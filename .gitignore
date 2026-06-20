@@ -1,0 +1,46 @@
+# ---- Node / Next.js (frontend) ----
+node_modules/
+.pnp
+.pnp.js
+.next/
+out/
+build/
+dist/
+coverage/
+.npm
+.eslintcache
+*.tsbuildinfo
+next-env.d.ts
+
+# ---- Java / Maven (backend) ----
+target/
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# ---- Env / secrets ----
+.env
+.env.local
+.env.*.local
+*.pem
+
+# ---- OS / IDE ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

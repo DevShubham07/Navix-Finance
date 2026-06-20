@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.navix</groupId>
+    <artifactId>navix-finance</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>navix-finance</name>
+    <description>NAVIX Finance - salary-linked single-repayment lending platform (Maven multi-module backend)</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Pinned: springdoc is NOT managed by the Spring Boot BOM -->
+        <springdoc.version>2.7.0</springdoc.version>
+        <!-- Spring Cloud AWS 3.3.x aligns with Spring Boot 3.4 -->
+        <spring-cloud-aws.version>3.3.0</spring-cloud-aws.version>
+    </properties>
+
+    <modules>
+        <module>navix-common</module>
+        <module>navix-iam</module>
+        <module>navix-onboarding</module>
+        <module>navix-kyc</module>
+        <module>navix-verification</module>
+        <module>navix-income-risk</module>
+        <module>navix-loan</module>
+        <module>navix-disbursement</module>
+        <module>navix-collections</module>
+        <module>navix-storage</module>
+        <module>navix-app</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Cloud AWS BOM: manages S3, SSM Parameter Store, and the
+                 underlying AWS SDK v2 versions so child modules declare starters
+                 without versions. -->
+            <dependency>
+                <groupId>io.awspring.cloud</groupId>
+                <artifactId>spring-cloud-aws-bom</artifactId>
+                <version>${spring-cloud-aws.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Pin springdoc-openapi so child modules can declare it without a version.
+                 Versions for spring-boot starters, lombok, postgresql and flyway-core
+                 are managed by the Spring Boot parent BOM and must NOT be pinned here. -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+</project>

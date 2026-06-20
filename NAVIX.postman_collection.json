@@ -1,0 +1,680 @@
+{
+	"info": {
+		"_postman_id": "54939aaf-ad19-4ab5-b677-e6fa6f13b4ec",
+		"name": "NAVIX",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "37654509"
+	},
+	"item": [
+		{
+			"name": "Email_Verificaiton",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Basic Y2xpX3JaejR5ZDB2SXZDS1BJMms6RTdTU2xpZFNBd3dULTktSUtFWUhJRGwzb2NxdGJ5THZWaldvVEUxVEFqOA=="
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"email\": \"ganesh.parmeshwar@digitap.ai\",\n  \"client_ref_num\": \"ref12345\",\n  \"individual_name\": \"Ganesh Parmeshwar\",\n  \"establishment_name\": \"Digitap.ai\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://admin.fintrix.tech/__api/api/v1/cv_email_verification",
+					"protocol": "https",
+					"host": [
+						"admin",
+						"fintrix",
+						"tech"
+					],
+					"path": [
+						"__api",
+						"api",
+						"v1",
+						"cv_email_verification"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "AddressVerification",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Basic Y2xpX3JaejR5ZDB2SXZDS1BJMms6RTdTU2xpZFNBd3dULTktSUtFWUhJRGwzb2NxdGJ5THZWaldvVEUxVEFqOA=="
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"latitude\": \"28.5711702\",\n  \"uniqueId\": \"DIGITAP78799\",\n  \"longitude\": \"77.3158176\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://admin.fintrix.tech/__api/api/v1/ent_address_verification",
+					"protocol": "https",
+					"host": [
+						"admin",
+						"fintrix",
+						"tech"
+					],
+					"path": [
+						"__api",
+						"api",
+						"v1",
+						"ent_address_verification"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CRIF",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Basic Y2xpX3JaejR5ZDB2SXZDS1BJMms6RTdTU2xpZFNBd3dULTktSUtFWUhJRGwzb2NxdGJ5THZWaldvVEUxVEFqOA=="
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"dob\": \"15-08-1995\",\n  \"city\": \"Sampleville\",\n  \"email\": \"demo.user123@example.com\",\n  \"state\": \"Testland\",\n  \"gender\": \"M\",\n  \"remark\": \"Optional client note or reference\",\n  \"address\": \"123 Test Street, Block A\",\n  \"pincode\": \"999999\",\n  \"village\": \"Mockgaon\",\n  \"last_name\": \"Verma\",\n  \"first_name\": \"Rahul\",\n  \"pan_number\": \"ABCDE1234F\",\n  \"middle_name\": \"Kumar\",\n  \"mobile_number\": \"9123456789\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://admin.fintrix.tech/__api/api/v1/individual_crif",
+					"protocol": "https",
+					"host": [
+						"admin",
+						"fintrix",
+						"tech"
+					],
+					"path": [
+						"__api",
+						"api",
+						"v1",
+						"individual_crif"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "EXPERIAN",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Basic Y2xpX3JaejR5ZDB2SXZDS1BJMms6RTdTU2xpZFNBd3dULTktSUtFWUhJRGwzb2NxdGJ5THZWaldvVEUxVEFqOA=="
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"pan\": \"HVIPK175XX\",\n  \"name\": \"AIFD XFGX\",\n  \"mobile\": \"95880784XX\",\n  \"remark\": \"Optional client note or reference\",\n  \"consent\": \"Y\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://admin.fintrix.tech/__api/api/v1/individual_experian",
+					"protocol": "https",
+					"host": [
+						"admin",
+						"fintrix",
+						"tech"
+					],
+					"path": [
+						"__api",
+						"api",
+						"v1",
+						"individual_experian"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Pan_Comprehensive",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Basic Y2xpX3JaejR5ZDB2SXZDS1BJMms6RTdTU2xpZFNBd3dULTktSUtFWUhJRGwzb2NxdGJ5THZWaldvVEUxVEFqOA=="
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"remark\": \"Optional client note or reference\",\n  \"id_number\": \"BYTPP96XXD\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://admin.fintrix.tech/__api/api/v1/pan_comprehensive",
+					"protocol": "https",
+					"host": [
+						"admin",
+						"fintrix",
+						"tech"
+					],
+					"path": [
+						"__api",
+						"api",
+						"v1",
+						"pan_comprehensive"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "PennyDrop",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Basic Y2xpX3JaejR5ZDB2SXZDS1BJMms6RTdTU2xpZFNBd3dULTktSUtFWUhJRGwzb2NxdGJ5THZWaldvVEUxVEFqOA=="
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"ifsc\": \"BAXX0XXNKXX\",\n  \"remark\": \"Optional client note or reference\",\n  \"ifsc_details\": true,\n  \"account_number\": \"1257XX5XX13XX1\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://admin.fintrix.tech/__api/api/v1/verification_pennydrop",
+					"protocol": "https",
+					"host": [
+						"admin",
+						"fintrix",
+						"tech"
+					],
+					"path": [
+						"__api",
+						"api",
+						"v1",
+						"verification_pennydrop"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Face_Liveness",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Basic Y2xpX3JaejR5ZDB2SXZDS1BJMms6RTdTU2xpZFNBd3dULTktSUtFWUhJRGwzb2NxdGJ5THZWaldvVEUxVEFqOA=="
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"p_image\": \"https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&fm=jpg&q=80\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://admin.fintrix.tech/__api/api/v1/vkyc_face_liveness",
+					"protocol": "https",
+					"host": [
+						"admin",
+						"fintrix",
+						"tech"
+					],
+					"path": [
+						"__api",
+						"api",
+						"v1",
+						"vkyc_face_liveness"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
+
+{x
+  "http_status_code": 200,
+  "result_code": 101,
+  "client_ref_num": "ref12345",
+  "request_id": "9fc23a44-94fb-4550-999f-2b53a28c34a3",
+  "result": {
+    "summary": {
+      "is_verified": true,
+      "is_email_valid": true,
+      "is_establishment_matched": true,
+      "is_individual_matched": true
+    },
+    "establishment_details": {
+      "is_establishment_matched": true,
+      "matched_establishments": [
+        {
+          "matched_establishment": "DIGITAP.AI ENTERPRISE SOLUTIONS PRIVATE LIMITED",
+          "est_id": "PYKRP2460100000",
+          "matched_domain": "digitap.ai",
+          "source": "epfo",
+          "matched_email_id": "nageen.kommu@digitap.ai",
+          "is_establishment_individually_matched": true,
+          "score": 1
+        }
+      ]
+    },
+    "individual_details": {
+      "email_name": "ganesh.parmeshwar",
+      "is_individual_matched": true,
+      "score": 1
+    },
+    "whois_info": null,
+    "additional_info": {
+      "is_webmail": false,
+      "is_mx_records_present": true,
+      "is_smtp_server_valid": true,
+      "is_smtp_email_valid": true,
+      "is_generic_email": false
+    }
+  },
+  "input_data": {
+    "client_ref_num": "ref12345",
+    "email": "ganesh.parmeshwar@digitap.ai",
+    "individual_name": "Ganesh Parmeshwar",
+    "establishment_name": "Digitap.ai"
+  }
+}
+
+email address verification : 
+{
+  "code": "200",
+  "model": {
+    "address": "K.S Corporate Tower Plot No.24B, 2nd floor 215 office, 24B, Film City, Sector 16A, Noida, Uttar Pradesh 201301, India",
+    "pincode": "201301",
+    "district": "Meerut Division",
+    "state": "Uttar Pradesh",
+    "country": "India",
+    "withInIndia": true
+  }
+}
+
+crif : 
+{
+  "timestamp": "2026-06-19T09:34:30.200Z",
+  "transaction_id": "TXN-PROD-feab21bf-5c32-427d-aa7e-4c08adda05b1",
+  "status": "success",
+  "data": {
+    "HEADER": {
+      "DATE-OF-REQUEST": "19-06-2026",
+      "DATE-OF-ISSUE": "19-06-2026",
+      "REPORT-ID": "CCR260619CR198836677",
+      "BATCH-ID": "4710795651260619",
+      "inquiryId_": "",
+      "STATUS": "SUCCESS"
+    },
+    "REQUEST": {
+      "NAME": "Rahul Verma",
+      "DOB": "15-08-1995",
+      "PAN": "ABCDE1234F",
+      "UID": "",
+      "EMAIL-1": "demo.user123@example.com",
+      "ADDRESS-1": "123 Test Street,  Block A Mockgaon  Sampleville Testland 999999",
+      "ADDRESS-2": "",
+      "ADDRESS-3": "",
+      "PHONE-1": "9123456789"
+    },
+    "PERSONAL-INFO-VARIATION": {
+      "NAME-VARIATIONS": "",
+      "ADDRESS-VARIATIONS": "",
+      "PAN-VARIATIONS": "",
+      "UID-VARIATIONS": "",
+      "OTHER-ID-VARIATIONS": "",
+      "DRIVING-LICENSE-VARIATIONS": "",
+      "DATE-OF-BIRTH-VARIATIONS": "",
+      "VOTER-ID-VARIATIONS": "",
+      "PASSPORT-VARIATIONS": "",
+      "PHONE-NUMBER-VARIATIONS": "",
+      "RATION-CARD-VARIATIONS": "",
+      "EMAIL-VARIATIONS": ""
+    },
+    "SECONDARY-MATCHES": "",
+    "ACCOUNTS-SUMMARY": {
+      "DERIVED-ATTRIBUTES": {
+        "INQURIES-IN-LAST-SIX-MONTHS": "0",
+        "LENGTH-OF-CREDIT-HISTORY-YEAR": "0",
+        "LENGTH-OF-CREDIT-HISTORY-MONTH": "0",
+        "AVERAGE-ACCOUNT-AGE-YEAR": "0",
+        "AVERAGE-ACCOUNT-AGE-MONTH": "0",
+        "NEW-ACCOUNTS-IN-LAST-SIX-MONTHS": "0",
+        "NEW-DELINQ-ACCOUNT-IN-LAST-SIX-MONTHS": "0"
+      },
+      "PRIMARY-ACCOUNTS-SUMMARY": {
+        "PRIMARY-NUMBER-OF-ACCOUNTS": "0",
+        "PRIMARY-ACTIVE-NUMBER-OF-ACCOUNTS": "0",
+        "PRIMARY-OVERDUE-NUMBER-OF-ACCOUNTS": "0",
+        "PRIMARY-SECURED-NUMBER-OF-ACCOUNTS": "0",
+        "PRIMARY-UNSECURED-NUMBER-OF-ACCOUNTS": "0",
+        "PRIMARY-UNTAGGED-NUMBER-OF-ACCOUNTS": "0",
+        "PRIMARY-CURRENT-BALANCE": "0",
+        "PRIMARY-SANCTIONED-AMOUNT": "0",
+        "PRIMARY-DISBURSED-AMOUNT": "0",
+        "PRIMARY-OVERDUE-AMOUNT": ""
+      },
+      "SECONDARY-ACCOUNTS-SUMMARY": {
+        "SECONDARY-NUMBER-OF-ACCOUNTS": "0",
+        "SECONDARY-ACTIVE-NUMBER-OF-ACCOUNTS": "0",
+        "SECONDARY-OVERDUE-NUMBER-OF-ACCOUNTS": "0",
+        "SECONDARY-SECURED-NUMBER-OF-ACCOUNTS": "0.0",
+        "SECONDARY-UNSECURED-NUMBER-OF-ACCOUNTS": "0",
+        "SECONDARY-UNTAGGED-NUMBER-OF-ACCOUNTS": "0",
+        "SECONDARY-CURRENT-BALANCE": "0",
+        "SECONDARY-SANCTIONED-AMOUNT": "0",
+        "SECONDARY-DISBURSED-AMOUNT": "0",
+        "SECONDARY-OVERDUE-AMOUNT": ""
+      }
+    },
+    "EMPLOYMENT-DETAILS": {
+      "EMPLOYMENT-DETAIL": {
+        "ACCT-TYPE": "",
+        "DATE-REPORTED": "",
+        "OCCUPATION": ""
+      }
+    },
+    "RESPONSES": {
+      "RESPONSE": []
+    },
+    "INQUIRY-HISTORY": {
+      "HISTORY": []
+    },
+    "TRENDS": {
+      "NAME": "",
+      "DATES": "",
+      "VALUES": "",
+      "RESERVED1": "",
+      "RESERVED2": "",
+      "RESERVED3": "",
+      "DESCRIPTION": ""
+    },
+    "SCORES": {
+      "SCORE": {
+        "SCORE-TYPE": "",
+        "SCORE-VALUE": "",
+        "SCORE-FACTORS": ""
+      }
+    },
+    "verificarionScoreList": "",
+    "PRINTABLE-REPORT": {
+      "TYPE": "",
+      "FILE-NAME": "",
+      "CONTENT": ""
+    },
+    "enhanceProCcirFlag": "false",
+    "ccirFlag": "false"
+  }
+}
+
+experian  : 
+{
+  "timestamp": "2026-06-19T09:35:24.310Z",
+  "transaction_id": "TXN-PROD-ca7fdd1e-58a7-44ee-8a5f-22f367c4d42e",
+  "status": "success",
+  "data": {
+    "pan": "QVEPS1090J",
+    "name": "SHUBHAM",
+    "mobile": "7206485966",
+    "credit_score": 8,
+    "client_id": "REQa2daa91d3ac04b7bac50908dff0090da",
+    "credit_report": {
+      "CreditProfileHeader": {
+        "ReportDate": 20260619,
+        "ReportTime": 150524,
+        "Version": "V2.4",
+        "ReportNumber": "9682095281025"
+      },
+      "Current_Application": {
+        "Current_Application_Details": {
+          "Enquiry_Reason": "99",
+          "Finance_Purpose": "99",
+          "Amount_Financed": "0",
+          "Duration_Of_Agreement": "1",
+          "Current_Applicant_Details": {
+            "Last_Name": "SHUBHAM",
+            "First_Name": "SHUBHAM",
+            "Middle_Name1": "",
+            "Middle_Name2": "",
+            "Middle_Name3": "",
+            "Gender_Code": "1",
+            "IncomeTaxPan": "QVEPS1090J",
+            "PAN_Issue_Date": "",
+            "PAN_Expiration_Date": "",
+            "Passport_Number": "",
+            "Passport_Issue_Date": "",
+            "Passport_Expiration_Date": "",
+            "Voter_s_Identity_Card": "",
+            "Voter_ID_Issue_Date": "",
+            "Voter_ID_Expiration_Date": "",
+            "Driver_License_Number": "",
+            "Driver_License_Issue_Date": "",
+            "Driver_License_Expiration_Date": "",
+            "Ration_Card_Number": "",
+            "Ration_Card_Issue_Date": "",
+            "Ration_Card_Expiration_Date": "",
+            "Universal_ID_Number": "",
+            "Universal_ID_Issue_Date": "",
+            "Universal_ID_Expiration_Date": "",
+            "Date_Of_Birth_Applicant": "",
+            "Telephone_Number_Applicant_1st": "7206485966",
+            "Telephone_Extension": "",
+            "Telephone_Type": "",
+            "MobilePhoneNumber": "7206485966",
+            "EMailId": ""
+          },
+          "Current_Other_Details": {
+            "Income": "0",
+            "Marital_Status": "",
+            "Employment_Status": "",
+            "Time_with_Employer": "",
+            "Number_of_Major_Credit_Card_Held": ""
+          },
+          "Current_Applicant_Address_Details": {
+            "FlatNoPlotNoHouseNo": "DEFAULT",
+            "BldgNoSocietyName": "",
+            "RoadNoNameAreaLocality": "",
+            "City": "Mumbai",
+            "Landmark": "",
+            "State": "27",
+            "PINCode": "400048",
+            "Country_Code": "IB"
+          },
+          "Current_Applicant_Additional_AddressDetails": ""
+        }
+      },
+      "Match_result": {
+        "Exact_match": "N"
+      },
+      "SCORE": {
+        "FCIREXScore": 8,
+        "FCIREXScoreConfidLevel": "L"
+      },
+      "CAIS_Account": {
+        "CAIS_Summary": {},
+        "CAIS_Account_DETAILS": []
+      },
+      "CAPS": {
+        "CAPS_Summary": {},
+        "CAPS_Application_Details": []
+      },
+      "NonCreditCAPS": {
+        "NonCreditCAPS_Summary": {},
+        "CAPS_Application_Details": []
+      },
+      "TotalCAPS_Summary": {}
+    }
+  },
+  "message": "SYS100004 (No record found)"
+}
+
+PAN CARD : 
+{
+  "timestamp": "2026-06-18T09:06:34.538Z",
+  "transaction_id": "TXN-PROD-a2c3b290-f4a8-495c-b04a-8d102bfa7f4f",
+  "status": "success",
+  "data": {
+    "dob": "2003-03-24",
+    "doi": null,
+    "tax": true,
+    "email": "gs********96@gmail.com",
+    "gender": "M",
+    "status": "valid",
+    "category": "person",
+    "dob_check": false,
+    "full_name": "  SHUBHAM",
+    "last_name": "SHUBHAM",
+    "less_info": false,
+    "first_name": "",
+    "pan_number": "QVEPS0901K",
+    "address": {
+      "zip": "131001",
+      "city": "SONIPAT",
+      "full": "house 116', 'ward no 22 kathmandi gandhi nagar', 'Sonipat Mandi S.O', 'Sonipat', 'SONIPAT', 'Haryana', '131001', 'INDIA",
+      "state": "Haryana",
+      "line_1": "house 116",
+      "line_2": "ward no 22 kathmandi gandhi nagar",
+      "country": "INDIA",
+      "street_name": "Sonipat"
+    },
+    "middle_name": "",
+    "dob_verified": false,
+    "phone_number": "72XXXXXX66",
+    "aadhaar_linked": true,
+    "masked_aadhaar": "65XXXXXXXX90",
+    "full_name_split": [
+      "",
+      "",
+      "SHUBHAM"
+    ]
+  }
+}
+
+PENNY DROP : 
+{
+  "timestamp": "2026-06-19T09:38:19.184Z",
+  "transaction_id": "TXN-PROD-38ed8dda-12a4-4a87-b31a-b6016ed12244",
+  "status": "success",
+  "data": {
+    "status": true,
+    "upi_id": null,
+    "remarks": "Success",
+    "client_id": "TXN-PROD-38ed8dda-12a4-4a87-b31a-b6016ed12244",
+    "full_name": "SHUBHAM",
+    "imps_ref_no": "617099136717",
+    "account_exists": true,
+    "ifsc_details": {
+      "id": 0,
+      "upi": true,
+      "bank": "HDFC Bank",
+      "city": "SONIPAT",
+      "ifsc": "HDFC0002557",
+      "imps": true,
+      "micr": "110240250",
+      "neft": true,
+      "rtgs": true,
+      "state": "HARYANA",
+      "swift": "HDFCINBB",
+      "branch": "KATHMANDI,SONIPAT",
+      "centre": "SONIPAT",
+      "address": "HDFC BANK LTD., PROPERTY NO. 727/24, 73 MAY-24 735A/24 KATH MANDI, SONIPAT HARYANA 131001",
+      "contact": "+919996243333",
+      "iso3166": "IN-HR",
+      "district": "SONIPAT",
+      "bank_code": "HDFC"
+    },
+    "transaction_info": {
+      "reqid": "SVBAV-283425054",
+      "chanref": "SVBAV-283425054",
+      "txn_type": "IMPSP2A",
+      "nw_txn_refid": "617099136717",
+      "reference_id": 283425054
+    }
+  }
+}
+face liveness : 
+{
+  "timestamp": "2026-06-18T08:50:49.649Z",
+  "transaction_id": "TXN-PROD-1b87b58e-ca8c-4e0f-97c1-f7e3e846092d",
+  "status": "success",
+  "data": {
+    "is_live": true,
+    "is_person_image_blurry": false,
+    "liveness_confidence": 0.972,
+    "person_image_correctly_identified": true,
+    "eye_closed": false,
+    "is_face_aligned": true,
+    "is_low_light_image": false,
+    "multiple_face_detected": false,
+    "is_face_occluded": false,
+    "occlusion_confidence": 1,
+    "has_mask": false,
+    "mask_confidence": 0
+  }
+}
+}
