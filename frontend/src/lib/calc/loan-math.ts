@@ -28,43 +28,43 @@ export const LATE_PENALTY_CAP_DAYS = 30;
 export const LIMIT_PCT_OF_SALARY = 0.25;
 
 /** Up-front 10% processing fee on the principal. */
-export function processingFee(amount: number): number {
+export function processingFee(_amount: number): number {
   // TODO: implement (amount * PROCESSING_FEE_RATE) with rounding policy.
   throw new Error("Not implemented");
 }
 
 /** 18% GST charged on the processing fee. */
-export function gstOnFee(fee: number): number {
+export function gstOnFee(_fee: number): number {
   // TODO: implement (fee * GST_RATE).
   throw new Error("Not implemented");
 }
 
 /** Amount credited to the borrower = principal - fee - GST. */
-export function netDisbursed(amount: number): number {
+export function netDisbursed(_amount: number): number {
   // TODO: amount - processingFee(amount) - gstOnFee(processingFee(amount)).
   throw new Error("Not implemented");
 }
 
 /** Interest accrued over `days` at 1%/day on principal. */
-export function dailyInterest(amount: number, days: number): number {
+export function dailyInterest(_amount: number, _days: number): number {
   // TODO: amount * DAILY_INTEREST_RATE * days.
   throw new Error("Not implemented");
 }
 
 /** Total amount due on the repayment date = principal + interest. */
-export function totalRepayable(amount: number, days: number): number {
+export function totalRepayable(_amount: number, _days: number): number {
   // TODO: amount + dailyInterest(amount, days).
   throw new Error("Not implemented");
 }
 
 /** Eligible loan limit = 25% of monthly salary. */
-export function eligibleLimit(monthlySalary: number): number {
+export function eligibleLimit(_monthlySalary: number): number {
   // TODO: monthlySalary * LIMIT_PCT_OF_SALARY (apply min/max policy).
   throw new Error("Not implemented");
 }
 
 /** Map days-past-due to a {@link DpdBucket}. */
-export function dpdBucket(daysPastDue: number): DpdBucket {
+export function dpdBucket(_daysPastDue: number): DpdBucket {
   // TODO: bucket by 0-7 / 8-30 / 30-60 / 60-90 / 90+, UPCOMING when <= 0.
   throw new Error("Not implemented");
 }

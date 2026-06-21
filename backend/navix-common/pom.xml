@@ -25,6 +25,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!-- BaseAuditEntity uses JPA mappings (jakarta.persistence) and Spring
+             Data JPA auditing (@CreatedDate/@LastModifiedDate + AuditingEntityListener),
+             so the shared module must bring the data-jpa starter. Downstream
+             modules inherit it transitively. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
