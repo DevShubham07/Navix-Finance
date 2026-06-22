@@ -62,7 +62,7 @@ export default function ReloanPage() {
 
       <div className="rounded border border-gold-soft bg-gold-50/50 p-7 text-center shadow-sm">
         <div className="text-sm text-muted">Available to borrow now</div>
-        <div className="my-1 font-serif text-4xl font-bold text-navy">{formatINR0(j.sanctionedLimit())}</div>
+        <div className="my-1 font-serif text-3xl font-bold text-navy sm:text-4xl">{formatINR0(j.sanctionedLimit())}</div>
         <div className="mb-5 text-sm text-muted">Up to 25% of your {formatINR0(j.applicant.monthlySalary)} salary</div>
         <button onClick={borrowAgain} className="btn btn-gold">
           <RotateCw size={16} /> Borrow again

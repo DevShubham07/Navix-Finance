@@ -55,6 +55,34 @@ const NAV: NavGroup[] = [
   },
 ];
 
+/** Flattened horizontal nav for the mobile strip — icon + label pills that
+ *  scroll sideways, no group headings (those only make sense in the sidebar). */
+function MobileNavLinks({ role, pathname }: { role: Parameters<typeof hasPermission>[0]; pathname: string }) {
+  const items = NAV.flatMap((g) => g.items).filter((it) => !it.perm || hasPermission(role, it.perm));
+  return (
+    <>
+      {items.map(({ label, href, Icon }) => {
+        const active = pathname === href || pathname.startsWith(href + "/");
+        return (
+          <Link
+            key={href}
+            href={href}
+            className={cn(
+              "flex flex-shrink-0 items-center gap-2 whitespace-nowrap rounded px-3 py-2 text-sm transition-colors",
+              active
+                ? "bg-white/10 font-semibold text-white"
+                : "text-[#AFC3DC] hover:bg-white/5 hover:text-white",
+            )}
+          >
+            <Icon size={16} className="flex-shrink-0" />
+            {label}
+          </Link>
+        );
+      })}
+    </>
+  );
+}
+
 function NavLinks({ role, pathname, onNavigate }: { role: Parameters<typeof hasPermission>[0]; pathname: string; onNavigate?: () => void }) {
   return (
     <>
@@ -143,8 +171,8 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           <div className="lg:hidden">
             <Brand href="/staff/dashboard" tag="Staff" />
           </div>
-          <div className="ml-auto flex items-center gap-3">
-            <div className="text-right">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <div className="hidden text-right sm:block">
               <div className="text-sm font-semibold text-ink">{session.name}</div>
               <div className="text-xs text-gold-dark">{STAFF_ROLE_LABELS[session.role]}</div>
             </div>
@@ -153,17 +181,17 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             </div>
             <button
               onClick={signOut}
-              className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-sm text-muted hover:bg-grey-100 hover:text-ink"
+              className="flex items-center gap-1.5 rounded border border-line px-3 py-2 text-sm text-muted hover:bg-grey-100 hover:text-ink"
             >
               <LogOut size={15} /> <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
         </header>
 
-        {/* Mobile nav strip */}
-        <div className="border-b border-line bg-navy-900 px-2 py-2 lg:hidden">
-          <div className="flex gap-1 overflow-x-auto">
-            <NavLinks role={session.role} pathname={pathname} />
+        {/* Mobile nav strip — flat, horizontally scrollable */}
+        <div className="border-b border-line bg-navy-900 lg:hidden">
+          <div className="flex gap-1 overflow-x-auto px-2 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none]">
+            <MobileNavLinks role={session.role} pathname={pathname} />
           </div>
         </div>
 

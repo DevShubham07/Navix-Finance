@@ -13,7 +13,7 @@ export default function BorrowerLayout({ children }: { children: React.ReactNode
       <footer className="border-t border-line bg-white">
         <div className="container flex flex-wrap items-center justify-between gap-3 py-5 text-sm text-muted">
           <span>© 2026 {BRAND.legalName}</span>
-          <span className="flex gap-4">
+          <span className="flex flex-wrap gap-x-4 gap-y-1">
             <Link href="/policies#privacy" className="hover:text-navy">Privacy</Link>
             <Link href="/policies#terms" className="hover:text-navy">Terms</Link>
             <Link href="/grievance" className="hover:text-navy">Grievance</Link>

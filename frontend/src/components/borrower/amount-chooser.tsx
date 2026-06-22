@@ -52,13 +52,13 @@ export function AmountChooser({ limit, salaryDay, value, onChange }: AmountChoos
           <span>{formatINR0(min)}</span>
           <span>Limit {formatINR0(limit)}</span>
         </div>
-        <div className="mt-4 grid grid-cols-4 gap-2">
+        <div className="mt-4 grid grid-cols-4 gap-2 max-[360px]:grid-cols-2">
           {presets.map((p, i) => (
             <button
               key={i}
               type="button"
               onClick={() => onChange(p)}
-              className={`rounded border px-2 py-2 text-xs font-semibold transition ${
+              className={`rounded border px-2 py-2.5 text-sm font-semibold transition ${
                 value === p ? "border-navy bg-navy-tint text-navy" : "border-line text-muted hover:border-navy hover:text-navy"
               }`}
             >

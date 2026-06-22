@@ -408,9 +408,9 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius
 .reassure-strip .ri svg { width: 18px; height: 18px; color: var(--ok); }
 
 /* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(20,43,80,.55); display: none; place-items: center; z-index: 200; padding: 24px; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(20,43,80,.55); display: none; place-items: center; z-index: 200; padding: 24px; overflow-y: auto; }
 .modal-overlay.show { display: grid; animation: fadeUp .25s ease; }
-.modal { background: #fff; border-radius: var(--radius); max-width: 460px; width: 100%; padding: 38px 34px; text-align: center; box-shadow: var(--shadow-md); }
+.modal { background: #fff; border-radius: var(--radius); max-width: 460px; width: 100%; padding: 38px 34px; text-align: center; box-shadow: var(--shadow-md); max-height: calc(100dvh - 48px); overflow-y: auto; }
 .modal .check { width: 70px; height: 70px; border-radius: 50%; background: var(--ok-bg); color: var(--ok); display: grid; place-items: center; margin: 0 auto 1.4rem; }
 .modal .check svg { width: 36px; height: 36px; }
 
@@ -542,7 +542,7 @@ input[type="range"]:focus-visible { outline: 2px solid var(--navy); outline-offs
   .nav-menu > li > a, .nav-toggle-link { padding: 14px 12px; border-radius: var(--radius); width: 100%; }
   .nav-menu > li { border-bottom: 1px solid var(--grey-200); }
   .nav-menu > li.active > a::after { display: none; }
-  .dropdown { position: static; opacity: 1; visibility: visible; transform: none; box-shadow: none; border: 0; border-left: 2px solid var(--gold); border-radius: 0; margin: 0 0 8px 12px; padding: 0; max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+  .dropdown { position: static; min-width: 0; opacity: 1; visibility: visible; transform: none; box-shadow: none; border: 0; border-left: 2px solid var(--gold); border-radius: 0; margin: 0 0 8px 12px; padding: 0; max-height: 0; overflow: hidden; transition: max-height .25s ease; }
   .has-dropdown.open .dropdown { max-height: 500px; }
   .nav-burger { display: block; }
   .nav-cta .btn-nav-apply { display: none; }
@@ -559,8 +559,24 @@ input[type="range"]:focus-visible { outline: 2px solid var(--navy); outline-offs
   .footer-bottom .container { flex-direction: column; text-align: center; }
   .partner-card { flex-direction: column; }
   .tier { flex-direction: column; gap: 14px; }
+  .stepper { justify-content: space-between; }
   .stepper .s-label { display: none; }
+  .stepper .s-line { margin: 0 6px; min-width: 8px; }
+  .stepper .s-dot { width: 32px; height: 32px; font-size: .9rem; }
+  .fraud-close { padding: 8px 10px; font-size: 1.25rem; }
+}
+@media (max-width: 560px) {
+  .modal-overlay { padding: 14px; }
+  .modal { padding: 26px 20px; max-height: calc(100dvh - 28px); }
+  .form-card { padding: 22px 18px; }
+  .reassure-strip { flex-direction: column; align-items: stretch; gap: .75rem; }
+  .reassure-strip .ri { justify-content: center; }
+  .hero-cta { flex-direction: column; align-items: stretch; }
+  .hero-cta .btn { width: 100%; }
 }
 @media (max-width: 460px) {
   .stats .container { grid-template-columns: 1fr; }
+  .steps { grid-template-columns: 1fr; gap: 28px 0; }
+  .btn { padding: 13px 18px; }
+  .container { padding: 0 16px; }
 }

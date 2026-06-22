@@ -44,7 +44,7 @@ export default function KycApprovalsPage() {
       )}
 
       {pending.length === 0 ? (
-        <div className="rounded border border-line bg-white p-10 text-center text-muted">No applications awaiting KYC clearance.</div>
+        <div className="rounded border border-line bg-white p-6 text-center text-muted sm:p-10">No applications awaiting KYC clearance.</div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {pending.map((a) => (

@@ -44,7 +44,7 @@ export function StatCard({
   return (
     <div className={cn("rounded border bg-white p-5 shadow-sm", ring)}>
       <div className="text-sm text-muted">{label}</div>
-      <div className="mt-1 font-serif text-3xl font-bold text-navy">{value}</div>
+      <div className="mt-1 font-serif text-2xl font-bold text-navy lg:text-3xl">{value}</div>
       {hint ? <div className="mt-1 text-xs text-muted">{hint}</div> : null}
     </div>
   );

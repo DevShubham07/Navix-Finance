@@ -101,23 +101,23 @@ export default function StaffDashboardPage() {
 
         <aside className="space-y-4">
           <div className="rounded border border-line bg-white p-5 shadow-sm">
-            <h3 className="mb-3 font-serif text-base text-navy">Quick links</h3>
-            <ul className="space-y-2 text-sm">
-              <li><Link href="/staff/kyc-approvals" className="flex items-center gap-2 text-ink hover:text-navy"><ShieldCheck size={15} /> KYC approvals</Link></li>
-              <li><Link href="/staff/credit/queue" className="flex items-center gap-2 text-ink hover:text-navy"><ClipboardList size={15} /> Credit queue</Link></li>
-              <li><Link href="/staff/disbursement" className="flex items-center gap-2 text-ink hover:text-navy"><Banknote size={15} /> Disbursement</Link></li>
-              <li><Link href="/staff/accounting" className="flex items-center gap-2 text-ink hover:text-navy"><Receipt size={15} /> Accounting</Link></li>
-              <li><Link href="/staff/collections/buckets" className="flex items-center gap-2 text-ink hover:text-navy"><PhoneCall size={15} /> Collections</Link></li>
+            <h3 className="mb-2 font-serif text-base text-navy">Quick links</h3>
+            <ul className="text-sm">
+              <li><Link href="/staff/kyc-approvals" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><ShieldCheck size={15} /> KYC approvals</Link></li>
+              <li><Link href="/staff/credit/queue" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><ClipboardList size={15} /> Credit queue</Link></li>
+              <li><Link href="/staff/disbursement" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><Banknote size={15} /> Disbursement</Link></li>
+              <li><Link href="/staff/accounting" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><Receipt size={15} /> Accounting</Link></li>
+              <li><Link href="/staff/collections/buckets" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><PhoneCall size={15} /> Collections</Link></li>
             </ul>
           </div>
 
           {showCollections && (
             <div className="rounded border border-line bg-white p-5 shadow-sm">
               <h3 className="mb-3 flex items-center gap-2 font-serif text-base text-navy"><Wallet size={16} /> Collections</h3>
-              <ul className="space-y-2">
+              <ul>
                 {collections.map((c) => (
                   <li key={c.id} className="flex items-center justify-between gap-2 text-sm">
-                    <Link href={`/staff/collections/${c.loanId}`} className="truncate text-ink hover:text-navy">{c.applicantName}</Link>
+                    <Link href={`/staff/collections/${c.loanId}`} className="-mx-2 min-w-0 flex-1 truncate rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">{c.applicantName}</Link>
                     <DpdBadge dpd={c.daysPastDue} />
                   </li>
                 ))}

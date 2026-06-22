@@ -99,11 +99,11 @@ export default function DashboardPage() {
           )}
 
           <div className="rounded border border-line bg-white p-5 shadow-sm">
-            <div className="mb-3 text-sm font-semibold text-navy">Quick links</div>
-            <ul className="space-y-2 text-sm">
-              <li><Link href="/loan/status" className="text-ink hover:text-navy">Application status</Link></li>
-              <li><Link href="/repay" className="text-ink hover:text-navy">Repay / prepay</Link></li>
-              <li><Link href="/profile" className="text-ink hover:text-navy">Profile &amp; KYC</Link></li>
+            <div className="mb-2 text-sm font-semibold text-navy">Quick links</div>
+            <ul className="text-sm">
+              <li><Link href="/loan/status" className="-mx-2 block rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">Application status</Link></li>
+              <li><Link href="/repay" className="-mx-2 block rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">Repay / prepay</Link></li>
+              <li><Link href="/profile" className="-mx-2 block rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">Profile &amp; KYC</Link></li>
             </ul>
           </div>
         </aside>
@@ -163,7 +163,7 @@ function LoanCard({
       </div>
       <div className="p-6">
         <div className="text-sm text-muted">Total outstanding</div>
-        <div className="font-serif text-4xl font-bold text-navy">{formatINR0(outstanding)}</div>
+        <div className="font-serif text-3xl font-bold text-navy sm:text-4xl">{formatINR0(outstanding)}</div>
         {penalty > 0 && (
           <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-error-600">
             <AlertTriangle size={14} /> Includes {formatINR0(penalty)} late penalty (2%/day, cap 30d)
