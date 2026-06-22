@@ -14,6 +14,47 @@ This is a monorepo containing:
 
 ---
 
+## Verified Status — last tested 2026-06-21
+
+Full-stack test run (offline dev environment). Each item below was **verified by execution**, not assumed. Adversarially re-checked where marked ✅.
+
+### Live services
+
+| Service | URL | Status |
+|---|---|---|
+| Frontend (Next.js dev, mock-data layer) | http://localhost:3000 | 🟢 up, all 38 routes HTTP 200 |
+| Postgres 16 | `localhost:5432` (db/user/pass `navix`) | 🟢 healthy, schema applied (21 tables) |
+| Adminer | http://localhost:8081 | 🟢 up |
+| Backend (Spring Boot) | http://localhost:8080 | 🔴 **cannot run here** (see blockers) |
+
+### What is verified working
+
+- **Database schema** ✅ — `V2__core_schema.sql` applies cleanly: 21 tables + indexes + enum CHECK constraints. Invalid enum values are rejected; a `borrower→loan_application→loan→payment` insert chain succeeds (tested transactionally, rolled back).
+- **Loan math** ✅ (`frontend/src/lib/calc/loan-math.ts`) — executed under `node`, all product rules correct: 25% cap, 10% fee, 18% GST on fee, 1%/day interest, **2%/day late penalty correctly capped at 30 days**.
+- **Routing / middleware** ✅ — all 38 routes render; `src/middleware.ts` gates `/staff/*` (307 → `/staff/login` without `navix_session` cookie); `/staff/login` + `/staff/activate` are public.
+- **Marketing landing page** ✅ — high-fidelity (≈87/100) reproduction of `NAVIX Website (offline) (1).html`; brand system (navy `#1B3A6B` / gold `#C9A227` / ivory, Source Serif 4 + Inter) is coherent. Design system, `ui/` primitives, and RBAC `StaffShell` are well-built.
+
+### Known blockers / gaps (NOT working)
+
+- **Backend cannot build or run in an offline env**: requires **Java 21** (only 17/8/25 present) AND Spring Boot **3.4.1 deps are not cached** in `~/.m2`. To run: get online → `sdk install java 21.0.11-tem`, then `./mvnw -pl navix-app spring-boot:run` (auto-runs Flyway). `Dockerfile.backend` (eclipse-temurin:21) is the alternative but must pull the base image online.
+- **Backend endpoints are stubs**: 16/18 REST methods throw `UnsupportedOperationException`; only `StorageController` presign endpoints are real. `Disbursement`/`Collections` controllers expose **zero active routes** (maker-checker workflow unimplemented).
+- **Borrower flow — now wired & tested** ✅ (2026-06-22) — all 23 borrower pages are built and click through end-to-end on the `useBorrowerJourney` state machine: signup wizard (10 steps) → KYC (DigiLocker + selfie) → credit decision → amount/offer → e-sign → penny-drop → disburse → dashboard → repay/reborrow. Models A/B/C/D risk, the co-applicant gate, a policy decline, and the overdue 2%/day penalty (cap 30d). Verified by `next build` (24 routes static, all HTTP 200), a state-machine harness (`frontend/scripts/scenario-harness.mts`, **53/53 assertions**), and a Playwright walk capturing desktop + 390px-mobile screenshots of every page across 7 scenarios (`frontend/scripts/visual-walk.mjs` → `frontend/screenshots/`). A floating **DemoBar** seeds the scenarios. Still **mock-data only** — swap `src/lib/mock/*` + `signInBorrower()` for the real backend.
+- **Staff flow is not wired + SoD NOT enforced** 🔴🔒 — all 14 staff pages are stubs. **Separation-of-duties (a hard requirement) is enforced nowhere**: `middleware.ts` checks cookie *presence* only, `rbac.enforceSeparationOfDuties()` is an empty no-op called nowhere, and the store never compares actors. A garbage cookie value returns HTTP 200 on `/staff/admin/*` and `/staff/credit/*`.
+- **DB design flaws** 🔴 — **no foreign-key constraints** (only indexes); **cross-module ID type mismatch**: `loan.id` is `bigint` but `disbursement_request.loan_id` / `collection_case.loan_id` are `uuid` (cannot reference a real loan). Same `bigint` vs `uuid` mismatch for staff actor ids. Needs a `V3` migration.
+- **Design coverage** 🟡 — the marketing landing + **all 24 borrower routes** are now designed on the Classic-Corporate system and verified mobile-responsive (390px); the **14 staff routes remain unstyled stubs**. Visible keyboard focus is now global (`:focus-visible` in `globals.css`). Marketing copy still depicts a generic multi-tenure EMI loan, which **contradicts the salary-linked single-repayment product** — flag for product/compliance. Partner names/CoR/CIN on the landing page are fictional placeholders.
+
+### Change log (this session)
+
+- `docker-compose.yml`: Postgres healthcheck `retries: 5 → 3`.
+- **Borrower flow built & wired** (frontend): 23 pages implemented against an extended `useBorrowerJourney` store, plus new `src/lib/mock/scenarios.ts`, `src/lib/calc/risk.ts`, and a borrower UI kit (`wizard-actions`, `otp-input`, `amount-chooser`, `summary`, `kyc-progress`, `reassurance`, `demo-bar`). Added `:focus-visible` to `globals.css`.
+- Added Playwright (devDependency) + `frontend/scripts/scenario-harness.mts` (logic) + `frontend/scripts/visual-walk.mjs` (browser screenshots, output in `frontend/screenshots/`).
+
+### Doc corrections
+
+- Flyway migrations actually live in **`backend/navix-app/src/main/resources/db/migration/`** (`V1__init.sql` is a no-op placeholder; `V2__core_schema.sql` is the real schema) — *not* `navix-common/...` as stated in the Development workflow section below.
+
+---
+
 ## Quick Start
 
 ### 1. Environment setup

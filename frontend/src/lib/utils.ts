@@ -19,6 +19,18 @@ export function formatINR(amount: number): string {
 }
 
 /**
+ * Format a number as whole-rupee INR, e.g. 200000 -> "₹2,00,000".
+ * Matches the design's amount style (no paise).
+ */
+export function formatINR0(amount: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+/**
  * Format a date (Date | ISO string) as a human-readable Indian date.
  */
 export function formatDate(date: Date | string): string {

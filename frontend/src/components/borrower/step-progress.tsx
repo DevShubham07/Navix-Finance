@@ -1,7 +1,11 @@
 import * as React from "react";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// TODO: render the borrower onboarding wizard steps (KYC -> income -> offer -> agreement).
+/**
+ * Wizard stepper matching the design's `.stepper`. Steps before the active one
+ * render as "done" (green check); the active one is navy; the rest are muted.
+ */
 export interface StepProgressProps {
   steps: string[];
   /** Zero-based index of the active step. */
@@ -11,20 +15,20 @@ export interface StepProgressProps {
 
 export function StepProgress({ steps, currentStep, className }: StepProgressProps) {
   return (
-    <ol className={cn("flex items-center gap-2", className)}>
-      {steps.map((label, index) => (
-        <li key={label} className="flex items-center gap-2">
-          <span
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium",
-              index <= currentStep ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-500",
-            )}
-          >
-            {index + 1}
-          </span>
-          <span className="text-sm">{label}</span>
-        </li>
-      ))}
-    </ol>
+    <div className={cn("stepper", className)}>
+      {steps.map((label, index) => {
+        const done = index < currentStep;
+        const active = index === currentStep;
+        return (
+          <React.Fragment key={label}>
+            <div className={cn("s-item", done && "done", active && "active")}>
+              <span className="s-dot">{done ? <Check size={16} strokeWidth={3} /> : index + 1}</span>
+              <span className="s-label">{label}</span>
+            </div>
+            {index < steps.length - 1 ? <span className="s-line" /> : null}
+          </React.Fragment>
+        );
+      })}
+    </div>
   );
 }

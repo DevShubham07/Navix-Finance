@@ -1,43 +1,41 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-// TODO: table primitives for staff queues (applications, disbursements, collections).
+/**
+ * Table primitives for staff queues. Wraps the design's `.table-wrap` +
+ * `table.data` styling (navy header, zebra rows, hairline borders) so staff
+ * lists look institutional with no per-cell styling.
+ */
 export const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
-    <div className="w-full overflow-auto">
-      <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
+    <div className="table-wrap">
+      <table ref={ref} className={cn("data", className)} {...props} />
     </div>
   ),
 );
 Table.displayName = "Table";
 
 export const TableHeader = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />,
+  ({ className, ...props }, ref) => <thead ref={ref} className={className} {...props} />,
 );
 TableHeader.displayName = "TableHeader";
 
 export const TableBody = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => <tbody ref={ref} className={cn("[&_tr:last-child]:border-0", className)} {...props} />,
+  ({ className, ...props }, ref) => <tbody ref={ref} className={className} {...props} />,
 );
 TableBody.displayName = "TableBody";
 
 export const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTMLTableRowElement>>(
-  ({ className, ...props }, ref) => (
-    <tr ref={ref} className={cn("border-b transition-colors hover:bg-gray-50", className)} {...props} />
-  ),
+  ({ className, ...props }, ref) => <tr ref={ref} className={className} {...props} />,
 );
 TableRow.displayName = "TableRow";
 
 export const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
-    <th ref={ref} className={cn("h-12 px-4 text-left align-middle font-medium text-gray-500", className)} {...props} />
-  ),
+  ({ className, ...props }, ref) => <th ref={ref} className={className} {...props} />,
 );
 TableHead.displayName = "TableHead";
 
 export const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
-    <td ref={ref} className={cn("p-4 align-middle", className)} {...props} />
-  ),
+  ({ className, ...props }, ref) => <td ref={ref} className={className} {...props} />,
 );
 TableCell.displayName = "TableCell";

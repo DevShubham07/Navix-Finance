@@ -3,8 +3,11 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-// TODO: replace with accessible modal (focus trap, portal) for confirm actions
-// such as maker-checker approvals and disbursement release.
+/**
+ * Lightweight modal using the design's `.modal-overlay` / `.modal` styling.
+ * Used for confirm actions such as maker-checker approvals and disbursement
+ * release. Closes on overlay click and Escape.
+ */
 export interface DialogProps {
   open: boolean;
   onClose: () => void;
@@ -13,14 +16,22 @@ export interface DialogProps {
 }
 
 export function Dialog({ open, onClose, children, className }: DialogProps) {
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+    <div className="modal-overlay show" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
-        className={cn("relative z-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-lg", className)}
+        className={cn("modal", className)}
+        style={{ textAlign: "left" }}
+        onClick={(e) => e.stopPropagation()}
       >
         {children}
       </div>
@@ -29,11 +40,11 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
 }
 
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("mb-4 flex flex-col space-y-1.5", className)} {...props} />;
+  return <div className={cn("mb-4 flex flex-col gap-1.5", className)} {...props} />;
 }
 
 export function DialogTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h2 className={cn("text-lg font-semibold", className)} {...props} />;
+  return <h3 className={cn("font-serif text-xl text-navy", className)} {...props} />;
 }
 
 export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

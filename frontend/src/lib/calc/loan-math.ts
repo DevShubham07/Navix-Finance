@@ -27,72 +27,130 @@ export const LATE_PENALTY_CAP_DAYS = 30;
 /** Eligible loan limit as a fraction of monthly salary. */
 export const LIMIT_PCT_OF_SALARY = 0.25;
 
+/** Floor on a sanctioned advance (working value — finalised in credit policy). */
+export const MIN_LOAN_AMOUNT = 1000;
+
+/** Round to whole rupees (amounts are presented and settled in INR). */
+function inr(value: number): number {
+  return Math.round(value);
+}
+
 /** Up-front 10% processing fee on the principal. */
-export function processingFee(_amount: number): number {
-  // TODO: implement (amount * PROCESSING_FEE_RATE) with rounding policy.
-  throw new Error("Not implemented");
+export function processingFee(amount: number): number {
+  return inr(amount * PROCESSING_FEE_RATE);
 }
 
 /** 18% GST charged on the processing fee. */
-export function gstOnFee(_fee: number): number {
-  // TODO: implement (fee * GST_RATE).
-  throw new Error("Not implemented");
+export function gstOnFee(fee: number): number {
+  return inr(fee * GST_RATE);
 }
 
 /** Amount credited to the borrower = principal - fee - GST. */
-export function netDisbursed(_amount: number): number {
-  // TODO: amount - processingFee(amount) - gstOnFee(processingFee(amount)).
-  throw new Error("Not implemented");
+export function netDisbursed(amount: number): number {
+  const fee = processingFee(amount);
+  return inr(amount - fee - gstOnFee(fee));
 }
 
 /** Interest accrued over `days` at 1%/day on principal. */
-export function dailyInterest(_amount: number, _days: number): number {
-  // TODO: amount * DAILY_INTEREST_RATE * days.
-  throw new Error("Not implemented");
+export function dailyInterest(amount: number, days: number): number {
+  return inr(amount * DAILY_INTEREST_RATE * Math.max(0, days));
 }
 
 /** Total amount due on the repayment date = principal + interest. */
-export function totalRepayable(_amount: number, _days: number): number {
-  // TODO: amount + dailyInterest(amount, days).
-  throw new Error("Not implemented");
+export function totalRepayable(amount: number, days: number): number {
+  return inr(amount + dailyInterest(amount, days));
 }
 
-/** Eligible loan limit = 25% of monthly salary. */
-export function eligibleLimit(_monthlySalary: number): number {
-  // TODO: monthlySalary * LIMIT_PCT_OF_SALARY (apply min/max policy).
-  throw new Error("Not implemented");
+/** Late penalty accrued for `daysLate`, capped at 30 days. */
+export function latePenalty(amount: number, daysLate: number): number {
+  const cappedDays = Math.min(Math.max(0, daysLate), LATE_PENALTY_CAP_DAYS);
+  return inr(amount * LATE_PENALTY_RATE * cappedDays);
+}
+
+/** Eligible loan limit = 25% of monthly salary, rounded down to ₹100. */
+export function eligibleLimit(monthlySalary: number): number {
+  const raw = monthlySalary * LIMIT_PCT_OF_SALARY;
+  return Math.floor(raw / 100) * 100;
 }
 
 /** Map days-past-due to a {@link DpdBucket}. */
-export function dpdBucket(_daysPastDue: number): DpdBucket {
-  // TODO: bucket by 0-7 / 8-30 / 30-60 / 60-90 / 90+, UPCOMING when <= 0.
-  throw new Error("Not implemented");
+export function dpdBucket(daysPastDue: number): DpdBucket {
+  if (daysPastDue <= 0) return "UPCOMING";
+  if (daysPastDue <= 7) return "T0_T7";
+  if (daysPastDue <= 30) return "T8_T30";
+  if (daysPastDue <= 60) return "T30_T60";
+  if (daysPastDue <= 90) return "T60_T90";
+  return "T90_PLUS";
+}
+
+/** Whole days between two dates (b - a), ignoring time-of-day. */
+export function daysBetween(a: Date, b: Date): number {
+  const ms = 24 * 60 * 60 * 1000;
+  const da = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const db = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((db - da) / ms);
+}
+
+/** Salary-due-date window working values (spec: exact rule TBD). */
+export const SALARY_DUE_MIN_CYCLE_DAYS = 15;
+export const SALARY_DUE_MAX_WINDOW_DAYS = 40;
+
+/** Clamp a day-of-month to a valid date within the given month. */
+function salaryDateInMonth(year: number, monthIndex: number, salaryDay: number): Date {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return new Date(year, monthIndex, Math.min(salaryDay, lastDay));
 }
 
 /**
  * Derive the single-repayment due date from the borrower's salary credit.
- * Repayment lands on the salary day (last salary credit within ~40 days of
- * disbursement).
+ * Repayment lands on the salary day — the next salary credit that gives a
+ * reasonable cycle (>= ~15 days) while staying within the ~40-day window.
  *
- * TODO: compute the next salary date after disbursement given the salary-day
- * signal and the ~40-day window.
+ * Examples (salary on 30th): disbursed 3 Jun → due 30 Jun (~27d);
+ * disbursed 25 Jun → 30 Jun is only ~5d out, so roll to 30 Jul (~35d).
  */
-export function dueDateFromSalary(_params: {
+export function dueDateFromSalary(params: {
   disbursedOn: Date;
   /** Day-of-month the salary is typically credited. */
   salaryDay: number;
   /** Recent salary credit dates observed (bank statement). */
   recentSalaryDates?: Date[];
 }): Date {
-  // TODO: implement salary-day due-date resolution.
-  throw new Error("Not implemented");
+  const { disbursedOn, salaryDay } = params;
+  let candidate = salaryDateInMonth(
+    disbursedOn.getFullYear(),
+    disbursedOn.getMonth(),
+    salaryDay,
+  );
+
+  // Roll forward until the candidate is strictly after disbursement and gives
+  // at least a minimum cycle, without exceeding the max window.
+  for (let i = 0; i < 3; i += 1) {
+    const gap = daysBetween(disbursedOn, candidate);
+    if (gap >= SALARY_DUE_MIN_CYCLE_DAYS) break;
+    const next = new Date(candidate);
+    next.setMonth(next.getMonth() + 1);
+    const rolled = salaryDateInMonth(next.getFullYear(), next.getMonth(), salaryDay);
+    if (daysBetween(disbursedOn, rolled) > SALARY_DUE_MAX_WINDOW_DAYS) break;
+    candidate = rolled;
+  }
+  return candidate;
 }
 
 /**
  * Build a full itemized {@link LoanCostBreakdown} for a principal and tenure.
- * TODO: compose the pure functions above.
  */
-export function buildCostBreakdown(_amount: number, _tenureDays: number): LoanCostBreakdown {
-  // TODO: assemble breakdown using the functions above.
-  throw new Error("Not implemented");
+export function buildCostBreakdown(amount: number, tenureDays: number): LoanCostBreakdown {
+  const fee = processingFee(amount);
+  const gst = gstOnFee(fee);
+  const interest = dailyInterest(amount, tenureDays);
+  return {
+    principal: amount,
+    processingFee: fee,
+    gstOnFee: gst,
+    netDisbursed: inr(amount - fee - gst),
+    interest,
+    tenureDays,
+    totalRepayable: inr(amount + interest),
+  };
 }
