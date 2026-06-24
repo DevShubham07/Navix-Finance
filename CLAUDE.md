@@ -40,7 +40,7 @@ This is a monorepo:
 
 ---
 
-## 2. Current state (verified 2026-06-24)
+## 2. Current state (verified 2026-06-25)
 
 The project moved well past scaffolding. **The full loan lifecycle is implemented in the backend
 as one aggregate and wired to the frontend end-to-end through a BFF.**
@@ -66,25 +66,44 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
   documents in the signup flow; every staff reviewer can view the masked-PAN profile and
   view/download the documents (Flyway **V9**; demo-grade storage — document bytes stored inline as
   `bytea`, base64 in/out, not S3 yet).
-- ✅ **Tests** — **114 backend unit tests** green; a **Testcontainers integration test** drives
+- ✅ **Collections on the real loans** — `collection_case` / `settlement` now key off the **bigint**
+  loan id (Flyway **V11**); opening a case validates the loan and flips it `ACTIVE/OVERDUE →
+  IN_COLLECTIONS`; officers + settlement proposer/approver are **real staff** (names, not UUIDs); the
+  buckets page lists collectible loans with live DPD. Seam: `LoanDirectory` port in navix-common +
+  adapter in navix-loan (mirrors `StaffDirectory`) — no new Maven edge.
+- ✅ **Borrower repay / prepay (live)** — `/repay` records a real manual payment
+  (`POST /api/loan/{id}/repayments`, → PENDING_VERIFICATION); the **Accountant** verifies it
+  (`…/verify`), which reduces the outstanding and, at zero, closes the **loan** and the **application**
+  (`ApplicationFlowService.closeForLoan`, ACTIVE/OVERDUE → CLOSED). The repay page shows the
+  **prepayment-aware** "pay today" amount (interest only to the day paid) via `GET …/outstanding`.
+  (Reborrow `/reloan` is still mock.)
+- ✅ **Disbursement fast-path** — the **Disbursement Head** may finalize a release **directly** when
+  they enter a transaction id (`DISBURSEMENT_PENDING → DISBURSED → ACTIVE`, recording
+  `loan.disbursal_txn_ref`, Flyway **V13**), skipping the accountant; without a txn id it still routes
+  to the accountant. (A deliberate SoD relaxation — see §5/§7.)
+- ✅ **Accountant transactions ledger** — `GET /api/loan/transactions?q=&direction=` synthesizes a
+  company-wide ledger (OUTGOING disbursals + INCOMING repayments, borrower name, masked PAN) from
+  existing data — no new table; surfaced at `/staff/accounting/transactions` (searchable).
+- ✅ **Unique identity at signup** — PAN / Aadhaar / mobile are unique across applicants (partial
+  unique indexes, Flyway **V12**; enforced in `ApplicantReviewService`). Aadhaar is stored in full at
+  the owner's request but **masked on every read** (consistent with PAN).
+- ✅ **Tests** — the backend unit suite green (incl. repayment, transactions-ledger, disbursement
+  fast-path, collections-bridge, identity-uniqueness); a **Testcontainers integration test** drives
   DRAFT→ACTIVE + SoD-violation + illegal-transition (3/3 green); frontend `tsc --noEmit` + ESLint clean.
-- ✅ **DB** — Postgres 16 via Docker; Flyway **V1–V9** apply cleanly (seeded staff/invites/blocklist/
+- ✅ **DB** — Postgres 16 via Docker; Flyway **V1–V13** apply cleanly (seeded staff/invites/blocklist/
   collection-case demo rows).
 
 **Demo-first (not yet real):**
 - 🟡 **No real auth/JWT yet.** Identity is injected via demo headers (§7). This is intentional for
   the current phase and is the main go-live item.
 - 🟡 **The mock Zustand layer now backs only the leftovers** (§8): the **cosmetic, unmodeled steps**
-  (DigiLocker, selfie, e-sign, penny-drop, co-applicant) and **repay / reborrow** (no backend
-  endpoints yet). The rest of the designed journey is live. `NEXT_PUBLIC_DEMO_MODE` defaults **on**.
-- 🟡 **Collections is wired but on its own UUID island** — `/api/collections/*` + the collections
-  pages are live, but `collection_case`/`settlement` use **UUID** loan ids and are **not yet linked
-  to the real bigint loans** (legacy debt, §10/§13).
+  (DigiLocker, selfie, e-sign, penny-drop, co-applicant) and **reborrow** (`/reloan` — no backend
+  endpoint yet). Repay is now live. `NEXT_PUBLIC_DEMO_MODE` defaults **on**.
 - 🟡 External integrations (Fintrix salary verify, DigiLocker KYC, S3, bank penny-drop/transfer)
   are **mocked**.
 
 **Deferred (see §13):** real auth + Spring Security lockdown, AWS/Fintrix/DigiLocker infra,
-borrower repay/reborrow endpoints, bridging collections to the real bigint loans, FK constraints.
+borrower **reborrow** endpoint, FK constraints, applicant-identity unification.
 
 ---
 
@@ -105,7 +124,7 @@ navix_final/
 │   ├── navix-collections/        # DPD buckets, collection cases, settlements
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-app/                # ★ the only bootable module; DemoActorFilter, Flyway migrations
-│   │   └── src/main/resources/db/migration/   # V1..V9 (the REAL schema lives here)
+│   │   └── src/main/resources/db/migration/   # V1..V13 (the REAL schema lives here)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -148,7 +167,7 @@ cd backend
 ./mvnw install -DskipTests     # FIRST build sibling jars (navix-common etc.) into ~/.m2
 ./mvnw -pl navix-app spring-boot:run
 ```
-Flyway auto-applies **V1–V9** on boot. Swagger UI at `http://localhost:8080/swagger-ui.html`.
+Flyway auto-applies **V1–V13** on boot. Swagger UI at `http://localhost:8080/swagger-ui.html`.
 
 ### 4.3 Frontend  (http://localhost:3000)
 ```bash
@@ -215,6 +234,16 @@ DRAFT ─(borrower)→ KYC_PENDING ─(KYC_APPROVER)→ KYC_APPROVED ─(borrowe
 `CREDIT_EXEC_APPROVED → CREDIT_HEAD_PENDING`, `CREDIT_HEAD_APPROVED → DISBURSEMENT_PENDING`,
 `DISBURSED → ACTIVE` (which mints the loan via `LoanService.disburse`).
 
+**Disbursement fast-path:** the Disbursement Head's accept normally goes
+`DISBURSEMENT_PENDING → ACCOUNTANT_PENDING`, but when they supply a **transaction id** the flow
+service finalizes the release directly (`DISBURSEMENT_PENDING → DISBURSED → ACTIVE`, recording
+`loan.disbursal_txn_ref`), skipping the accountant — a deliberate **relaxation** of the
+Disbursement-Head ≠ Accountant SoD (product decision); the no-txn-id path keeps the accountant gate.
+
+**Repay → close:** repayments are recorded by the borrower (PENDING_VERIFICATION) and confirmed by
+the Accountant (`…/repayments/{pid}/verify`); when Σ verified payments ≥ total the loan closes and
+`ApplicationFlowService.closeForLoan` transitions the application `ACTIVE/OVERDUE → CLOSED`.
+
 **Invariants:**
 - **SoD (D3):** the actor who drove the application into `CREDIT_EXEC_APPROVED` (the recommender)
   must not be the Credit Head who approves. Enforced by replaying `application_event`
@@ -244,7 +273,10 @@ How a real applicant moves through the product — this is now the **designed, b
    audit trail; no more client-side "simulate decision".
 6. **Active loan** — after the staff chain completes (`ACTIVE`), `/dashboard` shows the real loan from
    `borrowerApi.loan`: **net disbursed**, **due date** (salary-linked), **total repayable**.
-7. **Repay / reborrow** — **still mock** (Zustand `/repay`, `/reloan`); needs new backend endpoints (§13).
+7. **Repay / prepay** — **live**: `/repay` reads the real loan and records a manual payment
+   (`borrowerApi.recordRepayment` → PENDING_VERIFICATION); the Accountant verifies it, which reduces the
+   outstanding and closes the loan + application at zero. The page shows the prepayment-aware "pay today"
+   amount (interest only to the day paid). **Reborrow** (`/reloan`) is still mock (§13).
 
 The borrower can only call **borrower** actions (`requireRole("BORROWER")`); `apply` is rejected
 unless the application is `KYC_APPROVED`, the amount is ≥ ₹1,000, and (if an eligible limit is set)
@@ -283,8 +315,8 @@ these headers are replaced by the JWT principal — nothing else changes.
 | `KYC_APPROVER` | approve/reject KYC → `KYC_APPROVED` / `KYC_REJECTED` |
 | `CREDIT_HEAD` | assign to an executive (→ `CREDIT_EXEC_PENDING`); **final approve** (→ `CREDIT_HEAD_APPROVED`, SoD-checked) |
 | `CREDIT_EXECUTIVE` | recommend/reject (→ `CREDIT_EXEC_APPROVED` / `REJECTED`) |
-| `DISBURSEMENT_HEAD` | accept for disbursal (→ `ACCOUNTANT_PENDING`); retry on failure |
-| `ACCOUNTANT` | validate bank transfer → `DISBURSED` → `ACTIVE` (mints loan), or `DISBURSEMENT_FAILED` |
+| `DISBURSEMENT_HEAD` | accept for disbursal (→ `ACCOUNTANT_PENDING`); **or finalize directly with a txn id** (→ `DISBURSED`→`ACTIVE`); retry on failure |
+| `ACCOUNTANT` | validate bank transfer → `DISBURSED`→`ACTIVE` (mints loan) / `DISBURSEMENT_FAILED`; **verify borrower repayments**; **view the transactions ledger** |
 | `COLLECTION_HEAD` | collections management + settlements |
 | `COLLECTION_EXECUTIVE` | borrower collections interactions |
 | `ADMIN` | oversight — **bypasses role checks** (may act in any step) |
@@ -300,6 +332,10 @@ dedicated pages reuse it: `kyc-approvals`, `credit/queue` (+ `credit/{id}` detai
 `accounting`. `/staff/dashboard` shows live counts/queues per role. Collections (`buckets`,
 `settlements`, case detail) and Admin (`staff`, `invites`, `blocklist`) + `activate` are wired via
 `collectionsApi` / `adminApi`. Settlement approval enforces **SoD** (proposer ≠ approver) server-side.
+The `accounting` page also carries the **repayment-verify queue** and links the **transactions
+ledger** (`accounting/transactions`). Staff screens carry small **ⓘ info-tooltips**
+(`components/ui/tooltip.tsx`) on dashboard cards / queue / DPD-bucket headers so a newly-added staffer
+knows what each section does.
 
 ---
 
@@ -313,18 +349,21 @@ dedicated pages reuse it: `kyc-approvals`, `credit/queue` (+ `credit/{id}` detai
   `[[...path]]`** (required `[...path]` does **not** match the bare base path — that was a bug,
   fixed) that read the session cookie, inject demo-actor headers, and forward to
   `BACKEND_BASE_URL`. Shared logic: `lib/api/bff-session.ts` (cookies), `lib/api/bff-proxy.ts`
-  (`proxyToBackend` / `joinPath` / `unauthorized`).
-- **Typed client:** `lib/api/applications.ts` exposes `borrowerApi`, `staffApi`, `adminApi`
-  (staff users / invites / blocklist), and `collectionsApi` (cases / interactions / settlements /
-  DPD). It unwraps the `ApiResponse<T>` envelope and throws `ApplicationApiError` carrying
-  `error.code`. Money helpers `rupeesToPaise` / `paiseToINR`.
+  (`proxyToBackend` / `joinPath` / `unauthorized` / `forbidden`). The borrower/staff **loan** proxies
+  also accept **POST** (borrower records a repayment; accountant verifies one — path-restricted).
+- **Typed client:** `lib/api/applications.ts` exposes `borrowerApi` (incl. `recordRepayment` /
+  `repayments` / `outstanding`), `staffApi` (incl. `pendingRepayments` / `verifyRepayment` /
+  `transactions`), `adminApi` (staff users / invites / blocklist), and `collectionsApi` (cases /
+  interactions / settlements / DPD / collectible loans / officers). It unwraps the `ApiResponse<T>`
+  envelope and throws `ApplicationApiError` carrying `error.code`. Money helpers `rupeesToPaise` /
+  `paiseToINR`.
 - **Live adapters:** `lib/api/live-journey.ts` is the borrower seam — session + app-id persistence,
   polling (`useLiveApplication`), the `submitOnboarding` / `applyForAmount` mutations, and the
   backend-status → designed-stage mapping that lets the polished pages reuse the existing
   components. `components/staff/live-pipeline.tsx` is the staff seam (shared queues + actions).
-- **What's still mock:** the designed journey + every staff page are now backend-wired. The Zustand
-  mock layer (`lib/mock/*`, `lib/calc/*`, `NEXT_PUBLIC_DEMO_MODE`) now only backs the **cosmetic
-  unmodeled steps** (DigiLocker, selfie, e-sign, penny-drop, co-applicant) and **repay / reborrow**.
+- **What's still mock:** the designed journey + every staff page are now backend-wired (incl. repay).
+  The Zustand mock layer (`lib/mock/*`, `lib/calc/*`, `NEXT_PUBLIC_DEMO_MODE`) now only backs the
+  **cosmetic unmodeled steps** (DigiLocker, selfie, e-sign, penny-drop, co-applicant) and **reborrow**.
 
 ---
 
@@ -371,15 +410,20 @@ navix-common). Applied on every boot:
 | `V7__loan_application_salary_credit_day.sql` | add `salary_credit_day` |
 | `V8__staff_roles_rename.sql` | role check-constraint + data: COLLECTION_HEAD / COLLECTION_EXECUTIVE / +DEVELOPER |
 | `V9__applicant_profile_and_documents.sql` | `applicant_profile` (1:1 KYC snapshot) + `application_document` (uploaded docs, `bytea`) for staff review |
+| `V10__seed_demo_staff.sql` | seed demo staff users (one ACTIVE per role) so role-pick login resolves to a **real** staff id |
+| `V11__collection_case_real_loan_and_staff_ids.sql` | retype `collection_case.loan_id`/`assigned_officer_id` + `settlement.proposed_by`/`approved_by` to **bigint** (real loan + staff ids) |
+| `V12__applicant_profile_unique_identity.sql` | add `aadhaar` + `mobile` to `applicant_profile`; partial **unique** indexes on pan/aadhaar/mobile |
+| `V13__loan_disbursal_txn_ref.sql` | add `loan.disbursal_txn_ref` (the outgoing disbursal's transaction id) |
 
 **The aggregate** `loan_application`: `id`, `applicant_id`, `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
 **Audit** `application_event`: `id`, `application_id`, `from_status`, `to_status`, `actor_id`,
 `actor_role`, `action`, `notes`, `at` — append-only, and the source of truth for SoD checks.
 
-> Known DB debt (deferred): no FK constraints (indexes only); the legacy `disbursement_request` /
-> `collection_case` UUID `loan_id` columns mismatch the `bigint` loan id — that legacy maker-checker
-> chain is **superseded by the single aggregate** and left dormant.
+> Known DB debt (deferred): no FK constraints (indexes only). The legacy `disbursement_request` UUID
+> maker-checker chain is **superseded by the single aggregate** and left dormant. (`collection_case` is
+> now on the real **bigint** loan id — V11; `loan` carries `disbursal_txn_ref` — V13; `applicant_profile`
+> carries unique `pan`/`aadhaar`/`mobile` — V12.)
 
 ---
 
@@ -400,12 +444,22 @@ return `FORBIDDEN_ROLE`, `SOD_VIOLATION`, or `ILLEGAL_TRANSITION` (422) on viola
 | `POST /{id}/assign` | CREDIT_HEAD | assign executive → CREDIT_EXEC_PENDING |
 | `POST /{id}/exec-decision` | CREDIT_EXECUTIVE | recommend/reject |
 | `POST /{id}/head-decision` | CREDIT_HEAD | final approve (SoD) / reject |
-| `POST /{id}/disbursement-decision` | DISBURSEMENT_HEAD | accept → ACCOUNTANT_PENDING / reject |
-| `POST /{id}/accountant-validate` | ACCOUNTANT | success → DISBURSED→ACTIVE / fail |
+| `POST /{id}/disbursement-decision` | DISBURSEMENT_HEAD | accept → ACCOUNTANT_PENDING, **or with `txnRef` → DISBURSED→ACTIVE** / reject |
+| `POST /{id}/accountant-validate` | ACCOUNTANT | success → DISBURSED→ACTIVE (records `txnRef`) / fail |
 | `POST /{id}/retry-disbursement` | DISBURSEMENT_HEAD | failed → ACCOUNTANT_PENDING |
 | `POST /{id}/cancel` | borrower/staff | → CANCELLED (pre-disbursement) |
 | `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read) |
 | `POST /{id}/documents` · `GET /{id}/documents` · `GET /{id}/documents/{docId}` | borrower uploads · any reads | documents (base64; metadata list + content for view/download) |
+
+### Loan ledger, repayments & transactions (`/api/loan`)
+
+| Method + path | Role | Purpose |
+|---|---|---|
+| `GET /{id}` · `GET /{id}/outstanding?asOf=` | any | disbursed-loan view · **prepayment-aware** balance (interest only to `asOf`) |
+| `POST /{id}/repayments` · `GET /{id}/repayments` | borrower writes · any reads | record a manual repayment (→ PENDING_VERIFICATION) · list a loan's repayments |
+| `POST /{id}/repayments/{pid}/verify` | ACCOUNTANT | confirm proof → reduce outstanding, close loan + application at zero |
+| `GET /pending-repayments` | ACCOUNTANT | repayments awaiting verification (company-wide queue) |
+| `GET /transactions?q=&direction=` | ACCOUNTANT | company-wide ledger (OUTGOING disbursals + INCOMING repayments), searchable by borrower |
 
 ### Collections (`/api/collections`) and IAM/Admin (`/api/staff`, `/api/admin`)
 
@@ -414,8 +468,9 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
 
 | Method + path | Purpose |
 |---|---|
-| `GET/POST /api/collections/cases` · `GET /cases/{id}` | list/open/read a collection case (UUID-keyed; see §10 debt) |
-| `POST /cases/{id}/assign` · `GET/POST /cases/{id}/interactions` | assign officer · log/list interactions |
+| `GET/POST /api/collections/cases` · `GET /cases/{id}` | list/open/read a case (real **bigint** loan id; open flips the loan → IN_COLLECTIONS) |
+| `GET /api/collections/loans` · `GET /api/collections/officers` | collectible loans (ACTIVE/OVERDUE, due ≤ today) · ACTIVE collection officers (assignee picker) |
+| `POST /cases/{id}/assign` · `GET/POST /cases/{id}/interactions` | assign officer (real staff id) · log/list interactions |
 | `POST /cases/{id}/settlements` · `GET /settlements` · `POST /settlements/{id}/approve` | propose · list · approve (SoD) |
 | `GET /api/collections/dpd?dueDate=&asOf=` | days-past-due + bucket helper |
 | `GET/PUT/DELETE /api/staff` (+`/{id}`) | staff users: list · update role/status · disable |
@@ -450,12 +505,10 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
   invites end-to-end (the invite/activate UI exists but is demo-grade — no password, no email).
 - Real **Fintrix** (salary verify), **DigiLocker** (KYC), **S3** (sanction letters/docs), bank
   **penny-drop + transfer**.
-- **Borrower repay / reborrow** — `/repay` and `/reloan` are still mock; they need new backend
-  endpoints (record a payment → `CLOSED`; reborrow → new draft) before they can be wired.
-- **Bridge collections to real loans** — `/api/collections/*` + the collections pages are live, but
-  on a **UUID** `collection_case`/`settlement` model disconnected from the bigint loans. Re-point to
-  the real loan id (entity + Flyway + cross-module wiring) and drive cases off real `OVERDUE` loans.
-- DB cleanup: **FK constraints**; drop/repurpose the legacy UUID disbursement table.
+- **Borrower reborrow** — `/repay` is now **live** (record → accountant verifies → CLOSED); `/reloan`
+  (reborrow → a new draft reusing the profile) is still mock and needs a backend endpoint.
+- DB cleanup: **FK constraints**; drop/repurpose the legacy UUID `disbursement_request` table;
+  unify applicant identity (`applicant_profile` ↔ onboarding `Borrower`).
 - Polish the reworked live pages to the design system (functional, lightly styled).
 
 ---

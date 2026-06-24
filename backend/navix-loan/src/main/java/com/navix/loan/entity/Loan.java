@@ -75,4 +75,8 @@ public class Loan extends BaseAuditEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
     private LoanStatus status;
+
+    /** Bank/UPI transaction reference for the outgoing disbursal (captured at release). */
+    @Column(name = "disbursal_txn_ref", length = 64)
+    private String disbursalTxnRef;
 }

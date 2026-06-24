@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { RouteProgress } from "@/components/app/route-progress";
 
 /**
  * Brand typefaces — Inter (body/UI) + Source Serif 4 (headings), matching the
@@ -42,6 +43,7 @@ export default function RootLayout({
           producing a benign server/client attribute mismatch. This silences only
           that top-level attribute diff; it does not affect children. */}
       <body suppressHydrationWarning>
+        <RouteProgress />
         <Providers>{children}</Providers>
       </body>
     </html>

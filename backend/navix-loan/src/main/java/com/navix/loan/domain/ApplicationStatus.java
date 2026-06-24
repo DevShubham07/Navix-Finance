@@ -48,7 +48,9 @@ public enum ApplicationStatus {
         TRANSITIONS.put(CREDIT_EXEC_APPROVED, EnumSet.of(CREDIT_HEAD_PENDING));
         TRANSITIONS.put(CREDIT_HEAD_PENDING, EnumSet.of(CREDIT_HEAD_APPROVED, REJECTED));
         TRANSITIONS.put(CREDIT_HEAD_APPROVED, EnumSet.of(DISBURSEMENT_PENDING));
-        TRANSITIONS.put(DISBURSEMENT_PENDING, EnumSet.of(ACCOUNTANT_PENDING, REJECTED));
+        // The Disbursement Head may either hand off to the accountant, or — when they supply a
+        // transaction id — finalize the release directly (DISBURSED, then auto → ACTIVE).
+        TRANSITIONS.put(DISBURSEMENT_PENDING, EnumSet.of(ACCOUNTANT_PENDING, DISBURSED, REJECTED));
         TRANSITIONS.put(ACCOUNTANT_PENDING, EnumSet.of(DISBURSED, DISBURSEMENT_FAILED));
         TRANSITIONS.put(DISBURSEMENT_FAILED, EnumSet.of(ACCOUNTANT_PENDING, CANCELLED));
         TRANSITIONS.put(DISBURSED, EnumSet.of(ACTIVE));

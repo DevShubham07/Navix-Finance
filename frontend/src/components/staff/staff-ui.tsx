@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Badge } from "@/components/ui";
+import { Badge, InfoTooltip } from "@/components/ui";
 import type { AppStage } from "@/lib/mock/types";
 import type { KycCheckStatus } from "@/lib/domain/kyc";
 import { cn } from "@/lib/utils";
@@ -31,11 +31,14 @@ export function StatCard({
   value,
   hint,
   accent,
+  info,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: string;
   accent?: "navy" | "gold" | "success" | "error";
+  /** Optional ⓘ explanation (top-right) so new staff know what this metric means. */
+  info?: string;
 }) {
   const ring =
     accent === "gold" ? "border-gold-soft" :
@@ -43,7 +46,10 @@ export function StatCard({
     accent === "error" ? "border-error-100" : "border-line";
   return (
     <div className={cn("rounded border bg-white p-5 shadow-sm", ring)}>
-      <div className="text-sm text-muted">{label}</div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm text-muted">{label}</div>
+        {info ? <InfoTooltip content={info} /> : null}
+      </div>
       <div className="mt-1 font-serif text-2xl font-bold text-navy lg:text-3xl">{value}</div>
       {hint ? <div className="mt-1 text-xs text-muted">{hint}</div> : null}
     </div>

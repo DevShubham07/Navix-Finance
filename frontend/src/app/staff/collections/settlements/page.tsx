@@ -6,7 +6,7 @@ import { Loader2, RefreshCw, Check } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage } from "@/components/staff/live-pipeline";
 import { collectionsApi, paiseToINR, type SettlementView } from "@/lib/api/applications";
-import { formatDate } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 
 /**
  * Collections · settlements (maker-checker). A Collection Executive proposes
@@ -57,7 +57,8 @@ export default function CollectionsSettlementsPage() {
                   <tr key={s.id}>
                     <td className="px-4 py-3">
                       <div className="font-mono text-xs text-ink">{s.id.slice(0, 8)}…</div>
-                      <div className="text-xs text-muted">case {s.collectionCaseId.slice(0, 8)}… · {s.createdAt ? formatDate(s.createdAt) : ""}</div>
+                      <div className="text-xs text-muted">case {s.collectionCaseId.slice(0, 8)}… · {s.createdAt ? formatDateTime(s.createdAt) : ""}</div>
+                      <div className="text-xs text-muted">by {s.proposedByName ?? (s.proposedBy != null ? `#${s.proposedBy}` : "—")}</div>
                     </td>
                     <td className="px-4 py-3 font-semibold text-ink">{paiseToINR(s.settlementAmountPaise)}</td>
                     <td className="px-4 py-3">
@@ -69,7 +70,7 @@ export default function CollectionsSettlementsPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       {approved ? (
-                        <span className="text-xs text-muted">{s.approvedAt ? formatDate(s.approvedAt) : "—"}</span>
+                        <span className="text-xs text-muted">{s.approvedByName ?? (s.approvedBy != null ? `#${s.approvedBy}` : "")} · {s.approvedAt ? formatDateTime(s.approvedAt) : "—"}</span>
                       ) : (
                         <button
                           onClick={() => approve.mutate(s.id)}

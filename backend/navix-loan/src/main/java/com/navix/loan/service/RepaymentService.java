@@ -31,6 +31,7 @@ public class RepaymentService {
     private final PaymentRepository paymentRepository;
     private final LoanRepository loanRepository;
     private final LoanMath loanMath;
+    private final ApplicationFlowService applicationFlowService;
 
     /** Record a (possibly partial) repayment. Idempotent on {@code txnRef} per loan. */
     @Transactional
@@ -82,6 +83,12 @@ public class RepaymentService {
         return paymentRepository.findByLoanId(loanId);
     }
 
+    /** Accountant queue: every repayment still awaiting proof verification, across all loans. */
+    @Transactional(readOnly = true)
+    public List<Payment> listPending() {
+        return paymentRepository.findByStatusOrderByIdAsc(PaymentStatus.PENDING_VERIFICATION);
+    }
+
     /**
      * Authoritative outstanding balance at a date: principal + interest accrued to {@code asOf}
      * (capped at the scheduled tenure) + late penalty past the 1-day grace − verified payments.
@@ -109,6 +116,10 @@ public class RepaymentService {
             loan.setStatus(LoanStatus.CLOSED);
         }
         loanRepository.save(loan);
+        // Mirror full repayment onto the application aggregate (ACTIVE/OVERDUE → CLOSED).
+        if (outstanding == 0L) {
+            applicationFlowService.closeForLoan(loanId);
+        }
     }
 
     private Loan requireLoan(Long loanId) {

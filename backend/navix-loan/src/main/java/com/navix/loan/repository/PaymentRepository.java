@@ -15,6 +15,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     List<Payment> findByLoanId(Long loanId);
 
+    /** Accountant queue: repayments awaiting proof verification, oldest first. */
+    List<Payment> findByStatusOrderByIdAsc(PaymentStatus status);
+
     /** Idempotency guard: a transaction reference is unique per loan. */
     Optional<Payment> findFirstByLoanIdAndTxnRef(Long loanId, String txnRef);
 

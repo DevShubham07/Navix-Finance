@@ -40,7 +40,7 @@ public class LoanService {
      * outstanding balance.
      */
     @Transactional
-    public Loan disburse(LoanApplication application, LocalDate disbursedOn) {
+    public Loan disburse(LoanApplication application, LocalDate disbursedOn, String disbursalTxnRef) {
         LocalDate disbursed = disbursedOn != null ? disbursedOn : LocalDate.now();
         long principal = application.getAmountRequested();
         int salaryDay = application.getSalaryCreditDay() != null
@@ -62,6 +62,7 @@ public class LoanService {
         loan.setTotalRepayable(total);
         loan.setOutstanding(total);
         loan.setStatus(LoanStatus.ACTIVE);
+        loan.setDisbursalTxnRef(disbursalTxnRef != null && !disbursalTxnRef.isBlank() ? disbursalTxnRef : null);
         return loanRepository.save(loan);
     }
 }

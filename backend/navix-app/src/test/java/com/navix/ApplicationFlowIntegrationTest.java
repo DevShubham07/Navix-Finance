@@ -54,7 +54,7 @@ class ApplicationFlowIntegrationTest {
         act(appId, "apply", "b7", "BORROWER",
                 "{\"amountPaise\":1000000,\"purpose\":\"medical\",\"eligibleLimitPaise\":1250000,\"salaryCreditDay\":30}",
                 "KYC_APPROVED");
-        act(appId, "assign", "priya", "CREDIT_HEAD", "{\"executiveId\":55}", "CREDIT_EXEC_PENDING");
+        act(appId, "assign", "priya", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
         act(appId, "exec-decision", "rahul", "CREDIT_EXECUTIVE", "{\"decision\":true}", "CREDIT_HEAD_PENDING");
         act(appId, "head-decision", "priya", "CREDIT_HEAD", "{\"decision\":true}", "DISBURSEMENT_PENDING");
         act(appId, "disbursement-decision", "vikram", "DISBURSEMENT_HEAD", "{\"decision\":true}", "ACCOUNTANT_PENDING");
@@ -86,7 +86,7 @@ class ApplicationFlowIntegrationTest {
         act(appId, "submit-kyc", "b8", "BORROWER", null, "KYC_PENDING");
         act(appId, "kyc-decision", "ananya", "KYC_APPROVER", "{\"decision\":true}", "KYC_APPROVED");
         act(appId, "apply", "b8", "BORROWER", "{\"amountPaise\":1000000}", "KYC_APPROVED");
-        act(appId, "assign", "boss", "CREDIT_HEAD", "{\"executiveId\":55}", "CREDIT_EXEC_PENDING");
+        act(appId, "assign", "boss", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
         act(appId, "exec-decision", "sameperson", "CREDIT_EXECUTIVE", "{\"decision\":true}", "CREDIT_HEAD_PENDING");
 
         // The same human who recommended cannot give final approval (dfd.md D3).

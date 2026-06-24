@@ -57,6 +57,7 @@ export default function SignupReviewPage() {
         <SummarySection title="Identity" editHref="/signup/pan">
           <InfoRow label="Full name" value={a.fullName} />
           <InfoRow label="PAN" value={a.pan} />
+          <InfoRow label="Aadhaar" value={a.aadhaar} />
           <InfoRow label="Mobile" value={a.mobile} />
         </SummarySection>
 

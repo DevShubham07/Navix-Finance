@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ShieldCheck, ClipboardList, Banknote, Receipt, PhoneCall, RefreshCw, Loader2 } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
+import { InfoTooltip } from "@/components/ui";
 import { useStaffSession, STAFF_ROLE_LABELS } from "@/lib/mock/session";
 import type { StaffRole } from "@/lib/auth/rbac";
 import {
@@ -18,14 +19,32 @@ import { useMounted } from "@/hooks/use-mounted";
 
 const REFRESH_MS = 10_000;
 
-/** Per-role "your queue" label + the live statuses that feed it. */
-const QUEUE: Partial<Record<StaffRole, { label: string }>> = {
-  KYC_APPROVER: { label: "Applications awaiting KYC clearance" },
-  CREDIT_EXECUTIVE: { label: "Applications to review" },
-  CREDIT_HEAD: { label: "Decisions awaiting your approval" },
-  DISBURSEMENT_HEAD: { label: "Approved loans to release" },
-  ACCOUNTANT: { label: "Transfers to confirm" },
-  ADMIN: { label: "Live pipeline" },
+/** Per-role "your queue" label (+ an ⓘ explanation) and the live statuses that feed it. */
+const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
+  KYC_APPROVER: {
+    label: "Applications awaiting KYC clearance",
+    info: "Review each applicant's KYC details and documents, then approve to advance to credit review, or reject to send it back.",
+  },
+  CREDIT_EXECUTIVE: {
+    label: "Applications to review",
+    info: "Assess income, employment and risk, then recommend or reject. Your recommendation goes to the Credit Head for final approval.",
+  },
+  CREDIT_HEAD: {
+    label: "Decisions awaiting your approval",
+    info: "Assign an executive, then give final approval. You cannot approve an application you recommended as executive (separation of duties).",
+  },
+  DISBURSEMENT_HEAD: {
+    label: "Approved loans to release",
+    info: "Release funds to the borrower's bank. Enter a transaction id to activate the loan immediately, or approve without one to send it to the accountant.",
+  },
+  ACCOUNTANT: {
+    label: "Transfers to confirm",
+    info: "Confirm the bank transfer landed (activates the loan) and verify borrower repayments. See all money movement under Accounting → all transactions.",
+  },
+  ADMIN: {
+    label: "Live pipeline",
+    info: "Oversight across every queue — ADMIN can act in any role.",
+  },
 };
 
 /** Statuses we count for the headline stat cards. */
@@ -136,18 +155,27 @@ export default function StaffDashboardPage() {
       </PageHeader>
 
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="KYC review" value={n("KYC_PENDING")} accent="gold" />
-        <StatCard label="In credit" value={inCredit} />
-        <StatCard label="To release" value={n("DISBURSEMENT_PENDING")} />
-        <StatCard label="To confirm" value={n("ACCOUNTANT_PENDING")} />
-        <StatCard label="Active loans" value={n("ACTIVE")} accent="success" />
-        <StatCard label="In collections" value={n("OVERDUE")} accent="error" />
+        <StatCard label="KYC review" value={n("KYC_PENDING")} accent="gold"
+          info="Applications whose identity (PAN/Aadhaar) and documents are waiting for a KYC Approver to clear before they enter credit." />
+        <StatCard label="In credit" value={inCredit}
+          info="Applications being assessed by the Credit Executive (recommend) and Credit Head (final approve, SoD-checked)." />
+        <StatCard label="To release" value={n("DISBURSEMENT_PENDING")}
+          info="Approved loans waiting for the Disbursement Head to release funds. Entering a transaction id activates the loan immediately." />
+        <StatCard label="To confirm" value={n("ACCOUNTANT_PENDING")}
+          info="Disbursals released without a transaction id, waiting for the Accountant to confirm the bank transfer (activates the loan)." />
+        <StatCard label="Active loans" value={n("ACTIVE")} accent="success"
+          info="Live loans currently being repaid (disbursed and not yet closed)." />
+        <StatCard label="In collections" value={n("OVERDUE")} accent="error"
+          info="Loans past their due date. Collections officers work these by DPD bucket; settlements need Collection Head approval." />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="mb-0 text-xl">{queue ? queue.label : "Pipeline"}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="mb-0 text-xl">{queue ? queue.label : "Pipeline"}</h2>
+              {queue ? <InfoTooltip content={queue.info} /> : null}
+            </div>
             {queue ? (
               <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{myItems.length} pending</span>
             ) : null}

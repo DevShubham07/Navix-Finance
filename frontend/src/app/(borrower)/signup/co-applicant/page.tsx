@@ -7,6 +7,7 @@ import { Input, Select } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useBorrowerJourney } from "@/lib/mock/borrower";
+import { normalizeMobile } from "@/lib/utils";
 
 const RELATIONSHIPS = ["Spouse", "Parent", "Sibling", "Child", "Other"].map((r) => ({ value: r, label: r }));
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
@@ -78,10 +79,11 @@ export default function SignupCoApplicantPage() {
                 label="Mobile"
                 required
                 inputMode="numeric"
+                maxLength={10}
                 value={mobile}
-                onChange={(e) => setMobile(e.target.value.replace(/[^\d ]/g, "").slice(0, 11))}
+                onChange={(e) => setMobile(normalizeMobile(e.target.value))}
                 placeholder="98765 43210"
-                error={touched && mobile.replace(/\D/g, "").length !== 10 ? "10-digit mobile" : undefined}
+                error={touched && mobile.length !== 10 ? "Enter a valid 10-digit mobile number" : undefined}
               />
             </div>
             <Select label="Relationship" value={relationship} onChange={(e) => setRelationship(e.target.value)} options={RELATIONSHIPS} />

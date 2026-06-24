@@ -14,7 +14,7 @@ import {
   isTerminalBad,
 } from "@/lib/api/live-journey";
 import { statusLabel } from "@/lib/api/applications";
-import { formatDate } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 import { BRAND } from "@/lib/brand";
 
 /**
@@ -151,7 +151,7 @@ export default function LoanStatusPage() {
                         {e.fromStatus ? `${e.fromStatus} → ` : ""}{e.toStatus ?? ""}
                       </span>
                     </span>
-                    <span className="flex-shrink-0">{e.at ? formatDate(e.at) : ""}</span>
+                    <span className="flex-shrink-0">{e.at ? formatDateTime(e.at) : ""}</span>
                   </li>
                 ))}
               </ul>

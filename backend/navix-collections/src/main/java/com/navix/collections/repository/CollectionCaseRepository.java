@@ -12,9 +12,9 @@ import java.util.UUID;
 @Repository
 public interface CollectionCaseRepository extends JpaRepository<CollectionCase, UUID> {
 
-    // TODO: implement query — one open case per loan.
-    Optional<CollectionCase> findByLoanId(UUID loanId);
+    /** One open case per real loan (bigint loan id). */
+    Optional<CollectionCase> findByLoanId(Long loanId);
 
-    // TODO: implement query — cases on an officer's worklist.
-    List<CollectionCase> findByAssignedOfficerId(UUID assignedOfficerId);
+    /** Cases on an officer's worklist (bigint staff id). */
+    List<CollectionCase> findByAssignedOfficerId(Long assignedOfficerId);
 }

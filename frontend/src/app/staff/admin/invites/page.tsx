@@ -7,7 +7,7 @@ import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage } from "@/components/staff/live-pipeline";
 import { adminApi, type StaffRoleName, type InviteResponse } from "@/lib/api/applications";
-import { formatDate } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 
 const ROLES: StaffRoleName[] = [
   "KYC_APPROVER", "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
@@ -82,7 +82,7 @@ export default function AdminInvitesPage() {
                   <td className="px-4 py-3 text-ink">{inv.email}</td>
                   <td className="px-4 py-3 text-muted">{inv.role}</td>
                   <td className="px-4 py-3"><TokenChip token={inv.token} /></td>
-                  <td className="px-4 py-3 text-muted">{inv.expiresAt ? formatDate(inv.expiresAt) : "—"}</td>
+                  <td className="px-4 py-3 text-muted">{inv.expiresAt ? formatDateTime(inv.expiresAt) : "—"}</td>
                 </tr>
               ))}
               {(q.data ?? []).length === 0 && (

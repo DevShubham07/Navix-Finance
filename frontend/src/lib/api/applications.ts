@@ -80,11 +80,47 @@ export interface OutstandingView {
   outstandingPaise: number;
 }
 
-/** Applicant KYC snapshot for an application. PAN arrives masked from the backend. */
+export type PaymentMethodName = "UPI" | "BANK_TRANSFER" | "NACH";
+export type PaymentStatusName = "PENDING_VERIFICATION" | "VERIFIED" | "REJECTED";
+
+/** A recorded repayment against a loan (mirrors backend PaymentView). */
+export interface PaymentView {
+  id: number;
+  loanId: number;
+  amountPaise: number;
+  method: PaymentMethodName;
+  status: PaymentStatusName;
+  txnRef: string | null;
+  proofUrl: string | null;
+  paidOn: string | null;
+  partial: boolean;
+}
+
+export type TransactionType = "DISBURSAL" | "REPAYMENT";
+export type TransactionDirection = "OUTGOING" | "INCOMING";
+
+/** One row in the accountant's company-wide transactions ledger (mirrors backend TransactionView). */
+export interface TransactionView {
+  id: string;
+  type: TransactionType;
+  direction: TransactionDirection;
+  loanId: number | null;
+  applicantId: number | null;
+  borrowerName: string | null;
+  panMasked: string | null;
+  amountPaise: number;
+  txnRef: string | null;
+  status: string | null;
+  date: string | null;
+}
+
+/** Applicant KYC snapshot for an application. PAN/Aadhaar/mobile arrive masked from the backend. */
 export interface ProfileView {
   applicationId: number;
   fullName: string | null;
   panMasked: string | null;
+  aadhaarMasked: string | null;
+  mobileMasked: string | null;
   dob: string | null;
   address: string | null;
   employer: string | null;
@@ -97,6 +133,8 @@ export interface ProfileView {
 export interface ProfileInput {
   fullName?: string;
   pan?: string;
+  aadhaar?: string; // 12 digits; uniqueness enforced server-side
+  mobile?: string; // 10 digits; uniqueness enforced server-side
   dob?: string; // ISO yyyy-mm-dd
   address?: string;
   employer?: string;
@@ -237,6 +275,22 @@ export const borrowerApi = {
   /** Loan summary (net disbursed, due date, total repayable) once ACTIVE. */
   loan: (loanId: number) => bff<LoanView>(`${BORROWER_LOAN_BASE}/${loanId}`, "GET"),
 
+  /** Prepayment-aware balance as of a date (interest only to the day paid). */
+  outstanding: (loanId: number, asOf?: string) =>
+    bff<OutstandingView>(
+      `${BORROWER_LOAN_BASE}/${loanId}/outstanding${asOf ? `?asOf=${encodeURIComponent(asOf)}` : ""}`,
+      "GET",
+    ),
+
+  /** Record a (full / partial / prepayment) repayment with proof — lands PENDING_VERIFICATION. */
+  recordRepayment: (
+    loanId: number,
+    payload: { amountPaise: number; method: PaymentMethodName; txnRef?: string; proofUrl?: string; paidOn?: string },
+  ) => bff<PaymentView>(`${BORROWER_LOAN_BASE}/${loanId}/repayments`, "POST", payload),
+
+  /** Repayments recorded against this loan (the borrower's payment history). */
+  repayments: (loanId: number) => bff<PaymentView[]>(`${BORROWER_LOAN_BASE}/${loanId}/repayments`, "GET"),
+
   /** Save/update the applicant KYC details for this application. */
   saveProfile: (id: number, profile: ProfileInput) =>
     bff<ProfileView>(`${BORROWER_BASE}/${id}/profile`, "PUT", profile),
@@ -288,11 +342,11 @@ export const staffApi = {
     payload: { decision: boolean; approvedAmountPaise?: number; notes?: string },
   ) => bff<ApplicationView>(`${STAFF_BASE}/${id}/head-decision`, "POST", payload),
 
-  disbursementDecision: (id: number, decision: boolean, notes?: string) =>
-    bff<ApplicationView>(`${STAFF_BASE}/${id}/disbursement-decision`, "POST", { decision, notes }),
+  disbursementDecision: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/disbursement-decision`, "POST", { decision, txnRef, notes }),
 
-  accountantValidate: (id: number, decision: boolean, notes?: string) =>
-    bff<ApplicationView>(`${STAFF_BASE}/${id}/accountant-validate`, "POST", { decision, notes }),
+  accountantValidate: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/accountant-validate`, "POST", { decision, txnRef, notes }),
 
   // --- loan view (staff) ---
   loan: (loanId: number) => bff<LoanView>(`${STAFF_LOAN_BASE}/${loanId}`, "GET"),
@@ -302,6 +356,26 @@ export const staffApi = {
       `${STAFF_LOAN_BASE}/${loanId}/outstanding?asOf=${encodeURIComponent(asOf)}`,
       "GET",
     ),
+
+  // --- repayment verification (accountant maker-checker) ---
+  /** Repayments awaiting proof verification, across all loans (accountant queue). */
+  pendingRepayments: () => bff<PaymentView[]>(`${STAFF_LOAN_BASE}/pending-repayments`, "GET"),
+
+  /** Company-wide transactions ledger (disbursals + repayments); optional borrower/direction filter. */
+  transactions: (q?: string, direction?: TransactionDirection) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (direction) params.set("direction", direction);
+    const qs = params.toString();
+    return bff<TransactionView[]>(`${STAFF_LOAN_BASE}/transactions${qs ? `?${qs}` : ""}`, "GET");
+  },
+
+  /** Repayments recorded against one loan. */
+  repayments: (loanId: number) => bff<PaymentView[]>(`${STAFF_LOAN_BASE}/${loanId}/repayments`, "GET"),
+
+  /** Confirm proof for a payment → reduces outstanding, closes the loan/application at zero. */
+  verifyRepayment: (loanId: number, paymentId: number) =>
+    bff<PaymentView>(`${STAFF_LOAN_BASE}/${loanId}/repayments/${paymentId}/verify`, "POST"),
 
   // --- applicant review (any reviewing role) ---
   /** The applicant's KYC details (PAN masked). */
@@ -390,12 +464,59 @@ export const adminApi = {
 
 export type DpdBucket = "UPCOMING" | "T0_T7" | "T8_T30" | "T30_T60" | "T60_T90" | "T90_PLUS";
 
+/** Real loan + borrower snapshot surfaced to collections (mirrors backend LoanSummary). */
+export interface LoanSummary {
+  loanId: number;
+  applicantId: number | null;
+  applicationId: number | null;
+  status: string | null;
+  principalPaise: number | null;
+  netDisbursedPaise: number | null;
+  totalRepayablePaise: number | null;
+  outstandingPaise: number | null;
+  disbursedOn: string | null;
+  dueDate: string | null;
+  borrowerName: string | null;
+  panMasked: string | null;
+  employer: string | null;
+  employmentStatus: string | null;
+  monthlySalaryPaise: number | null;
+  salaryBank: string | null;
+}
+
+/** Staff snapshot for assignee pickers / name rendering (mirrors backend StaffSummary). */
+export interface StaffSummary {
+  id: number;
+  name: string;
+  role: string;
+  active: boolean;
+}
+
+/** A row in the collections worklist (case + live DPD + key loan/borrower fields). */
 export interface CaseView {
-  id: string; // UUID
-  loanId: string; // UUID (legacy model — not the bigint loan id)
-  currentBucket: string;
-  assignedOfficerId: string | null;
+  id: string; // case UUID
+  loanId: number;
+  assignedOfficerId: number | null;
+  assignedOfficerName: string | null;
   createdAt: string;
+  dpd: number;
+  bucket: DpdBucket;
+  loanStatus: string | null;
+  borrowerName: string | null;
+  outstandingPaise: number | null;
+  dueDate: string | null;
+}
+
+/** Full case detail: case + live DPD + the complete loan/borrower snapshot. */
+export interface CaseDetailView {
+  id: string;
+  loanId: number;
+  assignedOfficerId: number | null;
+  assignedOfficerName: string | null;
+  createdAt: string;
+  dpd: number;
+  bucket: DpdBucket;
+  loan: LoanSummary | null;
 }
 
 export interface InteractionView {
@@ -412,8 +533,10 @@ export interface SettlementView {
   id: string;
   collectionCaseId: string;
   settlementAmountPaise: number | null;
-  proposedBy: string | null;
-  approvedBy: string | null;
+  proposedBy: number | null;
+  proposedByName: string | null;
+  approvedBy: number | null;
+  approvedByName: string | null;
   createdAt: string;
   approvedAt: string | null;
 }
@@ -429,10 +552,19 @@ const COLLECTIONS_BASE = "/api/staff/collections";
 
 export const collectionsApi = {
   listCases: () => bff<CaseView[]>(`${COLLECTIONS_BASE}/cases`, "GET"),
-  getCase: (caseId: string) => bff<CaseView>(`${COLLECTIONS_BASE}/cases/${caseId}`, "GET"),
-  openCase: (loanId: string) => bff<CaseView>(`${COLLECTIONS_BASE}/cases`, "POST", { loanId }),
-  assignOfficer: (caseId: string, officerId: string) =>
-    bff<CaseView>(`${COLLECTIONS_BASE}/cases/${caseId}/assign`, "POST", { officerId }),
+  getCase: (caseId: string) => bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases/${caseId}`, "GET"),
+  openCase: (loanId: number) => bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases`, "POST", { loanId }),
+  assignOfficer: (caseId: string, officerId: number) =>
+    bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases/${caseId}/assign`, "POST", { officerId }),
+
+  /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before dueBy). */
+  listCollectibleLoans: (dueBy?: string) =>
+    bff<LoanSummary[]>(
+      `${COLLECTIONS_BASE}/loans${dueBy ? `?dueBy=${encodeURIComponent(dueBy)}` : ""}`,
+      "GET",
+    ),
+  /** ACTIVE collections officers, for the assignee picker. */
+  listOfficers: () => bff<StaffSummary[]>(`${COLLECTIONS_BASE}/officers`, "GET"),
 
   listInteractions: (caseId: string) =>
     bff<InteractionView[]>(`${COLLECTIONS_BASE}/cases/${caseId}/interactions`, "GET"),

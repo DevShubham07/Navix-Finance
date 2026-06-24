@@ -102,12 +102,14 @@ public class ApplicationController {
 
     @PostMapping("/{id}/disbursement-decision")
     public ApiResponse<ApplicationView> disbursementDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
-        return ApiResponse.ok(ApplicationView.of(flow.disbursementDecision(id, req.decision(), req.notes())));
+        return ApiResponse.ok(ApplicationView.of(
+                flow.disbursementDecision(id, req.decision(), req.txnRef(), req.notes())));
     }
 
     @PostMapping("/{id}/accountant-validate")
     public ApiResponse<ApplicationView> accountantValidate(@PathVariable Long id, @RequestBody DecisionRequest req) {
-        return ApiResponse.ok(ApplicationView.of(flow.accountantValidate(id, req.decision(), req.notes())));
+        return ApiResponse.ok(ApplicationView.of(
+                flow.accountantValidate(id, req.decision(), req.txnRef(), req.notes())));
     }
 
     @PostMapping("/{id}/retry-disbursement")

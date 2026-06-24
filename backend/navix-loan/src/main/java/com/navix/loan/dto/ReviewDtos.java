@@ -21,6 +21,8 @@ public final class ReviewDtos {
     public record ProfileRequest(
             String fullName,
             String pan,
+            String aadhaar,
+            String mobile,
             LocalDate dob,
             String address,
             String employer,
@@ -29,11 +31,13 @@ public final class ReviewDtos {
             String salaryBank) {
     }
 
-    /** Staff-facing KYC view — PAN masked (e.g. ABXXXXX34F). */
+    /** Staff-facing KYC view — PAN/Aadhaar/mobile masked (e.g. ABXXXXX34F, XXXXXXXX1234). */
     public record ProfileView(
             Long applicationId,
             String fullName,
             String panMasked,
+            String aadhaarMasked,
+            String mobileMasked,
             LocalDate dob,
             String address,
             String employer,
@@ -43,7 +47,8 @@ public final class ReviewDtos {
 
         public static ProfileView of(ApplicantProfile p) {
             return new ProfileView(
-                    p.getApplicationId(), p.getFullName(), Masking.maskPan(p.getPan()), p.getDob(),
+                    p.getApplicationId(), p.getFullName(), Masking.maskPan(p.getPan()),
+                    Masking.maskAadhaar(p.getAadhaar()), Masking.maskPhone(p.getMobile()), p.getDob(),
                     p.getAddress(), p.getEmployer(), p.getEmploymentStatus(),
                     p.getMonthlySalaryPaise(), p.getSalaryBank());
         }

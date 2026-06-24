@@ -9,6 +9,7 @@ import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useBorrowerJourney } from "@/lib/mock/borrower";
 import { signInBorrower } from "@/lib/mock/session";
+import { normalizeMobile } from "@/lib/utils";
 
 const DEMO_OTP = "123456";
 
@@ -20,7 +21,7 @@ export default function LoginPage() {
   const [otp, setOtp] = React.useState("");
   const [error, setError] = React.useState<string>();
 
-  const mobileOk = mobile.replace(/\D/g, "").length === 10;
+  const mobileOk = mobile.length === 10;
 
   const send = () => {
     if (!mobileOk) { setError("Enter a valid 10-digit mobile number"); return; }
@@ -63,8 +64,9 @@ export default function LoginPage() {
                 label="Mobile number"
                 required
                 inputMode="numeric"
+                maxLength={10}
                 value={mobile}
-                onChange={(e) => { setMobile(e.target.value.replace(/[^\d ]/g, "").slice(0, 11)); setError(undefined); }}
+                onChange={(e) => { setMobile(normalizeMobile(e.target.value)); setError(undefined); }}
                 placeholder="98765 43210"
                 leftIcon={<Smartphone size={16} />}
                 autoComplete="tel"

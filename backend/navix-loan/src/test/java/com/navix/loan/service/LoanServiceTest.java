@@ -37,8 +37,9 @@ class LoanServiceTest {
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         // Disbursed 3 Jun → latest salary credit ≤ 40d is 30 Jun (27-day tenure).
-        Loan loan = loanService.disburse(app, LocalDate.of(2026, 6, 3));
+        Loan loan = loanService.disburse(app, LocalDate.of(2026, 6, 3), "UTR12345");
 
+        assertThat(loan.getDisbursalTxnRef()).isEqualTo("UTR12345");
         assertThat(loan.getPrincipal()).isEqualTo(1_000_000L);
         assertThat(loan.getProcessingFee()).isEqualTo(100_000L);
         assertThat(loan.getGst()).isEqualTo(18_000L);

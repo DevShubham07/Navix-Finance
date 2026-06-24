@@ -3,9 +3,13 @@ package com.navix.loan.controller;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.OutstandingView;
+import com.navix.loan.dto.LoanDtos.PaymentView;
+import com.navix.loan.dto.LoanDtos.TransactionView;
 import com.navix.loan.service.LoanService;
 import com.navix.loan.service.RepaymentService;
+import com.navix.loan.service.TransactionService;
 import java.time.LocalDate;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,10 +29,32 @@ public class LoanController {
 
     private final LoanService loanService;
     private final RepaymentService repaymentService;
+    private final TransactionService transactionService;
 
     @GetMapping("/{loanId}")
     public ApiResponse<LoanView> getLoan(@PathVariable Long loanId) {
         return ApiResponse.ok(LoanView.of(loanService.getLoan(loanId)));
+    }
+
+    /**
+     * Accountant queue: repayments awaiting proof verification, across all loans. A literal path so
+     * it is selected over {@code /{loanId}} (PathPattern ranks literal segments above captures).
+     */
+    @GetMapping("/pending-repayments")
+    public ApiResponse<List<PaymentView>> pendingRepayments() {
+        return ApiResponse.ok(repaymentService.listPending().stream().map(PaymentView::of).toList());
+    }
+
+    /**
+     * Accountant transactions ledger: all money movement (OUTGOING disbursals + INCOMING
+     * repayments), company-wide, optionally filtered by {@code direction} and a free-text
+     * {@code q} (borrower name / mobile / loan id). Literal path → ranks above {@code /{loanId}}.
+     */
+    @GetMapping("/transactions")
+    public ApiResponse<List<TransactionView>> transactions(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String direction) {
+        return ApiResponse.ok(transactionService.listTransactions(q, direction));
     }
 
     /** Authoritative compute-on-read balance (prepayment + penalty aware). */

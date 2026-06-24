@@ -38,10 +38,32 @@ public class ApplicantReviewService {
     public ApplicantProfile saveProfile(Long appId, ProfileRequest req) {
         requireRole("BORROWER");
         requireApplication(appId);
+
+        String pan = normalizePan(req.pan());
+        String aadhaar = normalizeAadhaar(req.aadhaar());
+        String mobile = normalizeMobile(req.mobile());
+
+        // A mobile / PAN / Aadhaar may belong to only one applicant (uniqueness at
+        // signup). The "...Not(appId)" exclusion lets the same application re-save.
+        if (pan != null && profileRepository.existsByPanAndApplicationIdNot(pan, appId)) {
+            throw new BusinessException("DUPLICATE_PAN",
+                    "This PAN is already registered with another applicant.");
+        }
+        if (aadhaar != null && profileRepository.existsByAadhaarAndApplicationIdNot(aadhaar, appId)) {
+            throw new BusinessException("DUPLICATE_AADHAAR",
+                    "This Aadhaar number is already registered with another applicant.");
+        }
+        if (mobile != null && profileRepository.existsByMobileAndApplicationIdNot(mobile, appId)) {
+            throw new BusinessException("DUPLICATE_MOBILE",
+                    "This mobile number is already registered with another applicant.");
+        }
+
         ApplicantProfile p = profileRepository.findByApplicationId(appId).orElseGet(ApplicantProfile::new);
         p.setApplicationId(appId);
         p.setFullName(trimToNull(req.fullName()));
-        p.setPan(normalizePan(req.pan()));
+        p.setPan(pan);
+        p.setAadhaar(aadhaar);
+        p.setMobile(mobile);
         p.setDob(req.dob());
         p.setAddress(trimToNull(req.address()));
         p.setEmployer(trimToNull(req.employer()));
@@ -124,5 +146,34 @@ public class ApplicantReviewService {
     private static String normalizePan(String pan) {
         String t = trimToNull(pan);
         return t == null ? null : t.toUpperCase();
+    }
+
+    /** Digits only; must be exactly 12. Null when not supplied. */
+    private static String normalizeAadhaar(String aadhaar) {
+        String t = trimToNull(aadhaar);
+        if (t == null) {
+            return null;
+        }
+        String digits = t.replaceAll("\\D", "");
+        if (digits.length() != 12) {
+            throw new BusinessException("INVALID_AADHAAR", "Aadhaar must be a 12-digit number");
+        }
+        return digits;
+    }
+
+    /** Digits only, last 10 (drops a country/STD prefix); must be exactly 10. Null when not supplied. */
+    private static String normalizeMobile(String mobile) {
+        String t = trimToNull(mobile);
+        if (t == null) {
+            return null;
+        }
+        String digits = t.replaceAll("\\D", "");
+        if (digits.length() > 10) {
+            digits = digits.substring(digits.length() - 10);
+        }
+        if (digits.length() != 10) {
+            throw new BusinessException("INVALID_MOBILE", "Mobile must be a 10-digit number");
+        }
+        return digits;
     }
 }

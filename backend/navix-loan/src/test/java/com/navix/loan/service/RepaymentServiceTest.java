@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
@@ -30,12 +31,14 @@ class RepaymentServiceTest {
     private PaymentRepository paymentRepository;
     @Mock
     private LoanRepository loanRepository;
+    @Mock
+    private ApplicationFlowService applicationFlowService;
 
     private RepaymentService repaymentService;
 
     @BeforeEach
     void setUp() {
-        repaymentService = new RepaymentService(paymentRepository, loanRepository, new LoanMath());
+        repaymentService = new RepaymentService(paymentRepository, loanRepository, new LoanMath(), applicationFlowService);
     }
 
     private Loan activeLoan() {
@@ -106,6 +109,8 @@ class RepaymentServiceTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.VERIFIED);
         assertThat(loan.getOutstanding()).isZero();
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.CLOSED);
+        // Full repayment also closes the application aggregate (ACTIVE → CLOSED).
+        verify(applicationFlowService).closeForLoan(1L);
     }
 
     @Test

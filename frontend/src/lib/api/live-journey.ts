@@ -154,7 +154,11 @@ export function useLiveApplication(): LiveApplication {
   });
 
   const app = appQuery.data;
-  const loanId = app?.status === "ACTIVE" ? app.loanId : null;
+  // The loan is minted at ACTIVE and persists through OVERDUE/CLOSED — fetch it for any of them.
+  const loanId =
+    app && (app.status === "ACTIVE" || app.status === "OVERDUE" || app.status === "CLOSED")
+      ? app.loanId
+      : null;
 
   const loanQuery = useQuery({
     queryKey: ["live-loan", loanId],
@@ -253,6 +257,8 @@ export function buildProfileInput(a: ApplicantProfile): ProfileInput {
   return {
     fullName: a.fullName?.trim() || undefined,
     pan: a.pan?.trim().toUpperCase() || undefined,
+    aadhaar: a.aadhaar?.replace(/\D/g, "") || undefined,
+    mobile: a.mobile?.replace(/\D/g, "") || undefined,
     address: address || undefined,
     employer: a.employer?.trim() || undefined,
     employmentStatus: "SALARIED",

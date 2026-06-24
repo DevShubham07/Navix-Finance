@@ -30,9 +30,17 @@ public class ApplicantProfile extends BaseAuditEntity {
     @Column(name = "full_name", length = 160)
     private String fullName;
 
-    /** Stored in full; surfaced to staff masked. */
+    /** Stored in full; surfaced to staff masked. Unique across applicants. */
     @Column(name = "pan", length = 10)
     private String pan;
+
+    /** Stored in full at the owner's request; surfaced masked. Unique across applicants. */
+    @Column(name = "aadhaar", length = 12)
+    private String aadhaar;
+
+    /** Borrower's mobile (normalised to 10 digits); surfaced masked. Unique across applicants. */
+    @Column(name = "mobile", length = 15)
+    private String mobile;
 
     @Column(name = "dob")
     private LocalDate dob;

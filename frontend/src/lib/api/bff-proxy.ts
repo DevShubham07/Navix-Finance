@@ -96,3 +96,17 @@ export function unauthorized(message: string): NextResponse {
     { status: 401 },
   );
 }
+
+/** Envelope-shaped 403 for a proxy call the session is not allowed to make. */
+export function forbidden(message: string): NextResponse {
+  return NextResponse.json(
+    {
+      success: false,
+      message,
+      data: null,
+      error: { code: "FORBIDDEN", message },
+      timestamp: new Date().toISOString(),
+    },
+    { status: 403 },
+  );
+}

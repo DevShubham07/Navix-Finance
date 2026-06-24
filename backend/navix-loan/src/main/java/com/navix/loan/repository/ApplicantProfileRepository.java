@@ -10,4 +10,12 @@ import org.springframework.stereotype.Repository;
 public interface ApplicantProfileRepository extends JpaRepository<ApplicantProfile, Long> {
 
     Optional<ApplicantProfile> findByApplicationId(Long applicationId);
+
+    // --- identity uniqueness (a mobile/PAN/Aadhaar may belong to only one applicant) ---
+    // "...ApplicationIdNot" excludes the profile's own application so re-saving it is fine.
+    boolean existsByPanAndApplicationIdNot(String pan, Long applicationId);
+
+    boolean existsByAadhaarAndApplicationIdNot(String aadhaar, Long applicationId);
+
+    boolean existsByMobileAndApplicationIdNot(String mobile, Long applicationId);
 }

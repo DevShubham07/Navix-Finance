@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const firstName =
     (session.data?.name || j.applicant.fullName || "there").split(" ")[0] || "there";
   const active = app?.status === "ACTIVE" || app?.status === "OVERDUE";
+  const closed = app?.status === "CLOSED";
   const declined = isTerminalBad(app);
   const continueHref = canChooseAmount(app) ? "/loan/apply" : "/loan/status";
 
@@ -66,6 +67,14 @@ export default function DashboardPage() {
               penalty={Math.max(0, (loan.outstandingPaise - loan.totalRepayablePaise) / 100)}
               principal={loan.principalPaise / 100}
               dueISO={loan.dueDate ?? new Date().toISOString()}
+            />
+          ) : closed ? (
+            <InfoCard
+              icon={<CheckCircle2 size={26} />}
+              tone="navy"
+              title="Loan fully repaid"
+              body="Your advance is closed and in good standing. Need another? You can apply again anytime."
+              cta={{ href: "/repay", label: "View repayment" }}
             />
           ) : declined ? (
             <InfoCard

@@ -68,4 +68,23 @@ public final class LoanDtos {
 
     public record OutstandingView(Long loanId, LocalDate asOf, long outstandingPaise) {
     }
+
+    /**
+     * One row in the accountant's company-wide transactions ledger. Synthesized (not stored):
+     * a DISBURSAL (OUTGOING, money leaving NAVIX, from {@code loan.net_disbursed}) or a REPAYMENT
+     * (INCOMING, from a {@code payment}). PAN is masked.
+     */
+    public record TransactionView(
+            String id,            // synthetic: "D-{loanId}" or "P-{paymentId}"
+            String type,          // DISBURSAL | REPAYMENT
+            String direction,     // OUTGOING | INCOMING
+            Long loanId,
+            Long applicantId,
+            String borrowerName,
+            String panMasked,
+            long amountPaise,
+            String txnRef,
+            String status,
+            LocalDate date) {
+    }
 }

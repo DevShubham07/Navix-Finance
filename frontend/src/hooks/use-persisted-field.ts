@@ -11,12 +11,15 @@ import * as React from "react";
 export function usePersistedField<T extends string | number>(
   source: T,
 ): [T, React.Dispatch<React.SetStateAction<T>>] {
-  const [value, setValue] = React.useState<T>(source);
+  // Coerce a missing source (e.g. a field absent from older persisted state) to
+  // an empty string so the input is controlled from the first render — never
+  // undefined -> defined, which trips React's controlled/uncontrolled warning.
+  const [value, setValue] = React.useState<T>((source ?? ("" as T)) as T);
   const adopted = React.useRef(false);
   React.useEffect(() => {
     if (!adopted.current) {
       adopted.current = true;
-      if (source !== "" && source !== 0) setValue(source);
+      if (source != null && source !== "" && source !== 0) setValue(source);
     }
   }, [source]);
   return [value, setValue];

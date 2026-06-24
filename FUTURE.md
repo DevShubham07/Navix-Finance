@@ -39,7 +39,7 @@ edits deep in domain logic, stop — the seam was bypassed somewhere.
 | A | Real authentication & authorization (JWT + Spring Security) | 🟡 demo headers; invite/activate UI wired (demo-grade) | **P0 (gate for everything)** |
 | B | AWS infrastructure (secrets, S3, deploy, observability) | 🟡 spring-cloud-aws wired but offline | P1 |
 | C | External integrations un-mocked (Fintrix, DigiLocker, bank) | 🟡 mock clients | P1 |
-| D | Data model & platform hardening (FK, legacy tables, PII) | 🔴 | P2 |
+| D | Data model & platform hardening (FK, legacy tables, PII) | 🟡 (D2 collections-bridge + D5 repay done; FK/identity/PII remain) | P2 |
 | E | Compliance & product alignment (NBFC/DLG, reporting, copy) | 🔴 | P2 (regulatory gate before launch) |
 
 ---
@@ -110,6 +110,10 @@ What already exists (reusable):
   source of truth; add an authorization integration-test matrix (every role × every endpoint).
 - **Done when:** the test matrix proves each endpoint rejects every role that shouldn't call it,
   and `SOD_VIOLATION` fires when the same subject recommends and approves.
+- **Note:** the **Disbursement-Head ≠ Accountant** SoD is now *intentionally relaxed* — a Disbursement
+  Head who enters a transaction id finalizes the release directly, skipping the accountant (the no-txn
+  path still routes to the accountant). The **Credit-Exec ≠ Credit-Head** SoD is unchanged. The
+  RBAC/SoD matrix must encode this product decision.
 
 ---
 
@@ -171,22 +175,22 @@ WARN at boot — harmless locally).
 
 - **D1. Foreign keys** — schema has indexes only; add FK constraints across the aggregate
   (`application_event`, `applicant_profile`, `application_document`, `loan`, payments).
-- **D2. Collections on a UUID island** — `/api/collections/*` + the collections pages (buckets /
-  settlements / case detail) are now **wired and working** (maker-checker settlement with SoD), but
-  `collection_case` / `settlement` carry **UUID `loan_id`** that can't reference the `bigint` loan id,
-  so collections is **not linked to the real loans**. Re-type to the real loan id + repurpose (Flyway +
-  `CollectionsService`/`SettlementService` + a "list overdue loans / open case from loan" path) so it
-  reflects real `OVERDUE` loans. The legacy `disbursement_request` UUID chain is **superseded** by the
-  aggregate — drop it.
+- **D2. Collections on the real loans** — 🟢 **DONE.** `collection_case` / `settlement` now key off the
+  real **bigint** loan id (Flyway V11); opening a case validates the loan via the `LoanDirectory` port
+  and flips it `ACTIVE/OVERDUE → IN_COLLECTIONS`; officers + settlement proposer/approver are real staff
+  (names, not UUIDs); cases are driven off real loans via `GET /api/collections/loans`. _Remaining:_ the
+  legacy `disbursement_request` UUID chain is still **superseded by the aggregate** — drop it (D1/below).
 - **D3. Unify applicant identity** — the live `applicant_profile` (in `navix-loan`) is a
   self-contained KYC snapshot; unify it with `navix-onboarding.Borrower` + `navix-kyc.KycCase`
   (one borrower identity, linked to applications) so KYC isn't duplicated.
 - **D4. PII at rest** — encrypt PAN/Aadhaar/bank columns (or tokenize); make `application_event`
   append-only at the DB level (revoke UPDATE/DELETE); confirm masking on every read path.
-- **D5. Borrower repay / reborrow** — the borrower journey is wired through `ACTIVE`, but `/repay`
-  and `/reloan` are still mock (Zustand). Add backend endpoints (record a repayment → reduce
-  outstanding → `CLOSED` when settled; reborrow → new draft reusing the profile) and wire the pages
-  off `borrowerApi`. Small, self-contained — the one piece of the borrower flow not yet on the backend.
+- **D5. Borrower repay** — 🟢 **DONE.** `/repay` records a real manual payment
+  (`POST /api/loan/{id}/repayments`, → PENDING_VERIFICATION); the **Accountant** verifies it, reducing
+  the outstanding and closing the loan + application (`closeForLoan`, ACTIVE/OVERDUE → CLOSED) at zero;
+  the page shows the prepayment-aware "pay today" amount via `…/outstanding`. _Remaining:_ **reborrow**
+  (`/reloan` → a new draft reusing the profile) is still mock — add the endpoint and wire it off
+  `borrowerApi`.
 
 ---
 
@@ -218,7 +222,7 @@ WARN at boot — harmless locally).
 
 - No `DemoActorFilter`, no `X-Demo-Actor-*` trust, no role-pick login in prod.
 - Every `/api/**` (except auth/health) requires a valid JWT; role + SoD enforced and test-proven.
-- Secrets only in SSM/Secrets Manager; documents only in S3 (no `bytea`, no base64 over the BFF).
+- Secrets only in SSM/Secrets Manager;documents only in S3 (no `bytea`, no base64 over the BFF).
 - Fintrix + DigiLocker + bank payout are live with graceful failure paths.
 - FK constraints in place; legacy UUID tables resolved; PII encrypted/masked; audit immutable.
 - Product copy + agreements match the salary-linked single-repayment product and the chosen
@@ -226,5 +230,5 @@ WARN at boot — harmless locally).
 
 ---
 
-_Last updated 2026-06-24. As each item ships, mark it 🟢 and migrate the detail into `handoff.md`’s
+_Last updated 2026-06-25. As each item ships, mark it 🟢 and migrate the detail into `handoff.md`’s
 change log + `CLAUDE.md`._

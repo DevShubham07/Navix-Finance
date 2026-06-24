@@ -1,6 +1,7 @@
 package com.navix.collections.controller;
 
 import com.navix.collections.dto.CollectionsDtos.AssignOfficerRequest;
+import com.navix.collections.dto.CollectionsDtos.CaseDetailView;
 import com.navix.collections.dto.CollectionsDtos.CaseView;
 import com.navix.collections.dto.CollectionsDtos.DpdView;
 import com.navix.collections.dto.CollectionsDtos.InteractionView;
@@ -11,6 +12,8 @@ import com.navix.collections.dto.CollectionsDtos.SettlementView;
 import com.navix.collections.service.CollectionsService;
 import com.navix.collections.service.DpdCalculator;
 import com.navix.collections.service.SettlementService;
+import com.navix.common.loan.LoanSummary;
+import com.navix.common.staff.StaffSummary;
 import com.navix.common.web.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
@@ -27,9 +30,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST endpoints for collections: case management, interaction logging, the
- * maker-checker settlement workflow, and a live DPD-bucket helper. All responses
- * use {@link ApiResponse}.
+ * REST endpoints for collections: case management (bridged to real loans),
+ * interaction logging, the maker-checker settlement workflow, and a live
+ * DPD-bucket helper. All responses use {@link ApiResponse}.
  */
 @RestController
 @RequestMapping("/api/collections")
@@ -40,28 +43,42 @@ public class CollectionsController {
     private final SettlementService settlementService;
     private final DpdCalculator dpdCalculator;
 
-    /** Open (or fetch) the collection case for an overdue loan. */
+    /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before {@code dueBy}). */
+    @GetMapping("/loans")
+    public ApiResponse<List<LoanSummary>> collectibleLoans(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBy) {
+        LocalDate asOf = dueBy != null ? dueBy : LocalDate.now();
+        return ApiResponse.ok(collectionsService.collectibleLoans(asOf));
+    }
+
+    /** ACTIVE collections officers, for the assignee picker. */
+    @GetMapping("/officers")
+    public ApiResponse<List<StaffSummary>> assignableOfficers() {
+        return ApiResponse.ok(collectionsService.assignableOfficers());
+    }
+
+    /** Open (or fetch) the collection case for a real loan, moving it into collections. */
     @PostMapping("/cases")
-    public ApiResponse<CaseView> openCase(@Valid @RequestBody OpenCaseRequest request) {
-        return ApiResponse.ok(CaseView.of(collectionsService.openCase(request.loanId())));
+    public ApiResponse<CaseDetailView> openCase(@Valid @RequestBody OpenCaseRequest request) {
+        return ApiResponse.ok(collectionsService.openCase(request.loanId()));
     }
 
     @GetMapping("/cases")
     public ApiResponse<List<CaseView>> listCases() {
-        return ApiResponse.ok(collectionsService.listCases().stream().map(CaseView::of).toList());
+        return ApiResponse.ok(collectionsService.listCaseViews());
     }
 
     @GetMapping("/cases/{caseId}")
-    public ApiResponse<CaseView> getCase(@PathVariable UUID caseId) {
-        return ApiResponse.ok(CaseView.of(collectionsService.getCase(caseId)));
+    public ApiResponse<CaseDetailView> getCase(@PathVariable UUID caseId) {
+        return ApiResponse.ok(collectionsService.getCaseDetail(caseId));
     }
 
-    /** Assign a collections officer to a case. */
+    /** Assign a collections officer (a real ACTIVE executive) to a case. */
     @PostMapping("/cases/{caseId}/assign")
-    public ApiResponse<CaseView> assignOfficer(@PathVariable UUID caseId,
-                                               @Valid @RequestBody AssignOfficerRequest request) {
-        return ApiResponse.ok(CaseView.of(
-                collectionsService.assignOfficer(caseId, request.officerId())));
+    public ApiResponse<CaseDetailView> assignOfficer(@PathVariable UUID caseId,
+                                                     @Valid @RequestBody AssignOfficerRequest request) {
+        collectionsService.assignOfficer(caseId, request.officerId());
+        return ApiResponse.ok(collectionsService.getCaseDetail(caseId));
     }
 
     /** Log a borrower interaction (PAID outcome requires a proof reference). */
@@ -83,20 +100,19 @@ public class CollectionsController {
     @PostMapping("/cases/{caseId}/settlements")
     public ApiResponse<SettlementView> proposeSettlement(@PathVariable UUID caseId,
                                                          @Valid @RequestBody ProposeSettlementRequest request) {
-        return ApiResponse.ok(SettlementView.of(
-                settlementService.propose(caseId, request.settlementAmountPaise())));
+        return ApiResponse.ok(settlementService.propose(caseId, request.settlementAmountPaise()));
     }
 
     /** All settlements (pending + approved) for the collections settlements worklist. */
     @GetMapping("/settlements")
     public ApiResponse<List<SettlementView>> listSettlements() {
-        return ApiResponse.ok(settlementService.listAll().stream().map(SettlementView::of).toList());
+        return ApiResponse.ok(settlementService.listAll());
     }
 
     /** Collections Head approves a settlement (separation of duties enforced). */
     @PostMapping("/settlements/{settlementId}/approve")
     public ApiResponse<SettlementView> approveSettlement(@PathVariable UUID settlementId) {
-        return ApiResponse.ok(SettlementView.of(settlementService.approve(settlementId)));
+        return ApiResponse.ok(settlementService.approve(settlementId));
     }
 
     /** Live DPD-bucket helper: days-past-due + bucket for a due date as of a date. */

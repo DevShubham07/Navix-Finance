@@ -31,15 +31,17 @@ public class CollectionCase {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    /** The real loan this case works (FK to {@code loan.id}, a bigint). */
     @Column(name = "loan_id", nullable = false)
-    private UUID loanId;
+    private Long loanId;
 
     /** Denormalised snapshot of the live-computed DPD bucket; not authoritative. */
     @Column(name = "current_bucket")
     private String currentBucket;
 
+    /** The assigned collections officer (FK to {@code staff_user.id}, a bigint). */
     @Column(name = "assigned_officer_id")
-    private UUID assignedOfficerId;
+    private Long assignedOfficerId;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

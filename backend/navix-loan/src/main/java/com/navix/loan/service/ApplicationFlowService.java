@@ -4,6 +4,7 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.staff.StaffDirectory;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.Loan;
@@ -35,6 +36,7 @@ public class ApplicationFlowService {
     private final ApplicationEventRepository eventRepository;
     private final EligibilityService eligibilityService;
     private final LoanService loanService;
+    private final StaffDirectory staffDirectory;
 
     // ---- creation & borrower steps -------------------------------------------------
 
@@ -100,6 +102,11 @@ public class ApplicationFlowService {
         if (app.getAmountRequested() == null) {
             throw new BusinessException("NOT_APPLIED", "Application has not been submitted by the borrower yet");
         }
+        // Activation gating (dfd.md §13.4): the assignee must be an ACTIVE Credit Executive.
+        if (!staffDirectory.isActiveWithRole(executiveId, "CREDIT_EXECUTIVE")) {
+            throw new BusinessException("INVALID_ASSIGNEE",
+                    "The assignee must be an active Credit Executive");
+        }
         app.setAssignedExecutiveId(executiveId);
         transition(app, ApplicationStatus.CREDIT_EXEC_PENDING, "ASSIGN", "executiveId=" + executiveId);
         return applicationRepository.save(app);
@@ -143,31 +150,44 @@ public class ApplicationFlowService {
     // ---- disbursement & accountant validation (W3) ---------------------------------
 
     @Transactional
-    public LoanApplication disbursementDecision(Long appId, boolean accept, String notes) {
+    public LoanApplication disbursementDecision(Long appId, boolean accept, String txnRef, String notes) {
         requireRole("DISBURSEMENT_HEAD");
         LoanApplication app = require(appId);
-        if (accept) {
+        if (!accept) {
+            transition(app, ApplicationStatus.REJECTED, "DISB_REJECT", notes);
+        } else if (txnRef != null && !txnRef.isBlank()) {
+            // Fast path: a transaction id means the transfer is already done — release directly,
+            // skipping the accountant gate (DISBURSEMENT_PENDING → DISBURSED → ACTIVE).
+            finalizeDisbursal(app, txnRef, notes);
+        } else {
+            // No transaction id → hand off to the accountant to confirm the transfer.
             // (Sanction letter generation → S3 is a deferred document step.)
             transition(app, ApplicationStatus.ACCOUNTANT_PENDING, "DISB_ACCEPT", notes);
-        } else {
-            transition(app, ApplicationStatus.REJECTED, "DISB_REJECT", notes);
         }
         return applicationRepository.save(app);
     }
 
     @Transactional
-    public LoanApplication accountantValidate(Long appId, boolean success, String notes) {
+    public LoanApplication accountantValidate(Long appId, boolean success, String txnRef, String notes) {
         requireRole("ACCOUNTANT");
         LoanApplication app = require(appId);
         if (success) {
-            transition(app, ApplicationStatus.DISBURSED, "VALIDATE_SUCCESS", notes);
-            Loan loan = loanService.disburse(app, LocalDate.now());
-            app.setLoanId(loan.getId());
-            transition(app, ApplicationStatus.ACTIVE, "ACTIVATE", "loanId=" + loan.getId());
+            finalizeDisbursal(app, txnRef, notes);
         } else {
             transition(app, ApplicationStatus.DISBURSEMENT_FAILED, "VALIDATE_FAIL", notes);
         }
         return applicationRepository.save(app);
+    }
+
+    /**
+     * Mint the loan and activate the application (DISBURSED → ACTIVE), recording the disbursal
+     * transaction id. Shared by the Disbursement Head fast path and the accountant confirmation.
+     */
+    private void finalizeDisbursal(LoanApplication app, String txnRef, String notes) {
+        transition(app, ApplicationStatus.DISBURSED, "VALIDATE_SUCCESS", notes);
+        Loan loan = loanService.disburse(app, LocalDate.now(), txnRef);
+        app.setLoanId(loan.getId());
+        transition(app, ApplicationStatus.ACTIVE, "ACTIVATE", "loanId=" + loan.getId());
     }
 
     @Transactional
@@ -183,6 +203,23 @@ public class ApplicationFlowService {
         LoanApplication app = require(appId);
         transition(app, ApplicationStatus.CANCELLED, "CANCEL", notes);
         return applicationRepository.save(app);
+    }
+
+    /**
+     * System close when the loan is fully repaid: mirrors the loan's closure onto the application
+     * aggregate (the §5 invariant {@code ACTIVE → CLOSED} once Σ payments ≥ total). Called by
+     * {@link RepaymentService} after the final verified payment zeroes the balance. Idempotent —
+     * only an ACTIVE/OVERDUE application moves; anything else (no app for the loan, already closed)
+     * is a no-op. Attributed to the current actor (the accountant verifying the payment).
+     */
+    @Transactional
+    public void closeForLoan(Long loanId) {
+        applicationRepository.findByLoanId(loanId).ifPresent(app -> {
+            if (app.getStatus() == ApplicationStatus.ACTIVE || app.getStatus() == ApplicationStatus.OVERDUE) {
+                transition(app, ApplicationStatus.CLOSED, "REPAID", "Loan fully repaid");
+                applicationRepository.save(app);
+            }
+        });
     }
 
     // ---- reads ---------------------------------------------------------------------

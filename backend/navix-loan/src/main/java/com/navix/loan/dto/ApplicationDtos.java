@@ -29,9 +29,11 @@ public final class ApplicationDtos {
 
     /**
      * Generic decision for the staff steps. {@code decision} = approve / accept / success;
-     * {@code approvedAmountPaise} is used only by the Credit Head's final approval.
+     * {@code approvedAmountPaise} is used only by the Credit Head's final approval;
+     * {@code txnRef} is the disbursal transaction id — when the Disbursement Head supplies it the
+     * release skips the accountant gate (also recorded by the accountant on confirmation).
      */
-    public record DecisionRequest(boolean decision, Long approvedAmountPaise, String notes) {
+    public record DecisionRequest(boolean decision, Long approvedAmountPaise, String notes, String txnRef) {
     }
 
     public record ApplicationView(

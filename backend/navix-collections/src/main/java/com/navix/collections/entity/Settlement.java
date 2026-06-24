@@ -38,12 +38,13 @@ public class Settlement {
     @Column(name = "settlement_amount", nullable = false)
     private Long settlementAmount;
 
+    /** Collections officer who proposed it (FK to {@code staff_user.id}, a bigint). */
     @Column(name = "proposed_by", nullable = false)
-    private UUID proposedBy;
+    private Long proposedBy;
 
-    /** Collections Head who approved; null until approved. */
+    /** Collections Head who approved (FK to {@code staff_user.id}); null until approved. */
     @Column(name = "approved_by")
-    private UUID approvedBy;
+    private Long approvedBy;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
