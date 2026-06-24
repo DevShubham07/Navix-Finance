@@ -28,6 +28,17 @@ hs_err_pid*
 .env.*.local
 *.pem
 
+# real deploy env files (keep the *.example templates tracked)
+deploy/*.env
+deploy/backend.env
+!deploy/*.env.example
+
+# corporate CA bundle for local builds behind a TLS proxy (machine-specific)
+deploy/certs/*.pem
+deploy/certs/*.crt
+!deploy/certs/.gitkeep
+!deploy/certs/README.txt
+
 # ---- OS / IDE ----
 .DS_Store
 Thumbs.db

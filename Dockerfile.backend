@@ -1,17 +1,63 @@
-FROM eclipse-temurin:21-jdk-jammy
+# syntax=docker/dockerfile:1
+#
+# NAVIX backend — production image.
+# Multi-stage: build the full Maven multi-module project, then run only the
+# bootable navix-app JAR on a slim JRE. No Maven, no secrets baked in.
+#
+# Build (from repo root):   docker build -f Dockerfile.backend -t navix-backend:latest .
+# Run:                      docker run --env-file backend.env -p 8080:8080 navix-backend:latest
+# -----------------------------------------------------------------------------
 
+# ---- Stage 1: build ----------------------------------------------------------
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /src
+
+# Optionally trust extra CA certs (e.g. a corporate TLS-inspection proxy like
+# Netskope on a build laptop). On a normal network (e.g. EC2) deploy/certs holds
+# only a placeholder and nothing is imported — the build behaves identically.
+COPY deploy/certs/ /tmp/extra-certs/
+RUN for c in /tmp/extra-certs/*.pem /tmp/extra-certs/*.crt; do \
+      [ -f "$c" ] || continue; \
+      keytool -importcert -noprompt -trustcacerts \
+        -alias "extra-$(basename "$c")" \
+        -file "$c" \
+        -keystore "$JAVA_HOME/lib/security/cacerts" \
+        -storepass changeit || true; \
+    done
+
+# Copy the whole backend tree (poms + sources) and build the bootable JAR.
+# (A finer-grained dependency cache layer is possible later; this is correct and simple.)
+COPY backend/ ./
+# Retry/backoff flags make downloads resilient to flaky corporate proxies; they
+# are harmless on a clean network (EC2).
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -DskipTests clean package \
+      -Dmaven.wagon.http.retryHandler.count=5 \
+      -Dmaven.wagon.httpconnectionManager.ttlSeconds=60 \
+      -Dmaven.wagon.rto=120000
+
+# ---- Stage 2: runtime --------------------------------------------------------
+FROM eclipse-temurin:21-jre-jammy AS runtime
 WORKDIR /app
 
-COPY backend/ ./
+# Run as a non-root user.
+RUN groupadd --system navix && useradd --system --gid navix --home /app navix
 
-RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
+# Copy the bootable JAR produced by the build stage.
+# spring-boot-maven-plugin (repackage) leaves the runnable JAR in navix-app/target/.
+COPY --from=build /src/navix-app/target/*.jar /app/app.jar
 
-ENV DB_URL=jdbc:postgresql://navix-postgres:5432/navix \
-    DB_USERNAME=navix \
-    DB_PASSWORD=navix \
-    BACKEND_BASE_URL=http://localhost:8080 \
-    AUTH_SECRET=dev-secret-key-12345
+# Defaults; override the real values at runtime via --env-file / -e.
+# NAVIX_ENV=prod keeps the app on the default profile (no application-local.yml).
+ENV NAVIX_ENV=prod \
+    AWS_REGION=ap-south-1 \
+    JAVA_OPTS="-XX:MaxRAMPercentage=75.0"
 
 EXPOSE 8080
+USER navix
 
-CMD ["mvn", "spring-boot:run", "-pl", "navix-app"]
+# Spring Boot Actuator health endpoint (exposed in application.yml).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget -q -O /dev/null http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

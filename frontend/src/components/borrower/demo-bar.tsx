@@ -7,6 +7,7 @@ import { useBorrowerJourney, type BorrowerStatus } from "@/lib/mock/borrower";
 import { SCENARIOS } from "@/lib/mock/scenarios";
 import { signInBorrower, signOutBorrower } from "@/lib/mock/session";
 import { useMounted } from "@/hooks/use-mounted";
+import { config } from "@/lib/config";
 
 /** Landing route for a seeded journey so the tester picks up at the right screen. */
 export function routeForStatus(status: BorrowerStatus): string {
@@ -46,7 +47,8 @@ export function DemoBar() {
   const loadScenario = useBorrowerJourney((s) => s.loadScenario);
   const beginApplication = useBorrowerJourney((s) => s.beginApplication);
 
-  // Never show on the public marketing site.
+  // Hidden when demo mode is off, and never shown on the public marketing site.
+  if (!config.demoMode) return null;
   if (!mounted || pathname === "/" || pathname.startsWith("/(marketing)")) return null;
 
   const pick = (id: string) => {
