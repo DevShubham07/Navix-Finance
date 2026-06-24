@@ -21,9 +21,16 @@ public class EmailVerificationClient {
 
     /**
      * Verify email + EPFO employer match.
-     * TODO: POST email/name/establishment to the Fintrix email-verification endpoint.
+     *
+     * <p>DEMO MOCK: returns a deterministic fully-verified response (email valid, establishment
+     * and individual matched) without any network call, pending live Fintrix credentials. The
+     * injected {@code fintrix} RestClient is intentionally left unused for the demo.
      */
     public EmailVerificationResponse verify(String email, String name, String establishment) {
-        throw new UnsupportedOperationException("TODO: call Fintrix email/EPFO verification endpoint");
+        return new EmailVerificationResponse(
+                Boolean.TRUE,
+                Boolean.TRUE,
+                Boolean.TRUE,
+                Boolean.TRUE);
     }
 }

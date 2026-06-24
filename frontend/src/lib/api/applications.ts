@@ -1,0 +1,516 @@
+/**
+ * Typed client for the NAVIX backend application state-machine API.
+ *
+ * IMPORTANT: these functions call the Next.js BFF proxies, NOT the Spring
+ * backend directly. Staff actions/queues go through `/api/staff/applications/*`
+ * (identity injected from the httpOnly `navix_staff` cookie); borrower actions
+ * go through `/api/borrower/applications/*` (identity from `navix_borrower`).
+ * The two namespaces never share a session/cookie.
+ *
+ * Every backend response is an `ApiResponse<T>` envelope; the helpers below
+ * unwrap `data` and throw {@link ApplicationApiError} on `success:false`,
+ * surfacing `error.code` so the UI can show a meaningful message.
+ */
+
+// ---------------------------------------------------------------------------
+// Domain types (mirror the backend exactly)
+// ---------------------------------------------------------------------------
+
+export type ApplicationStatus =
+  | "DRAFT"
+  | "KYC_PENDING"
+  | "KYC_APPROVED"
+  | "KYC_REJECTED"
+  | "CREDIT_EXEC_PENDING"
+  | "CREDIT_EXEC_APPROVED"
+  | "CREDIT_HEAD_PENDING"
+  | "CREDIT_HEAD_APPROVED"
+  | "DISBURSEMENT_PENDING"
+  | "ACCOUNTANT_PENDING"
+  | "DISBURSEMENT_FAILED"
+  | "DISBURSED"
+  | "ACTIVE"
+  | "OVERDUE"
+  | "DEFAULTED"
+  | "CLOSED"
+  | "WRITTEN_OFF"
+  | "REJECTED"
+  | "CANCELLED";
+
+export interface ApplicationView {
+  id: number;
+  applicantId: number;
+  status: ApplicationStatus;
+  amountRequestedPaise: number | null;
+  eligibleLimitPaise: number | null;
+  purpose: string | null;
+  assignedExecutiveId: number | null;
+  loanId: number | null;
+}
+
+export interface EventView {
+  id: number;
+  fromStatus: ApplicationStatus | null;
+  toStatus: ApplicationStatus | null;
+  actorId: number | null;
+  actorRole: string | null;
+  action: string | null;
+  notes: string | null;
+  at: string;
+}
+
+export interface LoanView {
+  id: number;
+  applicantId: number;
+  principalPaise: number;
+  processingFeePaise: number;
+  gstPaise: number;
+  netDisbursedPaise: number;
+  dailyInterestRate: number;
+  disbursedOn: string | null;
+  dueDate: string | null;
+  totalRepayablePaise: number;
+  outstandingPaise: number;
+  status: string;
+}
+
+export interface OutstandingView {
+  loanId: number;
+  asOf: string;
+  outstandingPaise: number;
+}
+
+/** Applicant KYC snapshot for an application. PAN arrives masked from the backend. */
+export interface ProfileView {
+  applicationId: number;
+  fullName: string | null;
+  panMasked: string | null;
+  dob: string | null;
+  address: string | null;
+  employer: string | null;
+  employmentStatus: string | null;
+  monthlySalaryPaise: number | null;
+  salaryBank: string | null;
+}
+
+/** What the borrower submits for their KYC profile (all fields optional). */
+export interface ProfileInput {
+  fullName?: string;
+  pan?: string;
+  dob?: string; // ISO yyyy-mm-dd
+  address?: string;
+  employer?: string;
+  employmentStatus?: string;
+  monthlySalaryPaise?: number;
+  salaryBank?: string;
+}
+
+/** Document metadata (no bytes). */
+export interface DocumentView {
+  id: number;
+  docType: string;
+  fileName: string;
+  contentType: string | null;
+  sizeBytes: number | null;
+  uploadedAt: string;
+}
+
+/** A document with its bytes as base64, for view/download. */
+export interface DocumentContent {
+  id: number;
+  docType: string;
+  fileName: string;
+  contentType: string | null;
+  dataBase64: string;
+}
+
+/** Standard backend envelope. */
+export interface ApiResponse<T> {
+  success: boolean;
+  message: string;
+  data: T;
+  error: { code: string; message: string } | null;
+  timestamp: string;
+}
+
+// ---------------------------------------------------------------------------
+// Error + low-level fetch (talks to the BFF, same-origin)
+// ---------------------------------------------------------------------------
+
+export class ApplicationApiError extends Error {
+  /** Backend `error.code` when present, otherwise an HTTP-derived code. */
+  readonly code: string;
+  readonly status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = "ApplicationApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+type Method = "GET" | "POST" | "PUT" | "DELETE";
+
+async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // BFF sets/reads httpOnly cookies; ensure they ride along.
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+  } catch (e) {
+    throw new ApplicationApiError(
+      e instanceof Error ? e.message : "Network error reaching the server.",
+      "NETWORK_ERROR",
+      0,
+    );
+  }
+
+  const text = await res.text();
+  let parsed: ApiResponse<T> | undefined;
+  try {
+    parsed = text ? (JSON.parse(text) as ApiResponse<T>) : undefined;
+  } catch {
+    parsed = undefined;
+  }
+
+  // Envelope-level failure (the backend returns success:false with an error).
+  if (parsed && parsed.success === false) {
+    const code = parsed.error?.code ?? `HTTP_${res.status}`;
+    const message = parsed.error?.message ?? parsed.message ?? "Request failed.";
+    throw new ApplicationApiError(message, code, res.status);
+  }
+
+  if (!res.ok) {
+    throw new ApplicationApiError(
+      parsed?.message ?? `Request failed with status ${res.status}.`,
+      parsed?.error?.code ?? `HTTP_${res.status}`,
+      res.status,
+    );
+  }
+
+  if (!parsed) {
+    throw new ApplicationApiError("Empty response from server.", "EMPTY_RESPONSE", res.status);
+  }
+
+  return parsed.data;
+}
+
+// ---------------------------------------------------------------------------
+// Borrower client — routes under /api/borrower/*
+// ---------------------------------------------------------------------------
+
+const BORROWER_BASE = "/api/borrower/applications";
+const BORROWER_LOAN_BASE = "/api/borrower/loan";
+
+export const borrowerApi = {
+  /** Create a DRAFT application for the given applicant. */
+  create: (applicantId: number) =>
+    bff<ApplicationView>(`${BORROWER_BASE}`, "POST", { applicantId }),
+
+  /** DRAFT -> KYC_PENDING. */
+  submitKyc: (id: number) =>
+    bff<ApplicationView>(`${BORROWER_BASE}/${id}/submit-kyc`, "POST"),
+
+  /** Set amount/purpose/salary-day once KYC is approved (stays KYC_APPROVED). */
+  apply: (
+    id: number,
+    payload: {
+      amountPaise: number;
+      purpose?: string;
+      eligibleLimitPaise?: number;
+      salaryCreditDay?: number;
+    },
+  ) => bff<ApplicationView>(`${BORROWER_BASE}/${id}/apply`, "POST", payload),
+
+  /** Poll a single application. */
+  get: (id: number) => bff<ApplicationView>(`${BORROWER_BASE}/${id}`, "GET"),
+
+  /** Event/audit trail for an application. */
+  events: (id: number) => bff<EventView[]>(`${BORROWER_BASE}/${id}/events`, "GET"),
+
+  /** Loan summary (net disbursed, due date, total repayable) once ACTIVE. */
+  loan: (loanId: number) => bff<LoanView>(`${BORROWER_LOAN_BASE}/${loanId}`, "GET"),
+
+  /** Save/update the applicant KYC details for this application. */
+  saveProfile: (id: number, profile: ProfileInput) =>
+    bff<ProfileView>(`${BORROWER_BASE}/${id}/profile`, "PUT", profile),
+
+  /** Read back the (masked) profile. */
+  getProfile: (id: number) => bff<ProfileView>(`${BORROWER_BASE}/${id}/profile`, "GET"),
+
+  /** Upload one document (bytes as base64). */
+  uploadDocument: (
+    id: number,
+    doc: { docType: string; fileName: string; contentType?: string; dataBase64: string },
+  ) => bff<DocumentView>(`${BORROWER_BASE}/${id}/documents`, "POST", doc),
+
+  /** List documents already uploaded for this application. */
+  documents: (id: number) => bff<DocumentView[]>(`${BORROWER_BASE}/${id}/documents`, "GET"),
+};
+
+// ---------------------------------------------------------------------------
+// Staff client — routes under /api/staff/*
+// ---------------------------------------------------------------------------
+
+const STAFF_BASE = "/api/staff/applications";
+const STAFF_LOAN_BASE = "/api/staff/loan";
+
+export const staffApi = {
+  /** List applications by status, e.g. KYC_PENDING. */
+  listByStatus: (status: ApplicationStatus) =>
+    bff<ApplicationView[]>(`${STAFF_BASE}?status=${encodeURIComponent(status)}`, "GET"),
+
+  /** The credit head's assignment queue (KYC_APPROVED + applied). */
+  creditQueue: () => bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue`, "GET"),
+
+  get: (id: number) => bff<ApplicationView>(`${STAFF_BASE}/${id}`, "GET"),
+
+  events: (id: number) => bff<EventView[]>(`${STAFF_BASE}/${id}/events`, "GET"),
+
+  // --- maker-checker actions ---
+  kycDecision: (id: number, decision: boolean, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/kyc-decision`, "POST", { decision, notes }),
+
+  assign: (id: number, executiveId: number) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/assign`, "POST", { executiveId }),
+
+  execDecision: (id: number, decision: boolean, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/exec-decision`, "POST", { decision, notes }),
+
+  headDecision: (
+    id: number,
+    payload: { decision: boolean; approvedAmountPaise?: number; notes?: string },
+  ) => bff<ApplicationView>(`${STAFF_BASE}/${id}/head-decision`, "POST", payload),
+
+  disbursementDecision: (id: number, decision: boolean, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/disbursement-decision`, "POST", { decision, notes }),
+
+  accountantValidate: (id: number, decision: boolean, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/accountant-validate`, "POST", { decision, notes }),
+
+  // --- loan view (staff) ---
+  loan: (loanId: number) => bff<LoanView>(`${STAFF_LOAN_BASE}/${loanId}`, "GET"),
+
+  outstanding: (loanId: number, asOf: string) =>
+    bff<OutstandingView>(
+      `${STAFF_LOAN_BASE}/${loanId}/outstanding?asOf=${encodeURIComponent(asOf)}`,
+      "GET",
+    ),
+
+  // --- applicant review (any reviewing role) ---
+  /** The applicant's KYC details (PAN masked). */
+  getProfile: (id: number) => bff<ProfileView>(`${STAFF_BASE}/${id}/profile`, "GET"),
+
+  /** The application's uploaded documents (metadata). */
+  documents: (id: number) => bff<DocumentView[]>(`${STAFF_BASE}/${id}/documents`, "GET"),
+
+  /** One document's bytes (base64) for view/download. */
+  document: (id: number, docId: number) =>
+    bff<DocumentContent>(`${STAFF_BASE}/${id}/documents/${docId}`, "GET"),
+};
+
+// ---------------------------------------------------------------------------
+// Admin (IAM) — staff users, invites, fraud blocklist
+// ---------------------------------------------------------------------------
+
+export type StaffRoleName =
+  | "KYC_APPROVER"
+  | "CREDIT_EXECUTIVE"
+  | "CREDIT_HEAD"
+  | "DISBURSEMENT_HEAD"
+  | "ACCOUNTANT"
+  | "COLLECTION_HEAD"
+  | "COLLECTION_EXECUTIVE"
+  | "ADMIN"
+  | "DEVELOPER";
+
+export type StaffStatus = "INVITED" | "ACTIVE" | "DISABLED";
+
+export type BlocklistType = "PAN" | "AADHAAR_REF" | "PHONE" | "DEVICE" | "BANK_ACCOUNT";
+
+export interface StaffResponse {
+  id: number;
+  email: string;
+  name: string;
+  role: StaffRoleName;
+  status: StaffStatus;
+}
+
+export interface InviteResponse {
+  id: number;
+  email: string;
+  role: StaffRoleName;
+  token: string;
+  expiresAt: string;
+}
+
+export interface BlocklistResponse {
+  id: number;
+  type: BlocklistType;
+  value: string;
+  reason: string | null;
+  active: boolean;
+}
+
+const ADMIN_STAFF_BASE = "/api/staff/users";
+const ADMIN_INVITES_BASE = "/api/staff/invites";
+const ADMIN_BLOCKLIST_BASE = "/api/admin/blocklist";
+
+export const adminApi = {
+  // --- staff users ---
+  listStaff: () => bff<StaffResponse[]>(ADMIN_STAFF_BASE, "GET"),
+  getStaff: (id: number) => bff<StaffResponse>(`${ADMIN_STAFF_BASE}/${id}`, "GET"),
+  updateStaff: (id: number, payload: { role: StaffRoleName; status: StaffStatus }) =>
+    bff<StaffResponse>(`${ADMIN_STAFF_BASE}/${id}`, "PUT", payload),
+  disableStaff: (id: number) => bff<null>(`${ADMIN_STAFF_BASE}/${id}`, "DELETE"),
+
+  // --- invites ---
+  listInvites: () => bff<InviteResponse[]>(ADMIN_INVITES_BASE, "GET"),
+  createInvite: (payload: { email: string; role: StaffRoleName }) =>
+    bff<InviteResponse>(ADMIN_INVITES_BASE, "POST", payload),
+  acceptInvite: (payload: { token: string; name: string }) =>
+    bff<StaffResponse>(`${ADMIN_INVITES_BASE}/accept`, "POST", payload),
+
+  // --- fraud blocklist ---
+  listBlocklist: () => bff<BlocklistResponse[]>(ADMIN_BLOCKLIST_BASE, "GET"),
+  addBlocklist: (payload: { type: BlocklistType; value: string; reason?: string }) =>
+    bff<BlocklistResponse>(ADMIN_BLOCKLIST_BASE, "POST", payload),
+  removeBlocklist: (id: number) => bff<null>(`${ADMIN_BLOCKLIST_BASE}/${id}`, "DELETE"),
+};
+
+// ---------------------------------------------------------------------------
+// Collections — cases, interactions, settlements (maker-checker), DPD helper
+// ---------------------------------------------------------------------------
+
+export type DpdBucket = "UPCOMING" | "T0_T7" | "T8_T30" | "T30_T60" | "T60_T90" | "T90_PLUS";
+
+export interface CaseView {
+  id: string; // UUID
+  loanId: string; // UUID (legacy model — not the bigint loan id)
+  currentBucket: string;
+  assignedOfficerId: string | null;
+  createdAt: string;
+}
+
+export interface InteractionView {
+  id: string;
+  collectionCaseId: string;
+  type: string;
+  outcome: string;
+  promiseToPayDate: string | null;
+  proofRef: string | null;
+  loggedAt: string;
+}
+
+export interface SettlementView {
+  id: string;
+  collectionCaseId: string;
+  settlementAmountPaise: number | null;
+  proposedBy: string | null;
+  approvedBy: string | null;
+  createdAt: string;
+  approvedAt: string | null;
+}
+
+export interface DpdView {
+  dueDate: string;
+  asOf: string;
+  dpd: number;
+  bucket: DpdBucket;
+}
+
+const COLLECTIONS_BASE = "/api/staff/collections";
+
+export const collectionsApi = {
+  listCases: () => bff<CaseView[]>(`${COLLECTIONS_BASE}/cases`, "GET"),
+  getCase: (caseId: string) => bff<CaseView>(`${COLLECTIONS_BASE}/cases/${caseId}`, "GET"),
+  openCase: (loanId: string) => bff<CaseView>(`${COLLECTIONS_BASE}/cases`, "POST", { loanId }),
+  assignOfficer: (caseId: string, officerId: string) =>
+    bff<CaseView>(`${COLLECTIONS_BASE}/cases/${caseId}/assign`, "POST", { officerId }),
+
+  listInteractions: (caseId: string) =>
+    bff<InteractionView[]>(`${COLLECTIONS_BASE}/cases/${caseId}/interactions`, "GET"),
+  logInteraction: (
+    caseId: string,
+    payload: { type: string; outcome: string; promiseToPayDate?: string; proofRef?: string },
+  ) => bff<InteractionView>(`${COLLECTIONS_BASE}/cases/${caseId}/interactions`, "POST", payload),
+
+  proposeSettlement: (caseId: string, settlementAmountPaise: number) =>
+    bff<SettlementView>(`${COLLECTIONS_BASE}/cases/${caseId}/settlements`, "POST", { settlementAmountPaise }),
+  listSettlements: () => bff<SettlementView[]>(`${COLLECTIONS_BASE}/settlements`, "GET"),
+  approveSettlement: (settlementId: string) =>
+    bff<SettlementView>(`${COLLECTIONS_BASE}/settlements/${settlementId}/approve`, "POST"),
+
+  dpd: (dueDate: string, asOf?: string) =>
+    bff<DpdView>(
+      `${COLLECTIONS_BASE}/dpd?dueDate=${encodeURIComponent(dueDate)}${asOf ? `&asOf=${encodeURIComponent(asOf)}` : ""}`,
+      "GET",
+    ),
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** ₹ amount (e.g. 5000) -> integer paise (500000). */
+export function rupeesToPaise(rupees: number): number {
+  return Math.round(rupees * 100);
+}
+
+/** Integer paise -> ₹ string, e.g. 500000 -> "₹5,000". */
+export function paiseToINR(paise: number | null | undefined): string {
+  if (paise == null) return "—";
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(paise / 100);
+}
+
+/** Human label for an application status. */
+export function statusLabel(status: ApplicationStatus): string {
+  return status
+    .toLowerCase()
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** Read a browser File into base64 (no data: prefix), for the document-upload API. */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string; // "data:<type>;base64,<DATA>"
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Turn a base64 document into a Blob URL and either open it in a new tab or download it. */
+export function openDocument(doc: DocumentContent, download = false): void {
+  const bytes = Uint8Array.from(atob(doc.dataBase64), (c) => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: doc.contentType || "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  if (download) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = doc.fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+  // Give the browser time to consume the URL before revoking.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

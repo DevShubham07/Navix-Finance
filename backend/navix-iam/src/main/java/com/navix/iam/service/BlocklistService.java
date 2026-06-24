@@ -1,42 +1,60 @@
 package com.navix.iam.service;
 
+import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.iam.domain.BlocklistType;
 import com.navix.iam.entity.BlocklistEntry;
+import com.navix.iam.repository.BlocklistEntryRepository;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Fraud blocklist screening + administration.
+ * Fraud blocklist screening + administration, backed by {@link BlocklistEntryRepository}.
  *
- * <p>{@link #isBlocked} is called both at sign-up and before approval; a match
- * must stop the application.
- *
- * TODO: back with BlocklistEntryRepository.
+ * <p>{@link #isBlocked} is called both at sign-up and before approval; a match must stop the
+ * application. It uses the repository's active-only existence check so deactivated entries no
+ * longer block.
  */
 @Service
+@RequiredArgsConstructor
 public class BlocklistService {
 
-    /** True if the given identifier is actively blocklisted. */
+    private final BlocklistEntryRepository blocklistRepository;
+
+    /** True if the given identifier is currently (actively) blocklisted. */
+    @Transactional(readOnly = true)
     public boolean isBlocked(BlocklistType type, String value) {
-        // TODO: delegate to repository.existsByTypeAndValueAndActiveTrue.
-        throw new UnsupportedOperationException("BlocklistService.isBlocked not implemented yet");
+        return blocklistRepository.existsByTypeAndValueAndActiveTrue(type, value);
     }
 
-    /** Add (or reactivate) a blocklist entry. */
+    /**
+     * Add a blocklist entry — or reactivate (and re-reason) an existing one for the same
+     * type+value rather than creating a duplicate.
+     */
+    @Transactional
     public BlocklistEntry add(BlocklistType type, String value, String reason) {
-        // TODO: persist a new active entry.
-        throw new UnsupportedOperationException("BlocklistService.add not implemented yet");
+        BlocklistEntry entry = blocklistRepository.findByTypeAndValue(type, value)
+                .orElseGet(BlocklistEntry::new);
+        entry.setType(type);
+        entry.setValue(value);
+        entry.setReason(reason);
+        entry.setActive(true);
+        return blocklistRepository.save(entry);
     }
 
-    /** Deactivate a blocklist entry by id. */
+    /** Deactivate a blocklist entry by id (soft remove: {@code active = false}). */
+    @Transactional
     public void remove(Long id) {
-        // TODO: set active = false.
-        throw new UnsupportedOperationException("BlocklistService.remove not implemented yet");
+        BlocklistEntry entry = blocklistRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("BlocklistEntry", String.valueOf(id)));
+        entry.setActive(false);
+        blocklistRepository.save(entry);
     }
 
-    /** List active blocklist entries. */
+    /** List all active blocklist entries. */
+    @Transactional(readOnly = true)
     public List<BlocklistEntry> listActive() {
-        // TODO: return active entries.
-        throw new UnsupportedOperationException("BlocklistService.listActive not implemented yet");
+        return blocklistRepository.findByActiveTrue();
     }
 }

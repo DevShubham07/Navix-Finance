@@ -16,9 +16,10 @@ export const STAFF_ROLES = [
   "CREDIT_HEAD",
   "DISBURSEMENT_HEAD",
   "ACCOUNTANT",
-  "COLLECTIONS_HEAD",
-  "COLLECTION_OFFICER",
+  "COLLECTION_HEAD",
+  "COLLECTION_EXECUTIVE",
   "ADMIN",
+  "DEVELOPER",
 ] as const;
 
 export type StaffRole = (typeof STAFF_ROLES)[number];
@@ -44,8 +45,9 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   CREDIT_HEAD: ["loan:approve"],
   DISBURSEMENT_HEAD: ["loan:disburse"],
   ACCOUNTANT: ["loan:activate"],
-  COLLECTIONS_HEAD: ["collections:manage", "collections:interact"],
-  COLLECTION_OFFICER: ["collections:interact"],
+  COLLECTION_HEAD: ["collections:manage", "collections:interact"],
+  COLLECTION_EXECUTIVE: ["collections:interact"],
+  DEVELOPER: [],
   ADMIN: [
     "kyc:approve",
     "loan:review",

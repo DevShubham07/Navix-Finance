@@ -19,8 +19,13 @@ import type {
   StaffMember,
 } from "@/lib/mock/types";
 
-let idCounter = 1000;
-const nextId = (prefix: string) => `${prefix}-${(idCounter += 1)}`;
+// Unique across reloads. The store is `persist`ed to localStorage, so previously-generated ids
+// rehydrate on load — but a plain module counter resets to its seed and would regenerate the same
+// id (e.g. TRAIL-1001), producing duplicate React keys. Namespacing each page load with a session
+// token keeps every generated id unique even after a reload.
+let idCounter = 0;
+const idSession = Date.now().toString(36);
+const nextId = (prefix: string) => `${prefix}-${idSession}-${(idCounter += 1)}`;
 const nowIso = () => new Date().toISOString();
 
 interface Actor {

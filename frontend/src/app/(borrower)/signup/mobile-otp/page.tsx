@@ -9,6 +9,7 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { usePersistedField } from "@/hooks/use-persisted-field";
 import { useBorrowerJourney } from "@/lib/mock/borrower";
+import { ensureBorrowerSession } from "@/lib/api/live-journey";
 
 const DEMO_OTP = "123456";
 
@@ -32,12 +33,19 @@ export default function SignupMobileOtpPage() {
     setStage("verify");
   };
 
-  const confirm = (code = otp) => {
+  const confirm = async (code = otp) => {
     if (code !== DEMO_OTP) {
       setError("Incorrect code. For this demo, use 123456.");
       return;
     }
     verifyMobile();
+    // Establish the real backend session (httpOnly navix_borrower cookie) now so
+    // later steps — and the final submit — can persist against a stable applicantId.
+    try {
+      await ensureBorrowerSession(mobile.replace(/\s/g, ""), applicant.fullName);
+    } catch {
+      // Non-fatal: submitOnboarding will retry establishing the session at submit.
+    }
     router.push("/signup/employment");
   };
 

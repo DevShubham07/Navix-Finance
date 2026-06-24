@@ -8,7 +8,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -35,9 +34,9 @@ public class Payment extends BaseAuditEntity {
     @Column(name = "loan_id", nullable = false)
     private Long loanId;
 
-    /** Amount paid in this transaction. */
-    @Column(name = "amount", nullable = false, precision = 14, scale = 2)
-    private BigDecimal amount;
+    /** Amount paid in this transaction, in paise. */
+    @Column(name = "amount", nullable = false)
+    private Long amount;
 
     /** Method used to pay. */
     @Enumerated(EnumType.STRING)

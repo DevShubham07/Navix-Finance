@@ -2,99 +2,189 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowRight, ShieldCheck, ClipboardList, Banknote, Receipt, Wallet, PhoneCall } from "lucide-react";
-import { PageHeader, StatCard, StageBadge } from "@/components/staff/staff-ui";
-import { DpdBadge } from "@/components/staff/dpd-badge";
-import { useMockDb } from "@/lib/mock/store";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowRight, ShieldCheck, ClipboardList, Banknote, Receipt, PhoneCall, RefreshCw, Loader2 } from "lucide-react";
+import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { useStaffSession, STAFF_ROLE_LABELS } from "@/lib/mock/session";
 import type { StaffRole } from "@/lib/auth/rbac";
-import type { AppStage, ApplicationRecord } from "@/lib/mock/types";
+import {
+  staffApi,
+  paiseToINR,
+  statusLabel,
+  type ApplicationStatus,
+  type ApplicationView,
+} from "@/lib/api/applications";
 import { useMounted } from "@/hooks/use-mounted";
-import { formatINR0 } from "@/lib/utils";
 
-const QUEUE: Partial<Record<StaffRole, { stages: AppStage[]; label: string }>> = {
-  KYC_APPROVER: { stages: ["KYC_REVIEW"], label: "Applications awaiting KYC clearance" },
-  CREDIT_EXECUTIVE: { stages: ["CREDIT_QUEUE", "CREDIT_REVIEW"], label: "Applications to review" },
-  CREDIT_HEAD: { stages: ["CREDIT_QUEUE", "CREDIT_DECISION"], label: "Decisions awaiting your approval" },
-  DISBURSEMENT_HEAD: { stages: ["DISBURSEMENT"], label: "Approved loans to release" },
-  ACCOUNTANT: { stages: ["ACCOUNTING"], label: "Transfers to confirm" },
+const REFRESH_MS = 10_000;
+
+/** Per-role "your queue" label + the live statuses that feed it. */
+const QUEUE: Partial<Record<StaffRole, { label: string }>> = {
+  KYC_APPROVER: { label: "Applications awaiting KYC clearance" },
+  CREDIT_EXECUTIVE: { label: "Applications to review" },
+  CREDIT_HEAD: { label: "Decisions awaiting your approval" },
+  DISBURSEMENT_HEAD: { label: "Approved loans to release" },
+  ACCOUNTANT: { label: "Transfers to confirm" },
+  ADMIN: { label: "Live pipeline" },
 };
 
-function hrefForStage(app: ApplicationRecord): string {
-  switch (app.stage) {
-    case "KYC_REVIEW": return "/staff/kyc-approvals";
-    case "CREDIT_QUEUE":
-    case "CREDIT_REVIEW":
-    case "CREDIT_DECISION": return `/staff/credit/${app.id}`;
-    case "DISBURSEMENT": return "/staff/disbursement";
-    case "ACCOUNTING": return "/staff/accounting";
-    default: return `/staff/credit/${app.id}`;
+/** Statuses we count for the headline stat cards. */
+const COUNT_STATUSES: ApplicationStatus[] = [
+  "KYC_PENDING",
+  "CREDIT_EXEC_PENDING",
+  "CREDIT_EXEC_APPROVED",
+  "CREDIT_HEAD_PENDING",
+  "CREDIT_HEAD_APPROVED",
+  "DISBURSEMENT_PENDING",
+  "ACCOUNTANT_PENDING",
+  "ACTIVE",
+  "OVERDUE",
+];
+
+/** Count a status list defensively — a role lacking list permission shouldn't break the board. */
+async function countOf(status: ApplicationStatus): Promise<number> {
+  try {
+    return (await staffApi.listByStatus(status)).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** The live items for a role's action queue. */
+async function fetchRoleQueue(role: StaffRole): Promise<ApplicationView[]> {
+  const safe = (p: Promise<ApplicationView[]>) => p.catch(() => [] as ApplicationView[]);
+  switch (role) {
+    case "KYC_APPROVER":
+      return safe(staffApi.listByStatus("KYC_PENDING"));
+    case "CREDIT_EXECUTIVE":
+      return safe(staffApi.listByStatus("CREDIT_EXEC_PENDING"));
+    case "CREDIT_HEAD": {
+      const [queue, headPending] = await Promise.all([
+        safe(staffApi.creditQueue()),
+        safe(staffApi.listByStatus("CREDIT_HEAD_PENDING")),
+      ]);
+      return [...queue, ...headPending];
+    }
+    case "DISBURSEMENT_HEAD": {
+      const [pending, failed] = await Promise.all([
+        safe(staffApi.listByStatus("DISBURSEMENT_PENDING")),
+        safe(staffApi.listByStatus("DISBURSEMENT_FAILED")),
+      ]);
+      return [...pending, ...failed];
+    }
+    case "ACCOUNTANT":
+      return safe(staffApi.listByStatus("ACCOUNTANT_PENDING"));
+    case "ADMIN": {
+      const lists = await Promise.all(
+        (["KYC_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_HEAD_PENDING", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING"] as ApplicationStatus[]).map(
+          (s) => safe(staffApi.listByStatus(s)),
+        ),
+      );
+      return lists.flat();
+    }
+    default:
+      return [];
   }
 }
 
 export default function StaffDashboardPage() {
   const mounted = useMounted();
   const { session } = useStaffSession();
-  const apps = useMockDb((s) => s.applications);
-  const collections = useMockDb((s) => s.collections);
+
+  const counts = useQuery({
+    queryKey: ["staff-dashboard-counts"],
+    queryFn: async () => {
+      const entries = await Promise.all(COUNT_STATUSES.map(async (s) => [s, await countOf(s)] as const));
+      return Object.fromEntries(entries) as Record<ApplicationStatus, number>;
+    },
+    enabled: mounted && !!session,
+    refetchInterval: REFRESH_MS,
+  });
+
+  const role = session?.role;
+  const queueQuery = useQuery({
+    queryKey: ["staff-dashboard-queue", role],
+    queryFn: () => fetchRoleQueue(role as StaffRole),
+    enabled: mounted && !!role && !!QUEUE[role as StaffRole],
+    refetchInterval: REFRESH_MS,
+  });
 
   if (!mounted || !session) {
     return <div className="h-64 rounded border border-line bg-white" />;
   }
 
-  const count = (st: AppStage) => apps.filter((a) => a.stage === st).length;
-  const inCredit = count("CREDIT_QUEUE") + count("CREDIT_REVIEW") + count("CREDIT_DECISION");
+  const c = counts.data;
+  const n = (s: ApplicationStatus) => c?.[s] ?? 0;
+  const inCredit =
+    n("CREDIT_EXEC_PENDING") + n("CREDIT_EXEC_APPROVED") + n("CREDIT_HEAD_PENDING") + n("CREDIT_HEAD_APPROVED");
   const queue = QUEUE[session.role];
-  const myItems = queue ? apps.filter((a) => queue.stages.includes(a.stage)) : [];
-  const showCollections = session.role === "COLLECTIONS_HEAD" || session.role === "COLLECTION_OFFICER" || session.role === "ADMIN";
+  const myItems = queueQuery.data ?? [];
+  const loading = counts.isLoading || (!!queue && queueQuery.isLoading);
 
   return (
     <div>
-      <PageHeader title={`Welcome, ${session.name.split(" ")[0]}`} subtitle={`${STAFF_ROLE_LABELS[session.role]} · operations overview`} />
+      <PageHeader
+        title={`Welcome, ${session.name.split(" ")[0]}`}
+        subtitle={`${STAFF_ROLE_LABELS[session.role]} · live operations overview`}
+      >
+        <button
+          onClick={() => { counts.refetch(); queueQuery.refetch(); }}
+          className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
+        >
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+        </button>
+      </PageHeader>
 
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="KYC review" value={count("KYC_REVIEW")} accent="gold" />
+        <StatCard label="KYC review" value={n("KYC_PENDING")} accent="gold" />
         <StatCard label="In credit" value={inCredit} />
-        <StatCard label="To release" value={count("DISBURSEMENT")} />
-        <StatCard label="To confirm" value={count("ACCOUNTING")} />
-        <StatCard label="Active loans" value={count("ACTIVE")} accent="success" />
-        <StatCard label="In collections" value={collections.length} accent="error" />
+        <StatCard label="To release" value={n("DISBURSEMENT_PENDING")} />
+        <StatCard label="To confirm" value={n("ACCOUNTANT_PENDING")} />
+        <StatCard label="Active loans" value={n("ACTIVE")} accent="success" />
+        <StatCard label="In collections" value={n("OVERDUE")} accent="error" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="mb-0 text-xl">{queue ? queue.label : "Pipeline"}</h2>
-            {queue ? <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{myItems.length} pending</span> : null}
+            {queue ? (
+              <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{myItems.length} pending</span>
+            ) : null}
           </div>
 
-          {queue ? (
-            myItems.length ? (
-              <ul className="divide-y divide-grey-200 rounded border border-line bg-white">
-                {myItems.map((a) => (
-                  <li key={a.id}>
-                    <Link href={hrefForStage(a)} className="flex items-center gap-4 px-4 py-3 transition hover:bg-grey-100">
-                      <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-full bg-navy-tint font-serif text-sm font-bold text-navy">
-                        {a.applicantName.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-ink">{a.applicantName}</span>
-                        <span className="block text-xs text-muted">{a.id} · {formatINR0(a.requestedAmount)} · risk {a.riskCategory}</span>
-                      </span>
-                      <StageBadge stage={a.stage} />
-                      <ArrowRight size={16} className="flex-shrink-0 text-muted" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="rounded border border-line bg-white p-8 text-center text-sm text-muted">
-                You&apos;re all caught up — nothing in your queue.
-              </div>
-            )
-          ) : (
+          {!queue ? (
             <div className="rounded border border-line bg-white p-6 text-sm text-muted">
-              Use the navigation to open the queues your role can act on.
+              Use the navigation to open the queues your role can act on, or go to the{" "}
+              <Link href="/staff/applications" className="font-semibold text-navy hover:underline">live application queues</Link>.
+            </div>
+          ) : queueQuery.isLoading ? (
+            <div className="h-40 animate-pulse rounded border border-line bg-white" />
+          ) : myItems.length ? (
+            <ul className="divide-y divide-grey-200 rounded border border-line bg-white">
+              {myItems.map((a) => (
+                <li key={a.id}>
+                  <Link href="/staff/applications" className="flex items-center gap-4 px-4 py-3 transition hover:bg-grey-100">
+                    <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-full bg-navy-tint font-serif text-sm font-bold text-navy">
+                      #{a.id}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-ink">Applicant #{a.applicantId}</span>
+                      <span className="block text-xs text-muted">
+                        App #{a.id} · {a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "amount pending"}
+                      </span>
+                    </span>
+                    <span className="flex-shrink-0 rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">
+                      {statusLabel(a.status)}
+                    </span>
+                    <ArrowRight size={16} className="flex-shrink-0 text-muted" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="rounded border border-line bg-white p-8 text-center text-sm text-muted">
+              You&apos;re all caught up — nothing in your queue.
             </div>
           )}
         </div>
@@ -103,25 +193,17 @@ export default function StaffDashboardPage() {
           <div className="rounded border border-line bg-white p-5 shadow-sm">
             <h3 className="mb-2 font-serif text-base text-navy">Quick links</h3>
             <ul className="text-sm">
+              <li><Link href="/staff/applications" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><ClipboardList size={15} /> Live application queues</Link></li>
               <li><Link href="/staff/kyc-approvals" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><ShieldCheck size={15} /> KYC approvals</Link></li>
-              <li><Link href="/staff/credit/queue" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><ClipboardList size={15} /> Credit queue</Link></li>
               <li><Link href="/staff/disbursement" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><Banknote size={15} /> Disbursement</Link></li>
               <li><Link href="/staff/accounting" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><Receipt size={15} /> Accounting</Link></li>
               <li><Link href="/staff/collections/buckets" className="-mx-2 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><PhoneCall size={15} /> Collections</Link></li>
             </ul>
           </div>
 
-          {showCollections && (
-            <div className="rounded border border-line bg-white p-5 shadow-sm">
-              <h3 className="mb-3 flex items-center gap-2 font-serif text-base text-navy"><Wallet size={16} /> Collections</h3>
-              <ul>
-                {collections.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between gap-2 text-sm">
-                    <Link href={`/staff/collections/${c.loanId}`} className="-mx-2 min-w-0 flex-1 truncate rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">{c.applicantName}</Link>
-                    <DpdBadge dpd={c.daysPastDue} />
-                  </li>
-                ))}
-              </ul>
+          {counts.isError && (
+            <div className="rounded border border-warning-100 bg-warning-50 p-4 text-xs text-warning-800">
+              Couldn&apos;t load live counts — check that you&apos;re signed in to the staff console.
             </div>
           )}
         </aside>

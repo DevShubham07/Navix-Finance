@@ -1,26 +1,30 @@
 package com.navix.loan.service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 
 /**
- * Pure money-math for the single-repayment loan product.
+ * Pure money-math for the salary-linked single-repayment loan product.
  *
- * <p>All amounts are {@link BigDecimal}. Pricing is flat across risk
- * categories. Worked example for a principal of 10,000:
+ * <p><b>Money is integer paise everywhere</b> (1 rupee = 100 paise). Every amount in and
+ * out of this class is a {@code long} number of paise; there is no floating-point money.
+ * Rounding to a whole paisa is always {@link RoundingMode#HALF_UP}. This class is the
+ * backend source of truth for loan economics and mirrors
+ * {@code frontend/src/lib/calc/loan-math.ts}.
+ *
+ * <p>Pricing is flat across risk categories. Worked example for a principal of ₹10,000
+ * (= 1_000_000 paise):
  * <pre>
- *   processingFee  = 10000 * 0.10        = 1000.00
- *   gst            = 1000  * 0.18        =  180.00
- *   netDisbursed   = 10000 - 1000 - 180  = 8820.00
- *   interest (30d) = 10000 * 0.01 * 30   = 3000.00
- *   totalRepayable = 10000 + 3000        = 13000.00   (principal + interest)
+ *   processingFee  = 1_000_000 * 0.10          =   100_000   (₹1,000)
+ *   gst            =   100_000 * 0.18           =    18_000   (₹180)
+ *   netDisbursed   = 1_000_000 - 100_000 - 18_000 = 882_000   (₹8,820)
+ *   interest (30d) = 1_000_000 * 0.01 * 30       =   300_000   (₹3,000)
+ *   totalRepayable = 1_000_000 + 300_000         = 1_300_000   (₹13,000)
  * </pre>
- * Note: processing fee + GST are taken up front (reduce net disbursed); they
- * are not part of {@code totalRepayable}, which is principal + accrued interest.
- *
- * TODO: confirm rounding mode (HALF_UP to 2dp expected) and finalize whether
- * fee/GST ever feed into repayable; implement bodies below.
+ * Processing fee + GST are taken up front (they reduce {@code netDisbursed}); they are
+ * <i>not</i> part of {@code totalRepayable}, which is principal + accrued interest.
  */
 @Service
 public class LoanMath {
@@ -34,81 +38,158 @@ public class LoanMath {
     /** Interest accrued per day: 1% of principal. */
     public static final BigDecimal DAILY_INTEREST_RATE = new BigDecimal("0.01");
 
-    /** Late penalty per day past due: 2% of outstanding. */
+    /** Late penalty per day past due: 2% of principal. */
     public static final BigDecimal LATE_PENALTY_RATE = new BigDecimal("0.02");
 
     /** Late penalty accrues for at most this many days, then collections. */
     public static final int LATE_PENALTY_CAP_DAYS = 30;
 
-    /**
-     * Up-front processing fee = principal * {@link #PROCESSING_FEE_RATE}.
-     *
-     * @param principal sanctioned principal
-     * @return processing fee
-     */
-    public BigDecimal processingFee(BigDecimal principal) {
-        // TODO: implement: principal * PROCESSING_FEE_RATE (HALF_UP, 2dp).
-        throw new UnsupportedOperationException("LoanMath.processingFee not implemented yet");
+    /** Eligible loan limit as a fraction of monthly salary: a firm 25% cap. */
+    public static final BigDecimal LIMIT_PCT_OF_SALARY = new BigDecimal("0.25");
+
+    /** Eligible limit is rounded down to the nearest ₹100 (= 10,000 paise). */
+    public static final long LIMIT_ROUNDING_PAISE = 10_000L;
+
+    /** Maximum loan term: the due date must fall within this many days of disbursement. */
+    public static final int MAX_TERM_DAYS = 40;
+
+    /** Fixed loan term: 30-day single-repayment bullet loan, due = disbursed + 30d (dfd.md D10). */
+    public static final int TERM_DAYS = 30;
+
+    /** Grace after the due date before any penalty accrues (paying the day after salary is free). */
+    public static final int SALARY_GRACE_DAYS = 1;
+
+    /** Floor on a sanctioned advance: ₹1,000 = 100,000 paise. */
+    public static final long MIN_LOAN_PAISE = 100_000L;
+
+    /** Up-front processing fee = round(principal × 10%). */
+    public long processingFeePaise(long principalPaise) {
+        return roundPaise(BigDecimal.valueOf(principalPaise).multiply(PROCESSING_FEE_RATE));
+    }
+
+    /** GST on the processing fee = round(fee × 18%). */
+    public long gstPaise(long principalPaise) {
+        return roundPaise(BigDecimal.valueOf(processingFeePaise(principalPaise)).multiply(GST_RATE));
+    }
+
+    /** Net amount credited to the borrower = principal − fee − GST. */
+    public long netDisbursedPaise(long principalPaise) {
+        return principalPaise - processingFeePaise(principalPaise) - gstPaise(principalPaise);
+    }
+
+    /** Interest accrued over {@code days} = round(principal × 1%/day × days). Negative days clamp to 0. */
+    public long interestPaise(long principalPaise, int days) {
+        int d = Math.max(0, days);
+        return roundPaise(BigDecimal.valueOf(principalPaise)
+                .multiply(DAILY_INTEREST_RATE)
+                .multiply(BigDecimal.valueOf(d)));
+    }
+
+    /** Total repayable after {@code days} held = principal + accrued interest (fee/GST excluded). */
+    public long totalRepayablePaise(long principalPaise, int days) {
+        return principalPaise + interestPaise(principalPaise, days);
     }
 
     /**
-     * GST on the processing fee = processingFee * {@link #GST_RATE}.
-     *
-     * @param principal sanctioned principal
-     * @return GST amount on the fee
+     * Late penalty for {@code daysLate} = round(principal × 2%/day × min(daysLate, 30)).
+     * Non-positive {@code daysLate} yields 0.
      */
-    public BigDecimal gst(BigDecimal principal) {
-        // TODO: implement: processingFee(principal) * GST_RATE (HALF_UP, 2dp).
-        throw new UnsupportedOperationException("LoanMath.gst not implemented yet");
+    public long latePenaltyPaise(long principalPaise, int daysLate) {
+        int cappedDays = Math.min(Math.max(0, daysLate), LATE_PENALTY_CAP_DAYS);
+        return roundPaise(BigDecimal.valueOf(principalPaise)
+                .multiply(LATE_PENALTY_RATE)
+                .multiply(BigDecimal.valueOf(cappedDays)));
     }
 
     /**
-     * Net amount credited = principal - processingFee - gst.
+     * Eligible loan limit = 25% of monthly salary, floored to the nearest ₹100.
      *
-     * @param principal sanctioned principal
-     * @return net disbursed amount
+     * @param monthlySalaryPaise gross monthly salary in paise
+     * @return the sanctionable limit in paise (a multiple of {@link #LIMIT_ROUNDING_PAISE})
      */
-    public BigDecimal netDisbursed(BigDecimal principal) {
-        // TODO: implement: principal - processingFee(principal) - gst(principal).
-        throw new UnsupportedOperationException("LoanMath.netDisbursed not implemented yet");
+    public long eligibleLimitPaise(long monthlySalaryPaise) {
+        long quarter = BigDecimal.valueOf(monthlySalaryPaise)
+                .multiply(LIMIT_PCT_OF_SALARY)
+                .setScale(0, RoundingMode.FLOOR)
+                .longValueExact();
+        return Math.floorDiv(quarter, LIMIT_ROUNDING_PAISE) * LIMIT_ROUNDING_PAISE;
     }
 
     /**
-     * Interest for a number of days = principal * {@link #DAILY_INTEREST_RATE} * days.
+     * Canonical compute-on-read outstanding balance as of some day.
      *
-     * @param principal sanctioned principal
-     * @param days      number of days interest accrues
-     * @return accrued interest
+     * <p>{@code outstanding = principal + interest(daysHeld) + penalty(daysLate) − payments}.
+     * Prepayment falls out naturally: pass the actual days held so interest is charged only to
+     * the day paid. {@code daysLate} is 0 until the due date (the 1-day grace is applied by the
+     * caller, e.g. paying the day after salary passes {@code daysLate = 0}).
+     *
+     * @param principalPaise principal in paise
+     * @param daysHeld       whole days from disbursement to the as-of date (interest accrues)
+     * @param daysLate       whole days past the due date after grace (penalty accrues, capped)
+     * @param paymentsPaise  sum of verified payments already made, in paise
+     * @return remaining amount owed in paise (never negative)
      */
-    public BigDecimal interestForDays(BigDecimal principal, int days) {
-        // TODO: implement: principal * DAILY_INTEREST_RATE * days (HALF_UP, 2dp).
-        throw new UnsupportedOperationException("LoanMath.interestForDays not implemented yet");
+    public long outstandingPaise(long principalPaise, int daysHeld, int daysLate, long paymentsPaise) {
+        long gross = totalRepayablePaise(principalPaise, daysHeld)
+                + latePenaltyPaise(principalPaise, daysLate);
+        return Math.max(0L, gross - paymentsPaise);
     }
 
     /**
-     * Total repayable on the due date = principal + interest for the loan term.
-     *
-     * @param principal sanctioned principal
-     * @param days      number of days from disbursement to repayment
-     * @return total amount repayable
+     * Whole days a loan is past due as of {@code asOf} (0 before/on the due date).
+     * Bucketing into DPD buckets lives in the collections module.
      */
-    public BigDecimal totalRepayable(BigDecimal principal, int days) {
-        // TODO: implement: principal + interestForDays(principal, days).
-        throw new UnsupportedOperationException("LoanMath.totalRepayable not implemented yet");
+    public int daysPastDue(LocalDate dueDate, LocalDate asOf) {
+        long days = dueDate.until(asOf, java.time.temporal.ChronoUnit.DAYS);
+        return (int) Math.max(0L, days);
     }
 
     /**
-     * Determine the single-repayment due date: the borrower's next salary
-     * credit, which must be the last salary credit falling within ~40 days
-     * of disbursement.
+     * Single-repayment due date: the <b>latest</b> salary-credit date that is strictly after
+     * disbursement and falls within {@link #MAX_TERM_DAYS} days of it — i.e. the last salary the
+     * borrower receives inside the 40-day window (maximising tenure up to 40 days).
+     *
+     * <p>The salary day is clamped to each month's length (e.g. day 31 → 30 Apr, 28/29 Feb).
+     * Within any 40-day window there is always at least one monthly salary date.
      *
      * @param disbursedOn     date of disbursement
-     * @param salaryCreditDay day of month salary is credited (1-31)
-     * @return computed due date
+     * @param salaryCreditDay day of month salary is credited (1–31)
+     * @return the computed due date
      */
     public LocalDate dueDateFromSalary(LocalDate disbursedOn, int salaryCreditDay) {
-        // TODO: implement: find the salary-credit date that is the last one
-        // within ~40 days of disbursedOn; handle month-length edge cases.
-        throw new UnsupportedOperationException("LoanMath.dueDateFromSalary not implemented yet");
+        LocalDate windowEnd = disbursedOn.plusDays(MAX_TERM_DAYS);
+        LocalDate best = null;
+        // Walk salary dates from the disbursement month through the window-end month.
+        for (LocalDate month = disbursedOn.withDayOfMonth(1);
+                !month.isAfter(windowEnd.withDayOfMonth(1));
+                month = month.plusMonths(1)) {
+            LocalDate salaryDate = salaryDateInMonth(month, salaryCreditDay);
+            if (salaryDate.isAfter(disbursedOn) && !salaryDate.isAfter(windowEnd)) {
+                if (best == null || salaryDate.isAfter(best)) {
+                    best = salaryDate;
+                }
+            }
+        }
+        // Fallback (should not happen for a monthly salary, but keep it total): the first salary
+        // strictly after disbursement, even if it exceeds the window.
+        if (best == null) {
+            LocalDate salaryThisMonth = salaryDateInMonth(disbursedOn, salaryCreditDay);
+            best = salaryThisMonth.isAfter(disbursedOn)
+                    ? salaryThisMonth
+                    : salaryDateInMonth(disbursedOn.plusMonths(1), salaryCreditDay);
+        }
+        return best;
+    }
+
+    /** Clamp a salary day-of-month to a valid date within the month of {@code anyDayInMonth}. */
+    private static LocalDate salaryDateInMonth(LocalDate anyDayInMonth, int salaryCreditDay) {
+        int lastDay = anyDayInMonth.lengthOfMonth();
+        int day = Math.min(Math.max(1, salaryCreditDay), lastDay);
+        return anyDayInMonth.withDayOfMonth(day);
+    }
+
+    /** Round fractional paise to a whole paisa, HALF_UP. */
+    private static long roundPaise(BigDecimal paise) {
+        return paise.setScale(0, RoundingMode.HALF_UP).longValueExact();
     }
 }

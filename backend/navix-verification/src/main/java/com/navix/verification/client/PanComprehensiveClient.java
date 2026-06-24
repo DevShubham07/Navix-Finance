@@ -21,9 +21,19 @@ public class PanComprehensiveClient {
 
     /**
      * Verify a PAN and pull comprehensive identity details.
-     * TODO: POST the PAN to the Fintrix pan-comprehensive endpoint and map the envelope to PanResponse.
+     *
+     * <p>DEMO MOCK: returns a deterministic VALID PAN response (name-bearing, Aadhaar linked)
+     * without any network call, pending live Fintrix credentials. The injected {@code fintrix}
+     * RestClient is intentionally left unused for the demo.
      */
     public PanResponse verify(String pan) {
-        throw new UnsupportedOperationException("TODO: call Fintrix PAN comprehensive endpoint");
+        return new PanResponse(
+                "VALID",
+                "RAVI KUMAR",
+                "1990-05-14",
+                "M",
+                Boolean.TRUE,
+                "XXXXXXXX1234",
+                "12 MG ROAD, BENGALURU, KARNATAKA 560001");
     }
 }

@@ -37,7 +37,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en-IN" className={`${inter.variable} ${sourceSerif.variable}`}>
-      <body>
+      {/* suppressHydrationWarning: browser extensions (screenshot/zoom tools, etc.)
+          mutate <body> attributes — e.g. style="zoom:1" — before React hydrates,
+          producing a benign server/client attribute mismatch. This silences only
+          that top-level attribute diff; it does not affect children. */}
+      <body suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

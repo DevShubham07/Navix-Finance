@@ -1,17 +1,19 @@
 package com.navix.loan.repository;
 
+import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.LoanApplication;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-/**
- * Persistence for {@link LoanApplication}.
- *
- * TODO: add status/queue finders for the maker-checker review screens.
- */
+/** Persistence for {@link LoanApplication} — the application aggregate. */
 @Repository
 public interface LoanApplicationRepository extends JpaRepository<LoanApplication, Long> {
 
     List<LoanApplication> findByApplicantId(Long applicantId);
+
+    /** Drives the staff stage queues (e.g. all KYC_PENDING, all CREDIT_HEAD_PENDING). */
+    List<LoanApplication> findByStatusOrderByIdAsc(ApplicationStatus status);
+
+    List<LoanApplication> findByAssignedExecutiveIdAndStatusOrderByIdAsc(Long assignedExecutiveId, ApplicationStatus status);
 }

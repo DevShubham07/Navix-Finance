@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle } from "lucide-react";
 import { InfoRow, SummarySection } from "@/components/borrower/summary";
 import { Button } from "@/components/ui";
 import { useBorrowerJourney } from "@/lib/mock/borrower";
@@ -9,20 +10,36 @@ import { signInBorrower } from "@/lib/mock/session";
 import { useMounted } from "@/hooks/use-mounted";
 import { eligibleLimit } from "@/lib/calc/loan-math";
 import { formatINR0 } from "@/lib/utils";
+import { submitOnboarding } from "@/lib/api/live-journey";
+import { ApplicationApiError } from "@/lib/api/applications";
 
 export default function SignupReviewPage() {
   const router = useRouter();
   const mounted = useMounted();
-  const { applicant, submitForReview } = useBorrowerJourney();
+  const { applicant } = useBorrowerJourney();
   const [consent, setConsent] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string>();
 
-  const submit = () => {
+  const submit = async () => {
     if (!consent) return;
     setSubmitting(true);
-    submitForReview();
+    setError(undefined);
     signInBorrower(applicant.fullName || "Applicant", applicant.mobile || "98765 43210");
-    router.push("/kyc");
+    try {
+      // Persist to the real backend: create DRAFT -> save KYC profile -> submit KYC.
+      await submitOnboarding(applicant);
+      router.push("/kyc");
+    } catch (e) {
+      setError(
+        e instanceof ApplicationApiError
+          ? `${e.message} (${e.code})`
+          : e instanceof Error
+            ? e.message
+            : "Something went wrong submitting your application.",
+      );
+      setSubmitting(false);
+    }
   };
 
   if (!mounted) {
@@ -84,6 +101,12 @@ export default function SignupReviewPage() {
           credit check.
         </span>
       </label>
+
+      {error && (
+        <div className="mt-4 flex items-start gap-2 rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
+          <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" /> {error}
+        </div>
+      )}
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <a href="/signup/address-proof" className="btn btn-outline btn-sm order-2 sm:order-1">Back</a>

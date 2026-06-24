@@ -20,9 +20,18 @@ public class AddressVerificationClient {
 
     /**
      * Resolve a lat/lng pair to an address and confirm it is within India.
-     * TODO: call the Fintrix address/geo verification endpoint.
+     *
+     * <p>DEMO MOCK: returns a deterministic within-India address without any network call,
+     * pending live Fintrix credentials. The injected {@code fintrix} RestClient is intentionally
+     * left unused for the demo.
      */
     public AddressVerificationResponse verify(double lat, double lng) {
-        throw new UnsupportedOperationException("TODO: call Fintrix address verification endpoint");
+        return new AddressVerificationResponse(
+                "12 MG ROAD, BENGALURU",
+                "560001",
+                "BENGALURU URBAN",
+                "KARNATAKA",
+                "INDIA",
+                Boolean.TRUE);
     }
 }

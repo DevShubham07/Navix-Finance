@@ -28,9 +28,23 @@ export default function LoginPage() {
     setStage("verify");
   };
 
-  const verify = (code = otp) => {
+  const verify = async (code = otp) => {
     if (code !== DEMO_OTP) { setError("Incorrect code. For this demo, use 123456."); return; }
-    signInBorrower(applicant.fullName || "Aarav Sharma", mobile || applicant.mobile || "98765 43210");
+    const name = applicant.fullName || "Aarav Sharma";
+    const mob = mobile || applicant.mobile || "98765 43210";
+    // Mock session (localStorage) keeps the existing demo flow working.
+    signInBorrower(name, mob);
+    try {
+      // Live session: httpOnly navix_borrower cookie used by the BFF proxies.
+      await fetch("/api/auth/borrower/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile: mob, otp: code, name }),
+      });
+    } catch {
+      // Non-fatal: the dashboard resolves the live application on its own.
+    }
+    // The dashboard reflects the live application state (start / in-progress / active).
     router.push("/dashboard");
   };
 

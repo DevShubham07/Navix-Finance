@@ -10,7 +10,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -35,8 +34,9 @@ public class Settlement {
     @Column(name = "collection_case_id", nullable = false)
     private UUID collectionCaseId;
 
+    /** Agreed settlement amount, in paise. */
     @Column(name = "settlement_amount", nullable = false)
-    private BigDecimal settlementAmount;
+    private Long settlementAmount;
 
     @Column(name = "proposed_by", nullable = false)
     private UUID proposedBy;

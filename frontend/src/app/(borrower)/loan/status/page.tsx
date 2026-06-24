@@ -2,112 +2,134 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Sparkles, XCircle, ArrowRight, Loader2, Phone, UserPlus } from "lucide-react";
+import {
+  Sparkles, XCircle, ArrowRight, Loader2, RefreshCw, Phone, ShieldCheck, FileClock,
+} from "lucide-react";
 import { LoanStatusTracker } from "@/components/borrower/loan-status-tracker";
-import { useBorrowerJourney, type RiskCategory } from "@/lib/mock/borrower";
-import { useMounted } from "@/hooks/use-mounted";
-import { formatINR0 } from "@/lib/utils";
+import {
+  useLiveApplication,
+  useLiveEvents,
+  appStatusToStage,
+  canChooseAmount,
+  isTerminalBad,
+} from "@/lib/api/live-journey";
+import { statusLabel } from "@/lib/api/applications";
+import { formatDate } from "@/lib/utils";
 import { BRAND } from "@/lib/brand";
 
-const RISK_LABEL: Record<RiskCategory, string> = {
-  A: "Category A · low risk",
-  B: "Category B · moderate-low risk",
-  C: "Category C · moderate-high risk",
-  D: "Category D · high risk",
-};
-
+/**
+ * Live application status — driven entirely by the real backend state machine.
+ * The credit/disbursement decisions are made by staff (in /staff/applications);
+ * this page polls and reflects the application as it walks to ACTIVE.
+ */
 export default function LoanStatusPage() {
-  const mounted = useMounted();
-  const j = useBorrowerJourney();
-  const [deciding, setDeciding] = React.useState(false);
+  const { appId, app, isLoading, refetch } = useLiveApplication();
+  const eventsQuery = useLiveEvents(appId, app?.status);
+  const stage = appStatusToStage(app);
 
-  if (!mounted) {
-    return <div className="container max-w-content py-10"><div className="h-72 rounded border border-line bg-white" /></div>;
+  // No live application started in this browser yet.
+  if (appId == null) {
+    return (
+      <div className="container max-w-content py-10">
+        <div className="rounded border border-line bg-white p-8 text-center shadow-sm">
+          <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-navy-tint text-navy">
+            <FileClock size={26} />
+          </span>
+          <h1 className="text-2xl">No application yet</h1>
+          <p className="mb-5 text-muted">Start your application to track it here in real time.</p>
+          <Link href="/signup/pan" className="btn btn-gold">Start application <ArrowRight size={16} /></Link>
+        </div>
+      </div>
+    );
   }
 
-  const { status, riskCategory, coApplicantRequired, applicant, declineReason } = j;
-  const inReview = status === "APPLIED" || status === "UNDER_REVIEW";
-  const needsCoApplicant = coApplicantRequired && !applicant.coApplicant;
-
-  const decide = () => {
-    setDeciding(true);
-    setTimeout(() => {
-      if (riskCategory === "D") {
-        j.decline("Income and bureau profile do not meet current credit policy.");
-      } else {
-        j.approve();
-      }
-      setDeciding(false);
-    }, 1500);
-  };
+  const active = app?.status === "ACTIVE";
+  const declined = isTerminalBad(app);
+  const choose = canChooseAmount(app);
+  const processing = !!app && !active && !declined && !choose;
+  const events = eventsQuery.data ?? [];
+  const declineNote = [...events].reverse().find((e) => e.notes)?.notes;
 
   return (
     <div className="container max-w-content py-10">
-      <h1 className="mb-1">Application status</h1>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h1 className="mb-0">Application status</h1>
+        <button
+          onClick={refetch}
+          className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
+        >
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </div>
       <p className="mb-7 text-muted">
-        {applicant.fullName ? `${applicant.fullName} · ` : ""}
-        {status === "DECLINED" ? "Decision complete" : RISK_LABEL[riskCategory]}
+        {app ? (
+          <>
+            Application #{app.id} ·{" "}
+            <span className="font-semibold text-ink">{statusLabel(app.status)}</span>
+          </>
+        ) : (
+          "Loading your application…"
+        )}
       </p>
 
       <div className="grid gap-8 lg:grid-cols-[1fr_minmax(0,360px)]">
         <div className="rounded border border-line bg-white p-6 shadow-sm">
-          <LoanStatusTracker status={status} />
+          {isLoading && !app ? (
+            <div className="h-64 animate-pulse rounded bg-grey-100" />
+          ) : (
+            <LoanStatusTracker status={stage} />
+          )}
         </div>
 
-        <div>
-          {inReview && (
-            <div className="rounded border border-line bg-white p-6 text-center shadow-sm">
-              <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-navy-tint text-navy">
-                {deciding ? <Loader2 size={26} className="animate-spin" /> : <Sparkles size={26} />}
-              </span>
-              <h3 className="font-serif text-lg text-navy">{deciding ? "Running checks…" : "Under review"}</h3>
-              <p className="text-sm text-muted">
-                {deciding
-                  ? "Verifying income, bureau and policy rules."
-                  : "Our credit team is reviewing your application."}
-              </p>
-              {!deciding && (
-                <button onClick={decide} className="btn btn-gold btn-block mt-4">
-                  Simulate credit decision
-                </button>
-              )}
-            </div>
-          )}
-
-          {status === "APPROVED" && (
+        <div className="flex flex-col gap-4">
+          {choose && (
             <div className="rounded border border-success-100 bg-success-50/60 p-6 text-center shadow-sm">
               <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-success-50 text-success-600">
                 <Sparkles size={26} />
               </span>
-              <h3 className="font-serif text-lg text-navy">You&apos;re approved</h3>
-              <p className="text-sm text-muted">Sanctioned up to</p>
-              <p className="mb-4 font-serif text-3xl font-bold text-navy">{formatINR0(j.sanctionedLimit())}</p>
-              {needsCoApplicant ? (
-                <>
-                  <p className="mb-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-warning-700">
-                    <UserPlus size={15} /> A co-applicant is required before disbursal
-                  </p>
-                  <Link href="/signup/co-applicant" className="btn btn-gold btn-block">
-                    Add co-applicant <ArrowRight size={16} />
-                  </Link>
-                </>
-              ) : (
-                <Link href="/loan/apply" className="btn btn-gold btn-block">
-                  Choose your amount <ArrowRight size={16} />
-                </Link>
-              )}
+              <h3 className="font-serif text-lg text-navy">KYC approved</h3>
+              <p className="mb-4 text-sm text-muted">Choose how much you&apos;d like to draw to continue.</p>
+              <Link href="/loan/apply" className="btn btn-gold btn-block">
+                Choose your amount <ArrowRight size={16} />
+              </Link>
             </div>
           )}
 
-          {status === "DECLINED" && (
+          {processing && (
+            <div className="rounded border border-line bg-white p-6 text-center shadow-sm">
+              <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-navy-tint text-navy">
+                <Loader2 size={26} className="animate-spin" />
+              </span>
+              <h3 className="font-serif text-lg text-navy">Under review</h3>
+              <p className="text-sm text-muted">
+                Our team is processing your application. This page updates automatically — currently{" "}
+                <strong className="text-ink">{app && statusLabel(app.status)}</strong>.
+              </p>
+            </div>
+          )}
+
+          {active && (
+            <div className="rounded border border-success-100 bg-success-50/60 p-6 text-center shadow-sm">
+              <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-success-50 text-success-600">
+                <ShieldCheck size={26} />
+              </span>
+              <h3 className="font-serif text-lg text-navy">Your advance is active</h3>
+              <p className="mb-4 text-sm text-muted">Manage everything from your dashboard.</p>
+              <Link href="/dashboard" className="btn btn-gold btn-block">
+                Go to dashboard <ArrowRight size={16} />
+              </Link>
+            </div>
+          )}
+
+          {declined && (
             <div className="rounded border border-error-100 bg-error-50/50 p-6 text-center shadow-sm">
               <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-error-50 text-error-600">
                 <XCircle size={26} />
               </span>
               <h3 className="font-serif text-lg text-navy">Not approved this time</h3>
-              <p className="text-sm text-muted">{declineReason ?? "Your application did not meet current credit policy."}</p>
+              <p className="text-sm text-muted">{declineNote ?? "Your application did not meet current credit policy."}</p>
               <p className="mt-3 text-sm text-muted">
-                You can reapply after 90 days. Questions?{" "}
+                Questions?{" "}
                 <a href={BRAND.phoneHref} className="inline-flex items-center gap-1 font-semibold text-navy">
                   <Phone size={13} /> {BRAND.phone}
                 </a>
@@ -115,24 +137,25 @@ export default function LoanStatusPage() {
             </div>
           )}
 
-          {(status === "DOCS_SIGNED" || status === "BANK_VERIFIED" || status === "DISBURSING") && (
-            <div className="rounded border border-line bg-white p-6 text-center shadow-sm">
-              <h3 className="font-serif text-lg text-navy">Almost there</h3>
-              <p className="mb-4 text-sm text-muted">Finish the remaining steps to receive your funds.</p>
-              <Link href={status === "DOCS_SIGNED" ? "/loan/bank-verify" : "/loan/bank-verify"} className="btn btn-gold btn-block">
-                Continue <ArrowRight size={16} />
-              </Link>
-            </div>
-          )}
-
-          {(status === "ACTIVE" || status === "REPAID" || status === "OVERDUE") && (
-            <div className="rounded border border-line bg-white p-6 text-center shadow-sm">
-              <h3 className="font-serif text-lg text-navy">Loan {status === "REPAID" ? "closed" : "active"}</h3>
-              <p className="mb-4 text-sm text-muted">Manage everything from your dashboard.</p>
-              <Link href="/dashboard" className="btn btn-gold btn-block">
-                Go to dashboard <ArrowRight size={16} />
-              </Link>
-            </div>
+          {events.length > 0 && (
+            <details className="rounded border border-line bg-white p-4 shadow-sm">
+              <summary className="cursor-pointer text-sm font-semibold text-navy">
+                Audit trail ({events.length})
+              </summary>
+              <ul className="mt-2 space-y-1.5 text-xs text-muted">
+                {events.map((e) => (
+                  <li key={e.id} className="flex items-center justify-between gap-2 border-b border-line pb-1.5 last:border-0">
+                    <span className="text-ink">
+                      {e.action ?? "transition"}{" "}
+                      <span className="text-muted">
+                        {e.fromStatus ? `${e.fromStatus} → ` : ""}{e.toStatus ?? ""}
+                      </span>
+                    </span>
+                    <span className="flex-shrink-0">{e.at ? formatDate(e.at) : ""}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </div>
       </div>

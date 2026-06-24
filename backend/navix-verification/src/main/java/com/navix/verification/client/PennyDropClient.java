@@ -21,9 +21,17 @@ public class PennyDropClient {
 
     /**
      * Penny-drop verify an account/IFSC and return the registered account holder name.
-     * TODO: call the Fintrix penny-drop endpoint; caller compares fullName against KYC name.
+     *
+     * <p>DEMO MOCK: returns a deterministic SUCCESS penny-drop (account exists, name resolved)
+     * without any network call, pending live Fintrix credentials. The injected {@code fintrix}
+     * RestClient is intentionally left unused for the demo.
      */
     public PennyDropResponse verify(String accountNumber, String ifsc) {
-        throw new UnsupportedOperationException("TODO: call Fintrix penny-drop endpoint");
+        return new PennyDropResponse(
+                "SUCCESS",
+                Boolean.TRUE,
+                "RAVI KUMAR",
+                new com.navix.verification.dto.FintrixDtos.IfscDetails(
+                        "HDFC BANK", "MG ROAD", "BENGALURU", "KARNATAKA"));
     }
 }

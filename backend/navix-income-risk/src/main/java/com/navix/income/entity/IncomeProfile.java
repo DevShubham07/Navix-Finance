@@ -6,7 +6,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.math.BigDecimal;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -34,9 +33,9 @@ public class IncomeProfile {
     @Column(name = "applicant_id", nullable = false)
     private Long applicantId;
 
-    /** Verified gross monthly salary. */
-    @Column(name = "monthly_salary", nullable = false, precision = 14, scale = 2)
-    private BigDecimal monthlySalary;
+    /** Verified gross monthly salary, in paise. */
+    @Column(name = "monthly_salary", nullable = false)
+    private Long monthlySalary;
 
     /** Day of month (1-31) on which salary is typically credited. */
     @Column(name = "salary_credit_day")

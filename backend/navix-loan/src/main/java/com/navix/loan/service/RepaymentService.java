@@ -1,37 +1,118 @@
 package com.navix.loan.service;
 
+import com.navix.common.exception.BusinessException;
+import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.loan.domain.LoanStatus;
+import com.navix.loan.domain.PaymentMethod;
+import com.navix.loan.domain.PaymentStatus;
+import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.Payment;
+import com.navix.loan.repository.LoanRepository;
+import com.navix.loan.repository.PaymentRepository;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Records and verifies repayments against a loan.
+ * Records and verifies repayments against a loan (integer paise).
  *
- * <p>Rules: prepayment is allowed anytime (interest only to the day of
- * repayment, no penalty); partial payments are allowed and the loan closes when
- * the outstanding balance reaches zero. A "paid" claim requires proof.
- *
- * TODO: implement persistence + Loan.outstanding recomputation + status
- * transition to REPAID / CLOSED.
+ * <p>Allocation is simple at the ledger level: the stored {@code loan.outstanding} is
+ * {@code totalRepayable − Σ verified payments}. Proof is required before a payment counts, so only
+ * VERIFIED payments reduce the balance. Partial payments are allowed; the loan CLOSES at zero.
+ * The authoritative, prepayment-aware figure is {@link #outstandingAsOf} (compute-on-read).
  */
 @Service
+@RequiredArgsConstructor
 public class RepaymentService {
 
-    /** Record a (possibly partial) repayment; returns the persisted Payment. */
-    public Payment recordPayment(Long loanId, Payment payment) {
-        // TODO: persist payment, recompute outstanding, transition loan status.
-        throw new UnsupportedOperationException("RepaymentService.recordPayment not implemented yet");
+    private final PaymentRepository paymentRepository;
+    private final LoanRepository loanRepository;
+    private final LoanMath loanMath;
+
+    /** Record a (possibly partial) repayment. Idempotent on {@code txnRef} per loan. */
+    @Transactional
+    public Payment recordPayment(Long loanId, long amountPaise, PaymentMethod method,
+                                 String txnRef, String proofUrl, LocalDate paidOn) {
+        Loan loan = requireLoan(loanId);
+        if (loan.getStatus() == LoanStatus.CLOSED || loan.getStatus() == LoanStatus.REPAID) {
+            throw new BusinessException("LOAN_SETTLED", "Loan is already settled");
+        }
+        if (amountPaise <= 0) {
+            throw new BusinessException("INVALID_AMOUNT", "Payment amount must be positive");
+        }
+        if (txnRef != null && !txnRef.isBlank()) {
+            var existing = paymentRepository.findFirstByLoanIdAndTxnRef(loanId, txnRef);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
+        }
+        long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
+        long remaining = Math.max(0L, loan.getTotalRepayable() - verified);
+
+        Payment payment = new Payment();
+        payment.setLoanId(loanId);
+        payment.setAmount(amountPaise);
+        payment.setMethod(method);
+        payment.setStatus(PaymentStatus.PENDING_VERIFICATION);
+        payment.setTxnRef(txnRef);
+        payment.setProofUrl(proofUrl);
+        payment.setPaidOn(paidOn != null ? paidOn : LocalDate.now());
+        payment.setPartial(amountPaise < remaining);
+        return paymentRepository.save(payment);
     }
 
-    /** Mark a repayment VERIFIED once proof is confirmed. */
+    /** Confirm proof for a payment; recomputes the loan balance and closes it at zero. */
+    @Transactional
     public Payment verifyPayment(Long paymentId) {
-        // TODO: set status VERIFIED and recompute outstanding.
-        throw new UnsupportedOperationException("RepaymentService.verifyPayment not implemented yet");
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment", String.valueOf(paymentId)));
+        if (payment.getStatus() != PaymentStatus.VERIFIED) {
+            payment.setStatus(PaymentStatus.VERIFIED);
+            paymentRepository.save(payment);
+        }
+        recomputeOutstanding(payment.getLoanId());
+        return payment;
     }
 
-    /** List all repayments recorded against a loan. */
+    @Transactional(readOnly = true)
     public List<Payment> listPayments(Long loanId) {
-        // TODO: return payments for the loan.
-        throw new UnsupportedOperationException("RepaymentService.listPayments not implemented yet");
+        return paymentRepository.findByLoanId(loanId);
+    }
+
+    /**
+     * Authoritative outstanding balance at a date: principal + interest accrued to {@code asOf}
+     * (capped at the scheduled tenure) + late penalty past the 1-day grace − verified payments.
+     * Prepayment falls out naturally (less interest for fewer days held).
+     */
+    @Transactional(readOnly = true)
+    public long outstandingAsOf(Long loanId, LocalDate asOf) {
+        Loan loan = requireLoan(loanId);
+        LocalDate at = asOf != null ? asOf : LocalDate.now();
+        int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
+        int daysToAsOf = (int) Math.max(0L, ChronoUnit.DAYS.between(loan.getDisbursedOn(), at));
+        int interestDays = Math.min(daysToAsOf, tenureDays);
+        int rawDpd = loanMath.daysPastDue(loan.getDueDate(), at);
+        int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
+        long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
+        return loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
+    }
+
+    private void recomputeOutstanding(Long loanId) {
+        Loan loan = requireLoan(loanId);
+        long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
+        long outstanding = Math.max(0L, loan.getTotalRepayable() - verified);
+        loan.setOutstanding(outstanding);
+        if (outstanding == 0L) {
+            loan.setStatus(LoanStatus.CLOSED);
+        }
+        loanRepository.save(loan);
+    }
+
+    private Loan requireLoan(Long loanId) {
+        return loanRepository.findById(loanId)
+                .orElseThrow(() -> new ResourceNotFoundException("Loan", String.valueOf(loanId)));
     }
 }

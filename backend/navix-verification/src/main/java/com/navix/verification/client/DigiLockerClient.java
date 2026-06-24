@@ -23,43 +23,70 @@ public class DigiLockerClient {
         this.digiLocker = digiLocker;
     }
 
+    // DEMO MOCKS: every method below returns a deterministic canned result without any network
+    // call, pending live DigiLocker partner credentials. The injected {@code digiLocker}
+    // RestClient is intentionally left unused for the demo.
+
     /**
      * Start a DigiLocker consent session; returns the redirect URL + a clientId handle.
-     * TODO: POST redirectUrl/expiryMinutes/signupFlow to the DigiLocker initialize endpoint.
+     *
+     * <p>DEMO MOCK: returns a fixed clientId + consent URL in INITIATED state.
      */
     public InitializeResponse initialize(String redirectUrl, int expiryMinutes, boolean signupFlow) {
-        throw new UnsupportedOperationException("TODO: call DigiLocker initialize endpoint");
+        return new InitializeResponse(
+                "DL-DEMO-CLIENT-001",
+                "https://digilocker.demo/consent/DL-DEMO-CLIENT-001",
+                "INITIATED");
     }
 
     /**
      * Poll the consent session status.
-     * TODO: GET the DigiLocker status endpoint for the given session clientId.
+     *
+     * <p>DEMO MOCK: reports the session as COMPLETED/linked.
      */
     public StatusResponse status(String clientId) {
-        throw new UnsupportedOperationException("TODO: call DigiLocker status endpoint");
+        return new StatusResponse(clientId, "COMPLETED", Boolean.TRUE);
     }
 
     /**
      * List the documents the user shared in the session.
-     * TODO: GET the DigiLocker list-documents endpoint.
+     *
+     * <p>DEMO MOCK: returns a single shared Aadhaar document.
      */
     public ListDocumentsResponse listDocuments(String clientId) {
-        throw new UnsupportedOperationException("TODO: call DigiLocker list-documents endpoint");
+        return new ListDocumentsResponse(java.util.List.of(
+                new com.navix.verification.dto.DigiLockerDtos.DocumentMeta(
+                        "AADHAAR-FILE-001", "Aadhaar Card", "AADHAAR", "application/xml", "UIDAI")));
     }
 
     /**
      * Fetch a single shared document by fileId.
-     * TODO: GET the DigiLocker document endpoint.
+     *
+     * <p>DEMO MOCK: returns a tiny base64 placeholder payload.
      */
     public DocumentResponse document(String clientId, String fileId) {
-        throw new UnsupportedOperationException("TODO: call DigiLocker document endpoint");
+        return new DocumentResponse(
+                fileId,
+                "application/xml",
+                java.util.Base64.getEncoder().encodeToString(
+                        "<Aadhaar>demo</Aadhaar>".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
 
     /**
      * Fetch + parse the Aadhaar XML for the session.
-     * TODO: GET the DigiLocker Aadhaar XML endpoint and parse into AadhaarXmlResponse.
+     *
+     * <p>DEMO MOCK: returns parsed demographics with a masked Aadhaar reference (full number
+     * is never returned).
      */
     public AadhaarXmlResponse aadhaarXml(String clientId) {
-        throw new UnsupportedOperationException("TODO: call DigiLocker Aadhaar XML endpoint");
+        return new AadhaarXmlResponse(
+                "RAVI KUMAR",
+                "1990-05-14",
+                "M",
+                "XXXXXXXX1234",
+                null,
+                new com.navix.verification.dto.DigiLockerDtos.AadhaarAddress(
+                        "12", "MG ROAD", "Near Metro", "Shivajinagar",
+                        "BENGALURU URBAN", "KARNATAKA", "560001", "INDIA"));
     }
 }
