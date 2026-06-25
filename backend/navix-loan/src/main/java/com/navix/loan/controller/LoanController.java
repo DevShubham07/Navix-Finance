@@ -1,39 +1,68 @@
 package com.navix.loan.controller;
 
+import com.navix.common.web.ApiResponse;
+import com.navix.loan.dto.LoanDtos.LoanView;
+import com.navix.loan.dto.LoanDtos.OutstandingView;
+import com.navix.loan.dto.LoanDtos.PaymentView;
+import com.navix.loan.dto.LoanDtos.TransactionView;
+import com.navix.loan.service.LoanService;
+import com.navix.loan.service.RepaymentService;
+import com.navix.loan.service.TransactionService;
+import java.time.LocalDate;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST endpoints for the loan lifecycle.
- *
- * TODO: define request/response DTOs and wire to {@code LoanService}.
+ * Disbursed-loan read endpoints (the loan ledger). Application creation/lifecycle lives under
+ * {@code /api/applications}; repayments under {@code /api/loan/{loanId}/repayments}.
  */
 @RestController
 @RequestMapping("/api/loan")
+@RequiredArgsConstructor
 public class LoanController {
 
-    /**
-     * Submit a new loan application.
-     *
-     * TODO: implement.
-     */
-    @PostMapping("/applications")
-    public Object apply() {
-        // TODO: accept LoanApplicationRequest and delegate to LoanService.apply.
-        throw new UnsupportedOperationException("LoanController.apply not implemented yet");
+    private final LoanService loanService;
+    private final RepaymentService repaymentService;
+    private final TransactionService transactionService;
+
+    @GetMapping("/{loanId}")
+    public ApiResponse<LoanView> getLoan(@PathVariable Long loanId) {
+        return ApiResponse.ok(LoanView.of(loanService.getLoan(loanId)));
     }
 
     /**
-     * Fetch a loan by id.
-     *
-     * TODO: implement.
+     * Accountant queue: repayments awaiting proof verification, across all loans. A literal path so
+     * it is selected over {@code /{loanId}} (PathPattern ranks literal segments above captures).
      */
-    @GetMapping("/{loanId}")
-    public Object getLoan(@PathVariable Long loanId) {
-        // TODO: return loan view.
-        throw new UnsupportedOperationException("LoanController.getLoan not implemented yet");
+    @GetMapping("/pending-repayments")
+    public ApiResponse<List<PaymentView>> pendingRepayments() {
+        return ApiResponse.ok(repaymentService.listPending().stream().map(PaymentView::of).toList());
+    }
+
+    /**
+     * Accountant transactions ledger: all money movement (OUTGOING disbursals + INCOMING
+     * repayments), company-wide, optionally filtered by {@code direction} and a free-text
+     * {@code q} (borrower name / mobile / loan id). Literal path → ranks above {@code /{loanId}}.
+     */
+    @GetMapping("/transactions")
+    public ApiResponse<List<TransactionView>> transactions(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String direction) {
+        return ApiResponse.ok(transactionService.listTransactions(q, direction));
+    }
+
+    /** Authoritative compute-on-read balance (prepayment + penalty aware). */
+    @GetMapping("/{loanId}/outstanding")
+    public ApiResponse<OutstandingView> outstanding(
+            @PathVariable Long loanId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        long out = repaymentService.outstandingAsOf(loanId, asOf);
+        return ApiResponse.ok(new OutstandingView(loanId, asOf != null ? asOf : LocalDate.now(), out));
     }
 }

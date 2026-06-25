@@ -20,9 +20,16 @@ public class ExperianClient {
 
     /**
      * Pull the Experian credit report for the applicant.
-     * TODO: call the Fintrix Experian endpoint and map score + tradelines.
+     *
+     * <p>DEMO MOCK: returns a deterministic mid-band Experian report (score 742, one active
+     * tradeline) without any network call, pending live Fintrix credentials. The injected
+     * {@code fintrix} RestClient is intentionally left unused for the demo.
      */
     public ExperianResponse pull(String pan, String name, String mobile) {
-        throw new UnsupportedOperationException("TODO: call Fintrix Experian bureau endpoint");
+        return new ExperianResponse(
+                742,
+                java.util.List.of(new com.navix.verification.dto.FintrixDtos.Tradeline(
+                        "CREDIT_CARD", "HDFC BANK", 25_000.0, 0.0, "ACTIVE")),
+                "Experian hit (demo mock)");
     }
 }

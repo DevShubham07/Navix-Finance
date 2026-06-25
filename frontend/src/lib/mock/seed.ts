@@ -222,9 +222,9 @@ export function seedCollections(): CollectionsCaseRecord[] {
       daysPastDue: 5,
       bucket: "T0_T7",
       assignedOfficerId: "staff-collection_officer",
-      assignedOfficerName: STAFF_PERSONAS.COLLECTION_OFFICER.name,
+      assignedOfficerName: STAFF_PERSONAS.COLLECTION_EXECUTIVE.name,
       interactions: [
-        { id: "I1", channel: "CALL", outcome: "PROMISE_TO_PAY", notes: "Will pay by Friday after salary credit.", officerName: STAFF_PERSONAS.COLLECTION_OFFICER.name, at: daysAgo(1) },
+        { id: "I1", channel: "CALL", outcome: "PROMISE_TO_PAY", notes: "Will pay by Friday after salary credit.", officerName: STAFF_PERSONAS.COLLECTION_EXECUTIVE.name, at: daysAgo(1) },
       ],
       createdAt: daysAgo(5),
     },
@@ -237,11 +237,11 @@ export function seedCollections(): CollectionsCaseRecord[] {
       outstanding: 9200,
       daysPastDue: 19,
       bucket: "T8_T30",
-      assignedOfficerName: STAFF_PERSONAS.COLLECTION_OFFICER.name,
+      assignedOfficerName: STAFF_PERSONAS.COLLECTION_EXECUTIVE.name,
       assignedOfficerId: "staff-collection_officer",
       interactions: [
-        { id: "I1", channel: "WHATSAPP", outcome: "NO_RESPONSE", officerName: STAFF_PERSONAS.COLLECTION_OFFICER.name, at: daysAgo(3) },
-        { id: "I2", channel: "CALL", outcome: "DISPUTE", notes: "Disputes interest; escalated for review.", officerName: STAFF_PERSONAS.COLLECTION_OFFICER.name, at: daysAgo(1) },
+        { id: "I1", channel: "WHATSAPP", outcome: "NO_RESPONSE", officerName: STAFF_PERSONAS.COLLECTION_EXECUTIVE.name, at: daysAgo(3) },
+        { id: "I2", channel: "CALL", outcome: "DISPUTE", notes: "Disputes interest; escalated for review.", officerName: STAFF_PERSONAS.COLLECTION_EXECUTIVE.name, at: daysAgo(1) },
       ],
       createdAt: daysAgo(19),
     },
@@ -255,7 +255,7 @@ export function seedCollections(): CollectionsCaseRecord[] {
       daysPastDue: 47,
       bucket: "T30_T60",
       interactions: [],
-      settlement: { amount: 16000, status: "PROPOSED", proposedBy: STAFF_PERSONAS.COLLECTION_OFFICER.name, at: daysAgo(2) },
+      settlement: { amount: 16000, status: "PROPOSED", proposedBy: STAFF_PERSONAS.COLLECTION_EXECUTIVE.name, at: daysAgo(2) },
       createdAt: daysAgo(47),
     },
     {
@@ -289,7 +289,7 @@ export function seedStaff(): StaffMember[] {
 export function seedInvites(): InviteRecord[] {
   return [
     { id: "INV-1", email: "neha.bansal@navix.finance", role: "CREDIT_EXECUTIVE", status: "PENDING", invitedByName: STAFF_PERSONAS.ADMIN.name, expiresAt: daysAgo(-5), createdAt: daysAgo(2) },
-    { id: "INV-2", email: "karthik.r@navix.finance", role: "COLLECTION_OFFICER", status: "ACCEPTED", invitedByName: STAFF_PERSONAS.ADMIN.name, expiresAt: daysAgo(-3), createdAt: daysAgo(8) },
+    { id: "INV-2", email: "karthik.r@navix.finance", role: "COLLECTION_EXECUTIVE", status: "ACCEPTED", invitedByName: STAFF_PERSONAS.ADMIN.name, expiresAt: daysAgo(-3), createdAt: daysAgo(8) },
     { id: "INV-3", email: "old.invite@navix.finance", role: "ACCOUNTANT", status: "EXPIRED", invitedByName: STAFF_PERSONAS.ADMIN.name, expiresAt: daysAgo(10), createdAt: daysAgo(40) },
   ];
 }
@@ -297,7 +297,7 @@ export function seedInvites(): InviteRecord[] {
 export function seedBlocklist(): BlocklistEntry[] {
   return [
     { id: "BL-1", type: "PAN", value: "ABCDE1234F", reason: "Confirmed identity fraud (chargeback ring).", addedByName: STAFF_PERSONAS.ADMIN.name, createdAt: daysAgo(30) },
-    { id: "BL-2", type: "MOBILE", value: "90000 00000", reason: "Multiple fake-KYC attempts.", addedByName: STAFF_PERSONAS.COLLECTIONS_HEAD.name, createdAt: daysAgo(14) },
+    { id: "BL-2", type: "MOBILE", value: "90000 00000", reason: "Multiple fake-KYC attempts.", addedByName: STAFF_PERSONAS.COLLECTION_HEAD.name, createdAt: daysAgo(14) },
     { id: "BL-3", type: "BANK", value: "XXXX 9981 (IFSC YESB0001)", reason: "Mule account flagged by partner NBFC.", addedByName: STAFF_PERSONAS.ADMIN.name, createdAt: daysAgo(7) },
   ];
 }

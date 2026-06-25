@@ -35,23 +35,23 @@ public class Loan extends BaseAuditEntity {
     @Column(name = "applicant_id", nullable = false)
     private Long applicantId;
 
-    /** Sanctioned principal. */
-    @Column(name = "principal", nullable = false, precision = 14, scale = 2)
-    private BigDecimal principal;
+    /** Sanctioned principal, in paise. */
+    @Column(name = "principal", nullable = false)
+    private Long principal;
 
-    /** Up-front processing fee (10% of principal). */
-    @Column(name = "processing_fee", precision = 14, scale = 2)
-    private BigDecimal processingFee;
+    /** Up-front processing fee (10% of principal), in paise. */
+    @Column(name = "processing_fee")
+    private Long processingFee;
 
-    /** GST charged on the processing fee (18% of the fee). */
-    @Column(name = "gst", precision = 14, scale = 2)
-    private BigDecimal gst;
+    /** GST charged on the processing fee (18% of the fee), in paise. */
+    @Column(name = "gst")
+    private Long gst;
 
-    /** Net amount actually credited to the borrower. */
-    @Column(name = "net_disbursed", precision = 14, scale = 2)
-    private BigDecimal netDisbursed;
+    /** Net amount actually credited to the borrower, in paise. */
+    @Column(name = "net_disbursed")
+    private Long netDisbursed;
 
-    /** Daily interest rate (1%/day). */
+    /** Daily interest rate (1%/day) — a rate, not an amount. */
     @Column(name = "daily_interest_rate", precision = 6, scale = 4)
     private BigDecimal dailyInterestRate;
 
@@ -63,16 +63,20 @@ public class Loan extends BaseAuditEntity {
     @Column(name = "due_date")
     private LocalDate dueDate;
 
-    /** Total amount repayable on the due date (principal + interest). */
-    @Column(name = "total_repayable", precision = 14, scale = 2)
-    private BigDecimal totalRepayable;
+    /** Total amount repayable on the due date (principal + interest), in paise. */
+    @Column(name = "total_repayable")
+    private Long totalRepayable;
 
-    /** Current outstanding amount. */
-    @Column(name = "outstanding", precision = 14, scale = 2)
-    private BigDecimal outstanding;
+    /** Current outstanding amount (scheduled-to-due less verified payments), in paise. */
+    @Column(name = "outstanding")
+    private Long outstanding;
 
     /** Current loan status. */
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 32)
     private LoanStatus status;
+
+    /** Bank/UPI transaction reference for the outgoing disbursal (captured at release). */
+    @Column(name = "disbursal_txn_ref", length = 64)
+    private String disbursalTxnRef;
 }

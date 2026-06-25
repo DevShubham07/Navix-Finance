@@ -10,24 +10,27 @@ import { usePersistedField } from "@/hooks/use-persisted-field";
 import { useBorrowerJourney } from "@/lib/mock/borrower";
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const AADHAAR_RE = /^\d{12}$/;
 
 export default function SignupPanPage() {
   const router = useRouter();
   const { applicant, updateApplicant, setKyc } = useBorrowerJourney();
   const [name, setName] = usePersistedField(applicant.fullName);
   const [pan, setPan] = usePersistedField(applicant.pan);
+  const [aadhaar, setAadhaar] = usePersistedField(applicant.aadhaar);
   const [touched, setTouched] = React.useState(false);
 
   const nameOk = name.trim().length > 2;
   const panOk = PAN_RE.test(pan);
+  const aadhaarOk = AADHAAR_RE.test(aadhaar);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameOk || !panOk) {
+    if (!nameOk || !panOk || !aadhaarOk) {
       setTouched(true);
       return;
     }
-    updateApplicant({ fullName: name.trim(), pan });
+    updateApplicant({ fullName: name.trim(), pan, aadhaar });
     setKyc({ pan: "VERIFIED" });
     router.push("/signup/mobile-otp");
   };
@@ -57,6 +60,17 @@ export default function SignupPanPage() {
           inputClassName="tracking-[0.3em] uppercase"
           helperText="10 characters, e.g. ABCDE1234F"
           error={touched && !panOk ? "Enter a valid 10-character PAN" : undefined}
+        />
+        <Input
+          label="Aadhaar number"
+          required
+          value={aadhaar}
+          onChange={(e) => setAadhaar(e.target.value.replace(/\D/g, "").slice(0, 12))}
+          placeholder="1234 5678 9012"
+          inputMode="numeric"
+          inputClassName="tracking-[0.2em]"
+          helperText="12 digits"
+          error={touched && !aadhaarOk ? "Enter a valid 12-digit Aadhaar number" : undefined}
         />
         <p className="mt-1 flex items-start gap-2 text-sm text-muted">
           <ShieldCheck size={16} className="mt-0.5 flex-shrink-0 text-success-600" />

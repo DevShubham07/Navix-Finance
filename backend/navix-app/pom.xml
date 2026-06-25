@@ -140,6 +140,23 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Integration tests run the full app against a real Postgres via Testcontainers
+             (Flyway migrations + JPA validate exercised end-to-end). Versions from the BOM. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -157,7 +174,38 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!-- Integration tests (Testcontainers) are excluded from the default `mvn test`
+                 so unit builds need no Docker. Run them with the `-Pit` profile. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>integration</excludedGroups>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- `./mvnw -pl navix-app test -Pit` runs ONLY the @Tag("integration") tests.
+             On Colima, also export:
+               DOCKER_HOST=unix:///Users/<you>/.colima/default/docker.sock
+               TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
+               TESTCONTAINERS_RYUK_DISABLED=true -->
+        <profile>
+            <id>it</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration combine.self="override">
+                            <groups>integration</groups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

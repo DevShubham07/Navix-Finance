@@ -10,7 +10,9 @@ public enum StaffRole {
     CREDIT_HEAD,
     DISBURSEMENT_HEAD,
     ACCOUNTANT,
-    COLLECTIONS_HEAD,
-    COLLECTION_OFFICER,
-    ADMIN
+    COLLECTION_HEAD,
+    COLLECTION_EXECUTIVE,
+    ADMIN,
+    /** Internal read-only operations role (health, logs, read-only DB) — dfd.md §6.3 / W7. */
+    DEVELOPER
 }

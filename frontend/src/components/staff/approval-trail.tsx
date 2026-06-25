@@ -35,7 +35,7 @@ export function ApprovalTrail({ entries, className }: ApprovalTrailProps) {
         const meta = ACTION_META[entry.action] ?? ACTION_META.RECOMMEND;
         const Icon = meta.Icon;
         return (
-          <li key={entry.id ?? i} className="relative flex gap-3 pb-5 last:pb-0">
+          <li key={`${entry.id ?? "entry"}-${i}`} className="relative flex gap-3 pb-5 last:pb-0">
             {i < entries.length - 1 && <span className="absolute left-4 top-9 h-[calc(100%-1.25rem)] w-0.5 bg-line" />}
             <span className={cn("z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full", meta.tone)}>
               <Icon size={16} />

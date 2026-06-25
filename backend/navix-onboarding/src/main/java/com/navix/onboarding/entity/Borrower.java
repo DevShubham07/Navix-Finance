@@ -7,8 +7,6 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.math.BigDecimal;
-
 /**
  * A borrower (applicant) on the NAVIX platform.
  * Salary is declared in-app (Account Aggregator is OUT of scope) and later
@@ -38,8 +36,8 @@ public class Borrower extends BaseAuditEntity {
     @Column(length = 12)
     private String uan;
 
-    /** Self-declared monthly salary. */
-    private BigDecimal declaredSalary;
+    /** Self-declared monthly salary, in paise. */
+    private Long declaredSalary;
 
     private String salaryBank;
 

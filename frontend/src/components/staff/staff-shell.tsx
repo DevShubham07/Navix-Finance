@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Banknote,
   Receipt,
+  Workflow,
   PhoneCall,
   HandCoins,
   Users,
@@ -32,6 +33,7 @@ const NAV: NavGroup[] = [
     heading: "Operations",
     items: [
       { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard },
+      { label: "Live applications", href: "/staff/applications", Icon: Workflow },
       { label: "KYC Approvals", href: "/staff/kyc-approvals", Icon: ShieldCheck, perm: "kyc:approve" },
       { label: "Credit Queue", href: "/staff/credit/queue", Icon: ClipboardList, perm: "loan:review" },
       { label: "Disbursement", href: "/staff/disbursement", Icon: Banknote, perm: "loan:disburse" },

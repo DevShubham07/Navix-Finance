@@ -2,30 +2,77 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Wallet, Smartphone, Landmark, CheckCircle2, ArrowRight, AlertTriangle } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Wallet, Smartphone, Landmark, CheckCircle2, ArrowRight, AlertTriangle, Clock } from "lucide-react";
 import { Input } from "@/components/ui";
 import { InfoRow } from "@/components/borrower/summary";
-import { useBorrowerJourney } from "@/lib/mock/borrower";
 import { useMounted } from "@/hooks/use-mounted";
-import { formatINR0 } from "@/lib/utils";
+import { useLiveApplication } from "@/lib/api/live-journey";
+import {
+  borrowerApi,
+  paiseToINR,
+  rupeesToPaise,
+  ApplicationApiError,
+  type PaymentMethodName,
+  type PaymentView,
+} from "@/lib/api/applications";
+import { formatDate } from "@/lib/utils";
 
-type Method = "UPI" | "BANK_TRANSFER";
+const todayISO = () => new Date().toISOString().slice(0, 10);
 
 export default function RepayPage() {
   const mounted = useMounted();
-  const j = useBorrowerJourney();
-  const [method, setMethod] = React.useState<Method>("UPI");
+  const { app, isLoading: appLoading } = useLiveApplication();
+  const qc = useQueryClient();
+
+  const loanId =
+    app && (app.status === "ACTIVE" || app.status === "OVERDUE" || app.status === "CLOSED")
+      ? app.loanId
+      : null;
+
+  const [method, setMethod] = React.useState<PaymentMethodName>("UPI");
   const [mode, setMode] = React.useState<"full" | "custom">("full");
   const [custom, setCustom] = React.useState("");
   const [txnRef, setTxnRef] = React.useState("");
-  const [done, setDone] = React.useState<null | "partial" | "full">(null);
 
-  if (!mounted) {
-    return <div className="container max-w-content py-10"><div className="h-72 rounded border border-line bg-white" /></div>;
+  const loanQuery = useQuery({
+    queryKey: ["repay-loan", loanId],
+    queryFn: () => borrowerApi.loan(loanId as number),
+    enabled: loanId != null,
+  });
+  const outQuery = useQuery({
+    queryKey: ["repay-outstanding", loanId],
+    queryFn: () => borrowerApi.outstanding(loanId as number, todayISO()),
+    enabled: loanId != null,
+  });
+  const payQuery = useQuery({
+    queryKey: ["repay-payments", loanId],
+    queryFn: () => borrowerApi.repayments(loanId as number),
+    enabled: loanId != null,
+  });
+
+  const record = useMutation({
+    mutationFn: (payload: { amountPaise: number; method: PaymentMethodName; txnRef: string }) =>
+      borrowerApi.recordRepayment(loanId as number, { ...payload, paidOn: todayISO() }),
+    onSuccess: () => {
+      setTxnRef("");
+      setCustom("");
+      qc.invalidateQueries({ queryKey: ["repay-payments", loanId] });
+      qc.invalidateQueries({ queryKey: ["repay-outstanding", loanId] });
+      qc.invalidateQueries({ queryKey: ["repay-loan", loanId] });
+    },
+  });
+
+  if (!mounted || (appLoading && !app)) {
+    return (
+      <div className="container max-w-content py-10">
+        <div className="h-72 animate-pulse rounded border border-line bg-white" />
+      </div>
+    );
   }
 
-  const loan = j.loan;
-  if (!loan || (j.status !== "ACTIVE" && j.status !== "OVERDUE" && j.status !== "REPAID")) {
+  // No live, repayable loan.
+  if (loanId == null) {
     return (
       <div className="container max-w-content py-10">
         <div className="rounded border border-line bg-white p-8 text-center shadow-sm">
@@ -37,7 +84,17 @@ export default function RepayPage() {
     );
   }
 
-  if (j.status === "REPAID" || loan.outstanding === 0) {
+  const loan = loanQuery.data;
+  if (loanQuery.isLoading || !loan) {
+    return (
+      <div className="container max-w-content py-10">
+        <div className="h-72 animate-pulse rounded border border-line bg-white" />
+      </div>
+    );
+  }
+
+  const settled = loan.status === "CLOSED" || loan.outstandingPaise <= 0;
+  if (settled) {
     return (
       <div className="container max-w-content py-12">
         <div className="mx-auto max-w-md rounded-lg border border-success-100 bg-success-50/50 p-10 text-center shadow-md">
@@ -52,55 +109,81 @@ export default function RepayPage() {
     );
   }
 
-  const amount = mode === "full" ? loan.outstanding : Math.min(Number(custom.replace(/\D/g, "")) || 0, loan.outstanding);
-  const canPay = amount > 0 && txnRef.trim().length >= 4;
+  // Prepayment-aware "pay today" figure (interest only to today); fall back to the
+  // ledger outstanding while it loads.
+  const dueToday = outQuery.data?.outstandingPaise ?? loan.outstandingPaise;
+  const scheduled = loan.outstandingPaise; // full-tenure basis (minus verified payments)
+  const savingPaise = Math.max(0, scheduled - dueToday);
+  const overdue = app?.status === "OVERDUE" || dueToday > loan.totalRepayablePaise;
+
+  const customPaise = rupeesToPaise(Number(custom.replace(/\D/g, "")) || 0);
+  const amountPaise = mode === "full" ? dueToday : Math.min(customPaise, dueToday);
+  const canPay = amountPaise > 0 && txnRef.trim().length >= 4 && !record.isPending;
 
   const pay = () => {
     if (!canPay) return;
-    const willClose = amount >= loan.outstanding;
-    j.repay(amount, method, txnRef.trim());
-    setDone(willClose ? "full" : "partial");
+    record.mutate({ amountPaise, method, txnRef: txnRef.trim() });
   };
 
-  if (done) {
-    return (
-      <div className="container max-w-content py-12">
-        <div className="mx-auto max-w-md rounded-lg border border-success-100 bg-white p-10 text-center shadow-md">
-          <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-success-50 text-success-600">
-            <CheckCircle2 size={34} />
-          </span>
-          <h1 className="text-2xl">{done === "full" ? "Payment received — loan closed" : "Payment recorded"}</h1>
-          <p className="mb-6 text-muted">
-            {done === "full"
-              ? "Your advance is fully repaid. A closure confirmation is on its way to your email."
-              : `We've recorded ${formatINR0(amount)}. Remaining balance: ${formatINR0(j.loan?.outstanding ?? 0)}.`}
-          </p>
-          <Link href="/dashboard" className="btn btn-gold btn-block">Back to dashboard <ArrowRight size={16} /></Link>
-        </div>
-      </div>
-    );
-  }
+  const payments = payQuery.data ?? [];
 
-  const b = loan.costBreakdown;
   return (
     <div className="container max-w-content py-10">
       <h1 className="mb-1">Repay your advance</h1>
-      <p className="mb-7 text-muted">Single repayment on your salary day — or prepay any amount, anytime, no penalty.</p>
+      <p className="mb-7 text-muted">
+        Single repayment on your salary day — or prepay any amount, anytime, no penalty.
+      </p>
+
+      {record.isSuccess && (
+        <div className="mb-6 flex items-start gap-2 rounded border border-success-100 bg-success-50/60 p-4 text-sm text-success-700">
+          <Clock size={16} className="mt-0.5 flex-shrink-0" />
+          <span>
+            Payment recorded — <strong>pending verification</strong> by our accounts team. Your balance
+            updates once the transfer is confirmed.
+          </span>
+        </div>
+      )}
+      {record.isError && (
+        <div className="mb-6 flex items-start gap-2 rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
+          <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+          {record.error instanceof ApplicationApiError
+            ? `${record.error.message} (${record.error.code})`
+            : "Could not record your payment. Please try again."}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded border border-line bg-white p-6 shadow-sm">
           <h3 className="mb-2 font-serif text-base text-navy">What you owe</h3>
-          <InfoRow label="Principal" value={formatINR0(b.principal)} />
-          <InfoRow label={`Interest (1%/day × ${b.tenureDays}d)`} value={formatINR0(b.interest)} />
-          {loan.penalty > 0 && <InfoRow label="Late penalty (2%/day, cap 30d)" value={<span className="text-error-600">{formatINR0(loan.penalty)}</span>} />}
+          <InfoRow label="Principal" value={paiseToINR(loan.principalPaise)} />
+          <InfoRow label="Total repayable (on salary day)" value={paiseToINR(loan.totalRepayablePaise)} />
+          {loan.dueDate && <InfoRow label="Due date" value={formatDate(loan.dueDate)} />}
           <div className="mt-2 flex items-baseline justify-between rounded bg-navy px-4 py-3 text-white">
-            <span className="text-sm font-semibold text-white/90">Total outstanding</span>
-            <span className="font-serif text-2xl font-bold text-gold">{formatINR0(loan.outstanding)}</span>
+            <span className="text-sm font-semibold text-white/90">{overdue ? "Pay now (incl. penalty)" : "Pay today"}</span>
+            <span className="font-serif text-2xl font-bold text-gold">{paiseToINR(dueToday)}</span>
           </div>
-          {loan.penalty > 0 && (
-            <p className="mt-3 flex items-start gap-2 text-xs text-error-600">
-              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" /> Penalty keeps accruing daily until paid. Clear it soon to stop the clock.
+          {savingPaise > 0 && !overdue && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-success-700">
+              <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
+              Pay early &amp; save {paiseToINR(savingPaise)} — interest is charged only to the day you pay.
             </p>
+          )}
+          {overdue && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-error-600">
+              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" /> A late penalty (2%/day, capped 30 days)
+              is accruing. Clear it soon to stop the clock.
+            </p>
+          )}
+
+          {payments.length > 0 && (
+            <div className="mt-5 border-t border-grey-200 pt-4">
+              <div className="mb-2 text-sm font-semibold text-ink">Payments</div>
+              <ul className="space-y-2">
+                {payments.map((p) => (
+                  <PaymentRow key={p.id} p={p} />
+                ))}
+              </ul>
+            </div>
           )}
         </div>
 
@@ -129,9 +212,9 @@ export default function RepayPage() {
               inputMode="numeric"
               value={custom}
               onChange={(e) => setCustom(e.target.value.replace(/\D/g, ""))}
-              placeholder={String(loan.outstanding)}
+              placeholder={String(Math.round(dueToday / 100))}
               leftIcon={<span className="font-serif text-muted">₹</span>}
-              helperText={`Up to ${formatINR0(loan.outstanding)}`}
+              helperText={`Up to ${paiseToINR(dueToday)}`}
             />
           )}
 
@@ -165,15 +248,40 @@ export default function RepayPage() {
             label={method === "UPI" ? "UPI reference / txn ID" : "UTR number"}
             value={txnRef}
             onChange={(e) => setTxnRef(e.target.value)}
-            placeholder={method === "UPI" ? "e.g. 4287… " : "e.g. HDFCN…"}
-            helperText="We verify your payment against this reference"
+            placeholder={method === "UPI" ? "e.g. 4287…" : "e.g. HDFCN…"}
+            helperText="We verify your payment against this reference before it reduces your balance"
           />
 
           <button onClick={pay} disabled={!canPay} className="btn btn-gold btn-block mt-2">
-            <Wallet size={16} /> Pay {formatINR0(amount)}
+            <Wallet size={16} /> {record.isPending ? "Recording…" : `Pay ${paiseToINR(amountPaise)}`}
           </button>
+          <p className="mt-3 text-center text-xs text-muted">
+            Payments are confirmed manually by our accounts team — your balance updates once verified.
+          </p>
         </div>
       </div>
     </div>
+  );
+}
+
+function PaymentRow({ p }: { p: PaymentView }) {
+  const map: Record<PaymentView["status"], { label: string; cls: string }> = {
+    PENDING_VERIFICATION: { label: "Pending verification", cls: "bg-gold-50 text-gold-dark" },
+    VERIFIED: { label: "Verified", cls: "bg-success-50 text-success-700" },
+    REJECTED: { label: "Rejected", cls: "bg-error-50 text-error-700" },
+  };
+  const s = map[p.status];
+  return (
+    <li className="flex items-center justify-between gap-3 text-sm">
+      <span className="flex items-center gap-2">
+        <span className="font-semibold text-ink">{paiseToINR(p.amountPaise)}</span>
+        <span className="text-xs text-muted">
+          {p.method === "UPI" ? "UPI" : "Bank"}
+          {p.txnRef ? ` · ${p.txnRef}` : ""}
+          {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
+        </span>
+      </span>
+      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}>{s.label}</span>
+    </li>
   );
 }

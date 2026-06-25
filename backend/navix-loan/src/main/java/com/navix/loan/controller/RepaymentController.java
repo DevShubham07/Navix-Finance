@@ -1,33 +1,51 @@
 package com.navix.loan.controller;
 
+import com.navix.common.web.ApiResponse;
+import com.navix.loan.dto.LoanDtos.PaymentView;
+import com.navix.loan.dto.LoanDtos.RepaymentRequest;
+import com.navix.loan.service.RepaymentService;
+import jakarta.validation.Valid;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Repayment endpoints for a loan: manual UPI / bank-transfer repayment with
- * proof, supporting partial payments and prepayment. NACH auto-debit is
- * [FUTURE].
- *
- * TODO: define request/response DTOs and wire to {@code RepaymentService}.
+ * Repayment endpoints for a loan: manual UPI / bank-transfer repayment with proof, supporting
+ * partial payments and prepayment. A recorded payment is PENDING until verified; verification
+ * reduces the outstanding balance and closes the loan at zero. NACH auto-debit is [FUTURE].
  */
 @RestController
 @RequestMapping("/api/loan/{loanId}/repayments")
+@RequiredArgsConstructor
 public class RepaymentController {
+
+    private final RepaymentService repaymentService;
 
     /** Record a repayment (full, partial or prepayment) against the loan. */
     @PostMapping
-    public Object record(@PathVariable Long loanId) {
-        // TODO: accept RepaymentRequest (amount, method, txnRef, proof) and delegate.
-        throw new UnsupportedOperationException("RepaymentController.record not implemented yet");
+    public ApiResponse<PaymentView> record(@PathVariable Long loanId,
+                                           @Valid @RequestBody RepaymentRequest request) {
+        return ApiResponse.ok(PaymentView.of(repaymentService.recordPayment(
+                loanId, request.amountPaise(), request.method(), request.txnRef(),
+                request.proofUrl(), request.paidOn())));
     }
 
     /** List repayments recorded against the loan. */
     @GetMapping
-    public Object list(@PathVariable Long loanId) {
-        // TODO: return repayment history.
-        throw new UnsupportedOperationException("RepaymentController.list not implemented yet");
+    public ApiResponse<List<PaymentView>> list(@PathVariable Long loanId) {
+        return ApiResponse.ok(repaymentService.listPayments(loanId).stream()
+                .map(PaymentView::of)
+                .toList());
+    }
+
+    /** Confirm proof for a recorded payment (maker-checker: typically an accountant/ops action). */
+    @PostMapping("/{paymentId}/verify")
+    public ApiResponse<PaymentView> verify(@PathVariable Long loanId, @PathVariable Long paymentId) {
+        return ApiResponse.ok(PaymentView.of(repaymentService.verifyPayment(paymentId)));
     }
 }

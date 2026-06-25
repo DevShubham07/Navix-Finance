@@ -51,6 +51,7 @@ export interface CoApplicant {
 export interface ApplicantProfile {
   fullName: string;
   pan: string;
+  aadhaar: string;
   mobile: string;
   mobileVerified: boolean;
   email: string;
@@ -151,6 +152,7 @@ const nowIso = () => new Date().toISOString();
 const EMPTY_APPLICANT: ApplicantProfile = {
   fullName: "",
   pan: "",
+  aadhaar: "",
   mobile: "",
   mobileVerified: false,
   email: "",
@@ -346,9 +348,20 @@ export const useBorrowerJourney = create<BorrowerJourneyState>()(
     }),
     {
       name: "navix-borrower-journey",
-      version: 2,
-      // v1 persisted a different shape. With no migrate provided, a version
-      // mismatch makes persist discard the old state and use these defaults.
+      version: 3,
+      // Older persisted shapes predate fields like `applicant.aadhaar`. Merge any
+      // saved values onto the current defaults so that (a) every field is always
+      // present — a missing one would flip an input from uncontrolled to
+      // controlled — and (b) zustand doesn't log "couldn't be migrated (no migrate
+      // function)" whenever the version is bumped. Works for any prior version.
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Partial<BorrowerJourneyState>;
+        return {
+          ...p,
+          applicant: { ...EMPTY_APPLICANT, ...(p.applicant ?? {}) },
+          kyc: { ...FRESH_KYC, ...(p.kyc ?? {}) },
+        } as BorrowerJourneyState;
+      },
     },
   ),
 );

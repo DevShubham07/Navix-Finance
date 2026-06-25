@@ -1,31 +1,24 @@
 package com.navix.loan.service;
 
-import java.math.BigDecimal;
 import org.springframework.stereotype.Service;
 
 /**
  * Validates a loan request against eligibility rules before approval.
  *
- * <p>Checks include: requested amount within the eligible limit (25% of
- * salary), salary-day alignment, and risk-category gating.
- *
- * TODO: depend on income-risk outputs (eligible limit + category) once the
- * cross-module contract is finalized; implement the checks below.
+ * <p>The eligible limit (25% of salary, risk-adjusted) is produced by the income-risk module;
+ * this service gates a requested amount against it. All amounts are integer paise.
  */
 @Service
 public class EligibilityService {
 
     /**
-     * Check whether a requested amount is eligible for the given limit.
+     * Whether a requested amount is within the eligible limit.
      *
-     * TODO: implement full rule set (limit, salary alignment, category).
-     *
-     * @param amountRequested requested principal
-     * @param eligibleLimit   eligible limit from income-risk
-     * @return true if eligible
+     * @param amountRequestedPaise requested principal, in paise
+     * @param eligibleLimitPaise   eligible limit from income-risk, in paise
+     * @return true if the amount is positive and does not exceed the limit
      */
-    public boolean isEligible(BigDecimal amountRequested, BigDecimal eligibleLimit) {
-        // TODO: implement eligibility checks.
-        throw new UnsupportedOperationException("EligibilityService.isEligible not implemented yet");
+    public boolean isEligible(long amountRequestedPaise, long eligibleLimitPaise) {
+        return amountRequestedPaise > 0 && amountRequestedPaise <= eligibleLimitPaise;
     }
 }

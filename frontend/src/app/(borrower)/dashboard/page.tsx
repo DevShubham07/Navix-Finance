@@ -2,35 +2,50 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock, RotateCw,
+  Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { useBorrowerJourney, type BorrowerStatus } from "@/lib/mock/borrower";
-import { useMounted } from "@/hooks/use-mounted";
+import {
+  useLiveApplication,
+  useBorrowerSession,
+  appStatusToStage,
+  canChooseAmount,
+  isTerminalBad,
+} from "@/lib/api/live-journey";
+import { borrowerApi, rupeesToPaise } from "@/lib/api/applications";
+import { eligibleLimit, daysBetween } from "@/lib/calc/loan-math";
 import { formatINR0, formatDate } from "@/lib/utils";
-import { daysBetween } from "@/lib/calc/loan-math";
-
-const PIPELINE_HREF: Partial<Record<BorrowerStatus, string>> = {
-  APPLIED: "/loan/status",
-  UNDER_REVIEW: "/loan/status",
-  APPROVED: "/loan/apply",
-  DOCS_SIGNED: "/loan/bank-verify",
-  BANK_VERIFIED: "/loan/bank-verify",
-  DISBURSING: "/loan/status",
-};
 
 export default function DashboardPage() {
-  const mounted = useMounted();
+  const session = useBorrowerSession();
+  const { appId, app, loan, isLoading } = useLiveApplication();
   const j = useBorrowerJourney();
 
-  if (!mounted) {
-    return <div className="container py-10"><div className="h-72 rounded border border-line bg-white" /></div>;
-  }
+  // Eligible limit (25% of salary) — from the persisted profile, else the wizard value.
+  const profileQuery = useQuery({
+    queryKey: ["live-profile", appId],
+    queryFn: () => borrowerApi.getProfile(appId as number),
+    enabled: appId != null,
+  });
+  const salaryPaise =
+    profileQuery.data?.monthlySalaryPaise ??
+    (j.applicant.monthlySalary ? rupeesToPaise(j.applicant.monthlySalary) : 0);
+  const limitRupees = eligibleLimit(Math.round(salaryPaise / 100));
 
-  const { status, loan, applicant } = j;
-  const firstName = applicant.fullName?.split(" ")[0] || "there";
-  const hasLoan = Boolean(loan) && (status === "ACTIVE" || status === "OVERDUE" || status === "REPAID");
+  const stage = appStatusToStage(app);
+  const firstName =
+    (session.data?.name || j.applicant.fullName || "there").split(" ")[0] || "there";
+  const active = app?.status === "ACTIVE" || app?.status === "OVERDUE";
+  const closed = app?.status === "CLOSED";
+  const declined = isTerminalBad(app);
+  const continueHref = canChooseAmount(app) ? "/loan/apply" : "/loan/status";
+
+  if (isLoading && !app && appId != null) {
+    return <div className="container py-10"><div className="h-72 animate-pulse rounded border border-line bg-white" /></div>;
+  }
 
   return (
     <div className="container py-10">
@@ -39,34 +54,43 @@ export default function DashboardPage() {
           <h1 className="mb-0">Hi, {firstName}</h1>
           <p className="mt-1 text-muted">Here&apos;s where your advance stands.</p>
         </div>
-        <StatusChip status={status} />
+        <StatusChip status={stage} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
         <div>
-          {hasLoan && loan ? (
+          {active && loan ? (
             <LoanCard
-              status={status}
-              total={loan.costBreakdown.totalRepayable}
-              outstanding={loan.outstanding}
-              penalty={loan.penalty}
-              principal={loan.principal}
-              dueISO={loan.dueDateISO}
+              status={app?.status === "OVERDUE" ? "OVERDUE" : "ACTIVE"}
+              total={loan.totalRepayablePaise / 100}
+              outstanding={loan.outstandingPaise / 100}
+              penalty={Math.max(0, (loan.outstandingPaise - loan.totalRepayablePaise) / 100)}
+              principal={loan.principalPaise / 100}
+              dueISO={loan.dueDate ?? new Date().toISOString()}
             />
-          ) : status === "DECLINED" ? (
+          ) : closed ? (
+            <InfoCard
+              icon={<CheckCircle2 size={26} />}
+              tone="navy"
+              title="Loan fully repaid"
+              body="Your advance is closed and in good standing. Need another? You can apply again anytime."
+              cta={{ href: "/repay", label: "View repayment" }}
+            />
+          ) : declined ? (
             <InfoCard
               icon={<AlertTriangle size={26} />}
               tone="error"
               title="Application not approved"
-              body={j.declineReason ?? "Your application didn't meet current credit policy. You can reapply after 90 days."}
+              body="Your application didn't meet current credit policy. See your status page for details."
+              cta={{ href: "/loan/status", label: "View status" }}
             />
-          ) : PIPELINE_HREF[status] ? (
+          ) : app ? (
             <InfoCard
               icon={<FileClock size={26} />}
               tone="navy"
               title="Application in progress"
-              body="Pick up where you left off to get your advance."
-              cta={{ href: PIPELINE_HREF[status]!, label: "Continue" }}
+              body="Pick up where you left off — track your application or choose your amount."
+              cta={{ href: continueHref, label: "Continue" }}
             />
           ) : (
             <InfoCard
@@ -85,18 +109,12 @@ export default function DashboardPage() {
               <Wallet size={16} /> Eligible limit
             </div>
             <div className="font-serif text-2xl font-bold text-navy">
-              {applicant.monthlySalary ? formatINR0(j.sanctionedLimit()) : "—"}
+              {limitRupees > 0 ? formatINR0(limitRupees) : "—"}
             </div>
             <p className="mt-1 text-xs text-muted">
-              {applicant.monthlySalary ? "25% of your salary, after risk review" : "Add your salary to see your limit"}
+              {limitRupees > 0 ? "25% of your monthly salary" : "Add your salary to see your limit"}
             </p>
           </div>
-
-          {status === "REPAID" && (
-            <Link href="/reloan" className="btn btn-gold btn-block">
-              <RotateCw size={16} /> Borrow again
-            </Link>
-          )}
 
           <div className="rounded border border-line bg-white p-5 shadow-sm">
             <div className="mb-2 text-sm font-semibold text-navy">Quick links</div>
@@ -117,10 +135,10 @@ function StatusChip({ status }: { status: BorrowerStatus }) {
     NEW: { label: "Not started", variant: "neutral" },
     APPLIED: { label: "Applied", variant: "info" },
     UNDER_REVIEW: { label: "Under review", variant: "warning" },
-    APPROVED: { label: "Approved", variant: "success" },
+    APPROVED: { label: "KYC approved", variant: "success" },
     DOCS_SIGNED: { label: "Docs signed", variant: "info" },
     BANK_VERIFIED: { label: "Bank verified", variant: "info" },
-    DISBURSING: { label: "Disbursing", variant: "warning" },
+    DISBURSING: { label: "Processing", variant: "warning" },
     ACTIVE: { label: "Active loan", variant: "success" },
     REPAID: { label: "Repaid", variant: "neutral" },
     DECLINED: { label: "Declined", variant: "error" },

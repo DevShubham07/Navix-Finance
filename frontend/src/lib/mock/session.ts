@@ -37,9 +37,10 @@ export const STAFF_PERSONAS: Record<StaffRole, { name: string; email: string }> 
   CREDIT_HEAD: { name: "Priya Nair", email: "priya.nair@navix.finance" },
   DISBURSEMENT_HEAD: { name: "Vikram Shah", email: "vikram.shah@navix.finance" },
   ACCOUNTANT: { name: "Deepa Iyer", email: "deepa.iyer@navix.finance" },
-  COLLECTIONS_HEAD: { name: "Arjun Patel", email: "arjun.patel@navix.finance" },
-  COLLECTION_OFFICER: { name: "Sana Khan", email: "sana.khan@navix.finance" },
+  COLLECTION_HEAD: { name: "Arjun Patel", email: "arjun.patel@navix.finance" },
+  COLLECTION_EXECUTIVE: { name: "Sana Khan", email: "sana.khan@navix.finance" },
   ADMIN: { name: "Meera Krishnan", email: "meera.krishnan@navix.finance" },
+  DEVELOPER: { name: "Dev Ops", email: "dev.ops@navix.finance" },
 };
 
 export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
@@ -48,9 +49,10 @@ export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   CREDIT_HEAD: "Credit Head",
   DISBURSEMENT_HEAD: "Disbursement Head",
   ACCOUNTANT: "Accountant",
-  COLLECTIONS_HEAD: "Collections Head",
-  COLLECTION_OFFICER: "Collection Officer",
+  COLLECTION_HEAD: "Collection Head",
+  COLLECTION_EXECUTIVE: "Collection Executive",
   ADMIN: "Administrator",
+  DEVELOPER: "Developer",
 };
 
 function setCookie(name: string, value: string, days = 1) {

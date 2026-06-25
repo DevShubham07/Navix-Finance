@@ -21,9 +21,16 @@ public class CrifClient {
 
     /**
      * Pull the CRIF credit report for the applicant.
-     * TODO: call the Fintrix CRIF endpoint and map score + accounts summary.
+     *
+     * <p>DEMO MOCK: returns a deterministic mid-band CRIF report (score 730) without any
+     * network call, pending live Fintrix credentials. The injected {@code fintrix} RestClient
+     * is intentionally left unused for the demo.
      */
     public CrifResponse pull(String pan, String name, String mobile) {
-        throw new UnsupportedOperationException("TODO: call Fintrix CRIF bureau endpoint");
+        return new CrifResponse(
+                730,
+                new com.navix.verification.dto.FintrixDtos.CrifAccountsSummary(
+                        3, 2, 0, 41_000.0, 1),
+                "CRIF hit (demo mock)");
     }
 }

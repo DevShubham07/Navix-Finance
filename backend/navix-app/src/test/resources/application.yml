@@ -1,0 +1,14 @@
+# Test overrides: keep integration tests fully offline.
+# - Replace the AWS SSM param-store config import with a no-op optional import.
+# - Provide static AWS creds + region so the S3 client/presigner beans construct
+#   without reaching the network (Testcontainers supplies the datasource).
+spring:
+  config:
+    import: "optional:configtree:/tmp/navix-test-config/"
+  cloud:
+    aws:
+      region:
+        static: ap-south-1
+      credentials:
+        access-key: test
+        secret-key: test

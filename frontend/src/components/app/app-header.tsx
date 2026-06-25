@@ -45,7 +45,7 @@ export function AppHeader() {
                   </Link>
                 );
               })}
-              <Link href="/loan/apply" className="btn btn-gold btn-sm ml-2">
+              <Link href="/signup/pan" className="btn btn-gold btn-sm ml-2">
                 New loan
               </Link>
               <button

@@ -43,6 +43,16 @@
         <module>navix-app</module>
     </modules>
 
+    <!-- Shared across every module. Test starter (JUnit 5 + AssertJ + Mockito)
+         so any module can have src/test; version managed by the Spring Boot parent. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
     <dependencyManagement>
         <dependencies>
             <!-- Spring Cloud AWS BOM: manages S3, SSM Parameter Store, and the

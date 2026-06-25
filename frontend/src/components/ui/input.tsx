@@ -1,4 +1,5 @@
 import * as React from "react";
+import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -36,6 +37,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       leftIcon,
       rightIcon,
       id,
+      style: styleProp,
       ...props
     },
     ref,
@@ -51,6 +53,18 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             {required ? <span className="req"> *</span> : null}
           </label>
         )}
+        {/* Error sits ABOVE the input (under the label) so the user sees exactly
+            which field is wrong before their eyes reach the box. */}
+        {error ? (
+          <p
+            className="err"
+            role="alert"
+            style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 0, marginBottom: 7 }}
+          >
+            <AlertCircle size={14} style={{ flexShrink: 0 }} aria-hidden="true" />
+            <span>{error}</span>
+          </p>
+        ) : null}
         <div style={leftIcon || rightIcon ? { position: "relative" } : undefined}>
           {leftIcon && (
             <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }}>
@@ -61,7 +75,14 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             type={type}
-            className={cn(sizeClass, leftIcon && "pl-10", rightIcon && "pr-10", inputClassName)}
+            className={cn(sizeClass, inputClassName)}
+            // Inline padding so the leading/trailing icon never overlaps the text:
+            // the global `.field input` rule (class+element) outranks Tailwind's pl-10/pr-10.
+            style={{
+              ...styleProp,
+              ...(leftIcon ? { paddingLeft: "2.5rem" } : null),
+              ...(rightIcon ? { paddingRight: "2.5rem" } : null),
+            }}
             aria-invalid={!!error}
             {...props}
           />
@@ -71,7 +92,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             </span>
           )}
         </div>
-        {error ? <p className="err" style={{ display: "block" }}>{error}</p> : helperText ? <p className="hint">{helperText}</p> : null}
+        {!error && helperText ? <p className="hint">{helperText}</p> : null}
       </div>
     );
   },

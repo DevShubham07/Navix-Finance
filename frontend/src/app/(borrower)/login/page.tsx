@@ -9,6 +9,7 @@ import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useBorrowerJourney } from "@/lib/mock/borrower";
 import { signInBorrower } from "@/lib/mock/session";
+import { normalizeMobile } from "@/lib/utils";
 
 const DEMO_OTP = "123456";
 
@@ -20,7 +21,7 @@ export default function LoginPage() {
   const [otp, setOtp] = React.useState("");
   const [error, setError] = React.useState<string>();
 
-  const mobileOk = mobile.replace(/\D/g, "").length === 10;
+  const mobileOk = mobile.length === 10;
 
   const send = () => {
     if (!mobileOk) { setError("Enter a valid 10-digit mobile number"); return; }
@@ -28,9 +29,23 @@ export default function LoginPage() {
     setStage("verify");
   };
 
-  const verify = (code = otp) => {
+  const verify = async (code = otp) => {
     if (code !== DEMO_OTP) { setError("Incorrect code. For this demo, use 123456."); return; }
-    signInBorrower(applicant.fullName || "Aarav Sharma", mobile || applicant.mobile || "98765 43210");
+    const name = applicant.fullName || "Aarav Sharma";
+    const mob = mobile || applicant.mobile || "98765 43210";
+    // Mock session (localStorage) keeps the existing demo flow working.
+    signInBorrower(name, mob);
+    try {
+      // Live session: httpOnly navix_borrower cookie used by the BFF proxies.
+      await fetch("/api/auth/borrower/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile: mob, otp: code, name }),
+      });
+    } catch {
+      // Non-fatal: the dashboard resolves the live application on its own.
+    }
+    // The dashboard reflects the live application state (start / in-progress / active).
     router.push("/dashboard");
   };
 
@@ -49,8 +64,9 @@ export default function LoginPage() {
                 label="Mobile number"
                 required
                 inputMode="numeric"
+                maxLength={10}
                 value={mobile}
-                onChange={(e) => { setMobile(e.target.value.replace(/[^\d ]/g, "").slice(0, 11)); setError(undefined); }}
+                onChange={(e) => { setMobile(normalizeMobile(e.target.value)); setError(undefined); }}
                 placeholder="98765 43210"
                 leftIcon={<Smartphone size={16} />}
                 autoComplete="tel"
