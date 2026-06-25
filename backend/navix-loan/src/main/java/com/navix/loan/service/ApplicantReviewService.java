@@ -8,11 +8,15 @@ import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.ApplicationDocument;
+import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,11 +77,27 @@ public class ApplicantReviewService {
         return profileRepository.save(p);
     }
 
+    /**
+     * Read the applicant KYC snapshot for an application. A reborrow application has no profile row
+     * of its own (identity carries over from the prior loan), so fall back to the applicant's most
+     * recent saved profile — this is what the KYC reviewer and the borrower's amount page see.
+     */
     @Transactional(readOnly = true)
     public ApplicantProfile getProfile(Long appId) {
-        requireApplication(appId);
+        LoanApplication app = applicationRepository.findById(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
         return profileRepository.findByApplicationId(appId)
+                .or(() -> latestProfileForApplicant(app.getApplicantId()))
                 .orElseThrow(() -> new ResourceNotFoundException("ApplicantProfile", "application:" + appId));
+    }
+
+    /** The applicant's most recent saved KYC profile (newest application first), if any. */
+    private Optional<ApplicantProfile> latestProfileForApplicant(Long applicantId) {
+        return applicationRepository.findByApplicantId(applicantId).stream()
+                .sorted(Comparator.comparing(LoanApplication::getId).reversed())
+                .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
+                .filter(Objects::nonNull)
+                .findFirst();
     }
 
     @Transactional

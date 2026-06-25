@@ -19,8 +19,16 @@ export default function DisbursementPage() {
       <PermissionGate permission="loan:disburse" fallback={<NoAccessNotice />}>
         <div className="space-y-8">
           <StatusQueue
-            title="Disbursement pending"
+            title="Pre-approved — fast-track release"
             status="DISBURSEMENT_PENDING"
+            filter={(app) => app.fastTrack === true}
+            actions={(app) => <DisbursementActions app={app} />}
+            info="Returning borrowers pre-approved on a clean repayment history — these skipped credit review and came straight to you. Release the funds as usual."
+          />
+          <StatusQueue
+            title="Standard disbursement"
+            status="DISBURSEMENT_PENDING"
+            filter={(app) => app.fastTrack !== true}
             actions={(app) => <DisbursementActions app={app} />}
             info="Credit-approved loans awaiting release. Enter the bank/UPI transaction id to release & activate the loan immediately; approve without one to route it to the accountant to confirm the transfer."
           />

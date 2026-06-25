@@ -11,11 +11,19 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.domain.LoanStatus;
+import com.navix.loan.domain.PaymentStatus;
+import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.entity.Payment;
+import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import com.navix.loan.repository.LoanRepository;
+import com.navix.loan.repository.PaymentRepository;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +45,12 @@ class ApplicationFlowServiceTest {
     private LoanService loanService;
     @Mock
     private StaffDirectory staffDirectory;
+    @Mock
+    private LoanRepository loanRepository;
+    @Mock
+    private PaymentRepository paymentRepository;
+    @Mock
+    private ApplicantProfileRepository profileRepository;
 
     private ApplicationFlowService flow;
     private final List<ApplicationEvent> events = new ArrayList<>();
@@ -44,7 +58,8 @@ class ApplicationFlowServiceTest {
     @BeforeEach
     void setUp() {
         flow = new ApplicationFlowService(applicationRepository, eventRepository,
-                new EligibilityService(), loanService, staffDirectory);
+                new EligibilityService(), loanService, staffDirectory,
+                loanRepository, paymentRepository, profileRepository, new LoanMath());
         // Default: assignee passes activation gating; negative case overrides below.
         lenient().when(staffDirectory.isActiveWithRole(any(), any())).thenReturn(true);
         lenient().when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -203,5 +218,131 @@ class ApplicationFlowServiceTest {
     void closeForLoanNoOpWhenNoApplicationForLoan() {
         when(applicationRepository.findByLoanId(77L)).thenReturn(Optional.empty());
         flow.closeForLoan(77L); // must not throw
+    }
+
+    // ---- returning-borrower reborrow + review gate ---------------------------------
+
+    /** A returning borrower in good standing (no past delinquency) is pre-approved. */
+    @Test
+    void reborrowCleanHistoryIsPreApproved() {
+        actor("7", "BORROWER");
+        LoanApplication prior = priorApp(); // CLOSED, salary day 30
+        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(prior));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
+        when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of()); // paid on time
+
+        LoanApplication result = flow.reborrow();
+
+        assertThat(result.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
+        assertThat(result.getEligibleLimit()).isEqualTo(1_500_000L); // 25% of ₹60,000
+        assertThat(result.getSalaryCreditDay()).isEqualTo(30);
+    }
+
+    /** Any past delinquency — here a loan repaid LATE (now closed) — forces a KYC re-review. */
+    @Test
+    void reborrowWithLateRepaymentNeedsReview() {
+        actor("7", "BORROWER");
+        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(priorApp()));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(10));
+        when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(closed));
+        Payment late = new Payment();
+        late.setLoanId(50L);
+        late.setStatus(PaymentStatus.VERIFIED);
+        late.setPaidOn(LocalDate.now().minusDays(5)); // after the due date
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(late));
+
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REVIEW_PENDING);
+    }
+
+    @Test
+    void reborrowBlockedWhileAnApplicationIsLive() {
+        actor("7", "BORROWER");
+        LoanApplication live = new LoanApplication();
+        live.setId(10L);
+        live.setApplicantId(7L);
+        live.setStatus(ApplicationStatus.ACTIVE); // not terminal
+        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(live));
+
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("current advance");
+    }
+
+    @Test
+    void reborrowWithoutPriorProfileFails() {
+        actor("7", "BORROWER");
+        LoanApplication prior = new LoanApplication();
+        prior.setId(10L);
+        prior.setApplicantId(7L);
+        prior.setStatus(ApplicationStatus.CANCELLED); // terminal, but no profile
+        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(prior));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("No previous application");
+    }
+
+    @Test
+    void reviewApproveClearsToPreApproved() {
+        LoanApplication app = appAt(ApplicationStatus.REVIEW_PENDING);
+        actor("kyc1", "KYC_APPROVER");
+        flow.decideReview(1L, true, "manual check ok");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
+    }
+
+    @Test
+    void reviewRejectDeclines() {
+        LoanApplication app = appAt(ApplicationStatus.REVIEW_PENDING);
+        actor("kyc1", "KYC_APPROVER");
+        flow.decideReview(1L, false, "too risky");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+    }
+
+    @Test
+    void reviewRequiresKycApproverRole() {
+        appAt(ApplicationStatus.REVIEW_PENDING);
+        actor("head1", "CREDIT_HEAD");
+        assertThatThrownBy(() -> flow.decideReview(1L, true, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("requires role KYC_APPROVER");
+    }
+
+    /** Pre-approved borrower applying skips the credit gates → straight to disbursement (fast-track). */
+    @Test
+    void applyFromPreApprovedRoutesStraightToDisbursement() {
+        LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
+        actor("7", "BORROWER");
+        flow.apply(1L, 1_000_000L, "medical", 1_500_000L, 30);
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
+        assertThat(app.getAssignedExecutiveId()).isNull(); // the fast-track discriminator
+    }
+
+    private LoanApplication priorApp() {
+        LoanApplication prior = new LoanApplication();
+        prior.setId(10L);
+        prior.setApplicantId(7L);
+        prior.setStatus(ApplicationStatus.CLOSED); // terminal — reborrow allowed
+        prior.setSalaryCreditDay(30);
+        return prior;
+    }
+
+    private ApplicantProfile priorProfile() {
+        ApplicantProfile p = new ApplicantProfile();
+        p.setApplicationId(10L);
+        p.setMonthlySalaryPaise(6_000_000L); // ₹60,000
+        return p;
+    }
+
+    private Loan loanAt(Long id, LoanStatus status, LocalDate dueDate) {
+        Loan loan = new Loan();
+        loan.setId(id);
+        loan.setApplicantId(7L);
+        loan.setStatus(status);
+        loan.setDueDate(dueDate);
+        return loan;
     }
 }

@@ -86,12 +86,15 @@ export function StatusQueue({
   status,
   actions,
   info,
+  filter,
 }: {
   title: string;
   status: ApplicationStatus;
   actions: (app: ApplicationView) => React.ReactNode;
   /** Optional ⓘ explanation shown beside the queue title. */
   info?: string;
+  /** Optional client-side filter to split one status into sections (e.g. fast-track disbursement). */
+  filter?: (app: ApplicationView) => boolean;
 }) {
   const q = useQuery({
     queryKey: ["staff-queue", status],
@@ -99,11 +102,13 @@ export function StatusQueue({
     refetchInterval: 8000,
   });
 
+  const apps = filter ? (q.data ?? []).filter(filter) : q.data ?? [];
+
   return (
     <QueuePanel
       title={title}
       countBadge={status}
-      apps={q.data ?? []}
+      apps={apps}
       isLoading={q.isLoading}
       error={q.error}
       onRefresh={() => q.refetch()}
@@ -627,6 +632,32 @@ export function KycActions({ app }: { app: ApplicationView }) {
     <ActionGate permission="kyc:approve">
       <div className="flex items-center gap-2">
         <ApproveRejectButtons pending={m.isPending} onApprove={() => m.mutate(true)} onReject={() => m.mutate(false)} />
+        <ActionError error={m.error} />
+      </div>
+    </ActionGate>
+  );
+}
+
+/**
+ * Reborrow review (KYC approver): clear or reject a returning borrower flagged for past delinquency.
+ * Separate from fresh KYC — REVIEW_PENDING → PRE_APPROVED (clear) / REJECTED. Same `kyc:approve` perm.
+ */
+export function ReviewActions({ app }: { app: ApplicationView }) {
+  const refresh = useRefreshAfterAction();
+  const m = useMutation({
+    mutationFn: (decision: boolean) => staffApi.reviewDecision(app.id, decision),
+    onSuccess: () => refresh(app.id),
+  });
+  return (
+    <ActionGate permission="kyc:approve">
+      <div className="flex items-center gap-2">
+        <ApproveRejectButtons
+          pending={m.isPending}
+          onApprove={() => m.mutate(true)}
+          onReject={() => m.mutate(false)}
+          approveLabel="Clear borrower"
+          rejectLabel="Reject"
+        />
         <ActionError error={m.error} />
       </div>
     </ActionGate>

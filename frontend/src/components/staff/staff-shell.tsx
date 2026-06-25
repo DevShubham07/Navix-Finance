@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   ShieldCheck,
+  UserCheck,
   ClipboardList,
   Banknote,
   Receipt,
@@ -35,6 +36,7 @@ const NAV: NavGroup[] = [
       { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard },
       { label: "Live applications", href: "/staff/applications", Icon: Workflow },
       { label: "KYC Approvals", href: "/staff/kyc-approvals", Icon: ShieldCheck, perm: "kyc:approve" },
+      { label: "Reborrow Reviews", href: "/staff/kyc-review", Icon: UserCheck, perm: "kyc:approve" },
       { label: "Credit Queue", href: "/staff/credit/queue", Icon: ClipboardList, perm: "loan:review" },
       { label: "Disbursement", href: "/staff/disbursement", Icon: Banknote, perm: "loan:disburse" },
       { label: "Accounting", href: "/staff/accounting", Icon: Receipt, perm: "loan:activate" },

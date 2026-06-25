@@ -14,8 +14,9 @@ bank integrations**, and the remaining **platform hardening**.
 > cookie mismatch is fixed (A5), UI RBAC gating + `cancel`/settlement role guards landed (A6), and the
 > signup document upload is now a real file (B2). Money/lifecycle **bugs** found in the same pass
 > (penalty-aware outstanding + closure, OVERDUE-on-read, closed-case filtering) are fixed in code and
-> recorded in `CLAUDE.md` §2/§9 — not tracked here. **Still deferred:** the reborrow endpoint (D5),
-> full JWT/Spring Security (A), and emailed invites (A1).
+> recorded in `CLAUDE.md` §2/§9 — not tracked here. **Still deferred:** full JWT/Spring Security (A)
+> and emailed invites (A1). (The reborrow endpoint, D5, is now **done** — returning-borrower
+> pre-approval + past-delinquency review gate, Flyway V14.)
 
 Status legend: 🔴 not started · 🟡 partial scaffold exists · 🟢 done (moves out of this doc).
 
@@ -214,9 +215,15 @@ WARN at boot — harmless locally).
 - **D5. Borrower repay** — 🟢 **DONE.** `/repay` records a real manual payment
   (`POST /api/loan/{id}/repayments`, → PENDING_VERIFICATION); the **Accountant** verifies it, reducing
   the outstanding and closing the loan + application (`closeForLoan`, ACTIVE/OVERDUE → CLOSED) at zero;
-  the page shows the prepayment-aware "pay today" amount via `…/outstanding`. _Remaining:_ **reborrow**
-  (`/reloan` → a new draft reusing the profile) is still mock — add the endpoint and wire it off
-  `borrowerApi`.
+  the page shows the prepayment-aware "pay today" amount via `…/outstanding`.
+  **Reborrow is now 🟢 DONE too:** `/reloan` calls `POST /api/applications/reborrow`
+  (`borrowerApi.reborrow`), which reuses the saved KYC profile (no re-entry) and routes by loan
+  history — clean → `PRE_APPROVED` (skips KYC + credit, straight to the Disbursement Head's fast-track
+  section), any past overdue → `REVIEW_PENDING` (a separate KYC-approver queue, `/staff/kyc-review`,
+  every reborrow). New states + Flyway **V14**; standing is computed from history. _Remaining hardening:_
+  a persisted **`borrower_standing`** table would let standing be audited / "cleared once" (today it is
+  recomputed each reborrow), and pre-approved fast-track deliberately skips the credit maker-checker —
+  revisit if repeat-borrower credit re-checks are ever required.
 
 ---
 
