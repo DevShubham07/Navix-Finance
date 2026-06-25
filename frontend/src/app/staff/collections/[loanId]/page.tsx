@@ -135,10 +135,14 @@ function BorrowerCard({ loan }: { loan: LoanSummary | null }) {
         <dl className="grid grid-cols-2 gap-y-1.5">
           <Row label="Name" value={loan.borrowerName} />
           <Row label="PAN" value={loan.panMasked ? <span className="font-mono text-xs">{loan.panMasked}</span> : null} />
-          <Row label="Employer" value={loan.employer} />
           <Row label="Employment" value={loan.employmentStatus} />
-          <Row label="Monthly salary" value={paiseToINR(loan.monthlySalaryPaise)} />
-          <Row label="Salary bank" value={loan.salaryBank} />
+          {/* Employer / salary / salary-bank are credit-assessment data — need-to-know for the
+              Collection Head (collections:manage), not the executive chasing the payment. */}
+          <PermissionGate permission="collections:manage">
+            <Row label="Employer" value={loan.employer} />
+            <Row label="Monthly salary" value={paiseToINR(loan.monthlySalaryPaise)} />
+            <Row label="Salary bank" value={loan.salaryBank} />
+          </PermissionGate>
         </dl>
       )}
     </div>

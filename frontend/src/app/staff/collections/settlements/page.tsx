@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Check } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage } from "@/components/staff/live-pipeline";
+import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import { collectionsApi, paiseToINR, type SettlementView } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
@@ -72,13 +72,20 @@ export default function CollectionsSettlementsPage() {
                       {approved ? (
                         <span className="text-xs text-muted">{s.approvedByName ?? (s.approvedBy != null ? `#${s.approvedBy}` : "")} · {s.approvedAt ? formatDateTime(s.approvedAt) : "—"}</span>
                       ) : (
-                        <button
-                          onClick={() => approve.mutate(s.id)}
-                          disabled={approve.isPending}
-                          className="btn btn-sm bg-success-600 border-success-600 text-white hover:bg-success-700 disabled:opacity-50"
+                        // Only the Collection Head (collections:manage) approves; the backend enforces
+                        // the role + proposer≠approver SoD too.
+                        <PermissionGate
+                          permission="collections:manage"
+                          fallback={<span className="text-xs italic text-muted">Awaiting Collection Head</span>}
                         >
-                          {approve.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Approve
-                        </button>
+                          <button
+                            onClick={() => approve.mutate(s.id)}
+                            disabled={approve.isPending}
+                            className="btn btn-sm bg-success-600 border-success-600 text-white hover:bg-success-700 disabled:opacity-50"
+                          >
+                            {approve.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Approve
+                          </button>
+                        </PermissionGate>
                       )}
                     </td>
                   </tr>

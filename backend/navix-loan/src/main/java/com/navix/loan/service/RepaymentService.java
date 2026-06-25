@@ -50,8 +50,10 @@ public class RepaymentService {
                 return existing.get();
             }
         }
-        long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
-        long remaining = Math.max(0L, loan.getTotalRepayable() - verified);
+        // Penalty-aware remaining as of the payment date, so a short payment on an overdue loan is
+        // correctly flagged partial (the stored total excludes the accruing late penalty).
+        LocalDate effectivePaidOn = paidOn != null ? paidOn : LocalDate.now();
+        long remaining = outstandingAsOf(loanId, effectivePaidOn);
 
         Payment payment = new Payment();
         payment.setLoanId(loanId);
@@ -60,7 +62,7 @@ public class RepaymentService {
         payment.setStatus(PaymentStatus.PENDING_VERIFICATION);
         payment.setTxnRef(txnRef);
         payment.setProofUrl(proofUrl);
-        payment.setPaidOn(paidOn != null ? paidOn : LocalDate.now());
+        payment.setPaidOn(effectivePaidOn);
         payment.setPartial(amountPaise < remaining);
         return paymentRepository.save(payment);
     }
@@ -109,15 +111,16 @@ public class RepaymentService {
 
     private void recomputeOutstanding(Long loanId) {
         Loan loan = requireLoan(loanId);
-        long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
-        long outstanding = Math.max(0L, loan.getTotalRepayable() - verified);
-        loan.setOutstanding(outstanding);
-        if (outstanding == 0L) {
+        // Use the authoritative penalty-aware balance: an overdue loan must not close just because
+        // the borrower paid the no-penalty stored total — the accrued late penalty is still owed.
+        long owed = outstandingAsOf(loanId, LocalDate.now());
+        loan.setOutstanding(owed);
+        if (owed == 0L) {
             loan.setStatus(LoanStatus.CLOSED);
         }
         loanRepository.save(loan);
         // Mirror full repayment onto the application aggregate (ACTIVE/OVERDUE → CLOSED).
-        if (outstanding == 0L) {
+        if (owed == 0L) {
             applicationFlowService.closeForLoan(loanId);
         }
     }

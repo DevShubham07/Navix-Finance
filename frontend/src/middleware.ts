@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * Name of the cookie that carries the staff session.
- * TODO: align this name with whatever the auth/login flow actually sets.
+ * Name of the cookie that carries the staff session — the httpOnly cookie the BFF login route
+ * (`/api/auth/staff/login`) actually sets. (Was `navix_session`, which nothing set, so the gate
+ * was a no-op.) Real token verification is still a TODO; for now we check presence of this cookie.
  */
-const SESSION_COOKIE = "navix_session";
+const SESSION_COOKIE = "navix_staff";
 
 /**
  * Middleware that gates the internal (staff) routes.

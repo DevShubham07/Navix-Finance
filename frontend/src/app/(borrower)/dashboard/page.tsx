@@ -35,6 +35,18 @@ export default function DashboardPage() {
     (j.applicant.monthlySalary ? rupeesToPaise(j.applicant.monthlySalary) : 0);
   const limitRupees = eligibleLimit(Math.round(salaryPaise / 100));
 
+  // "Repaid" is the sum of VERIFIED payments — not total − outstanding, since the (now penalty- and
+  // prepayment-aware) outstanding can be below the on-time total without any payment being made.
+  const paymentsQuery = useQuery({
+    queryKey: ["live-payments", loan?.id],
+    queryFn: () => borrowerApi.repayments(loan!.id as number),
+    enabled: loan?.id != null,
+  });
+  const repaidRupees =
+    (paymentsQuery.data ?? [])
+      .filter((p) => p.status === "VERIFIED")
+      .reduce((sum, p) => sum + p.amountPaise, 0) / 100;
+
   const stage = appStatusToStage(app);
   const firstName =
     (session.data?.name || j.applicant.fullName || "there").split(" ")[0] || "there";
@@ -66,6 +78,7 @@ export default function DashboardPage() {
               outstanding={loan.outstandingPaise / 100}
               penalty={Math.max(0, (loan.outstandingPaise - loan.totalRepayablePaise) / 100)}
               principal={loan.principalPaise / 100}
+              repaid={repaidRupees}
               dueISO={loan.dueDate ?? new Date().toISOString()}
             />
           ) : closed ? (
@@ -149,12 +162,11 @@ function StatusChip({ status }: { status: BorrowerStatus }) {
 }
 
 function LoanCard({
-  status, total, outstanding, penalty, principal, dueISO,
+  status, total, outstanding, penalty, principal, repaid, dueISO,
 }: {
   status: BorrowerStatus;
-  total: number; outstanding: number; penalty: number; principal: number; dueISO: string;
+  total: number; outstanding: number; penalty: number; principal: number; repaid: number; dueISO: string;
 }) {
-  const repaid = Math.max(0, total - outstanding);
   const pct = total > 0 ? Math.min(100, Math.round((repaid / total) * 100)) : 0;
   const due = new Date(dueISO);
   const days = daysBetween(new Date(), due);

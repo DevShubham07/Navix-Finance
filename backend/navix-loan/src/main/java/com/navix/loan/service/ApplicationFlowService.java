@@ -14,6 +14,7 @@ import com.navix.loan.repository.LoanApplicationRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,10 @@ public class ApplicationFlowService {
     private final EligibilityService eligibilityService;
     private final LoanService loanService;
     private final StaffDirectory staffDirectory;
+
+    /** Staff roles permitted to cancel a pre-disbursement application (alongside the owning borrower). */
+    private static final Set<String> CANCEL_STAFF_ROLES = Set.of(
+            "KYC_APPROVER", "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD", "ACCOUNTANT");
 
     // ---- creation & borrower steps -------------------------------------------------
 
@@ -201,8 +206,32 @@ public class ApplicationFlowService {
     @Transactional
     public LoanApplication cancel(Long appId, String notes) {
         LoanApplication app = require(appId);
+        requireCancelAuthority(app);
         transition(app, ApplicationStatus.CANCELLED, "CANCEL", notes);
         return applicationRepository.save(app);
+    }
+
+    /**
+     * Who may cancel: ADMIN (oversight); the owning BORROWER (their own application only); or a
+     * pre-disbursement staff role. Anyone else (anonymous, an unrelated borrower) is rejected so a
+     * cancel can't be driven by an actor with no authority over the application.
+     */
+    private void requireCancelAuthority(LoanApplication app) {
+        CurrentActor actor = ActorContext.get();
+        String role = actor.role();
+        if ("ADMIN".equals(role)) {
+            return;
+        }
+        if ("BORROWER".equals(role)) {
+            if (!String.valueOf(app.getApplicantId()).equals(actor.id())) {
+                throw new BusinessException("FORBIDDEN", "A borrower can only cancel their own application");
+            }
+            return;
+        }
+        if (CANCEL_STAFF_ROLES.contains(role)) {
+            return;
+        }
+        throw new BusinessException("FORBIDDEN_ROLE", "You are not allowed to cancel this application");
     }
 
     /**

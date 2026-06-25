@@ -1,19 +1,13 @@
 "use client";
 
-import * as React from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, ShieldCheck } from "lucide-react";
 import { InfoRow, SummarySection } from "@/components/borrower/summary";
 import { KycProgress } from "@/components/borrower/kyc-progress";
-import { Badge } from "@/components/ui";
-import { useBorrowerJourney, type RiskCategory } from "@/lib/mock/borrower";
+import { useBorrowerJourney } from "@/lib/mock/borrower";
 import { signOutBorrower } from "@/lib/mock/session";
 import { useMounted } from "@/hooks/use-mounted";
 import { formatINR0 } from "@/lib/utils";
-
-const RISK_VARIANT: Record<RiskCategory, React.ComponentProps<typeof Badge>["variant"]> = {
-  A: "success", B: "info", C: "warning", D: "error",
-};
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -37,12 +31,8 @@ export default function ProfilePage() {
           <h1 className="mb-0">{a.fullName || "Your profile"}</h1>
           <p className="mt-1 text-muted">{a.email || "Verified borrower"}</p>
         </div>
-        {j.creditScore > 0 && (
-          <div className="flex items-center gap-2">
-            <Badge variant={RISK_VARIANT[j.riskCategory]}>Risk {j.riskCategory}</Badge>
-            <Badge variant="neutral">Score {j.creditScore}</Badge>
-          </div>
-        )}
+        {/* Risk category (A/B/C/D) and credit score are staff-only signals — never shown to the
+            borrower (product rule: one price for all). */}
       </div>
 
       <div className="grid gap-4">

@@ -113,11 +113,25 @@ class SettlementServiceTest {
 
     @Test
     void approveBySameActorWhoProposedViolatesSod() {
-        ActorContext.set(OFFICER); // id 9 — same as proposer
-        when(settlementRepository.findById(settlementId)).thenReturn(Optional.of(proposedByOfficer()));
+        // A Collection Head may also propose; if that same head then approves, SoD must block it
+        // (the role guard passes, so we reach the proposer≠approver check).
+        ActorContext.set(HEAD); // id 8
+        Settlement proposedByHead = proposedByOfficer();
+        proposedByHead.setProposedBy(8L); // same staff id as the approver
+        when(settlementRepository.findById(settlementId)).thenReturn(Optional.of(proposedByHead));
 
         assertThatThrownBy(() -> service.approve(settlementId))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("separation of duties");
+    }
+
+    @Test
+    void approveByNonHeadIsForbidden() {
+        // Only a Collection Head (or ADMIN) may approve — an executive is rejected up front.
+        ActorContext.set(OFFICER);
+
+        assertThatThrownBy(() -> service.approve(settlementId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("COLLECTION_HEAD");
     }
 }

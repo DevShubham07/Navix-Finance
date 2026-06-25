@@ -79,4 +79,16 @@ public class Loan extends BaseAuditEntity {
     /** Bank/UPI transaction reference for the outgoing disbursal (captured at release). */
     @Column(name = "disbursal_txn_ref", length = 64)
     private String disbursalTxnRef;
+
+    /**
+     * Effective status on read: an ACTIVE loan past its due date reads as OVERDUE. This is computed,
+     * not persisted (the stored column stays ACTIVE until a collection case flips it to
+     * IN_COLLECTIONS) — collectible queries already include both ACTIVE and OVERDUE.
+     */
+    public LoanStatus effectiveStatus(LocalDate asOf) {
+        if (status == LoanStatus.ACTIVE && dueDate != null && asOf != null && asOf.isAfter(dueDate)) {
+            return LoanStatus.OVERDUE;
+        }
+        return status;
+    }
 }

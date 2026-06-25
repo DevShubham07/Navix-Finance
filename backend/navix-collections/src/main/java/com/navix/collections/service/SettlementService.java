@@ -30,9 +30,30 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SettlementService {
 
+    /** Role a settlement proposer must hold (a collections officer). */
+    private static final String OFFICER_ROLE = "COLLECTION_EXECUTIVE";
+
+    /** Role that approves a settlement (collections management). */
+    private static final String MANAGER_ROLE = "COLLECTION_HEAD";
+
     private final SettlementRepository settlementRepository;
     private final CollectionCaseRepository caseRepository;
     private final StaffDirectory staffDirectory;
+
+    /** Authorise the current actor against one of {@code roles} (ADMIN always passes). */
+    private static void requireOneOf(String... roles) {
+        String role = ActorContext.get().role();
+        if ("ADMIN".equals(role)) {
+            return;
+        }
+        for (String r : roles) {
+            if (r.equals(role)) {
+                return;
+            }
+        }
+        throw new BusinessException("FORBIDDEN_ROLE",
+                "This action requires one of: " + String.join(", ", roles));
+    }
 
     /** The acting staff id (a real bigint) from the current actor. */
     private static long actorStaffId() {
@@ -53,6 +74,8 @@ public class SettlementService {
      */
     @Transactional
     public SettlementView propose(UUID caseId, long settlementAmountPaise) {
+        // A collections officer (or the Head/ADMIN) proposes; not just any staff actor.
+        requireOneOf(OFFICER_ROLE, MANAGER_ROLE);
         if (!caseRepository.existsById(caseId)) {
             throw new ResourceNotFoundException("CollectionCase", String.valueOf(caseId));
         }
@@ -72,6 +95,8 @@ public class SettlementService {
      */
     @Transactional
     public SettlementView approve(UUID settlementId) {
+        // Only a Collection Head (or ADMIN) approves — in addition to the proposer≠approver SoD below.
+        requireOneOf(MANAGER_ROLE);
         Settlement s = settlementRepository.findById(settlementId)
                 .orElseThrow(() -> new ResourceNotFoundException("Settlement", String.valueOf(settlementId)));
         long approver = actorStaffId();

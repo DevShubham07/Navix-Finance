@@ -33,7 +33,11 @@ public class LoanController {
 
     @GetMapping("/{loanId}")
     public ApiResponse<LoanView> getLoan(@PathVariable Long loanId) {
-        return ApiResponse.ok(LoanView.of(loanService.getLoan(loanId)));
+        var loan = loanService.getLoan(loanId);
+        // Single source of truth for "amount owed": the penalty/prepayment-aware balance, and an
+        // effective status so a past-due ACTIVE loan reads as OVERDUE (matches the repay page).
+        long owed = repaymentService.outstandingAsOf(loanId, null);
+        return ApiResponse.ok(LoanView.of(loan, owed, loan.effectiveStatus(LocalDate.now())));
     }
 
     /**

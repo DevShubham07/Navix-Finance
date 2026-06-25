@@ -91,6 +91,9 @@ export interface BorrowerLoan {
   repayments: BorrowerRepayment[];
 }
 
+/** A captured document (base64, no data: prefix) to upload to the backend at submit time. */
+export type UploadedDoc = { docType: string; fileName: string; contentType?: string; dataBase64: string };
+
 interface BorrowerJourneyState {
   status: BorrowerStatus;
   applicant: ApplicantProfile;
@@ -103,6 +106,8 @@ interface BorrowerJourneyState {
   documentsSigned: boolean;
   bankVerified: boolean;
   loan?: BorrowerLoan;
+  /** Address-proof document captured in the wizard, uploaded to the backend on review-submit. */
+  addressProofDoc?: UploadedDoc;
 
   /** 25% of monthly salary (statutory cap, before risk haircut). */
   eligibleLimit: () => number;
@@ -113,6 +118,7 @@ interface BorrowerJourneyState {
   updateApplicant: (patch: Partial<ApplicantProfile>) => void;
   verifyMobile: () => void;
   setKyc: (patch: Partial<KycState>) => void;
+  setAddressProofDoc: (doc: UploadedDoc | undefined) => void;
   /** Submit the completed onboarding form; assigns risk + credit score. */
   submitForReview: () => void;
   startReview: () => void;
@@ -229,6 +235,7 @@ export const useBorrowerJourney = create<BorrowerJourneyState>()(
           documentsSigned: false,
           bankVerified: false,
           loan: undefined,
+          addressProofDoc: undefined,
         }),
 
       updateApplicant: (patch) => set((s) => ({ applicant: { ...s.applicant, ...patch } })),
@@ -236,6 +243,8 @@ export const useBorrowerJourney = create<BorrowerJourneyState>()(
       verifyMobile: () => set((s) => ({ applicant: { ...s.applicant, mobileVerified: true } })),
 
       setKyc: (patch) => set((s) => ({ kyc: { ...s.kyc, ...patch } })),
+
+      setAddressProofDoc: (doc) => set({ addressProofDoc: doc }),
 
       submitForReview: () =>
         set((s) => {
