@@ -203,10 +203,14 @@ export function appStatusToStage(app: ApplicationView | null | undefined): Borro
     case "KYC_PENDING":
       return "UNDER_REVIEW";
     case "KYC_APPROVED":
-      // KYC done; "APPROVED" prompts the choose-amount step. Once an amount is
-      // submitted it's in credit review — still shown as approved (the precise
-      // label + audit trail on /loan/status disambiguate).
+    case "PRE_APPROVED":
+      // KYC done (or a pre-approved returning borrower); "APPROVED" prompts the
+      // choose-amount step. Once an amount is submitted it's in credit/disbursement
+      // review — still shown as approved (the audit trail on /loan/status disambiguates).
       return "APPROVED";
+    case "REVIEW_PENDING":
+      // Returning borrower with past delinquency, held for KYC re-review.
+      return "UNDER_REVIEW";
     case "CREDIT_EXEC_PENDING":
     case "CREDIT_EXEC_APPROVED":
     case "CREDIT_HEAD_PENDING":
@@ -237,9 +241,16 @@ export function hasApplied(app: ApplicationView | null | undefined): boolean {
   return !!app && app.amountRequestedPaise != null;
 }
 
-/** The borrower can pick an amount only when KYC-approved and not yet applied. */
+/**
+ * The borrower can pick an amount once approved and not yet applied — a fresh borrower after KYC
+ * (KYC_APPROVED) or a returning borrower who is pre-approved (PRE_APPROVED, straight to disbursement).
+ */
 export function canChooseAmount(app: ApplicationView | null | undefined): boolean {
-  return !!app && app.status === "KYC_APPROVED" && app.amountRequestedPaise == null;
+  return (
+    !!app &&
+    (app.status === "KYC_APPROVED" || app.status === "PRE_APPROVED") &&
+    app.amountRequestedPaise == null
+  );
 }
 
 export function isTerminalBad(app: ApplicationView | null | undefined): boolean {

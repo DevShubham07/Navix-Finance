@@ -45,6 +45,15 @@ public class ApplicationController {
         return ApiResponse.ok(ApplicationView.of(flow.createDraft(request.applicantId())));
     }
 
+    /**
+     * Returning-borrower reborrow: start a new advance reusing the saved KYC profile (applicantId
+     * from the borrower actor). Routes to PRE_APPROVED (clean) or REVIEW_PENDING (past delinquency).
+     */
+    @PostMapping("/reborrow")
+    public ApiResponse<ApplicationView> reborrow() {
+        return ApiResponse.ok(ApplicationView.of(flow.reborrow()));
+    }
+
     /** Stage queue, e.g. ?status=KYC_PENDING / DISBURSEMENT_PENDING / ACCOUNTANT_PENDING. */
     @GetMapping
     public ApiResponse<List<ApplicationView>> queue(@RequestParam ApplicationStatus status) {
@@ -75,6 +84,12 @@ public class ApplicationController {
     @PostMapping("/{id}/kyc-decision")
     public ApiResponse<ApplicationView> kycDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
         return ApiResponse.ok(ApplicationView.of(flow.decideKyc(id, req.decision(), req.notes())));
+    }
+
+    /** KYC approver clears (or rejects) a flagged returning borrower: REVIEW_PENDING → PRE_APPROVED. */
+    @PostMapping("/{id}/review-decision")
+    public ApiResponse<ApplicationView> reviewDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
+        return ApiResponse.ok(ApplicationView.of(flow.decideReview(id, req.decision(), req.notes())));
     }
 
     @PostMapping("/{id}/apply")

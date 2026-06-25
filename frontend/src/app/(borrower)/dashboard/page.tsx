@@ -82,12 +82,10 @@ export default function DashboardPage() {
               dueISO={loan.dueDate ?? new Date().toISOString()}
             />
           ) : closed ? (
-            <InfoCard
-              icon={<CheckCircle2 size={26} />}
-              tone="navy"
-              title="Loan fully repaid"
-              body="Your advance is closed and in good standing. Need another? You can apply again anytime."
-              cta={{ href: "/repay", label: "View repayment" }}
+            <PreApprovedBanner
+              limitRupees={limitRupees}
+              href="/reloan"
+              note="Your previous advance is fully repaid — you're in good standing."
             />
           ) : declined ? (
             <InfoCard
@@ -106,13 +104,7 @@ export default function DashboardPage() {
               cta={{ href: continueHref, label: "Continue" }}
             />
           ) : (
-            <InfoCard
-              icon={<Sparkles size={26} />}
-              tone="navy"
-              title="Get an instant salary advance"
-              body="Draw up to 25% of your monthly salary, repaid in one instalment on your salary day."
-              cta={{ href: "/signup/pan", label: "Start application" }}
-            />
+            <PreApprovedBanner limitRupees={limitRupees} href="/signup/pan" />
           )}
         </div>
 
@@ -215,6 +207,48 @@ function LoanCard({
         <Link href="/repay" className="btn btn-gold btn-block mt-5">
           <Wallet size={16} /> {overdue ? "Pay now" : "Repay / prepay"}
         </Link>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The pre-approved offer a borrower sees on the dashboard whenever no loan is in
+ * process — a fresh applicant, or after a previous advance has been fully repaid.
+ * Brand-styled (navy gradient + gold CTA). When the salary-derived eligible limit
+ * is known it surfaces the real "up to ₹X pre-approved" amount; otherwise it stays
+ * generic. Benefits are product-accurate (single salary-day repayment — no EMI).
+ */
+function PreApprovedBanner({
+  limitRupees, href, ctaLabel = "Check Now", note,
+}: {
+  limitRupees: number; href: string; ctaLabel?: string; note?: string;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-navy-900 bg-gradient-to-br from-navy-900 via-navy to-navy-700 p-7 shadow-lg sm:p-8">
+      {/* Decorative gold rings — the on-brand echo of the reference's accent swoosh. */}
+      <div aria-hidden className="pointer-events-none absolute -right-16 -top-12 h-56 w-56 rounded-full border-[18px] border-gold/15" />
+      <div aria-hidden className="pointer-events-none absolute -bottom-20 right-2 h-44 w-44 rounded-full bg-gold/5" />
+
+      <div className="relative max-w-md">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-gold/20 px-3 py-1 text-xs font-bold uppercase tracking-wide text-gold-soft">
+          <Sparkles size={13} />
+          {limitRupees > 0 ? `Up to ${formatINR0(limitRupees)} pre-approved` : "Pre-approved"}
+        </span>
+
+        <h2 className="mt-3 font-serif text-3xl font-bold text-white sm:text-4xl">
+          Pre-Approved Personal Loan
+        </h2>
+        <p className="mt-2 text-sm text-navix-100">
+          No paperwork&nbsp; | &nbsp;One repayment on salary day&nbsp; | &nbsp;Instant disbursal
+        </p>
+        {note && <p className="mt-2 text-xs text-navix-200">{note}</p>}
+
+        <Link href={href} className="btn btn-gold mt-6">
+          {ctaLabel} <ArrowRight size={16} />
+        </Link>
+
+        <p className="mt-4 text-[11px] text-white/55">*T&amp;C Apply</p>
       </div>
     </div>
   );

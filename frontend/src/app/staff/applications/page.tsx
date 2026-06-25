@@ -10,6 +10,7 @@ import {
   StatusQueue,
   CreditQueuePanel,
   KycActions,
+  ReviewActions,
   ExecActions,
   HeadActions,
   DisbursementActions,
@@ -70,7 +71,14 @@ function RoleQueues({ role }: { role: StaffRole }) {
   return (
     <div className="space-y-8">
       {(showAll || role === "KYC_APPROVER") && (
-        <StatusQueue title="KYC pending" status="KYC_PENDING" actions={(app) => <KycActions app={app} />} />
+        <>
+          <StatusQueue title="KYC pending" status="KYC_PENDING" actions={(app) => <KycActions app={app} />} />
+          <StatusQueue
+            title="Reborrow reviews (past delinquency)"
+            status="REVIEW_PENDING"
+            actions={(app) => <ReviewActions app={app} />}
+          />
+        </>
       )}
 
       {(showAll || role === "CREDIT_HEAD") && (

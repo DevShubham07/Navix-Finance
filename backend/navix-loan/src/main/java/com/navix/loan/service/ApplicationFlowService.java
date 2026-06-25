@@ -6,14 +6,23 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.domain.LoanStatus;
+import com.navix.loan.domain.PaymentStatus;
+import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import com.navix.loan.repository.LoanRepository;
+import com.navix.loan.repository.PaymentRepository;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,6 +47,16 @@ public class ApplicationFlowService {
     private final EligibilityService eligibilityService;
     private final LoanService loanService;
     private final StaffDirectory staffDirectory;
+    // For the returning-borrower (reborrow) path: prior loan history (delinquency check) and the
+    // saved KYC profile (identity/salary reuse — no re-collection).
+    private final LoanRepository loanRepository;
+    private final PaymentRepository paymentRepository;
+    private final ApplicantProfileRepository profileRepository;
+    private final LoanMath loanMath;
+
+    /** Loan statuses that mean the borrower was (or is) delinquent — triggers reborrow review. */
+    private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
+            Set.of(LoanStatus.OVERDUE, LoanStatus.IN_COLLECTIONS);
 
     /** Staff roles permitted to cancel a pre-disbursement application (alongside the owning borrower). */
     private static final Set<String> CANCEL_STAFF_ROLES = Set.of(
@@ -53,6 +72,52 @@ public class ApplicationFlowService {
         LoanApplication saved = applicationRepository.save(app);
         logEvent(saved, null, ApplicationStatus.DRAFT, "CREATE", null);
         return saved;
+    }
+
+    /**
+     * Returning-borrower reborrow (W?): a repeat borrower starts a new advance reusing their saved
+     * KYC profile — no re-collection. The actor's id is the applicantId (the BFF injects it).
+     *
+     * <p>Routing by standing, computed from loan history (no stored flag):
+     * <ul>
+     *   <li>clean history → {@link ApplicationStatus#PRE_APPROVED} (skips KYC + credit; on apply it
+     *       goes straight to the Disbursement Head);</li>
+     *   <li>any past delinquency (a loan currently/ever overdue, in collections, or repaid late) →
+     *       {@link ApplicationStatus#REVIEW_PENDING} for a KYC-approver re-review every time.</li>
+     * </ul>
+     *
+     * <p>Blocked while the borrower still has a live application/loan, and rejected if there is no
+     * prior application to borrow against (the caller then falls back to a fresh signup).
+     * Deliberately does <b>not</b> create a new {@code applicant_profile} row — identity carries over
+     * (V12 keeps pan/aadhaar/mobile globally unique) and profile reads fall back to the prior one.
+     */
+    @Transactional
+    public LoanApplication reborrow() {
+        requireRole("BORROWER");
+        Long applicantId = Long.valueOf(ActorContext.get().id());
+
+        boolean hasLive = applicationRepository.findByApplicantId(applicantId).stream()
+                .anyMatch(a -> !a.getStatus().isTerminal());
+        if (hasLive) {
+            throw new BusinessException("ACTIVE_LOAN",
+                    "Finish or repay your current advance before borrowing again");
+        }
+
+        ApplicantProfile prior = latestProfileForApplicant(applicantId)
+                .orElseThrow(() -> new BusinessException("NO_PRIOR_LOAN",
+                        "No previous application found to borrow against"));
+        Long salaryPaise = prior.getMonthlySalaryPaise();
+        Long eligibleLimit = salaryPaise != null ? loanMath.eligibleLimitPaise(salaryPaise) : null;
+
+        LoanApplication app = createDraft(applicantId);
+        app.setEligibleLimit(eligibleLimit);
+        app.setSalaryCreditDay(latestSalaryCreditDay(applicantId));
+
+        boolean needsReview = hasPastDelinquency(applicantId);
+        transition(app, needsReview ? ApplicationStatus.REVIEW_PENDING : ApplicationStatus.PRE_APPROVED,
+                "REBORROW",
+                needsReview ? "Past delinquency — KYC review required" : "Pre-approved returning borrower");
+        return applicationRepository.save(app);
     }
 
     @Transactional
@@ -75,13 +140,31 @@ public class ApplicationFlowService {
         return applicationRepository.save(app);
     }
 
+    /**
+     * Reborrow review decision (KYC approver): clear a flagged returning borrower so they may proceed
+     * ({@code REVIEW_PENDING → PRE_APPROVED}) or reject them. Mirrors {@link #decideKyc} — same role.
+     */
+    @Transactional
+    public LoanApplication decideReview(Long appId, boolean approve, String notes) {
+        requireRole("KYC_APPROVER");
+        LoanApplication app = require(appId);
+        if (approve) {
+            transition(app, ApplicationStatus.PRE_APPROVED, "REVIEW_APPROVE", notes);
+        } else {
+            transition(app, ApplicationStatus.REJECTED, "REVIEW_REJECT", notes);
+        }
+        return applicationRepository.save(app);
+    }
+
     @Transactional
     public LoanApplication apply(Long appId, long amountPaise, String purpose, Long eligibleLimitPaise,
                                  Integer salaryCreditDay) {
         requireRole("BORROWER");
         LoanApplication app = require(appId);
-        if (app.getStatus() != ApplicationStatus.KYC_APPROVED) {
-            throw new BusinessException("NOT_APPLICABLE", "Borrower can only apply after KYC approval");
+        ApplicationStatus st = app.getStatus();
+        // A fresh borrower applies after KYC; a returning borrower applies once PRE_APPROVED.
+        if (st != ApplicationStatus.KYC_APPROVED && st != ApplicationStatus.PRE_APPROVED) {
+            throw new BusinessException("NOT_APPLICABLE", "Borrower can only apply after approval");
         }
         if (amountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "Requested amount is below the minimum of ₹1,000");
@@ -91,10 +174,17 @@ public class ApplicationFlowService {
         }
         app.setAmountRequested(amountPaise);
         app.setPurpose(purpose);
-        app.setEligibleLimit(eligibleLimitPaise);
+        // Keep the reborrow-computed limit if the caller didn't supply one.
+        app.setEligibleLimit(eligibleLimitPaise != null ? eligibleLimitPaise : app.getEligibleLimit());
         app.setSalaryCreditDay(salaryCreditDay);
-        // Stays KYC_APPROVED ("applied"); the Credit Head's queue picks up applied applications.
-        logEvent(app, app.getStatus(), app.getStatus(), "APPLY", "amountPaise=" + amountPaise);
+        if (st == ApplicationStatus.PRE_APPROVED) {
+            // Pre-approved returning borrower → straight to the Disbursement Head (skips credit).
+            transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "APPLY_FAST_TRACK",
+                    "amountPaise=" + amountPaise);
+        } else {
+            // Stays KYC_APPROVED ("applied"); the Credit Head's queue picks up applied applications.
+            logEvent(app, st, st, "APPLY", "amountPaise=" + amountPaise);
+        }
         return applicationRepository.save(app);
     }
 
@@ -316,6 +406,52 @@ public class ApplicationFlowService {
         if (!role.equals(actor.role()) && !"ADMIN".equals(actor.role())) {
             throw new BusinessException("FORBIDDEN_ROLE", "This action requires role " + role);
         }
+    }
+
+    // ---- reborrow standing (computed from history; no stored flag) -----------------
+
+    /**
+     * Whether the applicant has ever been delinquent — a loan currently/ever overdue or in
+     * collections, or one that was ultimately repaid <em>late</em> (now closed). Such a borrower is
+     * re-reviewed by a KYC approver on every reborrow.
+     */
+    private boolean hasPastDelinquency(Long applicantId) {
+        LocalDate today = LocalDate.now();
+        for (Loan loan : loanRepository.findByApplicantId(applicantId)) {
+            if (DELINQUENT_LOAN_STATUSES.contains(loan.effectiveStatus(today))) {
+                return true;
+            }
+            if (loan.getDueDate() != null && paidLate(loan)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True if any verified repayment on the loan landed after its due date. */
+    private boolean paidLate(Loan loan) {
+        return paymentRepository.findByLoanId(loan.getId()).stream()
+                .anyMatch(p -> p.getStatus() == PaymentStatus.VERIFIED
+                        && p.getPaidOn() != null && p.getPaidOn().isAfter(loan.getDueDate()));
+    }
+
+    /** The applicant's most recent saved KYC profile (newest application first), if any. */
+    private Optional<ApplicantProfile> latestProfileForApplicant(Long applicantId) {
+        return applicationRepository.findByApplicantId(applicantId).stream()
+                .sorted(Comparator.comparing(LoanApplication::getId).reversed())
+                .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
+                .filter(Objects::nonNull)
+                .findFirst();
+    }
+
+    /** The salary-credit day from the applicant's most recent application that captured one. */
+    private Integer latestSalaryCreditDay(Long applicantId) {
+        return applicationRepository.findByApplicantId(applicantId).stream()
+                .sorted(Comparator.comparing(LoanApplication::getId).reversed())
+                .map(LoanApplication::getSalaryCreditDay)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
     }
 
     private LoanApplication require(Long appId) {

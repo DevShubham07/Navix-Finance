@@ -44,12 +44,17 @@ public final class ApplicationDtos {
             Long eligibleLimitPaise,
             String purpose,
             Long assignedExecutiveId,
-            Long loanId) {
+            Long loanId,
+            boolean fastTrack) {
 
         public static ApplicationView of(LoanApplication a) {
+            // A pre-approved reborrow reaches disbursement without a credit executive being assigned;
+            // the Disbursement Head surfaces these in a separate fast-track section.
+            boolean fastTrack = a.getStatus() == ApplicationStatus.DISBURSEMENT_PENDING
+                    && a.getAssignedExecutiveId() == null;
             return new ApplicationView(a.getId(), a.getApplicantId(), a.getStatus(),
                     a.getAmountRequested(), a.getEligibleLimit(), a.getPurpose(),
-                    a.getAssignedExecutiveId(), a.getLoanId());
+                    a.getAssignedExecutiveId(), a.getLoanId(), fastTrack);
         }
     }
 

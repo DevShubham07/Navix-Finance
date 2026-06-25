@@ -76,7 +76,14 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
   (`…/verify`), which reduces the outstanding and, at zero, closes the **loan** and the **application**
   (`ApplicationFlowService.closeForLoan`, ACTIVE/OVERDUE → CLOSED). The repay page shows the
   **prepayment-aware** "pay today" amount (interest only to the day paid) via `GET …/outstanding`.
-  (Reborrow `/reloan` is still mock.)
+- ✅ **Returning-borrower reborrow + review gate (live)** — `/reloan` calls
+  `POST /api/applications/reborrow`, which reuses the saved KYC profile (no re-entry) and routes by
+  loan history: a borrower in **good standing** → `PRE_APPROVED` (skips KYC **and** credit; choosing an
+  amount goes **straight to the Disbursement Head**, shown in a fast-track section), while a borrower
+  who **ever had an overdue** → `REVIEW_PENDING`, a **separate** KYC-approver queue (`/staff/kyc-review`)
+  that must clear them on **every** reborrow. New states `PRE_APPROVED`/`REVIEW_PENDING` (Flyway **V14**);
+  standing is **computed from loan history**, no new table. (A deliberate credit-SoD relaxation for
+  repeat borrowers — see §5/§7.)
 - ✅ **Disbursement fast-path** — the **Disbursement Head** may finalize a release **directly** when
   they enter a transaction id (`DISBURSEMENT_PENDING → DISBURSED → ACTIVE`, recording
   `loan.disbursal_txn_ref`, Flyway **V13**), skipping the accountant; without a txn id it still routes
@@ -118,8 +125,8 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
 - 🟡 **No real auth/JWT yet.** Identity is injected via demo headers (§7). This is intentional for
   the current phase and is the main go-live item.
 - 🟡 **The mock Zustand layer now backs only the leftovers** (§8): the **cosmetic, unmodeled steps**
-  (DigiLocker, selfie, e-sign, penny-drop, co-applicant) and **reborrow** (`/reloan` — no backend
-  endpoint yet). Repay is now live. `NEXT_PUBLIC_DEMO_MODE` defaults **on**.
+  (DigiLocker, selfie, e-sign, penny-drop, co-applicant). Repay **and reborrow** are now live.
+  `NEXT_PUBLIC_DEMO_MODE` defaults **on**.
 - 🟡 External integrations (Fintrix salary verify, DigiLocker KYC, S3, bank penny-drop/transfer)
   are **mocked**.
 
@@ -272,6 +279,16 @@ Disbursement-Head ≠ Accountant SoD (product decision); the no-txn-id path keep
 the Accountant (`…/repayments/{pid}/verify`); when Σ verified payments ≥ total the loan closes and
 `ApplicationFlowService.closeForLoan` transitions the application `ACTIVE/OVERDUE → CLOSED`.
 
+**Reborrow (returning borrower):** `ApplicationFlowService.reborrow` mints a **new** application for an
+existing borrower, reusing their saved profile (no re-collection; eligible limit recomputed from the
+stored salary). Standing is computed from loan history (`hasPastDelinquency` — any loan ever
+OVERDUE/IN_COLLECTIONS, or a verified repayment made after its due date): clean → `DRAFT → PRE_APPROVED`,
+flagged → `DRAFT → REVIEW_PENDING`. A `KYC_APPROVER` clears a review (`REVIEW_PENDING → PRE_APPROVED`)
+or rejects it. From `PRE_APPROVED`, the borrower's `apply` routes **straight to `DISBURSEMENT_PENDING`**
+(skips the credit maker-checker — a deliberate relaxation for pre-approved repeat borrowers, surfaced
+to the Disbursement Head as a separate fast-track section via `ApplicationView.fastTrack`). Reborrow is
+blocked while a live application/loan exists.
+
 **Invariants:**
 - **SoD (D3):** the actor who drove the application into `CREDIT_EXEC_APPROVED` (the recommender)
   must not be the Credit Head who approves. Enforced by replaying `application_event`
@@ -304,7 +321,12 @@ How a real applicant moves through the product — this is now the **designed, b
 7. **Repay / prepay** — **live**: `/repay` reads the real loan and records a manual payment
    (`borrowerApi.recordRepayment` → PENDING_VERIFICATION); the Accountant verifies it, which reduces the
    outstanding and closes the loan + application at zero. The page shows the prepayment-aware "pay today"
-   amount (interest only to the day paid). **Reborrow** (`/reloan`) is still mock (§13).
+   amount (interest only to the day paid).
+8. **Reborrow** — **live**: a returning borrower taps "Borrow again" on `/reloan`, which calls
+   `borrowerApi.reborrow()`. With a clean history they're **pre-approved** (reuse profile, skip KYC +
+   credit) and land on `/loan/apply` → choosing an amount routes **straight to the Disbursement Head**;
+   if they **ever had an overdue** they're sent to a KYC-approver **review** (`/staff/kyc-review`) first.
+   See §5 (`PRE_APPROVED`/`REVIEW_PENDING`) and §11 (`/reborrow`, `/review-decision`).
 
 The borrower can only call **borrower** actions (`requireRole("BORROWER")`); `apply` is rejected
 unless the application is `KYC_APPROVED`, the amount is ≥ ₹1,000, and (if an eligible limit is set)
@@ -340,7 +362,7 @@ these headers are replaced by the JWT principal — nothing else changes.
 
 | Role | Does (state transition) |
 |---|---|
-| `KYC_APPROVER` | approve/reject KYC → `KYC_APPROVED` / `KYC_REJECTED` |
+| `KYC_APPROVER` | approve/reject KYC → `KYC_APPROVED` / `KYC_REJECTED`; **reborrow reviews** for returning borrowers with a past overdue (`REVIEW_PENDING` → `PRE_APPROVED` / `REJECTED`) on the separate `/staff/kyc-review` queue |
 | `CREDIT_HEAD` | assign to an executive (→ `CREDIT_EXEC_PENDING`); **final approve** (→ `CREDIT_HEAD_APPROVED`, SoD-checked) |
 | `CREDIT_EXECUTIVE` | recommend/reject (→ `CREDIT_EXEC_APPROVED` / `REJECTED`) |
 | `DISBURSEMENT_HEAD` | accept for disbursal (→ `ACCOUNTANT_PENDING`); **or finalize directly with a txn id** (→ `DISBURSED`→`ACTIVE`); retry on failure |
@@ -448,6 +470,7 @@ navix-common). Applied on every boot:
 | `V11__collection_case_real_loan_and_staff_ids.sql` | retype `collection_case.loan_id`/`assigned_officer_id` + `settlement.proposed_by`/`approved_by` to **bigint** (real loan + staff ids) |
 | `V12__applicant_profile_unique_identity.sql` | add `aadhaar` + `mobile` to `applicant_profile`; partial **unique** indexes on pan/aadhaar/mobile |
 | `V13__loan_disbursal_txn_ref.sql` | add `loan.disbursal_txn_ref` (the outgoing disbursal's transaction id) |
+| `V14__application_reborrow_states.sql` | extend the `status` CHECK with `PRE_APPROVED` / `REVIEW_PENDING` (returning-borrower reborrow); no new column/table |
 
 **The aggregate** `loan_application`: `id`, `applicant_id`, `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
@@ -469,12 +492,14 @@ return `FORBIDDEN_ROLE`, `SOD_VIOLATION`, or `ILLEGAL_TRANSITION` (422) on viola
 | Method + path | Role | Purpose |
 |---|---|---|
 | `POST /` | borrower | create DRAFT |
-| `GET /?status=` | staff | list by status (stage queues) |
+| `POST /reborrow` | borrower | returning borrower: new advance reusing saved profile → `PRE_APPROVED` (clean) / `REVIEW_PENDING` (past overdue) |
+| `GET /?status=` | staff | list by status (stage queues); `ApplicationView.fastTrack` flags a pre-approved reborrow at disbursement |
 | `GET /credit-queue` | CREDIT_HEAD | KYC-approved **applied** applications |
 | `GET /{id}` · `GET /{id}/events` | any | read application / audit trail |
 | `POST /{id}/submit-kyc` | BORROWER | DRAFT → KYC_PENDING |
 | `POST /{id}/kyc-decision` | KYC_APPROVER | approve/reject |
-| `POST /{id}/apply` | BORROWER | set amount/purpose/salaryDay (stays KYC_APPROVED) |
+| `POST /{id}/review-decision` | KYC_APPROVER | reborrow review: `REVIEW_PENDING` → `PRE_APPROVED` / `REJECTED` |
+| `POST /{id}/apply` | BORROWER | set amount/purpose/salaryDay (KYC_APPROVED stays; **PRE_APPROVED → DISBURSEMENT_PENDING**, skipping credit) |
 | `POST /{id}/assign` | CREDIT_HEAD | assign executive → CREDIT_EXEC_PENDING |
 | `POST /{id}/exec-decision` | CREDIT_EXECUTIVE | recommend/reject |
 | `POST /{id}/head-decision` | CREDIT_HEAD | final approve (SoD) / reject |

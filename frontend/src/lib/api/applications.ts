@@ -21,6 +21,8 @@ export type ApplicationStatus =
   | "KYC_PENDING"
   | "KYC_APPROVED"
   | "KYC_REJECTED"
+  | "PRE_APPROVED"
+  | "REVIEW_PENDING"
   | "CREDIT_EXEC_PENDING"
   | "CREDIT_EXEC_APPROVED"
   | "CREDIT_HEAD_PENDING"
@@ -46,6 +48,8 @@ export interface ApplicationView {
   purpose: string | null;
   assignedExecutiveId: number | null;
   loanId: number | null;
+  /** A pre-approved reborrow that reached disbursement without credit review (fast-track section). */
+  fastTrack?: boolean;
 }
 
 export interface EventView {
@@ -251,6 +255,13 @@ export const borrowerApi = {
   create: (applicantId: number) =>
     bff<ApplicationView>(`${BORROWER_BASE}`, "POST", { applicantId }),
 
+  /**
+   * Returning-borrower reborrow: start a new advance reusing the saved KYC profile (applicantId is
+   * resolved server-side from the session). Returns PRE_APPROVED (good standing → choose amount) or
+   * REVIEW_PENDING (past delinquency → held for KYC review). Throws NO_PRIOR_LOAN / ACTIVE_LOAN.
+   */
+  reborrow: () => bff<ApplicationView>(`${BORROWER_BASE}/reborrow`, "POST"),
+
   /** DRAFT -> KYC_PENDING. */
   submitKyc: (id: number) =>
     bff<ApplicationView>(`${BORROWER_BASE}/${id}/submit-kyc`, "POST"),
@@ -330,6 +341,10 @@ export const staffApi = {
   // --- maker-checker actions ---
   kycDecision: (id: number, decision: boolean, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/kyc-decision`, "POST", { decision, notes }),
+
+  /** Clear (or reject) a flagged returning borrower: REVIEW_PENDING → PRE_APPROVED / REJECTED. */
+  reviewDecision: (id: number, decision: boolean, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/review-decision`, "POST", { decision, notes }),
 
   assign: (id: number, executiveId: number) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/assign`, "POST", { executiveId }),

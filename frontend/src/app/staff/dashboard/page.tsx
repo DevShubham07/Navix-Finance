@@ -22,8 +22,8 @@ const REFRESH_MS = 10_000;
 /** Per-role "your queue" label (+ an ⓘ explanation) and the live statuses that feed it. */
 const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
   KYC_APPROVER: {
-    label: "Applications awaiting KYC clearance",
-    info: "Review each applicant's KYC details and documents, then approve to advance to credit review, or reject to send it back.",
+    label: "KYC clearances & reborrow reviews",
+    info: "Review fresh applicants' KYC, plus returning borrowers flagged for a past overdue. Approve to advance, or reject to send it back.",
   },
   CREDIT_EXECUTIVE: {
     label: "Applications to review",
@@ -50,6 +50,7 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
 /** Statuses we count for the headline stat cards. */
 const COUNT_STATUSES: ApplicationStatus[] = [
   "KYC_PENDING",
+  "REVIEW_PENDING",
   "CREDIT_EXEC_PENDING",
   "CREDIT_EXEC_APPROVED",
   "CREDIT_HEAD_PENDING",
@@ -73,8 +74,13 @@ async function countOf(status: ApplicationStatus): Promise<number> {
 async function fetchRoleQueue(role: StaffRole): Promise<ApplicationView[]> {
   const safe = (p: Promise<ApplicationView[]>) => p.catch(() => [] as ApplicationView[]);
   switch (role) {
-    case "KYC_APPROVER":
-      return safe(staffApi.listByStatus("KYC_PENDING"));
+    case "KYC_APPROVER": {
+      const [kyc, review] = await Promise.all([
+        safe(staffApi.listByStatus("KYC_PENDING")),
+        safe(staffApi.listByStatus("REVIEW_PENDING")),
+      ]);
+      return [...kyc, ...review];
+    }
     case "CREDIT_EXECUTIVE":
       return safe(staffApi.listByStatus("CREDIT_EXEC_PENDING"));
     case "CREDIT_HEAD": {
@@ -95,7 +101,7 @@ async function fetchRoleQueue(role: StaffRole): Promise<ApplicationView[]> {
       return safe(staffApi.listByStatus("ACCOUNTANT_PENDING"));
     case "ADMIN": {
       const lists = await Promise.all(
-        (["KYC_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_HEAD_PENDING", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING"] as ApplicationStatus[]).map(
+        (["KYC_PENDING", "REVIEW_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_HEAD_PENDING", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING"] as ApplicationStatus[]).map(
           (s) => safe(staffApi.listByStatus(s)),
         ),
       );
@@ -157,6 +163,8 @@ export default function StaffDashboardPage() {
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard label="KYC review" value={n("KYC_PENDING")} accent="gold"
           info="Applications whose identity (PAN/Aadhaar) and documents are waiting for a KYC Approver to clear before they enter credit." />
+        <StatCard label="Reborrow reviews" value={n("REVIEW_PENDING")} accent="gold"
+          info="Returning borrowers with a past overdue, awaiting a KYC Approver's sign-off before they can borrow again." />
         <StatCard label="In credit" value={inCredit}
           info="Applications being assessed by the Credit Executive (recommend) and Credit Head (final approve, SoD-checked)." />
         <StatCard label="To release" value={n("DISBURSEMENT_PENDING")}
