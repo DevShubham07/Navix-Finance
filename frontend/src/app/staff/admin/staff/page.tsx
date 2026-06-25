@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, UserX } from "lucide-react";
 import { Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { hasPermission } from "@/lib/auth/rbac";
 import {
   adminApi,
   type StaffResponse,
@@ -19,9 +20,14 @@ const ROLES: StaffRoleName[] = [
 ];
 const STATUSES: StaffStatus[] = ["INVITED", "ACTIVE", "DISABLED"];
 
-/** Admin · staff accounts — list, change role/status, disable (live /api/staff). */
+/** Admin · staff accounts — list, change role/status, disable (live /api/staff). ADMIN only. */
 export default function AdminStaffPage() {
+  const role = useStaffMe().data?.role;
   const q = useQuery({ queryKey: ["admin-staff"], queryFn: adminApi.listStaff });
+
+  if (role && !hasPermission(role, "staff:manage")) {
+    return <NoAccessNotice message="Admin access only." />;
+  }
 
   return (
     <div>

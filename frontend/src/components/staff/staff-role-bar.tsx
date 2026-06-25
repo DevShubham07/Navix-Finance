@@ -23,8 +23,20 @@ export function StaffRoleBar() {
 
   if (!mounted) return null;
 
-  const pick = (role: StaffRole) => {
+  const pick = async (role: StaffRole) => {
+    // Mock session (navix_session cookie + localStorage) keeps the demo pages + middleware working.
     signInStaff(role);
+    try {
+      // Live session: the httpOnly navix_staff cookie the BFF reads, so backend calls actually carry
+      // the chosen role (without this the switch is cosmetic — the backend keeps the previous actor).
+      await fetch("/api/auth/staff/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+    } catch {
+      // Non-fatal: the mock console still works without the live session.
+    }
     setOpen(false);
     router.refresh();
   };

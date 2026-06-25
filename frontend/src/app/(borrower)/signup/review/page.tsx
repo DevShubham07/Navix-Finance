@@ -16,7 +16,7 @@ import { ApplicationApiError } from "@/lib/api/applications";
 export default function SignupReviewPage() {
   const router = useRouter();
   const mounted = useMounted();
-  const { applicant } = useBorrowerJourney();
+  const { applicant, addressProofDoc } = useBorrowerJourney();
   const [consent, setConsent] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string>();
@@ -27,8 +27,8 @@ export default function SignupReviewPage() {
     setError(undefined);
     signInBorrower(applicant.fullName || "Applicant", applicant.mobile || "98765 43210");
     try {
-      // Persist to the real backend: create DRAFT -> save KYC profile -> submit KYC.
-      await submitOnboarding(applicant);
+      // Persist to the real backend: create DRAFT -> save KYC profile -> upload document(s) -> submit KYC.
+      await submitOnboarding(applicant, addressProofDoc ? [addressProofDoc] : []);
       router.push("/kyc");
     } catch (e) {
       setError(

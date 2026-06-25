@@ -8,6 +8,15 @@ bank integrations**, and the remaining **platform hardening**.
 > log), `dfd.md` (authoritative lifecycle + roles). This file owns the *not-yet-built* go-live set —
 > i.e. task **#14: "DEFERRED: real auth, AWS/Fintrix infra, full platform"**.
 
+> **Update 2026-06-25 — correctness & RBAC hardening pass** ([`PRODUCT_GAPS.md`](PRODUCT_GAPS.md)):
+> several go-live items were partially hardened ahead of their full builds — `DemoActorFilter` now
+> fails closed as `ANONYMOUS` (A3), the role switcher authenticates for real (A4), the middleware
+> cookie mismatch is fixed (A5), UI RBAC gating + `cancel`/settlement role guards landed (A6), and the
+> signup document upload is now a real file (B2). Money/lifecycle **bugs** found in the same pass
+> (penalty-aware outstanding + closure, OVERDUE-on-read, closed-case filtering) are fixed in code and
+> recorded in `CLAUDE.md` §2/§9 — not tracked here. **Still deferred:** the reborrow endpoint (D5),
+> full JWT/Spring Security (A), and emailed invites (A1).
+
 Status legend: 🔴 not started · 🟡 partial scaffold exists · 🟢 done (moves out of this doc).
 
 ---
@@ -86,8 +95,16 @@ What already exists (reusable):
   service), `navix-common/security` (unchanged — that's the point).
 - **Done when:** a request with no/invalid JWT to `/api/applications/*` → **401**; a valid token's
   role drives `requireRole`; `X-Demo-Actor-*` headers are ignored in prod.
+- **Hardened 2026-06-25 (PRODUCT_GAPS B1):** `DemoActorFilter` now defaults to a non-privileged
+  **`ANONYMOUS`** actor (was `ADMIN`), so a header-less or direct backend call already **fails closed**
+  at `requireRole` — closing the "anything reaching the backend without headers is ADMIN" gap ahead of
+  the full JWT swap.
 
 ### A4. BFF session swap 🔴
+- **Hardened 2026-06-25 (PRODUCT_GAPS B2):** the staff **role switcher** (`staff-role-bar.tsx`) now
+  calls the real `POST /api/auth/staff/login` so the `navix_staff` cookie reflects the chosen role
+  (it previously only mutated client state, leaving the backend on the stale actor). The cookie is
+  still plain JSON — the JWT/bearer swap below is unchanged.
 - **Now:** `bff-session.ts` writes plain JSON into `navix_staff`/`navix_borrower`; `bff-proxy.ts`
   injects `X-Demo-Actor-*`.
 - **Target:** the BFF stores the **JWT** (or an opaque session id) in an httpOnly, `Secure`,
@@ -96,16 +113,22 @@ What already exists (reusable):
 - **Touchpoints:** `lib/api/bff-session.ts`, `lib/api/bff-proxy.ts`, `app/api/auth/{staff,borrower}/*`.
 - **Done when:** the browser never holds a role it can edit; the proxy carries a real bearer token.
 
-### A5. Middleware → real verification 🔴
-- **Now:** `middleware.ts` gates `/staff/*` on **presence** of `navix_session` (a *different* cookie
-  than the BFF's `navix_staff` — a known demo mismatch). A garbage cookie passes.
+### A5. Middleware → real verification 🟡
+- **Now:** `middleware.ts` gates `/staff/*` on the **real `navix_staff`** cookie the BFF/login sets —
+  the old `navix_session` mismatch is **fixed** (PRODUCT_GAPS B9), so the gate is no longer a no-op.
+  It is still a **presence** check, so a forged cookie of that name passes.
 - **Target:** verify the session JWT signature + expiry + `staff` token type in middleware (or a
-  server component), redirect to `/staff/login` otherwise. Unify on **one** cookie name.
+  server component), redirect to `/staff/login` otherwise. (Cookie name already unified.)
 - **Done when:** a forged/empty cookie → redirect; only a valid staff token reaches `/staff/*`.
 
 ### A6. RBAC + SoD hardening 🟡
 - **Now:** role checks live in the service (`requireRole`); SoD in `headDecision`. Good, but
   defense-in-depth at the edge is missing.
+- **Landed 2026-06-25 (PRODUCT_GAPS):** **UI RBAC gating** added (admin pages behind `staff:manage`,
+  collections salary/employer + settlement-approve behind `collections:manage`, applicant-PII review
+  restricted to reviewer roles, risk/score hidden from borrowers); service-layer role guards added to
+  **`ApplicationFlowService.cancel`** (owning borrower / staff only) and collections **settlement
+  `propose`/`approve`** (officer-or-head / head, before the proposer≠approver SoD).
 - **Target:** add method/endpoint `@PreAuthorize` as a second layer; keep the event-trail SoD as the
   source of truth; add an authorization integration-test matrix (every role × every endpoint).
 - **Done when:** the test matrix proves each endpoint rejects every role that shouldn't call it,
@@ -129,7 +152,10 @@ WARN at boot — harmless locally).
 
 ### B2. S3 document storage (replace inline `bytea`) 🟡
 - **Now:** `ApplicationDocument.data` stores bytes inline; `navix-storage` `StorageController` exposes
-  `presign-upload`/`presign-download` but the app doesn't use them.
+  `presign-upload`/`presign-download` but the app doesn't use them. The signup **address-proof upload
+  is now a real file** (PRODUCT_GAPS B7) — read as base64 and `POST …/documents` at submit, so staff
+  review shows an actual document; it still lands in the inline `bytea` column (S3 swap below is what
+  remains).
 - **Target:** borrower uploads go **direct to S3 via presigned PUT**; the app stores only
   `s3_key` + metadata; staff view/download via **presigned GET**. Drop the `bytea` column (Flyway).
 - **Touchpoints:** `ApplicantReviewService` (store key, not bytes), `ApplicationDocument` (s3_key),

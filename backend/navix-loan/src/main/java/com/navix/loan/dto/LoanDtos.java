@@ -43,9 +43,18 @@ public final class LoanDtos {
             LoanStatus status) {
 
         public static LoanView of(Loan l) {
+            return of(l, l.getOutstanding(), l.getStatus());
+        }
+
+        /**
+         * Build a view with a compute-on-read {@code outstandingPaise} (prepayment + late-penalty
+         * aware) and an effective {@code status} (ACTIVE reads as OVERDUE once past the due date).
+         * The on-time {@code totalRepayable} stays the stored figure.
+         */
+        public static LoanView of(Loan l, long outstandingPaise, LoanStatus status) {
             return new LoanView(l.getId(), l.getApplicantId(), l.getPrincipal(), l.getProcessingFee(),
                     l.getGst(), l.getNetDisbursed(), l.getDailyInterestRate(), l.getDisbursedOn(),
-                    l.getDueDate(), l.getTotalRepayable(), l.getOutstanding(), l.getStatus());
+                    l.getDueDate(), l.getTotalRepayable(), outstandingPaise, status);
         }
     }
 

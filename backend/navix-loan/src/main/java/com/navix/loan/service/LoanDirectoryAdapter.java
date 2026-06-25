@@ -34,6 +34,7 @@ public class LoanDirectoryAdapter implements LoanDirectory {
     private final LoanRepository loanRepository;
     private final LoanApplicationRepository applicationRepository;
     private final ApplicantProfileRepository profileRepository;
+    private final RepaymentService repaymentService;
 
     @Override
     @Transactional(readOnly = true)
@@ -74,15 +75,19 @@ public class LoanDirectoryAdapter implements LoanDirectory {
         ApplicantProfile profile = applicationId != null
                 ? profileRepository.findByApplicationId(applicationId).orElse(null)
                 : null;
+        // Effective status (ACTIVE → OVERDUE past due) and the penalty/prepayment-aware balance, so
+        // collections shows the same "amount owed" the borrower sees on the repay page.
+        LoanStatus effective = loan.effectiveStatus(LocalDate.now());
+        long owed = repaymentService.outstandingAsOf(loan.getId(), null);
         return new LoanSummary(
                 loan.getId(),
                 loan.getApplicantId(),
                 applicationId,
-                loan.getStatus() != null ? loan.getStatus().name() : null,
+                effective != null ? effective.name() : null,
                 loan.getPrincipal(),
                 loan.getNetDisbursed(),
                 loan.getTotalRepayable(),
-                loan.getOutstanding(),
+                owed,
                 loan.getDisbursedOn(),
                 loan.getDueDate(),
                 profile != null ? profile.getFullName() : null,

@@ -87,6 +87,27 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
 - ✅ **Unique identity at signup** — PAN / Aadhaar / mobile are unique across applicants (partial
   unique indexes, Flyway **V12**; enforced in `ApplicantReviewService`). Aadhaar is stored in full at
   the owner's request but **masked on every read** (consistent with PAN).
+- ✅ **Correctness & RBAC hardening pass** (QA findings in [`PRODUCT_GAPS.md`](PRODUCT_GAPS.md)) — fixed,
+  no schema change:
+  - **Money:** the displayed **outstanding is penalty/prepayment-aware on every read** (loan view +
+    collections `LoanSummary`, not just `GET …/outstanding`), so the dashboard, repay page and
+    collections agree; **closure is penalty-aware** — an overdue loan no longer closes when only the
+    no-penalty stored total is paid (the accrued late penalty stays owed). A short payment is flagged
+    `partial` against the penalty-aware balance.
+  - **Lifecycle:** a past-due `ACTIVE` loan **reads as `OVERDUE`** (compute-on-read in `Loan.effectiveStatus`;
+    stored column unchanged until a case flips it to `IN_COLLECTIONS`); a **settled loan's collection
+    case drops off** the worklist (`CollectionsService.listCaseViews` filters CLOSED/REPAID/WRITTEN_OFF).
+  - **Authz:** `DemoActorFilter` now defaults to a non-privileged **`ANONYMOUS`** actor — a header-less
+    or direct call fails closed at `requireRole` (no more silent ADMIN); `ApplicationFlowService.cancel`
+    and collections **settlement propose/approve** carry role guards (propose = officer/head, approve =
+    head, before the proposer≠approver SoD).
+  - **Frontend:** the staff **role switcher** now calls the real `POST /api/auth/staff/login` (no more
+    stale-session "Not your step"); the signup **address-proof upload is a real file** (→ base64 →
+    `POST …/documents`, no longer cosmetic); **UI RBAC gating** added (admin pages, collections
+    salary/employer behind `collections:manage`, settlement-approve, applicant-PII review by reviewer
+    roles only) and **risk category / credit score are no longer shown to the borrower**; the middleware
+    gate keys on the real `navix_staff` cookie.
+  - _Deferred from this pass (still §13):_ reborrow endpoint, full JWT/Spring Security, emailed invites.
 - ✅ **Tests** — the backend unit suite green (incl. repayment, transactions-ledger, disbursement
   fast-path, collections-bridge, identity-uniqueness); a **Testcontainers integration test** drives
   DRAFT→ACTIVE + SoD-violation + illegal-transition (3/3 green); frontend `tsc --noEmit` + ESLint clean.
@@ -188,7 +209,7 @@ below call the backend regardless.
 ### 4.5 Tests
 ```bash
 cd backend
-./mvnw test                    # 114 unit tests (no Docker needed; integration tests excluded)
+./mvnw test                    # full unit suite (no Docker needed; integration tests excluded)
 
 # Integration test (Testcontainers Postgres) — needs Docker. On Colima, export:
 export DOCKER_HOST=unix:///Users/<you>/.colima/default/docker.sock
@@ -199,6 +220,13 @@ export TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1     # localhost→::1 gives "conne
 
 cd ../frontend && npm run build                    # typecheck + build
 ```
+
+> **Build caveats (verified 2026-06-25):** the backend build/tests require **Java 21** — a Java 17
+> `JAVA_HOME` fails the Maven build with *"release version 21 not supported"* (set `JAVA_HOME` to a
+> JDK 21 first). On the frontend, `npm run build`'s **static-prerender** step currently fails at
+> `/staff/admin/staff` with a Next 15.1.3 *"React Client Manifest"* error — this **reproduces on a
+> clean checkout** (an environmental/Next bug, not app code). `npm run dev`, `npx tsc --noEmit` and
+> ESLint are clean; use those to verify the frontend.
 
 ---
 
@@ -383,6 +411,12 @@ Canonical **integer-paise** engine (`long` paise, `BigDecimal` rates, `HALF_UP`)
 - `eligibleLimitPaise(salary)` = floor(salary × 0.25 to a multiple of ₹100).
 - `dueDateFromSalary(disbursedOn, salaryCreditDay)` = the **latest** salary-credit date strictly
   after disbursal **and ≤ disbursal + 40 days** (salary day clamped to month length).
+- **Outstanding is compute-on-read** (`RepaymentService.outstandingAsOf`): `principal +
+  interest(daysHeld, capped at tenure) + latePenalty(daysLate past the 1-day grace) − Σ verified
+  payments`. This is the single "amount owed" surfaced **everywhere** — the `LoanView` from
+  `GET /api/loan/{id}`, the collections `LoanSummary`, and `GET …/outstanding` all use it (so they
+  agree). The stored `loan.outstanding` column is just a recompute cache; a loan **closes only when
+  this penalty-aware balance reaches 0** (paying the no-penalty total leaves the penalty owed).
 
 **Worked example** (₹10,000 = 1,000,000 paise): fee 100,000 · GST 18,000 · **net 882,000**.
 Disbursed 2026-06-03, salary day 30 → due **2026-06-30** (27 days) → total **1,270,000**.

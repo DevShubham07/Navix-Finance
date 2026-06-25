@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type BlocklistType, type BlocklistResponse } from "@/lib/api/applications";
 
 const TYPES: { value: BlocklistType; label: string }[] = [
@@ -16,8 +17,9 @@ const TYPES: { value: BlocklistType; label: string }[] = [
   { value: "BANK_ACCOUNT", label: "Bank account" },
 ];
 
-/** Admin · fraud blocklist — list / add / remove blocked identifiers (live /api/admin/blocklist). */
+/** Admin · fraud blocklist — list / add / remove blocked identifiers (live /api/admin/blocklist). ADMIN only. */
 export default function AdminBlocklistPage() {
+  const myRole = useStaffMe().data?.role;
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-blocklist"], queryFn: adminApi.listBlocklist });
   const [type, setType] = React.useState<BlocklistType>("PAN");
@@ -33,6 +35,10 @@ export default function AdminBlocklistPage() {
     mutationFn: (id: number) => adminApi.removeBlocklist(id),
     onSuccess: invalidate,
   });
+
+  if (myRole && !hasPermission(myRole, "staff:manage")) {
+    return <NoAccessNotice message="Admin access only." />;
+  }
 
   return (
     <div>

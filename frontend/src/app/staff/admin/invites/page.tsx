@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Mail, Copy, Check } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type StaffRoleName, type InviteResponse } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
@@ -14,8 +15,9 @@ const ROLES: StaffRoleName[] = [
   "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN", "DEVELOPER",
 ];
 
-/** Admin · invites — issue an invite (returns a one-time token) and list invites. */
+/** Admin · invites — issue an invite (returns a one-time token) and list invites. ADMIN only. */
 export default function AdminInvitesPage() {
+  const myRole = useStaffMe().data?.role;
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-invites"], queryFn: adminApi.listInvites });
   const [email, setEmail] = React.useState("");
@@ -28,6 +30,10 @@ export default function AdminInvitesPage() {
       qc.invalidateQueries({ queryKey: ["admin-invites"] });
     },
   });
+
+  if (myRole && !hasPermission(myRole, "staff:manage")) {
+    return <NoAccessNotice message="Admin access only." />;
+  }
 
   return (
     <div>

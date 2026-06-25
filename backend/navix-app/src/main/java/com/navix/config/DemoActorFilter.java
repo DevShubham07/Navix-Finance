@@ -17,10 +17,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * staff/borrower is taken from request headers so separation-of-duties and audit still work:
  *
  * <pre>
- *   X-Demo-Actor-Id    (default "demo")
- *   X-Demo-Actor-Name  (default "Demo User")
- *   X-Demo-Actor-Role  (default "ADMIN")
+ *   X-Demo-Actor-Id    (default "anonymous")
+ *   X-Demo-Actor-Name  (default "Anonymous")
+ *   X-Demo-Actor-Role  (default "ANONYMOUS")
  * </pre>
+ *
+ * <p>The default role is the non-privileged {@code ANONYMOUS} (not ADMIN): a request that reaches
+ * the backend without the BFF-injected actor headers fails closed at {@code requireRole(...)} rather
+ * than silently running as an administrator. Every borrower/staff flow injects the real actor headers.
  *
  * At go-live this filter is replaced by JWT authentication populating the same {@link ActorContext}.
  */
@@ -32,9 +36,9 @@ public class DemoActorFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         CurrentActor actor = new CurrentActor(
-                header(request, "X-Demo-Actor-Id", "demo"),
-                header(request, "X-Demo-Actor-Name", "Demo User"),
-                header(request, "X-Demo-Actor-Role", "ADMIN"));
+                header(request, "X-Demo-Actor-Id", "anonymous"),
+                header(request, "X-Demo-Actor-Name", "Anonymous"),
+                header(request, "X-Demo-Actor-Role", "ANONYMOUS"));
         try {
             ActorContext.set(actor);
             filterChain.doFilter(request, response);

@@ -32,12 +32,15 @@ class LoanDirectoryAdapterTest {
     private LoanApplicationRepository applicationRepository;
     @Mock
     private ApplicantProfileRepository profileRepository;
+    @Mock
+    private RepaymentService repaymentService;
 
     private LoanDirectoryAdapter adapter;
 
     @BeforeEach
     void setUp() {
-        adapter = new LoanDirectoryAdapter(loanRepository, applicationRepository, profileRepository);
+        adapter = new LoanDirectoryAdapter(loanRepository, applicationRepository, profileRepository,
+                repaymentService);
     }
 
     private Loan loan(long id, LoanStatus status) {
@@ -74,6 +77,8 @@ class LoanDirectoryAdapterTest {
         when(loanRepository.findById(2L)).thenReturn(Optional.of(loan(2L, LoanStatus.ACTIVE)));
         when(applicationRepository.findByLoanId(2L)).thenReturn(Optional.of(app));
         when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(profile));
+        // Outstanding is now the compute-on-read penalty/prepayment-aware balance.
+        when(repaymentService.outstandingAsOf(2L, null)).thenReturn(1_040_000L);
 
         LoanSummary s = adapter.findLoan(2L).orElseThrow();
 

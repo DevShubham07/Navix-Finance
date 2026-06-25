@@ -269,20 +269,40 @@ function EventsTrail({ id }: { id: number }) {
 // Applicant review: KYC details + documents (any reviewing role)
 // ---------------------------------------------------------------------------
 
+/**
+ * Permissions that legitimately need to read applicant PII (name, masked PAN/Aadhaar, salary,
+ * employer, address, documents). Collection roles (only `collections:*`) and DEVELOPER (no perms)
+ * are intentionally excluded — they have no need-to-know for a borrower's salary/employer.
+ */
+const REVIEW_PERMS: Permission[] = [
+  "kyc:approve",
+  "loan:review",
+  "loan:approve",
+  "loan:disburse",
+  "loan:activate",
+];
+
 export function ApplicantReview({ applicationId }: { applicationId: number }) {
+  const role = useStaffMe().data?.role;
+  const canReview = role != null && REVIEW_PERMS.some((p) => hasPermission(role, p));
   const [load, setLoad] = React.useState(false);
   const profileQ = useQuery({
     queryKey: ["staff-profile", applicationId],
     queryFn: () => staffApi.getProfile(applicationId),
-    enabled: load,
+    enabled: load && canReview,
     retry: false,
   });
   const docsQ = useQuery({
     queryKey: ["staff-docs", applicationId],
     queryFn: () => staffApi.documents(applicationId),
-    enabled: load,
+    enabled: load && canReview,
     retry: false,
   });
+
+  if (role == null) return null;
+  if (!canReview) {
+    return <NoAccessNotice message="Applicant details (incl. PII) aren't available to your role." />;
+  }
 
   if (!load) {
     return (
@@ -348,11 +368,12 @@ function Row({ label, value, mono }: { label: string; value: string | null | und
   );
 }
 
-/** Universal: every staff role can open any application by ID and load its applicant review on demand. */
+/** Open any application by ID to load its applicant review — gated to reviewer roles (not collections/dev). */
 export function ReviewLookup() {
   const [input, setInput] = React.useState("");
   const [openId, setOpenId] = React.useState<number | null>(null);
   return (
+    <PermissionGate permission={REVIEW_PERMS} fallback={null}>
     <section className="rounded border border-line bg-white shadow-sm">
       <header className="border-b border-line px-5 py-3">
         <h2 className="font-serif text-lg font-semibold text-navy">Review an application</h2>
@@ -384,6 +405,7 @@ export function ReviewLookup() {
         </div>
       )}
     </section>
+    </PermissionGate>
   );
 }
 

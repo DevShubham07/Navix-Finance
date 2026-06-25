@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -42,6 +43,9 @@ public class CollectionsService {
 
     /** Role allowed to *assign* a case to an officer (collections management). */
     private static final String MANAGER_ROLE = "COLLECTION_HEAD";
+
+    /** Loan statuses that mean the loan is settled — its case drops off the collections worklist. */
+    private static final Set<String> TERMINAL_LOAN_STATUSES = Set.of("CLOSED", "REPAID", "WRITTEN_OFF");
 
     private final CollectionCaseRepository caseRepository;
     private final InteractionLogRepository interactionRepository;
@@ -77,10 +81,16 @@ public class CollectionsService {
         return buildDetail(getCase(caseId));
     }
 
-    /** The collections worklist as enriched rows. */
+    /**
+     * The collections worklist as enriched rows. Cases whose loan has settled (CLOSED/REPAID/
+     * WRITTEN_OFF) are dropped so a fully-repaid loan no longer surfaces as an open case.
+     */
     @Transactional(readOnly = true)
     public List<CaseView> listCaseViews() {
-        return caseRepository.findAll().stream().map(this::toListView).toList();
+        return caseRepository.findAll().stream()
+                .map(this::toListView)
+                .filter(v -> v.loanStatus() == null || !TERMINAL_LOAN_STATUSES.contains(v.loanStatus()))
+                .toList();
     }
 
     /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before {@code asOf}). */
