@@ -55,3 +55,6 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# ---- QA report screenshots (excluded from VCS) ----
+docs/product-gaps-shots/
