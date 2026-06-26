@@ -18,6 +18,13 @@ bank integrations**, and the remaining **platform hardening**.
 > and emailed invites (A1). (The reborrow endpoint, D5, is now **done** — returning-borrower
 > pre-approval + past-delinquency review gate, Flyway V14.)
 
+> **Update 2026-06-27 — borrower account menu + ADMIN per-step control + per-stage demo-data
+> populator.** Demo-layer features with no new go-live surface except A6 below: a borrower **account
+> menu** (`/loans`, `/transactions`, `/support`, `/settings`) backed by `GET /api/applications/mine`;
+> **ADMIN per-step control** (admin exempt from the credit SoD + active-executive `assign`, plus an
+> "Assign to me" button in the console — see A6); and a **per-stage demo-data populator**
+> (`scripts/populate-demo-data.ps1` / `populateDummyData.md`).
+
 Status legend: 🔴 not started · 🟡 partial scaffold exists · 🟢 done (moves out of this doc).
 
 ---
@@ -134,10 +141,13 @@ What already exists (reusable):
   source of truth; add an authorization integration-test matrix (every role × every endpoint).
 - **Done when:** the test matrix proves each endpoint rejects every role that shouldn't call it,
   and `SOD_VIOLATION` fires when the same subject recommends and approves.
-- **Note:** the **Disbursement-Head ≠ Accountant** SoD is now *intentionally relaxed* — a Disbursement
-  Head who enters a transaction id finalizes the release directly, skipping the accountant (the no-txn
-  path still routes to the accountant). The **Credit-Exec ≠ Credit-Head** SoD is unchanged. The
-  RBAC/SoD matrix must encode this product decision.
+- **Note:** two SoD relaxations are now *intentional* and the RBAC/SoD matrix must encode them:
+  (1) **Disbursement-Head ≠ Accountant** — a Disbursement Head who enters a transaction id finalizes
+  the release directly, skipping the accountant (the no-txn path still routes to the accountant);
+  (2) **`ADMIN` is exempt** from the **Credit-Exec ≠ Credit-Head** SoD *and* from the
+  active-Credit-Executive `assign` requirement (`headDecision` / `assignExecutive`), so an admin can
+  walk a loan KYC→ACTIVE solo, per-step (oversight). For **non-admin** roles the Credit-Exec ≠
+  Credit-Head SoD is unchanged.
 
 ---
 
@@ -263,5 +273,5 @@ WARN at boot — harmless locally).
 
 ---
 
-_Last updated 2026-06-25. As each item ships, mark it 🟢 and migrate the detail into `handoff.md`’s
+_Last updated 2026-06-27. As each item ships, mark it 🟢 and migrate the detail into `handoff.md`’s
 change log + `CLAUDE.md`._

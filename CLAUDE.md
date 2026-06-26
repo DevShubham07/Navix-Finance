@@ -40,7 +40,7 @@ This is a monorepo:
 
 ---
 
-## 2. Current state (verified 2026-06-25)
+## 2. Current state (verified 2026-06-27)
 
 The project moved well past scaffolding. **The full loan lifecycle is implemented in the backend
 as one aggregate and wired to the frontend end-to-end through a BFF.**
@@ -118,8 +118,23 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
 - ✅ **Tests** — the backend unit suite green (incl. repayment, transactions-ledger, disbursement
   fast-path, collections-bridge, identity-uniqueness); a **Testcontainers integration test** drives
   DRAFT→ACTIVE + SoD-violation + illegal-transition (3/3 green); frontend `tsc --noEmit` + ESLint clean.
-- ✅ **DB** — Postgres 16 via Docker; Flyway **V1–V13** apply cleanly (seeded staff/invites/blocklist/
+- ✅ **DB** — Postgres 16 via Docker; Flyway **V1–V14** apply cleanly (seeded staff/invites/blocklist/
   collection-case demo rows).
+- ✅ **Borrower account menu + my-applications (live)** — the borrower app-shell header carries an
+  account dropdown (`components/app/account-menu.tsx`): Profile, **Past loans** (`/loans`), **Past
+  transactions** (`/transactions`), Repay, Borrow again, Support / Help & FAQ (`/support`), Account
+  settings (`/settings`), and a real **Sign out** (`logoutBorrower()` clears the `navix_borrower`
+  cookie + stored app id). `/loans` and `/transactions` read **`GET /api/applications/mine`**
+  (`ApplicationFlowService.myApplications`) — the caller's own applications, newest-first — plus the
+  per-loan `GET /api/loan/{id}` / `…/repayments`. No schema change.
+- ✅ **ADMIN full per-step control (live)** — signed in as `ADMIN`, one operator can walk an
+  application KYC→ACTIVE **solo, per-step**: ADMIN is now **exempt from the credit-head SoD check**
+  (`headDecision`) and from the active-Credit-Executive **assign** requirement (`assignExecutive`),
+  and the credit queue renders an **"Assign to me"** button (`components/staff/live-pipeline.tsx`).
+  Non-admin SoD/assignee rules are unchanged. (A deliberate oversight relaxation — see §5/§7.)
+- ✅ **Per-stage demo data** — `scripts/populate-demo-data.ps1` (+ [`populateDummyData.md`](populateDummyData.md))
+  drives the live API to seed one application at **every** lifecycle stage (and a primary borrower with
+  history + current + in-review), so every staff queue and the borrower menu show realistic rows (§4.6).
 
 **Demo-first (not yet real):**
 - 🟡 **No real auth/JWT yet.** Identity is injected via demo headers (§7). This is intentional for
@@ -235,6 +250,13 @@ cd ../frontend && npm run build                    # typecheck + build
 > clean checkout** (an environmental/Next bug, not app code). `npm run dev`, `npx tsc --noEmit` and
 > ESLint are clean; use those to verify the frontend.
 
+### 4.6 Seed demo data (every lifecycle stage)
+With the stack up, **`./scripts/populate-demo-data.ps1`** seeds one application at every stage of the
+lifecycle (KYC → credit → disbursement → ACTIVE/OVERDUE/CLOSED, plus reborrow PRE_APPROVED /
+REVIEW_PENDING) and a primary borrower (login mobile **9819000001**, OTP **123456**) with a closed +
+active + in-review history — all through the live API, with one SQL backdate for the overdue personas.
+See [`populateDummyData.md`](populateDummyData.md).
+
 ---
 
 ## 5. The end-to-end product workflow (the spine)
@@ -292,7 +314,10 @@ blocked while a live application/loan exists.
 **Invariants:**
 - **SoD (D3):** the actor who drove the application into `CREDIT_EXEC_APPROVED` (the recommender)
   must not be the Credit Head who approves. Enforced by replaying `application_event`
-  (`ApplicationFlowService.headDecision` → `SOD_VIOLATION`). **ADMIN bypasses role checks** (oversight).
+  (`ApplicationFlowService.headDecision` → `SOD_VIOLATION`). **ADMIN bypasses role checks** (oversight)
+  **and is additionally exempt from this SoD check and from the active-Credit-Executive `assign`
+  requirement**, so an admin can walk a loan KYC→ACTIVE solo, one step at a time (the console's
+  "Assign to me" + each stage's action). Non-admin SoD/assignee rules are unchanged.
 - Interest accrues only while `ACTIVE`; late penalty only while `OVERDUE` (≤30 days).
 - The DPD bucket is computed-on-read, never stored.
 
@@ -336,6 +361,11 @@ within it.
 > **cosmetic** on the Zustand mock layer — they animate but don't drive real state. The standalone
 > `/apply-live` page is **retired** (redirects to `/dashboard`).
 
+> **Account menu (live):** the app-shell header's avatar dropdown gives the signed-in borrower **Past
+> loans** (`/loans`) and **Past transactions** (`/transactions`) — built from `GET /api/applications/mine`
+> + per-loan loan/repayment reads — plus Support / Help & FAQ (`/support`), Account settings
+> (`/settings`), and a real **Sign out** that clears the `navix_borrower` session and routes to `/login`.
+
 ---
 
 ## 7. Staff & Admin login flow  ★ separate from borrower
@@ -369,7 +399,7 @@ these headers are replaced by the JWT principal — nothing else changes.
 | `ACCOUNTANT` | validate bank transfer → `DISBURSED`→`ACTIVE` (mints loan) / `DISBURSEMENT_FAILED`; **verify borrower repayments**; **view the transactions ledger** |
 | `COLLECTION_HEAD` | collections management + settlements |
 | `COLLECTION_EXECUTIVE` | borrower collections interactions |
-| `ADMIN` | oversight — **bypasses role checks** (may act in any step) |
+| `ADMIN` | oversight — **bypasses role checks**; also exempt from the credit SoD + active-executive `assign`, so may walk a loan KYC→ACTIVE **solo, per-step** (credit queue shows an **"Assign to me"** button) |
 | `DEVELOPER` | internal read-only (health/logs/DB); no business permissions |
 
 > Role names are the **dfd.md** names: `COLLECTION_HEAD` / `COLLECTION_EXECUTIVE` (not the old
@@ -496,6 +526,7 @@ return `FORBIDDEN_ROLE`, `SOD_VIOLATION`, or `ILLEGAL_TRANSITION` (422) on viola
 | `GET /?status=` | staff | list by status (stage queues); `ApplicationView.fastTrack` flags a pre-approved reborrow at disbursement |
 | `GET /credit-queue` | CREDIT_HEAD | KYC-approved **applied** applications |
 | `GET /{id}` · `GET /{id}/events` | any | read application / audit trail |
+| `GET /mine` | BORROWER | the caller's own applications, newest-first (backs the account-menu `/loans` + `/transactions`) |
 | `POST /{id}/submit-kyc` | BORROWER | DRAFT → KYC_PENDING |
 | `POST /{id}/kyc-decision` | KYC_APPROVER | approve/reject |
 | `POST /{id}/review-decision` | KYC_APPROVER | reborrow review: `REVIEW_PENDING` → `PRE_APPROVED` / `REJECTED` |
@@ -564,8 +595,9 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
   invites end-to-end (the invite/activate UI exists but is demo-grade — no password, no email).
 - Real **Fintrix** (salary verify), **DigiLocker** (KYC), **S3** (sanction letters/docs), bank
   **penny-drop + transfer**.
-- **Borrower reborrow** — `/repay` is now **live** (record → accountant verifies → CLOSED); `/reloan`
-  (reborrow → a new draft reusing the profile) is still mock and needs a backend endpoint.
+- **Borrower repay + reborrow** — both now **live** (`/repay` record → accountant verifies → CLOSED;
+  `/reloan` → `POST /api/applications/reborrow` → PRE_APPROVED / REVIEW_PENDING). Remaining hardening:
+  a persisted `borrower_standing` table (standing is recomputed from loan history on each reborrow today).
 - DB cleanup: **FK constraints**; drop/repurpose the legacy UUID `disbursement_request` table;
   unify applicant identity (`applicant_profile` ↔ onboarding `Borrower`).
 - Polish the reworked live pages to the design system (functional, lightly styled).
@@ -584,6 +616,7 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
 
 - **`handoff.md`** — running execution plan, phase tracker (P0–P9), detailed change log.
 - **`FUTURE.md`** — go-live roadmap for the deferred set (real auth, AWS/Fintrix, hardening).
+- **`populateDummyData.md`** — seed demo data at every lifecycle stage (`scripts/populate-demo-data.ps1`).
 - **`dfd.md`** — authoritative state machine, roles, and workflows W2–W7.
 - Memory (`~/.claude/.../memory/`) — `navix-application-state-machine.md` (lifecycle) and
   `navix-execution-plan.md` (plan) capture the same decisions for cross-session continuity.
