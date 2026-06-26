@@ -81,6 +81,33 @@ class ApplicationFlowIntegrationTest {
     }
 
     @Test
+    void adminWalksApplicationToActiveSolo() throws Exception {
+        long appId = createApplication(10L);
+        assertStatusEquals(appId, "DRAFT");
+
+        // The borrower submits KYC and (after approval) applies; ADMIN drives every staff step solo.
+        act(appId, "submit-kyc", "b10", "BORROWER", null, "KYC_PENDING");
+        act(appId, "kyc-decision", "meera", "ADMIN", "{\"decision\":true}", "KYC_APPROVED");
+        act(appId, "apply", "b10", "BORROWER",
+                "{\"amountPaise\":1000000,\"purpose\":\"medical\",\"eligibleLimitPaise\":1250000,\"salaryCreditDay\":30}",
+                "KYC_APPROVED");
+        // Admin self-assigns (INVALID_ASSIGNEE gating lifted for ADMIN) and recommends.
+        act(appId, "assign", "meera", "ADMIN", "{\"executiveId\":10}", "CREDIT_EXEC_PENDING");
+        act(appId, "exec-decision", "meera", "ADMIN", "{\"decision\":true}", "CREDIT_HEAD_PENDING");
+        // SoD is lifted for ADMIN: the same actor who recommended now also gives final approval.
+        act(appId, "head-decision", "meera", "ADMIN", "{\"decision\":true}", "DISBURSEMENT_PENDING");
+        // A txn id fast-paths the release straight to ACTIVE (skips the accountant).
+        act(appId, "disbursement-decision", "meera", "ADMIN",
+                "{\"decision\":true,\"txnRef\":\"ADMIN-TXN-10\"}", "ACTIVE");
+
+        // The application links a minted, ACTIVE loan.
+        mvc.perform(get("/api/applications/{id}", appId).header("X-Demo-Actor-Role", "ADMIN"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.loanId", notNullValue()));
+    }
+
+    @Test
     void separationOfDutiesBlocksSameActorAsExecutiveAndHead() throws Exception {
         long appId = createApplication(8L);
         act(appId, "submit-kyc", "b8", "BORROWER", null, "KYC_PENDING");

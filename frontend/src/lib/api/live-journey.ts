@@ -24,6 +24,7 @@ import {
   type ProfileInput,
 } from "@/lib/api/applications";
 import { eligibleLimit as eligibleLimitRupees } from "@/lib/calc/loan-math";
+import { signOutBorrower } from "@/lib/mock/session";
 import type { ApplicantProfile, BorrowerStatus } from "@/lib/mock/borrower";
 
 /** Browser-local pointer to the borrower's in-flight live application id. */
@@ -91,6 +92,22 @@ export async function ensureBorrowerSession(mobile: string, name?: string): Prom
 /** React Query wrapper for the live borrower session. */
 export function useBorrowerSession() {
   return useQuery({ queryKey: ["borrower-me"], queryFn: fetchBorrowerSession });
+}
+
+/**
+ * Fully sign the borrower out: clear the mock session, clear the real
+ * `navix_borrower` httpOnly cookie (so re-visiting a borrower route no longer
+ * resolves a session), and drop the in-flight application pointer. The caller
+ * then routes to `/login`.
+ */
+export async function logoutBorrower(): Promise<void> {
+  signOutBorrower();
+  try {
+    await fetch("/api/auth/borrower/logout", { method: "POST", credentials: "same-origin" });
+  } catch {
+    // best-effort — the local session is already cleared
+  }
+  writeStoredAppId(null);
 }
 
 // ---------------------------------------------------------------------------

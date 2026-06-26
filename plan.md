@@ -1,8 +1,9 @@
 # Plan: Borrower account menu + full admin per-step control
 
-> Status: **planned, not yet implemented.** Captures the agreed approach for two
-> features. Decisions locked with the user: **per-step admin control** (no one-click
-> fast-forward) and **all** borrower menu extras.
+> Status: **validated against the code and being implemented** (branch
+> `plan/borrower-menu-admin-control`). Decisions locked with the user: **per-step admin control**
+> (no one-click fast-forward) and **all** borrower menu extras. Seed demo data for every lifecycle
+> stage with the populator — see [`populateDummyData.md`](populateDummyData.md).
 
 ## Context
 
@@ -46,7 +47,8 @@ identity via demo actor headers, separate staff/borrower sessions. No schema cha
   (`findByApplicantId` already exists — used by reborrow.)
 - `ApplicationController.java` — add `@GetMapping("/mine")` → returns
   `List<ApplicationView>`. **Must resolve before `/{id}`** (literal segment wins over
-  the `{id}` path-variable in Spring, so `/mine` is safe), reachable through the
+  the `{id}` path-variable in Spring, so `/mine` is safe — same precedence the existing
+  `/credit-queue` and `/pending-repayments` literal routes already rely on), reachable through the
   existing borrower catch-all proxy at `/api/borrower/applications/mine`.
 - No BFF change — `app/api/borrower/applications/[[...path]]/route.ts` is a catch-all
   that injects the borrower actor (id = applicantId).
@@ -55,9 +57,11 @@ identity via demo actor headers, separate staff/borrower sessions. No schema cha
 - `lib/api/applications.ts` — add `borrowerApi.myApplications()` →
   `bff<ApplicationView[]>("/api/borrower/applications/mine", "GET")`.
 - `lib/api/live-journey.ts` — add `logoutBorrower()` helper that fixes the latent
-  sign-out bug: it calls `signOutBorrower()` (mock), `POST /api/auth/borrower/logout`
-  (clears the real `navix_borrower` cookie — today's `app-header` sign-out never does),
-  `writeStoredAppId(null)`, then the caller routes to `/login`.
+  sign-out bug: it calls `signOutBorrower()` (imported from `@/lib/mock/session`),
+  `POST /api/auth/borrower/logout` (clears the real `navix_borrower` cookie — today's `app-header`
+  sign-out never does), `writeStoredAppId(null)`, then the caller routes to `/login`.
+  (The logout **route already exists** at `app/api/auth/borrower/logout/route.ts`; only this client
+  helper is new.)
 
 ### A3. Account menu component + header
 - New `components/app/account-menu.tsx` — a client dropdown: avatar/`User` button at
@@ -75,7 +79,7 @@ identity via demo actor headers, separate staff/borrower sessions. No schema cha
 
 ### A4. New borrower pages (under `app/(borrower)/`, so they inherit the shell + menu)
 - `loans/page.tsx` — "Your loans": `useQuery(borrowerApi.myApplications)`; one card per
-  application showing `statusLabel(status)`, requested amount, and — when `loanId` set —
+  application showing `statusLabel(status)`, requested amount (`amountRequestedPaise`), and — when `loanId` set —
   the loan summary via `borrowerApi.loan(loanId)` (principal, net disbursed, outstanding,
   due date). Reuses `Badge`, `paiseToINR`, `formatDate`, the dashboard's status mapping.
 - `transactions/page.tsx` — "Transactions": client-side ledger built from existing
@@ -97,12 +101,13 @@ identity via demo actor headers, separate staff/borrower sessions. No schema cha
 
 ### B1. Backend (`ApplicationFlowService.java`)
 - **SoD exemption** in `headDecision`: skip the recommender==approver check when
-  `"ADMIN".equals(ActorContext.get().role())`. One guard added before the existing
-  `recommender.equals(...)` test. Non-admin SoD is untouched, so the integration test
+  `"ADMIN".equals(ActorContext.get().role())`. One guard wraps the existing
+  `recommender.equals(ActorContext.get().id())` test (~L230-233; `requireRole` already bypasses
+  ADMIN at ~L406). Non-admin SoD is untouched, so the integration test
   `separationOfDutiesBlocksSameActorAsExecutiveAndHead` (uses role `CREDIT_HEAD`, id
   `sameperson`) stays green.
 - **Admin self-assign** in `assignExecutive`: when the actor role is `ADMIN`, skip the
-  `staffDirectory.isActiveWithRole(executiveId, "CREDIT_EXECUTIVE")` requirement so the
+  `staffDirectory.isActiveWithRole(executiveId, "CREDIT_EXECUTIVE")` requirement (~L201) so the
   admin can assign the review to himself (his own staff id) and proceed. Non-admin path
   unchanged (still must pick an active Credit Executive).
 
@@ -122,6 +127,18 @@ Signed in as ADMIN on `/staff/applications`, the admin walks one application sol
 KYC ✔ → **Assign to me** → Exec ✔ → Head ✔ (SoD lifted) → Disburse ✔ (txn id) → ACTIVE,
 and may **reject** at any stage (existing reject buttons already work for ADMIN). Reject/
 cancel need no change.
+
+---
+
+## Demo data (every lifecycle stage)
+
+Before exercising the menu/admin features, seed the app with an application parked at **every** stage
+(plus a primary borrower with history + current + in-review) using the API-driven populator —
+[`populateDummyData.md`](populateDummyData.md) / `scripts/populate-demo-data.ps1`. It drives the real
+REST API on `:8090` with demo-actor headers (genuine money math, salary-linked due dates, audit
+trail), with one small SQL `UPDATE` to backdate the OVERDUE / past-delinquency loans. After it runs,
+every staff queue and the borrower account menu show realistic rows. Primary demo login: mobile
+**9819000001**, OTP **123456**.
 
 ---
 
