@@ -66,6 +66,12 @@ public class ApplicationController {
         return ApiResponse.ok(flow.creditHeadQueue().stream().map(ApplicationView::of).toList());
     }
 
+    /** The calling borrower's own applications (newest first) — for their account "loans/transactions" views. */
+    @GetMapping("/mine")
+    public ApiResponse<List<ApplicationView>> mine() {
+        return ApiResponse.ok(flow.myApplications().stream().map(ApplicationView::of).toList());
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<ApplicationView> get(@PathVariable Long id) {
         return ApiResponse.ok(ApplicationView.of(flow.get(id)));

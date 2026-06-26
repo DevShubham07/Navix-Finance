@@ -198,7 +198,9 @@ public class ApplicationFlowService {
             throw new BusinessException("NOT_APPLIED", "Application has not been submitted by the borrower yet");
         }
         // Activation gating (dfd.md §13.4): the assignee must be an ACTIVE Credit Executive.
-        if (!staffDirectory.isActiveWithRole(executiveId, "CREDIT_EXECUTIVE")) {
+        // ADMIN is exempt — oversight may self-assign and drive the credit step solo (per-step control).
+        if (!"ADMIN".equals(ActorContext.get().role())
+                && !staffDirectory.isActiveWithRole(executiveId, "CREDIT_EXECUTIVE")) {
             throw new BusinessException("INVALID_ASSIGNEE",
                     "The assignee must be an active Credit Executive");
         }
@@ -226,10 +228,13 @@ public class ApplicationFlowService {
         LoanApplication app = require(appId);
         if (approve) {
             // SoD (D3): the approving Head must not be the recommending Executive.
-            String recommender = actorOf(appId, ApplicationStatus.CREDIT_EXEC_APPROVED);
-            if (recommender != null && recommender.equals(ActorContext.get().id())) {
-                throw new BusinessException("SOD_VIOLATION",
-                        "The recommending Credit Executive cannot also give final approval");
+            // ADMIN is exempt — oversight may approve its own recommendation (per-step control).
+            if (!"ADMIN".equals(ActorContext.get().role())) {
+                String recommender = actorOf(appId, ApplicationStatus.CREDIT_EXEC_APPROVED);
+                if (recommender != null && recommender.equals(ActorContext.get().id())) {
+                    throw new BusinessException("SOD_VIOLATION",
+                            "The recommending Credit Executive cannot also give final approval");
+                }
             }
             if (approvedAmountPaise != null) {
                 app.setAmountRequested(approvedAmountPaise);
@@ -358,6 +363,16 @@ public class ApplicationFlowService {
     public List<LoanApplication> creditHeadQueue() {
         return applicationRepository.findByStatusOrderByIdAsc(ApplicationStatus.KYC_APPROVED).stream()
                 .filter(a -> a.getAmountRequested() != null)
+                .toList();
+    }
+
+    /** The calling borrower's own applications, newest first (for the "my loans/transactions" views). */
+    @Transactional(readOnly = true)
+    public List<LoanApplication> myApplications() {
+        requireRole("BORROWER");
+        Long applicantId = Long.valueOf(ActorContext.get().id());
+        return applicationRepository.findByApplicantId(applicantId).stream()
+                .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .toList();
     }
 

@@ -280,6 +280,9 @@ export const borrowerApi = {
   /** Poll a single application. */
   get: (id: number) => bff<ApplicationView>(`${BORROWER_BASE}/${id}`, "GET"),
 
+  /** The borrower's own applications, newest first (for "Past loans" / "Transactions"). */
+  myApplications: () => bff<ApplicationView[]>(`${BORROWER_BASE}/mine`, "GET"),
+
   /** Event/audit trail for an application. */
   events: (id: number) => bff<EventView[]>(`${BORROWER_BASE}/${id}/events`, "GET"),
 

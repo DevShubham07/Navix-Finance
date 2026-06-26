@@ -666,6 +666,8 @@ export function ReviewActions({ app }: { app: ApplicationView }) {
 
 export function AssignActions({ app }: { app: ApplicationView }) {
   const refresh = useRefreshAfterAction();
+  const me = useStaffMe();
+  const isAdmin = me.data?.role === "ADMIN";
   const [execId, setExecId] = React.useState("");
   // Assignee picker: only ACTIVE Credit Executives (dfd §13.4 activation gating).
   const execQ = useQuery({
@@ -678,6 +680,12 @@ export function AssignActions({ app }: { app: ApplicationView }) {
   );
   const m = useMutation({
     mutationFn: () => staffApi.assign(app.id, Number.parseInt(execId, 10)),
+    onSuccess: () => refresh(app.id),
+  });
+  // ADMIN oversight: self-assign and drive the credit step solo (the backend lifts the
+  // active-Credit-Executive requirement for ADMIN).
+  const mSelf = useMutation({
+    mutationFn: () => staffApi.assign(app.id, Number(me.data!.id)),
     onSuccess: () => refresh(app.id),
   });
   return (
@@ -713,7 +721,17 @@ export function AssignActions({ app }: { app: ApplicationView }) {
             </button>
           </>
         )}
-        <ActionError error={m.error} />
+        {isAdmin && me.data && (
+          <button
+            onClick={() => mSelf.mutate()}
+            disabled={mSelf.isPending}
+            className="btn btn-sm btn-outline disabled:opacity-50"
+            title="Assign this credit review to yourself (admin oversight)"
+          >
+            {mSelf.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Assign to me
+          </button>
+        )}
+        <ActionError error={m.error || mSelf.error} />
       </div>
     </ActionGate>
   );
