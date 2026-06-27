@@ -7,6 +7,7 @@
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { NAVIX_MARK_PNG } from "./brand-mark";
 
 /** A column: a header label and an accessor that pulls a cell value from a row. */
 export interface ExportColumn<Row> {
@@ -75,14 +76,21 @@ export function exportPdf<Row>(opts: {
   doc.setFillColor(GOLD[0], GOLD[1], GOLD[2]);
   doc.rect(0, 58, pageWidth, 3, "F");
 
+  // emblem (transparent PNG sits on the navy band)
+  try {
+    doc.addImage(NAVIX_MARK_PNG, "PNG", 36, 12, 36, 36);
+  } catch {
+    // addImage can throw in non-DOM/test environments — the wordmark still renders.
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
-  doc.text("NAVIX", 40, 30);
+  doc.text("NAVIX", 82, 30);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(GOLD[0], GOLD[1], GOLD[2]);
-  doc.text("FINANCE", 41, 44);
+  doc.text("FINANCE", 83, 44);
 
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
