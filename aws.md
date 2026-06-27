@@ -206,11 +206,19 @@ aws ecs register-task-definition --cli-input-json file://td-new.json
 - The SG must open **both 80 and 8080** (§5).
 - Boot takes ~40s (Flyway V1–V19 + SSM + RDS connect) → the target shows `unhealthy` then flips
   `healthy`. Don't mistake the boot window for a crash — check CloudWatch logs.
-- **Deploy can flap on the micro RDS:** during the rolling deploy *two* tasks (old + new) both open
-  Hikari pools against the tiny `db.t4g.micro`, and `/actuator/health` includes a DB ping — under that
-  contention the 5s ELB health timeout can trip (2 fails = unhealthy → ECS kills the task → it cycles).
-  It self-heals once the deploy settles to one task. If it won't converge, raise the target-group
-  health-check timeout/threshold or bump the RDS instance.
+- **Deploy could flap on the micro RDS (now mitigated):** during the rolling deploy *two* tasks
+  (old + new) both pool to the tiny `db.t4g.micro`, and `/actuator/health` includes a DB ping — under
+  that contention a tight health check would kill the booting new task before it stabilised. The target
+  group's check was badly tuned for this (healthy-threshold **5** = 150s of passes to go healthy, but
+  unhealthy-threshold **2** = only 60s of fails to be killed, 5s timeout) → the new task could never
+  accumulate enough passes and the deploy never converged. **Fixed** by retuning the
+  `navix-backend-tg` health check to **healthy=2, unhealthy=4, timeout=10, interval=30** (go healthy in
+  ~60s, tolerate ~120s of transient blips). If it ever flaps again, relax further or bump the RDS:
+  ```bash
+  aws elbv2 modify-target-group --target-group-arn <navix-backend-tg> \
+    --healthy-threshold-count 2 --unhealthy-threshold-count 4 \
+    --health-check-timeout-seconds 10 --health-check-interval-seconds 30
+  ```
 - `aws logs ... --max-items 1` **corrupts** the returned stream name; use
   `--query 'logStreams[0].logStreamName'` without `--max-items`.
 - The ALB is **HTTP only** (no ACM cert / HTTPS:443). Server-side BFF calls are fine; a *browser*
