@@ -71,7 +71,14 @@ export default function SignupDigiLockerPage() {
     setError(undefined);
     setResult(null);
     try {
-      const redirectUrl = `${window.location.origin}/kyc/digilocker/callback`;
+      // The DigiLocker provider (Fintrix/Surepass) caches the consent session keyed by
+      // redirect_url and re-serves the SAME (eventually-expired) token for a repeat URL.
+      // A fixed callback therefore gets stuck on a stale token → the SDK rejects it with
+      // "Access Denied / token expired". Make the URL unique per attempt to force a fresh
+      // session. The callback page resolves the app from localStorage, so it ignores these
+      // params. (See verify/digilocker/init flow.)
+      const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      const redirectUrl = `${window.location.origin}/kyc/digilocker/callback?app=${appId}&sid=${nonce}`;
       const r = await verificationApi.digilockerInit(appId, redirectUrl);
       const url = typeof r.derived?.url === "string" ? (r.derived.url as string) : null;
       if (url) window.open(url, "_blank", "noopener,noreferrer");
