@@ -42,6 +42,12 @@ This is a monorepo:
 
 ## 2. Current state (verified 2026-06-27)
 
+> **⚠️ Superseded in part by the P0–P8 production migration — see `handoff.md` §15.** Since that
+> migration: identity is **real JWT + Spring Security** (not demo headers), the Fintrix/DigiLocker
+> clients are **un-mocked** (real API calls), documents are **S3-backed**, onboarding is a **9-step
+> verified wizard**, and the **mock layer is removed**. The "demo-first / mock" descriptions below
+> describe the pre-migration state; treat `handoff.md` §15 as authoritative for what is live now.
+
 The project moved well past scaffolding. **The full loan lifecycle is implemented in the backend
 as one aggregate and wired to the frontend end-to-end through a BFF.**
 

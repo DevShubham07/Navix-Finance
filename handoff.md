@@ -598,4 +598,42 @@ Build a real pyramid; gate CI on it.
 
 ---
 
+## 15. Production migration P0–P8 (2026-06-27)
+
+Executed `finalplan.md` — un-mocked the integrations, added the verified 9-step
+onboarding, moved documents to S3, swapped demo-header identity for real JWT auth, and
+added the admin payment block. **Live-verified against a local Postgres boot + the real
+Fintrix sandbox** (not just unit tests).
+
+- **P1 — real Fintrix/DigiLocker clients.** `navix-verification` clients now make real
+  `RestClient` calls (Fintrix Basic / DigiLocker `X-Client-*`), parse the real JSON
+  envelopes into reshaped DTOs, with timeouts + `VerificationException` + PII-safe logging;
+  Experian→CRIF fallback; new `FaceLivenessClient`. **Live sandbox check:** `verify/pan`
+  on a real PAN returned the true demographics (name, masked Aadhaar, state). 18 unit tests.
+- **P2 — verification engine.** Flyway **V15** (`application_verification` + `application_document.s3_object_key`) + **V16** (`applicant_profile` derived fields). Three `navix-common` ports — `VerificationPort` / `DocumentStoragePort` / `RiskPort` — with adapters in the provider modules (no new Maven edges; `RiskPort` makes `navix-income-risk` the single 25%-cap + A/B/C/D authority). `ApplicationVerificationService` (idempotent per `check_type`, identity name cross-match, derived-field updates, jsonb audit).
+- **P3 — onboarding endpoints.** `ApplicationVerificationController` `/api/applications/{id}/verify/*` (pan/email/address/digilocker init·status·complete/bureau/salary/penny-drop/selfie/agreement/summary/presign-upload, borrower + ownership gated). `submit-kyc` hardened: all mandatory checks PASS/REVIEW + agreement, else `KYC_INCOMPLETE`. Staff-readable `GET /{id}/verifications`.
+- **P4 — S3 documents.** `buildApplicationKey` + `storeFromUrl` on the storage service; app-scoped presign-upload; server-side DigiLocker Aadhaar ingest; approver `GET /{id}/documents/{docId}/url` presigned GET; `DocumentView.s3` flag.
+- **P5 — frontend 9-step wizard.** mobile-otp → email → address → digilocker → pan → bureau → salary → penny-drop → selfie → agreement → review; each step persists + calls its `/verify/*` with live PASS/REVIEW/FAIL; geolocation address, camera selfie + slip via presign→S3 PUT, DigiLocker poll, agreement consent (3 docs in `public/legal/`), bureau hidden from the borrower. AA step removed.
+- **P6 — real JWT auth + Spring Security.** `jjwt` `JwtService` (HS256, staff/borrower audiences); `AuthController` `/api/auth/{staff,borrower}/login` (staff = BCrypt vs `staff_user.password_hash` seeded in **V17**, borrower = mocked OTP `123456`); `JwtAuthFilter` replaces `DemoActorFilter`; `SecurityConfig` requires auth on `/api/**` except auth/storage/docs/actuator, 401 entry point. BFF stores the JWT in the httpOnly cookie + forwards `Authorization: Bearer`, stops injecting `X-Demo-Actor-*`. Role-pick staff login preserved (role→seeded email + default password `Admin@12345`). **Live-verified:** no/garbage token → 401, valid bearer → 200, login issues JWTs.
+- **P7 — mock removal + approver enrichment.** Deleted `lib/mock/*`, demo-bar, `demoMode`/`DEMO_OTP`/`NEXT_PUBLIC_DEMO_MODE`, legacy stub BFF routes (rewired live imports first). `live-pipeline` `ApplicantReview` now shows per-step verification cards + presigned-GET document links.
+- **P8 — admin payment block.** Flyway **V18** singleton `payment_settings` seeded from the old hardcoded payee; `PaymentSettingsController` (GET any actor with presigned QR/PDF URLs, PUT ADMIN); admin page + repay page (QR image for UPI, account fields + PDF link for bank) + BFF; demo assets in `frontend/public/payment/`.
+
+**Verification done here:** all 18 Flyway migrations apply + Hibernate `validate` passes
+against real Postgres; backend unit suite green (navix-loan 73, navix-verification 18,
+navix-iam 32, navix-app 4); frontend `tsc --noEmit` + ESLint clean; the auth + verification
+paths + a real Fintrix call exercised against a running app.
+
+**Remaining for go-live (owner action):**
+- Run `scripts/p0-aws-setup.sh` (RDS SG ingress for the host, S3 CORS, Fintrix/DigiLocker
+  SSM SecureString creds) — Claude was blocked from mutating shared cloud infra in auto mode.
+- Boot against **RDS** (or Docker) and run the Testcontainers IT under `-Pit` to confirm the
+  schema + JWT lifecycle on the deployed DB (locally validated on Homebrew Postgres here).
+- Browser E2E of the 9 steps against the live Fintrix/DigiLocker sandbox (camera, geolocation,
+  DigiLocker redirect, presigned S3 uploads) + the S3 presign round-trip.
+- Rotate the default staff password (`Admin@12345`) and set a strong `AUTH_SECRET` in SSM.
+- Deferred (unchanged): full-Aadhaar masking, drop the legacy UUID `disbursement_request`,
+  FK constraints, persisted `borrower_standing`, real emailed invites + OTP delivery.
+
+---
+
 *NAVIX Finance — completion handoff. One unified plan, FE + BE, to production. Nothing is live until §13 passes. Backend is the source of truth; money is paise; every state change is authorized, idempotent, and audited.*
