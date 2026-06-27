@@ -23,5 +23,6 @@ async function handle(req: NextRequest, ctx: Ctx) {
 }
 
 export const GET = handle;
+export const POST = handle;
 export const PUT = handle;
 export const DELETE = handle;

@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw, UserX } from "lucide-react";
-import { Select } from "@/components/ui";
+import { Loader2, RefreshCw, UserPlus, UserX } from "lucide-react";
+import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
@@ -53,6 +53,8 @@ export default function AdminStaffPage() {
         </button>
       </PageHeader>
 
+      <CreateStaffForm />
+
       {q.isLoading ? (
         <div className="h-40 animate-pulse rounded border border-line bg-white" />
       ) : q.error ? (
@@ -77,6 +79,69 @@ export default function AdminStaffPage() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Create a staff account with an email + password so they can sign in (ADMIN only). */
+function CreateStaffForm() {
+  const qc = useQueryClient();
+  const [email, setEmail] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [role, setRole] = React.useState<StaffRoleName>("KYC_APPROVER");
+  const [password, setPassword] = React.useState("");
+
+  const canSubmit =
+    email.trim().length > 0 && name.trim().length > 0 && password.length >= 4;
+
+  const create = useMutation({
+    mutationFn: () =>
+      adminApi.createStaff({ email: email.trim(), name: name.trim(), role, password }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-staff"] });
+      setEmail("");
+      setName("");
+      setPassword("");
+      setRole("KYC_APPROVER");
+    },
+  });
+
+  return (
+    <div className="mb-4 rounded border border-line bg-white p-4 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold text-ink">Create staff account</h2>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Input
+          label="Email" type="email" autoComplete="off" value={email}
+          onChange={(e) => setEmail(e.target.value)} placeholder="person@navix.example"
+        />
+        <Input
+          label="Name" value={name}
+          onChange={(e) => setName(e.target.value)} placeholder="Full name"
+        />
+        <Select
+          label="Role" value={role}
+          onChange={(e) => setRole(e.target.value as StaffRoleName)}
+          options={ROLES.map((r) => ({ value: r, label: r }))}
+        />
+        <Input
+          label="Password" type="password" autoComplete="new-password" value={password}
+          onChange={(e) => setPassword(e.target.value)} placeholder="Set a password (min 4)"
+        />
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          onClick={() => create.mutate()}
+          disabled={!canSubmit || create.isPending}
+          className="btn btn-sm btn-navy disabled:opacity-50"
+        >
+          {create.isPending ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />} Create staff
+        </button>
+        {create.error ? (
+          <span className="text-xs text-error-700">{errMessage(create.error)}</span>
+        ) : create.isSuccess ? (
+          <span className="text-xs text-success-700">Staff account created.</span>
+        ) : null}
+      </div>
     </div>
   );
 }

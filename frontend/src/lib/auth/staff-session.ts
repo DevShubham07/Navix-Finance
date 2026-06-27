@@ -33,11 +33,42 @@ export async function fetchStaffSession(): Promise<StaffSession | null> {
 }
 
 /**
- * Sign in as a role: maps the role to its seeded account server-side and
- * authenticates against the backend. Returns the sanitized session (no token)
- * or null on failure.
+ * Sign in with email + password (the real staff login). Authenticates against the
+ * backend via the BFF and stores the JWT in the httpOnly `navix_staff` cookie.
+ * Returns the sanitized session (no token); throws with the backend's message
+ * (e.g. "Invalid email or password") on failure so the form can surface it.
  */
-export async function loginStaff(role: StaffRole): Promise<StaffSession | null> {
+export async function loginStaff(email: string, password: string): Promise<StaffSession> {
+  const res = await fetch("/api/auth/staff/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    let message = "Sign-in failed. Please try again.";
+    try {
+      const body = (await res.json()) as { error?: { message?: string } | string; message?: string };
+      message =
+        (typeof body?.error === "object" ? body?.error?.message : body?.error) ??
+        body?.message ??
+        message;
+    } catch {
+      /* non-JSON error body — keep the default */
+    }
+    throw new Error(message);
+  }
+  const session = (await res.json()) as StaffSession;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(STAFF_SESSION_EVENT));
+  return session;
+}
+
+/**
+ * DEMO ONLY — one-click "act as role": maps the role to its seeded persona
+ * server-side (the BFF role shortcut) to exercise the maker-checker chain. The
+ * real login is {@link loginStaff} (email + password). Returns null on failure.
+ */
+export async function loginStaffAs(role: StaffRole): Promise<StaffSession | null> {
   const res = await fetch("/api/auth/staff/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

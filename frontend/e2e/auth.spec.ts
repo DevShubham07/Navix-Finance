@@ -22,9 +22,11 @@ test.describe("auth", () => {
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
   });
 
-  test("staff role-pick login lands on the dashboard", async ({ page }) => {
+  test("staff email+password login lands on the dashboard", async ({ page }) => {
     await page.goto("/staff/login");
-    await page.getByRole("button").filter({ hasText: "Administrator" }).click();
+    await page.getByLabel("Email").fill("navixfinance@gmail.com");
+    await page.getByLabel("Password").fill("demo");
+    await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/staff\/dashboard/, { timeout: 15_000 });
     await expect(page.getByText(/Welcome,/)).toBeVisible();
   });

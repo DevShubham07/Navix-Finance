@@ -650,6 +650,9 @@ export const adminApi = {
   // --- staff users ---
   listStaff: () => bff<StaffResponse[]>(ADMIN_STAFF_BASE, "GET"),
   getStaff: (id: number) => bff<StaffResponse>(`${ADMIN_STAFF_BASE}/${id}`, "GET"),
+  /** Create a staff account with an email + password so they can sign in (ADMIN only). */
+  createStaff: (payload: { email: string; name: string; role: StaffRoleName; password: string }) =>
+    bff<StaffResponse>(ADMIN_STAFF_BASE, "POST", payload),
   updateStaff: (id: number, payload: { role: StaffRoleName; status: StaffStatus }) =>
     bff<StaffResponse>(`${ADMIN_STAFF_BASE}/${id}`, "PUT", payload),
   disableStaff: (id: number) => bff<null>(`${ADMIN_STAFF_BASE}/${id}`, "DELETE"),

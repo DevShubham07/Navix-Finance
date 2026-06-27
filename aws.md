@@ -204,8 +204,13 @@ aws ecs register-task-definition --cli-input-json file://td-new.json
 - Build **`--provenance=false --sbom=false`** — buildx's default attestation manifest *list* can make
   the ECS image pull fail; use a plain single-arch manifest.
 - The SG must open **both 80 and 8080** (§5).
-- Boot takes ~40s (Flyway V1–V18 + SSM + RDS connect) → the target shows `unhealthy` then flips
+- Boot takes ~40s (Flyway V1–V19 + SSM + RDS connect) → the target shows `unhealthy` then flips
   `healthy`. Don't mistake the boot window for a crash — check CloudWatch logs.
+- **Deploy can flap on the micro RDS:** during the rolling deploy *two* tasks (old + new) both open
+  Hikari pools against the tiny `db.t4g.micro`, and `/actuator/health` includes a DB ping — under that
+  contention the 5s ELB health timeout can trip (2 fails = unhealthy → ECS kills the task → it cycles).
+  It self-heals once the deploy settles to one task. If it won't converge, raise the target-group
+  health-check timeout/threshold or bump the RDS instance.
 - `aws logs ... --max-items 1` **corrupts** the returned stream name; use
   `--query 'logStreams[0].logStreamName'` without `--max-items`.
 - The ALB is **HTTP only** (no ACM cert / HTTPS:443). Server-side BFF calls are fine; a *browser*
@@ -221,8 +226,16 @@ aws ecs register-task-definition --cli-input-json file://td-new.json
 | URL | `https://frontend-ruby-two-78.vercel.app` |
 | Key env | `BACKEND_BASE_URL` = `http://navix-alb-148184383.ap-south-1.elb.amazonaws.com` (server-only) |
 
-Redeploy = push to the connected Git branch, or `vercel --prod` from `frontend/`. If you ever
-re-create the ALB (new DNS), update `BACKEND_BASE_URL` in Vercel project settings and redeploy.
+Redeploy = `npx vercel@latest --prod --yes` from `frontend/` (the project is linked via
+`frontend/.vercel/`). If you ever re-create the ALB (new DNS), update `BACKEND_BASE_URL` in Vercel
+project settings and redeploy.
+
+> ⚠️ **Deploying through the corporate (Netskope) proxy is flaky** — the CLI's upload/poll to
+> `api.vercel.com` gets "socket hang up", leaving deployments stuck `UNKNOWN`. Use
+> **`vercel --prod --yes --archive=tgz`** (one tarball upload, far more resilient), or deploy from a
+> non-proxied network. The build itself runs server-side; if the CLI drops after upload, check
+> `vercel ls` and `vercel promote <url>` once the deployment is `Ready`. (Git auto-deploys from `main`
+> currently fail — the project Root Directory isn't set to `frontend`; the app lives in `frontend/`.)
 
 > **Legacy / not live:** `deploy/deploy-backend.sh` + `deploy/backend.env.example` describe a
 > single-EC2 box running the container via `docker run` (not ECS). It still works as an alternative
@@ -242,16 +255,27 @@ curl -s -o /dev/null -w '%{http_code}\n' "$ALB/api/applications?status=KYC_PENDI
 curl -s -X POST "$ALB/api/auth/borrower/otp/request" -H 'Content-Type: application/json' -d '{"mobile":"9819000001"}'
 curl -s -X POST "$ALB/api/auth/borrower/login"       -H 'Content-Type: application/json' -d '{"mobile":"9819000001","otp":"123456"}'
 
-# staff ADMIN (note the email — there is NO admin@navix.example)
-curl -s -X POST "$ALB/api/auth/staff/login" -H 'Content-Type: application/json' \
-  -d '{"email":"meera.krishnan@navix.example","password":"Admin@12345"}'
+# staff ADMIN — the PRIMARY login is the real email+password admin (Flyway V19)
+TOK=$(curl -s -X POST "$ALB/api/auth/staff/login" -H 'Content-Type: application/json' \
+  -d '{"email":"navixfinance@gmail.com","password":"demo"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["token"])')
+
+# admin creates a staff account that can then log in (ADMIN-only; non-admin → 422 FORBIDDEN_ROLE)
+curl -s -X POST "$ALB/api/staff" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  -d '{"email":"new.staff@navix.test","name":"New Staff","role":"KYC_APPROVER","password":"pass1234"}'
 ```
 
-**Seeded logins** (all password **`Admin@12345`**, set by Flyway V17; emails from V10):
-`meera.krishnan@navix.example`=ADMIN · `ananya.rao`=KYC_APPROVER · `priya.nair`=CREDIT_HEAD ·
-`rahul.mehta`/`kabir.singh`/`neha.gupta`=CREDIT_EXECUTIVE · `vikram.shah`=DISBURSEMENT_HEAD ·
-`deepa.iyer`=ACCOUNTANT · `arjun.patel`=COLLECTION_HEAD · `sana.khan`=COLLECTION_EXECUTIVE ·
-`dev.ops`=DEVELOPER. Borrower demo: mobile any 10 digits, OTP **`123456`** (mock).
+**Primary admin (Flyway V19):** **`navixfinance@gmail.com`** / **`demo`** (ADMIN). This is the real
+email+password login the staff console uses (the `/staff/login` page is a plain email+password form —
+the old role-picker demo is gone; the floating "Act as role" bar still uses the seeded personas below).
+Admins can mint more email+password staff via `POST /api/staff` (UI: `/staff/admin/staff` → "Create
+staff account"). Rotate `demo` before any real use.
+
+**Seeded demo personas** (kept for the maker-checker / SoD demo; all password **`Admin@12345`**, Flyway
+V17; emails from V10): `meera.krishnan@navix.example`=ADMIN · `ananya.rao`=KYC_APPROVER ·
+`priya.nair`=CREDIT_HEAD · `rahul.mehta`/`kabir.singh`/`neha.gupta`=CREDIT_EXECUTIVE ·
+`vikram.shah`=DISBURSEMENT_HEAD · `deepa.iyer`=ACCOUNTANT · `arjun.patel`=COLLECTION_HEAD ·
+`sana.khan`=COLLECTION_EXECUTIVE · `dev.ops`=DEVELOPER. Borrower demo: mobile any 10 digits, OTP
+**`123456`** (mock).
 
 ---
 

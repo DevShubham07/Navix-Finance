@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Users, X, RotateCcw } from "lucide-react";
 import { STAFF_ROLES, STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import { STAFF_PERSONA_NAMES } from "@/lib/api/staff-personas";
-import { loginStaff, useStaffSession } from "@/lib/auth/staff-session";
+import { loginStaffAs, useStaffSession } from "@/lib/auth/staff-session";
 import { useMounted } from "@/hooks/use-mounted";
 
 /**
@@ -24,8 +24,9 @@ export function StaffRoleBar() {
   if (!mounted) return null;
 
   const pick = async (role: StaffRole) => {
-    // Re-authenticate: sets the httpOnly navix_staff cookie (JWT) the BFF forwards as a bearer.
-    await loginStaff(role);
+    // Re-authenticate as the role's seeded persona (demo shortcut): sets the httpOnly
+    // navix_staff cookie (JWT) the BFF forwards as a bearer.
+    await loginStaffAs(role);
     setOpen(false);
     router.refresh();
   };
