@@ -1,12 +1,10 @@
 # FUTURE.md — Go-live roadmap (deferred work)
 
-The forward plan for taking NAVIX from its current **demo-first** state to production. Covers the
-deferred set: **real auth (JWT/Spring Security)**, **AWS infrastructure**, **Fintrix/DigiLocker +
-bank integrations**, and the remaining **platform hardening**.
+The forward plan for taking NAVIX to production. This file owns only the **not-yet-built** items.
+Completed work is recorded in `handoff.md` §15 and `CLAUDE.md` §2.
 
 > Companion docs: `CLAUDE.md` (onboarding / current state), `handoff.md` (execution plan + change
-> log, esp. **§15** = the migration record), `dfd.md` (authoritative lifecycle + roles). This file
-> owns the *not-yet-built* go-live set.
+> log, esp. **§15** = the migration record), `dfd.md` (authoritative lifecycle + roles).
 
 > ## ⚑ Update 2026-06-27 — P0–P8 production migration SHIPPED (most of A/B/C is now 🟢)
 >
@@ -57,13 +55,10 @@ Status legend: 🔴 not started · 🟡 partial scaffold exists · 🟢 done (mo
 
 ---
 
-## 0. Why this is safe to do later — the swap seams
+## 0. Swap seams — all shipped ✅
 
 The demo was deliberately built so that going live is mostly **swapping adapters at known seams**,
-not rewriting business logic. Every seam below already exists; production replaces the
-implementation behind it and leaves the domain code untouched.
-
-The seam design held: each was swapped behind its interface with the domain code untouched. ✅ = swapped.
+not rewriting business logic. All core seams have been swapped.
 
 | Seam | Was (demo) | Now (production) | Domain code that did NOT change |
 |---|---|---|---|
@@ -74,35 +69,27 @@ The seam design held: each was swapped behind its interface with the domain code
 | **KYC** ✅ | mock | real DigiLocker client (init→poll→complete) | the verification service callers |
 | **Config/secrets** ✅ | local env | **SSM Parameter Store** (spring-cloud-aws import) | application code (reads via `@Value`/config) |
 
-**Principle held:** services kept reading `CurrentActor` and calling the ports; the swaps were
-localized to the adapters/filters — no domain rewrites.
-
 ---
 
-## 1. The deferred set at a glance
+## 1. Remaining deferred work at a glance
 
-| # | Workstream | Current | Priority |
+| # | Workstream | Remaining | Priority |
 |---|---|---|---|
-| A | Real authentication & authorization (JWT + Spring Security) | 🟢 **JWT live**; remaining: emailed invites (A1), real SMS/DLT (A2), middleware JWT verify (A5) | P0 |
-| B | AWS infrastructure (secrets, S3, deploy, observability) | 🟢 **SSM secrets + S3 docs live**; remaining: deploy/CI infra (B3), observability (B4) | P1 |
-| C | External integrations un-mocked (Fintrix, DigiLocker, bank) | 🟢 **Fintrix + DigiLocker + penny-drop live**; remaining: real bank **payout** (C3) | P1 |
-| D | Data model & platform hardening (FK, legacy tables, PII) | 🟡 (D2 collections + D5 repay done; FK/identity/PII remain) | P2 |
-| E | Compliance & product alignment (NBFC/DLG, reporting, copy) | 🔴 | P2 (regulatory gate before launch) |
+| A | Auth hardening | emailed invites (A1), real SMS/DLT (A2), middleware JWT verify (A5), RBAC test matrix (A6) | P0 |
+| B | AWS infrastructure | drop legacy `bytea` column (B2), deploy/CI pipeline (B3), observability (B4) | P1 |
+| C | External integrations | real bank payout NEFT/IMPS (C3) | P1 |
+| D | Data model hardening | FK constraints (D1), unify applicant identity (D3), PII encryption (D4) | P2 |
+| E | Compliance & product alignment | lending model, copy, agreements, reporting | P2 (regulatory gate) |
 
 ---
 
-## A. Real authentication & authorization 🟡 — P0
+## A. Auth hardening 🟡 — P0
 
-Today identity is demo-only: BFF login endpoints set plain cookies and the backend trusts
-`X-Demo-Actor-*` headers. **Anyone can mint any role.** This is the single biggest go-live gate.
+JWT + Spring Security is live. `JwtAuthFilter` validates the bearer; `AuthController` issues staff
+(BCrypt) + borrower (OTP) JWTs; the BFF forwards `Authorization: Bearer` and no longer injects
+`X-Demo-Actor-*`. What remains:
 
-What already exists (reusable):
-- `navix-iam`: `StaffUser`, `StaffInvite`, `InviteService` (token + 7-day expiry → activates a
-  `StaffUser` ACTIVE with a role), `StaffRole` enum, `SeparationOfDutiesGuard`.
-- `ApplicationFlowService` already enforces **role-per-step + SoD** server-side via the
-  `application_event` trail — this stays as-is.
-
-### A1. Staff credentials + invite activation 🟡
+### A1. Staff emailed invites 🟡
 - **Now:** the admin **invites** + **activate** UI is wired end-to-end (`adminApi` → `/api/staff/invites`
   → `InviteService`), but **demo-grade**: `accept` takes `{token, name}` — **no password, no email, no
   ADMIN gate** on `create`; the one-time token is shown in the UI instead of emailed.
@@ -115,98 +102,49 @@ What already exists (reusable):
 - **Done when:** an admin invites by email → invitee sets a password → can authenticate; a
   non-admin cannot create invites.
 
-### A2. Borrower authentication 🔴
-- **Now:** demo OTP `123456` → `navix_borrower` cookie; `applicantId` derived from mobile.
-- **Target:** real mobile-OTP (SMS provider) with rate-limiting + lockout; a persisted `Borrower`
-  identity (unifies with `navix-onboarding.Borrower`, see D3).
-- **Done when:** OTP is provider-sent, single-use, expiring; sessions map to a real borrower row.
+### A2. Borrower OTP — DLT template registration 🟡
+- **Code complete.** Real UltronSMS client + `BorrowerOtpService` (random, single-use, TTL,
+  attempt-cap) are implemented. Mock mode (`NAVIX_SMS_MOCK=true` → `123456`) is wired for demo/testing.
+- **Blocked on:** registering a DLT-approved SMS template (TRAI requirement — the gateway returns
+  `Invalid template text` for unregistered content). Only the account owner can fulfil this.
+- **Done when:** a live OTP is delivered via UltronSMS and the mock mode flag can be removed.
 
-### A3. JWT issuance + Spring Security filter (replace `DemoActorFilter`) 🔴
-- **Target:** on login the backend issues a short-lived **JWT** (subject = user id, claims = role,
-  name, token type staff|borrower) + a refresh token. A `OncePerRequestFilter` validates the JWT
-  and populates **the same `ActorContext`/`CurrentActor`** that `DemoActorFilter` populates today.
-- **Steps:** add `spring-boot-starter-security` + a JWT lib (e.g. `nimbus`/`jjwt`); `SecurityConfig`
-  with stateless sessions, public paths (`/login`, `/actuator/health`, swagger in non-prod),
-  everything else authenticated; **delete/disable `DemoActorFilter`** (keep behind a
-  `demo` profile for local dev).
-- **Touchpoints:** `navix-app/config` (new `SecurityConfig`, `JwtAuthFilter`), `navix-iam` (token
-  service), `navix-common/security` (unchanged — that's the point).
-- **Done when:** a request with no/invalid JWT to `/api/applications/*` → **401**; a valid token's
-  role drives `requireRole`; `X-Demo-Actor-*` headers are ignored in prod.
-- **Hardened 2026-06-25 (PRODUCT_GAPS B1):** `DemoActorFilter` now defaults to a non-privileged
-  **`ANONYMOUS`** actor (was `ADMIN`), so a header-less or direct backend call already **fails closed**
-  at `requireRole` — closing the "anything reaching the backend without headers is ADMIN" gap ahead of
-  the full JWT swap.
-
-### A4. BFF session swap 🔴
-- **Hardened 2026-06-25 (PRODUCT_GAPS B2):** the staff **role switcher** (`staff-role-bar.tsx`) now
-  calls the real `POST /api/auth/staff/login` so the `navix_staff` cookie reflects the chosen role
-  (it previously only mutated client state, leaving the backend on the stale actor). The cookie is
-  still plain JSON — the JWT/bearer swap below is unchanged.
-- **Now:** `bff-session.ts` writes plain JSON into `navix_staff`/`navix_borrower`; `bff-proxy.ts`
-  injects `X-Demo-Actor-*`.
-- **Target:** the BFF stores the **JWT** (or an opaque session id) in an httpOnly, `Secure`,
-  `SameSite` cookie and forwards `Authorization: Bearer <jwt>` to the backend; login routes call the
-  real backend `/auth/login` instead of fabricating a session.
-- **Touchpoints:** `lib/api/bff-session.ts`, `lib/api/bff-proxy.ts`, `app/api/auth/{staff,borrower}/*`.
-- **Done when:** the browser never holds a role it can edit; the proxy carries a real bearer token.
-
-### A5. Middleware → real verification 🟡
-- **Now:** `middleware.ts` gates `/staff/*` on the **real `navix_staff`** cookie the BFF/login sets —
-  the old `navix_session` mismatch is **fixed** (PRODUCT_GAPS B9), so the gate is no longer a no-op.
-  It is still a **presence** check, so a forged cookie of that name passes.
-- **Target:** verify the session JWT signature + expiry + `staff` token type in middleware (or a
-  server component), redirect to `/staff/login` otherwise. (Cookie name already unified.)
+### A5. Middleware JWT-signature verify 🟡
+- **Now:** `middleware.ts` gates `/staff/*` on **presence** of the `navix_staff` cookie — a forged
+  cookie of that name passes.
+- **Target:** verify the JWT signature + expiry + `staff` token type in middleware (or a server
+  component), redirect to `/staff/login` otherwise.
 - **Done when:** a forged/empty cookie → redirect; only a valid staff token reaches `/staff/*`.
 
-### A6. RBAC + SoD hardening 🟡
-- **Now:** role checks live in the service (`requireRole`); SoD in `headDecision`. Good, but
-  defense-in-depth at the edge is missing.
-- **Landed 2026-06-25 (PRODUCT_GAPS):** **UI RBAC gating** added (admin pages behind `staff:manage`,
-  collections salary/employer + settlement-approve behind `collections:manage`, applicant-PII review
-  restricted to reviewer roles, risk/score hidden from borrowers); service-layer role guards added to
-  **`ApplicationFlowService.cancel`** (owning borrower / staff only) and collections **settlement
-  `propose`/`approve`** (officer-or-head / head, before the proposer≠approver SoD).
-- **Target:** add method/endpoint `@PreAuthorize` as a second layer; keep the event-trail SoD as the
-  source of truth; add an authorization integration-test matrix (every role × every endpoint).
+### A6. RBAC + SoD test matrix 🟡
+- **Now:** role checks live in the service (`requireRole`); SoD in `headDecision`; UI RBAC gating
+  added (admin pages, collections settle-approve, PII review restricted to reviewer roles).
+  Two intentional relaxations: Disbursement Head with txn id bypasses the Accountant gate; ADMIN is
+  exempt from the Credit-Exec ≠ Credit-Head SoD and the active-executive `assign` requirement.
+- **Target:** add method/endpoint `@PreAuthorize` as a second layer; an **authorization integration-test
+  matrix** (every role × every endpoint, including the two SoD relaxations above).
 - **Done when:** the test matrix proves each endpoint rejects every role that shouldn't call it,
   and `SOD_VIOLATION` fires when the same subject recommends and approves.
-- **Note:** two SoD relaxations are now *intentional* and the RBAC/SoD matrix must encode them:
-  (1) **Disbursement-Head ≠ Accountant** — a Disbursement Head who enters a transaction id finalizes
-  the release directly, skipping the accountant (the no-txn path still routes to the accountant);
-  (2) **`ADMIN` is exempt** from the **Credit-Exec ≠ Credit-Head** SoD *and* from the
-  active-Credit-Executive `assign` requirement (`headDecision` / `assignExecutive`), so an admin can
-  walk a loan KYC→ACTIVE solo, per-step (oversight). For **non-admin** roles the Credit-Exec ≠
-  Credit-Head SoD is unchanged.
 
 ---
 
 ## B. AWS infrastructure 🟡 — P1
 
-spring-cloud-aws is already on the classpath (you see the offline `ParameterStorePropertySources`
-WARN at boot — harmless locally).
+SSM secrets, S3 documents, and Fintrix/DigiLocker/penny-drop are live. What remains:
 
-### B1. Secrets & config 🟡
-- **Target:** all secrets (DB, `AUTH_SECRET`/JWT keys, Fintrix, DigiLocker, SMS/SES) in **SSM
-  Parameter Store** (`/navix/<env>/…`) or **Secrets Manager**; nothing in the repo.
-- **Done when:** prod boots reading config from SSM; no secret literals anywhere; rotation documented.
+### B2. Drop legacy `bytea` document column 🟡
+- S3 presigned PUT/GET + `s3_object_key` (V15) is live. The legacy `ApplicationDocument.data` `bytea`
+  column is now unused but still in the schema.
+- **Target:** Flyway migration to drop the `bytea` column + any code still referencing it.
+- **Done when:** no file bytes are stored in the DB; bucket has SSE + lifecycle + least-priv IAM.
 
-### B2. S3 document storage (replace inline `bytea`) 🟡
-- **Now:** `ApplicationDocument.data` stores bytes inline; `navix-storage` `StorageController` exposes
-  `presign-upload`/`presign-download` but the app doesn't use them. The signup **address-proof upload
-  is now a real file** (PRODUCT_GAPS B7) — read as base64 and `POST …/documents` at submit, so staff
-  review shows an actual document; it still lands in the inline `bytea` column (S3 swap below is what
-  remains).
-- **Target:** borrower uploads go **direct to S3 via presigned PUT**; the app stores only
-  `s3_key` + metadata; staff view/download via **presigned GET**. Drop the `bytea` column (Flyway).
-- **Touchpoints:** `ApplicantReviewService` (store key, not bytes), `ApplicationDocument` (s3_key),
-  the borrower upload + staff review UI (use presign instead of base64), `navix-storage`.
-- **Done when:** no file bytes transit the JSON BFF or the DB; bucket has SSE + lifecycle + least-priv IAM.
-
-### B3. Deployment & data 🔴
-- **Target:** containerized services (the `Dockerfile.backend` exists), **RDS Postgres** (Flyway on
-  deploy), VPC/subnets/SGs, ALB + TLS, the Next.js app on its host of choice; CI/CD pipeline.
-- **Done when:** a tagged release deploys to a non-prod env reproducibly; Flyway migrates RDS.
+### B3. Deployment & CI pipeline 🔴
+- `Dockerfile.backend` exists and the image is pushed to ECR (`382188661325.dkr.ecr.ap-south-1.amazonaws.com/navix-finance`).
+- **Target:** ECS Fargate service on `navix-cluster` pulling from ECR; RDS Flyway on deploy; VPC/SGs/ALB
+  + TLS; Next.js on Vercel with `BACKEND_BASE_URL` pointing at the ALB; CI/CD pipeline (GitHub Actions
+  build → push → deploy on tag).
+- **Done when:** a tagged release deploys to a non-prod env reproducibly; Flyway migrates RDS; health
+  checks pass end-to-end.
 
 ### B4. Observability 🔴
 - **Target:** structured logs (no PII — reuse `Masking`), metrics (`actuator` + Micrometer →
@@ -215,25 +153,14 @@ WARN at boot — harmless locally).
 
 ---
 
-## C. External integrations un-mocked 🟡 — P1
+## C. External integrations — remaining 🟡 — P1
 
-### C1. Fintrix — salary verification 🟡
-- **Now:** mocked in `navix-verification`. Base `https://admin.fintrix.tech/__api/api/v1/`, HTTP Basic
-  `base64(CLIENT_ID:CLIENT_SECRET)`. See `NAVIX_Fintrix_Integration_Flow.md`.
-- **Target:** real client behind the existing service interface; feeds salary → eligible limit (25%)
-  + risk A/B/C/D. Handle timeouts/retries/circuit-breaker; cache verified salary.
-- **Done when:** a real verification drives the limit/risk; failures degrade gracefully (manual review).
+Fintrix (salary verify + bureau), DigiLocker (KYC), and penny-drop (bank account verify) are all live
+with real API calls. One integration remains:
 
-### C2. DigiLocker — KYC 🟡
-- **Now:** mocked in `navix-kyc` (`KycCase`, `KycCheck`, `DigiLockerSession`). See `Digilocker_API_Guide.md`.
-- **Target:** real DigiLocker OAuth + document pull; populate `KycCheck` results/scores; the staff
-  KYC-approver decision reads real check outcomes.
-- **Done when:** KYC approval is backed by real DigiLocker results, not seed data.
-
-### C3. Bank — penny-drop + transfer 🔴
-- **Target:** account verification (penny-drop) at bank-detail capture; real NEFT/IMPS payout at the
-  **Accountant** disbursement step (`accountantValidate`), with webhook reconciliation →
-  `DISBURSED`/`DISBURSEMENT_FAILED`.
+### C3. Real bank payout (NEFT/IMPS) 🔴
+- **Target:** real NEFT/IMPS payout at the **Accountant** disbursement step (`accountantValidate`),
+  with webhook reconciliation → `DISBURSED` / `DISBURSEMENT_FAILED`.
 - **Done when:** disbursement moves real money and the state machine reflects the bank's async result.
 
 ---
@@ -241,34 +168,13 @@ WARN at boot — harmless locally).
 ## D. Data model & platform hardening 🔴 — P2
 
 - **D1. Foreign keys** — schema has indexes only; add FK constraints across the aggregate
-  (`application_event`, `applicant_profile`, `application_document`, `loan`, payments).
-- **D2. Collections on the real loans** — 🟢 **DONE.** `collection_case` / `settlement` now key off the
-  real **bigint** loan id (Flyway V11); opening a case validates the loan via the `LoanDirectory` port
-  and flips it `ACTIVE/OVERDUE → IN_COLLECTIONS`; officers + settlement proposer/approver are real staff
-  (names, not UUIDs); cases are driven off real loans via `GET /api/collections/loans`. An **approved**
-  partial settlement now flows through to the borrower: it caps `RepaymentService.outstandingAsOf` at the
-  agreed full-and-final (via a new `SettlementDirectory` port — the reverse seam of `LoanDirectory`), so
-  `/repay` shows "Settlement — full & final" and paying it closes the loan + application. _Remaining:_ the
-  legacy `disbursement_request` UUID chain is still **superseded by the aggregate** — drop it (D1/below);
-  a settlement could carry its own status enum + a distinct closed-as-settled loan state (today it closes
-  as `CLOSED`, with the audit trail recording the concession).
+  (`application_event`, `applicant_profile`, `application_document`, `loan`, payments). Also drop
+  the legacy `disbursement_request` UUID maker-checker table (superseded by the single aggregate).
 - **D3. Unify applicant identity** — the live `applicant_profile` (in `navix-loan`) is a
   self-contained KYC snapshot; unify it with `navix-onboarding.Borrower` + `navix-kyc.KycCase`
   (one borrower identity, linked to applications) so KYC isn't duplicated.
 - **D4. PII at rest** — encrypt PAN/Aadhaar/bank columns (or tokenize); make `application_event`
   append-only at the DB level (revoke UPDATE/DELETE); confirm masking on every read path.
-- **D5. Borrower repay** — 🟢 **DONE.** `/repay` records a real manual payment
-  (`POST /api/loan/{id}/repayments`, → PENDING_VERIFICATION); the **Accountant** verifies it, reducing
-  the outstanding and closing the loan + application (`closeForLoan`, ACTIVE/OVERDUE → CLOSED) at zero;
-  the page shows the prepayment-aware "pay today" amount via `…/outstanding`.
-  **Reborrow is now 🟢 DONE too:** `/reloan` calls `POST /api/applications/reborrow`
-  (`borrowerApi.reborrow`), which reuses the saved KYC profile (no re-entry) and routes by loan
-  history — clean → `PRE_APPROVED` (skips KYC + credit, straight to the Disbursement Head's fast-track
-  section), any past overdue → `REVIEW_PENDING` (a separate KYC-approver queue, `/staff/kyc-review`,
-  every reborrow). New states + Flyway **V14**; standing is computed from history. _Remaining hardening:_
-  a persisted **`borrower_standing`** table would let standing be audited / "cleared once" (today it is
-  recomputed each reborrow), and pre-approved fast-track deliberately skips the credit maker-checker —
-  revisit if repeat-borrower credit re-checks are ever required.
 
 ---
 
@@ -288,24 +194,24 @@ WARN at boot — harmless locally).
 
 ## Suggested sequencing
 
-1. **A (auth)** first — nothing else is safe to expose without it. A3+A4+A5 together flip the app
-   from demo to authenticated; A1/A2 make accounts real; A6 proves it.
-2. **B1 (secrets)** alongside A (you need a JWT signing key + real DB creds out of SSM anyway).
-3. **C1/C2** (Fintrix/DigiLocker) and **B2** (S3 docs) — make decisions real and storage real.
-4. **C3** (bank payout) — money movement, once auth + reconciliation exist.
-5. **D** (hardening) and **B3/B4** (deploy/observability) to productionize.
-6. **E** (compliance) gates the actual public launch and runs in parallel from day one.
+1. **A1/A2/A5** — close the remaining auth gaps (emailed invites, DLT SMS, middleware signature verify).
+2. **A6** — prove the RBAC/SoD matrix with integration tests.
+3. **B2** — drop the legacy `bytea` column now that S3 is live.
+4. **C3** — real bank payout (money movement, once auth is locked down).
+5. **B3/B4** — production deploy pipeline + observability.
+6. **D** — hardening (FK, identity unification, PII encryption).
+7. **E** — compliance gates the public launch; run in parallel from day one.
 
 ## Definition of done (go-live)
 
-- ✅ No `DemoActorFilter`, no `X-Demo-Actor-*` trust — JWT auth. (Staff still uses a demo role-pick UI
-  that authenticates for real with the seeded default password; swap to SSO/real passwords for prod.)
-- ✅ Every `/api/**` (except auth/storage/health/docs) requires a valid JWT; role + SoD enforced and
-  test-proven (incl. `SecurityMatrixIT`).
-- ✅ Secrets only in SSM. 🟡 Documents go to S3 via presign — **drop the legacy `bytea` column** to finish.
+- ✅ JWT auth live — no `DemoActorFilter`, no `X-Demo-Actor-*` trust.
+- ✅ Every `/api/**` (except auth/storage/health/docs) requires a valid JWT; role + SoD enforced.
+- ✅ Secrets only in SSM; documents in S3 via presign. 🟡 Drop the legacy `bytea` column (B2).
 - ✅ Fintrix + DigiLocker live with graceful failure. 🟡 **bank payout** (real NEFT/IMPS) still mocked.
-- 🟡 **OTP:** real UltronSMS client done; **register a DLT template** for delivery (mock mode meanwhile).
-- 🔴 FK constraints; legacy UUID `disbursement_request` resolved; PII encrypted/masked; audit immutable.
+- 🟡 **OTP:** real UltronSMS client done; **register a DLT template** to enable live delivery.
+- 🟡 **Emailed invites:** wire SES + password-at-activation + ADMIN gate (A1).
+- 🟡 **Middleware:** verify JWT signature + expiry (not just cookie presence) (A5).
+- 🔴 FK constraints; legacy UUID `disbursement_request` dropped; PII encrypted/masked; audit immutable.
 - 🔴 Product copy + agreements match the salary-linked single-repayment product + the chosen
   lending/regulatory model. Rotate the seeded default staff password + set a strong `AUTH_SECRET`.
 

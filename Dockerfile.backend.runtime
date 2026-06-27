@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+#
+# NAVIX backend — RUNTIME-ONLY image.
+# Assumes the bootable JAR is already built on the host
+# (`./mvnw -pl navix-app -am package -DskipTests`). This skips the in-Docker Maven
+# build entirely — far faster and avoids re-downloading deps through a corporate proxy.
+# Mirrors Stage 2 of Dockerfile.backend exactly.
+#
+# Build (from repo root, after packaging):
+#   docker build -f Dockerfile.backend.runtime -t navix-backend:latest .
+# -----------------------------------------------------------------------------
+FROM eclipse-temurin:21-jre-jammy AS runtime
+WORKDIR /app
+
+# Run as a non-root user.
+RUN groupadd --system navix && useradd --system --gid navix --home /app navix
+
+# Copy the host-built bootable JAR (spring-boot repackage output, excludes *.jar.original).
+COPY backend/navix-app/target/navix-app-0.0.1-SNAPSHOT.jar /app/app.jar
+
+# NAVIX_ENV is overridden by the ECS task definition (=dev → SSM /navix/dev/*).
+ENV NAVIX_ENV=prod \
+    AWS_REGION=ap-south-1 \
+    JAVA_OPTS="-XX:MaxRAMPercentage=75.0"
+
+EXPOSE 8080
+USER navix
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD wget -q -O /dev/null http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]
