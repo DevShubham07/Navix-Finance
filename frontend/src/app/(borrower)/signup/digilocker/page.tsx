@@ -51,14 +51,30 @@ export default function SignupDigiLockerPage() {
     try {
       const r = await verificationApi.digilockerStatus(appId);
       setResult(r);
-      if (r.derived?.completed === true) { stop(); await finalise(); }
-      else if (r.derived?.failed === true || r.status === "FAIL") { stop(); setPhase("failed"); }
+      const status = r.derived?.status;
+      if (r.derived?.completed === true) {
+        // Fully completed in this tab — fetch the Aadhaar and route.
+        stop();
+        await finalise();
+      } else if (status === "client_initiated") {
+        // The DigiLocker session is live with the provider (the user has been handed off
+        // to the consent tab). Don't block the wizard waiting for full completion — the
+        // separate callback tab finalises the Aadhaar fetch. Stop polling and continue.
+        stop();
+        setPhase("done");
+        setTimeout(() => router.push("/signup/pan"), 600);
+      } else if (r.derived?.failed === true || r.status === "FAIL") {
+        stop();
+        setPhase("failed");
+      }
+      // Any other status (e.g. "pending") → keep polling until the session is initiated.
     } catch (err) {
+      // Status API failed — stop and surface a retry rather than spinning silently.
       stop();
       setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Lost connection to DigiLocker.");
       setPhase("failed");
     }
-  }, [appId, stop, finalise]);
+  }, [appId, stop, finalise, router]);
 
   const connect = async () => {
     if (appId == null) return;
