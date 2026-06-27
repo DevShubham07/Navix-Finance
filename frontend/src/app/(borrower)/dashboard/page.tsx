@@ -54,7 +54,16 @@ export default function DashboardPage() {
   const active = app?.status === "ACTIVE" || app?.status === "OVERDUE";
   const closed = app?.status === "CLOSED";
   const declined = isTerminalBad(app);
-  const continueHref = canChooseAmount(app) ? "/loan/apply" : "/loan/status";
+
+  // Resume from the last wizard step the user was on (persisted by the signup layout).
+  const [lastOnboardingStep, setLastOnboardingStep] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setLastOnboardingStep(localStorage.getItem("navix.onboarding.lastStep"));
+  }, []);
+
+  const continueHref = app?.status === "DRAFT"
+    ? `/signup/${lastOnboardingStep ?? "mobile-otp"}`
+    : canChooseAmount(app) ? "/loan/apply" : "/loan/status";
 
   if (isLoading && !app && appId != null) {
     return <div className="container py-10"><div className="h-72 animate-pulse rounded border border-line bg-white" /></div>;

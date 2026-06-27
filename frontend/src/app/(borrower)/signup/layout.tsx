@@ -16,6 +16,13 @@ export default function SignupLayout({ children }: { children: React.ReactNode }
   const step = STEPS[idx] ?? STEPS[0];
   const pct = Math.round(((idx + 1) / STEPS.length) * 100);
 
+  // Persist the current step so the dashboard can resume here after Save & exit.
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("navix.onboarding.lastStep", seg);
+    }
+  }, [seg]);
+
   return (
     <div className="bg-ivory">
       <div className="border-b border-line bg-white">
@@ -30,7 +37,7 @@ export default function SignupLayout({ children }: { children: React.ReactNode }
           </div>
           <div className="mb-2 flex items-baseline justify-between gap-3">
             <h2 className="font-serif text-xl text-navy">{step.label}</h2>
-            <Link href="/login" className="text-sm text-muted hover:text-navy">
+            <Link href="/dashboard" className="btn btn-sm btn-outline">
               Save &amp; exit
             </Link>
           </div>

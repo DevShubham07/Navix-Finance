@@ -20,16 +20,23 @@ export default function LoginPage() {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
   const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
+  const [resendCount, setResendCount] = React.useState(0);
 
   const mobileOk = mobile.length === 10;
+  const MAX_RESENDS = 3;
 
   const send = async () => {
     if (!mobileOk) { setError("Enter a valid 10-digit mobile number"); return; }
+    if (resendCount >= MAX_RESENDS) {
+      setError("Maximum resend attempts reached. Please try again later or contact support.");
+      return;
+    }
     setBusy(true);
     setError(undefined);
     try {
       const info = await requestBorrowerOtp(mobile);
       setSentInfo(info);
+      setResendCount((n) => n + 1);
       setStage("verify");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send the code.");
@@ -108,12 +115,24 @@ export default function LoginPage() {
               ) : sentInfo?.sent ? (
                 <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
                   <CheckCircle2 size={15} className="text-success-600" /> Code sent.{" "}
-                  <button type="button" onClick={() => send()} disabled={busy} className="font-semibold text-navy hover:underline">Resend</button>
+                  {resendCount < MAX_RESENDS ? (
+                    <button type="button" onClick={() => send()} disabled={busy} className="font-semibold text-navy hover:underline">
+                      Resend ({MAX_RESENDS - resendCount} left)
+                    </button>
+                  ) : (
+                    <span className="text-muted">No more resends — contact support if you didn&apos;t receive your code.</span>
+                  )}
                 </p>
               ) : (
                 <p className="mt-3 text-sm text-muted">
                   We couldn&apos;t send an SMS.{" "}
-                  <button type="button" onClick={() => send()} disabled={busy} className="font-semibold text-navy hover:underline">Try again</button>
+                  {resendCount < MAX_RESENDS ? (
+                    <button type="button" onClick={() => send()} disabled={busy} className="font-semibold text-navy hover:underline">
+                      Try again ({MAX_RESENDS - resendCount} left)
+                    </button>
+                  ) : (
+                    <span>Please contact support.</span>
+                  )}
                 </p>
               )}
               <button onClick={() => verify()} disabled={otp.length !== 6 || busy} className="btn btn-gold btn-block mt-4">Sign in</button>

@@ -317,9 +317,9 @@ public class ApplicationVerificationService {
         return new StepResult(BUREAU, PASS, row.getMessage(), Map.of());
     }
 
-    /** Declared salary + salary-slip key → provisional eligible limit (25% cap). */
+    /** Declared salary + salary-slip keys (min 3 months) → provisional eligible limit (25% cap). */
     @Transactional
-    public StepResult verifySalary(Long appId, long monthlySalaryPaise, String slipObjectKey) {
+    public StepResult verifySalary(Long appId, long monthlySalaryPaise, List<String> slipObjectKeys) {
         if (monthlySalaryPaise <= 0) {
             throw new BusinessException("INVALID_SALARY", "Monthly salary must be positive");
         }
@@ -332,20 +332,25 @@ public class ApplicationVerificationService {
         app.setEligibleLimit(eligible);
         applicationRepo.save(app);
 
-        if (slipObjectKey != null && !slipObjectKey.isBlank()) {
-            ApplicationDocument slip = new ApplicationDocument();
-            slip.setApplicationId(appId);
-            slip.setDocType("SALARY_SLIP");
-            slip.setFileName("salary-slip");
-            slip.setS3ObjectKey(slipObjectKey);
-            documentRepo.save(slip);
+        if (slipObjectKeys != null) {
+            for (int i = 0; i < slipObjectKeys.size(); i++) {
+                String key = slipObjectKeys.get(i);
+                if (key == null || key.isBlank()) continue;
+                ApplicationDocument slip = new ApplicationDocument();
+                slip.setApplicationId(appId);
+                slip.setDocType("SALARY_SLIP");
+                slip.setFileName("salary-slip-" + (i + 1));
+                slip.setS3ObjectKey(key);
+                documentRepo.save(slip);
+            }
         }
 
+        String primaryKey = (slipObjectKeys != null && !slipObjectKeys.isEmpty()) ? slipObjectKeys.get(0) : null;
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("monthlySalaryPaise", monthlySalaryPaise);
         derived.put("eligibleLimitPaise", eligible);
         return view(upsert(appId, SALARY, PASS, "NAVIX", null, ref(appId, SALARY),
-                null, null, slipObjectKey, derived, "Declared salary recorded"));
+                null, null, primaryKey, derived, "Declared salary recorded"));
     }
 
     /** Penny-drop bank verify + name-at-bank match (payout gate). */

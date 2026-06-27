@@ -14,12 +14,20 @@ import { formatINR0 } from "@/lib/utils";
 
 const DAY_OPTIONS = Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: `${i + 1}` }));
 
+const SLIP_LABELS = [
+  "Latest payslip (this month)",
+  "Previous month's payslip",
+  "Payslip from 2 months ago",
+] as const;
+
+type SlipFiles = [File | null, File | null, File | null];
+
 export default function SignupSalaryPage() {
   const router = useRouter();
   const { mounted, draft, appId } = useOnboarding();
   const [salary, setSalary] = React.useState(0);
   const [salaryDay, setSalaryDay] = React.useState(1);
-  const [file, setFile] = React.useState<File | null>(null);
+  const [files, setFiles] = React.useState<SlipFiles>([null, null, null]);
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<StepResult | null>(null);
@@ -37,24 +45,41 @@ export default function SignupSalaryPage() {
 
   const salaryOk = salary >= 10000;
   const limit = salaryOk ? eligibleLimit(salary) : 0;
-  const formOk = salaryOk && file != null;
+  const allFilesUploaded = files.every((f) => f !== null);
+  const formOk = salaryOk && allFilesUploaded;
+
+  const setFile = (i: 0 | 1 | 2) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 10 * 1024 * 1024) { setError("File must be under 10 MB."); return; }
+    setError(undefined);
+    setFiles((prev) => {
+      const next = [...prev] as SlipFiles;
+      next[i] = f;
+      return next;
+    });
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formOk) { setTouched(true); return; }
-    if (appId == null || file == null) return;
+    if (appId == null) return;
     setBusy(true);
     setError(undefined);
-    // Persist the salary + salary-day to the onboarding draft so the post-approval
-    // choose-amount page can re-source them.
     draft.patch({ monthlySalary: salary, salaryDay });
     const monthlySalaryPaise = rupeesToPaise(salary);
     try {
       await saveProfileSlice(appId, { monthlySalaryPaise });
-      const contentType = file.type || "application/octet-stream";
-      const { key, url } = await verificationApi.presignUpload(appId, { docType: "SALARY_SLIP", fileName: file.name, contentType });
-      await verificationApi.putToPresignedUrl(url, file, contentType);
-      const r = await verificationApi.salary(appId, monthlySalaryPaise, key);
+      // Upload all 3 slips to S3, collecting their keys.
+      const keys: string[] = [];
+      for (const f of files) {
+        if (!f) continue;
+        const contentType = f.type || "application/octet-stream";
+        const { key, url } = await verificationApi.presignUpload(appId, { docType: "SALARY_SLIP", fileName: f.name, contentType });
+        await verificationApi.putToPresignedUrl(url, f, contentType);
+        keys.push(key);
+      }
+      const r = await verificationApi.salary(appId, monthlySalaryPaise, keys);
       setResult(r);
       if (r.status === "PASS" || r.status === "REVIEW") router.push("/signup/penny-drop");
     } catch (err) {
@@ -64,20 +89,12 @@ export default function SignupSalaryPage() {
     }
   };
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.size > 10 * 1024 * 1024) { setError("File must be under 10 MB."); return; }
-    setError(undefined);
-    setFile(f);
-  };
-
   return (
     <form onSubmit={submit} noValidate>
       <div className="form-card">
         <p className="lead mb-4">
-          Your net monthly salary sets your eligible limit (up to 25%) and your salary-day repayment date. Upload a
-          recent payslip so we can verify it.
+          Your net monthly salary sets your eligible limit (up to 25%) and your salary-day repayment date. Upload 3
+          months of payslips so we can verify your income.
         </p>
         <Input
           label="Net monthly salary"
@@ -98,27 +115,35 @@ export default function SignupSalaryPage() {
           helperText="Day of the month your salary lands — your repayment date"
         />
 
-        <label
-          className={`mt-1 flex w-full cursor-pointer flex-col items-center gap-2 rounded border-2 border-dashed p-7 text-center transition ${
-            file ? "border-success-600 bg-success-50/50" : "border-line bg-grey-100 hover:border-navy"
-          }`}
-        >
-          <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={onFile} />
-          {file ? (
-            <>
-              <FileCheck2 size={28} className="text-success-600" />
-              <span className="text-sm font-semibold text-success-700">Payslip selected</span>
-              <span className="text-xs text-muted">{file.name} · tap to replace</span>
-            </>
-          ) : (
-            <>
-              <UploadCloud size={28} className="text-navy" />
-              <span className="text-sm font-semibold text-navy">Upload latest payslip</span>
-              <span className="text-xs text-muted">PDF or image up to 10 MB</span>
-            </>
-          )}
-        </label>
-        {touched && !file ? <p className="mt-2 text-sm text-error-600">Upload a payslip to continue</p> : null}
+        <div className="mt-4 space-y-3">
+          <p className="text-sm font-semibold text-ink">Upload payslips (3 months required)</p>
+          {([0, 1, 2] as const).map((i) => (
+            <label
+              key={i}
+              className={`flex w-full cursor-pointer flex-col items-center gap-2 rounded border-2 border-dashed p-5 text-center transition ${
+                files[i] ? "border-success-600 bg-success-50/50" : "border-line bg-grey-100 hover:border-navy"
+              }`}
+            >
+              <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={setFile(i)} />
+              {files[i] ? (
+                <>
+                  <FileCheck2 size={24} className="text-success-600" />
+                  <span className="text-sm font-semibold text-success-700">{SLIP_LABELS[i]}</span>
+                  <span className="text-xs text-muted">{files[i]!.name} · tap to replace</span>
+                </>
+              ) : (
+                <>
+                  <UploadCloud size={24} className="text-navy" />
+                  <span className="text-sm font-semibold text-navy">{SLIP_LABELS[i]}</span>
+                  <span className="text-xs text-muted">PDF or image up to 10 MB</span>
+                </>
+              )}
+            </label>
+          ))}
+          {touched && !allFilesUploaded ? (
+            <p className="text-sm text-error-600">Upload all 3 payslips to continue</p>
+          ) : null}
+        </div>
 
         {salaryOk && (
           <div className="mt-4 flex items-center gap-4 rounded border border-gold-soft bg-gold-50/60 p-5">

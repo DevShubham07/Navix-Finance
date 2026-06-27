@@ -79,8 +79,8 @@ export default function SignupSelfiePage() {
         setTimeout(() => router.push("/signup/agreement"), 700);
         return;
       }
-      // FAIL: allow exactly one retry, then proceed for manual review.
-      if (failCount >= 1) {
+      // FAIL: allow up to 2 retries (3 total attempts), then proceed for manual review.
+      if (failCount >= 2) {
         stopCamera();
         setPhase("done");
         setTimeout(() => router.push("/signup/agreement"), 900);
@@ -134,8 +134,8 @@ export default function SignupSelfiePage() {
         )}
 
         <StepResultBanner result={result} />
-        {failCount > 0 && result?.status === "FAIL" ? (
-          <p className="mt-2 text-xs text-muted">One more try — after this we&apos;ll send it for a quick manual review and you can continue.</p>
+        {failCount === 1 && result?.status === "FAIL" ? (
+          <p className="mt-2 text-xs text-muted">2 attempts used — 1 retake remaining before we proceed to manual review.</p>
         ) : null}
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>

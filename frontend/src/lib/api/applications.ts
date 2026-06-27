@@ -446,9 +446,9 @@ export const verificationApi = {
   /** Credit bureau pull (automatic — no input; score/category never surfaced to the borrower). */
   bureau: (id: number) => bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau`, "POST"),
 
-  /** Declared salary + uploaded slip object key. */
-  salary: (id: number, monthlySalaryPaise: number, slipObjectKey: string) =>
-    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/salary`, "POST", { monthlySalaryPaise, slipObjectKey }),
+  /** Declared salary + uploaded slip object keys (min 3 months). */
+  salary: (id: number, monthlySalaryPaise: number, slipObjectKeys: string[]) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/salary`, "POST", { monthlySalaryPaise, slipObjectKeys }),
 
   /** Penny-drop on the salary account → name match. */
   pennyDrop: (id: number, accountNumber: string, ifsc: string) =>

@@ -17,7 +17,9 @@ export default function SignupDigiLockerPage() {
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [result, setResult] = React.useState<StepResult | null>(null);
   const [error, setError] = React.useState<string>();
+  const [retryCount, setRetryCount] = React.useState(0);
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const MAX_RETRIES = 3;
 
   React.useEffect(() => {
     if (mounted && appId == null) router.replace("/signup/mobile-otp");
@@ -60,6 +62,11 @@ export default function SignupDigiLockerPage() {
 
   const connect = async () => {
     if (appId == null) return;
+    if (retryCount >= MAX_RETRIES) {
+      setError("Maximum DigiLocker attempts reached. Please contact support.");
+      return;
+    }
+    setRetryCount((n) => n + 1);
     setPhase("connecting");
     setError(undefined);
     setResult(null);
@@ -107,12 +114,25 @@ export default function SignupDigiLockerPage() {
           <div className="flex items-center justify-center gap-2 text-sm font-semibold text-success-700">
             Aadhaar verified — continuing… <ArrowRight size={16} />
           </div>
+        ) : retryCount >= MAX_RETRIES && phase === "failed" ? (
+          <div className="rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
+            You&apos;ve reached the maximum of {MAX_RETRIES} DigiLocker attempts. Please{" "}
+            <a href="mailto:support@navix.in" className="font-semibold underline">contact our support team</a>{" "}
+            to continue your application.
+          </div>
         ) : (
-          <button onClick={connect} className="btn btn-gold">
-            {phase === "failed" ? <RefreshCw size={16} /> : null}
-            {phase === "failed" ? "Try DigiLocker again" : "Continue with DigiLocker"}
-            {phase !== "failed" ? <ArrowRight size={16} /> : null}
-          </button>
+          <>
+            <button onClick={connect} className="btn btn-gold">
+              {phase === "failed" ? <RefreshCw size={16} /> : null}
+              {phase === "failed" ? "Try DigiLocker again" : "Continue with DigiLocker"}
+              {phase !== "failed" ? <ArrowRight size={16} /> : null}
+            </button>
+            {phase === "failed" && retryCount > 0 && retryCount < MAX_RETRIES && (
+              <p className="mt-2 text-xs text-muted">
+                {MAX_RETRIES - retryCount} attempt{MAX_RETRIES - retryCount !== 1 ? "s" : ""} remaining
+              </p>
+            )}
+          </>
         )}
 
         <StepResultBanner result={phase === "done" || phase === "failed" ? result : null} />

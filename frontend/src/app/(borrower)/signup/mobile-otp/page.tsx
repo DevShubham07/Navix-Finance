@@ -21,16 +21,22 @@ export default function SignupMobileOtpPage() {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
   const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
+  const [resendCount, setResendCount] = React.useState(0);
 
   React.useEffect(() => {
     if (mounted && draft.mobile) setMobile(draft.mobile);
   }, [mounted, draft.mobile]);
 
   const mobileOk = mobile.length === 10;
+  const MAX_RESENDS = 3;
 
   const sendOtp = async () => {
     if (!mobileOk) {
       setError("Enter a valid 10-digit mobile number");
+      return;
+    }
+    if (resendCount >= MAX_RESENDS) {
+      setError("Maximum resend attempts reached. Please try again later or contact support.");
       return;
     }
     setBusy(true);
@@ -38,6 +44,7 @@ export default function SignupMobileOtpPage() {
     try {
       const info = await requestBorrowerOtp(mobile);
       setSentInfo(info);
+      setResendCount((n) => n + 1);
       draft.patch({ mobile });
       setStage("verify");
     } catch (e) {
@@ -111,12 +118,24 @@ export default function SignupMobileOtpPage() {
           ) : sentInfo?.sent ? (
             <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
               <CheckCircle2 size={15} className="text-success-600" /> Code sent.{" "}
-              <button type="button" onClick={() => sendOtp()} disabled={busy} className="font-semibold text-navy hover:underline">Resend</button>
+              {resendCount < MAX_RESENDS ? (
+                <button type="button" onClick={() => sendOtp()} disabled={busy} className="font-semibold text-navy hover:underline">
+                  Resend ({MAX_RESENDS - resendCount} left)
+                </button>
+              ) : (
+                <span className="text-muted">No more resends — contact support if you didn&apos;t receive your code.</span>
+              )}
             </p>
           ) : (
             <p className="mt-3 text-sm text-muted">
               We couldn&apos;t send an SMS.{" "}
-              <button type="button" onClick={() => sendOtp()} disabled={busy} className="font-semibold text-navy hover:underline">Try again</button>
+              {resendCount < MAX_RESENDS ? (
+                <button type="button" onClick={() => sendOtp()} disabled={busy} className="font-semibold text-navy hover:underline">
+                  Try again ({MAX_RESENDS - resendCount} left)
+                </button>
+              ) : (
+                <span>Please contact support.</span>
+              )}
             </p>
           )}
           <WizardActions onBack={() => setStage("enter")} continueLabel="Verify" onContinue={() => confirm()} loading={busy} disabled={otp.length !== 6 || busy} />
