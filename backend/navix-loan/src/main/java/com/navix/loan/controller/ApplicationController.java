@@ -86,6 +86,12 @@ public class ApplicationController {
         return ApiResponse.ok(flow.events(id).stream().map(EventView::of).toList());
     }
 
+    /** Staff-readable verification summary for the approver review (per-step status + safe derived). */
+    @GetMapping("/{id}/verifications")
+    public ApiResponse<List<ApplicationVerificationService.StepResult>> verifications(@PathVariable Long id) {
+        return ApiResponse.ok(verification.summary(id));
+    }
+
     /**
      * Borrower submits KYC (DRAFT → KYC_PENDING). Hardened gate: all mandatory verification
      * steps must be PASS/REVIEW and the agreement accepted (the onboarding-completeness check)
