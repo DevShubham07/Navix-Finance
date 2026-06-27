@@ -10,8 +10,9 @@ import lombok.Setter;
 
 /**
  * A KYC/supporting document a borrower uploaded for an application (PAN card, Aadhaar, selfie,
- * salary slip, bank statement, …). Bytes are stored inline as {@code bytea} — demo-grade storage
- * with no external object store; at go-live this becomes an S3 key via navix-storage.
+ * salary slip, bank statement, …). Stored either as an {@code s3_object_key} (the live path) or,
+ * for pre-existing rows, inline as {@code bytea}. Invariant (enforced in the service): exactly one
+ * of {@code data} / {@code s3ObjectKey} is set.
  */
 @Entity
 @Table(name = "application_document")
@@ -36,6 +37,11 @@ public class ApplicationDocument extends BaseAuditEntity {
     @Column(name = "size_bytes")
     private Long sizeBytes;
 
-    @Column(name = "data", nullable = false, columnDefinition = "bytea")
+    /** Inline bytes (legacy/demo path). Nullable since V15 — S3-backed rows use {@link #s3ObjectKey}. */
+    @Column(name = "data", columnDefinition = "bytea")
     private byte[] data;
+
+    /** S3 object key (the live path). Exactly one of {@link #data} / this is set. */
+    @Column(name = "s3_object_key", length = 512)
+    private String s3ObjectKey;
 }

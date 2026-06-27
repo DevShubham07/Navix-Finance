@@ -1,5 +1,6 @@
 package com.navix.loan.controller;
 
+import com.navix.common.exception.BusinessException;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
@@ -15,6 +16,7 @@ import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.service.ApplicantReviewService;
 import com.navix.loan.service.ApplicationFlowService;
+import com.navix.loan.service.ApplicationVerificationService;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,7 @@ public class ApplicationController {
 
     private final ApplicationFlowService flow;
     private final ApplicantReviewService review;
+    private final ApplicationVerificationService verification;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
@@ -82,8 +85,17 @@ public class ApplicationController {
         return ApiResponse.ok(flow.events(id).stream().map(EventView::of).toList());
     }
 
+    /**
+     * Borrower submits KYC (DRAFT → KYC_PENDING). Hardened gate: all mandatory verification
+     * steps must be PASS/REVIEW and the agreement accepted (the onboarding-completeness check)
+     * before the application enters the approver queue.
+     */
     @PostMapping("/{id}/submit-kyc")
     public ApiResponse<ApplicationView> submitKyc(@PathVariable Long id) {
+        if (!verification.allRequiredPassed(id)) {
+            throw new BusinessException("KYC_INCOMPLETE",
+                    "Complete all verification steps and accept the agreement before submitting");
+        }
         return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)));
     }
 

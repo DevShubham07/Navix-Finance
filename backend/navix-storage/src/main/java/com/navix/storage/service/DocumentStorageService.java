@@ -2,7 +2,13 @@ package com.navix.storage.service;
 
 import com.navix.storage.config.StorageCategory;
 import com.navix.storage.config.StorageProperties;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -51,6 +57,19 @@ public class DocumentStorageService {
         return category.prefix() + "/" + UUID.randomUUID() + "-" + safe;
     }
 
+    /**
+     * Deterministic, organised key for an application artifact:
+     * {@code applications/{applicationId}/{docType}/{epochMillis}.{ext}}. Used by the
+     * onboarding verification flow; keeps {@link #buildKey} for repayment/collections.
+     */
+    public String buildApplicationKey(Long applicationId, String docType, String ext) {
+        String type = StringUtils.hasText(docType)
+                ? docType.toLowerCase().replaceAll("[^a-z0-9._-]", "_") : "document";
+        String suffix = StringUtils.hasText(ext)
+                ? ext.toLowerCase().replaceAll("[^a-z0-9]", "") : "bin";
+        return "applications/" + applicationId + "/" + type + "/" + Instant.now().toEpochMilli() + "." + suffix;
+    }
+
     /** Presigned URL for a direct browser PUT upload to the given key. */
     public String presignUpload(String key, String contentType) {
         PutObjectRequest objectRequest = PutObjectRequest.builder()
@@ -89,6 +108,39 @@ public class DocumentStorageService {
                     .ssekmsKeyId(props.kmsKeyId());
         }
         s3Client.putObject(builder.build(), RequestBody.fromBytes(content));
+    }
+
+    /**
+     * Fetch the bytes at {@code sourceUrl} (e.g. a provider's short-lived presigned
+     * URL) and store them at {@code key}. Bytes pass provider→app→S3 only — never to
+     * the browser. Returns the stored key. Throws {@link IllegalStateException} on a
+     * non-2xx fetch or transport error.
+     */
+    public String storeFromUrl(String key, String sourceUrl, String contentType) {
+        try {
+            HttpResponse<byte[]> response = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(5))
+                    .build()
+                    .send(HttpRequest.newBuilder()
+                                    .uri(URI.create(sourceUrl))
+                                    .timeout(Duration.ofSeconds(30))
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() / 100 != 2) {
+                throw new IllegalStateException("source fetch failed: HTTP " + response.statusCode());
+            }
+            String resolvedType = StringUtils.hasText(contentType)
+                    ? contentType
+                    : response.headers().firstValue("content-type").orElse("application/octet-stream");
+            store(key, response.body(), resolvedType);
+            return key;
+        } catch (IOException e) {
+            throw new IllegalStateException("source fetch failed", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("source fetch interrupted", e);
+        }
     }
 
     /** Delete an object. */

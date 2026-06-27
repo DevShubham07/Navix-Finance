@@ -4,8 +4,6 @@ import com.navix.verification.client.CrifClient;
 import com.navix.verification.client.ExperianClient;
 import com.navix.verification.dto.FintrixDtos.CrifResponse;
 import com.navix.verification.dto.FintrixDtos.ExperianResponse;
-import com.navix.verification.dto.FintrixDtos.Tradeline;
-import java.util.List;
 import org.springframework.stereotype.Service;
 
 /**
@@ -24,9 +22,13 @@ public class BureauService {
     }
 
     /**
-     * Unified, bureau-agnostic credit summary.
+     * Unified, bureau-agnostic credit summary. {@code source} records which bureau answered
+     * (EXPERIAN / CRIF); {@code noRecord} flags a thin-file (no usable score).
      */
     public record UnifiedBureauReport(
+            String txnId,
+            String source,
+            boolean noRecord,
             Integer score,
             Integer activeAccounts,
             Integer overdueAccounts,
@@ -36,48 +38,39 @@ public class BureauService {
     }
 
     /**
-     * Pull Experian first; on miss/error fall back to CRIF, then normalise either
-     * response into {@link UnifiedBureauReport}.
-     *
-     * <p>The orchestration is real (primary/fallback selection + unification); the underlying
-     * clients return demo mocks pending live Fintrix credentials.
+     * Pull Experian first; on error, missing score, or a no-record (thin-file) result, fall back to
+     * CRIF, then normalise either response into {@link UnifiedBureauReport}.
      */
-    public UnifiedBureauReport pull(String pan, String name, String mobile) {
+    public UnifiedBureauReport pull(String pan, String name, String mobile, String dob, String clientRef) {
         try {
-            ExperianResponse experian = experianClient.pull(pan, name, mobile);
-            if (experian != null && experian.creditScore() != null) {
+            ExperianResponse experian = experianClient.pull(pan, name, mobile, clientRef);
+            if (experian != null
+                    && experian.creditScore() != null
+                    && !Boolean.TRUE.equals(experian.noRecord())) {
                 return fromExperian(experian);
             }
         } catch (RuntimeException primaryFailure) {
             // PRIMARY bureau miss/error — fall through to the CRIF fallback below.
         }
-        return fromCrif(crifClient.pull(pan, name, mobile));
+        return fromCrif(crifClient.pull(pan, name, mobile, dob, clientRef));
     }
 
     private UnifiedBureauReport fromExperian(ExperianResponse r) {
-        List<Tradeline> tradelines = r.tradelines() != null ? r.tradelines() : List.of();
-        int active = (int) tradelines.stream()
-                .filter(t -> "ACTIVE".equalsIgnoreCase(t.status()))
-                .count();
-        int overdue = (int) tradelines.stream()
-                .filter(t -> t.overdueAmount() != null && t.overdueAmount() > 0)
-                .count();
-        double totalBalance = tradelines.stream()
-                .mapToDouble(t -> t.balance() != null ? t.balance() : 0.0)
-                .sum();
-        return new UnifiedBureauReport(r.creditScore(), active, overdue, totalBalance, null);
+        // Sandbox Experian returns the score only (CAIS account detail is empty), so the
+        // account/balance facets are left null here.
+        return new UnifiedBureauReport(r.txnId(), "EXPERIAN", Boolean.TRUE.equals(r.noRecord()),
+                r.creditScore(), null, null, null, null);
     }
 
     private UnifiedBureauReport fromCrif(CrifResponse r) {
-        var summary = r.accountsSummary();
-        if (summary == null) {
-            return new UnifiedBureauReport(r.score(), null, null, null, null);
-        }
         return new UnifiedBureauReport(
+                r.txnId(),
+                "CRIF",
+                r.score() == null,
                 r.score(),
-                summary.activeAccounts(),
-                summary.overdueAccounts(),
-                summary.totalBalance(),
-                summary.enquiriesLast6m());
+                r.activeAccounts(),
+                r.overdueAccounts(),
+                r.totalBalance(),
+                r.enquiriesLast6m());
     }
 }

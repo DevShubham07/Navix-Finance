@@ -38,7 +38,8 @@ public class DigiLockerSessionService {
         DigiLockerSession session = new DigiLockerSession();
         session.setBorrowerId(borrowerId);
         session.setClientId(response.clientId());
-        session.setStatus(response.status());
+        // InitializeResponse no longer carries a status; a freshly-minted session is INITIATED.
+        session.setStatus("INITIATED");
         session.setAadhaarLinked(false);
         return digiLockerSessionRepository.save(session);
     }
