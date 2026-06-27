@@ -76,13 +76,49 @@ export async function fetchBorrowerSession(): Promise<BorrowerSession | null> {
  * supplied OTP (the backend validates it and issues the JWT) so the BFF can
  * authenticate every later call to Spring.
  */
+/** Result of requesting an OTP: whether the SMS went out + (dev-echo only) the code. */
+export interface OtpRequestResult {
+  sent: boolean;
+  ttlSeconds: number;
+  devCode?: string;
+}
+
+/**
+ * Ask the backend to generate + SMS an OTP to {@code mobile} (UltronSMS gateway).
+ * Throws with the backend message on failure (e.g. invalid mobile).
+ */
+export async function requestBorrowerOtp(mobile: string): Promise<OtpRequestResult> {
+  const res = await fetch("/api/auth/borrower/otp/request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ mobile }),
+  });
+  const env = (await res.json().catch(() => null)) as
+    | (OtpRequestResult & { error?: { message?: string } | string })
+    | null;
+  if (!res.ok) {
+    const msg =
+      (env && typeof env.error === "object" ? env.error?.message : (env?.error as string)) ??
+      "Could not send the OTP — please try again.";
+    throw new Error(typeof msg === "string" ? msg : "Could not send the OTP.");
+  }
+  return { sent: env?.sent ?? false, ttlSeconds: env?.ttlSeconds ?? 0, devCode: env?.devCode };
+}
+
+/**
+ * Return the live borrower session, or establish one by verifying {@code otp}. When
+ * {@code otp} is omitted this only reuses an existing session (used by flows that run
+ * after the mobile-otp step has already logged the borrower in).
+ */
 export async function ensureBorrowerSession(
   mobile: string,
-  otp: string,
+  otp?: string,
   name?: string,
 ): Promise<BorrowerSession | null> {
   const existing = await fetchBorrowerSession();
   if (existing) return existing;
+  if (!otp) return null;
   const res = await fetch("/api/auth/borrower/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -349,7 +385,8 @@ export async function submitOnboarding(
   docs: Array<{ docType: string; fileName: string; contentType?: string; dataBase64: string }> = [],
 ): Promise<ApplicationView> {
   const mobile = applicant.mobile?.replace(/\s/g, "") || "";
-  const session = await ensureBorrowerSession(mobile, "123456", applicant.fullName);
+  // The mobile-otp step already established the session with a real OTP; reuse it.
+  const session = await ensureBorrowerSession(mobile, undefined, applicant.fullName);
   if (!session) {
     throw new ApplicationApiError("Could not establish a borrower session — please sign in again.", "NO_SESSION", 0);
   }

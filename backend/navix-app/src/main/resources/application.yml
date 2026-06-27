@@ -49,6 +49,25 @@ navix:
     # otherwise applies. Leave blank to use the bucket default.
     kms-key-id: ${NAVIX_S3_KMS_KEY_ID:}
 
+  # Borrower OTP delivery via the UltronSMS gateway. The doc demo creds are placeholders
+  # ("username or password is invalid") — set real NAVIX_SMS_USER/PASSWORD or NAVIX_SMS_API_KEY.
+  sms:
+    base-url: ${NAVIX_SMS_BASE_URL:https://ultronsms.com/api/mt/}
+    user: ${NAVIX_SMS_USER:demo}
+    password: ${NAVIX_SMS_PASSWORD:demo123}
+    api-key: ${NAVIX_SMS_API_KEY:}
+    sender-id: ${NAVIX_SMS_SENDER_ID:WEBSMS}
+    # Promo | Trans. OTP is transactional; the route/peid/dlt-template-id are India-DLT params.
+    channel: ${NAVIX_SMS_CHANNEL:Trans}
+    route: ${NAVIX_SMS_ROUTE:}
+    peid: ${NAVIX_SMS_PEID:}
+    dlt-template-id: ${NAVIX_SMS_DLT_TEMPLATE_ID:}
+    enabled: ${NAVIX_SMS_ENABLED:true}
+    # DEV ONLY — returns the OTP in the request response when SMS can't reach a handset. MUST be false in prod.
+    dev-echo: ${NAVIX_SMS_DEV_ECHO:false}
+    otp-ttl-seconds: ${NAVIX_SMS_OTP_TTL:300}
+    otp-length: ${NAVIX_SMS_OTP_LENGTH:6}
+
 # API documentation
 springdoc:
   api-docs:

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboardingStore } from "@/stores/application-store";
+import { requestBorrowerOtp, type OtpRequestResult } from "@/lib/api/live-journey";
 import { normalizeMobile } from "@/lib/utils";
 
 export default function LoginPage() {
@@ -18,13 +19,22 @@ export default function LoginPage() {
   const [otp, setOtp] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
+  const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
 
   const mobileOk = mobile.length === 10;
 
-  const send = () => {
+  const send = async () => {
     if (!mobileOk) { setError("Enter a valid 10-digit mobile number"); return; }
+    setBusy(true);
     setError(undefined);
-    setStage("verify");
+    try {
+      const info = await requestBorrowerOtp(mobile);
+      setSentInfo(info);
+      setStage("verify");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send the code.");
+    }
+    setBusy(false);
   };
 
   const verify = async (code = otp) => {
@@ -79,7 +89,7 @@ export default function LoginPage() {
                 autoComplete="tel"
                 error={error}
               />
-              <button onClick={send} disabled={!mobileOk} className="btn btn-gold btn-block">Send code</button>
+              <button onClick={send} disabled={!mobileOk || busy} className="btn btn-gold btn-block">{busy ? "Sending…" : "Send code"}</button>
             </>
           ) : (
             <>
@@ -91,9 +101,19 @@ export default function LoginPage() {
               <OtpInput value={otp} onChange={(v) => { setOtp(v); setError(undefined); }} onComplete={verify} />
               {error ? (
                 <p className="mt-3 text-sm text-error-600">{error}</p>
-              ) : (
+              ) : sentInfo?.devCode ? (
                 <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
-                  <CheckCircle2 size={15} className="text-success-600" /> Demo code is <strong className="text-ink">123456</strong>
+                  <CheckCircle2 size={15} className="text-success-600" /> Dev code: <strong className="text-ink">{sentInfo.devCode}</strong>
+                </p>
+              ) : sentInfo?.sent ? (
+                <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
+                  <CheckCircle2 size={15} className="text-success-600" /> Code sent.{" "}
+                  <button type="button" onClick={() => send()} disabled={busy} className="font-semibold text-navy hover:underline">Resend</button>
+                </p>
+              ) : (
+                <p className="mt-3 text-sm text-muted">
+                  We couldn&apos;t send an SMS.{" "}
+                  <button type="button" onClick={() => send()} disabled={busy} className="font-semibold text-navy hover:underline">Try again</button>
                 </p>
               )}
               <button onClick={() => verify()} disabled={otp.length !== 6 || busy} className="btn btn-gold btn-block mt-4">Sign in</button>

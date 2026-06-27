@@ -28,6 +28,7 @@ class AuthControllerTest {
     private static final String SEEDED_HASH = "$2a$10$exssI9R9G/cJdEzsk0Apmemf5x7pUWRYlrwVWsb3WOKoq4R31pq/W";
 
     @Mock private StaffUserRepository staffRepository;
+    @Mock private BorrowerOtpService otpService;
 
     private AuthController controller;
     private JwtService jwt;
@@ -36,7 +37,7 @@ class AuthControllerTest {
     void setUp() {
         jwt = new JwtService("test-secret-test-secret-test-secret", 3600);
         PasswordEncoder encoder = new BCryptPasswordEncoder();
-        controller = new AuthController(staffRepository, jwt, encoder);
+        controller = new AuthController(staffRepository, jwt, encoder, otpService);
     }
 
     private StaffUser admin() {
@@ -73,6 +74,7 @@ class AuthControllerTest {
 
     @Test
     void borrowerLogin_rejectsWrongOtp() {
+        when(otpService.verify("9819000001", "000000")).thenReturn(false);
         assertThatThrownBy(() ->
                 controller.borrowerLogin(new BorrowerLoginRequest("9819000001", "000000", null, null)))
                 .isInstanceOf(BusinessException.class);
@@ -80,6 +82,7 @@ class AuthControllerTest {
 
     @Test
     void borrowerLogin_issuesBorrowerToken_derivingApplicantId() {
+        when(otpService.verify("98190 00001", "123456")).thenReturn(true);
         var resp = controller.borrowerLogin(new BorrowerLoginRequest("98190 00001", "123456", "Asha", null));
 
         assertThat(resp.getData().applicantId()).isEqualTo(9000001L); // last 7 digits

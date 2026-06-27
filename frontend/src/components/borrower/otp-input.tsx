@@ -4,7 +4,7 @@ import * as React from "react";
 
 /**
  * Six-box one-time-code input. Auto-advances on entry, supports paste and
- * backspace, and reports the joined value up. Demo OTP is always `123456`.
+ * backspace, and reports the joined value up.
  */
 export interface OtpInputProps {
   length?: number;

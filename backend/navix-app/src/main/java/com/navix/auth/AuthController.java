@@ -2,6 +2,8 @@ package com.navix.auth;
 
 import com.navix.auth.AuthDtos.AuthResponse;
 import com.navix.auth.AuthDtos.BorrowerLoginRequest;
+import com.navix.auth.AuthDtos.OtpRequestRequest;
+import com.navix.auth.AuthDtos.OtpRequestResponse;
 import com.navix.auth.AuthDtos.StaffLoginRequest;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.JwtService;
@@ -22,20 +24,19 @@ import org.springframework.web.bind.annotation.RestController;
  * moved out of the Next.js BFF into the backend; the BFF now calls these, stores the
  * returned token in its httpOnly cookie, and forwards it as a bearer.
  *
- * <p>Staff login is BCrypt vs {@code staff_user.password_hash}. Borrower OTP delivery
- * stays mocked (fixed code {@value #DEMO_OTP}) per decision 3 — only token issuance is real.
+ * <p>Staff login is BCrypt vs {@code staff_user.password_hash}. Borrower login verifies a
+ * real SMS-delivered OTP ({@link OtpService} → UltronSMS gateway) — request the code via
+ * {@code /borrower/otp/request} first, then {@code /borrower/login}.
  */
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
-    /** Mocked OTP (delivery is not wired; only token issuance is real). */
-    static final String DEMO_OTP = "123456";
-
     private final StaffUserRepository staffRepository;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final BorrowerOtpService otpService;
 
     @PostMapping("/staff/login")
     public ApiResponse<AuthResponse> staffLogin(@Valid @RequestBody StaffLoginRequest req) {
@@ -53,10 +54,17 @@ public class AuthController {
         return ApiResponse.ok(new AuthResponse(token, id, staff.getName(), staff.getRole().name(), null));
     }
 
+    /** Generate an OTP and SMS it to the borrower's mobile (UltronSMS). Call before login. */
+    @PostMapping("/borrower/otp/request")
+    public ApiResponse<OtpRequestResponse> requestBorrowerOtp(@Valid @RequestBody OtpRequestRequest req) {
+        BorrowerOtpService.OtpRequest result = otpService.request(req.mobile());
+        return ApiResponse.ok(new OtpRequestResponse(result.sent(), result.ttlSeconds(), result.devCode()));
+    }
+
     @PostMapping("/borrower/login")
     public ApiResponse<AuthResponse> borrowerLogin(@Valid @RequestBody BorrowerLoginRequest req) {
-        if (!DEMO_OTP.equals(req.otp())) {
-            throw new BusinessException("INVALID_OTP", "Invalid OTP");
+        if (!otpService.verify(req.mobile(), req.otp())) {
+            throw new BusinessException("INVALID_OTP", "Invalid or expired OTP");
         }
         long applicantId = req.applicantId() != null ? req.applicantId() : deriveApplicantId(req.mobile());
         String name = req.name() != null && !req.name().isBlank() ? req.name() : "Borrower";
