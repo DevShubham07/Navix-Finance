@@ -1,16 +1,26 @@
 package com.navix.verification.client;
 
+import static com.navix.verification.support.FintrixJson.integer;
+import static com.navix.verification.support.FintrixJson.post;
+import static com.navix.verification.support.FintrixJson.ref;
+import static com.navix.verification.support.FintrixJson.text;
+
+import com.fasterxml.jackson.databind.JsonNode;
 import com.navix.verification.config.FintrixClientConfig;
+import com.navix.verification.dto.FintrixDtos.ExperianRequest;
 import com.navix.verification.dto.FintrixDtos.ExperianResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 /**
- * Experian credit bureau pull via Fintrix. PRIMARY bureau for NAVIX risk scoring.
+ * Experian credit bureau pull via Fintrix ({@code individual_experian}). PRIMARY bureau for NAVIX
+ * risk scoring. Sandbox responses are typically thin-file (no CAIS detail) — that's expected.
  */
 @Component
 public class ExperianClient {
+
+    private static final String ENDPOINT = "individual_experian";
 
     private final RestClient fintrix;
 
@@ -18,18 +28,23 @@ public class ExperianClient {
         this.fintrix = fintrix;
     }
 
-    /**
-     * Pull the Experian credit report for the applicant.
-     *
-     * <p>DEMO MOCK: returns a deterministic mid-band Experian report (score 742, one active
-     * tradeline) without any network call, pending live Fintrix credentials. The injected
-     * {@code fintrix} RestClient is intentionally left unused for the demo.
-     */
-    public ExperianResponse pull(String pan, String name, String mobile) {
+    /** Pull the Experian credit report for the applicant. */
+    public ExperianResponse pull(String pan, String name, String mobile, String clientRef) {
+        JsonNode root = post(fintrix, ENDPOINT, new ExperianRequest(
+                pan, name, mobile, "Y", ref(clientRef)));
+        JsonNode data = root.path("data");
+        Integer creditScore = integer(data.path("credit_score"));
+        if (creditScore == null) {
+            creditScore = integer(data.path("credit_report").path("SCORE").path("FCIREXScore"));
+        }
+        String message = text(root.path("message"));
+        boolean noRecord = creditScore == null
+                || (message != null && message.toLowerCase().contains("no record"));
         return new ExperianResponse(
-                742,
-                java.util.List.of(new com.navix.verification.dto.FintrixDtos.Tradeline(
-                        "CREDIT_CARD", "HDFC BANK", 25_000.0, 0.0, "ACTIVE")),
-                "Experian hit (demo mock)");
+                text(root.path("transaction_id")),
+                text(root.path("status")),
+                creditScore,
+                noRecord,
+                message);
     }
 }

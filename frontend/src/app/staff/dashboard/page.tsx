@@ -6,8 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ShieldCheck, ClipboardList, Banknote, Receipt, PhoneCall, RefreshCw, Loader2, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { InfoTooltip } from "@/components/ui";
-import { useStaffSession, STAFF_ROLE_LABELS } from "@/lib/mock/session";
-import type { StaffRole } from "@/lib/auth/rbac";
+import { useStaffSession } from "@/lib/auth/staff-session";
+import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import {
   staffApi,
   paiseToINR,

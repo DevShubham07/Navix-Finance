@@ -158,6 +158,16 @@ export interface DocumentView {
   contentType: string | null;
   sizeBytes: number | null;
   uploadedAt: string;
+  /** True when the bytes live in S3 (fetch a presigned URL); false for legacy inline base64. */
+  s3?: boolean;
+}
+
+/** A presigned GET URL for an S3-backed document (mirrors backend DocumentUrlView). */
+export interface DocumentUrlView {
+  id: number;
+  fileName: string | null;
+  contentType: string | null;
+  url: string;
 }
 
 /** A document with its bytes as base64, for view/download. */
@@ -198,6 +208,32 @@ export interface UpdateCustomerInput {
   employmentStatus?: string | null;
   monthlySalaryPaise?: number | null;
   salaryBank?: string | null;
+}
+
+/**
+ * Admin-managed company payee shown on the borrower repay screen. The `*Url` fields are short-lived
+ * presigned GETs for an uploaded QR image / account-info PDF (null when none is uploaded — the UI
+ * then falls back to a bundled static asset).
+ */
+export interface PaymentSettings {
+  upiId: string | null;
+  accountName: string | null;
+  accountNumber: string | null;
+  ifsc: string | null;
+  bankName: string | null;
+  qrUrl: string | null;
+  accountInfoUrl: string | null;
+}
+
+/** ADMIN edit of the payee (all fields optional; identity-less text + uploaded asset keys). */
+export interface UpdatePaymentSettingsInput {
+  upiId?: string | null;
+  accountName?: string | null;
+  accountNumber?: string | null;
+  ifsc?: string | null;
+  bankName?: string | null;
+  qrObjectKey?: string | null;
+  accountInfoObjectKey?: string | null;
 }
 
 /** Standard backend envelope. */
@@ -357,6 +393,98 @@ export const borrowerApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Verification (P5 sequential onboarding) — routes under /api/borrower/applications/{id}/verify/*
+// ---------------------------------------------------------------------------
+
+/** Outcome of a single verification check (mirrors backend StepResult). */
+export type CheckStatus = "PASS" | "FAIL" | "REVIEW" | "PENDING";
+
+/** A verification step's live result. `derived` carries step-specific extras (urls, flags, …). */
+export interface StepResult {
+  checkType: string;
+  status: CheckStatus;
+  message: string | null;
+  derived: Record<string, unknown>;
+}
+
+/** Result of asking the app-scoped verify endpoint for a presigned PUT URL. */
+export interface VerifyPresign {
+  key: string;
+  url: string;
+}
+
+/** A single document version the borrower consents to (e.g. "loan-agreement@1"). */
+export type AgreementVersion = string;
+
+export const verificationApi = {
+  /** PAN identity match. */
+  pan: (id: number, pan: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/pan`, "POST", { pan }),
+
+  /** Official/work email → employer match. */
+  email: (id: number, officialEmail: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/email`, "POST", { officialEmail }),
+
+  /** Address: either live geolocation (lat/long) or a typed manual address. */
+  address: (
+    id: number,
+    body: { latitude: number; longitude: number } | { manualAddress: string },
+  ) => bff<StepResult>(`${BORROWER_BASE}/${id}/verify/address`, "POST", body),
+
+  /** DigiLocker: start the consent flow (returns derived.clientId + derived.url). */
+  digilockerInit: (id: number, redirectUrl: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/init`, "POST", { redirectUrl }),
+
+  /** DigiLocker: poll consent progress (derived.completed / .failed / .status). */
+  digilockerStatus: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/status`, "GET"),
+
+  /** DigiLocker: finalise once the consent flow reports completed. */
+  digilockerComplete: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/complete`, "POST"),
+
+  /** Credit bureau pull (automatic — no input; score/category never surfaced to the borrower). */
+  bureau: (id: number) => bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau`, "POST"),
+
+  /** Declared salary + uploaded slip object key. */
+  salary: (id: number, monthlySalaryPaise: number, slipObjectKey: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/salary`, "POST", { monthlySalaryPaise, slipObjectKey }),
+
+  /** Penny-drop on the salary account → name match. */
+  pennyDrop: (id: number, accountNumber: string, ifsc: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/penny-drop`, "POST", { accountNumber, ifsc }),
+
+  /** Selfie liveness/face match against the uploaded selfie object key. */
+  selfie: (id: number, selfieObjectKey: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/selfie`, "POST", { selfieObjectKey }),
+
+  /** Record consent to the agreement document set. */
+  agreement: (id: number, versions: AgreementVersion[]) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/agreement`, "POST", { versions }),
+
+  /** The full verification status board for this application. */
+  summary: (id: number) => bff<StepResult[]>(`${BORROWER_BASE}/${id}/verify/summary`, "GET"),
+
+  /** Ask the app-scoped endpoint for a presigned PUT URL (echo `key` back on the verify call). */
+  presignUpload: (
+    id: number,
+    body: { docType: string; fileName: string; contentType: string },
+  ) => bff<VerifyPresign>(`${BORROWER_BASE}/${id}/verify/presign-upload`, "POST", body),
+
+  /** PUT raw bytes (File or Blob) straight to the presigned S3 URL — never through the BFF. */
+  putToPresignedUrl: async (url: string, body: Blob, contentType: string): Promise<void> => {
+    const res = await fetch(url, {
+      method: "PUT",
+      body,
+      headers: { "Content-Type": contentType },
+    });
+    if (!res.ok) {
+      throw new ApplicationApiError(`Upload failed (status ${res.status}).`, `UPLOAD_FAILED_${res.status}`, res.status);
+    }
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Staff client — routes under /api/staff/*
 // ---------------------------------------------------------------------------
 
@@ -440,9 +568,16 @@ export const staffApi = {
   /** The application's uploaded documents (metadata). */
   documents: (id: number) => bff<DocumentView[]>(`${STAFF_BASE}/${id}/documents`, "GET"),
 
-  /** One document's bytes (base64) for view/download. */
+  /** One document's bytes (base64) for view/download (legacy inline storage). */
   document: (id: number, docId: number) =>
     bff<DocumentContent>(`${STAFF_BASE}/${id}/documents/${docId}`, "GET"),
+
+  /** A presigned GET URL for an S3-backed document (view/download in a new tab). */
+  documentUrl: (id: number, docId: number) =>
+    bff<DocumentUrlView>(`${STAFF_BASE}/${id}/documents/${docId}/url`, "GET"),
+
+  /** The application's verification step results (PAN/email/address/salary/…). */
+  verifications: (id: number) => bff<StepResult[]>(`${STAFF_BASE}/${id}/verifications`, "GET"),
 };
 
 // ---------------------------------------------------------------------------
@@ -531,6 +666,79 @@ export const adminApi = {
   addBlocklist: (payload: { type: BlocklistType; value: string; reason?: string }) =>
     bff<BlocklistResponse>(ADMIN_BLOCKLIST_BASE, "POST", payload),
   removeBlocklist: (id: number) => bff<null>(`${ADMIN_BLOCKLIST_BASE}/${id}`, "DELETE"),
+};
+
+// ---------------------------------------------------------------------------
+// Payment settings (admin-managed company payee) — routes under /api/payment-settings
+// ---------------------------------------------------------------------------
+
+export const paymentSettingsApi = {
+  /** The current payee (borrower repay + staff admin read). */
+  get: () => bff<PaymentSettings>("/api/payment-settings", "GET"),
+
+  /** ADMIN edit of the payee fields / uploaded asset keys. */
+  update: (body: UpdatePaymentSettingsInput) =>
+    bff<PaymentSettings>("/api/payment-settings", "PUT", body),
+};
+
+// ---------------------------------------------------------------------------
+// Storage (presigned uploads) — routes under /api/storage
+// ---------------------------------------------------------------------------
+
+/** Result of asking for a presigned PUT URL (raw — the storage endpoint is NOT envelope-wrapped). */
+export interface PresignUpload {
+  key: string;
+  url: string;
+  method: string;
+  expiresInSeconds: number;
+}
+
+export const storageApi = {
+  /** Ask the backend for a presigned PUT URL for a categorised upload. */
+  presignUpload: async (body: {
+    category: string;
+    filename: string;
+    contentType: string;
+  }): Promise<PresignUpload> => {
+    const res = await fetch("/api/storage/presign-upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      // BFF/backend error paths return the ApiResponse envelope.
+      let code = `HTTP_${res.status}`;
+      let message = `Upload could not be prepared (status ${res.status}).`;
+      try {
+        const env = JSON.parse(text) as ApiResponse<unknown>;
+        code = env.error?.code ?? code;
+        message = env.error?.message ?? env.message ?? message;
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new ApplicationApiError(message, code, res.status);
+    }
+    return JSON.parse(text) as PresignUpload;
+  },
+
+  /** PUT the file bytes straight to the presigned S3 URL (never through the BFF). */
+  putToPresignedUrl: async (url: string, file: File): Promise<void> => {
+    const res = await fetch(url, {
+      method: "PUT",
+      body: file,
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+    });
+    if (!res.ok) {
+      throw new ApplicationApiError(
+        `Upload failed (status ${res.status}).`,
+        `UPLOAD_FAILED_${res.status}`,
+        res.status,
+      );
+    }
+  },
 };
 
 // ---------------------------------------------------------------------------

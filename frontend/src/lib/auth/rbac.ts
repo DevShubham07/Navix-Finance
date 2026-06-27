@@ -24,6 +24,19 @@ export const STAFF_ROLES = [
 
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
+/** Human-readable label per staff role (mirrors the backend role names). */
+export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
+  KYC_APPROVER: "KYC Approver",
+  CREDIT_EXECUTIVE: "Credit Executive",
+  CREDIT_HEAD: "Credit Head",
+  DISBURSEMENT_HEAD: "Disbursement Head",
+  ACCOUNTANT: "Accountant",
+  COLLECTION_HEAD: "Collection Head",
+  COLLECTION_EXECUTIVE: "Collection Executive",
+  ADMIN: "Administrator",
+  DEVELOPER: "Developer",
+};
+
 /**
  * Fine-grained permissions checked by the UI and BFF.
  * TODO: expand as feature surfaces are built out.

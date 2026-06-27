@@ -1,0 +1,211 @@
+NAVIX FINANCE PRIVATE LIMITED
+
+MASTER LOAN AGREEMENT (MLA)
+
+LOAN AGREEMENT CUM ELECTRONIC CREDIT FACILITY AGREEMENT
+
+This Master Loan Agreement ("Agreement") is executed electronically on the date of acceptance by the Borrower through OTP Authentication, Aadhaar E-Sign, Digital Signature, Mobile Application Acceptance, Website Acceptance, or any other legally recognized electronic authentication method.
+
+BETWEEN
+
+NAVIX FINANCE PRIVATE LIMITED, a company incorporated under the Companies Act, 2013, having its registered office at _______________________________, India (hereinafter referred to as the "Lender"), which expression shall, unless repugnant to the context, include its successors, assigns, affiliates, legal representatives, and permitted transferees.
+
+AND
+
+Mr./Ms. ______________________________________, residing at _______________________________________________, holding PAN No. _______________________________, Mobile No. _______________________________, Email ID _______________________________, hereinafter referred to as the "Borrower", which expression shall include his/her heirs, executors, administrators, legal representatives, and permitted assigns.
+
+The Lender and Borrower shall collectively be referred to as the "Parties".
+
+1. PURPOSE
+
+The Borrower has requested a loan facility from the Lender and has submitted information, declarations, documents, authorizations, and disclosures required by the Lender.
+
+Subject to satisfactory verification, underwriting, risk assessment, internal policies, and applicable law, the Lender may sanction and disburse a loan facility to the Borrower.
+
+2. LOAN SANCTION
+
+2.1 The sanction of any loan shall be at the sole discretion of the Lender.
+
+2.2 The Lender may approve, reject, reduce, modify, defer, suspend, or cancel any application prior to disbursement in accordance with applicable law and internal policies.
+
+2.3 Transaction-specific terms including loan amount, tenure, repayment date, interest, fees, charges, and taxes shall be specified in the Loan Sanction Letter and Key Fact Statement (KFS).
+
+2.4 The Loan Sanction Letter and KFS shall form an integral part of this Agreement.
+
+3. CONDITIONS PRECEDENT
+
+The Lender shall not be obligated to disburse any loan unless all conditions prescribed by the Lender are fulfilled, including:
+
+(a) KYC verification;
+
+(b) Document verification;
+
+(c) Acceptance of loan documents;
+
+(d) Credit assessment;
+
+(e) Repayment mandate authorization;
+
+(f) Compliance with applicable laws and regulations.
+
+4. DISBURSEMENT
+
+4.1 The loan amount shall be disbursed to the Borrower's designated bank account.
+
+4.2 The Lender shall be deemed to have completed disbursement upon successful transfer of funds through approved banking channels.
+
+4.3 The Lender shall not be responsible for delays caused by banks, payment systems, technical failures, regulatory restrictions, incorrect account information, or circumstances beyond its reasonable control.
+
+5. REPAYMENT
+
+5.1 The Borrower shall repay all dues on or before the due date.
+
+5.2 The Borrower shall be liable to pay principal, interest, taxes, charges, fees, penalties, and other amounts disclosed in the applicable loan documents.
+
+5.3 Repayment may be collected through eNACH, UPI AutoPay, bank transfer, IMPS, NEFT, RTGS, debit mandate, or other approved channels.
+
+6. PREPAYMENT
+
+The Borrower may prepay or foreclose the loan in accordance with the terms disclosed in the Loan Sanction Letter and KFS.
+
+7. REPRESENTATIONS AND WARRANTIES
+
+The Borrower represents and warrants that:
+
+(a) All information furnished is true, complete, and accurate;
+
+(b) All documents submitted are genuine and valid;
+
+(c) No material information has been concealed;
+
+(d) The Borrower has legal capacity to enter into this Agreement;
+
+(e) The Borrower shall promptly notify the Lender of any material change affecting repayment ability.
+
+8. KYC AND VERIFICATION CONSENT
+
+The Borrower authorizes the Lender and its authorized service providers to verify identity, address, employment, income, banking details, and other information submitted by the Borrower.
+
+9. CREDIT INFORMATION CONSENT
+
+The Borrower authorizes the Lender to obtain, access, process, verify, and use information necessary for loan assessment, servicing, compliance, fraud prevention, and recovery activities, as permitted by applicable law.
+
+10. COMMUNICATION CONSENT
+
+The Borrower consents to receive communications through calls, SMS, email, WhatsApp, mobile applications, customer portals, and other electronic channels for lawful loan-related purposes.
+
+11. DATA PRIVACY
+
+The Borrower authorizes the collection, storage, processing, maintenance, and use of information submitted during the loan lifecycle in accordance with applicable laws and the Company's policies.
+
+12. EVENTS OF DEFAULT
+
+The following shall constitute Events of Default:
+
+(a) Non-payment of any amount due;
+
+(b) Submission of false information;
+
+(c) Fraud or misrepresentation;
+
+(d) Breach of this Agreement or other loan documents;
+
+(e) Insolvency or bankruptcy proceedings;
+
+(f) Any event materially affecting repayment obligations.
+
+13. CONSEQUENCES OF DEFAULT
+
+Upon occurrence of an Event of Default, the Lender may, subject to applicable law:
+
+(a) Demand immediate repayment of outstanding dues;
+
+(b) Suspend or terminate services;
+
+(c) Initiate lawful recovery proceedings;
+
+(d) Enforce rights available under accepted loan documents;
+
+(e) Recover legally permissible costs and expenses.
+
+14. ASSIGNMENT
+
+The Lender may assign, transfer, participate, securitize, or otherwise deal with its rights, interests, receivables, and obligations under the loan facility in accordance with applicable law.
+
+15. INDEMNITY
+
+The Borrower shall indemnify and hold harmless the Lender against losses, liabilities, damages, claims, costs, and expenses arising from fraud, misrepresentation, breach of obligations, or violation of applicable law by the Borrower.
+
+16. LIMITATION OF LIABILITY
+
+The Lender shall not be liable for indirect, consequential, incidental, special, or punitive damages, or for delays caused by events beyond its reasonable control.
+
+17. FORCE MAJEURE
+
+The Lender shall not be liable for any failure or delay arising from natural disasters, government actions, banking interruptions, cyber incidents, communication failures, technical disruptions, or other events beyond reasonable control.
+
+18. ELECTRONIC EXECUTION
+
+The Borrower agrees that:
+
+(a) OTP Authentication shall constitute valid acceptance;
+
+(b) E-Sign and Digital Signature shall be legally binding;
+
+(c) Electronic records and audit logs may be maintained as evidence of acceptance;
+
+(d) Electronic execution shall have the same effect as physical execution.
+
+19. GOVERNING LAW
+
+This Agreement shall be governed by and construed in accordance with the laws of India.
+
+20. DISPUTE RESOLUTION
+
+Any dispute arising out of this Agreement shall first be attempted to be resolved amicably.
+
+Failing resolution, the dispute shall be referred to arbitration under the Arbitration and Conciliation Act, 1996.
+
+The seat and venue of arbitration shall be New Delhi, India.
+
+The proceedings shall be conducted in English.
+
+21. JURISDICTION
+
+Subject to the arbitration clause, courts at New Delhi shall have exclusive jurisdiction.
+
+22. ENTIRE AGREEMENT
+
+This Agreement shall be read together with the Loan Sanction Letter, Key Fact Statement (KFS), Privacy & Consent Declaration, eNACH Mandate, repayment schedule, and all related loan documents.
+
+BORROWER ACCEPTANCE
+
+I confirm that I have read, understood, and voluntarily accepted this Master Loan Agreement and agree to be bound by its terms and conditions.
+
+Borrower Name: ______________________________
+
+Loan Application Number: ______________________________
+
+OTP Reference Number: ______________________________
+
+E-Sign Transaction ID: ______________________________
+
+IP Address: ______________________________
+
+Device ID: ______________________________
+
+Date & Time Stamp: ______________________________
+
+Digital Acceptance Status: VERIFIED
+
+FOR NAVIX FINANCE PRIVATE LIMITED
+
+Authorized Signatory
+
+Name: ______________________________
+
+Designation: ______________________________
+
+Date: ______________________________
+
+SYSTEM GENERATED ELECTRONIC AGREEMENT

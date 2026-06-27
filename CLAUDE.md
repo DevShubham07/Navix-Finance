@@ -42,6 +42,12 @@ This is a monorepo:
 
 ## 2. Current state (verified 2026-06-27)
 
+> **⚠️ Superseded in part by the P0–P8 production migration — see `handoff.md` §15.** Since that
+> migration: identity is **real JWT + Spring Security** (not demo headers), the Fintrix/DigiLocker
+> clients are **un-mocked** (real API calls), documents are **S3-backed**, onboarding is a **9-step
+> verified wizard**, and the **mock layer is removed**. The "demo-first / mock" descriptions below
+> describe the pre-migration state; treat `handoff.md` §15 as authoritative for what is live now.
+
 The project moved well past scaffolding. **The full loan lifecycle is implemented in the backend
 as one aggregate and wired to the frontend end-to-end through a BFF.**
 
@@ -249,11 +255,16 @@ The BFF route handlers reach the backend via **`BACKEND_BASE_URL`** (server-only
 `http://localhost:8080`). `NEXT_PUBLIC_DEMO_MODE` defaults **on** (mock UI); the live wired pages
 below call the backend regardless.
 
-### 4.4 Demo logins (no real passwords)
-- **Borrower:** `/login` → any 10-digit mobile, **OTP `123456`** → `/dashboard` (the designed,
-  backend-wired journey). Every "Apply now" CTA → `/signup/pan` starts the same live flow.
-- **Staff/Admin:** `/staff/login` → **pick a role** (no password) → `/staff/dashboard` /
-  `/staff/applications`. The role you pick decides which live queues/pages have data.
+### 4.4 Demo logins (post-migration — real JWT, see `handoff.md` §15)
+- **Borrower:** `/login` → any 10-digit mobile → **Send code** → enter the OTP. Real OTP is delivered
+  by the **UltronSMS** gateway, but is **blocked on DLT-template registration**, so for demo/testing
+  run the backend with **`NAVIX_SMS_MOCK=true`** → the fixed code **`123456`** always works (also shown
+  as "Dev code"). Issues a real **borrower JWT** in the `navix_borrower` httpOnly cookie. Every "Apply
+  now" CTA → `/signup/mobile-otp` starts the 9-step verified onboarding.
+- **Staff/Admin:** `/staff/login` → **pick a role** → the BFF authenticates for real against
+  `POST /api/auth/staff/login` (role → seeded `*.navix.example` email + default password
+  **`Admin@12345`**, BCrypt) and stores a **staff JWT**. The role decides which live queues have data.
+  (Rotate the default password + set a strong `AUTH_SECRET` before any real exposure.)
 
 ### 4.5 Tests
 ```bash
@@ -402,18 +413,21 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 | | Borrower | Staff / Admin |
 |---|---|---|
-| Login route | `POST /api/auth/borrower/login` (mobile + OTP `123456`) | `POST /api/auth/staff/login` (pick a role, no password) |
-| Cookie | `navix_borrower` `{id, applicantId, name, mobile}` | `navix_staff` `{id, name, role}` |
-| Logout / me | `/api/auth/borrower/{logout,me}` | `/api/auth/staff/{logout,me}` |
-| BFF proxy | `/api/borrower/applications/*`, `/api/borrower/loan/*` | `/api/staff/{applications,loan,collections,users,invites}/*`, `/api/admin/blocklist/*` |
-| UI entry | `/login` → `/dashboard` (designed journey) | `/staff/login` → `/staff/dashboard` / `/staff/applications` |
+| Login route | `POST /api/auth/borrower/otp/request` then `/borrower/login` (mobile + OTP) | `POST /api/auth/staff/login` (role → seeded email + `Admin@12345`, or email+password) |
+| Token | **borrower JWT** (HS256, audience `borrower`, subject = applicantId) | **staff JWT** (audience `staff`, subject = staffId, role claim) |
+| Cookie | `navix_borrower` `{token, id, applicantId, name, mobile}` | `navix_staff` `{token, id, name, role}` |
+| Logout / me | `/api/auth/borrower/{logout,me}` (me strips the token) | `/api/auth/staff/{logout,me}` |
+| BFF proxy | `/api/borrower/applications/*`, `/api/borrower/loan/*` | `/api/staff/{applications,loan,collections,users,invites}/*`, `/api/admin/blocklist/*`, `/api/payment-settings`, `/api/storage` |
+| UI entry | `/login` → `/dashboard` | `/staff/login` → `/staff/dashboard` |
 
-**How identity reaches the backend (demo mode):** each BFF proxy reads *its own* cookie and
-injects demo headers on the forwarded request — **`X-Demo-Actor-Id` / `-Name` / `-Role`**. The
-backend's `DemoActorFilter` reads them into `ActorContext`/`CurrentActor`; services call
-`requireRole(...)`. The staff proxy honours **only** `navix_staff`; no staff cookie → **401
-`UNAUTHENTICATED`** (a borrower session cannot reach staff routes, and vice-versa). At go-live
-these headers are replaced by the JWT principal — nothing else changes.
+**How identity reaches the backend (REAL JWT — migration P6):** login is now in the **backend**
+(`AuthController`): staff = BCrypt vs `staff_user.password_hash` (V17); borrower = OTP-verified
+(`BorrowerOtpService`). The BFF stores the issued **JWT** in its httpOnly cookie and forwards
+`Authorization: Bearer <jwt>` (it **no longer injects `X-Demo-Actor-*`**). The backend's
+**`JwtAuthFilter`** (which replaced `DemoActorFilter`) validates the bearer and populates the **same**
+`ActorContext`/`CurrentActor`; services still call `requireRole(...)` + the SoD event-trail replay.
+`SecurityConfig` requires auth on `/api/**` (401 otherwise) except `/api/auth`, `/api/storage`
+(decision 6), actuator, docs. Staff/borrower token audiences keep the namespaces apart.
 
 **Roles** (`StaffRole`, mirrored in `frontend/src/lib/auth/rbac.ts`) and who does which step:
 
@@ -543,8 +557,17 @@ navix-common). Applied on every boot:
 
 ## 11. Backend API surface (`/api/applications`)
 
-All actions resolve the actor from demo headers and enforce `requireRole`. Maker-checker actions
-return `FORBIDDEN_ROLE`, `SOD_VIOLATION`, or `ILLEGAL_TRANSITION` (422) on violation.
+All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `ActorContext`) and enforce
+`requireRole`. Maker-checker actions return `FORBIDDEN_ROLE`, `SOD_VIOLATION`, or `ILLEGAL_TRANSITION`
+(422) on violation; a missing/invalid bearer on a protected route → plain **401**.
+
+> **Migration-added endpoints (full list in `QA_CHECKLIST.md` §B):**
+> - **Auth:** `POST /api/auth/staff/login`, `POST /api/auth/borrower/otp/request`, `POST /api/auth/borrower/login`.
+> - **Onboarding verification** (BORROWER, ownership-checked): `POST /api/applications/{id}/verify/{pan,
+>   email,address,digilocker/init,bureau,salary,penny-drop,selfie,agreement,presign-upload}`,
+>   `POST …/verify/digilocker/complete`, `GET …/verify/{digilocker/status,summary}`; `submit-kyc` is gated
+>   (`KYC_INCOMPLETE`). Staff-readable `GET /api/applications/{id}/verifications`, `GET …/documents/{docId}/url`.
+> - **Payment block:** `GET /api/payment-settings` (any authed; presigned QR/PDF URLs), `PUT` (ADMIN).
 
 | Method + path | Role | Purpose |
 |---|---|---|
@@ -611,31 +634,38 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
   per-stage entities. The old `DisbursementRequest` UUID chain is dormant/superseded.
 - **SoD is mandatory** and enforced server-side (flow service via the event trail), not in
   middleware. Never collapse two maker-checker steps onto one actor.
-- **Demo-first identity.** Headers now, JWT later — keep services reading `CurrentActor` so the
-  swap is localized to `DemoActorFilter` → a real auth filter.
-- **Separate staff/borrower sessions.** Never share a cookie or BFF namespace between them.
+- **JWT identity (migration P6).** `JwtAuthFilter` validates the bearer → `CurrentActor`; services
+  read `CurrentActor` + `requireRole`. The swap stayed localized to the filter/`SecurityConfig` — keep
+  it that way (don't reintroduce header-trust or move authz out of the services).
+- **Separate staff/borrower sessions.** Never share a cookie or BFF namespace; the JWT audience
+  (`staff`/`borrower`) keeps them apart.
 - **Salary-linked due date ≤ 40 days** (final, over dfd D10).
-- **Secrets** never committed — env vars / `application-local.yml` (gitignored). Key vars:
-  `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_DEMO_MODE`, `DB_*`, `AUTH_SECRET`,
-  `FINTRIX_*`, `DIGILOCKER_*`.
+- **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
+  `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `AWS_PROFILE`, `NAVIX_ENV`,
+  `FINTRIX_*`, `DIGILOCKER_*`, `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`).
 
 ---
 
 ## 13. Deferred (go-live backlog)
 
-> **The full roadmap with steps, seams, and acceptance criteria is in [`FUTURE.md`](FUTURE.md).**
-> The bullets below are just the summary.
+> **The full roadmap with steps, seams, and acceptance criteria is in [`FUTURE.md`](FUTURE.md)
+> (see its 2026-06-27 banner).** Most of the original deferred set **shipped** in the P0–P8 migration
+> (`handoff.md` §15); the bullets below are what genuinely **remains**.
 
-- Real **auth/JWT + Spring Security** lockdown (replace `DemoActorFilter`); real staff passwords/
-  invites end-to-end (the invite/activate UI exists but is demo-grade — no password, no email).
-- Real **Fintrix** (salary verify), **DigiLocker** (KYC), **S3** (sanction letters/docs), bank
-  **penny-drop + transfer**.
-- **Borrower repay + reborrow** — both now **live** (`/repay` record → accountant verifies → CLOSED;
-  `/reloan` → `POST /api/applications/reborrow` → PRE_APPROVED / REVIEW_PENDING). Remaining hardening:
-  a persisted `borrower_standing` table (standing is recomputed from loan history on each reborrow today).
-- DB cleanup: **FK constraints**; drop/repurpose the legacy UUID `disbursement_request` table;
-  unify applicant identity (`applicant_profile` ↔ onboarding `Borrower`).
-- Polish the reworked live pages to the design system (functional, lightly styled).
+- ✅ **Done in the migration:** real auth (JWT + Spring Security, `JwtAuthFilter` replaced
+  `DemoActorFilter`, staff BCrypt login); real **Fintrix** + **DigiLocker** clients; **S3** documents
+  (presign + `s3_object_key`); bank **penny-drop**; SSM secrets; the 9-step verified onboarding; the
+  admin payment block; mock-layer removal; and a **test suite** (`QA_CHECKLIST.md`, ~136 backend tests,
+  Playwright `frontend/e2e/*`, `.github/workflows/ci.yml`).
+- 🟡 **Borrower OTP** — real **UltronSMS** client done, but SMS delivery is **blocked on a DLT-registered
+  template**; a **mock mode** (`NAVIX_SMS_MOCK=true` → `123456`) is wired for demo/testing.
+- 🟡 Staff **emailed invites** + ADMIN-gated invite create; middleware **JWT-signature verify** (still a
+  presence check). Rotate the seeded `Admin@12345` + set a strong `AUTH_SECRET` for prod.
+- 🔴 Real bank **payout** (NEFT/IMPS) at the accountant step; sanction-letter/agreement generation → S3.
+- 🔴 DB cleanup: **FK constraints**; drop the legacy `bytea` doc column + the UUID `disbursement_request`
+  table; unify applicant identity (`applicant_profile` ↔ onboarding `Borrower`); PII-at-rest encryption.
+- 🔴 Persisted `borrower_standing` table (standing is recomputed from loan history today); design-system
+  polish; full-Aadhaar masking; compliance/regulatory alignment (NBFC/DLG, reporting, product copy).
 
 ---
 

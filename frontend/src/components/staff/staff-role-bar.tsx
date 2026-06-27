@@ -2,41 +2,30 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Users, X, RotateCcw, Database } from "lucide-react";
-import { STAFF_ROLES, type StaffRole } from "@/lib/auth/rbac";
-import { signInStaff, STAFF_ROLE_LABELS, STAFF_PERSONAS, useStaffSession } from "@/lib/mock/session";
-import { useMockDb } from "@/lib/mock/store";
+import { Users, X, RotateCcw } from "lucide-react";
+import { STAFF_ROLES, STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
+import { STAFF_PERSONA_NAMES } from "@/lib/api/staff-personas";
+import { loginStaff, useStaffSession } from "@/lib/auth/staff-session";
 import { useMounted } from "@/hooks/use-mounted";
 
 /**
- * Prototype role switcher (clickable demo only). Sign in as any role in one
- * click to exercise separation of duties: recommend as a Credit Executive,
- * switch to Credit Head to approve, then try to act again and watch the
- * maker-checker bar lock you out. Also resets the seeded console data.
+ * Role switcher. Sign in as any role in one click to exercise separation of
+ * duties: recommend as a Credit Executive, switch to Credit Head to approve,
+ * then try to act again and watch the maker-checker bar lock you out. Each pick
+ * re-authenticates against the backend (role -> seeded account), so backend
+ * calls carry the chosen role's JWT.
  */
 export function StaffRoleBar() {
   const [open, setOpen] = React.useState(false);
   const router = useRouter();
   const mounted = useMounted();
   const { session } = useStaffSession();
-  const resetDemo = useMockDb((s) => s.resetDemo);
 
   if (!mounted) return null;
 
   const pick = async (role: StaffRole) => {
-    // Mock session (navix_session cookie + localStorage) keeps the demo pages + middleware working.
-    signInStaff(role);
-    try {
-      // Live session: the httpOnly navix_staff cookie the BFF reads, so backend calls actually carry
-      // the chosen role (without this the switch is cosmetic — the backend keeps the previous actor).
-      await fetch("/api/auth/staff/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role }),
-      });
-    } catch {
-      // Non-fatal: the mock console still works without the live session.
-    }
+    // Re-authenticate: sets the httpOnly navix_staff cookie (JWT) the BFF forwards as a bearer.
+    await loginStaff(role);
     setOpen(false);
     router.refresh();
   };
@@ -68,19 +57,13 @@ export function StaffRoleBar() {
                   >
                     <span>
                       <span className="block">{STAFF_ROLE_LABELS[role]}</span>
-                      <span className="block text-xs text-muted">{STAFF_PERSONAS[role].name}</span>
+                      <span className="block text-xs text-muted">{STAFF_PERSONA_NAMES[role]}</span>
                     </span>
                     {active ? <span className="text-xs font-semibold text-gold-dark">current</span> : null}
                   </button>
                 );
               })}
             </div>
-            <button
-              onClick={() => { resetDemo(); setOpen(false); router.refresh(); }}
-              className="flex w-full items-center gap-2 border-t border-grey-200 px-4 py-2.5 text-sm text-muted hover:bg-grey-100 hover:text-ink"
-            >
-              <Database size={14} /> Reset console data
-            </button>
           </div>
         )}
         <button onClick={() => setOpen((o) => !o)} className="btn btn-navy btn-sm shadow-lg" aria-label="Act as role" aria-expanded={open}>

@@ -59,4 +59,46 @@ public class ApplicantProfile extends BaseAuditEntity {
 
     @Column(name = "salary_bank", length = 120)
     private String salaryBank;
+
+    // --- derived verification fields (populated by ApplicationVerificationService; V16) ---
+
+    /** Credit bureau score (never surfaced to the borrower). */
+    @Column(name = "bureau_score")
+    private Long bureauScore;
+
+    /** Which bureau answered: EXPERIAN or CRIF. */
+    @Column(name = "bureau_source", length = 40)
+    private String bureauSource;
+
+    /** A/B/C/D risk grade (staff/internal only). */
+    @Column(name = "risk_category", length = 4)
+    private String riskCategory;
+
+    @Column(name = "pan_verified")
+    private Boolean panVerified;
+
+    /** Aadhaar↔PAN seeding link, read from pan_comprehensive. */
+    @Column(name = "aadhaar_linked")
+    private Boolean aadhaarLinked;
+
+    @Column(name = "email_verified")
+    private Boolean emailVerified;
+
+    @Column(name = "address_verified")
+    private Boolean addressVerified;
+
+    @Column(name = "penny_drop_verified")
+    private Boolean pennyDropVerified;
+
+    /** 0..1 fuzzy name-match across PAN / Aadhaar / penny-drop (identity cross-match). */
+    @Column(name = "name_match_score")
+    private Double nameMatchScore;
+
+    /** DigiLocker session client id (threaded through status/list/download). */
+    @Column(name = "digilocker_client_id", length = 120)
+    private String digilockerClientId;
+
+    /** True once the borrower has accepted the agreement documents. */
+    @Column(name = "agreement_accepted")
+    private Boolean agreementAccepted;
 }

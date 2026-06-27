@@ -21,11 +21,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
   const suffix = joinPath(path);
   const backendPath = suffix ? `/api/applications/${suffix}` : "/api/applications";
 
-  return proxyToBackend(req, backendPath, {
-    id: session.applicantId, // backend actor id == applicantId for borrowers
-    name: session.name,
-    role: "BORROWER",
-  });
+  return proxyToBackend(req, backendPath, session.token);
 }
 
 export const GET = handle;

@@ -62,22 +62,23 @@ public final class ReviewDtos {
             @NotBlank String dataBase64) {
     }
 
-    /** Document metadata for listing — no bytes. */
+    /** Document metadata for listing — no bytes. {@code s3} ⇒ fetch via the presigned-URL route. */
     public record DocumentView(
             Long id,
             String docType,
             String fileName,
             String contentType,
             Long sizeBytes,
+            boolean s3,
             Instant uploadedAt) {
 
         public static DocumentView of(ApplicationDocument d) {
             return new DocumentView(d.getId(), d.getDocType(), d.getFileName(), d.getContentType(),
-                    d.getSizeBytes(), d.getCreatedAt());
+                    d.getSizeBytes(), d.getS3ObjectKey() != null, d.getCreatedAt());
         }
     }
 
-    /** Full document for view/download — bytes as base64 so it rides the JSON BFF proxy. */
+    /** Full document for view/download — inline bytes as base64 (legacy/demo rows only). */
     public record DocumentContentView(
             Long id,
             String docType,
@@ -86,8 +87,12 @@ public final class ReviewDtos {
             String dataBase64) {
 
         public static DocumentContentView of(ApplicationDocument d) {
-            return new DocumentContentView(d.getId(), d.getDocType(), d.getFileName(), d.getContentType(),
-                    Base64.getEncoder().encodeToString(d.getData()));
+            String base64 = d.getData() != null ? Base64.getEncoder().encodeToString(d.getData()) : null;
+            return new DocumentContentView(d.getId(), d.getDocType(), d.getFileName(), d.getContentType(), base64);
         }
+    }
+
+    /** Presigned GET URL for an S3-backed document (short TTL). */
+    public record DocumentUrlView(Long id, String fileName, String contentType, String url) {
     }
 }

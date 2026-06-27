@@ -24,8 +24,7 @@ import {
   type ProfileInput,
 } from "@/lib/api/applications";
 import { eligibleLimit as eligibleLimitRupees } from "@/lib/calc/loan-math";
-import { signOutBorrower } from "@/lib/mock/session";
-import type { ApplicantProfile, BorrowerStatus } from "@/lib/mock/borrower";
+import type { ApplicantProfile, BorrowerStatus } from "@/lib/domain/borrower";
 
 /** Browser-local pointer to the borrower's in-flight live application id. */
 const STORAGE_KEY = "navix.live.applicationId";
@@ -73,17 +72,58 @@ export async function fetchBorrowerSession(): Promise<BorrowerSession | null> {
 
 /**
  * Ensure a real `navix_borrower` cookie exists for this mobile and return the
- * session. If one is already set we keep it; otherwise we log in with the demo
- * OTP so the applicantId is stable and the BFF can thread identity to Spring.
+ * session. If one is already set we keep it; otherwise we log in with the
+ * supplied OTP (the backend validates it and issues the JWT) so the BFF can
+ * authenticate every later call to Spring.
  */
-export async function ensureBorrowerSession(mobile: string, name?: string): Promise<BorrowerSession | null> {
+/** Result of requesting an OTP: whether the SMS went out + (dev-echo only) the code. */
+export interface OtpRequestResult {
+  sent: boolean;
+  ttlSeconds: number;
+  devCode?: string;
+}
+
+/**
+ * Ask the backend to generate + SMS an OTP to {@code mobile} (UltronSMS gateway).
+ * Throws with the backend message on failure (e.g. invalid mobile).
+ */
+export async function requestBorrowerOtp(mobile: string): Promise<OtpRequestResult> {
+  const res = await fetch("/api/auth/borrower/otp/request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ mobile }),
+  });
+  const env = (await res.json().catch(() => null)) as
+    | (OtpRequestResult & { error?: { message?: string } | string })
+    | null;
+  if (!res.ok) {
+    const msg =
+      (env && typeof env.error === "object" ? env.error?.message : (env?.error as string)) ??
+      "Could not send the OTP — please try again.";
+    throw new Error(typeof msg === "string" ? msg : "Could not send the OTP.");
+  }
+  return { sent: env?.sent ?? false, ttlSeconds: env?.ttlSeconds ?? 0, devCode: env?.devCode };
+}
+
+/**
+ * Return the live borrower session, or establish one by verifying {@code otp}. When
+ * {@code otp} is omitted this only reuses an existing session (used by flows that run
+ * after the mobile-otp step has already logged the borrower in).
+ */
+export async function ensureBorrowerSession(
+  mobile: string,
+  otp?: string,
+  name?: string,
+): Promise<BorrowerSession | null> {
   const existing = await fetchBorrowerSession();
   if (existing) return existing;
+  if (!otp) return null;
   const res = await fetch("/api/auth/borrower/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify({ mobile, otp: "123456", name }),
+    body: JSON.stringify({ mobile, otp, name }),
   });
   if (!res.ok) return null;
   return (await res.json()) as BorrowerSession;
@@ -95,17 +135,15 @@ export function useBorrowerSession() {
 }
 
 /**
- * Fully sign the borrower out: clear the mock session, clear the real
- * `navix_borrower` httpOnly cookie (so re-visiting a borrower route no longer
- * resolves a session), and drop the in-flight application pointer. The caller
- * then routes to `/login`.
+ * Fully sign the borrower out: clear the real `navix_borrower` httpOnly cookie
+ * (so re-visiting a borrower route no longer resolves a session) and drop the
+ * in-flight application pointer. The caller then routes to `/login`.
  */
 export async function logoutBorrower(): Promise<void> {
-  signOutBorrower();
   try {
     await fetch("/api/auth/borrower/logout", { method: "POST", credentials: "same-origin" });
   } catch {
-    // best-effort — the local session is already cleared
+    // best-effort — the cookie is httpOnly; the logout route is the way to clear it
   }
   writeStoredAppId(null);
 }
@@ -317,6 +355,27 @@ async function resolveApplication(session: BorrowerSession): Promise<Application
 }
 
 /**
+ * P5 onboarding: create the DRAFT application early (right after mobile-OTP) so every
+ * later step can persist/verify against a real id. Resumes an existing DRAFT if one is
+ * already stored (reload-safe); a previously-submitted app is left untouched and a fresh
+ * DRAFT is started instead.
+ */
+export async function createOrResumeDraft(session: BorrowerSession): Promise<ApplicationView> {
+  const existing = readStoredAppId();
+  if (existing != null) {
+    try {
+      const app = await borrowerApi.get(existing);
+      if (app.status === "DRAFT") return app;
+    } catch {
+      // fall through and create a fresh draft
+    }
+  }
+  const created = await borrowerApi.create(session.applicantId);
+  writeStoredAppId(created.id);
+  return created;
+}
+
+/**
  * Submit the completed onboarding form to the real backend:
  * ensure session -> create DRAFT -> save KYC profile -> upload docs -> submit KYC.
  * Persists everything in Postgres and advances the application to KYC_PENDING.
@@ -326,7 +385,8 @@ export async function submitOnboarding(
   docs: Array<{ docType: string; fileName: string; contentType?: string; dataBase64: string }> = [],
 ): Promise<ApplicationView> {
   const mobile = applicant.mobile?.replace(/\s/g, "") || "";
-  const session = await ensureBorrowerSession(mobile, applicant.fullName);
+  // The mobile-otp step already established the session with a real OTP; reuse it.
+  const session = await ensureBorrowerSession(mobile, undefined, applicant.fullName);
   if (!session) {
     throw new ApplicationApiError("Could not establish a borrower session — please sign in again.", "NO_SESSION", 0);
   }

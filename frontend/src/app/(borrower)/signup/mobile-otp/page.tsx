@@ -7,47 +7,69 @@ import { Input } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { usePersistedField } from "@/hooks/use-persisted-field";
-import { useBorrowerJourney } from "@/lib/mock/borrower";
-import { ensureBorrowerSession } from "@/lib/api/live-journey";
+import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
+import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, type OtpRequestResult } from "@/lib/api/live-journey";
+import { ApplicationApiError } from "@/lib/api/applications";
 import { normalizeMobile } from "@/lib/utils";
-
-const DEMO_OTP = "123456";
 
 export default function SignupMobileOtpPage() {
   const router = useRouter();
-  const { applicant, updateApplicant, verifyMobile } = useBorrowerJourney();
-  const [mobile, setMobile] = usePersistedField(applicant.mobile);
+  const { mounted, draft, setAppId } = useOnboarding();
+  const [mobile, setMobile] = React.useState("");
   const [stage, setStage] = React.useState<"enter" | "verify">("enter");
   const [otp, setOtp] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
+  const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
+
+  React.useEffect(() => {
+    if (mounted && draft.mobile) setMobile(draft.mobile);
+  }, [mounted, draft.mobile]);
 
   const mobileOk = mobile.length === 10;
 
-  const sendOtp = () => {
+  const sendOtp = async () => {
     if (!mobileOk) {
       setError("Enter a valid 10-digit mobile number");
       return;
     }
+    setBusy(true);
     setError(undefined);
-    updateApplicant({ mobile });
-    setStage("verify");
+    try {
+      const info = await requestBorrowerOtp(mobile);
+      setSentInfo(info);
+      draft.patch({ mobile });
+      setStage("verify");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send the code.");
+    }
+    setBusy(false);
   };
 
   const confirm = async (code = otp) => {
-    if (code !== DEMO_OTP) {
-      setError("Incorrect code. For this demo, use 123456.");
+    if (code.length !== 6) {
+      setError("Enter the 6-digit code.");
       return;
     }
-    verifyMobile();
-    // Establish the real backend session (httpOnly navix_borrower cookie) now so
-    // later steps — and the final submit — can persist against a stable applicantId.
+    setBusy(true);
+    setError(undefined);
     try {
-      await ensureBorrowerSession(mobile.replace(/\s/g, ""), applicant.fullName);
-    } catch {
-      // Non-fatal: submitOnboarding will retry establishing the session at submit.
+      const clean = mobile.replace(/\s/g, "");
+      // The backend validates the OTP and issues the JWT session cookie.
+      const session = await ensureBorrowerSession(clean, code, draft.fullName || undefined);
+      if (!session) throw new ApplicationApiError("Incorrect code or session error — please try again.", "INVALID_OTP", 0);
+      // Create the DRAFT application up front so every later step has a real id to persist against.
+      const app = await createOrResumeDraft(session);
+      setAppId(app.id);
+      await saveProfileSlice(app.id, { mobile: clean });
+      draft.patch({ mobile: clean });
+      router.push("/signup/email");
+    } catch (e) {
+      setError(
+        e instanceof ApplicationApiError ? `${e.message} (${e.code})` : "Something went wrong — please try again.",
+      );
+      setBusy(false);
     }
-    router.push("/signup/employment");
   };
 
   return (
@@ -68,7 +90,7 @@ export default function SignupMobileOtpPage() {
             error={error}
             helperText="Indian mobile number linked to your bank and Aadhaar"
           />
-          <WizardActions backHref="/signup/pan" continueLabel="Send code" onContinue={sendOtp} disabled={!mobileOk} />
+          <WizardActions backHref="/login" continueLabel="Send code" onContinue={sendOtp} disabled={!mobileOk || busy} loading={busy} />
         </div>
       ) : (
         <div className="form-card">
@@ -79,15 +101,25 @@ export default function SignupMobileOtpPage() {
               Change number
             </button>
           </p>
-          <OtpInput value={otp} onChange={(v) => { setOtp(v); setError(undefined); }} onComplete={confirm} />
+          <OtpInput value={otp} onChange={(v) => { setOtp(v); setError(undefined); }} onComplete={confirm} disabled={busy} />
           {error ? (
             <p className="mt-3 text-sm text-error-600">{error}</p>
-          ) : (
+          ) : sentInfo?.devCode ? (
             <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
-              <CheckCircle2 size={15} className="text-success-600" /> Demo code is <strong className="text-ink">123456</strong>
+              <CheckCircle2 size={15} className="text-success-600" /> Dev code: <strong className="text-ink">{sentInfo.devCode}</strong>
+            </p>
+          ) : sentInfo?.sent ? (
+            <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
+              <CheckCircle2 size={15} className="text-success-600" /> Code sent.{" "}
+              <button type="button" onClick={() => sendOtp()} disabled={busy} className="font-semibold text-navy hover:underline">Resend</button>
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-muted">
+              We couldn&apos;t send an SMS.{" "}
+              <button type="button" onClick={() => sendOtp()} disabled={busy} className="font-semibold text-navy hover:underline">Try again</button>
             </p>
           )}
-          <WizardActions onBack={() => setStage("enter")} continueLabel="Verify" onContinue={() => confirm()} disabled={otp.length !== 6} />
+          <WizardActions onBack={() => setStage("enter")} continueLabel="Verify" onContinue={() => confirm()} loading={busy} disabled={otp.length !== 6 || busy} />
         </div>
       )}
       <Reassurance />

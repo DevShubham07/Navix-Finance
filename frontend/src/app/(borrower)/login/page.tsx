@@ -7,46 +7,63 @@ import { Smartphone, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { useBorrowerJourney } from "@/lib/mock/borrower";
-import { signInBorrower } from "@/lib/mock/session";
+import { useOnboardingStore } from "@/stores/application-store";
+import { requestBorrowerOtp, type OtpRequestResult } from "@/lib/api/live-journey";
 import { normalizeMobile } from "@/lib/utils";
-
-const DEMO_OTP = "123456";
 
 export default function LoginPage() {
   const router = useRouter();
-  const applicant = useBorrowerJourney((s) => s.applicant);
+  const draftName = useOnboardingStore((s) => s.fullName);
   const [stage, setStage] = React.useState<"enter" | "verify">("enter");
   const [mobile, setMobile] = React.useState("");
   const [otp, setOtp] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
+  const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
 
   const mobileOk = mobile.length === 10;
 
-  const send = () => {
+  const send = async () => {
     if (!mobileOk) { setError("Enter a valid 10-digit mobile number"); return; }
+    setBusy(true);
     setError(undefined);
-    setStage("verify");
+    try {
+      const info = await requestBorrowerOtp(mobile);
+      setSentInfo(info);
+      setStage("verify");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send the code.");
+    }
+    setBusy(false);
   };
 
   const verify = async (code = otp) => {
-    if (code !== DEMO_OTP) { setError("Incorrect code. For this demo, use 123456."); return; }
-    const name = applicant.fullName || "Aarav Sharma";
-    const mob = mobile || applicant.mobile || "98765 43210";
-    // Mock session (localStorage) keeps the existing demo flow working.
-    signInBorrower(name, mob);
+    if (code.length !== 6) { setError("Enter the 6-digit code."); return; }
+    setBusy(true);
+    setError(undefined);
     try {
-      // Live session: httpOnly navix_borrower cookie used by the BFF proxies.
-      await fetch("/api/auth/borrower/login", {
+      // Live session: the backend validates the OTP and sets the httpOnly navix_borrower cookie.
+      const res = await fetch("/api/auth/borrower/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mobile: mob, otp: code, name }),
+        body: JSON.stringify({ mobile, otp: code, name: draftName || undefined }),
       });
+      if (!res.ok) {
+        let msg = "Incorrect code — please try again.";
+        try {
+          const env = await res.json();
+          msg = env?.error?.message ?? env?.error ?? msg;
+        } catch { /* keep default */ }
+        setError(typeof msg === "string" ? msg : "Incorrect code — please try again.");
+        setBusy(false);
+        return;
+      }
+      // The dashboard reflects the live application state (start / in-progress / active).
+      router.push("/dashboard");
     } catch {
-      // Non-fatal: the dashboard resolves the live application on its own.
+      setError("Something went wrong — please try again.");
+      setBusy(false);
     }
-    // The dashboard reflects the live application state (start / in-progress / active).
-    router.push("/dashboard");
   };
 
   return (
@@ -72,7 +89,7 @@ export default function LoginPage() {
                 autoComplete="tel"
                 error={error}
               />
-              <button onClick={send} disabled={!mobileOk} className="btn btn-gold btn-block">Send code</button>
+              <button onClick={send} disabled={!mobileOk || busy} className="btn btn-gold btn-block">{busy ? "Sending…" : "Send code"}</button>
             </>
           ) : (
             <>
@@ -84,18 +101,28 @@ export default function LoginPage() {
               <OtpInput value={otp} onChange={(v) => { setOtp(v); setError(undefined); }} onComplete={verify} />
               {error ? (
                 <p className="mt-3 text-sm text-error-600">{error}</p>
-              ) : (
+              ) : sentInfo?.devCode ? (
                 <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
-                  <CheckCircle2 size={15} className="text-success-600" /> Demo code is <strong className="text-ink">123456</strong>
+                  <CheckCircle2 size={15} className="text-success-600" /> Dev code: <strong className="text-ink">{sentInfo.devCode}</strong>
+                </p>
+              ) : sentInfo?.sent ? (
+                <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
+                  <CheckCircle2 size={15} className="text-success-600" /> Code sent.{" "}
+                  <button type="button" onClick={() => send()} disabled={busy} className="font-semibold text-navy hover:underline">Resend</button>
+                </p>
+              ) : (
+                <p className="mt-3 text-sm text-muted">
+                  We couldn&apos;t send an SMS.{" "}
+                  <button type="button" onClick={() => send()} disabled={busy} className="font-semibold text-navy hover:underline">Try again</button>
                 </p>
               )}
-              <button onClick={() => verify()} disabled={otp.length !== 6} className="btn btn-gold btn-block mt-4">Sign in</button>
+              <button onClick={() => verify()} disabled={otp.length !== 6 || busy} className="btn btn-gold btn-block mt-4">Sign in</button>
             </>
           )}
         </div>
 
         <p className="mt-5 text-center text-sm text-muted">
-          New to NAVIX? <Link href="/signup/pan" className="font-semibold text-navy hover:underline">Apply for an advance</Link>
+          New to NAVIX? <Link href="/signup/mobile-otp" className="font-semibold text-navy hover:underline">Apply for an advance</Link>
         </p>
         <div className="mt-6"><Reassurance /></div>
       </div>

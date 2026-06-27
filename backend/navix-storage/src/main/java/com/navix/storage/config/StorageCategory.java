@@ -18,7 +18,9 @@ public enum StorageCategory {
     /** Manual repayment proof (UPI/bank-transfer screenshots). */
     REPAYMENT_PROOF("loan/repayment-proof"),
     /** Collections interaction proof. */
-    COLLECTIONS_PROOF("collections/proof");
+    COLLECTIONS_PROOF("collections/proof"),
+    /** Admin-managed company payment assets (UPI QR image, payee account-info PDF). */
+    PAYMENT_SETTINGS("payment/settings");
 
     private final String prefix;
 

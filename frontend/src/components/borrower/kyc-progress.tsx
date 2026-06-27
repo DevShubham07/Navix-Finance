@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Check, Clock, Loader2, X } from "lucide-react";
-import type { KycCheck, KycState } from "@/lib/mock/borrower";
+import type { KycCheck, KycState } from "@/lib/domain/borrower";
 import { cn } from "@/lib/utils";
 
 const META: Record<KycCheck, { label: string; cls: string; Icon: React.ElementType }> = {

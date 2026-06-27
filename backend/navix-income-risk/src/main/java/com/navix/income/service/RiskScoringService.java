@@ -57,15 +57,30 @@ public class RiskScoringService {
 
     /** Blend signals into a 0–100 score. Higher is safer. */
     int score(IncomeProfile profile, int bureauScore) {
+        long salaryPaise = profile.getMonthlySalary() != null ? profile.getMonthlySalary() : 0L;
+        return scoreFrom(salaryPaise, profile.getUanTenure(), bureauScore);
+    }
+
+    /**
+     * Stateless variant used by the {@code RiskPort} for the onboarding flow: blend
+     * declared salary (paise), employment tenure (months) and bureau score into a
+     * 0–100 score. Null tenure → 0.
+     */
+    public int scoreFrom(long monthlySalaryPaise, Integer employmentMonths, int bureauScore) {
         int bureauPoints = clamp((bureauScore - 300) * 50 / 600, 0, 50);
-        int tenureMonths = profile.getUanTenure() != null ? profile.getUanTenure() : 0;
+        int tenureMonths = employmentMonths != null ? employmentMonths : 0;
         int tenurePoints = clamp(tenureMonths * 25 / 24, 0, 25);
-        long salaryRupees = profile.getMonthlySalary() != null ? profile.getMonthlySalary() / 100 : 0;
+        long salaryRupees = monthlySalaryPaise / 100;
         int salaryPoints = (int) clamp(salaryRupees * 25 / 100_000, 0, 25);
         return clamp(bureauPoints + tenurePoints + salaryPoints, 0, 100);
     }
 
-    RiskCategory categoryForScore(int score) {
+    /** Default bureau score assumed by the {@code RiskPort} when no bureau pull exists. */
+    public int defaultBureauScore() {
+        return DEFAULT_BUREAU_SCORE;
+    }
+
+    public RiskCategory categoryForScore(int score) {
         if (score >= 75) {
             return RiskCategory.A;
         }

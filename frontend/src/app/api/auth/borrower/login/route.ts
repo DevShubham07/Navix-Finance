@@ -1,22 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { setBorrowerSession } from "@/lib/api/bff-session";
+import { config } from "@/lib/config";
 
 /**
- * Borrower login (demo OTP). POST `{ mobile, applicantId?, name? }`.
- * Accepts the demo OTP "123456" -> sets the httpOnly `navix_borrower` cookie.
- * SEPARATE from staff auth — never shares a session/cookie.
+ * Borrower login (mobile + OTP). SEPARATE from staff auth — never shares a
+ * session/cookie.
  *
- * `applicantId` maps to the backend applicant; if omitted we derive a stable
- * numeric id from the mobile so the demo still threads an identity through.
+ * POST `{ mobile, otp, name?, applicantId? }` -> authenticates against the
+ * backend `POST /api/auth/borrower/login` (the backend enforces the OTP and
+ * derives the applicant id). On success the JWT is stored in the httpOnly
+ * `navix_borrower` cookie (`{ token, id, applicantId, name, mobile }`); the
+ * response body omits the token.
  */
-const DEMO_OTP = "123456";
 
-function deriveApplicantId(mobile: string): number {
-  const digits = mobile.replace(/\D/g, "");
-  // Last 7 digits keep it within a sane positive integer range for the demo.
-  const tail = digits.slice(-7);
-  const n = Number.parseInt(tail || "1", 10);
-  return Number.isFinite(n) && n > 0 ? n : 1;
+interface BorrowerLoginData {
+  token: string;
+  id: string | number;
+  name: string;
+  role: string;
+  applicantId: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -34,28 +36,57 @@ export async function POST(req: NextRequest) {
     name?: unknown;
   };
 
-  if (typeof mobile !== "string" || mobile.replace(/\D/g, "").length < 10) {
+  const cleanMobile = typeof mobile === "string" ? mobile.replace(/\D/g, "") : "";
+  if (cleanMobile.length < 10) {
     return NextResponse.json({ error: "Enter a valid 10-digit mobile number." }, { status: 400 });
   }
 
-  // Demo OTP gate. If an OTP is supplied it must match; the dedicated login
-  // page verifies the OTP client-side, but we re-check here when present.
-  if (otp !== undefined && otp !== DEMO_OTP) {
-    return NextResponse.json({ error: "Incorrect code. For this demo, use 123456." }, { status: 401 });
+  let backendRes: Response;
+  try {
+    backendRes = await fetch(`${config.backendBaseUrl}/api/auth/borrower/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        mobile: cleanMobile,
+        otp: typeof otp === "string" ? otp : "",
+        applicantId: typeof applicantId === "number" ? applicantId : undefined,
+        name: typeof name === "string" && name.trim() ? name.trim() : undefined,
+      }),
+      cache: "no-store",
+    });
+  } catch {
+    return NextResponse.json({ error: "Could not reach the authentication service." }, { status: 502 });
   }
 
-  const resolvedApplicantId =
-    typeof applicantId === "number" && Number.isFinite(applicantId) && applicantId > 0
-      ? Math.trunc(applicantId)
-      : deriveApplicantId(mobile);
+  const text = await backendRes.text();
+  // On failure (e.g. INVALID_OTP), pass the backend envelope straight through.
+  if (!backendRes.ok) {
+    return new NextResponse(text, {
+      status: backendRes.status,
+      headers: { "Content-Type": backendRes.headers.get("Content-Type") ?? "application/json" },
+    });
+  }
+
+  let data: BorrowerLoginData;
+  try {
+    data = (JSON.parse(text) as { data: BorrowerLoginData }).data;
+  } catch {
+    return NextResponse.json({ error: "Unexpected authentication response." }, { status: 502 });
+  }
 
   const session = {
-    id: `borrower-${resolvedApplicantId}`,
-    applicantId: resolvedApplicantId,
-    name: typeof name === "string" && name.trim() ? name.trim() : "Aarav Sharma",
-    mobile,
+    token: data.token,
+    id: String(data.id),
+    applicantId: data.applicantId,
+    name: data.name,
+    mobile: cleanMobile,
   };
-
   await setBorrowerSession(session);
-  return NextResponse.json(session);
+  // Never return the token to the browser.
+  return NextResponse.json({
+    id: session.id,
+    applicantId: session.applicantId,
+    name: session.name,
+    mobile: session.mobile,
+  });
 }

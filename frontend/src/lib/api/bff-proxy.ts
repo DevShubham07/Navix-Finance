@@ -1,39 +1,31 @@
 /**
  * Shared proxy logic for the BFF catch-all route handlers. Forwards a request
- * to the Spring backend (`config.backendBaseUrl`), injecting the demo identity
- * headers derived from whichever session cookie applies (staff or borrower).
+ * to the Spring backend (`config.backendBaseUrl`), attaching the caller's JWT
+ * (held server-side in the session cookie) as an `Authorization: Bearer` header.
  *
- * The backend reads identity from:
- *   X-Demo-Actor-Id / X-Demo-Actor-Name / X-Demo-Actor-Role
+ * The backend authenticates every `/api/**` call (except `/api/auth/**`,
+ * `/api/storage/**`, docs) from this bearer.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
 import { config } from "@/lib/config";
 
-export interface ActorIdentity {
-  id: string | number;
-  name: string;
-  role: string;
-}
-
 /**
- * Proxy `req` to `${backendBaseUrl}${backendPath}${search}`, attaching the
- * actor headers. Returns the backend status + JSON verbatim so the typed
+ * Proxy `req` to `${backendBaseUrl}${backendPath}${search}`, forwarding the
+ * caller's bearer token. Returns the backend status + JSON verbatim so the typed
  * client can unwrap the ApiResponse envelope (including error.code).
  */
 export async function proxyToBackend(
   req: NextRequest,
   backendPath: string,
-  actor: ActorIdentity,
+  token: string,
 ): Promise<NextResponse> {
   const search = req.nextUrl.search; // includes leading "?" or ""
   const url = `${config.backendBaseUrl}${backendPath}${search}`;
 
   const headers: Record<string, string> = {
     Accept: "application/json",
-    "X-Demo-Actor-Id": String(actor.id),
-    "X-Demo-Actor-Name": actor.name,
-    "X-Demo-Actor-Role": actor.role,
+    Authorization: `Bearer ${token}`,
   };
 
   let body: string | undefined;

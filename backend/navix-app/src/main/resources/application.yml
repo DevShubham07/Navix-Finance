@@ -49,6 +49,32 @@ navix:
     # otherwise applies. Leave blank to use the bucket default.
     kms-key-id: ${NAVIX_S3_KMS_KEY_ID:}
 
+  # Borrower OTP delivery via the UltronSMS gateway. The doc demo creds are placeholders
+  # ("username or password is invalid") — set real NAVIX_SMS_USER/PASSWORD or NAVIX_SMS_API_KEY.
+  sms:
+    base-url: ${NAVIX_SMS_BASE_URL:https://ultronsms.com/api/mt/}
+    user: ${NAVIX_SMS_USER:demo}
+    password: ${NAVIX_SMS_PASSWORD:demo123}
+    api-key: ${NAVIX_SMS_API_KEY:}
+    sender-id: ${NAVIX_SMS_SENDER_ID:WEBSMS}
+    # Promo | Trans. OTP is transactional; the route/peid/dlt-template-id are India-DLT params.
+    channel: ${NAVIX_SMS_CHANNEL:Trans}
+    route: ${NAVIX_SMS_ROUTE:}
+    peid: ${NAVIX_SMS_PEID:}
+    dlt-template-id: ${NAVIX_SMS_DLT_TEMPLATE_ID:}
+    # DLT-registered OTP message ({otp} = code, {ttl} = minutes). MUST match a template
+    # registered for the sender or the gateway returns "Invalid template text".
+    otp-template: ${NAVIX_SMS_OTP_TEMPLATE:Your NAVIX verification code is {otp}. Valid for {ttl} minutes. Do not share it.}
+    enabled: ${NAVIX_SMS_ENABLED:true}
+    # DEV ONLY — returns the OTP in the request response when SMS can't reach a handset. MUST be false in prod.
+    dev-echo: ${NAVIX_SMS_DEV_ECHO:false}
+    otp-ttl-seconds: ${NAVIX_SMS_OTP_TTL:300}
+    otp-length: ${NAVIX_SMS_OTP_LENGTH:6}
+    # DEMO/TESTING — when true, a fixed mock-code always verifies and NO SMS is sent (no DLT needed).
+    # MUST be false in production. Set NAVIX_SMS_MOCK=true to use OTP 123456 for testing.
+    mock: ${NAVIX_SMS_MOCK:false}
+    mock-code: ${NAVIX_SMS_MOCK_CODE:123456}
+
 # API documentation
 springdoc:
   api-docs:

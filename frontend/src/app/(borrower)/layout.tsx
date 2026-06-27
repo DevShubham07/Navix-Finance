@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/app/app-header";
-import { DemoBar } from "@/components/borrower/demo-bar";
 import { BRAND } from "@/lib/brand";
 
 /** Borrower app shell: slim header + content + compact footer. */
@@ -9,7 +8,6 @@ export default function BorrowerLayout({ children }: { children: React.ReactNode
     <div className="flex min-h-screen flex-col bg-ivory">
       <AppHeader />
       <main className="flex-1">{children}</main>
-      <DemoBar />
       <footer className="border-t border-line bg-white">
         <div className="container flex flex-wrap items-center justify-between gap-3 py-5 text-sm text-muted">
           <span>© 2026 {BRAND.legalName}</span>

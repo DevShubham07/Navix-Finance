@@ -94,13 +94,13 @@ export function SiteHeader() {
               );
             })}
             <li className="nav-apply-mobile">
-              <Link className="btn btn-gold" href="/signup/pan" onClick={() => setNavOpen(false)}>
+              <Link className="btn btn-gold" href="/signup/mobile-otp" onClick={() => setNavOpen(false)}>
                 Apply Now
               </Link>
             </li>
           </ul>
           <div className="nav-cta">
-            <Link href="/signup/pan" className="btn btn-gold btn-sm btn-nav-apply">
+            <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm btn-nav-apply">
               Apply Now
             </Link>
             <Link href="/login" className="btn btn-outline btn-sm btn-nav-apply">

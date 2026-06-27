@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { LayoutDashboard, Wallet } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { AccountMenu } from "@/components/app/account-menu";
-import { useBorrowerSession } from "@/lib/mock/session";
+import { useBorrowerSession } from "@/lib/api/live-journey";
 
 const APP_NAV = [
   { label: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
@@ -15,7 +15,7 @@ const APP_NAV = [
 /** Slim borrower app header — brand + authed nav, or sign-in/apply when out. */
 export function AppHeader() {
   const pathname = usePathname();
-  const { session } = useBorrowerSession();
+  const { data: session } = useBorrowerSession();
 
   return (
     <header className="site-header">
@@ -38,7 +38,7 @@ export function AppHeader() {
                   </Link>
                 );
               })}
-              <Link href="/signup/pan" className="btn btn-gold btn-sm ml-2">
+              <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm ml-2">
                 New loan
               </Link>
               <div className="ml-1">
@@ -50,7 +50,7 @@ export function AppHeader() {
               <Link href="/login" className="btn btn-outline btn-sm">
                 Sign in
               </Link>
-              <Link href="/signup/pan" className="btn btn-gold btn-sm">
+              <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm">
                 Apply Now
               </Link>
             </div>

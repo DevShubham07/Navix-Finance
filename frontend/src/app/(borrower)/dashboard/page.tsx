@@ -7,7 +7,7 @@ import {
   Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
-import { useBorrowerJourney, type BorrowerStatus } from "@/lib/mock/borrower";
+import type { BorrowerStatus } from "@/lib/domain/borrower";
 import {
   useLiveApplication,
   useBorrowerSession,
@@ -16,15 +16,16 @@ import {
   isTerminalBad,
 } from "@/lib/api/live-journey";
 import { borrowerApi, rupeesToPaise } from "@/lib/api/applications";
+import { useOnboardingStore } from "@/stores/application-store";
 import { eligibleLimit, daysBetween } from "@/lib/calc/loan-math";
 import { formatINR0, formatDate } from "@/lib/utils";
 
 export default function DashboardPage() {
   const session = useBorrowerSession();
   const { appId, app, loan, isLoading } = useLiveApplication();
-  const j = useBorrowerJourney();
+  const draft = useOnboardingStore();
 
-  // Eligible limit (25% of salary) — from the persisted profile, else the wizard value.
+  // Eligible limit (25% of salary) — from the persisted backend profile, else the onboarding draft.
   const profileQuery = useQuery({
     queryKey: ["live-profile", appId],
     queryFn: () => borrowerApi.getProfile(appId as number),
@@ -32,7 +33,7 @@ export default function DashboardPage() {
   });
   const salaryPaise =
     profileQuery.data?.monthlySalaryPaise ??
-    (j.applicant.monthlySalary ? rupeesToPaise(j.applicant.monthlySalary) : 0);
+    (draft.monthlySalary ? rupeesToPaise(draft.monthlySalary) : 0);
   const limitRupees = eligibleLimit(Math.round(salaryPaise / 100));
 
   // "Repaid" is the sum of VERIFIED payments — not total − outstanding, since the (now penalty- and
@@ -49,7 +50,7 @@ export default function DashboardPage() {
 
   const stage = appStatusToStage(app);
   const firstName =
-    (session.data?.name || j.applicant.fullName || "there").split(" ")[0] || "there";
+    (session.data?.name || draft.fullName || "there").split(" ")[0] || "there";
   const active = app?.status === "ACTIVE" || app?.status === "OVERDUE";
   const closed = app?.status === "CLOSED";
   const declined = isTerminalBad(app);
@@ -104,7 +105,7 @@ export default function DashboardPage() {
               cta={{ href: continueHref, label: "Continue" }}
             />
           ) : (
-            <PreApprovedBanner limitRupees={limitRupees} href="/signup/pan" />
+            <PreApprovedBanner limitRupees={limitRupees} href="/signup/mobile-otp" />
           )}
         </div>
 

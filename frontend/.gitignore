@@ -19,3 +19,9 @@
 /coverage
 
 # next-env.d.ts is generated but intentionally committed (not ignored)
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

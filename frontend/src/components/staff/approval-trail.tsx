@@ -1,7 +1,7 @@
 import * as React from "react";
 import { UserCheck, ThumbsUp, ThumbsDown, Banknote, Send } from "lucide-react";
 import type { ApprovalTrailEntry } from "@/lib/domain";
-import { STAFF_ROLE_LABELS } from "@/lib/mock/session";
+import { STAFF_ROLE_LABELS } from "@/lib/auth/rbac";
 import { cn } from "@/lib/utils";
 
 /**

@@ -60,7 +60,7 @@ export default function HomePage() {
               by our RBI-registered NBFC lending partners.
             </p>
             <div className="hero-cta">
-              <Link href="/signup/pan" className="btn btn-gold">
+              <Link href="/signup/mobile-otp" className="btn btn-gold">
                 Apply for a Loan
               </Link>
               <Link href="#how-it-works" className="btn btn-outline">
@@ -248,7 +248,7 @@ export default function HomePage() {
             <p style={{ color: "#BFD0E6" }}>Start a paperless application — it only takes a few minutes.</p>
           </div>
           <div className="hero-cta" style={{ justifyContent: "center" }}>
-            <Link href="/signup/pan" className="btn btn-gold">
+            <Link href="/signup/mobile-otp" className="btn btn-gold">
               Apply for a Loan
             </Link>
             <Link href="#calculator" className="btn btn-outline-light">
