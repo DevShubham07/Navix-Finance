@@ -5,8 +5,36 @@ deferred set: **real auth (JWT/Spring Security)**, **AWS infrastructure**, **Fin
 bank integrations**, and the remaining **platform hardening**.
 
 > Companion docs: `CLAUDE.md` (onboarding / current state), `handoff.md` (execution plan + change
-> log), `dfd.md` (authoritative lifecycle + roles). This file owns the *not-yet-built* go-live set —
-> i.e. task **#14: "DEFERRED: real auth, AWS/Fintrix infra, full platform"**.
+> log, esp. **§15** = the migration record), `dfd.md` (authoritative lifecycle + roles). This file
+> owns the *not-yet-built* go-live set.
+
+> ## ⚑ Update 2026-06-27 — P0–P8 production migration SHIPPED (most of A/B/C is now 🟢)
+>
+> The `finalplan.md` migration + the OTP integration landed and were **live-verified against AWS RDS,
+> S3, the Fintrix sandbox, and the JWT auth chain** (see `handoff.md` §15). This supersedes large parts
+> of the roadmap below — read the per-section 🟢 notes:
+> - **A (auth):** 🟢 **Real JWT + Spring Security.** `JwtAuthFilter` replaced `DemoActorFilter`;
+>   `SecurityConfig` requires a bearer on `/api/**` (401 otherwise); `AuthController` issues staff
+>   (BCrypt vs `staff_user.password_hash`, V17) + borrower (OTP) JWTs; the BFF stores the JWT cookie +
+>   forwards `Authorization: Bearer` and no longer injects `X-Demo-Actor-*`. **Remaining:** emailed
+>   invites (A1), DLT-registered real SMS (A2 — code done, see below), middleware JWT-signature verify (A5).
+> - **A2 (borrower OTP):** 🟡→🟢 **code complete.** Real UltronSMS gateway client + `BorrowerOtpService`
+>   (random, single-use, TTL, attempt-cap). **Blocked on a DLT-registered template** (the gateway returns
+>   `Invalid template text` for unregistered content — a TRAI requirement only the account owner can
+>   fulfil). A **mock mode** (`NAVIX_SMS_MOCK=true` → fixed `123456`, no SMS) is wired for demo/testing.
+> - **B1 (secrets):** 🟢 datasource + storage + Fintrix/DigiLocker + SMS creds in **SSM SecureString**.
+> - **B2 (S3 docs):** 🟢 presigned PUT/GET + server-side ingest; `application_document.s3_object_key`
+>   (V15). _Remaining:_ drop the legacy `bytea` column.
+> - **C1 (Fintrix):** 🟢 real `pan_comprehensive`/email/address/penny-drop/liveness + Experian→CRIF.
+> - **C2 (DigiLocker):** 🟢 real init→poll→complete + Aadhaar XML/PDF→S3 ingest.
+> - **C3 (penny-drop):** 🟢 (the bank-account verify gate). _Remaining:_ the real NEFT/IMPS **payout**.
+> - **New: 9-step verified onboarding** (`/verify/*`), **admin payment block**, **mock layer removed**,
+>   and a **test suite** — `QA_CHECKLIST.md` (manual), ~136 backend tests + Playwright E2E (`frontend/e2e`),
+>   `.github/workflows/ci.yml`.
+>
+> **Still genuinely deferred:** A1 (emailed invites + ADMIN-gated create), A2-DLT (real SMS delivery),
+> A5 (verify JWT signature in middleware), C3-payout (real money movement), **D1 FK / D3 identity / D4
+> PII**, and **E (compliance)**. The detailed sections below are kept for those.
 
 > **Update 2026-06-25 — correctness & RBAC hardening pass** ([`PRODUCT_GAPS.md`](PRODUCT_GAPS.md)):
 > several go-live items were partially hardened ahead of their full builds — `DemoActorFilter` now
@@ -35,17 +63,19 @@ The demo was deliberately built so that going live is mostly **swapping adapters
 not rewriting business logic. Every seam below already exists; production replaces the
 implementation behind it and leaves the domain code untouched.
 
-| Seam | Demo today | Production swap | Domain code that must NOT change |
-|---|---|---|---|
-| **Identity** | `DemoActorFilter` reads `X-Demo-Actor-*` headers → `ActorContext`/`CurrentActor` | A JWT auth filter populates the **same** `CurrentActor` | `ApplicationFlowService.requireRole` / SoD, all `requireRole(...)` |
-| **BFF session** | `bff-session.ts` stores plain JSON in `navix_staff`/`navix_borrower` cookies | Signed, httpOnly session referencing a real token; `bff-proxy.ts` sends `Authorization: Bearer …` instead of `X-Demo-Actor-*` | the typed client `applications.ts`, all pages |
-| **Doc storage** | `ApplicationDocument.data` = `bytea`, base64 in/out | `navix-storage` presign + S3; column becomes `s3_key` | `ApplicantReviewService` method signatures, the review UI |
-| **Salary verify** | mock in `navix-verification` | real Fintrix HTTP client behind the same service interface | risk/eligibility callers |
-| **KYC** | mock in `navix-kyc` | real DigiLocker client behind the same interface | `KycService` callers |
-| **Config/secrets** | local env / `application-local.yml` | SSM Parameter Store / Secrets Manager (spring-cloud-aws already wired) | application code (reads via `@Value`/config) |
+The seam design held: each was swapped behind its interface with the domain code untouched. ✅ = swapped.
 
-**Principle:** keep services reading `CurrentActor` and calling interfaces. If a go-live change forces
-edits deep in domain logic, stop — the seam was bypassed somewhere.
+| Seam | Was (demo) | Now (production) | Domain code that did NOT change |
+|---|---|---|---|
+| **Identity** ✅ | `DemoActorFilter` reads `X-Demo-Actor-*` | `JwtAuthFilter` validates the bearer → **same** `CurrentActor` | `ApplicationFlowService.requireRole` / SoD |
+| **BFF session** ✅ | plain JSON cookies | JWT in the httpOnly cookie; `bff-proxy.ts` forwards `Authorization: Bearer` | the typed client `applications.ts`, all pages |
+| **Doc storage** ✅ | `ApplicationDocument.data` = `bytea` | `s3_object_key` + presign (port `DocumentStoragePort`) | `ApplicantReviewService` callers, the review UI |
+| **Salary/verify** ✅ | mock in `navix-verification` | real Fintrix clients behind `VerificationPort` | risk/eligibility callers |
+| **KYC** ✅ | mock | real DigiLocker client (init→poll→complete) | the verification service callers |
+| **Config/secrets** ✅ | local env | **SSM Parameter Store** (spring-cloud-aws import) | application code (reads via `@Value`/config) |
+
+**Principle held:** services kept reading `CurrentActor` and calling the ports; the swaps were
+localized to the adapters/filters — no domain rewrites.
 
 ---
 
@@ -53,10 +83,10 @@ edits deep in domain logic, stop — the seam was bypassed somewhere.
 
 | # | Workstream | Current | Priority |
 |---|---|---|---|
-| A | Real authentication & authorization (JWT + Spring Security) | 🟡 demo headers; invite/activate UI wired (demo-grade) | **P0 (gate for everything)** |
-| B | AWS infrastructure (secrets, S3, deploy, observability) | 🟡 spring-cloud-aws wired but offline | P1 |
-| C | External integrations un-mocked (Fintrix, DigiLocker, bank) | 🟡 mock clients | P1 |
-| D | Data model & platform hardening (FK, legacy tables, PII) | 🟡 (D2 collections-bridge + D5 repay done; FK/identity/PII remain) | P2 |
+| A | Real authentication & authorization (JWT + Spring Security) | 🟢 **JWT live**; remaining: emailed invites (A1), real SMS/DLT (A2), middleware JWT verify (A5) | P0 |
+| B | AWS infrastructure (secrets, S3, deploy, observability) | 🟢 **SSM secrets + S3 docs live**; remaining: deploy/CI infra (B3), observability (B4) | P1 |
+| C | External integrations un-mocked (Fintrix, DigiLocker, bank) | 🟢 **Fintrix + DigiLocker + penny-drop live**; remaining: real bank **payout** (C3) | P1 |
+| D | Data model & platform hardening (FK, legacy tables, PII) | 🟡 (D2 collections + D5 repay done; FK/identity/PII remain) | P2 |
 | E | Compliance & product alignment (NBFC/DLG, reporting, copy) | 🔴 | P2 (regulatory gate before launch) |
 
 ---
@@ -268,15 +298,18 @@ WARN at boot — harmless locally).
 
 ## Definition of done (go-live)
 
-- No `DemoActorFilter`, no `X-Demo-Actor-*` trust, no role-pick login in prod.
-- Every `/api/**` (except auth/health) requires a valid JWT; role + SoD enforced and test-proven.
-- Secrets only in SSM/Secrets Manager;documents only in S3 (no `bytea`, no base64 over the BFF).
-- Fintrix + DigiLocker + bank payout are live with graceful failure paths.
-- FK constraints in place; legacy UUID tables resolved; PII encrypted/masked; audit immutable.
-- Product copy + agreements match the salary-linked single-repayment product and the chosen
-  lending/regulatory model.
+- ✅ No `DemoActorFilter`, no `X-Demo-Actor-*` trust — JWT auth. (Staff still uses a demo role-pick UI
+  that authenticates for real with the seeded default password; swap to SSO/real passwords for prod.)
+- ✅ Every `/api/**` (except auth/storage/health/docs) requires a valid JWT; role + SoD enforced and
+  test-proven (incl. `SecurityMatrixIT`).
+- ✅ Secrets only in SSM. 🟡 Documents go to S3 via presign — **drop the legacy `bytea` column** to finish.
+- ✅ Fintrix + DigiLocker live with graceful failure. 🟡 **bank payout** (real NEFT/IMPS) still mocked.
+- 🟡 **OTP:** real UltronSMS client done; **register a DLT template** for delivery (mock mode meanwhile).
+- 🔴 FK constraints; legacy UUID `disbursement_request` resolved; PII encrypted/masked; audit immutable.
+- 🔴 Product copy + agreements match the salary-linked single-repayment product + the chosen
+  lending/regulatory model. Rotate the seeded default staff password + set a strong `AUTH_SECRET`.
 
 ---
 
-_Last updated 2026-06-27. As each item ships, mark it 🟢 and migrate the detail into `handoff.md`’s
-change log + `CLAUDE.md`._
+_Last updated 2026-06-27 (post P0–P8 migration + OTP + tests). As each remaining item ships, mark it
+🟢 and migrate the detail into `handoff.md`'s change log + `CLAUDE.md`._
