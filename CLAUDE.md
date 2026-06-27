@@ -675,6 +675,20 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
   `base64(CLIENT_ID:CLIENT_SECRET)`. See `NAVIX_Fintrix_Integration_Flow.md`.
 - **DigiLocker** (KYC) — headers `X-Client-ID` / `X-Client-Secret`. See `Digilocker_API_Guide.md`.
 
+**DigiLocker live-flow gotchas (verified 2026-06-28, `signup/digilocker/page.tsx`):**
+- **`digilocker_initialize` caches the consent session keyed by `redirect_url`.** The provider
+  (Fintrix → Surepass/`notbot.in`) re-serves the **same** (eventually-expired) token for a repeat
+  `redirect_url`, so a fixed callback gets stuck on a stale token → the SDK shows *"Access Denied —
+  please try again with a valid token"* (its `kycapi.notbot.in/api/v1/digilocker/options` call → 401
+  `token_expired`). This is **not** a domain/origin/CORS issue (the token encodes only
+  `{client_id,gateway,type}`, no redirect binding). **Fix:** make `redirect_url` **unique per attempt**
+  (we append `?app=<id>&sid=<nonce>`); the callback page resolves the app from `localStorage`, so the
+  extra params are ignored. A never-before-used `redirect_url` always mints a fresh, valid token.
+- **Status polling advances on `derived.status === "client_initiated"`**, not on `completed`. Once the
+  user is handed to the consent tab the status sits at `client_initiated` (`completed:false`), so the
+  wizard would poll forever; we stop and move to the next step (the separate
+  `/kyc/digilocker/callback` tab finalises the Aadhaar fetch). A failed status call surfaces a retry.
+
 ---
 
 ## 15. Reference
