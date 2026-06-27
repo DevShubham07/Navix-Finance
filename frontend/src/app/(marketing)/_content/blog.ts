@@ -1,0 +1,21 @@
+// AUTO-GENERATED from the NAVIX design export — do not hand-edit.
+// Source section id: #blog. Regenerate via transform_html.py.
+/* eslint-disable */
+export const html = `<section class="page active" id="blog">
+  <div class="page-hero"><div class="wrap">
+    <div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Resources</div>
+    <h1>Money, made clearer</h1>
+    <p>Practical guides on borrowing well, managing repayments and staying safe from fraud — written in plain language.</p>
+  </div></div>
+
+  <div class="sec"><div class="wrap"><div class="blog-grid">
+    <article class="bcard reveal"><div class="bimg"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path><path d="M9 13h6M9 17h4"></path></svg></div><div class="bbody"><span class="bcat">Borrowing 101</span><h3>How to read a Key Fact Statement (KFS)</h3><p>The one document that tells you the true cost of any loan — and what to check before you sign.</p><div class="bmeta"><span>6 min read</span><span>Jun 2026</span></div></div></article>
+    <article class="bcard reveal d1"><div class="bimg"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3z"></path><path d="M9.5 12l1.8 1.8 3.5-3.6"></path></svg></div><div class="bbody"><span class="bcat">Stay safe</span><h3>5 signs of a loan scam (and how to avoid them)</h3><p>Anyone asking for an advance fee is a red flag. Here's how to spot fraud and protect yourself.</p><div class="bmeta"><span>5 min read</span><span>Jun 2026</span></div></div></article>
+    <article class="bcard reveal d2"><div class="bimg"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"></path><path d="M15 7h6v6"></path></svg></div><div class="bbody"><span class="bcat">Credit</span><h3>What actually affects your credit score</h3><p>The myths, the facts, and small habits that build a healthy score over time.</p><div class="bmeta"><span>7 min read</span><span>May 2026</span></div></div></article>
+    <article class="bcard reveal"><div class="bimg"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"></path><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3z"></path></svg></div><div class="bbody"><span class="bcat">Money tips</span><h3>APR vs flat rate: what's the difference?</h3><p>Why two loans with the same "rate" can cost very different amounts — explained simply.</p><div class="bmeta"><span>4 min read</span><span>May 2026</span></div></div></article>
+    <article class="bcard reveal d1"><div class="bimg"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M16 8l-2 6-6 2 2-6 6-2z"></path></svg></div><div class="bbody"><span class="bcat">Guides</span><h3>When a short-term loan makes sense (and when it doesn't)</h3><p>A calm, honest framework for deciding whether to borrow for a near-term need.</p><div class="bmeta"><span>8 min read</span><span>Apr 2026</span></div></div></article>
+    <article class="bcard reveal d2"><div class="bimg"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="3"></rect><path d="M11 18h2"></path></svg></div><div class="bbody"><span class="bcat">Product</span><h3>Repaying on NAVIX: UPI, net-banking &amp; auto-debit</h3><p>A quick walkthrough of every way to repay — and how to clear early to save.</p><div class="bmeta"><span>3 min read</span><span>Apr 2026</span></div></div></article>
+  </div>
+  <div style="text-align:center;margin-top:48px" class="reveal"><a href="/contact" class="btn btn-ghost" data-link="">Suggest a topic</a></div>
+  </div></div>
+</section>`;
