@@ -11,13 +11,15 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, X, Loader2, RefreshCw, ChevronDown, FileText, Download, ExternalLink, User } from "lucide-react";
+import { Check, X, Loader2, RefreshCw, ChevronDown, FileText, Download, ExternalLink, User, Banknote, ArrowRight } from "lucide-react";
 import { Input, Select, InfoTooltip } from "@/components/ui";
 import { hasPermission, type StaffRole, type Permission } from "@/lib/auth/rbac";
 import {
   staffApi,
   adminApi,
+  customersApi,
   paiseToINR,
   statusLabel,
   openDocument,
@@ -26,8 +28,12 @@ import {
   type ApplicationView,
   type EventView,
   type DocumentView,
+  type LoanView,
 } from "@/lib/api/applications";
-import { formatDateTime } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
+
+/** Loan statuses that mean the loan is still live (vs. a past/closed loan). */
+const OPEN_LOAN_STATUSES = new Set(["ACTIVE", "OVERDUE", "IN_COLLECTIONS", "DISBURSED", "DEFAULTED"]);
 
 // ---------------------------------------------------------------------------
 // Live staff session (navix_staff cookie)
@@ -222,8 +228,9 @@ function AppRow({
         <div className="flex items-center gap-2">{actions(app)}</div>
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap gap-2">
         <ApplicantReview applicationId={app.id} />
+        <LoanHistory applicantId={app.applicantId} />
       </div>
 
       <button
@@ -452,6 +459,83 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * The applicant's loan history (current + past), loaded on demand so a queue of N rows doesn't fan
+ * out N borrower-history fetches. Open to every staff role (the customers roll-up is). Keyed on the
+ * applicant id so a staffer inspecting an application sees the borrower's amount/due-date context.
+ */
+function LoanHistory({ applicantId }: { applicantId: number }) {
+  const [load, setLoad] = React.useState(false);
+  const q = useQuery({
+    queryKey: ["customer-loans", applicantId],
+    queryFn: () => customersApi.get(applicantId),
+    enabled: load,
+    retry: false,
+  });
+
+  if (!load) {
+    return (
+      <button onClick={() => setLoad(true)} className="btn btn-sm btn-outline">
+        <Banknote size={14} /> Show loan history
+      </button>
+    );
+  }
+
+  const c = q.data;
+  const current = c?.loans.find((l) => OPEN_LOAN_STATUSES.has(l.status)) ?? null;
+  const past = c ? c.loans.filter((l) => l !== current) : [];
+
+  return (
+    <div className="w-full rounded border border-line bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-center gap-2 font-serif text-base font-semibold text-navy">
+        <Banknote size={16} /> Loan history
+        {q.isFetching && <Loader2 size={14} className="animate-spin text-muted" />}
+        <Link href={`/staff/customers/${applicantId}`} className="ml-auto inline-flex items-center gap-1 text-xs font-normal text-navy hover:underline">
+          Full profile <ArrowRight size={12} />
+        </Link>
+      </div>
+
+      {q.isLoading ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : q.error ? (
+        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+      ) : !c || c.loans.length === 0 ? (
+        <p className="text-sm text-muted">No loans yet for this applicant.</p>
+      ) : (
+        <div className="space-y-3 text-sm">
+          {current && (
+            <div className="rounded border border-navy/20 bg-navy-tint/40 p-3">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-navy">Current loan</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-ink">Loan #{current.id} · {paiseToINR(current.principalPaise)}</span>
+                <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">{current.status}</span>
+              </div>
+              <div className="mt-0.5 text-xs text-muted">
+                due {current.dueDate ? formatDate(current.dueDate) : "—"} · outstanding {paiseToINR(current.outstandingPaise)}
+              </div>
+            </div>
+          )}
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Past loans ({past.length})</div>
+            {past.length === 0 ? (
+              <p className="text-xs text-muted">None.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {past.map((l: LoanView) => (
+                  <li key={l.id} className="flex items-center justify-between gap-2 py-1.5">
+                    <span className="text-ink">Loan #{l.id} · {paiseToINR(l.principalPaise)}</span>
+                    <span className="text-xs text-muted">due {l.dueDate ? formatDate(l.dueDate) : "—"} · {l.status}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------

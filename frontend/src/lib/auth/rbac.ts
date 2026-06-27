@@ -36,18 +36,22 @@ export type Permission =
   | "loan:activate"
   | "collections:manage"
   | "collections:interact"
-  | "staff:manage";
+  | "staff:manage"
+  // Customers pane: every staff role may view the borrower-centric roll-up (product decision —
+  // all staff see customer details incl. PII); only ADMIN may edit it / take lifecycle actions.
+  | "customer:view"
+  | "customer:manage";
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
-  KYC_APPROVER: ["kyc:approve"],
-  CREDIT_EXECUTIVE: ["loan:review"],
-  CREDIT_HEAD: ["loan:approve"],
-  DISBURSEMENT_HEAD: ["loan:disburse"],
-  ACCOUNTANT: ["loan:activate"],
-  COLLECTION_HEAD: ["collections:manage", "collections:interact"],
-  COLLECTION_EXECUTIVE: ["collections:interact"],
-  DEVELOPER: [],
+  KYC_APPROVER: ["kyc:approve", "customer:view"],
+  CREDIT_EXECUTIVE: ["loan:review", "customer:view"],
+  CREDIT_HEAD: ["loan:approve", "customer:view"],
+  DISBURSEMENT_HEAD: ["loan:disburse", "customer:view"],
+  ACCOUNTANT: ["loan:activate", "customer:view"],
+  COLLECTION_HEAD: ["collections:manage", "collections:interact", "customer:view"],
+  COLLECTION_EXECUTIVE: ["collections:interact", "customer:view"],
+  DEVELOPER: ["customer:view"],
   ADMIN: [
     "kyc:approve",
     "loan:review",
@@ -57,6 +61,8 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "collections:manage",
     "collections:interact",
     "staff:manage",
+    "customer:view",
+    "customer:manage",
   ],
 };
 

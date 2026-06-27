@@ -8,6 +8,7 @@ import { Loader2, RefreshCw, ArrowRight, CalendarClock, Banknote } from "lucide-
 import { Input, InfoTooltip } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage } from "@/components/staff/live-pipeline";
+import { ExportMenu } from "@/components/staff/export-menu";
 import { collectionsApi, paiseToINR, type CaseView, type DpdBucket } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
@@ -39,6 +40,22 @@ export default function CollectionsBucketsPage() {
   return (
     <div>
       <PageHeader title="Collections · DPD buckets" subtitle="Open collection cases grouped by days-past-due.">
+        <ExportMenu
+          title="Collections · DPD buckets"
+          fileBase="navix-dpd-buckets"
+          columns={[
+            { header: "Bucket", value: (c: CaseView) => c.bucket },
+            { header: "DPD", value: (c) => c.dpd },
+            { header: "Loan", value: (c) => c.loanId },
+            { header: "Borrower", value: (c) => c.borrowerName ?? "" },
+            { header: "Status", value: (c) => c.loanStatus ?? "" },
+            { header: "Outstanding (₹)", value: (c) => (c.outstandingPaise != null ? (c.outstandingPaise / 100).toFixed(2) : "") },
+            { header: "Due date", value: (c) => c.dueDate ?? "" },
+            { header: "Officer", value: (c) => c.assignedOfficerName ?? "" },
+            { header: "Opened", value: (c) => (c.createdAt ? formatDateTime(c.createdAt) : "") },
+          ]}
+          rows={q.data ?? []}
+        />
         <button
           onClick={() => q.refetch()}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"

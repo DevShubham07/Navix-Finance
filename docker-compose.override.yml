@@ -1,0 +1,6 @@
+# Local-only override (untracked). Remaps Postgres to host port 5433 to avoid
+# colliding with a native PostgreSQL already listening on 5432.
+services:
+  db:
+    ports:
+      - "5433:5432"

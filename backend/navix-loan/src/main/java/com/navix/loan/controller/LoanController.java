@@ -67,6 +67,7 @@ public class LoanController {
             @PathVariable Long loanId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
         long out = repaymentService.outstandingAsOf(loanId, asOf);
-        return ApiResponse.ok(new OutstandingView(loanId, asOf != null ? asOf : LocalDate.now(), out));
+        Long settled = repaymentService.approvedSettlementAmount(loanId).orElse(null);
+        return ApiResponse.ok(new OutstandingView(loanId, asOf != null ? asOf : LocalDate.now(), out, settled));
     }
 }

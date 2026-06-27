@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, ShieldCheck, ClipboardList, Banknote, Receipt, PhoneCall, RefreshCw, Loader2 } from "lucide-react";
+import { ArrowRight, ShieldCheck, ClipboardList, Banknote, Receipt, PhoneCall, RefreshCw, Loader2, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { InfoTooltip } from "@/components/ui";
 import { useStaffSession, STAFF_ROLE_LABELS } from "@/lib/mock/session";
@@ -14,8 +14,10 @@ import {
   statusLabel,
   type ApplicationStatus,
   type ApplicationView,
+  type TransactionView,
 } from "@/lib/api/applications";
 import { useMounted } from "@/hooks/use-mounted";
+import { formatDate } from "@/lib/utils";
 
 const REFRESH_MS = 10_000;
 
@@ -134,6 +136,15 @@ export default function StaffDashboardPage() {
     refetchInterval: REFRESH_MS,
   });
 
+  // Admin oversight: a company-wide transactions summary on the home page.
+  const isAdmin = role === "ADMIN";
+  const txns = useQuery({
+    queryKey: ["admin-dashboard-txns"],
+    queryFn: () => staffApi.transactions(),
+    enabled: mounted && isAdmin,
+    refetchInterval: REFRESH_MS,
+  });
+
   if (!mounted || !session) {
     return <div className="h-64 rounded border border-line bg-white" />;
   }
@@ -176,6 +187,8 @@ export default function StaffDashboardPage() {
         <StatCard label="In collections" value={n("OVERDUE")} accent="error"
           info="Loans past their due date. Collections officers work these by DPD bucket; settlements need Collection Head approval." />
       </div>
+
+      {isAdmin && <AdminTransactions rows={txns.data ?? []} loading={txns.isLoading} />}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -244,6 +257,64 @@ export default function StaffDashboardPage() {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+/** Admin-only: company-wide money-movement summary + the latest transactions, with a link to the ledger. */
+function AdminTransactions({ rows, loading }: { rows: TransactionView[]; loading: boolean }) {
+  const totalIn = rows.filter((r) => r.direction === "INCOMING").reduce((s, r) => s + r.amountPaise, 0);
+  const totalOut = rows.filter((r) => r.direction === "OUTGOING").reduce((s, r) => s + r.amountPaise, 0);
+  const latest = rows.slice(0, 5);
+
+  return (
+    <div className="mb-8 rounded border border-line bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Receipt size={16} className="text-navy" />
+          <h2 className="mb-0 text-lg">Transactions</h2>
+          <InfoTooltip content="Company-wide money movement — disbursals out and repayments in. Admin oversight; full searchable ledger under Administration → Transactions." />
+        </div>
+        <Link href="/staff/accounting/transactions" className="inline-flex items-center gap-1 text-sm font-semibold text-navy hover:underline">
+          View all <ArrowRight size={14} />
+        </Link>
+      </div>
+
+      <div className="mb-4 grid grid-cols-2 gap-4 sm:max-w-md">
+        <div className="rounded border border-success-100 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowDownLeft size={14} className="text-success-600" /> Incoming</div>
+          <div className="mt-1 font-serif text-xl font-bold text-navy">{paiseToINR(totalIn)}</div>
+        </div>
+        <div className="rounded border border-line bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowUpRight size={14} className="text-navy" /> Outgoing</div>
+          <div className="mt-1 font-serif text-xl font-bold text-navy">{paiseToINR(totalOut)}</div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="h-20 animate-pulse rounded bg-grey-100" />
+      ) : latest.length === 0 ? (
+        <p className="text-sm text-muted">No transactions yet.</p>
+      ) : (
+        <ul className="divide-y divide-line text-sm">
+          {latest.map((t) => {
+            const incoming = t.direction === "INCOMING";
+            return (
+              <li key={t.id} className="flex items-center justify-between gap-3 py-2">
+                <span className="min-w-0">
+                  <span className="text-ink">{t.borrowerName ?? "—"}</span>
+                  <span className="block text-xs text-muted">
+                    {t.type === "REPAYMENT" ? "Repayment" : "Disbursal"}{t.loanId != null ? ` · loan #${t.loanId}` : ""}{t.date ? ` · ${formatDate(t.date)}` : ""}
+                  </span>
+                </span>
+                <span className={`flex-shrink-0 font-semibold ${incoming ? "text-success-700" : "text-ink"}`}>
+                  {incoming ? "+" : "−"}{paiseToINR(t.amountPaise)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

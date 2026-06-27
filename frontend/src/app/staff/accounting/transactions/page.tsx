@@ -7,6 +7,7 @@ import { Loader2, RefreshCw, Search, ArrowDownLeft, ArrowUpRight, ArrowLeft } fr
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe, errMessage } from "@/components/staff/live-pipeline";
+import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
 
@@ -45,6 +46,23 @@ export default function TransactionsPage() {
   return (
     <div>
       <PageHeader title="Transactions ledger" subtitle="All money movement — disbursals out and repayments in, company-wide.">
+        <ExportMenu
+          title="Transactions ledger"
+          subtitle={tab === "ALL" ? "All movements" : tab === "INCOMING" ? "Incoming" : "Outgoing"}
+          fileBase="navix-transactions"
+          columns={[
+            { header: "Date", value: (t: TransactionView) => (t.date ? formatDate(t.date) : "") },
+            { header: "Borrower", value: (t) => t.borrowerName ?? "" },
+            { header: "PAN", value: (t) => t.panMasked ?? "" },
+            { header: "Type", value: (t) => (t.type === "REPAYMENT" ? "Repayment" : "Disbursal") },
+            { header: "Direction", value: (t) => t.direction },
+            { header: "Amount (₹)", value: (t) => (t.amountPaise / 100).toFixed(2) },
+            { header: "Reference", value: (t) => t.txnRef ?? "" },
+            { header: "Status", value: (t) => t.status ?? "" },
+            { header: "Loan", value: (t) => (t.loanId != null ? `#${t.loanId}` : "") },
+          ]}
+          rows={rows}
+        />
         {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
       </PageHeader>
 

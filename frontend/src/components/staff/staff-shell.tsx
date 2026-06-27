@@ -14,6 +14,7 @@ import {
   PhoneCall,
   HandCoins,
   Users,
+  Contact,
   Mail,
   Ban,
   LogOut,
@@ -35,6 +36,7 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard },
       { label: "Live applications", href: "/staff/applications", Icon: Workflow },
+      { label: "Customers", href: "/staff/customers", Icon: Contact, perm: "customer:view" },
       { label: "KYC Approvals", href: "/staff/kyc-approvals", Icon: ShieldCheck, perm: "kyc:approve" },
       { label: "Reborrow Reviews", href: "/staff/kyc-review", Icon: UserCheck, perm: "kyc:approve" },
       { label: "Credit Queue", href: "/staff/credit/queue", Icon: ClipboardList, perm: "loan:review" },
@@ -55,6 +57,7 @@ const NAV: NavGroup[] = [
       { label: "Staff", href: "/staff/admin/staff", Icon: Users, perm: "staff:manage" },
       { label: "Invites", href: "/staff/admin/invites", Icon: Mail, perm: "staff:manage" },
       { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
+      { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: "loan:activate" },
     ],
   },
 ];

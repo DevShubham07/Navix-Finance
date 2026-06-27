@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Check } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
+import { ExportMenu } from "@/components/staff/export-menu";
 import { collectionsApi, paiseToINR, type SettlementView } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
@@ -25,6 +26,21 @@ export default function CollectionsSettlementsPage() {
   return (
     <div>
       <PageHeader title="Collections · settlements" subtitle="Approve proposed settlements (separation of duties enforced).">
+        <ExportMenu
+          title="Collections settlements"
+          fileBase="navix-settlements"
+          columns={[
+            { header: "Settlement", value: (s: SettlementView) => s.id },
+            { header: "Case", value: (s) => s.collectionCaseId },
+            { header: "Amount (₹)", value: (s) => (s.settlementAmountPaise != null ? (s.settlementAmountPaise / 100).toFixed(2) : "") },
+            { header: "Status", value: (s) => (s.approvedBy ? "Approved" : "Pending") },
+            { header: "Proposed by", value: (s) => s.proposedByName ?? (s.proposedBy != null ? `#${s.proposedBy}` : "") },
+            { header: "Approved by", value: (s) => s.approvedByName ?? (s.approvedBy != null ? `#${s.approvedBy}` : "") },
+            { header: "Created", value: (s) => (s.createdAt ? formatDateTime(s.createdAt) : "") },
+            { header: "Approved", value: (s) => (s.approvedAt ? formatDateTime(s.approvedAt) : "") },
+          ]}
+          rows={q.data ?? []}
+        />
         <button
           onClick={() => q.refetch()}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"

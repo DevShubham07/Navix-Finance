@@ -215,8 +215,13 @@ WARN at boot — harmless locally).
 - **D2. Collections on the real loans** — 🟢 **DONE.** `collection_case` / `settlement` now key off the
   real **bigint** loan id (Flyway V11); opening a case validates the loan via the `LoanDirectory` port
   and flips it `ACTIVE/OVERDUE → IN_COLLECTIONS`; officers + settlement proposer/approver are real staff
-  (names, not UUIDs); cases are driven off real loans via `GET /api/collections/loans`. _Remaining:_ the
-  legacy `disbursement_request` UUID chain is still **superseded by the aggregate** — drop it (D1/below).
+  (names, not UUIDs); cases are driven off real loans via `GET /api/collections/loans`. An **approved**
+  partial settlement now flows through to the borrower: it caps `RepaymentService.outstandingAsOf` at the
+  agreed full-and-final (via a new `SettlementDirectory` port — the reverse seam of `LoanDirectory`), so
+  `/repay` shows "Settlement — full & final" and paying it closes the loan + application. _Remaining:_ the
+  legacy `disbursement_request` UUID chain is still **superseded by the aggregate** — drop it (D1/below);
+  a settlement could carry its own status enum + a distinct closed-as-settled loan state (today it closes
+  as `CLOSED`, with the audit trail recording the concession).
 - **D3. Unify applicant identity** — the live `applicant_profile` (in `navix-loan`) is a
   self-contained KYC snapshot; unify it with `navix-onboarding.Borrower` + `navix-kyc.KycCase`
   (one borrower identity, linked to applications) so KYC isn't duplicated.

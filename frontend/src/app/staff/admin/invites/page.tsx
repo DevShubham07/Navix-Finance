@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, Mail, Copy, Check } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type StaffRoleName, type InviteResponse } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
@@ -38,6 +39,17 @@ export default function AdminInvitesPage() {
   return (
     <div>
       <PageHeader title="Staff invites" subtitle="Issue a one-time invite token; the invitee activates on /staff/activate.">
+        <ExportMenu
+          title="Staff invites"
+          fileBase="navix-invites"
+          columns={[
+            { header: "Email", value: (i: InviteResponse) => i.email },
+            { header: "Role", value: (i) => i.role },
+            { header: "Token", value: (i) => i.token },
+            { header: "Expires", value: (i) => (i.expiresAt ? formatDateTime(i.expiresAt) : "") },
+          ]}
+          rows={q.data ?? []}
+        />
         <button
           onClick={() => q.refetch()}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"

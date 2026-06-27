@@ -58,3 +58,5 @@ yarn-error.log*
 
 # ---- QA report screenshots (excluded from VCS) ----
 docs/product-gaps-shots/
+# Added by code-review-graph
+.code-review-graph/
