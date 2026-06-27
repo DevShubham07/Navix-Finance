@@ -13,8 +13,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * A staff member who logs into the NAVIX back office.
- * TODO: wire authentication credentials / external IdP subject reference.
+ * A staff member who logs into the NAVIX back office. Authentication is a BCrypt
+ * {@code passwordHash} (set at invite-accept; null for not-yet-credentialed rows).
  */
 @Entity
 @Table(name = "staff_user")
@@ -36,4 +36,8 @@ public class StaffUser extends BaseAuditEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private StaffStatus status;
+
+    /** BCrypt hash; null until the staffer sets a password (invite-accept). */
+    @Column(name = "password_hash")
+    private String passwordHash;
 }
