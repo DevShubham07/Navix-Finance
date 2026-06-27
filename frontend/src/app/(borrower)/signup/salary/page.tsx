@@ -9,7 +9,6 @@ import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
 import { verificationApi, rupeesToPaise, ApplicationApiError, type StepResult } from "@/lib/api/applications";
-import { useBorrowerJourney } from "@/lib/mock/borrower";
 import { eligibleLimit } from "@/lib/calc/loan-math";
 import { formatINR0 } from "@/lib/utils";
 
@@ -18,7 +17,6 @@ const DAY_OPTIONS = Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label:
 export default function SignupSalaryPage() {
   const router = useRouter();
   const { mounted, draft, appId } = useOnboarding();
-  const updateApplicant = useBorrowerJourney((s) => s.updateApplicant);
   const [salary, setSalary] = React.useState(0);
   const [salaryDay, setSalaryDay] = React.useState(1);
   const [file, setFile] = React.useState<File | null>(null);
@@ -47,9 +45,9 @@ export default function SignupSalaryPage() {
     if (appId == null || file == null) return;
     setBusy(true);
     setError(undefined);
+    // Persist the salary + salary-day to the onboarding draft so the post-approval
+    // choose-amount page can re-source them.
     draft.patch({ monthlySalary: salary, salaryDay });
-    // Keep the mock journey in step so the post-approval choose-amount page sees the salary day.
-    updateApplicant({ monthlySalary: salary, salaryDay });
     const monthlySalaryPaise = rupeesToPaise(salary);
     try {
       await saveProfileSlice(appId, { monthlySalaryPaise });

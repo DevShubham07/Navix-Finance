@@ -158,6 +158,16 @@ export interface DocumentView {
   contentType: string | null;
   sizeBytes: number | null;
   uploadedAt: string;
+  /** True when the bytes live in S3 (fetch a presigned URL); false for legacy inline base64. */
+  s3?: boolean;
+}
+
+/** A presigned GET URL for an S3-backed document (mirrors backend DocumentUrlView). */
+export interface DocumentUrlView {
+  id: number;
+  fileName: string | null;
+  contentType: string | null;
+  url: string;
 }
 
 /** A document with its bytes as base64, for view/download. */
@@ -558,9 +568,16 @@ export const staffApi = {
   /** The application's uploaded documents (metadata). */
   documents: (id: number) => bff<DocumentView[]>(`${STAFF_BASE}/${id}/documents`, "GET"),
 
-  /** One document's bytes (base64) for view/download. */
+  /** One document's bytes (base64) for view/download (legacy inline storage). */
   document: (id: number, docId: number) =>
     bff<DocumentContent>(`${STAFF_BASE}/${id}/documents/${docId}`, "GET"),
+
+  /** A presigned GET URL for an S3-backed document (view/download in a new tab). */
+  documentUrl: (id: number, docId: number) =>
+    bff<DocumentUrlView>(`${STAFF_BASE}/${id}/documents/${docId}/url`, "GET"),
+
+  /** The application's verification step results (PAN/email/address/salary/…). */
+  verifications: (id: number) => bff<StepResult[]>(`${STAFF_BASE}/${id}/verifications`, "GET"),
 };
 
 // ---------------------------------------------------------------------------

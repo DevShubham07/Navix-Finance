@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { BorrowerStatus } from "@/lib/mock/borrower";
+import type { BorrowerStatus } from "@/lib/domain/borrower";
 
 /**
  * Vertical timeline of the customer-facing status journey (product flow §10):

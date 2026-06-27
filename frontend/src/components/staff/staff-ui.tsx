@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Badge, InfoTooltip } from "@/components/ui";
-import type { AppStage } from "@/lib/mock/types";
+import type { AppStage } from "@/lib/domain/application";
 import type { KycCheckStatus } from "@/lib/domain/kyc";
 import { cn } from "@/lib/utils";
 

@@ -22,8 +22,8 @@ import {
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { StaffRoleBar } from "@/components/staff/staff-role-bar";
-import { hasPermission, type Permission } from "@/lib/auth/rbac";
-import { useStaffSession, signOutStaff, STAFF_ROLE_LABELS } from "@/lib/mock/session";
+import { hasPermission, STAFF_ROLE_LABELS, type Permission } from "@/lib/auth/rbac";
+import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { cn } from "@/lib/utils";
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate"];
@@ -157,8 +157,8 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const signOut = () => {
-    signOutStaff();
+  const signOut = async () => {
+    await signOutStaff();
     router.push("/staff/login");
   };
 

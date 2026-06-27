@@ -6,32 +6,29 @@ import { Users, Info } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { useBorrowerJourney } from "@/lib/mock/borrower";
+import { useOnboarding } from "@/lib/onboarding";
 import { normalizeMobile } from "@/lib/utils";
 
 const RELATIONSHIPS = ["Spouse", "Parent", "Sibling", "Child", "Other"].map((r) => ({ value: r, label: r }));
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
+// The co-applicant step is an unmodeled, cosmetic part of the journey: the backend does not yet
+// capture a co-applicant, so the form is local-only and just gates progression to the salary step.
 export default function SignupCoApplicantPage() {
   const router = useRouter();
-  const { applicant, updateApplicant, coApplicantRequired } = useBorrowerJourney();
-  const [add, setAdd] = React.useState(Boolean(applicant.coApplicant) || coApplicantRequired);
-  const [fullName, setFullName] = React.useState(applicant.coApplicant?.fullName ?? "");
-  const [pan, setPan] = React.useState(applicant.coApplicant?.pan ?? "");
-  const [mobile, setMobile] = React.useState(applicant.coApplicant?.mobile ?? "");
-  const [relationship, setRelationship] = React.useState(applicant.coApplicant?.relationship ?? "Spouse");
+  const { draft } = useOnboarding();
+  const [add, setAdd] = React.useState(draft.coApplicantRequired);
+  const [fullName, setFullName] = React.useState("");
+  const [pan, setPan] = React.useState("");
+  const [mobile, setMobile] = React.useState("");
+  const [relationship, setRelationship] = React.useState("Spouse");
   const [touched, setTouched] = React.useState(false);
 
   const fieldsOk = fullName.trim().length > 2 && PAN_RE.test(pan) && mobile.replace(/\D/g, "").length === 10;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (add) {
-      if (!fieldsOk) { setTouched(true); return; }
-      updateApplicant({ coApplicant: { fullName: fullName.trim(), pan, mobile, relationship } });
-    } else {
-      updateApplicant({ coApplicant: undefined });
-    }
+    if (add && !fieldsOk) { setTouched(true); return; }
     router.push("/signup/salary");
   };
 

@@ -2,11 +2,12 @@
  * Server-side helpers for the BFF auth namespaces. SEPARATE staff and borrower
  * sessions: each lives in its own httpOnly cookie and is never shared.
  *
- *   - staff    -> cookie `navix_staff`    = { id, name, role }
- *   - borrower -> cookie `navix_borrower` = { id, applicantId, name, mobile }
+ *   - staff    -> cookie `navix_staff`    = { token, id, name, role }
+ *   - borrower -> cookie `navix_borrower` = { token, id, applicantId, name, mobile }
  *
- * The proxy route handlers read these to inject the backend's demo identity
- * headers (X-Demo-Actor-Id / -Name / -Role).
+ * The `token` is the backend-issued JWT. The proxy route handlers read it and
+ * forward it as `Authorization: Bearer <token>`; it is never exposed to the
+ * browser (the `/me` routes return the identity without the token).
  */
 
 import { cookies } from "next/headers";
@@ -16,12 +17,16 @@ export const STAFF_COOKIE = "navix_staff";
 export const BORROWER_COOKIE = "navix_borrower";
 
 export interface StaffBffSession {
+  /** Backend-issued JWT (forwarded as a bearer; never sent to the browser). */
+  token: string;
   id: string;
   name: string;
   role: StaffRole;
 }
 
 export interface BorrowerBffSession {
+  /** Backend-issued JWT (forwarded as a bearer; never sent to the browser). */
+  token: string;
   id: string;
   applicantId: number;
   name: string;

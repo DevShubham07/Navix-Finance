@@ -22,11 +22,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const suffix = joinPath(path);
   const backendPath = suffix ? `/api/loan/${suffix}` : "/api/loan";
 
-  return proxyToBackend(req, backendPath, {
-    id: session.id,
-    name: session.name,
-    role: session.role,
-  });
+  return proxyToBackend(req, backendPath, session.token);
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -40,9 +36,5 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return forbidden("Unsupported loan action.");
   }
 
-  return proxyToBackend(req, `/api/loan/${suffix}`, {
-    id: session.id,
-    name: session.name,
-    role: session.role,
-  });
+  return proxyToBackend(req, `/api/loan/${suffix}`, session.token);
 }

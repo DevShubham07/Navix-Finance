@@ -22,11 +22,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const suffix = joinPath(path);
   const backendPath = suffix ? `/api/loan/${suffix}` : "/api/loan";
 
-  return proxyToBackend(req, backendPath, {
-    id: session.applicantId,
-    name: session.name,
-    role: "BORROWER",
-  });
+  return proxyToBackend(req, backendPath, session.token);
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -40,9 +36,5 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return forbidden("Only recording a repayment is allowed here.");
   }
 
-  return proxyToBackend(req, `/api/loan/${suffix}`, {
-    id: session.applicantId,
-    name: session.name,
-    role: "BORROWER",
-  });
+  return proxyToBackend(req, `/api/loan/${suffix}`, session.token);
 }

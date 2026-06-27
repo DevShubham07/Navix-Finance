@@ -18,11 +18,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
   const suffix = joinPath(path);
   const backendPath = suffix ? `/api/admin/blocklist/${suffix}` : "/api/admin/blocklist";
 
-  return proxyToBackend(req, backendPath, {
-    id: session.id,
-    name: session.name,
-    role: session.role,
-  });
+  return proxyToBackend(req, backendPath, session.token);
 }
 
 export const GET = handle;

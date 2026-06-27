@@ -10,10 +10,7 @@ import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
 import { ensureBorrowerSession, createOrResumeDraft } from "@/lib/api/live-journey";
 import { ApplicationApiError } from "@/lib/api/applications";
-import { signInBorrower } from "@/lib/mock/session";
 import { normalizeMobile } from "@/lib/utils";
-
-const DEMO_OTP = "123456";
 
 export default function SignupMobileOtpPage() {
   const router = useRouter();
@@ -41,18 +38,17 @@ export default function SignupMobileOtpPage() {
   };
 
   const confirm = async (code = otp) => {
-    if (code !== DEMO_OTP) {
-      setError("Incorrect code. For this demo, use 123456.");
+    if (code.length !== 6) {
+      setError("Enter the 6-digit code.");
       return;
     }
     setBusy(true);
     setError(undefined);
     try {
       const clean = mobile.replace(/\s/g, "");
-      const session = await ensureBorrowerSession(clean, draft.fullName || undefined);
-      if (!session) throw new ApplicationApiError("Could not establish a session — please try again.", "NO_SESSION", 0);
-      // Keep the mock session in step for the cosmetic/handoff pages.
-      signInBorrower(draft.fullName || "Applicant", clean);
+      // The backend validates the OTP and issues the JWT session cookie.
+      const session = await ensureBorrowerSession(clean, code, draft.fullName || undefined);
+      if (!session) throw new ApplicationApiError("Incorrect code or session error — please try again.", "INVALID_OTP", 0);
       // Create the DRAFT application up front so every later step has a real id to persist against.
       const app = await createOrResumeDraft(session);
       setAppId(app.id);

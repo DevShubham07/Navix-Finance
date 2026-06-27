@@ -24,8 +24,7 @@ import {
   type ProfileInput,
 } from "@/lib/api/applications";
 import { eligibleLimit as eligibleLimitRupees } from "@/lib/calc/loan-math";
-import { signOutBorrower } from "@/lib/mock/session";
-import type { ApplicantProfile, BorrowerStatus } from "@/lib/mock/borrower";
+import type { ApplicantProfile, BorrowerStatus } from "@/lib/domain/borrower";
 
 /** Browser-local pointer to the borrower's in-flight live application id. */
 const STORAGE_KEY = "navix.live.applicationId";
@@ -73,17 +72,22 @@ export async function fetchBorrowerSession(): Promise<BorrowerSession | null> {
 
 /**
  * Ensure a real `navix_borrower` cookie exists for this mobile and return the
- * session. If one is already set we keep it; otherwise we log in with the demo
- * OTP so the applicantId is stable and the BFF can thread identity to Spring.
+ * session. If one is already set we keep it; otherwise we log in with the
+ * supplied OTP (the backend validates it and issues the JWT) so the BFF can
+ * authenticate every later call to Spring.
  */
-export async function ensureBorrowerSession(mobile: string, name?: string): Promise<BorrowerSession | null> {
+export async function ensureBorrowerSession(
+  mobile: string,
+  otp: string,
+  name?: string,
+): Promise<BorrowerSession | null> {
   const existing = await fetchBorrowerSession();
   if (existing) return existing;
   const res = await fetch("/api/auth/borrower/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify({ mobile, otp: "123456", name }),
+    body: JSON.stringify({ mobile, otp, name }),
   });
   if (!res.ok) return null;
   return (await res.json()) as BorrowerSession;
@@ -95,17 +99,15 @@ export function useBorrowerSession() {
 }
 
 /**
- * Fully sign the borrower out: clear the mock session, clear the real
- * `navix_borrower` httpOnly cookie (so re-visiting a borrower route no longer
- * resolves a session), and drop the in-flight application pointer. The caller
- * then routes to `/login`.
+ * Fully sign the borrower out: clear the real `navix_borrower` httpOnly cookie
+ * (so re-visiting a borrower route no longer resolves a session) and drop the
+ * in-flight application pointer. The caller then routes to `/login`.
  */
 export async function logoutBorrower(): Promise<void> {
-  signOutBorrower();
   try {
     await fetch("/api/auth/borrower/logout", { method: "POST", credentials: "same-origin" });
   } catch {
-    // best-effort — the local session is already cleared
+    // best-effort — the cookie is httpOnly; the logout route is the way to clear it
   }
   writeStoredAppId(null);
 }
@@ -347,7 +349,7 @@ export async function submitOnboarding(
   docs: Array<{ docType: string; fileName: string; contentType?: string; dataBase64: string }> = [],
 ): Promise<ApplicationView> {
   const mobile = applicant.mobile?.replace(/\s/g, "") || "";
-  const session = await ensureBorrowerSession(mobile, applicant.fullName);
+  const session = await ensureBorrowerSession(mobile, "123456", applicant.fullName);
   if (!session) {
     throw new ApplicationApiError("Could not establish a borrower session — please sign in again.", "NO_SESSION", 0);
   }

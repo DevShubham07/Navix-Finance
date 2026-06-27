@@ -6,29 +6,27 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, ArrowRight, Lock, Workflow } from "lucide-react";
 import { Brand } from "@/components/site/brand";
-import { STAFF_ROLES, type StaffRole } from "@/lib/auth/rbac";
-import { signInStaff, STAFF_ROLE_LABELS, STAFF_PERSONAS } from "@/lib/mock/session";
+import { STAFF_ROLES, STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
+import { STAFF_PERSONA_NAMES } from "@/lib/api/staff-personas";
+import { loginStaff } from "@/lib/auth/staff-session";
 
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
   const redirect = params.get("redirect") || "/staff/dashboard";
   const [busy, setBusy] = React.useState<StaffRole | null>(null);
+  const [error, setError] = React.useState<string>();
 
   const go = async (role: StaffRole) => {
     setBusy(role);
-    // Mock session (sets navix_session cookie + localStorage) keeps the demo
-    // pages and the /staff/* middleware gate working.
-    signInStaff(role);
-    try {
-      // Live session: httpOnly navix_staff cookie used by the BFF proxies.
-      await fetch("/api/auth/staff/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role }),
-      });
-    } catch {
-      // Non-fatal: the mock console still works without the live session.
+    setError(undefined);
+    // Authenticate against the backend (role -> seeded account) and store the JWT
+    // in the httpOnly navix_staff cookie the BFF proxies forward as a bearer.
+    const session = await loginStaff(role);
+    if (!session) {
+      setBusy(null);
+      setError("Sign-in failed. Please try again.");
+      return;
     }
     router.push(redirect);
   };
@@ -57,12 +55,13 @@ function LoginInner() {
               >
                 <span>
                   <span className="block text-sm font-semibold text-ink">{STAFF_ROLE_LABELS[role]}</span>
-                  <span className="block text-xs text-muted">{STAFF_PERSONAS[role].name}</span>
+                  <span className="block text-xs text-muted">{STAFF_PERSONA_NAMES[role]}</span>
                 </span>
                 <ArrowRight size={16} className="text-muted transition group-hover:translate-x-0.5 group-hover:text-navy" />
               </button>
             ))}
           </div>
+          {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
           <Link
             href="/staff/applications"
             className="mt-3 flex items-center justify-center gap-1.5 rounded border border-dashed border-line px-4 py-2 text-xs font-semibold text-navy hover:bg-navy-tint"

@@ -6,21 +6,21 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ArrowLeft, Loader2, AlertTriangle } from "lucide-react";
 import { AmountChooser } from "@/components/borrower/amount-chooser";
-import { useBorrowerJourney } from "@/lib/mock/borrower";
 import { useLiveApplication, applyForAmount, canChooseAmount } from "@/lib/api/live-journey";
 import { borrowerApi, rupeesToPaise, ApplicationApiError } from "@/lib/api/applications";
+import { useOnboardingStore } from "@/stores/application-store";
 import { eligibleLimit } from "@/lib/calc/loan-math";
 
 export default function LoanApplyPage() {
   const router = useRouter();
   const { appId, app, isLoading } = useLiveApplication();
-  const j = useBorrowerJourney();
+  const draft = useOnboardingStore();
   const [amount, setAmount] = React.useState(0);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string>();
 
   // Eligible limit = 25% of monthly salary (the backend gate). Prefer the
-  // persisted profile; fall back to the in-browser wizard value.
+  // persisted backend profile; fall back to the persisted onboarding draft.
   const profileQuery = useQuery({
     queryKey: ["live-profile", appId],
     queryFn: () => borrowerApi.getProfile(appId as number),
@@ -28,10 +28,10 @@ export default function LoanApplyPage() {
   });
   const salaryPaise =
     profileQuery.data?.monthlySalaryPaise ??
-    (j.applicant.monthlySalary ? rupeesToPaise(j.applicant.monthlySalary) : 0);
+    (draft.monthlySalary ? rupeesToPaise(draft.monthlySalary) : 0);
   const salaryRupees = Math.round(salaryPaise / 100);
   const limit = eligibleLimit(salaryRupees);
-  const salaryDay = j.applicant.salaryDay || 1;
+  const salaryDay = draft.salaryDay || 1;
 
   React.useEffect(() => {
     if (limit > 0) setAmount((prev) => (prev > 0 && prev <= limit ? prev : limit));
@@ -72,7 +72,6 @@ export default function LoanApplyPage() {
     setError(undefined);
     try {
       await applyForAmount(appId, { amountRupees: amount, salaryDay, monthlySalary: salaryRupees });
-      j.chooseAmount(amount); // keep the mock store in sync for cosmetic pages
       router.push("/loan/status");
     } catch (e) {
       setError(

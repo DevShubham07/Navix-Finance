@@ -29,6 +29,8 @@ import {
   type EventView,
   type DocumentView,
   type LoanView,
+  type StepResult,
+  type CheckStatus,
 } from "@/lib/api/applications";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
@@ -353,6 +355,8 @@ export function ApplicantReview({ applicationId }: { applicationId: number }) {
         </dl>
       )}
 
+      <VerificationCards applicationId={applicationId} />
+
       <div className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-muted">Documents</div>
       {docsQ.isLoading ? (
         <p className="text-sm text-muted">Loading…</p>
@@ -376,6 +380,97 @@ function Row({ label, value, mono }: { label: string; value: string | null | und
     <div className="flex items-center justify-between gap-4 py-2">
       <dt className="text-muted">{label}</dt>
       <dd className={mono ? "text-right font-mono text-ink" : "text-right text-ink"}>{value || "—"}</dd>
+    </div>
+  );
+}
+
+/** Status pill styling per verification outcome (green PASS / amber REVIEW / red FAIL / grey PENDING). */
+const CHECK_PILL: Record<CheckStatus, string> = {
+  PASS: "bg-success-100 text-success-700",
+  REVIEW: "bg-warning-100 text-warning-800",
+  FAIL: "bg-error-100 text-error-700",
+  PENDING: "bg-grey-100 text-muted",
+};
+
+/** "PENNY_DROP" -> "Penny drop". */
+function humanizeCheck(checkType: string): string {
+  return checkType
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** "monthlySalaryPaise" -> "Monthly salary paise". */
+function humanizeKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_\s]+/g, " ")
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+function stringifyDerived(value: unknown): string {
+  if (value == null) return "—";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Verification cards for an application's automated checks (PAN, email, address, salary, …).
+ * One card per {@link StepResult}: the check name, a status pill, the message, and the key
+ * `derived` fields the reviewer needs. Loaded on demand inside {@link ApplicantReview}.
+ */
+function VerificationCards({ applicationId }: { applicationId: number }) {
+  const q = useQuery({
+    queryKey: ["staff-verifications", applicationId],
+    queryFn: () => staffApi.verifications(applicationId),
+    retry: false,
+  });
+
+  const steps: StepResult[] = q.data ?? [];
+
+  return (
+    <div className="mt-5">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Verification checks</div>
+      {q.isLoading ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : q.error ? (
+        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+      ) : steps.length === 0 ? (
+        <p className="text-sm text-muted">No verification checks recorded yet.</p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {steps.map((s, i) => {
+            const entries = Object.entries(s.derived ?? {});
+            return (
+              <div key={`${s.checkType}-${i}`} className="rounded border border-line bg-grey-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-navy">{humanizeCheck(s.checkType)}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[s.status]}`}>
+                    {s.status}
+                  </span>
+                </div>
+                {s.message ? <p className="mt-1 text-xs text-ink/90">{s.message}</p> : null}
+                {entries.length > 0 && (
+                  <dl className="mt-2 space-y-0.5 text-xs">
+                    {entries.map(([k, v]) => (
+                      <div key={k} className="flex items-start justify-between gap-3">
+                        <dt className="text-muted">{humanizeKey(k)}</dt>
+                        <dd className="break-all text-right text-ink">{stringifyDerived(v)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -429,8 +524,15 @@ function DocRow({ appId, doc }: { appId: number; doc: DocumentView }) {
     setBusy(mode);
     setErr(null);
     try {
-      const content = await staffApi.document(appId, doc.id);
-      openDocument(content, mode === "download");
+      if (doc.s3) {
+        // S3-backed: open the short-lived presigned URL in a new tab (browser <-> S3 directly).
+        const { url } = await staffApi.documentUrl(appId, doc.id);
+        window.open(url, "_blank", "noopener,noreferrer");
+      } else {
+        // Legacy inline storage: fetch the base64 bytes and view/download via a Blob URL.
+        const content = await staffApi.document(appId, doc.id);
+        openDocument(content, mode === "download");
+      }
     } catch (e) {
       setErr(errMessage(e));
     } finally {
