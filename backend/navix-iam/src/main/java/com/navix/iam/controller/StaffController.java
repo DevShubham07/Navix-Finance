@@ -1,6 +1,7 @@
 package com.navix.iam.controller;
 
 import com.navix.common.web.ApiResponse;
+import com.navix.iam.dto.StaffDtos.CreateStaffRequest;
 import com.navix.iam.dto.StaffDtos.StaffResponse;
 import com.navix.iam.dto.StaffDtos.UpdateStaffRequest;
 import com.navix.iam.service.StaffService;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,6 +26,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class StaffController {
 
     private final StaffService staffService;
+
+    @PostMapping
+    public ApiResponse<StaffResponse> create(@Valid @RequestBody CreateStaffRequest request) {
+        return ApiResponse.ok(staffService.createStaff(request));
+    }
 
     @GetMapping
     public ApiResponse<List<StaffResponse>> list() {

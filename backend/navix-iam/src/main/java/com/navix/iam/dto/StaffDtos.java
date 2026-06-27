@@ -54,6 +54,15 @@ public final class StaffDtos {
     ) {
     }
 
+    /** Admin creates a staff account directly with an email + password (no invite). */
+    public record CreateStaffRequest(
+            @Email @NotBlank String email,
+            @NotBlank String name,
+            @NotNull StaffRole role,
+            @NotBlank String password
+    ) {
+    }
+
     /** Update an existing staff member's role and/or status. */
     public record UpdateStaffRequest(
             @NotNull StaffRole role,
