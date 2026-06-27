@@ -4,6 +4,7 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.ApplicantProfile;
@@ -37,6 +38,7 @@ public class ApplicantReviewService {
     private final LoanApplicationRepository applicationRepository;
     private final ApplicantProfileRepository profileRepository;
     private final ApplicationDocumentRepository documentRepository;
+    private final DocumentStoragePort storage;
 
     @Transactional
     public ApplicantProfile saveProfile(Long appId, ProfileRequest req) {
@@ -137,6 +139,20 @@ public class ApplicantReviewService {
         requireApplication(appId);
         return documentRepository.findByIdAndApplicationId(docId, appId)
                 .orElseThrow(() -> new ResourceNotFoundException("ApplicationDocument", String.valueOf(docId)));
+    }
+
+    /**
+     * Short-lived presigned GET URL for an S3-backed document (the live path; staff never stream
+     * document bytes through the backend). Throws for legacy inline ({@code bytea}) rows — those are
+     * served via {@link #getDocument} as base64.
+     */
+    @Transactional(readOnly = true)
+    public String presignedUrl(Long appId, Long docId) {
+        ApplicationDocument d = getDocument(appId, docId);
+        if (d.getS3ObjectKey() == null) {
+            throw new BusinessException("NOT_S3_BACKED", "This document is stored inline; fetch its bytes instead");
+        }
+        return storage.presignDownload(d.getS3ObjectKey());
     }
 
     // ---- internals -----------------------------------------------------------------

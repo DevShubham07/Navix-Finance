@@ -11,6 +11,7 @@ import com.navix.loan.dto.ApplicationDtos.DecisionRequest;
 import com.navix.loan.dto.ApplicationDtos.EventView;
 import com.navix.loan.dto.ReviewDtos.DocumentContentView;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
+import com.navix.loan.dto.ReviewDtos.DocumentUrlView;
 import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
@@ -181,9 +182,17 @@ public class ApplicationController {
         return ApiResponse.ok(review.listDocuments(id).stream().map(DocumentView::of).toList());
     }
 
-    /** Fetch one document's bytes (base64) for view/download. */
+    /** Fetch one document's inline bytes (base64) — legacy/demo rows only. */
     @GetMapping("/{id}/documents/{docId}")
     public ApiResponse<DocumentContentView> getDocument(@PathVariable Long id, @PathVariable Long docId) {
         return ApiResponse.ok(DocumentContentView.of(review.getDocument(id, docId)));
+    }
+
+    /** Short-lived presigned GET URL for an S3-backed document (the live approver-view path). */
+    @GetMapping("/{id}/documents/{docId}/url")
+    public ApiResponse<DocumentUrlView> getDocumentUrl(@PathVariable Long id, @PathVariable Long docId) {
+        var doc = review.getDocument(id, docId);
+        return ApiResponse.ok(new DocumentUrlView(doc.getId(), doc.getFileName(), doc.getContentType(),
+                review.presignedUrl(id, docId)));
     }
 }

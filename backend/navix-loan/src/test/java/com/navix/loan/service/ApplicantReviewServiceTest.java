@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.repository.ApplicantProfileRepository;
@@ -34,12 +35,14 @@ class ApplicantReviewServiceTest {
     private ApplicantProfileRepository profileRepository;
     @Mock
     private ApplicationDocumentRepository documentRepository;
+    @Mock
+    private DocumentStoragePort storage;
 
     private ApplicantReviewService service;
 
     @BeforeEach
     void setUp() {
-        service = new ApplicantReviewService(applicationRepository, profileRepository, documentRepository);
+        service = new ApplicantReviewService(applicationRepository, profileRepository, documentRepository, storage);
         ActorContext.set(BORROWER);
     }
 
