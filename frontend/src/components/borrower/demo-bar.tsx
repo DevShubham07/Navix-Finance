@@ -13,7 +13,7 @@ import { config } from "@/lib/config";
 export function routeForStatus(status: BorrowerStatus): string {
   switch (status) {
     case "NEW":
-      return "/signup/pan";
+      return "/signup/mobile-otp";
     case "APPLIED":
     case "UNDER_REVIEW":
     case "DECLINED":
@@ -64,7 +64,7 @@ export function DemoBar() {
     beginApplication();
     signOutBorrower();
     setOpen(false);
-    router.push("/signup/pan");
+    router.push("/signup/mobile-otp");
   };
 
   return (

@@ -6,51 +6,62 @@ import { ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { usePersistedField } from "@/hooks/use-persisted-field";
-import { useBorrowerJourney } from "@/lib/mock/borrower";
+import { StepResultBanner } from "@/components/borrower/step-result-banner";
+import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
+import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const AADHAAR_RE = /^\d{12}$/;
 
 export default function SignupPanPage() {
   const router = useRouter();
-  const { applicant, updateApplicant, setKyc } = useBorrowerJourney();
-  const [name, setName] = usePersistedField(applicant.fullName);
-  const [pan, setPan] = usePersistedField(applicant.pan);
-  const [aadhaar, setAadhaar] = usePersistedField(applicant.aadhaar);
+  const { mounted, draft, appId } = useOnboarding();
+  const [pan, setPan] = React.useState("");
+  const [aadhaar, setAadhaar] = React.useState("");
   const [touched, setTouched] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState<StepResult | null>(null);
+  const [error, setError] = React.useState<string>();
 
-  const nameOk = name.trim().length > 2;
+  React.useEffect(() => {
+    if (!mounted) return;
+    setPan(draft.pan);
+    setAadhaar(draft.aadhaar);
+  }, [mounted]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (mounted && appId == null) router.replace("/signup/mobile-otp");
+  }, [mounted, appId, router]);
+
   const panOk = PAN_RE.test(pan);
   const aadhaarOk = AADHAAR_RE.test(aadhaar);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nameOk || !panOk || !aadhaarOk) {
-      setTouched(true);
-      return;
+    if (!panOk || !aadhaarOk) { setTouched(true); return; }
+    if (appId == null) return;
+    setBusy(true);
+    setError(undefined);
+    draft.patch({ pan, aadhaar });
+    try {
+      await saveProfileSlice(appId, { pan, aadhaar });
+      const r = await verificationApi.pan(appId, pan);
+      setResult(r);
+      if (r.status === "PASS" || r.status === "REVIEW") router.push("/signup/bureau");
+    } catch (err) {
+      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your PAN — please try again.");
+    } finally {
+      setBusy(false);
     }
-    updateApplicant({ fullName: name.trim(), pan, aadhaar });
-    setKyc({ pan: "VERIFIED" });
-    router.push("/signup/mobile-otp");
   };
 
   return (
     <form onSubmit={submit} noValidate>
       <div className="form-card">
         <p className="lead mb-4">
-          Your PAN confirms your identity and pulls your name from income-tax records. This is a soft
-          check — it won&apos;t affect your credit score.
+          Your PAN confirms your identity against income-tax records, and your Aadhaar links your KYC. This is a
+          soft check — it won&apos;t affect your credit score.
         </p>
-        <Input
-          label="Full name (as per PAN)"
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Aarav Sharma"
-          autoComplete="name"
-          error={touched && !nameOk ? "Enter your name exactly as printed on your PAN" : undefined}
-        />
         <Input
           label="PAN"
           required
@@ -69,15 +80,17 @@ export default function SignupPanPage() {
           placeholder="1234 5678 9012"
           inputMode="numeric"
           inputClassName="tracking-[0.2em]"
-          helperText="12 digits"
+          helperText="12 digits — stored securely and masked on every screen"
           error={touched && !aadhaarOk ? "Enter a valid 12-digit Aadhaar number" : undefined}
         />
         <p className="mt-1 flex items-start gap-2 text-sm text-muted">
           <ShieldCheck size={16} className="mt-0.5 flex-shrink-0 text-success-600" />
           Used only for identity and credit verification with our NBFC partner.
         </p>
+        <StepResultBanner result={result} />
+        {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>
-      <WizardActions submit continueLabel="Verify & continue" />
+      <WizardActions backHref="/signup/digilocker" submit continueLabel={result?.status === "FAIL" ? "Try again" : "Verify & continue"} loading={busy} disabled={busy} />
       <Reassurance />
     </form>
   );

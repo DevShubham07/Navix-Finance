@@ -7,20 +7,26 @@ import { Input } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { usePersistedField } from "@/hooks/use-persisted-field";
-import { useBorrowerJourney } from "@/lib/mock/borrower";
-import { ensureBorrowerSession } from "@/lib/api/live-journey";
+import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
+import { ensureBorrowerSession, createOrResumeDraft } from "@/lib/api/live-journey";
+import { ApplicationApiError } from "@/lib/api/applications";
+import { signInBorrower } from "@/lib/mock/session";
 import { normalizeMobile } from "@/lib/utils";
 
 const DEMO_OTP = "123456";
 
 export default function SignupMobileOtpPage() {
   const router = useRouter();
-  const { applicant, updateApplicant, verifyMobile } = useBorrowerJourney();
-  const [mobile, setMobile] = usePersistedField(applicant.mobile);
+  const { mounted, draft, setAppId } = useOnboarding();
+  const [mobile, setMobile] = React.useState("");
   const [stage, setStage] = React.useState<"enter" | "verify">("enter");
   const [otp, setOtp] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
+
+  React.useEffect(() => {
+    if (mounted && draft.mobile) setMobile(draft.mobile);
+  }, [mounted, draft.mobile]);
 
   const mobileOk = mobile.length === 10;
 
@@ -30,7 +36,7 @@ export default function SignupMobileOtpPage() {
       return;
     }
     setError(undefined);
-    updateApplicant({ mobile });
+    draft.patch({ mobile });
     setStage("verify");
   };
 
@@ -39,15 +45,26 @@ export default function SignupMobileOtpPage() {
       setError("Incorrect code. For this demo, use 123456.");
       return;
     }
-    verifyMobile();
-    // Establish the real backend session (httpOnly navix_borrower cookie) now so
-    // later steps — and the final submit — can persist against a stable applicantId.
+    setBusy(true);
+    setError(undefined);
     try {
-      await ensureBorrowerSession(mobile.replace(/\s/g, ""), applicant.fullName);
-    } catch {
-      // Non-fatal: submitOnboarding will retry establishing the session at submit.
+      const clean = mobile.replace(/\s/g, "");
+      const session = await ensureBorrowerSession(clean, draft.fullName || undefined);
+      if (!session) throw new ApplicationApiError("Could not establish a session — please try again.", "NO_SESSION", 0);
+      // Keep the mock session in step for the cosmetic/handoff pages.
+      signInBorrower(draft.fullName || "Applicant", clean);
+      // Create the DRAFT application up front so every later step has a real id to persist against.
+      const app = await createOrResumeDraft(session);
+      setAppId(app.id);
+      await saveProfileSlice(app.id, { mobile: clean });
+      draft.patch({ mobile: clean });
+      router.push("/signup/email");
+    } catch (e) {
+      setError(
+        e instanceof ApplicationApiError ? `${e.message} (${e.code})` : "Something went wrong — please try again.",
+      );
+      setBusy(false);
     }
-    router.push("/signup/employment");
   };
 
   return (
@@ -68,7 +85,7 @@ export default function SignupMobileOtpPage() {
             error={error}
             helperText="Indian mobile number linked to your bank and Aadhaar"
           />
-          <WizardActions backHref="/signup/pan" continueLabel="Send code" onContinue={sendOtp} disabled={!mobileOk} />
+          <WizardActions backHref="/login" continueLabel="Send code" onContinue={sendOtp} disabled={!mobileOk} />
         </div>
       ) : (
         <div className="form-card">
@@ -79,7 +96,7 @@ export default function SignupMobileOtpPage() {
               Change number
             </button>
           </p>
-          <OtpInput value={otp} onChange={(v) => { setOtp(v); setError(undefined); }} onComplete={confirm} />
+          <OtpInput value={otp} onChange={(v) => { setOtp(v); setError(undefined); }} onComplete={confirm} disabled={busy} />
           {error ? (
             <p className="mt-3 text-sm text-error-600">{error}</p>
           ) : (
@@ -87,7 +104,7 @@ export default function SignupMobileOtpPage() {
               <CheckCircle2 size={15} className="text-success-600" /> Demo code is <strong className="text-ink">123456</strong>
             </p>
           )}
-          <WizardActions onBack={() => setStage("enter")} continueLabel="Verify" onContinue={() => confirm()} disabled={otp.length !== 6} />
+          <WizardActions onBack={() => setStage("enter")} continueLabel="Verify" onContinue={() => confirm()} loading={busy} disabled={otp.length !== 6 || busy} />
         </div>
       )}
       <Reassurance />

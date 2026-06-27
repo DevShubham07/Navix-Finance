@@ -317,6 +317,27 @@ async function resolveApplication(session: BorrowerSession): Promise<Application
 }
 
 /**
+ * P5 onboarding: create the DRAFT application early (right after mobile-OTP) so every
+ * later step can persist/verify against a real id. Resumes an existing DRAFT if one is
+ * already stored (reload-safe); a previously-submitted app is left untouched and a fresh
+ * DRAFT is started instead.
+ */
+export async function createOrResumeDraft(session: BorrowerSession): Promise<ApplicationView> {
+  const existing = readStoredAppId();
+  if (existing != null) {
+    try {
+      const app = await borrowerApi.get(existing);
+      if (app.status === "DRAFT") return app;
+    } catch {
+      // fall through and create a fresh draft
+    }
+  }
+  const created = await borrowerApi.create(session.applicantId);
+  writeStoredAppId(created.id);
+  return created;
+}
+
+/**
  * Submit the completed onboarding form to the real backend:
  * ensure session -> create DRAFT -> save KYC profile -> upload docs -> submit KYC.
  * Persists everything in Postgres and advances the application to KYC_PENDING.

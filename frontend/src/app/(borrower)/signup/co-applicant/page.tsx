@@ -32,7 +32,7 @@ export default function SignupCoApplicantPage() {
     } else {
       updateApplicant({ coApplicant: undefined });
     }
-    router.push("/signup/address-proof");
+    router.push("/signup/salary");
   };
 
   return (
@@ -90,7 +90,7 @@ export default function SignupCoApplicantPage() {
           </div>
         )}
       </div>
-      <WizardActions backHref="/signup/financials" submit continueLabel={add ? "Add & continue" : "Continue without co-applicant"} />
+      <WizardActions backHref="/signup/bureau" submit continueLabel={add ? "Add & continue" : "Continue without co-applicant"} />
       <Reassurance />
     </form>
   );

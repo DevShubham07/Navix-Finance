@@ -383,6 +383,98 @@ export const borrowerApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Verification (P5 sequential onboarding) — routes under /api/borrower/applications/{id}/verify/*
+// ---------------------------------------------------------------------------
+
+/** Outcome of a single verification check (mirrors backend StepResult). */
+export type CheckStatus = "PASS" | "FAIL" | "REVIEW" | "PENDING";
+
+/** A verification step's live result. `derived` carries step-specific extras (urls, flags, …). */
+export interface StepResult {
+  checkType: string;
+  status: CheckStatus;
+  message: string | null;
+  derived: Record<string, unknown>;
+}
+
+/** Result of asking the app-scoped verify endpoint for a presigned PUT URL. */
+export interface VerifyPresign {
+  key: string;
+  url: string;
+}
+
+/** A single document version the borrower consents to (e.g. "loan-agreement@1"). */
+export type AgreementVersion = string;
+
+export const verificationApi = {
+  /** PAN identity match. */
+  pan: (id: number, pan: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/pan`, "POST", { pan }),
+
+  /** Official/work email → employer match. */
+  email: (id: number, officialEmail: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/email`, "POST", { officialEmail }),
+
+  /** Address: either live geolocation (lat/long) or a typed manual address. */
+  address: (
+    id: number,
+    body: { latitude: number; longitude: number } | { manualAddress: string },
+  ) => bff<StepResult>(`${BORROWER_BASE}/${id}/verify/address`, "POST", body),
+
+  /** DigiLocker: start the consent flow (returns derived.clientId + derived.url). */
+  digilockerInit: (id: number, redirectUrl: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/init`, "POST", { redirectUrl }),
+
+  /** DigiLocker: poll consent progress (derived.completed / .failed / .status). */
+  digilockerStatus: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/status`, "GET"),
+
+  /** DigiLocker: finalise once the consent flow reports completed. */
+  digilockerComplete: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/complete`, "POST"),
+
+  /** Credit bureau pull (automatic — no input; score/category never surfaced to the borrower). */
+  bureau: (id: number) => bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau`, "POST"),
+
+  /** Declared salary + uploaded slip object key. */
+  salary: (id: number, monthlySalaryPaise: number, slipObjectKey: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/salary`, "POST", { monthlySalaryPaise, slipObjectKey }),
+
+  /** Penny-drop on the salary account → name match. */
+  pennyDrop: (id: number, accountNumber: string, ifsc: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/penny-drop`, "POST", { accountNumber, ifsc }),
+
+  /** Selfie liveness/face match against the uploaded selfie object key. */
+  selfie: (id: number, selfieObjectKey: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/selfie`, "POST", { selfieObjectKey }),
+
+  /** Record consent to the agreement document set. */
+  agreement: (id: number, versions: AgreementVersion[]) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/agreement`, "POST", { versions }),
+
+  /** The full verification status board for this application. */
+  summary: (id: number) => bff<StepResult[]>(`${BORROWER_BASE}/${id}/verify/summary`, "GET"),
+
+  /** Ask the app-scoped endpoint for a presigned PUT URL (echo `key` back on the verify call). */
+  presignUpload: (
+    id: number,
+    body: { docType: string; fileName: string; contentType: string },
+  ) => bff<VerifyPresign>(`${BORROWER_BASE}/${id}/verify/presign-upload`, "POST", body),
+
+  /** PUT raw bytes (File or Blob) straight to the presigned S3 URL — never through the BFF. */
+  putToPresignedUrl: async (url: string, body: Blob, contentType: string): Promise<void> => {
+    const res = await fetch(url, {
+      method: "PUT",
+      body,
+      headers: { "Content-Type": contentType },
+    });
+    if (!res.ok) {
+      throw new ApplicationApiError(`Upload failed (status ${res.status}).`, `UPLOAD_FAILED_${res.status}`, res.status);
+    }
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Staff client — routes under /api/staff/*
 // ---------------------------------------------------------------------------
 

@@ -4,25 +4,15 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-
-/** Canonical sign-up order (product flow §3.1). */
-const STEPS: Array<{ seg: string; label: string }> = [
-  { seg: "pan", label: "PAN verification" },
-  { seg: "mobile-otp", label: "Mobile & OTP" },
-  { seg: "employment", label: "Employment & UAN" },
-  { seg: "salary", label: "Salary details" },
-  { seg: "email", label: "Email addresses" },
-  { seg: "bank", label: "Salary bank" },
-  { seg: "financials", label: "Financials (Account Aggregator)" },
-  { seg: "co-applicant", label: "Co-applicant" },
-  { seg: "address-proof", label: "Address proof" },
-  { seg: "review", label: "Review & submit" },
-];
+import { ONBOARDING_STEPS as STEPS } from "@/lib/onboarding";
 
 export default function SignupLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const seg = pathname.split("/").filter(Boolean).pop() ?? "pan";
-  const idx = Math.max(0, STEPS.findIndex((s) => s.seg === seg));
+  const seg = pathname.split("/").filter(Boolean).pop() ?? "mobile-otp";
+  // Co-applicant is conditional and absent from the linear order — show it as the
+  // address/bureau-adjacent step rather than resetting the bar to step 1.
+  const found = STEPS.findIndex((s) => s.seg === seg);
+  const idx = found >= 0 ? found : 0;
   const step = STEPS[idx] ?? STEPS[0];
   const pct = Math.round(((idx + 1) / STEPS.length) * 100);
 

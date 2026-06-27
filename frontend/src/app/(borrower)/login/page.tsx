@@ -95,7 +95,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-5 text-center text-sm text-muted">
-          New to NAVIX? <Link href="/signup/pan" className="font-semibold text-navy hover:underline">Apply for an advance</Link>
+          New to NAVIX? <Link href="/signup/mobile-otp" className="font-semibold text-navy hover:underline">Apply for an advance</Link>
         </p>
         <div className="mt-6"><Reassurance /></div>
       </div>

@@ -132,7 +132,7 @@ function EmptyState() {
       </span>
       <h2 className="text-xl">No loans yet</h2>
       <p className="mb-4 text-muted">When you apply for an advance it&apos;ll show up here with live status.</p>
-      <Link href="/signup/pan" className="btn btn-gold">
+      <Link href="/signup/mobile-otp" className="btn btn-gold">
         Apply now <ArrowRight size={16} />
       </Link>
     </div>

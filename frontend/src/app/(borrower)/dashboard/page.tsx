@@ -104,7 +104,7 @@ export default function DashboardPage() {
               cta={{ href: continueHref, label: "Continue" }}
             />
           ) : (
-            <PreApprovedBanner limitRupees={limitRupees} href="/signup/pan" />
+            <PreApprovedBanner limitRupees={limitRupees} href="/signup/mobile-otp" />
           )}
         </div>
 

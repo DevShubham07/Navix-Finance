@@ -37,7 +37,7 @@ export default function LoanStatusPage() {
           </span>
           <h1 className="text-2xl">No application yet</h1>
           <p className="mb-5 text-muted">Start your application to track it here in real time.</p>
-          <Link href="/signup/pan" className="btn btn-gold">Start application <ArrowRight size={16} /></Link>
+          <Link href="/signup/mobile-otp" className="btn btn-gold">Start application <ArrowRight size={16} /></Link>
         </div>
       </div>
     );

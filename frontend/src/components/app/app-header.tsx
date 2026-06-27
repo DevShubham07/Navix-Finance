@@ -38,7 +38,7 @@ export function AppHeader() {
                   </Link>
                 );
               })}
-              <Link href="/signup/pan" className="btn btn-gold btn-sm ml-2">
+              <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm ml-2">
                 New loan
               </Link>
               <div className="ml-1">
@@ -50,7 +50,7 @@ export function AppHeader() {
               <Link href="/login" className="btn btn-outline btn-sm">
                 Sign in
               </Link>
-              <Link href="/signup/pan" className="btn btn-gold btn-sm">
+              <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm">
                 Apply Now
               </Link>
             </div>

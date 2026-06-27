@@ -116,7 +116,7 @@ export function EmiCalculator() {
           <span className="crr-label">Total payable</span>
           <span className="crr-val">{formatINR0(total)}</span>
         </div>
-        <Link href="/signup/pan" className="btn btn-gold btn-block mt-3">
+        <Link href="/signup/mobile-otp" className="btn btn-gold btn-block mt-3">
           Apply for this loan
         </Link>
       </div>
