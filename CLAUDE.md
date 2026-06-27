@@ -71,6 +71,15 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
   IN_COLLECTIONS`; officers + settlement proposer/approver are **real staff** (names, not UUIDs); the
   buckets page lists collectible loans with live DPD. Seam: `LoanDirectory` port in navix-common +
   adapter in navix-loan (mirrors `StaffDirectory`) — no new Maven edge.
+- ✅ **Approved settlement → borrower payable + close (live)** — an **approved** partial settlement now
+  caps what the borrower owes: `RepaymentService.outstandingAsOf` reads the agreed full-and-final via a
+  new `SettlementDirectory` port (port in navix-common, adapter in navix-collections, consumed by
+  navix-loan — the **reverse** of `LoanDirectory`, no new Maven edge) and returns
+  `min(formulaOwed, settlement − verified)` (a settlement only ever **reduces** the payable). Because
+  every read path (repay page, dashboard, partial-flag, close-at-zero) flows through that one method, the
+  borrower's `/repay` shows **"Settlement — full & final"** (`OutstandingView.settledAmountPaise`), and
+  paying it closes the loan + application and drops the case off the worklist — all automatically. No
+  schema change.
 - ✅ **Borrower repay / prepay (live)** — `/repay` records a real manual payment
   (`POST /api/loan/{id}/repayments`, → PENDING_VERIFICATION); the **Accountant** verifies it
   (`…/verify`), which reduces the outstanding and, at zero, closes the **loan** and the **application**
@@ -135,6 +144,24 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
 - ✅ **Per-stage demo data** — `scripts/populate-demo-data.ps1` (+ [`populateDummyData.md`](populateDummyData.md))
   drives the live API to seed one application at **every** lifecycle stage (and a primary borrower with
   history + current + in-review), so every staff queue and the borrower menu show realistic rows (§4.6).
+- ✅ **Staff Customers pane (live)** — a borrower-centric roll-up at `/staff/customers` (list + search by
+  name/applicant id) and `/staff/customers/{applicantId}` (current loan + past loans + payments +
+  applications + KYC profile). Backed by a new `CustomerService`/`CustomerController` (`/api/customers`,
+  aggregating by `applicant_id`; latest profile for name/PAN; penalty-aware outstanding reused). **Every
+  staff role can view it incl. PII** (product decision — relaxes the per-role PII gating elsewhere; new
+  `customer:view` perm on all roles). **ADMIN** can correct KYC data (`PUT /api/customers/{id}/profile`,
+  non-identity fields only — PAN/Aadhaar/mobile stay locked) and take lifecycle actions (cancel a
+  pre-disbursement application, add to the fraud blocklist) from the detail page (`customer:manage`).
+  Staff application rows also gained a lazy **loan-history** block (`live-pipeline.tsx`) so any reviewer
+  sees the borrower's current/past loans (amount + due date) in context. No schema change.
+- ✅ **Branded CSV + PDF export (live)** — `components/staff/export-menu.tsx` + `lib/export/exporters.ts`
+  (jsPDF + jspdf-autotable) add a one-click **Export ▾** (CSV / NAVIX-branded PDF) to the DPD buckets,
+  settlements, admin staff/invites/blocklist, transactions ledger, and Customers dashboards. The PDF
+  carries the NAVIX wordmark, the table, a **"Downloaded by {name} · {role} · {timestamp}"** provenance
+  line, and a per-page confidential footer.
+- ✅ **Transactions on Admin (live)** — the company-wide ledger is now a dedicated **Administration →
+  Transactions** nav item, and the staff dashboard shows an **ADMIN-only** transactions summary
+  (incoming/outgoing totals + latest movements) linking to the full ledger.
 
 **Demo-first (not yet real):**
 - 🟡 **No real auth/JWT yet.** Identity is injected via demo headers (§7). This is intentional for
@@ -540,6 +567,14 @@ return `FORBIDDEN_ROLE`, `SOD_VIOLATION`, or `ILLEGAL_TRANSITION` (422) on viola
 | `POST /{id}/cancel` | borrower/staff | → CANCELLED (pre-disbursement) |
 | `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read) |
 | `POST /{id}/documents` · `GET /{id}/documents` · `GET /{id}/documents/{docId}` | borrower uploads · any reads | documents (base64; metadata list + content for view/download) |
+
+### Customers (`/api/customers`) — borrower-centric roll-up
+
+| Method + path | Role | Purpose |
+|---|---|---|
+| `GET /?q=` | staff (all roles) | list/search distinct applicants (name / applicant id); each row rolls up counts + total outstanding |
+| `GET /{applicantId}` | staff (all roles) | one customer's full history: latest profile + all applications + loans + payments |
+| `PUT /{applicantId}/profile` | ADMIN | correct KYC data (non-identity fields; PAN/Aadhaar/mobile locked) |
 
 ### Loan ledger, repayments & transactions (`/api/loan`)
 

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.collections.SettlementDirectory;
 import com.navix.common.exception.BusinessException;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentMethod;
@@ -33,12 +34,15 @@ class RepaymentServiceTest {
     private LoanRepository loanRepository;
     @Mock
     private ApplicationFlowService applicationFlowService;
+    @Mock
+    private SettlementDirectory settlementDirectory;
 
     private RepaymentService repaymentService;
 
     @BeforeEach
     void setUp() {
-        repaymentService = new RepaymentService(paymentRepository, loanRepository, new LoanMath(), applicationFlowService);
+        repaymentService = new RepaymentService(paymentRepository, loanRepository, new LoanMath(),
+                applicationFlowService, settlementDirectory);
     }
 
     private Loan activeLoan() {
@@ -123,5 +127,47 @@ class RepaymentServiceTest {
 
         // Overdue on 5 Jul: full 27d interest + penalty for (5 − 1 grace) = 4 days
         assertThat(repaymentService.outstandingAsOf(1L, LocalDate.of(2026, 7, 5))).isEqualTo(1_350_000L);
+    }
+
+    @Test
+    void approvedSettlementCapsOutstanding() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
+        // Head approved a ₹7,000 full-and-final on a ₹12,700 due loan → borrower owes the settled amount.
+        when(settlementDirectory.approvedSettlementAmount(1L)).thenReturn(Optional.of(700_000L));
+
+        assertThat(repaymentService.outstandingAsOf(1L, LocalDate.of(2026, 6, 30))).isEqualTo(700_000L);
+    }
+
+    @Test
+    void settlementNeverIncreasesPayable() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
+        // A settlement above the real balance is a no-op: the borrower still owes only the lower formula amount.
+        when(settlementDirectory.approvedSettlementAmount(1L)).thenReturn(Optional.of(2_000_000L));
+
+        assertThat(repaymentService.outstandingAsOf(1L, LocalDate.of(2026, 6, 30))).isEqualTo(1_270_000L);
+    }
+
+    @Test
+    void payingTheSettledAmountClosesTheLoan() {
+        Loan loan = activeLoan();
+        Payment payment = new Payment();
+        payment.setLoanId(1L);
+        payment.setAmount(700_000L);
+        payment.setStatus(PaymentStatus.PENDING_VERIFICATION);
+        when(paymentRepository.findById(55L)).thenReturn(Optional.of(payment));
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        // Verified payments now equal the approved settlement → settled balance is 0, independent of the clock.
+        when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(700_000L);
+        when(settlementDirectory.approvedSettlementAmount(1L)).thenReturn(Optional.of(700_000L));
+        lenient().when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        repaymentService.verifyPayment(55L);
+
+        assertThat(loan.getOutstanding()).isZero();
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.CLOSED);
+        verify(applicationFlowService).closeForLoan(1L);
     }
 }

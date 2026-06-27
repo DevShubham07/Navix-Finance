@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, UserX } from "lucide-react";
 import { Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
 import {
   adminApi,
@@ -32,6 +33,18 @@ export default function AdminStaffPage() {
   return (
     <div>
       <PageHeader title="Staff accounts" subtitle="Manage staff roles and access status.">
+        <ExportMenu
+          title="Staff accounts"
+          fileBase="navix-staff"
+          columns={[
+            { header: "ID", value: (s: StaffResponse) => s.id },
+            { header: "Name", value: (s) => s.name },
+            { header: "Email", value: (s) => s.email },
+            { header: "Role", value: (s) => s.role },
+            { header: "Status", value: (s) => s.status },
+          ]}
+          rows={q.data ?? []}
+        />
         <button
           onClick={() => q.refetch()}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"

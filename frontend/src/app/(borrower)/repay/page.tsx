@@ -114,7 +114,11 @@ export default function RepayPage() {
   const dueToday = outQuery.data?.outstandingPaise ?? loan.outstandingPaise;
   const scheduled = loan.outstandingPaise; // full-tenure basis (minus verified payments)
   const savingPaise = Math.max(0, scheduled - dueToday);
-  const overdue = app?.status === "OVERDUE" || dueToday > loan.totalRepayablePaise;
+  // An approved collections settlement caps the payable at a full-and-final figure: show it as a
+  // settlement (not the normal balance) and suppress the prepay-saving / penalty hints.
+  const settlementPaise = outQuery.data?.settledAmountPaise ?? null;
+  const isSettlement = settlementPaise != null;
+  const overdue = !isSettlement && (app?.status === "OVERDUE" || dueToday > loan.totalRepayablePaise);
 
   const customPaise = rupeesToPaise(Number(custom.replace(/\D/g, "")) || 0);
   const amountPaise = mode === "full" ? dueToday : Math.min(customPaise, dueToday);
@@ -159,10 +163,17 @@ export default function RepayPage() {
           <InfoRow label="Total repayable (on salary day)" value={paiseToINR(loan.totalRepayablePaise)} />
           {loan.dueDate && <InfoRow label="Due date" value={formatDate(loan.dueDate)} />}
           <div className="mt-2 flex items-baseline justify-between rounded bg-navy px-4 py-3 text-white">
-            <span className="text-sm font-semibold text-white/90">{overdue ? "Pay now (incl. penalty)" : "Pay today"}</span>
+            <span className="text-sm font-semibold text-white/90">{isSettlement ? "Settlement — full & final" : overdue ? "Pay now (incl. penalty)" : "Pay today"}</span>
             <span className="font-serif text-2xl font-bold text-gold">{paiseToINR(dueToday)}</span>
           </div>
-          {savingPaise > 0 && !overdue && (
+          {isSettlement && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-navy">
+              <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
+              Our collections team approved a settlement of {paiseToINR(settlementPaise)} as <strong>full &amp; final</strong>.
+              Pay this to close your loan — no further amount will be due.
+            </p>
+          )}
+          {savingPaise > 0 && !overdue && !isSettlement && (
             <p className="mt-3 flex items-start gap-2 text-xs text-success-700">
               <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
               Pay early &amp; save {paiseToINR(savingPaise)} — interest is charged only to the day you pay.

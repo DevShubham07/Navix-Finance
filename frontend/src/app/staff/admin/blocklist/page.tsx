@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type BlocklistType, type BlocklistResponse } from "@/lib/api/applications";
 
@@ -43,6 +44,17 @@ export default function AdminBlocklistPage() {
   return (
     <div>
       <PageHeader title="Fraud blocklist" subtitle="Blocked PAN, Aadhaar ref, phone, device and bank account identifiers.">
+        <ExportMenu
+          title="Fraud blocklist"
+          fileBase="navix-blocklist"
+          columns={[
+            { header: "Type", value: (b: BlocklistResponse) => b.type },
+            { header: "Value", value: (b) => b.value },
+            { header: "Reason", value: (b) => b.reason ?? "" },
+            { header: "Active", value: (b) => (b.active ? "yes" : "no") },
+          ]}
+          rows={q.data ?? []}
+        />
         <button
           onClick={() => q.refetch()}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"

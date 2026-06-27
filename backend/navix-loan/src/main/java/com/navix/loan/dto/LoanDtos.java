@@ -75,7 +75,13 @@ public final class LoanDtos {
         }
     }
 
-    public record OutstandingView(Long loanId, LocalDate asOf, long outstandingPaise) {
+    /**
+     * The authoritative balance for a loan as of a date. {@code settledAmountPaise} is non-null only
+     * when collections has an approved partial settlement — then {@code outstandingPaise} is the
+     * settlement-capped "pay today" figure (full-and-final), letting the UI label it a settlement.
+     */
+    public record OutstandingView(Long loanId, LocalDate asOf, long outstandingPaise,
+                                  Long settledAmountPaise) {
     }
 
     /**

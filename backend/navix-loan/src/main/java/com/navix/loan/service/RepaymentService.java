@@ -1,5 +1,6 @@
 package com.navix.loan.service;
 
+import com.navix.common.collections.SettlementDirectory;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.loan.domain.LoanStatus;
@@ -32,6 +33,7 @@ public class RepaymentService {
     private final LoanRepository loanRepository;
     private final LoanMath loanMath;
     private final ApplicationFlowService applicationFlowService;
+    private final SettlementDirectory settlementDirectory;
 
     /** Record a (possibly partial) repayment. Idempotent on {@code txnRef} per loan. */
     @Transactional
@@ -95,6 +97,13 @@ public class RepaymentService {
      * Authoritative outstanding balance at a date: principal + interest accrued to {@code asOf}
      * (capped at the scheduled tenure) + late penalty past the 1-day grace − verified payments.
      * Prepayment falls out naturally (less interest for fewer days held).
+     *
+     * <p><b>Approved settlement:</b> when collections has an approved partial settlement for the loan
+     * (via {@link SettlementDirectory}), the agreed full-and-final amount caps the payable. Because a
+     * settlement is a concession it can only <i>reduce</i> what the borrower owes — never increase it —
+     * so the result is {@code min(formulaOwed, settlement − verified)}. The borrower's repay page,
+     * dashboard and the close-at-zero logic all read this method, so an approved settlement becomes the
+     * borrower-facing payable and the loan closes once the settled amount is paid.
      */
     @Transactional(readOnly = true)
     public long outstandingAsOf(Long loanId, LocalDate asOf) {
@@ -106,7 +115,20 @@ public class RepaymentService {
         int rawDpd = loanMath.daysPastDue(loan.getDueDate(), at);
         int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
         long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
-        return loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
+        long formulaOwed = loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
+        return settlementDirectory.approvedSettlementAmount(loanId)
+                .map(settled -> Math.min(formulaOwed, Math.max(0L, settled - verified)))
+                .orElse(formulaOwed);
+    }
+
+    /**
+     * The approved full-and-final settlement amount (paise) for a loan, if collections has one — for
+     * surfacing on the borrower's repay page (so the capped "pay today" figure is shown as a
+     * settlement, not the normal balance). Empty when no approved settlement applies.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Long> approvedSettlementAmount(Long loanId) {
+        return settlementDirectory.approvedSettlementAmount(loanId);
     }
 
     private void recomputeOutstanding(Long loanId) {

@@ -82,6 +82,9 @@ export interface OutstandingView {
   loanId: number;
   asOf: string;
   outstandingPaise: number;
+  /** Non-null when collections has an approved settlement: outstandingPaise is then the
+   *  settlement-capped full-and-final figure. */
+  settledAmountPaise?: number | null;
 }
 
 export type PaymentMethodName = "UPI" | "BANK_TRANSFER" | "NACH";
@@ -164,6 +167,37 @@ export interface DocumentContent {
   fileName: string;
   contentType: string | null;
   dataBase64: string;
+}
+
+/** One row in the staff Customers list (borrower-centric roll-up; mirrors backend CustomerSummary). */
+export interface CustomerSummary {
+  applicantId: number;
+  name: string | null;
+  panMasked: string | null;
+  mobileMasked: string | null;
+  applicationCount: number;
+  loanCount: number;
+  latestStatus: string | null;
+  totalOutstandingPaise: number;
+}
+
+/** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
+export interface CustomerDetail {
+  applicantId: number;
+  profile: ProfileView | null;
+  applications: ApplicationView[];
+  loans: LoanView[];
+  payments: PaymentView[];
+}
+
+/** Admin edit of a customer's KYC data (identity fields excluded — they stay locked). */
+export interface UpdateCustomerInput {
+  fullName?: string | null;
+  address?: string | null;
+  employer?: string | null;
+  employmentStatus?: string | null;
+  monthlySalaryPaise?: number | null;
+  salaryBank?: string | null;
 }
 
 /** Standard backend envelope. */
@@ -366,6 +400,10 @@ export const staffApi = {
   accountantValidate: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/accountant-validate`, "POST", { decision, txnRef, notes }),
 
+  /** Cancel a pre-disbursement application (staff/admin). Backend rejects once past disbursement. */
+  cancel: (id: number, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/cancel`, "POST", { notes }),
+
   // --- loan view (staff) ---
   loan: (loanId: number) => bff<LoanView>(`${STAFF_LOAN_BASE}/${loanId}`, "GET"),
 
@@ -405,6 +443,25 @@ export const staffApi = {
   /** One document's bytes (base64) for view/download. */
   document: (id: number, docId: number) =>
     bff<DocumentContent>(`${STAFF_BASE}/${id}/documents/${docId}`, "GET"),
+};
+
+// ---------------------------------------------------------------------------
+// Customers (borrower-centric) — routes under /api/staff/customers/*
+// ---------------------------------------------------------------------------
+
+const CUSTOMERS_BASE = "/api/staff/customers";
+
+export const customersApi = {
+  /** All customers, optionally filtered by name / applicant id. */
+  list: (q?: string) =>
+    bff<CustomerSummary[]>(`${CUSTOMERS_BASE}${q ? `?q=${encodeURIComponent(q)}` : ""}`, "GET"),
+
+  /** One customer's full history (profile + applications + loans + payments). */
+  get: (applicantId: number) => bff<CustomerDetail>(`${CUSTOMERS_BASE}/${applicantId}`, "GET"),
+
+  /** ADMIN corrects a customer's KYC data (non-identity fields). */
+  updateProfile: (applicantId: number, body: UpdateCustomerInput) =>
+    bff<ProfileView>(`${CUSTOMERS_BASE}/${applicantId}/profile`, "PUT", body),
 };
 
 // ---------------------------------------------------------------------------
