@@ -43,11 +43,14 @@ public class BorrowerOtpService {
     /** Generate + store an OTP for {@code mobile} and send it via SMS. */
     public OtpRequest request(String mobile) {
         String number = normalize(mobile);
-        String code = generate();
+        // Mock mode (demo/testing): a fixed code, no SMS, no DLT — testers just enter mockCode().
+        String code = props.mock() ? mockCode() : generate();
         store.put(number, new Otp(code, Instant.now().plusSeconds(props.otpTtlSeconds()), 0));
 
-        boolean sent = false;
-        if (props.enabled()) {
+        boolean sent = props.mock();
+        if (props.mock()) {
+            log.info("OTP mock mode — fixed code, no SMS dispatched");
+        } else if (props.enabled()) {
             try {
                 String jobId = smsClient.send("91" + number, buildMessage(code));
                 sent = true;
@@ -57,12 +60,19 @@ public class BorrowerOtpService {
                 log.warn("OTP SMS delivery failed: {}", e.getMessage());
             }
         }
-        return new OtpRequest(sent, props.devEcho() ? code : null, props.otpTtlSeconds());
+        // Surface the code to the caller in mock or dev-echo mode (never in real prod).
+        boolean reveal = props.mock() || props.devEcho();
+        return new OtpRequest(sent, reveal ? code : null, props.otpTtlSeconds());
     }
 
     /** Verify (and consume) the OTP for {@code mobile}. */
     public boolean verify(String mobile, String code) {
         String number = normalize(mobile);
+        // Mock mode: the fixed code always verifies (even if the store entry lapsed).
+        if (props.mock() && code != null && mockCode().equals(code.trim())) {
+            store.remove(number);
+            return true;
+        }
         Otp otp = store.get(number);
         if (otp == null || code == null) {
             return false;
@@ -93,6 +103,11 @@ public class BorrowerOtpService {
         int bound = (int) Math.pow(10, props.otpLength());
         int min = bound / 10;
         return String.valueOf(min + RANDOM.nextInt(bound - min));
+    }
+
+    /** The fixed code accepted in mock mode (default 123456). */
+    private String mockCode() {
+        return props.mockCode() != null && !props.mockCode().isBlank() ? props.mockCode() : "123456";
     }
 
     private static String normalize(String mobile) {

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.navix.sms.SmsException;
@@ -26,8 +27,12 @@ class BorrowerOtpServiceTest {
     @Mock
     private UltronSmsClient smsClient;
 
-    /** Build {@code SmsProperties} in its exact record field order. */
     private static SmsProperties props(boolean devEcho) {
+        return props(devEcho, false);
+    }
+
+    /** Build {@code SmsProperties} in its exact record field order. */
+    private static SmsProperties props(boolean devEcho, boolean mock) {
         return new SmsProperties(
                 "https://ultronsms.test/api/mt/", // baseUrl
                 "user",                            // user
@@ -42,8 +47,23 @@ class BorrowerOtpServiceTest {
                 true,                              // enabled
                 devEcho,                           // devEcho
                 300,                               // otpTtlSeconds
-                6                                  // otpLength
+                6,                                 // otpLength
+                mock,                              // mock
+                "123456"                           // mockCode
         );
+    }
+
+    @Test
+    void mockMode_usesFixedCode_andNeverCallsSms() {
+        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(false, true));
+        var result = service.request("9812345678");
+
+        assertThat(result.sent()).isTrue();        // mock "delivery"
+        assertThat(result.devCode()).isEqualTo("123456");
+        verifyNoInteractions(smsClient);            // no real SMS
+        assertThat(service.verify("9812345678", "123456")).isTrue();
+        assertThat(service.verify("9999999999", "123456")).isTrue(); // fixed code works for any mobile
+        assertThat(service.verify("9812345678", "000000")).isFalse();
     }
 
     @Test

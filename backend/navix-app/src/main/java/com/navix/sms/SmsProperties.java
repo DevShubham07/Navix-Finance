@@ -27,7 +27,10 @@ public record SmsProperties(
         boolean enabled,
         boolean devEcho,
         int otpTtlSeconds,
-        int otpLength
+        int otpLength,
+        /** Demo/testing OTP mock: a fixed {@code mockCode} always verifies, no SMS sent. OFF in prod. */
+        boolean mock,
+        String mockCode
 ) {
     public boolean usesApiKey() {
         return apiKey != null && !apiKey.isBlank();
