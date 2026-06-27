@@ -21,6 +21,9 @@ public record SmsProperties(
         String route,
         String peid,
         String dltTemplateId,
+        /** DLT-registered OTP message; {@code {otp}} → the code, {@code {ttl}} → minutes. Must
+         *  match a template registered for the sender, or the gateway returns "Invalid template text". */
+        String otpTemplate,
         boolean enabled,
         boolean devEcho,
         int otpTtlSeconds,

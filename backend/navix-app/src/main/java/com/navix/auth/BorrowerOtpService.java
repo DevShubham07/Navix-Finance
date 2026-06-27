@@ -49,9 +49,7 @@ public class BorrowerOtpService {
         boolean sent = false;
         if (props.enabled()) {
             try {
-                String jobId = smsClient.send("91" + number,
-                        "Your NAVIX verification code is " + code + ". Valid for "
-                                + (props.otpTtlSeconds() / 60) + " minutes. Do not share it.");
+                String jobId = smsClient.send("91" + number, buildMessage(code));
                 sent = true;
                 log.info("OTP SMS dispatched (jobId={})", jobId);
             } catch (SmsException e) {
@@ -79,6 +77,16 @@ public class BorrowerOtpService {
         }
         store.remove(number); // single-use
         return true;
+    }
+
+    /** Build the SMS body from the (DLT-registered) template: {@code {otp}} → code, {@code {ttl}} → minutes. */
+    private String buildMessage(String code) {
+        String template = props.otpTemplate() != null && !props.otpTemplate().isBlank()
+                ? props.otpTemplate()
+                : "Your NAVIX verification code is {otp}. Valid for {ttl} minutes. Do not share it.";
+        return template
+                .replace("{otp}", code)
+                .replace("{ttl}", String.valueOf(props.otpTtlSeconds() / 60));
     }
 
     private String generate() {

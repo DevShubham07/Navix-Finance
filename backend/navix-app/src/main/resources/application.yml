@@ -62,6 +62,9 @@ navix:
     route: ${NAVIX_SMS_ROUTE:}
     peid: ${NAVIX_SMS_PEID:}
     dlt-template-id: ${NAVIX_SMS_DLT_TEMPLATE_ID:}
+    # DLT-registered OTP message ({otp} = code, {ttl} = minutes). MUST match a template
+    # registered for the sender or the gateway returns "Invalid template text".
+    otp-template: ${NAVIX_SMS_OTP_TEMPLATE:Your NAVIX verification code is {otp}. Valid for {ttl} minutes. Do not share it.}
     enabled: ${NAVIX_SMS_ENABLED:true}
     # DEV ONLY — returns the OTP in the request response when SMS can't reach a handset. MUST be false in prod.
     dev-echo: ${NAVIX_SMS_DEV_ECHO:false}
