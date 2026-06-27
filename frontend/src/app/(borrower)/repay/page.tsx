@@ -10,6 +10,7 @@ import { useMounted } from "@/hooks/use-mounted";
 import { useLiveApplication } from "@/lib/api/live-journey";
 import {
   borrowerApi,
+  paymentSettingsApi,
   paiseToINR,
   rupeesToPaise,
   ApplicationApiError,
@@ -49,6 +50,12 @@ export default function RepayPage() {
     queryKey: ["repay-payments", loanId],
     queryFn: () => borrowerApi.repayments(loanId as number),
     enabled: loanId != null,
+  });
+  // Admin-managed company payee (UPI QR + bank details). Falls back to the bundled static assets
+  // when the backend has no S3 keys yet; presigned URLs are short-lived, so don't cache long.
+  const settingsQuery = useQuery({
+    queryKey: ["payment-settings"],
+    queryFn: () => paymentSettingsApi.get(),
   });
 
   const record = useMutation({
@@ -130,6 +137,17 @@ export default function RepayPage() {
   };
 
   const payments = payQuery.data ?? [];
+
+  // Payee block — fetched from the admin-managed settings, with the bundled static assets and the
+  // previously-hardcoded values as fallbacks so the screen always renders something usable.
+  const settings = settingsQuery.data;
+  const upiId = settings?.upiId || "navix.collections@hdfcbank";
+  const qrSrc = settings?.qrUrl || "/payment/upi-qr.jpg";
+  const accountName = settings?.accountName || "NAVIX Finance";
+  const accountNumber = settings?.accountNumber || "5010 0099 8877";
+  const ifsc = settings?.ifsc || "HDFC0000123";
+  const bankName = settings?.bankName || "HDFC Bank";
+  const accountInfoHref = settings?.accountInfoUrl || "/payment/account-info.pdf";
 
   return (
     <div className="container max-w-content py-10">
@@ -249,9 +267,34 @@ export default function RepayPage() {
 
           <div className="mb-4 rounded bg-grey-100 p-3 text-xs text-muted">
             {method === "UPI" ? (
-              <>Pay to <strong className="text-ink">navix.collections@hdfcbank</strong>, then paste the UPI reference below.</>
+              <div className="flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={qrSrc}
+                  alt="UPI QR code"
+                  className="h-24 w-24 flex-shrink-0 rounded border border-line bg-white object-contain p-1"
+                />
+                <div>
+                  Scan the QR or pay to <strong className="text-ink">{upiId}</strong>, then paste the
+                  UPI reference below.
+                </div>
+              </div>
             ) : (
-              <>NEFT/IMPS to <strong className="text-ink">A/C 5010 0099 8877</strong> · IFSC <strong className="text-ink">HDFC0000123</strong>, then paste the UTR below.</>
+              <div className="space-y-0.5">
+                <div>NEFT/IMPS to:</div>
+                <div><span className="text-ink">{accountName}</span></div>
+                <div>A/C <strong className="text-ink">{accountNumber}</strong> · IFSC <strong className="text-ink">{ifsc}</strong></div>
+                <div>{bankName}</div>
+                <a
+                  href={accountInfoHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 font-semibold text-navy underline-offset-2 hover:underline"
+                >
+                  <Landmark size={13} /> Download account details (PDF)
+                </a>
+                <div className="pt-1">Then paste the UTR below.</div>
+              </div>
             )}
           </div>
 

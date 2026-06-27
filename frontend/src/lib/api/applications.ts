@@ -200,6 +200,32 @@ export interface UpdateCustomerInput {
   salaryBank?: string | null;
 }
 
+/**
+ * Admin-managed company payee shown on the borrower repay screen. The `*Url` fields are short-lived
+ * presigned GETs for an uploaded QR image / account-info PDF (null when none is uploaded — the UI
+ * then falls back to a bundled static asset).
+ */
+export interface PaymentSettings {
+  upiId: string | null;
+  accountName: string | null;
+  accountNumber: string | null;
+  ifsc: string | null;
+  bankName: string | null;
+  qrUrl: string | null;
+  accountInfoUrl: string | null;
+}
+
+/** ADMIN edit of the payee (all fields optional; identity-less text + uploaded asset keys). */
+export interface UpdatePaymentSettingsInput {
+  upiId?: string | null;
+  accountName?: string | null;
+  accountNumber?: string | null;
+  ifsc?: string | null;
+  bankName?: string | null;
+  qrObjectKey?: string | null;
+  accountInfoObjectKey?: string | null;
+}
+
 /** Standard backend envelope. */
 export interface ApiResponse<T> {
   success: boolean;
@@ -531,6 +557,79 @@ export const adminApi = {
   addBlocklist: (payload: { type: BlocklistType; value: string; reason?: string }) =>
     bff<BlocklistResponse>(ADMIN_BLOCKLIST_BASE, "POST", payload),
   removeBlocklist: (id: number) => bff<null>(`${ADMIN_BLOCKLIST_BASE}/${id}`, "DELETE"),
+};
+
+// ---------------------------------------------------------------------------
+// Payment settings (admin-managed company payee) — routes under /api/payment-settings
+// ---------------------------------------------------------------------------
+
+export const paymentSettingsApi = {
+  /** The current payee (borrower repay + staff admin read). */
+  get: () => bff<PaymentSettings>("/api/payment-settings", "GET"),
+
+  /** ADMIN edit of the payee fields / uploaded asset keys. */
+  update: (body: UpdatePaymentSettingsInput) =>
+    bff<PaymentSettings>("/api/payment-settings", "PUT", body),
+};
+
+// ---------------------------------------------------------------------------
+// Storage (presigned uploads) — routes under /api/storage
+// ---------------------------------------------------------------------------
+
+/** Result of asking for a presigned PUT URL (raw — the storage endpoint is NOT envelope-wrapped). */
+export interface PresignUpload {
+  key: string;
+  url: string;
+  method: string;
+  expiresInSeconds: number;
+}
+
+export const storageApi = {
+  /** Ask the backend for a presigned PUT URL for a categorised upload. */
+  presignUpload: async (body: {
+    category: string;
+    filename: string;
+    contentType: string;
+  }): Promise<PresignUpload> => {
+    const res = await fetch("/api/storage/presign-upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      // BFF/backend error paths return the ApiResponse envelope.
+      let code = `HTTP_${res.status}`;
+      let message = `Upload could not be prepared (status ${res.status}).`;
+      try {
+        const env = JSON.parse(text) as ApiResponse<unknown>;
+        code = env.error?.code ?? code;
+        message = env.error?.message ?? env.message ?? message;
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new ApplicationApiError(message, code, res.status);
+    }
+    return JSON.parse(text) as PresignUpload;
+  },
+
+  /** PUT the file bytes straight to the presigned S3 URL (never through the BFF). */
+  putToPresignedUrl: async (url: string, file: File): Promise<void> => {
+    const res = await fetch(url, {
+      method: "PUT",
+      body: file,
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+    });
+    if (!res.ok) {
+      throw new ApplicationApiError(
+        `Upload failed (status ${res.status}).`,
+        `UPLOAD_FAILED_${res.status}`,
+        res.status,
+      );
+    }
+  },
 };
 
 // ---------------------------------------------------------------------------

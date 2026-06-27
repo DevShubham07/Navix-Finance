@@ -17,6 +17,7 @@ import {
   Contact,
   Mail,
   Ban,
+  CreditCard,
   LogOut,
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
@@ -57,6 +58,7 @@ const NAV: NavGroup[] = [
       { label: "Staff", href: "/staff/admin/staff", Icon: Users, perm: "staff:manage" },
       { label: "Invites", href: "/staff/admin/invites", Icon: Mail, perm: "staff:manage" },
       { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
+      { label: "Payment settings", href: "/staff/admin/payment-settings", Icon: CreditCard, perm: "staff:manage" },
       { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: "loan:activate" },
     ],
   },
