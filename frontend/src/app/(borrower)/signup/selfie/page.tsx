@@ -99,10 +99,11 @@ export default function SignupSelfiePage() {
       <div className="form-card text-center">
         <h1 className="text-2xl">Take a quick selfie</h1>
         <p className="mx-auto mb-6 max-w-md text-muted">
-          We match your face to your PAN photo. Look straight at the camera in good lighting.
+          We match your face to your PAN photo. Look straight at the camera in good lighting,
+          and fit your face fully inside the circle.
         </p>
 
-        <div className="mx-auto mb-6 grid aspect-square w-full max-w-xs place-items-center overflow-hidden rounded-full border-4 border-dashed border-line bg-grey-100">
+        <div className="relative mx-auto mb-3 grid aspect-square w-full max-w-xs place-items-center overflow-hidden rounded-full border-4 border-dashed border-line bg-grey-100">
           {/* video is always mounted so the ref is available before play() */}
           <video
             ref={videoRef}
@@ -110,9 +111,24 @@ export default function SignupSelfiePage() {
             muted
             className={`h-full w-full object-cover ${phase === "live" || phase === "uploading" ? "" : "hidden"}`}
           />
+          {/* Face-position guide: a dashed ring marks the "perfect spot"; the surrounding spotlight
+              mask dims everything outside it so the borrower centres their face inside the circle. */}
+          {phase === "live" || phase === "uploading" ? (
+            <div className="pointer-events-none absolute inset-0 grid place-items-center">
+              <div className="h-[80%] w-[80%] rounded-full border-2 border-dashed border-white/90 shadow-[0_0_0_9999px_rgba(12,37,64,0.35)]" />
+            </div>
+          ) : null}
           {phase === "idle" ? <Camera size={64} className="text-muted" /> : null}
           {phase === "done" ? <ArrowRight size={56} className="text-success-600" /> : null}
         </div>
+
+        {phase === "live" ? (
+          <p className="mx-auto mb-5 max-w-xs text-sm font-semibold text-navy">
+            Fit your face inside the circle and hold still, then capture.
+          </p>
+        ) : (
+          <div className="mb-5" />
+        )}
 
         {phase === "idle" ? (
           <button onClick={startCamera} className="btn btn-navy">
