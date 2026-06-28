@@ -128,6 +128,18 @@ export default function DashboardPage() {
               tone="navy"
               title="Application in progress"
               body="Pick up where you left off — track your application or choose your amount."
+              extra={
+                <div className="mb-5 rounded border border-line bg-grey-100 px-4 py-3">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-navy">Application status</span>
+                    <StatusChip status={stage} />
+                  </div>
+                  <p className="text-xs text-muted">{stageDescription(stage)}</p>
+                  <Link href="/loan/status" className="mt-1 inline-block text-xs font-semibold text-gold-dark hover:underline">
+                    View full status &amp; timeline →
+                  </Link>
+                </div>
+              }
               cta={{ href: continueHref, label: "Continue" }}
             />
           ) : (
@@ -160,6 +172,19 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+/** One-line, customer-friendly description of where the application currently stands. */
+function stageDescription(status: BorrowerStatus): string {
+  const map: Partial<Record<BorrowerStatus, string>> = {
+    NEW: "Continue your application where you left off.",
+    APPLIED: "Submitted — your application is in the queue.",
+    UNDER_REVIEW: "Our team is verifying your KYC and details.",
+    APPROVED: "KYC approved — choose your amount to continue.",
+    DOCS_SIGNED: "Documents signed — moving to disbursal.",
+    DISBURSING: "Approved — your disbursal is being arranged.",
+  };
+  return map[status] ?? "Track your application for the latest update.";
 }
 
 function StatusChip({ status }: { status: BorrowerStatus }) {
@@ -282,10 +307,11 @@ function PreApprovedBanner({
 }
 
 function InfoCard({
-  icon, title, body, cta, tone,
+  icon, title, body, cta, tone, extra,
 }: {
   icon: React.ReactNode; title: string; body: string;
   cta?: { href: string; label: string }; tone: "navy" | "error";
+  extra?: React.ReactNode;
 }) {
   return (
     <div className={`rounded border p-7 shadow-sm ${tone === "error" ? "border-error-100 bg-error-50/40" : "border-line bg-white"}`}>
@@ -294,6 +320,7 @@ function InfoCard({
       </span>
       <h2 className="text-2xl">{title}</h2>
       <p className="mb-4 text-muted">{body}</p>
+      {extra}
       {cta && <Link href={cta.href} className="btn btn-gold">{cta.label} <ArrowRight size={16} /></Link>}
     </div>
   );

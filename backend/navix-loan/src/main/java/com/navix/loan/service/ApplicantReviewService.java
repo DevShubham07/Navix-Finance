@@ -69,22 +69,27 @@ public class ApplicantReviewService {
 
         ApplicantProfile p = profileRepository.findByApplicationId(appId).orElseGet(ApplicantProfile::new);
         p.setApplicationId(appId);
-        p.setFullName(trimToNull(req.fullName()));
-        p.setPan(pan);
-        p.setAadhaar(aadhaar);
-        p.setMobile(mobile);
-        p.setDob(req.dob());
-        p.setAddress(trimToNull(req.address()));
-        p.setEmployer(trimToNull(req.employer()));
-        p.setEmploymentStatus(trimToNull(req.employmentStatus()));
-        p.setMonthlySalaryPaise(req.monthlySalaryPaise());
-        p.setSalaryBank(trimToNull(req.salaryBank()));
-        // Contact email is captured once (signup email step, or the verify-email fallback). A later
-        // partial save that omits it must not wipe it — only overwrite when a value is provided.
+        // PARTIAL MERGE: onboarding saves the profile in slices (name on the email step, salary on
+        // the salary step, bank on the penny-drop step, …). Only overwrite a field when this request
+        // actually provides it, so a later slice never wipes an earlier one — otherwise the profile
+        // ends up holding only the last slice's fields (e.g. name/salary null on re-login).
+        String fullName = trimToNull(req.fullName());
+        if (fullName != null) p.setFullName(fullName);
+        if (pan != null) p.setPan(pan);
+        if (aadhaar != null) p.setAadhaar(aadhaar);
+        if (mobile != null) p.setMobile(mobile);
+        if (req.dob() != null) p.setDob(req.dob());
+        String address = trimToNull(req.address());
+        if (address != null) p.setAddress(address);
+        String employer = trimToNull(req.employer());
+        if (employer != null) p.setEmployer(employer);
+        String employmentStatus = trimToNull(req.employmentStatus());
+        if (employmentStatus != null) p.setEmploymentStatus(employmentStatus);
+        if (req.monthlySalaryPaise() != null) p.setMonthlySalaryPaise(req.monthlySalaryPaise());
+        String salaryBank = trimToNull(req.salaryBank());
+        if (salaryBank != null) p.setSalaryBank(salaryBank);
         String email = trimToNull(req.email());
-        if (email != null) {
-            p.setEmail(email);
-        }
+        if (email != null) p.setEmail(email);
         return profileRepository.save(p);
     }
 

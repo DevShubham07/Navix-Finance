@@ -151,7 +151,15 @@ public class ApplicationVerificationService {
         String ref = ref(appId, ADDRESS);
         VerificationPort.AddressCheck r = verification.verifyAddress(lat, lng, ref);
         ApplicantProfile profile = profile(appId);
-        profile.setAddressVerified(r.withinIndia());
+        // The geocoder's within-India flag is unreliable (valid Indian addresses sometimes resolve
+        // false), so it no longer gates the step — a successfully resolved address PASSes. The raw
+        // flag is still recorded in the audit `derived` for staff. Only an address that fails to
+        // resolve at all goes to REVIEW.
+        boolean resolved = r.address() != null && !r.address().isBlank();
+        profile.setAddressVerified(resolved);
+        if (resolved && (profile.getAddress() == null || profile.getAddress().isBlank())) {
+            profile.setAddress(r.address());
+        }
         profileRepo.save(profile);
 
         Map<String, Object> derived = new LinkedHashMap<>();
@@ -159,9 +167,9 @@ public class ApplicationVerificationService {
         derived.put("state", r.state());
         derived.put("pincode", r.pincode());
         derived.put("address", r.address());
-        String status = r.withinIndia() ? PASS : REVIEW;
+        String status = resolved ? PASS : REVIEW;
         return view(upsert(appId, ADDRESS, status, "FINTRIX", r.txnId(), ref, null, null, null, derived,
-                r.withinIndia() ? "Address resolved within India" : "Address not within India — review"));
+                resolved ? "Address resolved" : "Address could not be resolved — review"));
     }
 
     /** Manual address fallback when geolocation is unavailable — recorded for approver review. */

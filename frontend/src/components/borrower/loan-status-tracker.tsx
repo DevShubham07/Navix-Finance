@@ -5,8 +5,8 @@ import type { BorrowerStatus } from "@/lib/domain/borrower";
 
 /**
  * Vertical timeline of the customer-facing status journey (product flow §10):
- * Applied → Under review → Approved → Docs signed → Bank verified →
- * Money on the way → Active → Repaid.
+ * Applied → Under review → Approved → Docs signed → Money on the way → Active → Repaid.
+ * (Bank verification is completed during onboarding, so it isn't shown as a post-submission step.)
  */
 export interface LoanStatusTrackerProps {
   status: BorrowerStatus;
@@ -18,8 +18,7 @@ const STAGES: Array<{ key: BorrowerStatus; label: string; sub: string }> = [
   { key: "UNDER_REVIEW", label: "Under review", sub: "Credit team is reviewing" },
   { key: "APPROVED", label: "Approved", sub: "Loan offer ready" },
   { key: "DOCS_SIGNED", label: "Documents signed", sub: "Agreement, sanction letter & KFS e-signed" },
-  { key: "BANK_VERIFIED", label: "Bank verified", sub: "Penny-drop name match" },
-  { key: "DISBURSING", label: "Money on the way", sub: "Partner NBFC transferring funds" },
+  { key: "DISBURSING", label: "Money on the way", sub: "Transferring funds to your bank account" },
   { key: "ACTIVE", label: "Active", sub: "Due on your salary day" },
   { key: "REPAID", label: "Repaid & closed", sub: "Loan fully settled" },
 ];
