@@ -68,6 +68,11 @@
             <artifactId>navix-storage</artifactId>
             <version>0.0.1-SNAPSHOT</version>
         </dependency>
+        <dependency>
+            <groupId>com.navix</groupId>
+            <artifactId>navix-notification</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
 
         <!-- Spring Boot starters (versions managed by parent BOM) -->
         <dependency>

@@ -50,7 +50,7 @@ class CollectionsServiceTest {
     @BeforeEach
     void setUp() {
         service = new CollectionsService(caseRepository, interactionRepository,
-                loanDirectory, staffDirectory, new DpdCalculator());
+                loanDirectory, staffDirectory, new DpdCalculator(), event -> {});
         // Default actor is a Collection Head (allowed to assign); tests override where needed.
         ActorContext.set(new CurrentActor("100", "Head", "COLLECTION_HEAD"));
     }

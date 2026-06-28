@@ -150,6 +150,7 @@ export interface ProfileInput {
   pan?: string;
   aadhaar?: string; // 12 digits; uniqueness enforced server-side
   mobile?: string; // 10 digits; uniqueness enforced server-side
+  email?: string; // contact email — gates email notifications
   dob?: string; // ISO yyyy-mm-dd
   address?: string;
   employer?: string;
@@ -918,6 +919,61 @@ export const collectionsApi = {
       "GET",
     ),
 };
+
+// ---------------------------------------------------------------------------
+// Notifications — the recipient's in-app inbox (borrower + staff share the shape)
+// ---------------------------------------------------------------------------
+
+/** One in-app notification (mirrors backend NotificationView). */
+export interface NotificationView {
+  id: number;
+  /** Stable enum, e.g. "KYC_APPROVED" — drives the icon/intent. */
+  type: string;
+  /** Coarse grouping, e.g. "KYC" | "CREDIT" | "DISBURSEMENT" | "REPAYMENT" | "COLLECTIONS" | "STAFF_IAM" | "SECURITY" | "SYSTEM". */
+  category: string;
+  title: string;
+  body: string;
+  read: boolean;
+  /** Routing ids for deep-linking on click (any may be null). */
+  applicationId: number | null;
+  loanId: number | null;
+  caseId: string | null;
+  createdAt: string;
+}
+
+/** Which session/cookie a notifications client speaks for. */
+export type NotificationScope = "borrower" | "staff";
+
+/**
+ * Build a notifications client bound to one BFF namespace. The backend endpoint is the
+ * same (`/api/notifications`); only the proxy prefix (and thus the cookie) differs.
+ */
+function makeNotificationsApi(base: string) {
+  return {
+    /** The caller's notifications, newest-first. */
+    list: (page = 0, size = 20) =>
+      bff<NotificationView[]>(`${base}?page=${page}&size=${size}`, "GET"),
+
+    /** Unread in-app count for the bell badge. */
+    unreadCount: () => bff<number>(`${base}/unread-count`, "GET"),
+
+    /** Mark one read; resolves to the fresh unread count. */
+    markRead: (id: number) => bff<number>(`${base}/${id}/read`, "POST"),
+
+    /** Mark all read; resolves to the fresh unread count (0). */
+    markAllRead: () => bff<number>(`${base}/read-all`, "POST"),
+  };
+}
+
+export type NotificationsApi = ReturnType<typeof makeNotificationsApi>;
+
+export const borrowerNotificationsApi = makeNotificationsApi("/api/borrower/notifications");
+export const staffNotificationsApi = makeNotificationsApi("/api/staff/notifications");
+
+/** Pick the right notifications client for a scope. */
+export function notificationsApiFor(scope: NotificationScope): NotificationsApi {
+  return scope === "staff" ? staffNotificationsApi : borrowerNotificationsApi;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers

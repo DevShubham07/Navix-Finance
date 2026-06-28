@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { LayoutDashboard, Wallet } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { AccountMenu } from "@/components/app/account-menu";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useBorrowerSession } from "@/lib/api/live-journey";
 
 const APP_NAV = [
@@ -41,6 +42,9 @@ export function AppHeader() {
               <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm ml-2">
                 New loan
               </Link>
+              <div className="ml-1">
+                <NotificationBell scope="borrower" />
+              </div>
               <div className="ml-1">
                 <AccountMenu />
               </div>

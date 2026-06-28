@@ -59,7 +59,7 @@ class ApplicationFlowServiceTest {
     void setUp() {
         flow = new ApplicationFlowService(applicationRepository, eventRepository,
                 new EligibilityService(), loanService, staffDirectory,
-                loanRepository, paymentRepository, profileRepository, new LoanMath());
+                loanRepository, paymentRepository, profileRepository, new LoanMath(), event -> {});
         // Default: assignee passes activation gating; negative case overrides below.
         lenient().when(staffDirectory.isActiveWithRole(any(), any())).thenReturn(true);
         lenient().when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));

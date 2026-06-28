@@ -191,6 +191,25 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
   enriched queue endpoints are staff-guarded, and **nothing** is added to the borrower `/profile`
   (honours the "never show score to the borrower" rule). Local demo: the Fintrix sandbox is thin-file,
   so set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`** to drive a rich brief end-to-end (§14).
+- ✅ **Notification engine — in-app + SMS + email (live, 2026-06-28)** — a new **`navix-notification`**
+  module (depends only on navix-common; `navix-app → navix-notification` is the only new Maven edge) turns
+  every lifecycle moment into a notification, **fully decoupled** from business logic. Domain services
+  publish Spring events (`ApplicationFlowService.logEvent`, `RepaymentService`, `CollectionsService`,
+  `SettlementService`, `StaffService`, `InviteService`); a `@TransactionalEventListener(AFTER_COMMIT)`
+  **`@Async`** listener fans them out so notifications **never block, fail, or roll back** business work.
+  A self-describing **catalog** (`NotificationType` × `RecipientPolicy`) drives an `AudienceResolver`
+  (fan-out across ACTIVE role holders + dedupe), a `{placeholder}` `TemplateRenderer` (unknown key → `—`),
+  and the `NotificationDispatcher`, which persists **one `notification` row per recipient** (the row *is*
+  the in-app inbox) and **one `notification_delivery` per channel** with per-channel **error isolation**.
+  Channels are **address-gated**: IN_APP always; SMS only with a mobile (so staff never get SMS, over the
+  existing `SmsGateway`/UltronSMS, mock honoured); EMAIL only with an email (`LogEmailClient` by default,
+  `SmtpEmailClient` when `navix.email.provider=smtp` — mirrors the `NAVIX_SMS_MOCK` philosophy). Surfaced
+  to both audiences by a shared **`NotificationBell`** (borrower app-header + staff console) polling
+  `GET /api/notifications` / `…/unread-count` every 20s with mark-read / mark-all-read, scoped to the
+  caller (cross-owner read/write → 404). Flyway **V21** (notification core + partial unread index) +
+  **V22** (`applicant_profile.email`, captured at the signup email step for the EMAIL channel). 37 new
+  unit tests (dispatcher fan-out + error-isolation, audience, renderer, listener mapping, service
+  scoping, email toggle). See §11 (`/api/notifications`) and §12 (event-driven convention).
 
 **Demo-first (not yet real):**
 - 🟡 **No real auth/JWT yet.** Identity is injected via demo headers (§7). This is intentional for
@@ -222,6 +241,7 @@ navix_final/
 │   ├── navix-disbursement/       # (legacy UUID maker-checker chain — superseded, dormant)
 │   ├── navix-collections/        # DPD buckets, collection cases, settlements
 │   ├── navix-storage/            # S3 abstraction (presign)
+│   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; DemoActorFilter, Flyway migrations
 │   │   └── src/main/resources/db/migration/   # V1..V13 (the REAL schema lives here)
 │   └── pom.xml                   # parent BOM
@@ -567,6 +587,8 @@ navix-common). Applied on every boot:
 | `V14__application_reborrow_states.sql` | extend the `status` CHECK with `PRE_APPROVED` / `REVIEW_PENDING` (returning-borrower reborrow); no new column/table |
 | `V15`–`V19` | the **P0–P8 production-migration** set (S3 `s3_object_key`, `application_verification` + applicant-profile verification fields, staff `password_hash`, payment settings, admin/staff seed) — **detailed in `handoff.md` §15** |
 | `V20__applicant_profile_credit_brief.sql` | add `applicant_profile.{credit_star_rating, credit_recommendation, credit_brief_summary, credit_brief_generated_at, credit_brief_facts jsonb}` (the bureau credit brief; credit **score reuses `bureau_score`**) |
+| `V21__notification_core.sql` | `notification` (per-recipient in-app inbox) + `notification_delivery` (per-channel send audit); partial unread index `where in_app and read_at is null` |
+| `V22__applicant_profile_email.sql` | add `applicant_profile.email` (the borrower's contact email — gates the EMAIL channel) |
 
 **The aggregate** `loan_application`: `id`, `applicant_id`, `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
@@ -651,6 +673,19 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
 | `GET/POST /api/staff/invites` · `POST /accept` | list/create invites (one-time token) · activate |
 | `GET/POST/DELETE /api/admin/blocklist` (+`/{id}`) | fraud blocklist: list · add · remove |
 
+### Notifications (`/api/notifications`) — the caller's in-app inbox
+
+All four endpoints are **scoped to the authenticated caller** (`NotificationService` resolves the
+recipient from the JWT — `BORROWER` → applicant inbox, else staff inbox); a cross-recipient id → 404.
+The borrower/staff BFF namespaces both proxy to the same backend path.
+
+| Method + path | Role | Purpose |
+|---|---|---|
+| `GET /?page=&size=` | any authed | the caller's notifications, newest-first |
+| `GET /unread-count` | any authed | unread in-app count for the bell badge |
+| `POST /{id}/read` | any authed | mark one read (idempotent) → fresh unread count |
+| `POST /read-all` | any authed | mark all read → fresh unread count (0) |
+
 ---
 
 ## 12. Conventions & key decisions
@@ -666,9 +701,14 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
 - **Separate staff/borrower sessions.** Never share a cookie or BFF namespace; the JWT audience
   (`staff`/`borrower`) keeps them apart.
 - **Salary-linked due date ≤ 40 days** (final, over dfd D10).
+- **Notifications are event-driven & non-blocking.** Domain code never calls the engine directly — it
+  **publishes a Spring event**; the `@TransactionalEventListener(AFTER_COMMIT) @Async` listener in
+  `navix-notification` does the rest. Adding a new notification = add a `NotificationType` + template +
+  audience and publish (or map) an event; **never** make business logic depend on a delivery succeeding.
 - **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `AWS_PROFILE`, `NAVIX_ENV`,
   `FINTRIX_*`, `DIGILOCKER_*`, `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
+  `NAVIX_EMAIL_*` (`PROVIDER` log|smtp · `ENABLED` · `FROM`), `NAVIX_NOTIF_*` (async pool sizing),
   `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs).
 
 ---

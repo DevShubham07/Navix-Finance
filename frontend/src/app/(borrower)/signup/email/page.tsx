@@ -49,8 +49,11 @@ export default function SignupEmailPage() {
     setBusy(true);
     setError(undefined);
     draft.patch({ fullName: fullName.trim(), employer: employer.trim(), personalEmail: personalEmail.trim(), officialEmail: officialEmail.trim() });
+    // Contact email for notifications (sanction letter + statements): prefer the personal
+    // inbox the borrower actually reads, fall back to the verified work email.
+    const contactEmail = (personalEmail.trim() || officialEmail.trim());
     try {
-      await saveProfileSlice(appId, { fullName: fullName.trim(), employer: employer.trim(), employmentStatus: "SALARIED" });
+      await saveProfileSlice(appId, { fullName: fullName.trim(), employer: employer.trim(), employmentStatus: "SALARIED", email: contactEmail });
       const r = await verificationApi.email(appId, officialEmail.trim());
       setResult(r);
       if (r.status === "PASS" || r.status === "REVIEW") router.push("/signup/address");

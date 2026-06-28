@@ -64,6 +64,10 @@ public class ApplicantProfile extends BaseAuditEntity {
     @Column(name = "salary_bank", length = 120)
     private String salaryBank;
 
+    /** Borrower's contact email for notifications (personal preferred, else verified official). V22. */
+    @Column(name = "email", length = 255)
+    private String email;
+
     // --- derived verification fields (populated by ApplicationVerificationService; V16) ---
 
     /** Credit bureau score (never surfaced to the borrower). */

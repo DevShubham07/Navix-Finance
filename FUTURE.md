@@ -72,6 +72,28 @@ Completed work is recorded in `handoff.md` §15 and `CLAUDE.md` §2.
 >   (`applicant_profile.credit_brief_facts`). Persist per-account CAIS / DPD history (or a
 >   `credit_assessment` table) if deeper underwriting/audit is needed.
 
+> ## ⚑ Update 2026-06-28 — notification engine (in-app + SMS + email) SHIPPED 🟢
+>
+> A foundational, extensible **`navix-notification`** module is live: domain events →
+> `@Async` `AFTER_COMMIT` listener → dispatcher → per-recipient `notification` rows + per-channel
+> `notification_delivery`, surfaced by a shared **bell** on both the borrower and staff surfaces
+> (`GET /api/notifications`). Lives behind clean seams (events in navix-common; the `SmsGateway`/
+> `EmailClient` ports), so going live is again a **swap, not a rewrite**. Genuinely-deferred
+> **follow-ups** from this build:
+> - **G1 — real email delivery:** `EmailClient` ships with `LogEmailClient` (logs, mock ref);
+>   `SmtpEmailClient` is wired but **off** (`navix.email.provider=log`). Flip to `smtp` + set
+>   `spring.mail.*` (or swap in SES) to send for real. _Done when:_ a real email lands for a borrower
+>   `KYC_APPROVED` / `LOAN_DISBURSED`. (Parallels the A2 SMS/DLT gate — the SMS channel rides the same
+>   UltronSMS path and is likewise blocked on the DLT template.)
+> - **G2 — push instead of poll:** the bell polls every 20s; move to SSE/WebSocket (or web-push) for
+>   instant delivery + lower load. _Done when:_ the badge updates without a poll.
+> - **G3 — delivery retry / outbox:** a `FAILED` `notification_delivery` is recorded but **not retried**.
+>   Add a scheduled retry (or transactional-outbox) for transient SMS/email failures.
+> - **G4 — recipient preferences + digest:** no per-user channel opt-out or quiet-hours/digest batching
+>   yet; every type fires on every eligible channel. Add a preferences table + a daily staff-queue digest.
+> - **G5 — drop the legacy `applicant_profile.email` nullability / unify contact identity:** email is a
+>   nullable add-on (V22); fold it into the D3 applicant-identity unification.
+
 Status legend: 🔴 not started · 🟡 partial scaffold exists · 🟢 done (moves out of this doc).
 
 ---
@@ -238,6 +260,7 @@ with real API calls. One integration remains:
 
 ---
 
-_Last updated 2026-06-28 (credit brief + 1–5★ rating + PDF shipped; see the 2026-06-28 banner →
-follow-ups F1–F5). As each remaining item ships, mark it 🟢 and migrate the detail into `handoff.md`'s
-change log + `CLAUDE.md`._
+_Last updated 2026-06-28 (notification engine — in-app + SMS + email — shipped; see the 2026-06-28
+notification banner → follow-ups G1–G5. Credit brief + 1–5★ rating + PDF also shipped this day →
+F1–F5). As each remaining item ships, mark it 🟢 and migrate the detail into `handoff.md`'s change
+log + `CLAUDE.md`._

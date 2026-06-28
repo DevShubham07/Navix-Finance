@@ -42,6 +42,7 @@
         <module>navix-disbursement</module>
         <module>navix-collections</module>
         <module>navix-storage</module>
+        <module>navix-notification</module>
         <module>navix-app</module>
     </modules>
 

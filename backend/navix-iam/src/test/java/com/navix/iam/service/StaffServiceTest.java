@@ -41,7 +41,7 @@ class StaffServiceTest {
 
     @BeforeEach
     void setUp() {
-        staffService = new StaffService(staffUserRepository, passwordEncoder);
+        staffService = new StaffService(staffUserRepository, passwordEncoder, event -> {});
     }
 
     @AfterEach

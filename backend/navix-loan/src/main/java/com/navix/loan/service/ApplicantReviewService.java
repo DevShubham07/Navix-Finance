@@ -79,6 +79,12 @@ public class ApplicantReviewService {
         p.setEmploymentStatus(trimToNull(req.employmentStatus()));
         p.setMonthlySalaryPaise(req.monthlySalaryPaise());
         p.setSalaryBank(trimToNull(req.salaryBank()));
+        // Contact email is captured once (signup email step, or the verify-email fallback). A later
+        // partial save that omits it must not wipe it — only overwrite when a value is provided.
+        String email = trimToNull(req.email());
+        if (email != null) {
+            p.setEmail(email);
+        }
         return profileRepository.save(p);
     }
 
@@ -104,6 +110,15 @@ public class ApplicantReviewService {
         }
         return profileRepository.findByApplicationIdIn(appIds).stream()
                 .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
+    }
+
+    /**
+     * The applicant's most recent saved KYC profile, if any — public entry point for the
+     * notification {@code BorrowerContactDirectory} adapter (name + mobile + email by applicant id).
+     */
+    @Transactional(readOnly = true)
+    public Optional<ApplicantProfile> latestProfile(Long applicantId) {
+        return latestProfileForApplicant(applicantId);
     }
 
     /** The applicant's most recent saved KYC profile (newest application first), if any. */

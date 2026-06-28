@@ -21,6 +21,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { StaffRoleBar } from "@/components/staff/staff-role-bar";
 import { hasPermission, STAFF_ROLE_LABELS, type Permission } from "@/lib/auth/rbac";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
@@ -188,6 +189,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             <div className="grid h-9 w-9 place-items-center rounded-full bg-navy-tint font-serif font-bold text-navy">
               {session.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
             </div>
+            <NotificationBell scope="staff" />
             <button
               onClick={signOut}
               className="flex items-center gap-1.5 rounded border border-line px-3 py-2 text-sm text-muted hover:bg-grey-100 hover:text-ink"

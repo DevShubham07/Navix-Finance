@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
@@ -25,6 +26,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +55,7 @@ public class ApplicationFlowService {
     private final PaymentRepository paymentRepository;
     private final ApplicantProfileRepository profileRepository;
     private final LoanMath loanMath;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** Loan statuses that mean the borrower was (or is) delinquent — triggers reborrow review. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -405,6 +408,13 @@ public class ApplicationFlowService {
         event.setNotes(notes);
         event.setAt(Instant.now());
         eventRepository.save(event);
+        // Fan out a domain event for the notification engine (consumed AFTER_COMMIT + async). All
+        // data is carried inline — the async listener has no ActorContext/transaction. This single
+        // publish covers every transition (incl. same-status APPLY → LOAN_APPLIED).
+        eventPublisher.publishEvent(new ApplicationTransitionedEvent(
+                app.getId(), app.getApplicantId(), app.getLoanId(),
+                from != null ? from.name() : null, to != null ? to.name() : null,
+                action, app.getAssignedExecutiveId(), actor.id(), actor.role(), event.getAt()));
     }
 
     /** Actor id who drove the transition INTO {@code status} (for SoD), or null. */

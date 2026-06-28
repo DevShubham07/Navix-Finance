@@ -2,15 +2,19 @@ package com.navix.iam.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.notification.event.StaffAccountEvent;
 import com.navix.common.security.ActorContext;
+import com.navix.iam.domain.StaffRole;
 import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.dto.StaffDtos.CreateStaffRequest;
 import com.navix.iam.dto.StaffDtos.StaffResponse;
 import com.navix.iam.dto.StaffDtos.UpdateStaffRequest;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
+import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +31,7 @@ public class StaffService {
 
     private final StaffUserRepository staffUserRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Admin-only: create a staff account directly with an email + password so the
@@ -47,7 +52,10 @@ public class StaffService {
         staff.setRole(request.role());
         staff.setStatus(StaffStatus.ACTIVE);
         staff.setPasswordHash(passwordEncoder.encode(request.password()));
-        return StaffResponse.of(staffUserRepository.save(staff));
+        StaffUser saved = staffUserRepository.save(staff);
+        eventPublisher.publishEvent(new StaffAccountEvent(saved.getId(), saved.getEmail(), saved.getName(),
+                saved.getRole().name(), StaffAccountEvent.ChangeType.CREATED, null, Instant.now()));
+        return StaffResponse.of(saved);
     }
 
     @Transactional(readOnly = true)
@@ -66,9 +74,15 @@ public class StaffService {
     @Transactional
     public StaffResponse updateStaff(Long id, UpdateStaffRequest request) {
         StaffUser staff = requireStaff(id);
+        StaffRole previousRole = staff.getRole();
         staff.setRole(request.role());
         staff.setStatus(request.status());
-        return StaffResponse.of(staffUserRepository.save(staff));
+        StaffUser saved = staffUserRepository.save(staff);
+        if (previousRole != request.role()) {
+            eventPublisher.publishEvent(new StaffAccountEvent(saved.getId(), saved.getEmail(), saved.getName(),
+                    saved.getRole().name(), StaffAccountEvent.ChangeType.ROLE_CHANGED, null, Instant.now()));
+        }
+        return StaffResponse.of(saved);
     }
 
     /** Deactivate a staff member (status → {@link StaffStatus#DISABLED}); idempotent. */
@@ -77,6 +91,8 @@ public class StaffService {
         StaffUser staff = requireStaff(id);
         staff.setStatus(StaffStatus.DISABLED);
         staffUserRepository.save(staff);
+        eventPublisher.publishEvent(new StaffAccountEvent(staff.getId(), staff.getEmail(), staff.getName(),
+                staff.getRole().name(), StaffAccountEvent.ChangeType.DISABLED, null, Instant.now()));
     }
 
     private StaffUser requireStaff(Long id) {

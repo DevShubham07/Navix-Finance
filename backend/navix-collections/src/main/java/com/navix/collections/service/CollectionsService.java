@@ -10,17 +10,20 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
+import com.navix.common.notification.event.CollectionCaseOpenedEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -52,6 +55,7 @@ public class CollectionsService {
     private final LoanDirectory loanDirectory;
     private final StaffDirectory staffDirectory;
     private final DpdCalculator dpdCalculator;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Open (or fetch) the single collection case for a real loan, and move that
@@ -62,16 +66,20 @@ public class CollectionsService {
      */
     @Transactional
     public CaseDetailView openCase(Long loanId) {
-        if (loanDirectory.findLoan(loanId).isEmpty()) {
-            throw new ResourceNotFoundException("Loan", String.valueOf(loanId));
-        }
-        CollectionCase c = caseRepository.findByLoanId(loanId)
-                .orElseGet(() -> {
-                    CollectionCase nc = new CollectionCase();
-                    nc.setLoanId(loanId);
-                    return caseRepository.save(nc);
-                });
+        LoanSummary loan = loanDirectory.findLoan(loanId)
+                .orElseThrow(() -> new ResourceNotFoundException("Loan", String.valueOf(loanId)));
+        Optional<CollectionCase> existing = caseRepository.findByLoanId(loanId);
+        CollectionCase c = existing.orElseGet(() -> {
+            CollectionCase nc = new CollectionCase();
+            nc.setLoanId(loanId);
+            return caseRepository.save(nc);
+        });
         loanDirectory.markInCollections(loanId);
+        if (existing.isEmpty()) {
+            // Only a freshly-opened case fires the notification (an idempotent re-open is silent).
+            eventPublisher.publishEvent(new CollectionCaseOpenedEvent(
+                    c.getId(), loanId, loan.applicantId(), Instant.now()));
+        }
         return buildDetail(c);
     }
 

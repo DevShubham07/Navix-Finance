@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.navix.collections.dto.CollectionsDtos.SettlementView;
+import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.Settlement;
 import com.navix.collections.repository.CollectionCaseRepository;
 import com.navix.collections.repository.SettlementRepository;
 import com.navix.common.exception.BusinessException;
+import com.navix.common.loan.LoanDirectory;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
@@ -33,6 +35,8 @@ class SettlementServiceTest {
     private CollectionCaseRepository caseRepository;
     @Mock
     private StaffDirectory staffDirectory;
+    @Mock
+    private LoanDirectory loanDirectory;
 
     private SettlementService service;
 
@@ -47,12 +51,20 @@ class SettlementServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SettlementService(settlementRepository, caseRepository, staffDirectory);
+        service = new SettlementService(settlementRepository, caseRepository, staffDirectory,
+                loanDirectory, event -> {});
     }
 
     @AfterEach
     void tearDown() {
         ActorContext.clear();
+    }
+
+    private CollectionCase caseWithLoan() {
+        CollectionCase c = new CollectionCase();
+        c.setId(caseId);
+        c.setLoanId(2L);
+        return c;
     }
 
     private Settlement proposedByOfficer() {
@@ -68,7 +80,7 @@ class SettlementServiceTest {
     @Test
     void proposeRecordsAmountAndRealProposer() {
         ActorContext.set(OFFICER);
-        when(caseRepository.existsById(caseId)).thenReturn(true);
+        when(caseRepository.findById(caseId)).thenReturn(Optional.of(caseWithLoan()));
         when(settlementRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(staffDirectory.findStaff(9L))
                 .thenReturn(Optional.of(new StaffSummary(9L, "Sana Khan", "COLLECTION_EXECUTIVE", true)));
@@ -86,7 +98,7 @@ class SettlementServiceTest {
     @Test
     void proposeWithNonNumericActorIsRejected() {
         ActorContext.set(new CurrentActor("staff-COLLECTION_EXECUTIVE", "Demo", "COLLECTION_EXECUTIVE"));
-        when(caseRepository.existsById(caseId)).thenReturn(true);
+        when(caseRepository.findById(caseId)).thenReturn(Optional.of(caseWithLoan()));
 
         assertThatThrownBy(() -> service.propose(caseId, 500_000L))
                 .isInstanceOf(BusinessException.class)

@@ -37,7 +37,7 @@ class InviteServiceTest {
 
     @BeforeEach
     void setUp() {
-        inviteService = new InviteService(inviteRepository, staffUserRepository);
+        inviteService = new InviteService(inviteRepository, staffUserRepository, event -> {});
     }
 
     private static StaffInvite invite(StaffRole role, Instant expiresAt, Instant acceptedAt) {

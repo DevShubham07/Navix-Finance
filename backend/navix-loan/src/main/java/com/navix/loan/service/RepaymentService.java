@@ -3,6 +3,8 @@ package com.navix.loan.service;
 import com.navix.common.collections.SettlementDirectory;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.notification.event.RepaymentRecordedEvent;
+import com.navix.common.notification.event.RepaymentVerifiedEvent;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentMethod;
 import com.navix.loan.domain.PaymentStatus;
@@ -10,10 +12,12 @@ import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.Payment;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +38,7 @@ public class RepaymentService {
     private final LoanMath loanMath;
     private final ApplicationFlowService applicationFlowService;
     private final SettlementDirectory settlementDirectory;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** Record a (possibly partial) repayment. Idempotent on {@code txnRef} per loan. */
     @Transactional
@@ -66,7 +71,10 @@ public class RepaymentService {
         payment.setProofUrl(proofUrl);
         payment.setPaidOn(effectivePaidOn);
         payment.setPartial(amountPaise < remaining);
-        return paymentRepository.save(payment);
+        Payment saved = paymentRepository.save(payment);
+        eventPublisher.publishEvent(new RepaymentRecordedEvent(
+                loanId, loan.getApplicantId(), saved.getId(), amountPaise, Instant.now()));
+        return saved;
     }
 
     /** Confirm proof for a payment; recomputes the loan balance and closes it at zero. */
@@ -79,6 +87,10 @@ public class RepaymentService {
             paymentRepository.save(payment);
         }
         recomputeOutstanding(payment.getLoanId());
+        Loan loan = requireLoan(payment.getLoanId());
+        eventPublisher.publishEvent(new RepaymentVerifiedEvent(
+                loan.getId(), loan.getApplicantId(), payment.getId(), payment.getAmount(),
+                loan.getStatus() == LoanStatus.CLOSED, Instant.now()));
         return payment;
     }
 

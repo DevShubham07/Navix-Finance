@@ -28,7 +28,8 @@ public final class ReviewDtos {
             String employer,
             String employmentStatus,
             Long monthlySalaryPaise,
-            String salaryBank) {
+            String salaryBank,
+            String email) {
     }
 
     /**

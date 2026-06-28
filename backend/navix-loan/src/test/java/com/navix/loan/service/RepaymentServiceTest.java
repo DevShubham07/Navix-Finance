@@ -42,7 +42,7 @@ class RepaymentServiceTest {
     @BeforeEach
     void setUp() {
         repaymentService = new RepaymentService(paymentRepository, loanRepository, new LoanMath(),
-                applicationFlowService, settlementDirectory);
+                applicationFlowService, settlementDirectory, event -> {});
     }
 
     private Loan activeLoan() {

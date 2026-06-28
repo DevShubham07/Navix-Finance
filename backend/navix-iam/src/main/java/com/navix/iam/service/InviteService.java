@@ -1,6 +1,7 @@
 package com.navix.iam.service;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.notification.event.StaffAccountEvent;
 import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.dto.StaffDtos.AcceptInviteRequest;
 import com.navix.iam.dto.StaffDtos.CreateInviteRequest;
@@ -15,6 +16,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +39,7 @@ public class InviteService {
 
     private final StaffInviteRepository inviteRepository;
     private final StaffUserRepository staffUserRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** All invites (pending + accepted), most recent first, for the admin invites list. */
     @Transactional(readOnly = true)
@@ -57,7 +60,11 @@ public class InviteService {
         invite.setRole(request.role());
         invite.setToken(UUID.randomUUID().toString());
         invite.setExpiresAt(Instant.now().plus(INVITE_TTL));
-        return InviteResponse.of(inviteRepository.save(invite));
+        StaffInvite saved = inviteRepository.save(invite);
+        // Carries the one-time accept token so STAFF_INVITED's email can include the activation link.
+        eventPublisher.publishEvent(new StaffAccountEvent(null, invite.getEmail(), null,
+                invite.getRole().name(), StaffAccountEvent.ChangeType.INVITED, invite.getToken(), Instant.now()));
+        return InviteResponse.of(saved);
     }
 
     /**

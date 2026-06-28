@@ -325,6 +325,7 @@ export function buildProfileInput(a: ApplicantProfile): ProfileInput {
     pan: a.pan?.trim().toUpperCase() || undefined,
     aadhaar: a.aadhaar?.replace(/\D/g, "") || undefined,
     mobile: a.mobile?.replace(/\D/g, "") || undefined,
+    email: a.email?.trim() || undefined,
     address: address || undefined,
     employer: a.employer?.trim() || undefined,
     employmentStatus: "SALARIED",

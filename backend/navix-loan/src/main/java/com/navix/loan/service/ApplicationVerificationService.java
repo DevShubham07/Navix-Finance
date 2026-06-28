@@ -121,6 +121,11 @@ public class ApplicationVerificationService {
         VerificationPort.EmailCheck r = verification.verifyEmail(
                 email, nz(profile.getFullName()), nz(profile.getEmployer()), ref);
         profile.setEmailVerified(r.verified());
+        // Persist the verified official email as the contact email only if the borrower hasn't
+        // already supplied one (personal email saved via the profile takes precedence). V22.
+        if (profile.getEmail() == null || profile.getEmail().isBlank()) {
+            profile.setEmail(email);
+        }
         profileRepo.save(profile);
 
         boolean ok = r.verified() && r.establishmentMatched() && !r.genericEmail();
