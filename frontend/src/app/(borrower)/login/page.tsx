@@ -3,17 +3,17 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Smartphone, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { useOnboardingStore } from "@/stores/application-store";
-import { requestBorrowerOtp, type OtpRequestResult } from "@/lib/api/live-journey";
+import { requestBorrowerOtp, clearBorrowerClientState, type OtpRequestResult } from "@/lib/api/live-journey";
 import { normalizeMobile } from "@/lib/utils";
 
 export default function LoginPage() {
   const router = useRouter();
-  const draftName = useOnboardingStore((s) => s.fullName);
+  const queryClient = useQueryClient();
   const [stage, setStage] = React.useState<"enter" | "verify">("enter");
   const [mobile, setMobile] = React.useState("");
   const [otp, setOtp] = React.useState("");
@@ -50,10 +50,12 @@ export default function LoginPage() {
     setError(undefined);
     try {
       // Live session: the backend validates the OTP and sets the httpOnly navix_borrower cookie.
+      // A returning borrower's display name comes from their stored profile (resolved server-side),
+      // never from a leftover onboarding draft on this device — that would leak across users.
       const res = await fetch("/api/auth/borrower/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mobile, otp: code, name: draftName || undefined }),
+        body: JSON.stringify({ mobile, otp: code }),
       });
       if (!res.ok) {
         let msg = "Incorrect code — please try again.";
@@ -65,6 +67,13 @@ export default function LoginPage() {
         setBusy(false);
         return;
       }
+      // Drop every trace of a prior user on this browser before entering the app — the persisted
+      // onboarding draft (name/PAN/Aadhaar/bank, which the profile page renders verbatim), the
+      // in-flight app-id pointer, and the React Query cache — so the new session can never render
+      // the previous borrower's identity/PII. (Logout already does this; do it on login too, since a
+      // different user can sign in without the previous one ever signing out.)
+      clearBorrowerClientState();
+      queryClient.clear();
       // The dashboard reflects the live application state (start / in-progress / active).
       router.push("/dashboard");
     } catch {

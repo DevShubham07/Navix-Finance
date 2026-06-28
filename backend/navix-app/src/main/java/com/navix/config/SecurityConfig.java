@@ -51,7 +51,10 @@ public class SecurityConfig {
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-            .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class)
+            // RequestLoggingFilter runs FIRST (before JwtAuthFilter) so the requestId MDC is set for
+            // every request — including 401s — and it emits the one-line access log on the way out.
+            .addFilterBefore(new RequestLoggingFilter(), JwtAuthFilter.class);
         return http.build();
     }
 }

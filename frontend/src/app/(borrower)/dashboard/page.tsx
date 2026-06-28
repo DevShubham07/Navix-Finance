@@ -65,7 +65,7 @@ export default function DashboardPage() {
     ? `/signup/${lastOnboardingStep ?? "mobile-otp"}`
     : canChooseAmount(app) ? "/loan/apply" : "/loan/status";
 
-  if (isLoading && !app && appId != null) {
+  if (isLoading && !app) {
     return <div className="container py-10"><div className="h-72 animate-pulse rounded border border-line bg-white" /></div>;
   }
 

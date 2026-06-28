@@ -30,6 +30,13 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+# Logging — the appender/pattern live in logback-spring.xml (CloudWatch-friendly, MDC-aware).
+# Only the com.navix level is set here so ops can raise it to DEBUG in ECS via NAVIX_LOG_LEVEL
+# (env var) without a redeploy of the logback config. Framework loggers are tamed in the xml.
+logging:
+  level:
+    com.navix: ${NAVIX_LOG_LEVEL:INFO}
+
 # NAVIX integration settings
 navix:
   # Opt-in demo fixture: when set, every Experian bureau pull returns this bundled report instead of

@@ -16,6 +16,13 @@ public interface ApplicantProfileRepository extends JpaRepository<ApplicantProfi
     /** Batch-load profiles for a set of applications — used to enrich application list views. */
     List<ApplicantProfile> findByApplicationIdIn(Collection<Long> applicationIds);
 
+    /**
+     * The most recently captured profile for a mobile number (latest application wins). Used at
+     * borrower login to resolve a returning borrower's display name from their stored KYC snapshot
+     * instead of trusting a client-supplied name.
+     */
+    Optional<ApplicantProfile> findFirstByMobileOrderByApplicationIdDesc(String mobile);
+
     // --- identity uniqueness (a mobile/PAN/Aadhaar may belong to only one applicant) ---
     // "...ApplicationIdNot" excludes the profile's own application so re-saving it is fine.
     boolean existsByPanAndApplicationIdNot(String pan, Long applicationId);

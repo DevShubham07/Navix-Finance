@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   User,
   ChevronDown,
@@ -16,7 +15,7 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
-import { useBorrowerSession, logoutBorrower } from "@/lib/api/live-journey";
+import { useBorrowerSession, useBorrowerLogout } from "@/lib/api/live-journey";
 
 type Item = { label: string; href: string; Icon: typeof User };
 
@@ -47,7 +46,7 @@ const GROUPS: Item[][] = [
  * name comes from the live (`navix_borrower`) session, falling back to "Account".
  */
 export function AccountMenu() {
-  const router = useRouter();
+  const logout = useBorrowerLogout();
   const { data: session } = useBorrowerSession();
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -73,8 +72,7 @@ export function AccountMenu() {
 
   const signOut = async () => {
     setOpen(false);
-    await logoutBorrower();
-    router.push("/login");
+    await logout();
   };
 
   return (

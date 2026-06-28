@@ -11,13 +11,16 @@ export function Brand({
   href = "/",
   className,
   tag = "Lending Platform",
+  light = false,
 }: {
   href?: string;
   className?: string;
   tag?: string;
+  /** Light variant for dark surfaces (e.g. the navy staff sidebar). */
+  light?: boolean;
 }) {
   return (
-    <Link href={href} className={cn("brand", className)} aria-label="NAVIX home" style={{ textDecoration: "none" }}>
+    <Link href={href} className={cn("brand", light && "brand--light", className)} aria-label="NAVIX home" style={{ textDecoration: "none" }}>
       <span className="brand-mark brand-mark--img">
         <Image src="/navix-mark.png" alt="NAVIX" width={42} height={42} priority />
       </span>

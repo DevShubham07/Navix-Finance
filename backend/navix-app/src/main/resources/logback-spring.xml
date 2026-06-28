@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NAVIX backend logging — tuned for AWS CloudWatch (ECS Fargate awslogs driver).
+
+  Goals: enough signal to debug a request end-to-end, without drowning the stream.
+   - ONE plain (no-ANSI) line per event; CloudWatch renders colour escapes as garbage.
+   - UTC ISO-8601 timestamps so Logs Insights sorts/queries cleanly.
+   - Every line carries the per-request correlation id and the acting principal
+     (req=… actor=id/role), seeded into the MDC by RequestLoggingFilter / JwtAuthFilter.
+   - root=WARN so framework chatter stays quiet; com.navix=INFO (env-tunable via
+     NAVIX_LOG_LEVEL / logging.level.com.navix) so OUR logs stand out.
+
+  PII rule: code must never log PAN/Aadhaar/full-mobile/OTP/token/password — this file
+  only controls format/levels; spring.jpa.show-sql stays false so bound params never leak.
+-->
+<configuration>
+    <!-- Spring Boot conversion rules (gives us %wEx extended stack traces) + safe framework defaults. -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <charset>UTF-8</charset>
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSS'Z', UTC} %-5level [%thread] %logger{32} req=%X{requestId:-} actor=%X{actorId:-}/%X{actorRole:-} - %msg%n%wEx</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Knock noisy framework loggers down so com.navix INFO is the signal, not the noise. -->
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="org.springframework.security" level="WARN"/>
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.hibernate.SQL" level="WARN"/>
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+    <logger name="org.apache.tomcat" level="WARN"/>
+    <logger name="org.apache.catalina" level="WARN"/>
+    <logger name="software.amazon.awssdk" level="WARN"/>
+    <logger name="io.awspring.cloud" level="WARN"/>
+    <!-- Flyway at INFO so migration application is visible on boot. -->
+    <logger name="org.flywaydb" level="INFO"/>
+
+    <!-- com.navix level comes from logging.level.com.navix (application.yml, env-tunable). -->
+    <root level="WARN">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

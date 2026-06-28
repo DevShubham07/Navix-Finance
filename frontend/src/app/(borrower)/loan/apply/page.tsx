@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ArrowLeft, Loader2, AlertTriangle } from "lucide-react";
 import { AmountChooser } from "@/components/borrower/amount-chooser";
+import { SalaryCalendar } from "@/components/borrower/salary-calendar";
 import { useLiveApplication, applyForAmount, canChooseAmount } from "@/lib/api/live-journey";
 import { borrowerApi, rupeesToPaise, ApplicationApiError } from "@/lib/api/applications";
 import { useOnboardingStore } from "@/stores/application-store";
@@ -31,7 +32,10 @@ export default function LoanApplyPage() {
     (draft.monthlySalary ? rupeesToPaise(draft.monthlySalary) : 0);
   const salaryRupees = Math.round(salaryPaise / 100);
   const limit = eligibleLimit(salaryRupees);
-  const salaryDay = draft.salaryDay || 1;
+  // Salary credit day — seeded from the onboarding draft, then driven live by the
+  // SalaryCalendar so the borrower confirms exactly which salary day repays the advance.
+  const [salaryDay, setSalaryDay] = React.useState(draft.salaryDay || 1);
+  const handlePickDay = React.useCallback((d: Date) => setSalaryDay(d.getDate()), []);
 
   React.useEffect(() => {
     if (limit > 0) setAmount((prev) => (prev > 0 && prev <= limit ? prev : limit));
@@ -87,8 +91,11 @@ export default function LoanApplyPage() {
 
   return (
     <div className="container max-w-container py-10">
-      <h1 className="mb-1">Choose your amount</h1>
-      <p className="mb-7 text-muted">Drag to set your advance. The full cost updates live — no hidden charges.</p>
+      <h1 className="mb-1">Set up your advance</h1>
+      <p className="mb-7 text-muted">
+        Pick the day your salary lands, then choose your amount. Your due date and full cost update
+        live — repaid in one instalment, no hidden charges.
+      </p>
 
       {limit <= 0 ? (
         <div className="mb-6 flex items-start gap-3 rounded border border-warning-100 bg-warning-50 p-4 text-sm text-warning-800">
@@ -96,7 +103,14 @@ export default function LoanApplyPage() {
           <p className="m-0">We couldn&apos;t determine your eligible limit. Please ensure your salary details are filled in.</p>
         </div>
       ) : (
-        <AmountChooser limit={limit} salaryDay={salaryDay} value={amount} onChange={setAmount} />
+        <div className="space-y-8">
+          <SalaryCalendar value={salaryDay} onPick={handlePickDay} />
+          <div>
+            <h2 className="mb-1 text-xl">Step 2 · Choose your amount</h2>
+            <p className="mb-4 text-sm text-muted">Drag to set your advance within your sanctioned limit.</p>
+            <AmountChooser limit={limit} salaryDay={salaryDay} value={amount} onChange={setAmount} />
+          </div>
+        </div>
       )}
 
       {error && (

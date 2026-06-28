@@ -217,6 +217,122 @@ export function MarketingScripts() {
       upd();
     }
 
+    // Repayment calendar (salary-linked due-date picker) — design "calendar" variant
+    const calTitle = document.getElementById("calTitle");
+    const calGrid = document.getElementById("calGrid");
+    const calAmt = document.getElementById("calAmt") as HTMLInputElement | null;
+    if (calTitle && calGrid && calAmt) {
+      const calAmtV = document.getElementById("calAmtV");
+      const bigEl = document.getElementById("calBig");
+      const subEl = document.getElementById("calSub");
+      const oA = document.getElementById("calOA");
+      const oT = document.getElementById("calOT");
+      const oR = document.getElementById("calOR");
+      const oI = document.getElementById("calOI");
+      const oApr = document.getElementById("calOApr");
+      const oTotal = document.getElementById("calOTotal");
+      const prevBtn = document.getElementById("calPrev") as HTMLButtonElement | null;
+      const nextBtn = document.getElementById("calNext") as HTMLButtonElement | null;
+      const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const DAY = 86_400_000;
+      const RATE = 1;
+      const MIN_T = 7;
+      const MAX_T = 40;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const minDate = new Date(today.getTime() + MIN_T * DAY);
+      const maxDate = new Date(today.getTime() + MAX_T * DAY);
+      let sel = new Date(today.getTime() + 30 * DAY);
+      let view = new Date(sel.getFullYear(), sel.getMonth(), 1);
+      const minMonth = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+      const maxMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+      const sameDay = (a: Date, b: Date) =>
+        a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+      const tenure = (d: Date) => Math.round((d.getTime() - today.getTime()) / DAY);
+      const inWindow = (d: Date) => {
+        const t = tenure(d);
+        return t >= MIN_T && t <= MAX_T;
+      };
+      const fillRange = (el: HTMLInputElement) => {
+        const mn = +el.min,
+          mx = +el.max,
+          v = +el.value;
+        const pct = ((v - mn) / (mx - mn)) * 100;
+        el.style.background = "linear-gradient(90deg,#E2A02C " + pct + "%,#F4EBD7 " + pct + "%)";
+      };
+      const compute = () => {
+        const A = +calAmt.value,
+          T = tenure(sel),
+          R = RATE;
+        const interest = A * (R / 100) * T,
+          total = A + interest,
+          apr = R * 365;
+        if (calAmtV) calAmtV.textContent = rupee(A);
+        if (bigEl) bigEl.textContent = sel.getDate() + " " + MON[sel.getMonth()];
+        if (subEl) subEl.textContent = WEEKDAYS[sel.getDay()] + " " + sel.getFullYear() + " · " + T + (T === 1 ? " day" : " days") + " away";
+        if (oA) oA.textContent = rupee(A);
+        if (oT) oT.textContent = T + " days";
+        if (oR) oR.textContent = R + "% / day";
+        if (oI) oI.textContent = rupee(interest);
+        if (oApr) oApr.textContent = apr.toFixed(1) + "%";
+        if (oTotal) oTotal.textContent = rupee(total);
+        fillRange(calAmt);
+      };
+      const renderCal = () => {
+        calTitle.textContent = MONTHS[view.getMonth()] + " " + view.getFullYear();
+        if (prevBtn) prevBtn.disabled = view <= minMonth;
+        if (nextBtn) nextBtn.disabled = view >= maxMonth;
+        calGrid.innerHTML = "";
+        const y = view.getFullYear(),
+          m = view.getMonth();
+        const startDow = new Date(y, m, 1).getDay();
+        const dim = new Date(y, m + 1, 0).getDate();
+        for (let i = 0; i < startDow; i++) calGrid.appendChild(document.createElement("div"));
+        for (let d = 1; d <= dim; d++) {
+          const date = new Date(y, m, d);
+          const cell = document.createElement("button");
+          cell.type = "button";
+          cell.className = "cal-day";
+          cell.textContent = String(d);
+          if (!inWindow(date)) cell.classList.add("muted");
+          if (sameDay(date, today)) cell.classList.add("today");
+          if (sameDay(date, sel)) cell.classList.add("sel");
+          cell.addEventListener("click", () => {
+            if (!inWindow(date)) return;
+            sel = date;
+            renderCal();
+            compute();
+          });
+          calGrid.appendChild(cell);
+        }
+      };
+      calAmt.oninput = compute;
+      document.querySelectorAll<HTMLElement>(".cal-preset").forEach((b) => {
+        b.onclick = () => {
+          calAmt.value = b.dataset.v || calAmt.value;
+          document.querySelectorAll(".cal-preset").forEach((x) => x.classList.remove("on"));
+          b.classList.add("on");
+          compute();
+        };
+      });
+      if (prevBtn)
+        prevBtn.onclick = () => {
+          if (view <= minMonth) return;
+          view = new Date(view.getFullYear(), view.getMonth() - 1, 1);
+          renderCal();
+        };
+      if (nextBtn)
+        nextBtn.onclick = () => {
+          if (view >= maxMonth) return;
+          view = new Date(view.getFullYear(), view.getMonth() + 1, 1);
+          renderCal();
+        };
+      renderCal();
+      compute();
+    }
+
     // Hero loan journey (auto-advancing panels)
     const journey = document.getElementById("journey");
     if (journey) {

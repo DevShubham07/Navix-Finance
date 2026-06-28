@@ -88,17 +88,20 @@ public class ApplicationController {
 
     @GetMapping("/{id}")
     public ApiResponse<ApplicationView> get(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(flow.get(id)));
     }
 
     @GetMapping("/{id}/events")
     public ApiResponse<List<EventView>> events(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(flow.events(id).stream().map(EventView::of).toList());
     }
 
     /** Staff-readable verification summary for the approver review (per-step status + safe derived). */
     @GetMapping("/{id}/verifications")
     public ApiResponse<List<ApplicationVerificationService.StepResult>> verifications(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(verification.summary(id));
     }
 
@@ -116,6 +119,7 @@ public class ApplicationController {
      */
     @PostMapping("/{id}/submit-kyc")
     public ApiResponse<ApplicationView> submitKyc(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
         if (!verification.allRequiredPassed(id)) {
             throw new BusinessException("KYC_INCOMPLETE",
                     "Complete all verification steps and accept the agreement before submitting");
@@ -136,6 +140,7 @@ public class ApplicationController {
 
     @PostMapping("/{id}/apply")
     public ApiResponse<ApplicationView> apply(@PathVariable Long id, @Valid @RequestBody ApplyRequest req) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(
                 flow.apply(id, req.amountPaise(), req.purpose(), req.eligibleLimitPaise(),
                         req.salaryCreditDay())));
@@ -184,6 +189,7 @@ public class ApplicationController {
     /** Borrower saves/updates their KYC details for this application. */
     @PutMapping("/{id}/profile")
     public ApiResponse<ProfileView> saveProfile(@PathVariable Long id, @RequestBody ProfileRequest req) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ProfileView.of(review.saveProfile(id, req)));
     }
 
@@ -191,6 +197,7 @@ public class ApplicationController {
      *  headline (score + rating) is stripped for a borrower reading their own profile. */
     @GetMapping("/{id}/profile")
     public ApiResponse<ProfileView> getProfile(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
         ProfileView v = ProfileView.of(review.getProfile(id));
         if ("BORROWER".equals(ActorContext.get().role())) {
             v = v.withoutCredit();
@@ -201,24 +208,28 @@ public class ApplicationController {
     /** Borrower uploads a supporting document (base64 body so it rides the JSON BFF proxy). */
     @PostMapping("/{id}/documents")
     public ApiResponse<DocumentView> addDocument(@PathVariable Long id, @Valid @RequestBody DocumentRequest req) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(DocumentView.of(review.addDocument(id, req)));
     }
 
     /** List an application's documents (metadata only). */
     @GetMapping("/{id}/documents")
     public ApiResponse<List<DocumentView>> listDocuments(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(review.listDocuments(id).stream().map(DocumentView::of).toList());
     }
 
     /** Fetch one document's inline bytes (base64) — legacy/demo rows only. */
     @GetMapping("/{id}/documents/{docId}")
     public ApiResponse<DocumentContentView> getDocument(@PathVariable Long id, @PathVariable Long docId) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(DocumentContentView.of(review.getDocument(id, docId)));
     }
 
     /** Short-lived presigned GET URL for an S3-backed document (the live approver-view path). */
     @GetMapping("/{id}/documents/{docId}/url")
     public ApiResponse<DocumentUrlView> getDocumentUrl(@PathVariable Long id, @PathVariable Long docId) {
+        requireBorrowerOwnsOrStaff(id);
         var doc = review.getDocument(id, docId);
         return ApiResponse.ok(new DocumentUrlView(doc.getId(), doc.getFileName(), doc.getContentType(),
                 review.presignedUrl(id, docId)));
@@ -241,6 +252,23 @@ public class ApplicationController {
         String role = ActorContext.get().role();
         if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+    }
+
+    /**
+     * Ownership guard for the by-id reads: a BORROWER may only read their OWN application (its
+     * {@code applicant_id} must equal the JWT subject); any staff role may read any application.
+     * Closes an IDOR — without this a borrower could fetch another applicant's application, audit
+     * trail, KYC profile or documents by guessing the id. (Anonymous/unauthenticated callers never
+     * reach a controller method: {@code SecurityConfig} requires auth on {@code /api/**}.)
+     */
+    private void requireBorrowerOwnsOrStaff(Long id) {
+        var actor = ActorContext.get();
+        if ("BORROWER".equals(actor.role())) {
+            Long owner = flow.get(id).getApplicantId();
+            if (owner == null || !owner.toString().equals(actor.id())) {
+                throw new BusinessException("FORBIDDEN", "Not your application");
+            }
         }
     }
 }

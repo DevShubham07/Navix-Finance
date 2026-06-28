@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   ShieldCheck,
@@ -81,7 +82,7 @@ function MobileNavLinks({ role, pathname }: { role: Parameters<typeof hasPermiss
               "flex flex-shrink-0 items-center gap-2 whitespace-nowrap rounded px-3 py-2 text-sm transition-colors",
               active
                 ? "bg-white/10 font-semibold text-white"
-                : "text-[#AFC3DC] hover:bg-white/5 hover:text-white",
+                : "text-navix-200 hover:bg-white/5 hover:text-white",
             )}
           >
             <Icon size={16} className="flex-shrink-0" />
@@ -101,7 +102,7 @@ function NavLinks({ role, pathname, onNavigate }: { role: Parameters<typeof hasP
         if (!items.length) return null;
         return (
           <div key={group.heading} className="mb-5">
-            <p className="px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-wider text-[#7E96B4]">{group.heading}</p>
+            <p className="px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-wider text-navix-300">{group.heading}</p>
             <ul className="space-y-0.5">
               {items.map(({ label, href, Icon }) => {
                 const active = pathname === href || pathname.startsWith(href + "/");
@@ -114,7 +115,7 @@ function NavLinks({ role, pathname, onNavigate }: { role: Parameters<typeof hasP
                         "flex items-center gap-3 rounded px-3 py-2 text-sm transition-colors",
                         active
                           ? "bg-white/10 font-semibold text-white shadow-[inset_3px_0_0_0_var(--gold)]"
-                          : "text-[#AFC3DC] hover:bg-white/5 hover:text-white",
+                          : "text-navix-200 hover:bg-white/5 hover:text-white",
                       )}
                     >
                       <Icon size={17} className="flex-shrink-0" />
@@ -134,6 +135,7 @@ function NavLinks({ role, pathname, onNavigate }: { role: Parameters<typeof hasP
 export function StaffShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { session, loading } = useStaffSession();
   const isPublic = PUBLIC_STAFF.some((p) => pathname.startsWith(p));
 
@@ -160,6 +162,9 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await signOutStaff();
+    // Drop all cached staff queries (queues, customers, ledgers) so the next staffer
+    // who signs in on this browser never sees the previous user's cached data.
+    queryClient.clear();
     router.push("/staff/login");
   };
 
@@ -168,7 +173,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside className="sticky top-0 hidden h-screen w-60 flex-shrink-0 flex-col bg-navy-900 lg:flex">
         <div className="border-b border-white/10 px-5 py-4">
-          <Brand href="/staff/dashboard" tag="Staff Console" />
+          <Brand href="/staff/dashboard" tag="Staff Console" light />
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-5">
           <NavLinks role={session.role} pathname={pathname} />

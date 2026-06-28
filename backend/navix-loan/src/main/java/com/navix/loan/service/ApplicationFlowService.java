@@ -26,6 +26,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +45,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ApplicationFlowService {
+
+    private static final Logger log = LoggerFactory.getLogger(ApplicationFlowService.class);
 
     private final LoanApplicationRepository applicationRepository;
     private final ApplicationEventRepository eventRepository;
@@ -235,6 +239,8 @@ public class ApplicationFlowService {
             if (!"ADMIN".equals(ActorContext.get().role())) {
                 String recommender = actorOf(appId, ApplicationStatus.CREDIT_EXEC_APPROVED);
                 if (recommender != null && recommender.equals(ActorContext.get().id())) {
+                    log.warn("SoD violation blocked app={} actor={} cannot approve own recommendation",
+                            appId, ActorContext.get().id());
                     throw new BusinessException("SOD_VIOLATION",
                             "The recommending Credit Executive cannot also give final approval");
                 }
@@ -389,6 +395,7 @@ public class ApplicationFlowService {
     private void transition(LoanApplication app, ApplicationStatus to, String action, String notes) {
         ApplicationStatus from = app.getStatus();
         if (!from.canTransitionTo(to)) {
+            log.warn("illegal transition blocked app={} {} -> {} action={}", app.getId(), from, to, action);
             throw new BusinessException("ILLEGAL_TRANSITION", from + " → " + to + " is not allowed");
         }
         logEvent(app, from, to, action, notes);
@@ -408,6 +415,10 @@ public class ApplicationFlowService {
         event.setNotes(notes);
         event.setAt(Instant.now());
         eventRepository.save(event);
+        // Mirror the lifecycle event (already persisted to the DB audit table) into the log stream so
+        // the state machine is debuggable in CloudWatch — ids + status enums + actor only, no PII.
+        log.info("application {} {} -> {} action={} actor={}/{}",
+                app.getId(), from, to, action, actor.id(), actor.role());
         // Fan out a domain event for the notification engine (consumed AFTER_COMMIT + async). All
         // data is carried inline — the async listener has no ActorContext/transaction. This single
         // publish covers every transition (incl. same-status APPLY → LOAN_APPLIED).

@@ -169,8 +169,8 @@ function RouteProgressBar() {
         style={{
           height: "100%",
           width: "0%",
-          background: "linear-gradient(90deg, var(--gold, #C9A227), var(--teal, #14746F))",
-          boxShadow: "0 0 10px rgba(201,162,39,.55), 0 0 4px rgba(20,116,111,.45)",
+          background: "linear-gradient(90deg, var(--gold-600, #D49A24), var(--gold-400, #F4C95B))",
+          boxShadow: "0 0 12px rgba(244,201,91,.55)",
           borderRadius: "0 3px 3px 0",
         }}
       />

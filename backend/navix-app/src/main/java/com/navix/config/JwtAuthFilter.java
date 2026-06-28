@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -43,6 +44,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             if (principal != null && principal.id() != null) {
                 ActorContext.set(new CurrentActor(principal.id(), principal.name(), principal.role()));
+                // Enrich the log MDC so every line for this request is attributable (id/role only —
+                // never the token or name). RequestLoggingFilter (outermost) clears the MDC.
+                MDC.put("actorId", principal.id());
+                MDC.put("actorRole", principal.role());
                 var authentication = new UsernamePasswordAuthenticationToken(
                         principal.id(), null,
                         List.of(new SimpleGrantedAuthority("ROLE_" + principal.role())));
@@ -50,6 +55,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
             filterChain.doFilter(request, response);
         } finally {
+            // Thread-state must be cleared here; the actor MDC keys are cleared by RequestLoggingFilter
+            // so they remain available for that filter's one-line access log after this returns.
             ActorContext.clear();
             SecurityContextHolder.clearContext();
         }

@@ -14,7 +14,8 @@
  */
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import {
   ApplicationApiError,
   borrowerApi,
@@ -24,6 +25,7 @@ import {
   type ProfileInput,
 } from "@/lib/api/applications";
 import { eligibleLimit as eligibleLimitRupees } from "@/lib/calc/loan-math";
+import { useOnboardingStore } from "@/stores/application-store";
 import type { ApplicantProfile, BorrowerStatus } from "@/lib/domain/borrower";
 
 /** Browser-local pointer to the borrower's in-flight live application id. */
@@ -129,15 +131,62 @@ export async function ensureBorrowerSession(
   return (await res.json()) as BorrowerSession;
 }
 
-/** React Query wrapper for the live borrower session. */
+/**
+ * React Query wrapper for the live borrower session.
+ *
+ * `staleTime: 0` so the displayed identity (name/mobile) is always re-validated
+ * against the cookie on mount — it must NEVER be served stale across a
+ * logout/login on the same browser (that previously leaked the prior user's
+ * name to the next one). The cache is also cleared outright on every auth
+ * change ({@link useBorrowerLogout}, login) as the authoritative guarantee.
+ */
 export function useBorrowerSession() {
-  return useQuery({ queryKey: ["borrower-me"], queryFn: fetchBorrowerSession });
+  return useQuery({ queryKey: ["borrower-me"], queryFn: fetchBorrowerSession, staleTime: 0 });
 }
 
 /**
- * Fully sign the borrower out: clear the real `navix_borrower` httpOnly cookie
- * (so re-visiting a borrower route no longer resolves a session) and drop the
- * in-flight application pointer. The caller then routes to `/login`.
+ * Wipe every borrower-scoped artifact this browser holds, so no identity or PII
+ * survives a sign-out and bleeds into the next user on the same device:
+ *  - the in-flight application-id pointer,
+ *  - the persisted onboarding draft (name / PAN / Aadhaar / bank details) — both
+ *    the in-memory zustand state and its `navix.onboarding.draft` localStorage copy,
+ *  - any remaining `navix.*` client scratch (settings, last onboarding step, …).
+ *
+ * The in-memory React Query cache (the cached `borrower-me` session) is cleared
+ * separately by {@link useBorrowerLogout}, which has access to the QueryClient.
+ *
+ * Exported so the login + signup entry points can also call it on a successful
+ * auth — a different user can sign in WITHOUT the previous one signing out (an
+ * expired cookie, or just "Welcome back"), and the previous user's persisted
+ * draft/app-pointer must not carry over.
+ */
+export function clearBorrowerClientState(): void {
+  writeStoredAppId(null);
+  if (typeof window === "undefined") return;
+  try {
+    useOnboardingStore.getState().reset();
+    useOnboardingStore.persist?.clearStorage?.();
+  } catch {
+    /* store may be unavailable during teardown — best-effort */
+  }
+  try {
+    const stale: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith("navix.")) stale.push(key);
+    }
+    stale.forEach((key) => window.localStorage.removeItem(key));
+  } catch {
+    /* ignore storage access errors */
+  }
+}
+
+/**
+ * Sign the borrower out at the network level: clear the real `navix_borrower`
+ * httpOnly cookie (so re-visiting a borrower route no longer resolves a session)
+ * and drop all client-side borrower state. UI callers should prefer
+ * {@link useBorrowerLogout}, which ALSO flushes the React Query cache and routes
+ * to `/login` (without it the cached name lingers until a full reload).
  */
 export async function logoutBorrower(): Promise<void> {
   try {
@@ -145,7 +194,25 @@ export async function logoutBorrower(): Promise<void> {
   } catch {
     // best-effort — the cookie is httpOnly; the logout route is the way to clear it
   }
-  writeStoredAppId(null);
+  clearBorrowerClientState();
+}
+
+/**
+ * The sign-out a component should call. Clears the cookie + all client state
+ * (above) AND the in-memory React Query cache — which holds the cached
+ * `borrower-me` session plus every per-user application/loan/notification query —
+ * then routes to `/login`. Clearing the query cache is what makes the header and
+ * account menu update immediately (no reload needed) and is what stops the
+ * previous user's name from being shown to the next user on the same browser.
+ */
+export function useBorrowerLogout(): () => Promise<void> {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  return React.useCallback(async () => {
+    await logoutBorrower();
+    queryClient.clear();
+    router.replace("/login");
+  }, [queryClient, router]);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,9 +259,35 @@ export interface LiveApplication {
   refetch: () => void;
 }
 
+/**
+ * Pick the borrower's "current" application from their own list (newest-first): the newest one that
+ * is still live or carries a loan, skipping dead-ends (cancelled/rejected). Falls back to the newest.
+ */
+function pickCurrentAppId(apps: ApplicationView[]): number | null {
+  if (!apps.length) return null;
+  const current = apps.find((a) => !TERMINAL_BAD.includes(a.status)) ?? apps[0];
+  return current.id;
+}
+
 /** Poll the borrower's live application (+ loan once ACTIVE). */
 export function useLiveApplication(): LiveApplication {
   const [appId, setAppId] = useStoredAppId();
+
+  // Self-heal: with no stored pointer (a fresh login clears it, or a new device), resolve the
+  // caller's OWN latest application from the ownership-scoped /mine endpoint and adopt it. /mine is
+  // scoped server-side to the JWT subject, so this can never surface another user's application —
+  // unlike a localStorage app-id pointer, which could be stale from a previous user on this browser.
+  const mineQuery = useQuery({
+    queryKey: ["mine-latest"],
+    queryFn: () => borrowerApi.myApplications(),
+    enabled: appId == null,
+  });
+  React.useEffect(() => {
+    if (appId == null && mineQuery.data) {
+      const resolved = pickCurrentAppId(mineQuery.data);
+      if (resolved != null) setAppId(resolved);
+    }
+  }, [appId, mineQuery.data, setAppId]);
 
   const appQuery = useQuery({
     queryKey: ["live-application", appId],
@@ -226,7 +319,9 @@ export function useLiveApplication(): LiveApplication {
     setAppId,
     app,
     loan: loanQuery.data,
-    isLoading: appQuery.isLoading,
+    // Loading while we resolve the pointer from /mine OR while the resolved application loads, so a
+    // returning user doesn't flash the "start a new application" state before their own loan appears.
+    isLoading: appQuery.isLoading || (appId == null && mineQuery.isLoading),
     refetch: () => appQuery.refetch(),
   };
 }

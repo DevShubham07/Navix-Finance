@@ -8,7 +8,7 @@ import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
-import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, type OtpRequestResult } from "@/lib/api/live-journey";
+import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, clearBorrowerClientState, type OtpRequestResult } from "@/lib/api/live-journey";
 import { ApplicationApiError } from "@/lib/api/applications";
 import { normalizeMobile } from "@/lib/utils";
 
@@ -39,6 +39,13 @@ export default function SignupMobileOtpPage() {
       setError("Maximum resend attempts reached. Please try again later or contact support.");
       return;
     }
+    // A different number than the persisted draft means a different applicant is starting onboarding
+    // on this browser — discard the previous applicant's draft (name/PAN/Aadhaar/bank), app pointer,
+    // and cached queries so none of their identity/PII carries over. Same number = the same person
+    // resuming, so their draft is preserved.
+    if (draft.mobile && draft.mobile !== mobile) {
+      clearBorrowerClientState();
+    }
     setBusy(true);
     setError(undefined);
     try {
@@ -62,8 +69,11 @@ export default function SignupMobileOtpPage() {
     setError(undefined);
     try {
       const clean = mobile.replace(/\s/g, "");
-      // The backend validates the OTP and issues the JWT session cookie.
-      const session = await ensureBorrowerSession(clean, code, draft.fullName || undefined);
+      // The backend validates the OTP and issues the JWT session cookie. Do NOT forward a name here:
+      // at this first step the persisted draft name (if any) belongs to a *previous* applicant on this
+      // browser, and forwarding it would mint this user's session under that name. The backend resolves
+      // the display name from the stored profile instead.
+      const session = await ensureBorrowerSession(clean, code);
       if (!session) throw new ApplicationApiError("Incorrect code or session error — please try again.", "INVALID_OTP", 0);
       // Create the DRAFT application up front so every later step has a real id to persist against.
       const app = await createOrResumeDraft(session);

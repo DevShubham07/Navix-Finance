@@ -21,10 +21,11 @@ export interface ExportActor {
   role: string;
 }
 
-// NAVIX design tokens (see CLAUDE.md).
-const NAVY: [number, number, number] = [14, 58, 83];
-const GOLD: [number, number, number] = [201, 162, 39];
-const ROW_ALT: [number, number, number] = [245, 247, 250];
+// NAVIX design tokens (2026 "calendar" system) — navy #0C2540 · gold #D49A24 ·
+// warm-cream row #F7F2E9. Keeps branded PDFs aligned with the re-skinned UI.
+const NAVY: [number, number, number] = [12, 37, 64];
+const GOLD: [number, number, number] = [212, 154, 36];
+const ROW_ALT: [number, number, number] = [247, 242, 233];
 
 function cell(v: string | number | null | undefined): string {
   return v == null ? "" : String(v);

@@ -1,11 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { LogOut, ShieldCheck } from "lucide-react";
 import { InfoRow, SummarySection } from "@/components/borrower/summary";
 import { KycProgress } from "@/components/borrower/kyc-progress";
 import { useOnboarding } from "@/lib/onboarding";
-import { useLiveApplication, logoutBorrower } from "@/lib/api/live-journey";
+import { useLiveApplication, useBorrowerLogout } from "@/lib/api/live-journey";
 import type { ApplicationStatus } from "@/lib/api/applications";
 import type { KycCheck, KycState } from "@/lib/domain/borrower";
 import { formatINR0 } from "@/lib/utils";
@@ -27,7 +26,7 @@ function kycFromStatus(status: ApplicationStatus | undefined): KycState {
 }
 
 export default function ProfilePage() {
-  const router = useRouter();
+  const logout = useBorrowerLogout();
   const { mounted, draft } = useOnboarding();
   const { app } = useLiveApplication();
 
@@ -37,8 +36,7 @@ export default function ProfilePage() {
 
   const accountLast4 = draft.accountNumber ? draft.accountNumber.replace(/\D/g, "").slice(-4) : "";
   const signOut = async () => {
-    await logoutBorrower();
-    router.push("/login");
+    await logout();
   };
 
   return (

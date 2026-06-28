@@ -210,6 +210,25 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
   **V22** (`applicant_profile.email`, captured at the signup email step for the EMAIL channel). 37 new
   unit tests (dispatcher fan-out + error-isolation, audience, renderer, listener mapping, service
   scoping, email toggle). See §11 (`/api/notifications`) and §12 (event-driven convention).
+- ✅ **Unified design system + salary-calendar (live, 2026-06-28)** — the **functional app (borrower +
+  staff) is re-skinned to the same "2026 calendar" design the marketing site uses** (navy `#0C2540` ·
+  gold `#E9B53A` · cream `#FDFBF6`; **Bricolage Grotesque** display / **Hanken Grotesk** body / **IBM Plex
+  Mono** figures), retiring the old "Classic Corporate" theme (navy #1B3A6B / Source Serif). Done as a
+  **token-remap cascade, not a per-page rewrite**: the app consumes a shared vocabulary (Tailwind tokens
+  + `globals.css` classes), so changing token **values** while keeping every **name** restyled all 54
+  functional screens at once. Touch points: `tailwind.config.ts` (palette/fonts/radii/shadows — names
+  unchanged), `globals.css` (`:root` retokenized → now **matches** the marketing `.navix-mkt` scope; `.btn*`
+  /`.field`/headings restyled; `.cal-*` calendar block added), `app/layout.tsx` (functional app now loads
+  Bricolage/Hanken/Plex Mono — Inter/Source Serif dropped). Only a handful of hand-fixes were needed
+  (`route-progress.tsx` hardcoded teal→gold, `staff-shell.tsx` sidebar `<Brand light>` so the navy-on-navy
+  wordmark shows white, `lib/export/exporters.ts` PDF colours). **Salary calendar wired into the real
+  flow:** `components/borrower/salary-calendar.tsx` (`<SalaryCalendar>`) on **`/loan/apply`** lets the
+  borrower pick the day their salary lands, driving the real `salaryCreditDay`; its selectable window is
+  **15–40 days** (= `SALARY_DUE_MIN_CYCLE_DAYS`) so the picked date always equals what `AmountChooser` **and**
+  the backend `dueDateFromSalary` resolve to (no API change). The marketing **`/calculator`** gained its own
+  illustrative 7–40-day calendar (markup in `_content/calculator.ts`, scoped CSS in `marketing-theme.css`,
+  JS in `marketing-scripts.tsx`). Verified `tsc` + `next lint` clean and `npm run build` green for all 50+
+  routes. See §8 (frontend architecture) and the `navix-unified-design-system` memory.
 
 **Demo-first (not yet real):**
 - 🟡 **No real auth/JWT yet.** Identity is injected via demo headers (§7). This is intentional for
@@ -417,9 +436,12 @@ How a real applicant moves through the product — this is now the **designed, b
    `profile` → upload `documents` → `submit-kyc` → `KYC_PENDING`.
 3. **Wait for KYC** — the cosmetic DigiLocker/selfie screens animate; the real gate is a staff
    `KYC_APPROVER` (→ `KYC_APPROVED`).
-4. **Choose amount** — on `/loan/apply` the borrower picks an amount within the eligible limit
-   (25% of salary) and submits `apply` (amount + purpose + salary-credit day). The app stays
-   `KYC_APPROVED`, now flagged "applied" (`amountRequested != null`), and enters the Credit Head's queue.
+4. **Choose amount** — on `/loan/apply` the borrower first **picks their salary day on the
+   `<SalaryCalendar>`** (a month grid; selectable window 15–40 days, which sets the real
+   `salaryCreditDay`), then picks an amount within the eligible limit (25% of salary) on the
+   `AmountChooser` — the due date and full cost update live. Submitting `apply` (amount + salary-credit
+   day) keeps the app `KYC_APPROVED`, now flagged "applied" (`amountRequested != null`), and enters the
+   Credit Head's queue.
 5. **Track live** — `/loan/status` polls `GET …/{id}` and renders the live state-machine status +
    audit trail; no more client-side "simulate decision".
 6. **Active loan** — after the staff chain completes (`ACTIVE`), `/dashboard` shows the real loan from
@@ -508,6 +530,19 @@ knows what each section does.
 - **Route groups:** `(marketing)` landing, `(borrower)` applicant flows, `staff/` back-office.
   `src/middleware.ts` gates `/staff/*` on cookie *presence* (real RBAC is enforced server-side in
   the flow service, not the middleware).
+- **Design system (unified 2026 "calendar"):** one visual language across marketing **and** the
+  functional app — navy `#0C2540` · gold `#E9B53A` · cream `#FDFBF6`; **Bricolage Grotesque** (display) /
+  **Hanken Grotesk** (body) / **IBM Plex Mono** (figures). Tokens live in **`tailwind.config.ts`** (colour/
+  font/radius/shadow scales) + **`globals.css`** `:root`, and the functional app styles via those Tailwind
+  tokens (`bg-ivory`/`text-navy`/`font-serif`…) **and** globals.css component classes (`.btn*`/`.card`/
+  `.field`/`.cal-*`). The marketing site re-declares the **same** tokens scoped under **`.navix-mkt`**
+  (`marketing-theme.css`) so it can't bleed into the app. **Re-skin by remapping token *values*, never by
+  renaming** — names are load-bearing across ~54 screens (`font-serif` is the Bricolage *display* face,
+  not a literal serif). The salary-day `<SalaryCalendar>` (borrower `/loan/apply`) and the marketing
+  `/calculator` calendar share the `.cal-*` styles (unscoped in globals.css; `.navix-mkt`-scoped copy in
+  marketing-theme.css). Don't reintroduce the retired "Classic Corporate" theme (navy #1B3A6B / Source
+  Serif). ⚠️ Running `npm run build` while `npm run dev` is up corrupts the dev server's `.next`
+  (`Cannot find module './638.js'`) — kill dev, `rm -rf .next`, restart.
 - **BFF (Backend-for-Frontend):** all backend calls go through Next.js route handlers under
   `src/app/api/*`, never browser→Spring directly. Handlers are **optional catch-alls
   `[[...path]]`** (required `[...path]` does **not** match the bare base path — that was a bug,
@@ -774,5 +809,6 @@ For local end-to-end demos set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`
 - **`FUTURE.md`** — go-live roadmap for the deferred set (real auth, AWS/Fintrix, hardening).
 - **`populateDummyData.md`** — seed demo data at every lifecycle stage (`scripts/populate-demo-data.ps1`).
 - **`dfd.md`** — authoritative state machine, roles, and workflows W2–W7.
-- Memory (`~/.claude/.../memory/`) — `navix-application-state-machine.md` (lifecycle) and
-  `navix-execution-plan.md` (plan) capture the same decisions for cross-session continuity.
+- Memory (`~/.claude/.../memory/`) — `navix-application-state-machine.md` (lifecycle),
+  `navix-execution-plan.md` (plan), and `navix-unified-design-system.md` (the 2026 "calendar" re-skin +
+  salary-calendar wiring) capture the same decisions for cross-session continuity.

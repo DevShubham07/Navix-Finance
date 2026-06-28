@@ -12,6 +12,7 @@ import com.navix.iam.domain.StaffRole;
 import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
+import com.navix.loan.repository.ApplicantProfileRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ class AuthControllerTest {
 
     @Mock private StaffUserRepository staffRepository;
     @Mock private BorrowerOtpService otpService;
+    @Mock private ApplicantProfileRepository profileRepository;
 
     private AuthController controller;
     private JwtService jwt;
@@ -37,7 +39,7 @@ class AuthControllerTest {
     void setUp() {
         jwt = new JwtService("test-secret-test-secret-test-secret", 3600);
         PasswordEncoder encoder = new BCryptPasswordEncoder();
-        controller = new AuthController(staffRepository, jwt, encoder, otpService);
+        controller = new AuthController(staffRepository, jwt, encoder, otpService, profileRepository);
     }
 
     private StaffUser admin() {
