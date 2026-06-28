@@ -37,10 +37,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title:
-    "NAVIX — Instant Personal Loans, Fully Digital | Powered by RBI-Registered NBFC Partners",
+  title: "NAVIX — Instant Personal Loans, Fully Digital",
   description:
-    "NAVIX is a digital lending platform offering instant, fully-digital personal loans in partnership with RBI-registered NBFC lending partners. Paperless process, direct bank disbursal, zero advance fees.",
+    "NAVIX is a digital lending platform offering instant, fully-digital, salary-linked personal loans. Paperless process, direct bank disbursal, single repayment, zero advance fees.",
 };
 
 export default function RootLayout({
