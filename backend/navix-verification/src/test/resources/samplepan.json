@@ -1,0 +1,3808 @@
+{
+    "timestamp": "2026-06-27T22:24:35.307Z",
+    "transaction_id": "TXN-PROD-48568da2-4eaa-45b4-91e7-206151343b47",
+    "status": "success",
+    "data": {
+        "credit_report": {
+            "CreditProfileHeader": {
+                "ReportDate": 20260628,
+                "ReportTime": 35434,
+                "Version": "V2.4",
+                "ReportNumber": 1782599074402
+            },
+            "Current_Application": {
+                "Current_Application_Details": {
+                    "Enquiry_Reason": "99",
+                    "Finance_Purpose": "99",
+                    "Amount_Financed": "0",
+                    "Duration_Of_Agreement": "0",
+                    "Current_Applicant_Details": {
+                        "Last_Name": "JINDAL",
+                        "First_Name": "KARTIK",
+                        "Middle_Name1": "",
+                        "Middle_Name2": "",
+                        "Middle_Name3": "",
+                        "Gender_Code": "1",
+                        "IncomeTaxPan": "BXFPJ0767C",
+                        "PAN_Issue_Date": "",
+                        "PAN_Expiration_Date": "",
+                        "Passport_Number": "",
+                        "Passport_Issue_Date": "",
+                        "Passport_Expiration_Date": "",
+                        "Voter_s_Identity_Card": "",
+                        "Voter_ID_Issue_Date": "",
+                        "Voter_ID_Expiration_Date": "",
+                        "Driver_License_Number": "",
+                        "Driver_License_Issue_Date": "",
+                        "Driver_License_Expiration_Date": "",
+                        "Ration_Card_Number": "",
+                        "Ration_Card_Issue_Date": "",
+                        "Ration_Card_Expiration_Date": "",
+                        "Universal_ID_Number": "",
+                        "Universal_ID_Issue_Date": "",
+                        "Universal_ID_Expiration_Date": "",
+                        "Date_Of_Birth_Applicant": "19850710",
+                        "Telephone_Number_Applicant_1st": "95880784XX",
+                        "Telephone_Extension": "",
+                        "Telephone_Type": "",
+                        "MobilePhoneNumber": "",
+                        "EMailId": ""
+                    },
+                    "Current_Other_Details": {
+                        "Income": "0",
+                        "Marital_Status": "",
+                        "Employment_Status": "",
+                        "Time_with_Employer": "",
+                        "Number_of_Major_Credit_Card_Held": ""
+                    },
+                    "Current_Applicant_Address_Details": {
+                        "FlatNoPlotNoHouseNo": "DEFAULT",
+                        "BldgNoSocietyName": "",
+                        "RoadNoNameAreaLocality": "",
+                        "City": "Mumbai",
+                        "Landmark": "",
+                        "State": "27",
+                        "PINCode": "400001",
+                        "Country_Code": "IB"
+                    },
+                    "Current_Applicant_Additional_AddressDetails": ""
+                }
+            },
+            "CAIS_Account": {
+                "CAIS_Summary": {
+                    "Credit_Account": {
+                        "CreditAccountTotal": "11",
+                        "CreditAccountActive": "9",
+                        "CreditAccountDefault": "0",
+                        "CreditAccountClosed": "2",
+                        "CADSuitFiledCurrentBalance": "0"
+                    },
+                    "Total_Outstanding_Balance": {
+                        "Outstanding_Balance_Secured": "712212",
+                        "Outstanding_Balance_Secured_Percentage": "83",
+                        "Outstanding_Balance_UnSecured": "149020",
+                        "Outstanding_Balance_UnSecured_Percentage": "17",
+                        "Outstanding_Balance_All": "861232"
+                    }
+                },
+                "CAIS_Account_DETAILS": [
+                    {
+                        "Identification_Number": "OTHXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXX2640",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20260424",
+                        "Credit_Limit_Amount": "300000",
+                        "Highest_Credit_or_Original_Loan_Amount": "0",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "11",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "00??????????????????????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "0",
+                        "Amount_Past_Due": "0",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260615",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20260430",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK",
+                                "First_Name_Non_Normalized": "",
+                                "Middle_Name_1_Non_Normalized": "JINDAL",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "2ND FLOOR, E-40, SUNCITY, SECTOR",
+                                "Second_Line_Of_Address_non_normalized": "54 GURGAON",
+                                "Third_Line_Of_Address_non_normalized": "SUNCITY GURUGRAM HARAYANA",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "06",
+                                "ZIP_Postal_Code_non_normalized": "122003",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": "02"
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "7417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "60000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "60000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "60000",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXXXXX6215",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20260317",
+                        "Credit_Limit_Amount": "263000",
+                        "Highest_Credit_or_Original_Loan_Amount": "0",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "11",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "000?????????????????????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "0",
+                        "Amount_Past_Due": "0",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260615",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20260331",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK JINDAL",
+                                "First_Name_Non_Normalized": "",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "BHAWAN NO. 50 HOUSE NO. 428 HOLI CHOWK",
+                                "Second_Line_Of_Address_non_normalized": "MALIYANA MEERUT MEERUT UTTAR PRADESH",
+                                "Third_Line_Of_Address_non_normalized": "INDIA MEERUT UTTAR PRADESH",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "01",
+                                "Residence_code_non_normalized": ""
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "917417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "263000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "26300",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "263000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "26300",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "263000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "26300",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "263000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "26300",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXXXX2133",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20250902",
+                        "Credit_Limit_Amount": "100000",
+                        "Highest_Credit_or_Original_Loan_Amount": "6426",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "11",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "000000000???????????????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "0",
+                        "Amount_Past_Due": "0",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260615",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "20251030",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20250930",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK",
+                                "First_Name_Non_Normalized": "",
+                                "Middle_Name_1_Non_Normalized": "JINDAL",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "2ND FLOOR, E-40 SUNCITY 122002, SUNCITY",
+                                "Second_Line_Of_Address_non_normalized": "SECTOR 54",
+                                "Third_Line_Of_Address_non_normalized": "",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "06",
+                                "ZIP_Postal_Code_non_normalized": "122002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": "02"
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "00917417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "4975",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "271",
+                                "Current_Balance": "4975",
+                                "Credit_Limit_Amount": "100000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXXXX5264",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20250830",
+                        "Credit_Limit_Amount": "549000",
+                        "Highest_Credit_or_Original_Loan_Amount": "227906",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "11",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "000000000???????????????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "4636",
+                        "Amount_Past_Due": "",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260618",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "20260608",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20250930",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK JINDAL",
+                                "First_Name_Non_Normalized": "",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "BHAWAN NO 50 HOUSE NO 428 HOLI",
+                                "Second_Line_Of_Address_non_normalized": "CHOWK MALIYANA MEERUT MEERUT",
+                                "Third_Line_Of_Address_non_normalized": "",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": "02"
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "7417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "4636",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "2167",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "24513",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "17398",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "24402",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "17536",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "176251",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "69569",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "124302",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "54534",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXXXX8474",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20250718",
+                        "Credit_Limit_Amount": "25000",
+                        "Highest_Credit_or_Original_Loan_Amount": "6232",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "11",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "00000000000?????????????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "0",
+                        "Amount_Past_Due": "0",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260615",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "20251030",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "46.200",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20250731",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK",
+                                "First_Name_Non_Normalized": "JINDAL",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "2ND FLOOR E-40 SUNCITY",
+                                "Second_Line_Of_Address_non_normalized": "SUNCITY",
+                                "Third_Line_Of_Address_non_normalized": "GURUGRAM",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "06",
+                                "ZIP_Postal_Code_non_normalized": "122003",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": "02"
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "7417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIK.JINDAL@SPRINKLR.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIK.JINDAL@SPRINKLR.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "6232",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "9104",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "-7000",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "0",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "25000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "7000",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXXXX5083",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20250113",
+                        "Credit_Limit_Amount": "549000",
+                        "Highest_Credit_or_Original_Loan_Amount": "14968",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "11",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "00000000000000000???????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "1718",
+                        "Amount_Past_Due": "",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260621",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "20260530",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20250131",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "3",
+                                "Days_Past_Due": "27",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK JINDAL",
+                                "First_Name_Non_Normalized": "",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "BHAWAN NO. 50 HOUSE NO. 428",
+                                "Second_Line_Of_Address_non_normalized": "HOLI CHOWK MALIYANA MEERUT",
+                                "Third_Line_Of_Address_non_normalized": "MEERUT .",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": "02"
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "7417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIK.JINDAL@SPRINKLR.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIK.JINDAL@SPRINKLR.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "1718",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "2168",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "3418",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "832",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "-356",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "6989",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "1557",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "5285",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "7025",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "-104",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "898",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "8171",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "2234",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "89",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "4625",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "200",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "3036",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "2088",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXX9837",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20241028",
+                        "Credit_Limit_Amount": "300000",
+                        "Highest_Credit_or_Original_Loan_Amount": "25092",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "11",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "00000000000??00?????????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "15515",
+                        "Amount_Past_Due": "0",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260615",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "20260530",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "00",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20250331",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK",
+                                "First_Name_Non_Normalized": "JINDAL",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "BHAWAN NO. 50 HOUSE NO. 428 MALIYANA MEE",
+                                "Second_Line_Of_Address_non_normalized": "RUT UTTAR PRADESH 250002   NEAR HOLI CH",
+                                "Third_Line_Of_Address_non_normalized": "OWK,,",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "01",
+                                "Residence_code_non_normalized": ""
+                            },
+                            {
+                                "First_Line_Of_Address_non_normalized": "SPRINKLR INDIA PRIVATE LIMITED 6TH FLOOR",
+                                "Second_Line_Of_Address_non_normalized": ", BLOCK-V , DLF DOWNTOWN, SECTOR 25A, GU",
+                                "Third_Line_Of_Address_non_normalized": "RUGRAM, HARYANA,  NEAR DLF DOWNTOWN",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "06",
+                                "ZIP_Postal_Code_non_normalized": "122002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "03",
+                                "Residence_code_non_normalized": ""
+                            },
+                            {
+                                "First_Line_Of_Address_non_normalized": "2ND FLOOR, FLAT NUMBER 489, NEAR HOC DES",
+                                "Second_Line_Of_Address_non_normalized": "IGNARCH, SECTOR 42, GURUGRAM, HARYANA  N",
+                                "Third_Line_Of_Address_non_normalized": "EAR HOC DESIGNARCH",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "06",
+                                "ZIP_Postal_Code_non_normalized": "122002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": ""
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "7417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIK.JINDAL@SPRINKLR.COM"
+                            },
+                            {
+                                "Telephone_Number": "02201207777",
+                                "Telephone_Type": "3",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIK.JINDAL@SPRINKLR.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIK.JINDAL@SPRINKLR.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "15515",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "13181",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "26187",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "61855",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "51691",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "64192",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "76881",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "17999",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "14876",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "1153",
+                                "Credit_Limit_Amount": "300000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "30000",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "PUBXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXX9206",
+                        "Portfolio_Type": "I",
+                        "Account_Type": "01",
+                        "Open_Date": "20241014",
+                        "Credit_Limit_Amount": "",
+                        "Highest_Credit_or_Original_Loan_Amount": "1000000",
+                        "Terms_Duration": "060",
+                        "Terms_Frequency": "M",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "21",
+                        "Payment_Rating": "S",
+                        "Payment_History_Profile": "SSSSSSSSSSSSSSSSSSSS????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "712212",
+                        "Amount_Past_Due": "",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260615",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "0",
+                        "Value_of_Collateral": "1410150",
+                        "Type_of_Collateral": "01",
+                        "Written_Off_Amt_Total": "0",
+                        "Written_Off_Amt_Principal": "0",
+                        "Rate_of_Interest": "9.050",
+                        "Repayment_Tenure": "60",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20241031",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "6",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "5",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "4",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "3",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "2",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "1",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "12",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "11",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "10",
+                                "Days_Past_Due": null,
+                                "Asset_Classification": "S"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK",
+                                "First_Name_Non_Normalized": "JINDAL",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "C/O VIJAY JINDAL, BHAWAN NO. 50 HOUSE NO",
+                                "Second_Line_Of_Address_non_normalized": ". 428, HOLI CHOWK, MALIYANA",
+                                "Third_Line_Of_Address_non_normalized": "MEERUT",
+                                "City_non_normalized": "138:MEERUT",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": "02"
+                            },
+                            {
+                                "First_Line_Of_Address_non_normalized": "C/O VIJAY JINDAL, BHAWAN NO. 50 HOUSE NO",
+                                "Second_Line_Of_Address_non_normalized": ". 428, HOLI CHOWK, MALIYANA",
+                                "Third_Line_Of_Address_non_normalized": "MEERUT",
+                                "City_non_normalized": "MEERUT",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "01",
+                                "Residence_code_non_normalized": "02"
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "7417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "712212",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "732995",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "748141",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "763354",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "778268",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "793639",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "808322",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "822893",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "837554",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "851902",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "866344",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "880473",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "6",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "894494",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "5",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "908626",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "4",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "915570",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "3",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "936353",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "2",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "949948",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "1",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "964135",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "12",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "977518",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "11",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "990799",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "10",
+                                "Account_Status": "21",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "1004215",
+                                "Credit_Limit_Amount": "1000000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "20783"
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXXXX5252",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20240905",
+                        "Credit_Limit_Amount": "549000",
+                        "Highest_Credit_or_Original_Loan_Amount": "133208",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "11",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "000000000000000000000???????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "127151",
+                        "Amount_Past_Due": "",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20260623",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "",
+                        "Date_of_Last_Payment": "20260530",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "S",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20240930",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "12",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "11",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "10",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK JINDAL",
+                                "First_Name_Non_Normalized": "",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "BHAWAN NO 50 HOUSE NO 428",
+                                "Second_Line_Of_Address_non_normalized": "HOLI CHOWK MALIYANA MEERUT",
+                                "Third_Line_Of_Address_non_normalized": "MEERUT .",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": "02"
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "7417682036",
+                                "FaxNumber": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": "KARTIKJINDAL58@GMAIL.COM"
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2026",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "127151",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "73924",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "80810",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "58052",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "49530",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2026",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "2030",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "12",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "20617",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "11",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "20910",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "10",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "43774",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "42937",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "82188",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "7",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "81293",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "73090",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "87186",
+                                "Credit_Limit_Amount": "549000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "5722",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "69086",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "77780",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "69241",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "12",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "68337",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "11",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "73532",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "10",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "71878",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "9",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "47358",
+                                "Credit_Limit_Amount": "350000",
+                                "Amount_Past_Due": "",
+                                "Cash_Limit": "",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "NBFXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXXXX9852",
+                        "Portfolio_Type": "R",
+                        "Account_Type": "10",
+                        "Open_Date": "20250730",
+                        "Credit_Limit_Amount": "140000",
+                        "Highest_Credit_or_Original_Loan_Amount": "0",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "13",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "0???????????????????????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "0",
+                        "Amount_Past_Due": "0",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20250915",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "20250806",
+                        "Date_of_Last_Payment": "",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20250830",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "?"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK",
+                                "First_Name_Non_Normalized": "JINDAL",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "SPRINKLR INDIA PVT LTD",
+                                "Second_Line_Of_Address_non_normalized": "6TH FLOOR BUILDING NO 2",
+                                "Third_Line_Of_Address_non_normalized": "DLF DOWNTOWN SECTOR 24",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "06",
+                                "ZIP_Postal_Code_non_normalized": "122002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "03",
+                                "Residence_code_non_normalized": ""
+                            },
+                            {
+                                "First_Line_Of_Address_non_normalized": "HOUSE NO E-40 SUNCITY SECTOR 54",
+                                "Second_Line_Of_Address_non_normalized": "2ND FLOOR GURGAON HARYANA",
+                                "Third_Line_Of_Address_non_normalized": "",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "06",
+                                "ZIP_Postal_Code_non_normalized": "122002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "02",
+                                "Residence_code_non_normalized": ""
+                            },
+                            {
+                                "First_Line_Of_Address_non_normalized": "C/O VIJAY JINDAL BHAWAN NO. 50 HOUSE",
+                                "Second_Line_Of_Address_non_normalized": "",
+                                "Third_Line_Of_Address_non_normalized": "",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "01",
+                                "Residence_code_non_normalized": ""
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "07417682036",
+                                "FaxNumber": "",
+                                "EMailId": ""
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": ""
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2025",
+                                "Month": "9",
+                                "Account_Status": "13",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "140000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "28000",
+                                "EMI_Amount": ""
+                            },
+                            {
+                                "Year": "2025",
+                                "Month": "8",
+                                "Account_Status": "13",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "140000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "28000",
+                                "EMI_Amount": ""
+                            }
+                        ]
+                    },
+                    {
+                        "Identification_Number": "NBFXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Account_Number": "XXXXXXXXXXXXXXXX2173",
+                        "Portfolio_Type": "I",
+                        "Account_Type": "69",
+                        "Open_Date": "20230218",
+                        "Credit_Limit_Amount": "",
+                        "Highest_Credit_or_Original_Loan_Amount": "3000",
+                        "Terms_Duration": "",
+                        "Terms_Frequency": "",
+                        "Scheduled_Monthly_Payment_Amount": "",
+                        "Account_Status": "13",
+                        "Payment_Rating": "0",
+                        "Payment_History_Profile": "000000000000000?????????????????????",
+                        "Special_Comment": "",
+                        "Current_Balance": "0",
+                        "Amount_Past_Due": "0",
+                        "Original_Charge_Off_Amount": "",
+                        "Date_Reported": "20240531",
+                        "Date_of_First_Delinquency": "",
+                        "Date_Closed": "20240328",
+                        "Date_of_Last_Payment": "20230806",
+                        "SuitFiledWillfulDefaultWrittenOffStatus": "",
+                        "SuitFiled_WillfulDefault": "",
+                        "Written_off_Settled_Status": "",
+                        "Value_of_Credits_Last_Month": "",
+                        "Occupation_Code": "",
+                        "Settlement_Amount": "",
+                        "Value_of_Collateral": "",
+                        "Type_of_Collateral": "",
+                        "Written_Off_Amt_Total": "",
+                        "Written_Off_Amt_Principal": "",
+                        "Rate_of_Interest": "",
+                        "Repayment_Tenure": "0",
+                        "Promotional_Rate_Flag": "",
+                        "Income": "",
+                        "Income_Indicator": "",
+                        "Income_Frequency_Indicator": "",
+                        "DefaultStatusDate": "",
+                        "LitigationStatusDate": "",
+                        "WriteOffStatusDate": "",
+                        "DateOfAddition": "20230228",
+                        "CurrencyCode": "INR",
+                        "Subscriber_comments": "",
+                        "Consumer_comments": "",
+                        "AccountHoldertypeCode": "1",
+                        "CAIS_Account_History": [
+                            {
+                                "Year": "2024",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "1",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "12",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "11",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "10",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "9",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "8",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "7",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "6",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "5",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "4",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "3",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "2",
+                                "Days_Past_Due": "0",
+                                "Asset_Classification": "S"
+                            }
+                        ],
+                        "CAIS_Holder_Details": [
+                            {
+                                "Surname_Non_Normalized": "KARTIK",
+                                "First_Name_Non_Normalized": "JINDAL",
+                                "Middle_Name_1_Non_Normalized": "",
+                                "Middle_Name_2_Non_Normalized": "",
+                                "Middle_Name_3_Non_Normalized": "",
+                                "Alias": "",
+                                "Gender_Code": "1",
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "Passport_Number": "",
+                                "Voter_ID_Number": "",
+                                "Date_of_birth": "20020902"
+                            }
+                        ],
+                        "CAIS_Holder_Address_Details": [
+                            {
+                                "First_Line_Of_Address_non_normalized": "C O VIJAY JINDAL BHAWAN NO 50 HOUSE NO 4",
+                                "Second_Line_Of_Address_non_normalized": "28 HOLI CHOWK MALIYANA MEERUT",
+                                "Third_Line_Of_Address_non_normalized": "",
+                                "City_non_normalized": "",
+                                "Fifth_Line_Of_Address_non_normalized": "",
+                                "State_non_normalized": "09",
+                                "ZIP_Postal_Code_non_normalized": "250002",
+                                "CountryCode_non_normalized": "IB",
+                                "Address_indicator_non_normalized": "01",
+                                "Residence_code_non_normalized": ""
+                            }
+                        ],
+                        "CAIS_Holder_Phone_Details": [
+                            {
+                                "Telephone_Number": "",
+                                "Telephone_Type": "1",
+                                "Telephone_Extension": "",
+                                "Mobile_Telephone_Number": "7417682036",
+                                "FaxNumber": "",
+                                "EMailId": ""
+                            }
+                        ],
+                        "CAIS_Holder_ID_Details": [
+                            {
+                                "Income_TAX_PAN": "BXFPJ0767C",
+                                "PAN_Issue_Date": "",
+                                "PAN_Expiration_Date": "",
+                                "Passport_Number": "",
+                                "Passport_Issue_Date": "",
+                                "Passport_Expiration_Date": "",
+                                "Voter_ID_Number": "",
+                                "Voter_ID_Issue_Date": "",
+                                "Voter_ID_Expiration_Date": "",
+                                "Driver_License_Number": "",
+                                "Driver_License_Issue_Date": "",
+                                "Driver_License_Expiration_Date": "",
+                                "Ration_Card_Number": "",
+                                "Ration_Card_Issue_Date": "",
+                                "Ration_Card_Expiration_Date": "",
+                                "Universal_ID_Number": "",
+                                "Universal_ID_Issue_Date": "",
+                                "Universal_ID_Expiration_Date": "",
+                                "EMailId": ""
+                            }
+                        ],
+                        "Account_Review_Data": [
+                            {
+                                "Year": "2024",
+                                "Month": "5",
+                                "Account_Status": "13",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "4",
+                                "Account_Status": "13",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "3",
+                                "Account_Status": "13",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2024",
+                                "Month": "1",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "12",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "11",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "10",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "9",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "8",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "3000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "7",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "1000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "6",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "200",
+                                "Credit_Limit_Amount": "1000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "5",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "154",
+                                "Credit_Limit_Amount": "1000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "4",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "1000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "3",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "1000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            },
+                            {
+                                "Year": "2023",
+                                "Month": "2",
+                                "Account_Status": "11",
+                                "Actual_Payment_Amount": "",
+                                "Current_Balance": "0",
+                                "Credit_Limit_Amount": "1000",
+                                "Amount_Past_Due": "0",
+                                "Cash_Limit": "",
+                                "EMI_Amount": "0"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "Match_result": {
+                "Exact_match": "Y"
+            },
+            "TotalCAPS_Summary": {
+                "TotalCAPSLast7Days": "5",
+                "TotalCAPSLast30Days": "5",
+                "TotalCAPSLast90Days": "5",
+                "TotalCAPSLast180Days": "5"
+            },
+            "CAPS": {
+                "CAPS_Summary": {
+                    "CAPSLast7Days": "0",
+                    "CAPSLast30Days": "0",
+                    "CAPSLast90Days": "0",
+                    "CAPSLast180Days": "0"
+                },
+                "CAPS_Application_Details": [
+                    {
+                        "Subscriber_code": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20250901",
+                        "ReportTime": "163341",
+                        "ReportNumber": "1756724621036",
+                        "Enquiry_Reason": "7",
+                        "Finance_Purpose": "",
+                        "Amount_Financed": "100000",
+                        "Duration_Of_Agreement": "12"
+                    },
+                    {
+                        "Subscriber_code": "PUBXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20241014",
+                        "ReportTime": "165900",
+                        "ReportNumber": "1728905340184",
+                        "Enquiry_Reason": "2",
+                        "Finance_Purpose": "99",
+                        "Amount_Financed": "1000000",
+                        "Duration_Of_Agreement": "216"
+                    },
+                    {
+                        "Subscriber_code": "PUBXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20241014",
+                        "ReportTime": "105036",
+                        "ReportNumber": "1728883236396",
+                        "Enquiry_Reason": "2",
+                        "Finance_Purpose": "99",
+                        "Amount_Financed": "1000000",
+                        "Duration_Of_Agreement": "216"
+                    },
+                    {
+                        "Subscriber_code": "PUBXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20241003",
+                        "ReportTime": "134450",
+                        "ReportNumber": "1727943290327",
+                        "Enquiry_Reason": "2",
+                        "Finance_Purpose": "99",
+                        "Amount_Financed": "1000000",
+                        "Duration_Of_Agreement": "216"
+                    },
+                    {
+                        "Subscriber_code": "PUBXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20240927",
+                        "ReportTime": "161208",
+                        "ReportNumber": "1727433728547",
+                        "Enquiry_Reason": "2",
+                        "Finance_Purpose": "99",
+                        "Amount_Financed": "1000000",
+                        "Duration_Of_Agreement": "216"
+                    },
+                    {
+                        "Subscriber_code": "PUBXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20240926",
+                        "ReportTime": "151130",
+                        "ReportNumber": "1727343690580",
+                        "Enquiry_Reason": "2",
+                        "Finance_Purpose": "99",
+                        "Amount_Financed": "1000000",
+                        "Duration_Of_Agreement": "216"
+                    }
+                ]
+            },
+            "NonCreditCAPS": {
+                "NonCreditCAPS_Summary": {
+                    "NonCreditCAPSLast7Days": "5",
+                    "NonCreditCAPSLast30Days": "5",
+                    "NonCreditCAPSLast90Days": "5",
+                    "NonCreditCAPSLast180Days": "5"
+                },
+                "CAPS_Application_Details": [
+                    {
+                        "Subscriber_code": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20260317",
+                        "ReportTime": "145113",
+                        "ReportNumber": "1773739273750",
+                        "Enquiry_Reason": "7",
+                        "Finance_Purpose": "23",
+                        "Amount_Financed": "0",
+                        "Duration_Of_Agreement": "0"
+                    },
+                    {
+                        "Subscriber_code": "PVTXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20250830",
+                        "ReportTime": "131115",
+                        "ReportNumber": "1756539675730",
+                        "Enquiry_Reason": "7",
+                        "Finance_Purpose": "23",
+                        "Amount_Financed": "0",
+                        "Duration_Of_Agreement": "0"
+                    },
+                    {
+                        "Subscriber_code": "OTHXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20250830",
+                        "ReportTime": "051856",
+                        "ReportNumber": "1756511336149",
+                        "Enquiry_Reason": "7",
+                        "Finance_Purpose": "23",
+                        "Amount_Financed": "0",
+                        "Duration_Of_Agreement": "0"
+                    },
+                    {
+                        "Subscriber_code": "INSXXXXXXXX",
+                        "Subscriber_Name": "XXXXXXXXXX",
+                        "Date_of_Request": "20250515",
+                        "ReportTime": "174513",
+                        "ReportNumber": "1747311313857",
+                        "Enquiry_Reason": "99",
+                        "Finance_Purpose": "99",
+                        "Amount_Financed": "0",
+                        "Duration_Of_Agreement": "0"
+                    }
+                ]
+            },
+            "SCORE": {
+                "FCIREXScore": 778,
+                "FCIREXScoreConfidLevel": ""
+            }
+        },
+        "mobile": "95880784XX",
+        "pan": "BXFPJ0767C",
+        "name": "KARTIK JINDAL",
+        "credit_score": 778,
+        "client_id": "TXN-PROD-48568da2-4eaa-45b4-91e7-206151343b47"
+    },
+    "message": "Normal Response"
+}

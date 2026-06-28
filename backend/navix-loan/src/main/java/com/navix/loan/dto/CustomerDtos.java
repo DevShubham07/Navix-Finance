@@ -18,7 +18,10 @@ public final class CustomerDtos {
     private CustomerDtos() {
     }
 
-    /** One row in the customers list: an applicant plus rolled-up counts and total outstanding (paise). */
+    /**
+     * One row in the customers list: an applicant plus rolled-up counts and total outstanding (paise),
+     * and their latest credit headline (score + 1–5★ rating) for the staff Customers dashboard.
+     */
     public record CustomerSummary(
             Long applicantId,
             String name,
@@ -27,7 +30,9 @@ public final class CustomerDtos {
             int applicationCount,
             int loanCount,
             String latestStatus,
-            long totalOutstandingPaise) {
+            long totalOutstandingPaise,
+            Integer creditScore,
+            Double starRating) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */

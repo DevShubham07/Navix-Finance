@@ -31,7 +31,11 @@ public final class ReviewDtos {
             String salaryBank) {
     }
 
-    /** Staff-facing KYC view — PAN/Aadhaar/mobile masked (e.g. ABXXXXX34F, XXXXXXXX1234). */
+    /**
+     * Staff-facing KYC view — PAN/Aadhaar/mobile masked (e.g. ABXXXXX34F, XXXXXXXX1234). Carries the
+     * staff-only credit headline (score + 1–5★ rating + verdict) so customer/applicant cards can show
+     * it without a second call; never returned on a borrower-facing path.
+     */
     public record ProfileView(
             Long applicationId,
             String fullName,
@@ -43,14 +47,26 @@ public final class ReviewDtos {
             String employer,
             String employmentStatus,
             Long monthlySalaryPaise,
-            String salaryBank) {
+            String salaryBank,
+            Integer creditScore,
+            Double starRating,
+            String recommendation) {
 
         public static ProfileView of(ApplicantProfile p) {
             return new ProfileView(
                     p.getApplicationId(), p.getFullName(), Masking.maskPan(p.getPan()),
                     Masking.maskAadhaar(p.getAadhaar()), Masking.maskPhone(p.getMobile()), p.getDob(),
                     p.getAddress(), p.getEmployer(), p.getEmploymentStatus(),
-                    p.getMonthlySalaryPaise(), p.getSalaryBank());
+                    p.getMonthlySalaryPaise(), p.getSalaryBank(),
+                    p.getBureauScore() != null ? p.getBureauScore().intValue() : null,
+                    p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
+                    p.getCreditRecommendation());
+        }
+
+        /** Copy with the staff-only credit headline stripped — for borrower-facing responses. */
+        public ProfileView withoutCredit() {
+            return new ProfileView(applicationId, fullName, panMasked, aadhaarMasked, mobileMasked, dob,
+                    address, employer, employmentStatus, monthlySalaryPaise, salaryBank, null, null, null);
         }
     }
 

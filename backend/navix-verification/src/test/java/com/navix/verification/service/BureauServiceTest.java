@@ -36,7 +36,7 @@ class BureauServiceTest {
     void usesExperianWhenScoredAndNotNoRecord() {
         BureauService service = new BureauService(experianClient, crifClient);
         when(experianClient.pull(any(), any(), any(), any()))
-                .thenReturn(new ExperianResponse("TXN-EXP", "success", 760, false, "hit"));
+                .thenReturn(new ExperianResponse("TXN-EXP", "success", 760, false, "hit", null));
 
         UnifiedBureauReport report = service.pull("PAN", "Name", "9999999999", "1990-01-01", "ref");
 
@@ -48,7 +48,7 @@ class BureauServiceTest {
     void fallsBackToCrifOnExperianNoRecord() {
         BureauService service = new BureauService(experianClient, crifClient);
         when(experianClient.pull(any(), any(), any(), any()))
-                .thenReturn(new ExperianResponse("TXN-EXP", "success", null, true, "No record found"));
+                .thenReturn(new ExperianResponse("TXN-EXP", "success", null, true, "No record found", null));
         when(crifClient.pull(any(), any(), any(), any(), any())).thenReturn(crif(700));
 
         UnifiedBureauReport report = service.pull("PAN", "Name", "9999999999", "1990-01-01", "ref");

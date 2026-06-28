@@ -50,6 +50,10 @@ export interface ApplicationView {
   loanId: number | null;
   /** A pre-approved reborrow that reached disbursement without credit review (fast-track section). */
   fastTrack?: boolean;
+  /** Staff-only credit headline (populated on staff queue rows; never on borrower paths). */
+  creditScore?: number | null;
+  starRating?: number | null;
+  recommendation?: string | null;
 }
 
 export interface EventView {
@@ -134,6 +138,10 @@ export interface ProfileView {
   employmentStatus: string | null;
   monthlySalaryPaise: number | null;
   salaryBank: string | null;
+  /** Staff-only credit headline (score + 1–5★ rating + verdict). Null until the bureau is pulled. */
+  creditScore?: number | null;
+  starRating?: number | null;
+  recommendation?: string | null;
 }
 
 /** What the borrower submits for their KYC profile (all fields optional). */
@@ -189,6 +197,9 @@ export interface CustomerSummary {
   loanCount: number;
   latestStatus: string | null;
   totalOutstandingPaise: number;
+  /** Latest credit headline for the customer (staff-only). */
+  creditScore?: number | null;
+  starRating?: number | null;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -198,6 +209,39 @@ export interface CustomerDetail {
   applications: ApplicationView[];
   loans: LoanView[];
   payments: PaymentView[];
+}
+
+/** Parsed bureau facts behind the credit brief (Categories A/B/C). Amounts are rupees (bureau unit). */
+export interface CreditBriefFacts {
+  name: string | null;
+  panMasked: string | null;
+  mobileMasked: string | null;
+  dob: string | null;
+  city: string | null;
+  pin: string | null;
+  creditScore: number | null;
+  totalAccounts: number | null;
+  activeAccounts: number | null;
+  closedAccounts: number | null;
+  defaults: number | null;
+  totalBalance: number | null;
+  securedBalance: number | null;
+  unsecuredBalance: number | null;
+  recentInquiries30d: number | null;
+}
+
+/** Staff credit brief for an application: 1–5★ rating headline + facts + the CREDIT_BRIEF PDF doc id. */
+export interface CreditBriefView {
+  applicationId: number;
+  available: boolean;
+  creditScore: number | null;
+  starRating: number | null;
+  recommendation: string | null;
+  summary: string | null;
+  generatedAt: string | null;
+  /** The stored CREDIT_BRIEF document id — fetch its presigned URL via staffApi.documentUrl. */
+  documentId: number | null;
+  facts: CreditBriefFacts | null;
 }
 
 /** Admin edit of a customer's KYC data (identity fields excluded — they stay locked). */
@@ -578,6 +622,9 @@ export const staffApi = {
 
   /** The application's verification step results (PAN/email/address/salary/…). */
   verifications: (id: number) => bff<StepResult[]>(`${STAFF_BASE}/${id}/verifications`, "GET"),
+
+  /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
+  creditBrief: (id: number) => bff<CreditBriefView>(`${STAFF_BASE}/${id}/credit-brief`, "GET"),
 };
 
 // ---------------------------------------------------------------------------

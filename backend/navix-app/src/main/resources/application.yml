@@ -32,6 +32,11 @@ spring:
 
 # NAVIX integration settings
 navix:
+  # Opt-in demo fixture: when set, every Experian bureau pull returns this bundled report instead of
+  # calling Fintrix (the live sandbox is thin-file). Use classpath:samplepan.json or an absolute path
+  # to see a rich credit brief + rating locally. Leave blank in real environments.
+  bureau:
+    fixture: ${NAVIX_BUREAU_FIXTURE:}
   fintrix:
     base-url: ${FINTRIX_BASE_URL:https://admin.fintrix.tech/__api/api/v1/}
     client-id: ${FINTRIX_CLIENT_ID:}

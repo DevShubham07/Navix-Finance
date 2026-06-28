@@ -8,6 +8,8 @@ import { ArrowLeft, Loader2, RefreshCw, User, Banknote, Receipt, Workflow, Penci
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
+import { CreditBadge } from "@/components/staff/credit-badge";
+import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import {
   customersApi,
   staffApi,
@@ -67,6 +69,7 @@ export default function CustomerDetailPage() {
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
             <div className="space-y-6">
+              {c.applications[0] && <CreditProfileCard applicationId={c.applications[0].id} />}
               <CurrentLoanCard loan={currentLoan} />
               <PastLoansCard loans={pastLoans} />
               <PaymentsCard payments={c.payments} />
@@ -108,6 +111,12 @@ function ProfileCard({ detail }: { detail: CustomerDetail }) {
   const p = detail.profile;
   return (
     <Card title="Profile" icon={<User size={16} />}>
+      {p && (p.starRating != null || p.creditScore != null) && (
+        <div className="mb-3 flex items-center gap-2 border-b border-line pb-3">
+          <span className="text-xs text-muted">#{detail.applicantId}</span>
+          <CreditBadge starRating={p.starRating} creditScore={p.creditScore} recommendation={p.recommendation} />
+        </div>
+      )}
       {!p ? (
         <p className="text-sm text-muted">No KYC profile on file.</p>
       ) : (

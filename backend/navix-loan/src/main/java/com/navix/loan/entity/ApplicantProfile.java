@@ -4,10 +4,14 @@ import com.navix.common.entity.BaseAuditEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * The applicant's KYC snapshot captured for a single application, so staff reviewers
@@ -101,4 +105,27 @@ public class ApplicantProfile extends BaseAuditEntity {
     /** True once the borrower has accepted the agreement documents. */
     @Column(name = "agreement_accepted")
     private Boolean agreementAccepted;
+
+    // --- credit brief (V20): 1–5★ "should we recommend" rating + parsed bureau facts.
+    //     Staff/internal only — never surfaced to the borrower. Credit score = bureauScore. ---
+
+    /** 1.0–5.0 in 0.5 steps. */
+    @Column(name = "credit_star_rating")
+    private BigDecimal creditStarRating;
+
+    /** Verdict band, e.g. STRONGLY RECOMMEND / RECOMMEND / REFER — MANUAL REVIEW / NOT RECOMMENDED. */
+    @Column(name = "credit_recommendation", length = 40)
+    private String creditRecommendation;
+
+    /** Generated 2–3 sentence underwriter summary. */
+    @Column(name = "credit_brief_summary")
+    private String creditBriefSummary;
+
+    @Column(name = "credit_brief_generated_at")
+    private Instant creditBriefGeneratedAt;
+
+    /** JSON of the parsed {@code BureauReportFacts} (Categories A/B/C) backing the brief card + PDF. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "credit_brief_facts")
+    private String creditBriefFacts;
 }

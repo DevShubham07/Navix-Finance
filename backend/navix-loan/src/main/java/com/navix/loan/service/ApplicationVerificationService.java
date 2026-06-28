@@ -75,6 +75,7 @@ public class ApplicationVerificationService {
     private final DocumentStoragePort storage;
     private final RiskPort risk;
     private final ObjectMapper objectMapper;
+    private final CreditBriefService creditBriefService;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     public record StepResult(String checkType, String status, String message, Map<String, Object> derived) {
@@ -306,6 +307,9 @@ public class ApplicationVerificationService {
             RiskPort.RiskGrade grade = risk.grade(salary, bureauScore, null);
             profile.setRiskCategory(grade.category());
         }
+        // Build the staff credit brief (1–5★ rating + one-page PDF → S3 + CREDIT_BRIEF document) from
+        // the parsed report. Best-effort and self-saving; no-op on a thin-file (facts == null).
+        creditBriefService.generate(appId, profile, r.facts());
         profileRepo.save(profile);
 
         // Borrower-safe derived: NO score, NO category.

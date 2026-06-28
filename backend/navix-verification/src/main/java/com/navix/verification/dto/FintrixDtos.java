@@ -1,6 +1,7 @@
 package com.navix.verification.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.navix.common.verification.BureauReportFacts;
 
 /**
  * Request/response records for the 7 Fintrix (Digitap-backed) endpoints used by NAVIX:
@@ -96,7 +97,8 @@ public final class FintrixDtos {
             String status,
             Integer creditScore,
             Boolean noRecord,
-            String message
+            String message,
+            BureauReportFacts facts
     ) {
     }
 

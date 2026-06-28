@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.verification.dto.FintrixDtos.AddressVerificationResponse;
 import com.navix.verification.dto.FintrixDtos.CrifResponse;
 import com.navix.verification.dto.FintrixDtos.EmailVerificationResponse;
@@ -126,7 +127,8 @@ class FintrixClientsTest {
                 "message":"SYS100004 (No record found)"}
                 """);
 
-        ExperianResponse r = new ExperianClient(b.restClient()).pull("QVEPS0901K", "Shubham", "9999999999", "navix-1-exp");
+        ExperianResponse r = new ExperianClient(b.restClient(), new ObjectMapper(), "")
+                .pull("QVEPS0901K", "Shubham", "9999999999", "navix-1-exp");
 
         assertThat(r.txnId()).isEqualTo("TXN-EXP-1");
         assertThat(r.status()).isEqualTo("success");

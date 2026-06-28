@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { CreditBadge } from "@/components/staff/credit-badge";
 import { staffApi, statusLabel, paiseToINR, type ApplicationView } from "@/lib/api/applications";
 import {
   ApplicantReview,
@@ -51,6 +52,13 @@ export default function CreditReviewPage() {
     refetchInterval: 8000,
   });
 
+  // get(id) is borrower-safe (no credit fields); the staff-only headline comes from the brief endpoint.
+  const briefQ = useQuery({
+    queryKey: ["credit-brief", id],
+    queryFn: () => staffApi.creditBrief(id),
+    enabled: Number.isFinite(id),
+  });
+
   const app = q.data;
   const action = app ? actionFor(app) : null;
 
@@ -85,6 +93,13 @@ export default function CreditReviewPage() {
                 <span>· requested {paiseToINR(app.amountRequestedPaise)}</span>
                 {app.assignedExecutiveId != null && <span>· exec #{app.assignedExecutiveId}</span>}
                 {app.loanId != null && <span>· loan #{app.loanId}</span>}
+                {briefQ.data?.available && (
+                  <CreditBadge
+                    starRating={briefQ.data.starRating}
+                    creditScore={briefQ.data.creditScore}
+                    recommendation={briefQ.data.recommendation}
+                  />
+                )}
               </div>
             </div>
             {action && <div className="flex items-center gap-2">{action}</div>}

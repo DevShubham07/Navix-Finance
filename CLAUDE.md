@@ -133,7 +133,7 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
 - ✅ **Tests** — the backend unit suite green (incl. repayment, transactions-ledger, disbursement
   fast-path, collections-bridge, identity-uniqueness); a **Testcontainers integration test** drives
   DRAFT→ACTIVE + SoD-violation + illegal-transition (3/3 green); frontend `tsc --noEmit` + ESLint clean.
-- ✅ **DB** — Postgres 16 via Docker; Flyway **V1–V14** apply cleanly (seeded staff/invites/blocklist/
+- ✅ **DB** — Postgres 16 via Docker; Flyway **V1–V20** apply cleanly (seeded staff/invites/blocklist/
   collection-case demo rows).
 - ✅ **Borrower account menu + my-applications (live)** — the borrower app-shell header carries an
   account dropdown (`components/app/account-menu.tsx`): Profile, **Past loans** (`/loans`), **Past
@@ -168,6 +168,29 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
 - ✅ **Transactions on Admin (live)** — the company-wide ledger is now a dedicated **Administration →
   Transactions** nav item, and the staff dashboard shows an **ADMIN-only** transactions summary
   (incoming/outgoing totals + latest movements) linking to the full ledger.
+- ✅ **Bureau credit brief + 1–5★ rating + one-page PDF (live, 2026-06-28)** — the **existing** bureau
+  pull (`ApplicationVerificationService.pullBureau`) previously kept only the score; it now **harvests
+  the whole Experian report**. `ExperianClient` parses the spec's Category A/B/C fields into a neutral
+  `BureauReportFacts` (in **navix-common**, carried across `VerificationPort` — no Fintrix DTO crosses
+  the seam). From those facts `CreditRatingCalculator` computes a **1–5★ "should we recommend" rating**
+  (base band by score → bonus if >770 & 0 defaults → −0.5 for >3 recent enquiries → cap 2.5 on any
+  default → clamp; `samplepan.json` → **4.0★ RECOMMEND**) + a dynamic underwriter summary, and
+  `CreditBriefPdfRenderer` (**OpenPDF**) renders a **NAVIX-branded one-page PDF** (vector stars; amounts
+  as "Rs" — the base-14 font has no ₹ glyph; PAN/mobile masked). `CreditBriefService` runs at the bureau
+  step — **best-effort, never breaks the pull**: it persists the rating first (so the UI works even if
+  S3 is down), then renders the PDF, **stores it to S3**, and **upserts a `CREDIT_BRIEF`
+  `application_document`** so the brief rides the customer's documents list. The **score + stars show on
+  every staff detail surface** (live-pipeline queue rows + applicant-review card → kyc-approvals /
+  credit / disbursement / accounting / applications; `credit/{id}`; Customers list **+** detail
+  Profile card "next to the ID"; collections case) via new `StarRating` / `CreditBadge` /
+  `CreditProfileCard`, with a **Download brief (PDF)** button. New staff-only
+  `GET /api/applications/{id}/credit-brief` (`CreditBriefView`); Flyway **V20** adds
+  `applicant_profile.{credit_star_rating, credit_recommendation, credit_brief_summary,
+  credit_brief_generated_at, credit_brief_facts jsonb}` (credit **score reuses `bureau_score`**).
+  **Staff-only**: the score/stars are stripped from the borrower's own `GET …/{id}/profile`, the
+  enriched queue endpoints are staff-guarded, and **nothing** is added to the borrower `/profile`
+  (honours the "never show score to the borrower" rule). Local demo: the Fintrix sandbox is thin-file,
+  so set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`** to drive a rich brief end-to-end (§14).
 
 **Demo-first (not yet real):**
 - 🟡 **No real auth/JWT yet.** Identity is injected via demo headers (§7). This is intentional for
@@ -542,6 +565,8 @@ navix-common). Applied on every boot:
 | `V12__applicant_profile_unique_identity.sql` | add `aadhaar` + `mobile` to `applicant_profile`; partial **unique** indexes on pan/aadhaar/mobile |
 | `V13__loan_disbursal_txn_ref.sql` | add `loan.disbursal_txn_ref` (the outgoing disbursal's transaction id) |
 | `V14__application_reborrow_states.sql` | extend the `status` CHECK with `PRE_APPROVED` / `REVIEW_PENDING` (returning-borrower reborrow); no new column/table |
+| `V15`–`V19` | the **P0–P8 production-migration** set (S3 `s3_object_key`, `application_verification` + applicant-profile verification fields, staff `password_hash`, payment settings, admin/staff seed) — **detailed in `handoff.md` §15** |
+| `V20__applicant_profile_credit_brief.sql` | add `applicant_profile.{credit_star_rating, credit_recommendation, credit_brief_summary, credit_brief_generated_at, credit_brief_facts jsonb}` (the bureau credit brief; credit **score reuses `bureau_score`**) |
 
 **The aggregate** `loan_application`: `id`, `applicant_id`, `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
@@ -588,8 +613,9 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 | `POST /{id}/accountant-validate` | ACCOUNTANT | success → DISBURSED→ACTIVE (records `txnRef`) / fail |
 | `POST /{id}/retry-disbursement` | DISBURSEMENT_HEAD | failed → ACCOUNTANT_PENDING |
 | `POST /{id}/cancel` | borrower/staff | → CANCELLED (pre-disbursement) |
-| `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read) |
-| `POST /{id}/documents` · `GET /{id}/documents` · `GET /{id}/documents/{docId}` | borrower uploads · any reads | documents (base64; metadata list + content for view/download) |
+| `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read; the staff-only credit score/★ rating are **stripped** for a borrower reading their own profile) |
+| `POST /{id}/documents` · `GET /{id}/documents` · `GET /{id}/documents/{docId}` | borrower uploads · any reads | documents (base64; metadata list + content for view/download) — the auto-generated `CREDIT_BRIEF` PDF rides this list |
+| `GET /{id}/credit-brief` | staff only | bureau credit brief: 1–5★ rating + categorized facts (A/B/C) + summary + the `CREDIT_BRIEF` PDF doc id (`CreditBriefView`); borrower/anonymous → `FORBIDDEN_ROLE` |
 
 ### Customers (`/api/customers`) — borrower-centric roll-up
 
@@ -642,7 +668,8 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
 - **Salary-linked due date ≤ 40 days** (final, over dfd D10).
 - **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `AWS_PROFILE`, `NAVIX_ENV`,
-  `FINTRIX_*`, `DIGILOCKER_*`, `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`).
+  `FINTRIX_*`, `DIGILOCKER_*`, `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
+  `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs).
 
 ---
 
@@ -671,9 +698,19 @@ via `ActorContext` (proposer ≠ approver). The BFF still injects the staff acto
 
 ## 14. External integrations (when un-mocked)
 
-- **Fintrix** (salary verification) — base `https://admin.fintrix.tech/__api/api/v1/`, HTTP Basic
-  `base64(CLIENT_ID:CLIENT_SECRET)`. See `NAVIX_Fintrix_Integration_Flow.md`.
+- **Fintrix** (salary verification + **Experian/CRIF bureau**) — base
+  `https://admin.fintrix.tech/__api/api/v1/`, HTTP Basic `base64(CLIENT_ID:CLIENT_SECRET)`. See
+  `NAVIX_Fintrix_Integration_Flow.md`.
 - **DigiLocker** (KYC) — headers `X-Client-ID` / `X-Client-Secret`. See `Digilocker_API_Guide.md`.
+
+**Bureau report → credit brief (verified 2026-06-28):** `ExperianClient.pull` now parses the **full**
+`individual_experian` response (`data.credit_report.*` — CAIS summary, outstanding balances, CAPS
+enquiries; shape in `samplepan.json`) into `BureauReportFacts`, not just the score. The **sandbox is
+thin-file** (no CAIS detail → `facts == null` → score-only, no brief); a **prod** response is rich.
+For local end-to-end demos set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`** (bundled in
+`navix-app`/`navix-verification` resources) — every pull then returns that report, yielding a real
+4.0★ brief + PDF without calling Fintrix. The rating math + field map live in `CreditRatingCalculator`
+(see §2); the PDF needs **OpenPDF** (`com.github.librepdf:openpdf`, in the parent BOM + `navix-loan`).
 
 **DigiLocker live-flow gotchas (verified 2026-06-28, `signup/digilocker/page.tsx`):**
 - **`digilocker_initialize` caches the consent session keyed by `redirect_url`.** The provider

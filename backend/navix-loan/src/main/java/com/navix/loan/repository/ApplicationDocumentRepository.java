@@ -13,4 +13,7 @@ public interface ApplicationDocumentRepository extends JpaRepository<Application
     List<ApplicationDocument> findByApplicationIdOrderByIdAsc(Long applicationId);
 
     Optional<ApplicationDocument> findByIdAndApplicationId(Long id, Long applicationId);
+
+    /** The latest document of a given type for an application — used to upsert the CREDIT_BRIEF PDF. */
+    Optional<ApplicationDocument> findFirstByApplicationIdAndDocTypeOrderByIdDesc(Long applicationId, String docType);
 }

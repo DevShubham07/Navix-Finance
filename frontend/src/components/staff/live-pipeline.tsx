@@ -15,6 +15,8 @@ import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, X, Loader2, RefreshCw, ChevronDown, FileText, Download, ExternalLink, User, Banknote, ArrowRight } from "lucide-react";
 import { Input, Select, InfoTooltip } from "@/components/ui";
+import { CreditBadge } from "@/components/staff/credit-badge";
+import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { hasPermission, type StaffRole, type Permission } from "@/lib/auth/rbac";
 import {
   staffApi,
@@ -225,6 +227,11 @@ function AppRow({
             <span>Requested {paiseToINR(app.amountRequestedPaise)}</span>
             {app.assignedExecutiveId != null && <span>· exec #{app.assignedExecutiveId}</span>}
             {app.loanId != null && <span>· loan #{app.loanId}</span>}
+            <CreditBadge
+              starRating={app.starRating}
+              creditScore={app.creditScore}
+              recommendation={app.recommendation}
+            />
           </div>
         </div>
         <div className="flex items-center gap-2">{actions(app)}</div>
@@ -329,6 +336,7 @@ export function ApplicantReview({ applicationId }: { applicationId: number }) {
   const p = profileQ.data;
 
   return (
+    <div className="w-full space-y-3">
     <div className="rounded border border-line bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2 font-serif text-base font-semibold text-navy">
         <User size={16} /> Applicant details
@@ -371,6 +379,8 @@ export function ApplicantReview({ applicationId }: { applicationId: number }) {
           ))}
         </ul>
       )}
+    </div>
+    <CreditProfileCard applicationId={applicationId} />
     </div>
   );
 }

@@ -51,6 +51,27 @@ Completed work is recorded in `handoff.md` §15 and `CLAUDE.md` §2.
 > "Assign to me" button in the console — see A6); and a **per-stage demo-data populator**
 > (`scripts/populate-demo-data.ps1` / `populateDummyData.md`).
 
+> ## ⚑ Update 2026-06-28 — bureau credit brief + 1–5★ rating + one-page PDF SHIPPED 🟢
+>
+> The bureau pull now harvests the **full** Experian report → a 1–5★ "should we recommend" rating, a
+> NAVIX-branded one-page **PDF** (S3 + `CREDIT_BRIEF` document), and a score/★ headline on every staff
+> detail surface (see `CLAUDE.md` §2). Staff-only (stripped from borrower paths). Lives behind the
+> existing seams — no new go-live workstream. Genuinely-deferred **follow-ups** from this build:
+> - **F1 — PDF ₹ glyph (cosmetic):** the brief prints `Rs` because the OpenPDF base-14 fonts have no
+>   `₹` (U+20B9) glyph. Embed a Unicode TTF (e.g. Noto Sans) to render `₹` in the PDF (the web UI
+>   already shows `₹`). _Done when:_ the PDF renders the rupee symbol.
+> - **F2 — reborrow brief inheritance:** a `PRE_APPROVED` reborrow skips the bureau pull, so it has no
+>   brief of its own; the staff brief is per-application. Surface the applicant's **latest** brief on
+>   reborrow surfaces (fall back to `latestProfileForApplicant`). _Done when:_ a reborrow row shows the
+>   prior brief.
+> - **F3 — `CreditBriefDemoTest` is a non-asserting runner** (`navix-app`) that prints + writes
+>   `target/credit-brief-sample.{txt,pdf}` on every `mvn test`. Relocate behind a tag/profile or delete.
+> - **F4 — externalize rating thresholds:** the bands/penalties/cap are hardcoded in
+>   `CreditRatingCalculator`; move to config if product wants to tune A/B/C weights without a rebuild.
+> - **F5 — (optional) richer underwriting store:** only the summary facts JSON is persisted
+>   (`applicant_profile.credit_brief_facts`). Persist per-account CAIS / DPD history (or a
+>   `credit_assessment` table) if deeper underwriting/audit is needed.
+
 Status legend: 🔴 not started · 🟡 partial scaffold exists · 🟢 done (moves out of this doc).
 
 ---
@@ -217,5 +238,6 @@ with real API calls. One integration remains:
 
 ---
 
-_Last updated 2026-06-27 (post P0–P8 migration + OTP + tests). As each remaining item ships, mark it
-🟢 and migrate the detail into `handoff.md`'s change log + `CLAUDE.md`._
+_Last updated 2026-06-28 (credit brief + 1–5★ rating + PDF shipped; see the 2026-06-28 banner →
+follow-ups F1–F5). As each remaining item ships, mark it 🟢 and migrate the detail into `handoff.md`'s
+change log + `CLAUDE.md`._

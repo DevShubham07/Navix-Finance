@@ -56,7 +56,7 @@ public class VerificationAdapter implements VerificationPort {
     public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String clientRef) {
         BureauService.UnifiedBureauReport r = bureauService.pull(pan, name, mobile, dob, clientRef);
         return new BureauCheck(r.txnId(), r.source(), r.score(), r.noRecord(),
-                r.activeAccounts(), r.overdueAccounts(), r.totalBalance());
+                r.activeAccounts(), r.overdueAccounts(), r.totalBalance(), r.facts());
     }
 
     @Override

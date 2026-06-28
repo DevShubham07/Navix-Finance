@@ -105,7 +105,7 @@ class VerificationAdapterTest {
     void pullBureau_passesThroughSourceAndScore() {
         when(bureauService.pull(anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(new BureauService.UnifiedBureauReport(
-                        "TXN-BUR", "EXPERIAN", false, 780, 3, 0, 12345.0, 1));
+                        "TXN-BUR", "EXPERIAN", false, 780, 3, 0, 12345.0, 1, null));
 
         VerificationPort.BureauCheck check =
                 adapter.pullBureau("QVEPS0901K", "SHUBHAM", "9819000001", "2003-03-24", "ref-5");

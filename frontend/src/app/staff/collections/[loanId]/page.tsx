@@ -8,7 +8,8 @@ import { ArrowLeft, Loader2, RefreshCw, Phone, HandCoins, UserPlus, Banknote, Us
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
-import { collectionsApi, paiseToINR, rupeesToPaise, type InteractionView, type LoanSummary } from "@/lib/api/applications";
+import { CreditBadge } from "@/components/staff/credit-badge";
+import { collectionsApi, customersApi, paiseToINR, rupeesToPaise, type InteractionView, type LoanSummary } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
 const TYPES = ["CALL", "SMS", "EMAIL", "VISIT"];
@@ -126,9 +127,27 @@ function LoanCard({ loan }: { loan: LoanSummary | null }) {
 }
 
 function BorrowerCard({ loan }: { loan: LoanSummary | null }) {
+  // Credit headline isn't on the collections LoanSummary — pull it from the customer roll-up
+  // (same query key as the customer detail page, so it's deduped/cached).
+  const creditQ = useQuery({
+    queryKey: ["customer", loan?.applicantId],
+    queryFn: () => customersApi.get(loan!.applicantId as number),
+    enabled: loan?.applicantId != null,
+  });
+  const credit = creditQ.data?.profile;
   return (
     <div className="rounded border border-line bg-white p-5 shadow-sm text-sm">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-navy"><User size={16} /> Borrower</div>
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-navy">
+        <User size={16} /> Borrower
+        {credit && (credit.starRating != null || credit.creditScore != null) && (
+          <CreditBadge
+            starRating={credit.starRating}
+            creditScore={credit.creditScore}
+            recommendation={credit.recommendation}
+            className="ml-auto"
+          />
+        )}
+      </div>
       {!loan ? (
         <p className="text-sm text-muted">No borrower detail.</p>
       ) : (

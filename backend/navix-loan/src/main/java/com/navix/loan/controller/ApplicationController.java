@@ -1,6 +1,7 @@
 package com.navix.loan.controller;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.security.ActorContext;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
@@ -9,17 +10,22 @@ import com.navix.loan.dto.ApplicationDtos.AssignRequest;
 import com.navix.loan.dto.ApplicationDtos.CreateApplicationRequest;
 import com.navix.loan.dto.ApplicationDtos.DecisionRequest;
 import com.navix.loan.dto.ApplicationDtos.EventView;
+import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.dto.ReviewDtos.DocumentContentView;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.DocumentUrlView;
 import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.service.ApplicantReviewService;
 import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService;
+import com.navix.loan.service.CreditBriefService;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,6 +49,7 @@ public class ApplicationController {
     private final ApplicationFlowService flow;
     private final ApplicantReviewService review;
     private final ApplicationVerificationService verification;
+    private final CreditBriefService creditBrief;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
@@ -58,16 +65,19 @@ public class ApplicationController {
         return ApiResponse.ok(ApplicationView.of(flow.reborrow()));
     }
 
-    /** Stage queue, e.g. ?status=KYC_PENDING / DISBURSEMENT_PENDING / ACCOUNTANT_PENDING. */
+    /** Stage queue, e.g. ?status=KYC_PENDING / DISBURSEMENT_PENDING / ACCOUNTANT_PENDING. Staff-only:
+     *  rows are enriched with the applicant's credit score + 1–5★ rating (never exposed to borrowers). */
     @GetMapping
     public ApiResponse<List<ApplicationView>> queue(@RequestParam ApplicationStatus status) {
-        return ApiResponse.ok(flow.byStatus(status).stream().map(ApplicationView::of).toList());
+        requireStaff();
+        return ApiResponse.ok(enrich(flow.byStatus(status)));
     }
 
-    /** Credit Head queue: KYC-approved applications the borrower has applied on. */
+    /** Credit Head queue: KYC-approved applications the borrower has applied on (credit-enriched). */
     @GetMapping("/credit-queue")
     public ApiResponse<List<ApplicationView>> creditQueue() {
-        return ApiResponse.ok(flow.creditHeadQueue().stream().map(ApplicationView::of).toList());
+        requireStaff();
+        return ApiResponse.ok(enrich(flow.creditHeadQueue()));
     }
 
     /** The calling borrower's own applications (newest first) — for their account "loans/transactions" views. */
@@ -90,6 +100,13 @@ public class ApplicationController {
     @GetMapping("/{id}/verifications")
     public ApiResponse<List<ApplicationVerificationService.StepResult>> verifications(@PathVariable Long id) {
         return ApiResponse.ok(verification.summary(id));
+    }
+
+    /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
+    @GetMapping("/{id}/credit-brief")
+    public ApiResponse<CreditBriefView> creditBrief(@PathVariable Long id) {
+        requireStaff();
+        return ApiResponse.ok(creditBrief.view(id));
     }
 
     /**
@@ -170,10 +187,15 @@ public class ApplicationController {
         return ApiResponse.ok(ProfileView.of(review.saveProfile(id, req)));
     }
 
-    /** Any reviewing role reads the applicant's KYC details (PAN masked). */
+    /** Any reviewing role reads the applicant's KYC details (PAN masked). The staff-only credit
+     *  headline (score + rating) is stripped for a borrower reading their own profile. */
     @GetMapping("/{id}/profile")
     public ApiResponse<ProfileView> getProfile(@PathVariable Long id) {
-        return ApiResponse.ok(ProfileView.of(review.getProfile(id)));
+        ProfileView v = ProfileView.of(review.getProfile(id));
+        if ("BORROWER".equals(ActorContext.get().role())) {
+            v = v.withoutCredit();
+        }
+        return ApiResponse.ok(v);
     }
 
     /** Borrower uploads a supporting document (base64 body so it rides the JSON BFF proxy). */
@@ -200,5 +222,25 @@ public class ApplicationController {
         var doc = review.getDocument(id, docId);
         return ApiResponse.ok(new DocumentUrlView(doc.getId(), doc.getFileName(), doc.getContentType(),
                 review.presignedUrl(id, docId)));
+    }
+
+    // ---- internals -----------------------------------------------------------------
+
+    /** Attach the applicant's credit headline (score + 1–5★ + verdict) to each queue row. */
+    private List<ApplicationView> enrich(List<LoanApplication> apps) {
+        if (apps.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, ApplicantProfile> byApp = review.profilesByApplicationIds(
+                apps.stream().map(LoanApplication::getId).toList());
+        return apps.stream().map(a -> ApplicationView.of(a, byApp.get(a.getId()))).toList();
+    }
+
+    /** Credit score / rating are staff-only — reject borrower / anonymous callers on these reads. */
+    private void requireStaff() {
+        String role = ActorContext.get().role();
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
     }
 }

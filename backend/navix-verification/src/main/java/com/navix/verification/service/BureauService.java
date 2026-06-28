@@ -1,5 +1,6 @@
 package com.navix.verification.service;
 
+import com.navix.common.verification.BureauReportFacts;
 import com.navix.verification.client.CrifClient;
 import com.navix.verification.client.ExperianClient;
 import com.navix.verification.dto.FintrixDtos.CrifResponse;
@@ -33,7 +34,8 @@ public class BureauService {
             Integer activeAccounts,
             Integer overdueAccounts,
             Double totalBalance,
-            Integer enquiriesLast6m
+            Integer enquiriesLast6m,
+            BureauReportFacts facts
     ) {
     }
 
@@ -56,13 +58,20 @@ public class BureauService {
     }
 
     private UnifiedBureauReport fromExperian(ExperianResponse r) {
-        // Sandbox Experian returns the score only (CAIS account detail is empty), so the
-        // account/balance facets are left null here.
+        // A rich (prod) Experian response carries categorized facts; a sandbox thin-file has facts==null.
+        // The account/balance facets below are derived from facts when present.
+        BureauReportFacts f = r.facts();
         return new UnifiedBureauReport(r.txnId(), "EXPERIAN", Boolean.TRUE.equals(r.noRecord()),
-                r.creditScore(), null, null, null, null);
+                r.creditScore(),
+                f != null ? f.activeAccounts() : null,
+                f != null ? f.defaults() : null,
+                f != null && f.totalBalanceRupees() != null ? f.totalBalanceRupees().doubleValue() : null,
+                f != null ? f.recentInquiries30d() : null,
+                f);
     }
 
     private UnifiedBureauReport fromCrif(CrifResponse r) {
+        // CRIF fallback has a different shape; no categorized brief facts (facts==null).
         return new UnifiedBureauReport(
                 r.txnId(),
                 "CRIF",
@@ -71,6 +80,7 @@ public class BureauService {
                 r.activeAccounts(),
                 r.overdueAccounts(),
                 r.totalBalance(),
-                r.enquiriesLast6m());
+                r.enquiriesLast6m(),
+                null);
     }
 }

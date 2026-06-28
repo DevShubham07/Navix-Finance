@@ -1,6 +1,8 @@
 package com.navix.loan.repository;
 
 import com.navix.loan.entity.ApplicantProfile;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -10,6 +12,9 @@ import org.springframework.stereotype.Repository;
 public interface ApplicantProfileRepository extends JpaRepository<ApplicantProfile, Long> {
 
     Optional<ApplicantProfile> findByApplicationId(Long applicationId);
+
+    /** Batch-load profiles for a set of applications — used to enrich application list views. */
+    List<ApplicantProfile> findByApplicationIdIn(Collection<Long> applicationIds);
 
     // --- identity uniqueness (a mobile/PAN/Aadhaar may belong to only one applicant) ---
     // "...ApplicationIdNot" excludes the profile's own application so re-saving it is fine.

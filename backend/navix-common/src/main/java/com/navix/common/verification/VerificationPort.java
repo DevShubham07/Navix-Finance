@@ -62,8 +62,10 @@ public interface VerificationPort {
                         String state, String district) {
     }
 
+    /** {@code facts} carries the categorized credit-report snapshot (Experian); null on thin-file/CRIF. */
     record BureauCheck(String txnId, String source, Integer score, boolean noRecord,
-                       Integer activeAccounts, Integer overdueAccounts, Double totalBalance) {
+                       Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
+                       BureauReportFacts facts) {
     }
 
     record PennyDropCheck(String txnId, boolean accountExists, String fullName, String bank, String ifsc) {

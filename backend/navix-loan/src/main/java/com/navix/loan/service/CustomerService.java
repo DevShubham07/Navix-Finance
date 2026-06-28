@@ -83,7 +83,11 @@ public class CustomerService {
                     apps.size(),
                     loans.size(),
                     latestStatus,
-                    totalOutstanding);
+                    totalOutstanding,
+                    profile != null && profile.getBureauScore() != null
+                            ? profile.getBureauScore().intValue() : null,
+                    profile != null && profile.getCreditStarRating() != null
+                            ? profile.getCreditStarRating().doubleValue() : null);
             if (matches(cs, needle)) {
                 out.add(cs);
             }
@@ -101,9 +105,12 @@ public class CustomerService {
             throw new ResourceNotFoundException("Customer", String.valueOf(applicantId));
         }
 
+        Map<Long, ApplicantProfile> profByApp = profileRepository
+                .findByApplicationIdIn(apps.stream().map(LoanApplication::getId).toList()).stream()
+                .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
         List<ApplicationView> appViews = apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
-                .map(ApplicationView::of)
+                .map(a -> ApplicationView.of(a, profByApp.get(a.getId())))
                 .toList();
 
         LocalDate today = LocalDate.now();

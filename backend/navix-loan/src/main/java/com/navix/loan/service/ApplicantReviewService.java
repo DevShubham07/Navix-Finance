@@ -14,10 +14,13 @@ import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,6 +94,16 @@ public class ApplicantReviewService {
         return profileRepository.findByApplicationId(appId)
                 .or(() -> latestProfileForApplicant(app.getApplicantId()))
                 .orElseThrow(() -> new ResourceNotFoundException("ApplicantProfile", "application:" + appId));
+    }
+
+    /** Profiles for a set of applications, keyed by {@code applicationId} — to enrich list/queue views. */
+    @Transactional(readOnly = true)
+    public Map<Long, ApplicantProfile> profilesByApplicationIds(Collection<Long> appIds) {
+        if (appIds == null || appIds.isEmpty()) {
+            return Map.of();
+        }
+        return profileRepository.findByApplicationIdIn(appIds).stream()
+                .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
     }
 
     /** The applicant's most recent saved KYC profile (newest application first), if any. */

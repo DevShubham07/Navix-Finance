@@ -8,6 +8,7 @@ import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
+import { CreditBadge } from "@/components/staff/credit-badge";
 import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
 
 /**
@@ -46,6 +47,8 @@ export default function CustomersPage() {
             { header: "Loans", value: (c) => c.loanCount },
             { header: "Latest status", value: (c) => (c.latestStatus ? statusLabel(c.latestStatus as ApplicationStatus) : "") },
             { header: "Outstanding (₹)", value: (c) => (c.totalOutstandingPaise / 100).toFixed(2) },
+            { header: "Credit score", value: (c) => c.creditScore ?? "" },
+            { header: "Credit rating", value: (c) => (c.starRating != null ? c.starRating.toFixed(1) : "") },
           ]}
           rows={rows}
         />
@@ -87,6 +90,7 @@ export default function CustomersPage() {
                   <th className="px-4 py-2.5">Mobile</th>
                   <th className="px-4 py-2.5">Loans</th>
                   <th className="px-4 py-2.5">Outstanding</th>
+                  <th className="px-4 py-2.5">Credit</th>
                   <th className="px-4 py-2.5">Latest status</th>
                   <th className="px-4 py-2.5 text-right">Open</th>
                 </tr>
@@ -108,6 +112,13 @@ export default function CustomersPage() {
                     <td className="px-4 py-3 text-muted">{c.mobileMasked ?? "—"}</td>
                     <td className="px-4 py-3 text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
                     <td className="px-4 py-3 font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
+                    <td className="px-4 py-3">
+                      {c.starRating != null || c.creditScore != null ? (
+                        <CreditBadge starRating={c.starRating} creditScore={c.creditScore} />
+                      ) : (
+                        <span className="text-xs text-muted">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       {c.latestStatus ? (
                         <span className="rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">
