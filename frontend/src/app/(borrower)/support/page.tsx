@@ -6,8 +6,8 @@ import { Mail, Phone, ShieldAlert, ChevronDown } from "lucide-react";
  * Static content — product facts mirror CLAUDE.md §1.
  */
 
-const SUPPORT_EMAIL = "support@navix.example";
-const SUPPORT_PHONE = "+91 80 4718 9000";
+const SUPPORT_EMAIL = "info@navixfinance.com";
+const SUPPORT_PHONE = "+91 97167 60246";
 
 const FAQ: Array<{ q: string; a: string }> = [
   {

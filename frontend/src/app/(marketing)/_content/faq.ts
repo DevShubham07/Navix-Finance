@@ -33,7 +33,7 @@ export const html = `<section class="page active" id="faq">
     <div class="sec-head left" style="margin-bottom:24px"><span class="eyebrow">Security</span></div>
     <div class="faq">
       <div class="qa"><button class="q">Is my data safe with NAVIX?<span class="qi">+</span></button><div class="a"><p>Yes. We use 256-bit encryption and follow ISO-27001-aligned controls. We never sell your data and only share what's necessary with the partner NBFC to process your loan.</p></div></div>
-      <div class="qa"><button class="q">How do I spot a fake NAVIX app or agent?<span class="qi">+</span></button><div class="a"><p>NAVIX never asks for advance fees or upfront payments. We only use official channels (navix.finance and support@navix.finance). Report anything suspicious to report@navix.finance.</p></div></div>
+      <div class="qa"><button class="q">How do I spot a fake NAVIX app or agent?<span class="qi">+</span></button><div class="a"><p>NAVIX never asks for advance fees or upfront payments. We only use official channels (navixfinance.com and info@navixfinance.com). Report anything suspicious to info@navixfinance.com.</p></div></div>
     </div>
   </div></div>
 </section>`;

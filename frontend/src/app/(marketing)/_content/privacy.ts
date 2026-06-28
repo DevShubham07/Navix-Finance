@@ -6,7 +6,7 @@ export const html = `<section class="page active" id="privacy">
   <div class="sec"><div class="wrap"><div class="prose">
     <div class="callout"><b>In short:</b> We collect only what's needed to process your loan, protect it with strong security, never sell it, and share it only with the partner NBFC and as required by law.</div>
     <h2>1. Who we are</h2>
-    <p>NAVIX Technologies Private Limited ("NAVIX", "we", "us") operates a digital lending platform that connects borrowers with RBI-registered NBFC lending partners. We are a platform, not a lender.</p>
+    <p>NAVIX Finance Private Limited ("NAVIX", "we", "us") operates a digital lending platform that connects borrowers with RBI-registered NBFC lending partners. We are a platform, not a lender.</p>
     <h2>2. Information we collect</h2>
     <ul>
       <li>Identity &amp; KYC data: name, date of birth, PAN, Aadhaar (via authorised e-KYC).</li>
@@ -25,7 +25,7 @@ export const html = `<section class="page active" id="privacy">
     <h2>5. Security</h2>
     <p>We use 256-bit encryption in transit, access controls and ISO-27001-aligned practices. While no system is perfectly secure, we work hard to protect your data.</p>
     <h2>6. Your rights</h2>
-    <p>You may access, correct or request deletion of your data, and withdraw consent, subject to legal and regulatory retention requirements. Contact privacy@navix.finance.</p>
+    <p>You may access, correct or request deletion of your data, and withdraw consent, subject to legal and regulatory retention requirements. Contact info@navixfinance.com.</p>
     <h2>7. Data retention &amp; consent</h2>
     <p>We retain data only as long as necessary for the purposes above and as required by RBI and applicable law. By using NAVIX you consent to this policy.</p>
     <div class="callout" style="border-left-color:var(--navy-600)"><b>Note:</b> This is a design-prototype policy for demonstration and is not legal advice. Final policies must be reviewed by qualified counsel before launch.</div>

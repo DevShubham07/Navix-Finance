@@ -3,21 +3,21 @@
  * Working values for the in-development build — finalise with legal/compliance.
  */
 export const BRAND = {
-  legalName: "NAVIX Technologies Private Limited",
+  legalName: "NAVIX Finance Private Limited",
   shortName: "NAVIX",
   tagline: "Lending Platform",
-  phone: "+91 80 4718 2200",
-  phoneHref: "tel:+918047182200",
-  email: "support@navix.finance",
-  grievanceEmail: "grievance@navix.finance",
-  fraudEmail: "report@navix.finance",
+  phone: "+91 97167 60246",
+  phoneHref: "tel:+9197167 60246",
+  email: "info@navixfinance.com",
+  grievanceEmail: "info@navixfinance.com",
+  fraudEmail: "info@navixfinance.com",
   hours: "Mon–Sat, 9:30 AM – 6:30 PM",
-  cin: "U65999KA2026PTC000000",
+  cin: "U64990HR2026PTC144926",
   address: {
-    line1: "WeWork Prestige Atlanta, 80 Feet Road",
-    line2: "Koramangala 1A Block, Bengaluru",
-    city: "Bengaluru",
-    pin: "560034",
+    line1: "Dev Nagar",
+    line2: "Gurugram",
+    city: "Gurugram",
+    pin: "122102",
   },
   maxLoanLakh: "5",
 } as const;

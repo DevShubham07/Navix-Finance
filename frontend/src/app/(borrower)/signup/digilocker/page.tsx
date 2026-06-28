@@ -140,7 +140,7 @@ export default function SignupDigiLockerPage() {
         ) : retryCount >= MAX_RETRIES && phase === "failed" ? (
           <div className="rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
             You&apos;ve reached the maximum of {MAX_RETRIES} DigiLocker attempts. Please{" "}
-            <a href="mailto:support@navix.in" className="font-semibold underline">contact our support team</a>{" "}
+            <a href="mailto:info@navixfinance.com" className="font-semibold underline">contact our support team</a>{" "}
             to continue your application.
           </div>
         ) : (

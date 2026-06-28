@@ -22,6 +22,6 @@ export const html = `<section class="page active" id="careers">
       <div class="job"><div><h3>Risk &amp; Compliance Analyst</h3><div class="jmeta"><span>Risk</span><span>Bengaluru</span><span>Full-time</span></div></div><a href="/contact" class="btn btn-ghost btn-sm" data-link="">Apply →</a></div>
       <div class="job"><div><h3>Customer Support Lead</h3><div class="jmeta"><span>Operations</span><span>Bengaluru</span><span>Full-time</span></div></div><a href="/contact" class="btn btn-ghost btn-sm" data-link="">Apply →</a></div>
     </div>
-    <div class="callout reveal" style="margin-top:28px">Don't see your role? We're always glad to meet good people. Write to <b>careers@navix.finance</b>.</div>
+    <div class="callout reveal" style="margin-top:28px">Don't see your role? We're always glad to meet good people. Write to <b>info@navixfinance.com</b>.</div>
   </div></div>
 </section>`;
