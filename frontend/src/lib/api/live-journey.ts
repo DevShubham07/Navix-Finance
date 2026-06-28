@@ -73,6 +73,26 @@ export async function fetchBorrowerSession(): Promise<BorrowerSession | null> {
 }
 
 /**
+ * Update the live session's display name (maps the borrower's typed name onto their
+ * phone-derived session) so the header/dashboard greet them by name instead of the
+ * "Borrower" default. Best-effort: never throws / never blocks onboarding.
+ */
+export async function updateBorrowerName(name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  try {
+    await fetch("/api/auth/borrower/me", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ name: trimmed }),
+    });
+  } catch {
+    /* ignore — display name is cosmetic; the next /me poll self-heals */
+  }
+}
+
+/**
  * Ensure a real `navix_borrower` cookie exists for this mobile and return the
  * session. If one is already set we keep it; otherwise we log in with the
  * supplied OTP (the backend validates it and issues the JWT) so the BFF can

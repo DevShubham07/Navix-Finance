@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
 } from "lucide-react";
@@ -11,6 +11,7 @@ import type { BorrowerStatus } from "@/lib/domain/borrower";
 import {
   useLiveApplication,
   useBorrowerSession,
+  updateBorrowerName,
   appStatusToStage,
   canChooseAmount,
   isTerminalBad,
@@ -24,6 +25,7 @@ export default function DashboardPage() {
   const session = useBorrowerSession();
   const { appId, app, loan, isLoading } = useLiveApplication();
   const draft = useOnboardingStore();
+  const queryClient = useQueryClient();
 
   // Eligible limit (25% of salary) — from the persisted backend profile, else the onboarding draft.
   const profileQuery = useQuery({
@@ -31,6 +33,17 @@ export default function DashboardPage() {
     queryFn: () => borrowerApi.getProfile(appId as number),
     enabled: appId != null,
   });
+
+  // Self-heal the session display name: an OTP-only login defaults to "Borrower" until a
+  // name exists; once the borrower has saved one (backend profile or onboarding draft), map
+  // it onto the session so the header/greeting use their real name. Runs once per change.
+  const knownName = (profileQuery.data?.fullName || draft.fullName || "").trim();
+  React.useEffect(() => {
+    const current = session.data?.name?.trim();
+    if (session.data && knownName && (!current || current === "Borrower") && knownName !== "Borrower") {
+      updateBorrowerName(knownName).then(() => queryClient.invalidateQueries({ queryKey: ["borrower-me"] }));
+    }
+  }, [session.data, knownName, queryClient]);
   const salaryPaise =
     profileQuery.data?.monthlySalaryPaise ??
     (draft.monthlySalary ? rupeesToPaise(draft.monthlySalary) : 0);
@@ -49,8 +62,12 @@ export default function DashboardPage() {
       .reduce((sum, p) => sum + p.amountPaise, 0) / 100;
 
   const stage = appStatusToStage(app);
+  // Prefer a real name (the OTP-login default "Borrower" is not one) — session if it's been
+  // mapped, else the known profile/draft name, else a friendly fallback.
+  const realSessionName =
+    session.data?.name && session.data.name !== "Borrower" ? session.data.name : "";
   const firstName =
-    (session.data?.name || draft.fullName || "there").split(" ")[0] || "there";
+    (realSessionName || knownName || session.data?.name || "there").split(" ")[0] || "there";
   const active = app?.status === "ACTIVE" || app?.status === "OVERDUE";
   const closed = app?.status === "CLOSED";
   const declined = isTerminalBad(app);

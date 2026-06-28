@@ -2,18 +2,21 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Mail, Building2 } from "lucide-react";
 import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
+import { updateBorrowerName } from "@/lib/api/live-journey";
 import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function SignupEmailPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { mounted, draft, appId } = useOnboarding();
   const [fullName, setFullName] = React.useState("");
   const [employer, setEmployer] = React.useState("");
@@ -54,6 +57,9 @@ export default function SignupEmailPage() {
     const contactEmail = (personalEmail.trim() || officialEmail.trim());
     try {
       await saveProfileSlice(appId, { fullName: fullName.trim(), employer: employer.trim(), employmentStatus: "SALARIED", email: contactEmail });
+      // Map the typed name onto the live session so the header/dashboard greet them by name.
+      await updateBorrowerName(fullName.trim());
+      queryClient.invalidateQueries({ queryKey: ["borrower-me"] });
       const r = await verificationApi.email(appId, officialEmail.trim());
       setResult(r);
       if (r.status === "PASS" || r.status === "REVIEW") router.push("/signup/address");

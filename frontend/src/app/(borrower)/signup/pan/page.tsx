@@ -85,7 +85,7 @@ export default function SignupPanPage() {
         />
         <p className="mt-1 flex items-start gap-2 text-sm text-muted">
           <ShieldCheck size={16} className="mt-0.5 flex-shrink-0 text-success-600" />
-          Used only for identity and credit verification with our NBFC partner.
+          Used only for identity and credit verification.
         </p>
         <StepResultBanner result={result} />
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
