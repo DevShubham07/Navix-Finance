@@ -29,7 +29,7 @@ export const html = `<section class="page active" id="home">
         <span class="offer-sheen"></span>
         <div class="offer-head">
           <div class="offer-id">
-            <span class="offer-logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.6L22 10l-6.2 4.8L18 22l-6-4.2L6 22l2.2-7.2L2 10l7.4-.4L12 2z"></path></svg></span>
+            <span class="offer-logo"><img src="/navix-mark.png" alt="NAVIX" width="26" height="26" style="object-fit:contain" /></span>
             <div><b>NAVIX</b><small>Personal loan offer</small></div>
           </div>
           <span class="offer-status" id="offerStatus"><span class="os-dot"></span><span class="os-review">Reviewing</span><span class="os-ok">Approved</span></span>
