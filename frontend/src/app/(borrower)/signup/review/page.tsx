@@ -35,12 +35,29 @@ function checkLabel(checkType: string): string {
   );
 }
 
+/** The wizard step a verification check maps to — so a failed check can be retried on its own. */
+function stepRoute(checkType: string): string | null {
+  const map: Record<string, string> = {
+    PAN: "/signup/pan",
+    EMAIL: "/signup/email",
+    ADDRESS: "/signup/address",
+    DIGILOCKER: "/signup/digilocker",
+    AADHAAR: "/signup/digilocker", // Aadhaar is fetched via DigiLocker
+    BUREAU: "/signup/bureau",
+    SALARY: "/signup/salary",
+    PENNY_DROP: "/signup/penny-drop",
+    SELFIE: "/signup/selfie",
+    AGREEMENT: "/signup/agreement",
+  };
+  return map[checkType] ?? null;
+}
+
 export default function SignupReviewPage() {
   const router = useRouter();
   const { mounted, draft, appId } = useOnboarding();
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string>();
-  const [incomplete, setIncomplete] = React.useState<string[]>([]);
+  const [incomplete, setIncomplete] = React.useState<string[]>([]); // pending check types
 
   React.useEffect(() => {
     if (mounted && appId == null) router.replace("/signup/mobile-otp");
@@ -64,9 +81,13 @@ export default function SignupReviewPage() {
     } catch (e) {
       if (e instanceof ApplicationApiError && e.code === "KYC_INCOMPLETE") {
         const fresh = await verificationApi.summary(appId).catch(() => summary);
-        const pending = fresh.filter((s) => s.status !== "PASS" && s.status !== "REVIEW").map((s) => checkLabel(s.checkType));
-        setIncomplete(pending.length ? pending : ["Some verification steps are still incomplete."]);
-        setError("Please complete the remaining verification steps before submitting.");
+        const pending = fresh.filter((s) => s.status !== "PASS" && s.status !== "REVIEW").map((s) => s.checkType);
+        setIncomplete(pending);
+        setError(
+          pending.length
+            ? "A few steps still need attention — retry just those below, then submit again."
+            : "Please complete the remaining verification steps before submitting.",
+        );
       } else {
         setError(e instanceof ApplicationApiError ? `${e.message} (${e.code})` : "Something went wrong submitting your application.");
       }
@@ -128,21 +149,48 @@ export default function SignupReviewPage() {
           ) : summary.length === 0 ? (
             <li className="px-4 py-3 text-sm text-muted">No verification steps recorded yet.</li>
           ) : (
-            summary.map((s) => (
-              <li key={s.checkType} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-                <span className="text-ink">{checkLabel(s.checkType)}</span>
-                <StepStatusPill status={s.status} />
-              </li>
-            ))
+            summary.map((s) => {
+              const route = stepRoute(s.checkType);
+              const needsRetry = s.status !== "PASS" && s.status !== "REVIEW";
+              return (
+                <li key={s.checkType} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                  <span className="text-ink">{checkLabel(s.checkType)}</span>
+                  <div className="flex items-center gap-3">
+                    {needsRetry && route && (
+                      <a href={route} className="text-xs font-semibold text-gold-dark hover:underline">
+                        Retry this step
+                      </a>
+                    )}
+                    <StepStatusPill status={s.status} />
+                  </div>
+                </li>
+              );
+            })
           )}
         </ul>
+        <p className="border-t border-line px-4 py-3 text-xs text-muted">
+          Couldn&apos;t finish DigiLocker? You can still submit — our team will verify your Aadhaar
+          manually. Any other step that didn&apos;t go through can be retried on its own above.
+        </p>
       </div>
 
       {incomplete.length > 0 && (
         <div className="mt-4 rounded border border-warning-100 bg-warning-50 p-4 text-sm text-warning-800">
-          <div className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> Still to complete</div>
-          <ul className="ml-6 list-disc">
-            {incomplete.map((i) => <li key={i}>{i}</li>)}
+          <div className="mb-2 flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> A few steps still need attention</div>
+          <ul className="divide-y divide-warning-100/70">
+            {incomplete.map((ct) => {
+              const route = stepRoute(ct);
+              return (
+                <li key={ct} className="flex items-center justify-between gap-3 py-1.5">
+                  <span>{checkLabel(ct)}</span>
+                  {route && (
+                    <a href={route} className="font-semibold text-warning-800 underline hover:no-underline">
+                      Retry this step
+                    </a>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

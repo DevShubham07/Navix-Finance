@@ -120,6 +120,9 @@ public class ApplicationController {
     @PostMapping("/{id}/submit-kyc")
     public ApiResponse<ApplicationView> submitKyc(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
+        // DigiLocker is best-effort: if Aadhaar didn't come through, let the app submit anyway
+        // with Aadhaar flagged for manual staff review (other required checks still gate).
+        verification.allowAadhaarManualReview(id);
         if (!verification.allRequiredPassed(id)) {
             throw new BusinessException("KYC_INCOMPLETE",
                     "Complete all verification steps and accept the agreement before submitting");

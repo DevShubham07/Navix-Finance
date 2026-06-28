@@ -454,6 +454,24 @@ public class ApplicationVerificationService {
                 .orElse(false);
     }
 
+    /**
+     * DigiLocker is best-effort. If the borrower couldn't complete it (the Aadhaar details
+     * didn't come through), don't hard-block submission: record AADHAAR as REVIEW so the
+     * application still reaches the KYC approver queue and staff verify Aadhaar manually
+     * (the number is already captured on the PAN step). All OTHER required checks still gate,
+     * so the borrower must still complete/retry those. Idempotent — never downgrades a PASS.
+     */
+    @Transactional
+    public void allowAadhaarManualReview(Long appId) {
+        String status = verificationRepo.findByApplicationIdAndCheckType(appId, AADHAAR)
+                .map(ApplicationVerification::getStatus)
+                .orElse(null);
+        if (!PASS.equals(status) && !REVIEW.equals(status)) {
+            upsert(appId, AADHAAR, REVIEW, "MANUAL", null, null, null, null, null,
+                    Map.of(), "DigiLocker not completed — Aadhaar pending manual review by staff");
+        }
+    }
+
     /** All verification rows for an application as borrower-safe step results. */
     @Transactional(readOnly = true)
     public List<StepResult> summary(Long appId) {
