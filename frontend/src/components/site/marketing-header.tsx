@@ -36,16 +36,6 @@ const PRODUCT_DROP: DropItem[] = [
       </svg>
     ),
   },
-  {
-    href: "/partners",
-    title: "Lending Partners",
-    sub: "RBI-registered NBFCs",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M20 7h-9M14 17H5M17 3a4 4 0 0 0 0 8 4 4 0 0 0 0-8zM7 13a4 4 0 0 0 0 8 4 4 0 0 0 0-8z" />
-      </svg>
-    ),
-  },
 ];
 
 const SUPPORT_DROP: DropItem[] = [
@@ -96,9 +86,7 @@ const DRAWER_LINKS = [
   { href: "/how-it-works", label: "How It Works" },
   { href: "/products", label: "Loan Products" },
   { href: "/calculator", label: "Calculator & Rates" },
-  { href: "/partners", label: "Lending Partners" },
   { href: "/about", label: "About Us" },
-  { href: "/reviews", label: "Reviews" },
   { href: "/blog", label: "Resources" },
   { href: "/help", label: "Support" },
   { href: "/contact", label: "Contact" },

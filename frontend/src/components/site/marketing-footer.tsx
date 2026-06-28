@@ -16,13 +16,13 @@ export function MarketingFooter() {
               </span>
             </Link>
             <p className="f-about">
-              A premium digital lending platform connecting borrowers with RBI-registered NBFC
-              partners for fast, fully-online, fairly-priced personal loans.
+              A premium digital lending platform offering fast, fully-online, fairly-priced
+              personal loans — salary-linked, with a single repayment and no advance fees.
             </p>
             <p className="f-legal">
               <b>NAVIX Technologies Private Limited</b>
               <br />
-              A digital lending platform — not a lender.
+              A digital lending platform.
               <br />
               CIN: <b>U65999KA2026PTC000000</b>
             </p>
@@ -31,7 +31,6 @@ export function MarketingFooter() {
             <h5>Company</h5>
             <Link href="/about">About Us</Link>
             <Link href="/products">Loan Products</Link>
-            <Link href="/partners">Lending Partners</Link>
             <Link href="/careers">Careers</Link>
             <Link href="/blog">Resources</Link>
           </div>
@@ -72,12 +71,11 @@ export function MarketingFooter() {
           </div>
         </div>
         <div className="f-disc">
-          <b>Disclaimer:</b> NAVIX (NAVIX Technologies Private Limited) is a digital lending platform,
-          not a lender. All loans are sanctioned and disbursed by our RBI-registered NBFC lending
-          partners, who remain the lender of record. Loan approval is subject to the partner&apos;s
+          <b>Disclaimer:</b> NAVIX (NAVIX Technologies Private Limited) operates a digital lending
+          platform offering salary-linked personal loans. Loan approval is subject to NAVIX&apos;s
           credit policy and eligibility assessment. NAVIX does not charge any advance fee for loan
-          processing. Representative APR and all charges are disclosed in the Key Fact Statement
-          before you accept any offer. Please borrow responsibly.
+          processing. Representative APR and all charges are disclosed before you accept any offer.
+          Please borrow responsibly.
         </div>
         <div className="f-bottom">
           <span>© 2026 NAVIX Technologies Private Limited. All rights reserved.</span>

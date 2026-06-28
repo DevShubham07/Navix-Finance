@@ -333,6 +333,64 @@ export function MarketingScripts() {
       compute();
     }
 
+    // Home hero — animated approval offer card (design "calendar" front page)
+    const hero = document.querySelector<HTMLElement>(".navix-mkt .hero");
+    const offerCard = document.getElementById("offerCard");
+    if (hero && offerCard) {
+      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion:reduce)").matches;
+      const amtEl = document.getElementById("offerAmt");
+      const rateEl = document.getElementById("offerRate");
+      const tenEl = document.getElementById("offerTen");
+      const bar = document.getElementById("offerBar");
+      if (amtEl && rateEl && tenEl && bar) {
+        const fmtAmt = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
+        const fmtRate = (v: number) => (Math.round(v * 10) / 10).toFixed(1);
+        const fmtTen = (v: number) => "" + Math.round(v);
+        // NAVIX-correct illustrative offer: max ₹1,00,000 · 1% / day · 30 days.
+        const AMT = 100000, RATE = 1.0, TEN = 30;
+        let gen = 0;
+        const timers: ReturnType<typeof setTimeout>[] = [];
+        const clearTimers = () => { timers.forEach(clearTimeout); timers.length = 0; };
+        const countUp = (el: HTMLElement, to: number, dur: number, delay: number, fmt: (n: number) => string) => {
+          const my = gen, start = performance.now() + delay;
+          const tick = (now: number) => {
+            if (my !== gen) return;
+            if (now < start) { requestAnimationFrame(tick); return; }
+            const p = Math.min((now - start) / dur, 1), e = 1 - Math.pow(1 - p, 3);
+            el.textContent = fmt(to * e);
+            if (p < 1) requestAnimationFrame(tick); else el.textContent = fmt(to);
+          };
+          requestAnimationFrame(tick);
+          timers.push(setTimeout(() => { if (my === gen) el.textContent = fmt(to); }, delay + dur + 140));
+        };
+        const setFinal = () => {
+          amtEl.textContent = fmtAmt(AMT); rateEl.textContent = fmtRate(RATE); tenEl.textContent = fmtTen(TEN);
+          bar.style.transition = "none"; bar.style.width = "100%"; offerCard.classList.add("approved");
+        };
+        const play = () => {
+          if (reduce) { setFinal(); return; }
+          gen++; const g = gen; clearTimers();
+          offerCard.classList.remove("approved");
+          amtEl.textContent = "₹0"; rateEl.textContent = "0.0"; tenEl.textContent = "0";
+          bar.style.transition = "none"; bar.style.width = "0%"; void bar.offsetWidth;
+          bar.style.transition = "width 1.7s cubic-bezier(.16,1,.3,1) .2s";
+          offerCard.classList.remove("shine"); void offerCard.offsetWidth; offerCard.classList.add("shine");
+          countUp(amtEl, AMT, 1500, 250, fmtAmt);
+          countUp(rateEl, RATE, 1300, 500, fmtRate);
+          countUp(tenEl, TEN, 1200, 700, fmtTen);
+          requestAnimationFrame(() => { if (g === gen) bar.style.width = "100%"; });
+          timers.push(setTimeout(() => { if (g === gen) offerCard.classList.add("approved"); }, 2200));
+        };
+        let loopTimer: ReturnType<typeof setTimeout> | undefined;
+        const schedule = () => { if (loopTimer) clearTimeout(loopTimer); if (reduce) return; loopTimer = setTimeout(() => { play(); schedule(); }, 7200); };
+        const enter = () => { hero.classList.remove("go"); void hero.offsetWidth; hero.classList.add("go"); play(); schedule(); };
+        const onEnter = () => { play(); schedule(); };
+        offerCard.addEventListener("mouseenter", onEnter);
+        if (reduce) { hero.classList.add("go"); setFinal(); } else { enter(); }
+        cleanups.push(() => { gen++; clearTimers(); if (loopTimer) clearTimeout(loopTimer); offerCard.removeEventListener("mouseenter", onEnter); });
+      }
+    }
+
     // Hero loan journey (auto-advancing panels)
     const journey = document.getElementById("journey");
     if (journey) {

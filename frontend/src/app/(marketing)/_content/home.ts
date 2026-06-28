@@ -1,95 +1,63 @@
-// AUTO-GENERATED from the NAVIX design export — do not hand-edit.
-// Source section id: #home. Regenerate via transform_html.py.
+// Regenerated from the NAVIX "calendar" design export — front page (#home).
+// No fabricated stats or third-party lender claims; includes the auto-advancing how-it-works
+// journey + the repayment calendar. Links rewritten to the real app routes.
 /* eslint-disable */
 export const html = `<section class="page active" id="home">
 
   <!-- HERO -->
-  <div class="hero"><div class="wrap"><div class="hero-grid">
+  <div class="hero"><span class="hero-blob hb-1"></span><span class="hero-blob hb-2"></span><div class="wrap"><div class="hero-grid">
     <div>
-      <div class="hero-badge reveal" style="margin-bottom:20px"><span class="hb-dot"></span> <b id="liveStat">2,140</b>&nbsp;loans funded this week</div>
       <span class="eyebrow reveal d1">Digital Lending Platform</span>
-      <h1 class="reveal d2">Instant personal loans.<br><span class="l2">Fully digital.</span><br><span class="l3">Fairly priced.</span></h1>
-      <p class="lead reveal d3">A paperless application, disbursal in 24–48 hours, and transparent terms — powered by our RBI-registered NBFC lending partners. Borrow ₹5,000 to ₹1,00,000 with no advance fees, ever.</p>
+      <h1 class="hero-h1" aria-label="Instant personal loans. Fully digital. Fairly priced.">
+        <span class="hl"><span class="w" style="--i:0">Instant</span> <span class="w" style="--i:1">personal</span> <span class="w" style="--i:2">loans.</span></span><br>
+        <span class="hl l2"><span class="w" style="--i:3">Fully</span> <span class="w" style="--i:4">digital.</span></span><br>
+        <span class="hl l3"><span class="w" style="--i:5">Fairly</span> <span class="w" style="--i:6">priced.</span></span>
+      </h1>
+      <p class="lead reveal d3">A paperless application and transparent terms, from first tap to funds in your account. Borrow ₹5,000 to ₹1,00,000 with no advance fees, ever.</p>
       <div class="hero-cta reveal d4">
         <a href="/signup/mobile-otp" class="btn btn-gold btn-lg" data-link="">Apply for a Loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
         <a href="/how-it-works" class="btn btn-ghost btn-lg" data-link="">How It Works</a>
       </div>
-      <div class="hero-trust reveal d5">
-        <div class="ht"><span class="htico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg></span><div><b>Funds in 24–48h</b><small>Quick disbursal</small></div></div>
-        <div class="ht"><span class="htico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z"></path></svg></span><div><b>Bank-grade secure</b><small>256-bit encrypted</small></div></div>
-        <div class="ht"><span class="htico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg></span><div><b>RBI-regulated</b><small>Trusted NBFC partners</small></div></div>
+      <div class="hero-trust">
+        <div class="ht"><span class="htico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg></span><div><b>Fully digital</b><small>Apply in minutes</small></div></div>
+        <div class="ht"><span class="htico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z"></path></svg></span><div><b>Transparent terms</b><small>No hidden fees</small></div></div>
+        <div class="ht"><span class="htico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg></span><div><b>No advance fees</b><small>Ever</small></div></div>
       </div>
     </div>
     <div class="reveal d2" style="position:relative">
-      <div class="float-card fc-1"><span class="fcico" style="background:var(--success)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Approved</b><small>in 4 min 12 sec</small></div></div>
-      <div class="float-card fc-2"><span class="fcico" style="background:var(--grad-gold);color:var(--navy-800)"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 8.5L24 11l-7 5.5 2.6 8.5L12 20l-7.6 5 2.6-8.5L0 11l9.1-.5L12 2z"></path></svg></span><div><b>4.8 / 5</b><small>12,400+ reviews</small></div></div>
-      <div class="hero-card">
-        <div class="hc-head"><h3>Your loan snapshot</h3><span class="hc-badge"><span class="dot"></span> Instant decision</span></div>
-        <div class="donut-wrap" style="margin:4px 0 16px">
-          <svg width="188" height="188" class="donut" viewBox="0 0 130 130">
-            <circle cx="65" cy="65" r="54" fill="none" stroke="var(--cream-200)" stroke-width="12"></circle>
-            <circle class="d-prin" cx="65" cy="65" r="54" fill="none" stroke="#E9B53A" stroke-width="12" stroke-linecap="round" stroke-dasharray="261 339.292"></circle>
-            <circle class="d-int" cx="65" cy="65" r="54" fill="none" stroke="#12365C" stroke-width="12" stroke-linecap="round" stroke-dasharray="78 339.292" stroke-dashoffset="-261"></circle>
-          </svg>
-          <div class="donut-center"><div class="dc-amt" id="snapAmt" style="color:var(--navy-800)">₹13,000</div><div class="dc-lbl">Total payable</div></div>
+      <div class="offer-card" id="offerCard">
+        <span class="offer-sheen"></span>
+        <div class="offer-head">
+          <div class="offer-id">
+            <span class="offer-logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.6L22 10l-6.2 4.8L18 22l-6-4.2L6 22l2.2-7.2L2 10l7.4-.4L12 2z"></path></svg></span>
+            <div><b>NAVIX</b><small>Personal loan offer</small></div>
+          </div>
+          <span class="offer-status" id="offerStatus"><span class="os-dot"></span><span class="os-review">Reviewing</span><span class="os-ok">Approved</span></span>
         </div>
-        <div class="snap-legend">
-          <span><i style="background:#E9B53A"></i> Principal <b>₹10,000</b></span>
-          <span><i style="background:#12365C"></i> Interest <b>₹3,000</b></span>
+        <div class="offer-amount">
+          <span class="oa-label">Loan amount</span>
+          <div class="oa-value" id="offerAmt">₹0</div>
         </div>
-        <div class="snap-rows">
-          <div class="snap-row"><span>Tenure</span><b>30 days</b></div>
-          <div class="snap-row"><span>Daily rate</span><b>1% / day</b></div>
-          <div class="snap-row apr"><span>Representative APR</span><b>365%</b></div>
+        <div class="offer-stats">
+          <div class="ost"><span class="ost-l">Daily rate</span><b><span class="num" id="offerRate">0.0</span><i>% / day</i></b></div>
+          <div class="ost"><span class="ost-l">Tenure</span><b><span class="num" id="offerTen">0</span><i>days</i></b></div>
         </div>
-        <a href="/calculator" class="btn btn-navy btn-block" style="margin-top:18px" data-link="">Adjust in the calculator <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+        <div class="offer-track"><span class="offer-bar" id="offerBar"></span></div>
+        <div class="offer-approved" id="offerApproved">
+          <span class="oa-check"><svg viewBox="0 0 36 36" fill="none"><circle class="oac-ring" cx="18" cy="18" r="16" stroke="currentColor" stroke-width="2.5"></circle><path class="oac-tick" d="M11 18.5l4.4 4.4L25.5 13" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+          <div class="oa-text"><b>Approved</b><small>Funds ready to disburse</small></div>
+        </div>
       </div>
     </div>
-  </div></div></div>
-
-  <!-- LIVE TICKER -->
-  <div class="ticker" aria-hidden="true"><div class="ticker-track">
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹15,000</span> funded <span class="tk-city">· Mumbai</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹8,000</span> funded <span class="tk-city">· Pune</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹25,000</span> funded <span class="tk-city">· New Delhi</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹12,000</span> funded <span class="tk-city">· Jaipur</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹50,000</span> funded <span class="tk-city">· Bengaluru</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹18,000</span> funded <span class="tk-city">· Chennai</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹30,000</span> funded <span class="tk-city">· Hyderabad</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹10,000</span> funded <span class="tk-city">· Kolkata</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹15,000</span> funded <span class="tk-city">· Mumbai</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹8,000</span> funded <span class="tk-city">· Pune</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹25,000</span> funded <span class="tk-city">· New Delhi</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹12,000</span> funded <span class="tk-city">· Jaipur</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹50,000</span> funded <span class="tk-city">· Bengaluru</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹18,000</span> funded <span class="tk-city">· Chennai</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹30,000</span> funded <span class="tk-city">· Hyderabad</span><span class="tk-sep">/</span></span>
-    <span class="tk-item"><span class="tk-dot"></span><span class="tk-amt">₹10,000</span> funded <span class="tk-city">· Kolkata</span><span class="tk-sep">/</span></span>
-  </div></div>
-
-  <!-- TRUST STRIP -->
-  <div class="strip"><div class="wrap">
-    <span class="s-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z"></path></svg> RBI-registered NBFC partners</span>
-    <span class="s-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> 256-bit SSL encryption</span>
-    <span class="s-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg> ISO 27001 data security</span>
-    <span class="s-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path></svg> Trusted by 2 Lakh+ Indians</span>
-  </div></div>
-
-  <!-- STATS -->
-  <div class="sec" style="padding:80px 0"><div class="wrap"><div class="stats">
-    <div class="stat reveal" data-count="2" data-pre="₹" data-suf="L+"><div class="num"><span class="cv">₹0</span></div><div class="lbl">Loans disbursed</div></div>
-    <div class="stat reveal d1" data-count="200000" data-suf="+"><div class="num"><span class="cv">0</span></div><div class="lbl">Happy customers</div></div>
-    <div class="stat reveal d2" data-count="4.8" data-dec="1" data-suf="★"><div class="num"><span class="cv">0</span></div><div class="lbl">Average rating</div></div>
-    <div class="stat reveal d3" data-count="4" data-suf=" min"><div class="num"><span class="cv">0</span></div><div class="lbl">Avg. approval time</div></div>
   </div></div></div>
 
   <!-- WHY CHOOSE -->
   <div class="sec" id="s-why" style="padding-top:20px"><div class="wrap">
     <div class="sec-head"><span class="eyebrow center reveal">Why NAVIX</span><h2 class="reveal d1">Lending, reimagined to feel effortless</h2><p class="reveal d2">A transparent, fast and hassle-free experience built around you — with no hidden costs and no paperwork.</p></div>
     <div class="grid-3">
-      <div class="fcard reveal"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg></div><h3>Lightning-fast approval</h3><p>Get an eligibility decision in minutes and funds in your account within 24–48 hours of acceptance.</p></div>
-      <div class="fcard reveal d1"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg></div><h3>100% transparent pricing</h3><p>Every rupee of interest and charges is shown upfront in a Key Fact Statement. No surprises, no advance fees.</p></div>
-      <div class="fcard reveal d2"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z"></path><path d="M9 12l2 2 4-4"></path></svg></div><h3>Bank-grade security</h3><p>Your data is protected with 256-bit encryption and ISO-27001 controls. We never sell your information.</p></div>
+      <div class="fcard reveal"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg></div><h3>Lightning-fast application</h3><p>Get an eligibility decision in minutes and funds sent straight to your account after you accept.</p></div>
+      <div class="fcard reveal d1"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg></div><h3>100% transparent pricing</h3><p>Every rupee of interest and charges is shown upfront before you accept. No surprises, no advance fees.</p></div>
+      <div class="fcard reveal d2"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z"></path><path d="M9 12l2 2 4-4"></path></svg></div><h3>Strong data security</h3><p>Your data is protected with strong encryption and strict access controls. We never sell your information.</p></div>
       <div class="fcard reveal"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"></rect><path d="M8 6h8M8 10h8M8 14h3"></path></svg></div><h3>Minimal documentation</h3><p>Just PAN, Aadhaar and bank details — verified digitally. Complete everything from your phone.</p></div>
       <div class="fcard reveal d1"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-6"></path></svg></div><h3>Flexible repayment</h3><p>Repay via UPI, net-banking or auto-debit. No pre-closure or prepayment charges — clear early, save more.</p></div>
       <div class="fcard reveal d2"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></div><h3>Real human support</h3><p>Friendly support over chat, email and phone, six days a week — plus a transparent grievance redressal channel.</p></div>
@@ -125,9 +93,9 @@ export const html = `<section class="page active" id="home">
         </div>
         <div class="jrny-panel" data-i="1">
           <div class="jp-text">
-            <span class="jp-kicker">Step 02 — Partner NBFC</span>
+            <span class="jp-kicker">Step 02 — Verification</span>
             <h3>Instant digital verification</h3>
-            <p>Paperless KYC with PAN and Aadhaar, plus a quick eligibility check by the RBI-registered NBFC — usually decided in seconds.</p>
+            <p>Paperless KYC with PAN and Aadhaar, plus a quick eligibility check — all online.</p>
             <span class="jp-meta"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 5 6v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3z"></path></svg> Bank-grade &amp; encrypted</span>
           </div>
           <div class="jp-visual"><div class="mini-card">
@@ -141,7 +109,7 @@ export const html = `<section class="page active" id="home">
           <div class="jp-text">
             <span class="jp-kicker">Step 03 — You</span>
             <h3>Review &amp; e-sign your offer</h3>
-            <p>See your exact interest, APR and total repayment in a clear Key Fact Statement. Happy with it? Sign securely in a tap.</p>
+            <p>See your exact interest, APR and total repayment in a clear summary. Happy with it? Sign securely in a tap.</p>
             <span class="jp-meta"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg> Key Fact Statement upfront</span>
           </div>
           <div class="jp-visual"><div class="mini-card">
@@ -157,14 +125,14 @@ export const html = `<section class="page active" id="home">
           <div class="jp-text">
             <span class="jp-kicker">Step 04 — Money in</span>
             <h3>Funds land in your account</h3>
-            <p>The partner NBFC disburses straight to your bank — typically within 24–48 hours. Repay easily via UPI, net-banking or auto-debit.</p>
+            <p>Funds are sent straight to your bank account. Repay easily via UPI, net-banking or auto-debit.</p>
             <span class="jp-meta"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-6 9 6"></path><path d="M5 10v9h14v-9"></path><path d="M9 19v-5h6v5"></path></svg> Disbursed in 24–48h</span>
           </div>
           <div class="jp-visual"><div class="mini-card funds">
             <div class="fn-coins"><i></i><i></i><i></i><i></i><i></i></div>
             <div class="fn-label">Account balance</div>
             <div class="fn-amt" id="fnAmt">₹0</div>
-            <div class="fn-row"><span class="fn-chk">✓</span> Credited by Arthveda Capital</div>
+            <div class="fn-row"><span class="fn-chk">✓</span> Credited to your bank account</div>
           </div></div>
         </div>
       </div>
@@ -175,7 +143,7 @@ export const html = `<section class="page active" id="home">
   <!-- CALCULATOR TEASER -->
   <div class="sec" id="s-calc"><div class="wrap">
     <div class="ctaband" style="background:var(--grad-cream);color:var(--ink);border:1px solid var(--line)">
-      <div style="position:relative;display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center;text-align:left" class="elig">
+      <div style="position:relative;display:grid;gap:40px;align-items:center;text-align:left" class="elig">
         <div>
           <span class="eyebrow reveal">Plan with confidence</span>
           <h2 class="reveal d1" style="color:var(--ink);text-align:left;margin:16px 0">Know your exact repayment<br>before you borrow</h2>
@@ -203,43 +171,97 @@ export const html = `<section class="page active" id="home">
     </div>
   </div></div>
 
-  <!-- LENDING PARTNER TRUST -->
-  <div class="sec" id="s-trust" style="background:var(--grad-cream);padding:72px 0"><div class="wrap"><div class="elig">
-    <div class="reveal">
-      <span class="eyebrow">A platform, not a lender</span>
-      <h2 style="font-size:clamp(1.8rem,3.6vw,2.6rem);margin:16px 0">Loans by RBI-registered NBFCs you can trust</h2>
-      <p class="lead" style="margin-bottom:24px">NAVIX is a technology platform. Every loan is sanctioned and disbursed by one of our RBI-registered NBFC lending partners, who remain the lender of record. The sanction letter and Key Fact Statement are always issued by the NBFC.</p>
-      <a href="/partners" class="btn btn-navy" data-link="">Meet our partners <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
-    </div>
-    <div class="checklist reveal d1">
-      <div class="chk"><span class="ck"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>RBI-registered NBFC partners</b><small>Lending only through regulated entities.</small></div></div>
-      <div class="chk"><span class="ck"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Key Fact Statement upfront</b><small>All charges disclosed before you accept.</small></div></div>
-      <div class="chk"><span class="ck"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Digital Lending Guidelines compliant</b><small>Aligned with RBI's 2022 framework.</small></div></div>
-      <div class="chk"><span class="ck"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Transparent grievance redressal</b><small>A clear escalation path, always.</small></div></div>
-    </div>
-  </div></div></div>
-
-  <!-- TESTIMONIALS -->
-  <div class="sec" id="s-voices"><div class="wrap">
-    <div class="sec-head"><span class="eyebrow center reveal">Loved by borrowers</span><h2 class="reveal d1">People talk about us — kindly</h2><p class="reveal d2">Join thousands of customers who chose a calmer way to borrow.</p></div>
-    <div class="grid-3">
-      <div class="tcard reveal"><div class="stars">★★★★★</div><q>I was skeptical about online loans, but NAVIX changed my mind. Smooth process, funds within hours, and total clarity on fees.</q><div class="tperson"><span class="tav">N</span><div><b>Neha Gupta</b><small>Business Owner, Delhi</small></div></div></div>
-      <div class="tcard reveal d1"><div class="stars">★★★★★</div><q>Needed a quick loan for my daughter's school fees. From application to disbursal took less than a day. Highly recommended.</q><div class="tperson"><span class="tav">R</span><div><b>Rajesh Kumar</b><small>Teacher, Mumbai</small></div></div></div>
-      <div class="tcard reveal d2"><div class="stars">★★★★★</div><q>The calculator showed me exactly what I'd repay. No hidden charges, no advance fee. This is how lending should feel.</q><div class="tperson"><span class="tav">A</span><div><b>Ananya Rao</b><small>Designer, Bengaluru</small></div></div></div>
-    </div>
-    <div style="text-align:center;margin-top:44px" class="reveal d1"><a href="/reviews" class="btn btn-ghost" data-link="">Read more reviews</a></div>
-  </div></div>
-
   <!-- FAQ PREVIEW -->
   <div class="sec" style="background:var(--grad-cream)"><div class="wrap">
     <div class="sec-head"><span class="eyebrow center reveal">Good to know</span><h2 class="reveal d1">Frequently asked questions</h2></div>
     <div class="faq reveal d1">
-      <div class="qa"><button class="q">How quickly can I get a loan from NAVIX?<span class="qi">+</span></button><div class="a"><p>For most applicants the journey from application to disbursal takes under 24–48 hours. Eligibility decisions are often instant; funds are released by the partner NBFC once your agreement is e-signed and KYC is complete.</p></div></div>
+      <div class="qa"><button class="q">How quickly can I get a loan from NAVIX?<span class="qi">+</span></button><div class="a"><p>The whole journey is fully online. Once your agreement is e-signed and your KYC is complete, your funds are released to your bank account.</p></div></div>
       <div class="qa"><button class="q">What documents do I need to apply?<span class="qi">+</span></button><div class="a"><p>Typically just your PAN, Aadhaar (for KYC) and bank account details. Everything is verified digitally — no physical paperwork or branch visits.</p></div></div>
-      <div class="qa"><button class="q">Are there any hidden charges or advance fees?<span class="qi">+</span></button><div class="a"><p>Never. NAVIX does not charge any advance or upfront fee. All applicable interest and charges are disclosed in the Key Fact Statement before you accept the offer.</p></div></div>
-      <div class="qa"><button class="q">Is NAVIX an RBI-approved lender?<span class="qi">+</span></button><div class="a"><p>NAVIX is a digital lending platform, not a lender. Loans are provided by our RBI-registered NBFC partners, who are the lender of record and remain regulated by the RBI.</p></div></div>
+      <div class="qa"><button class="q">Are there any hidden charges or advance fees?<span class="qi">+</span></button><div class="a"><p>Never. NAVIX does not charge any advance or upfront fee. All applicable interest and charges are shown in your loan summary before you accept the offer.</p></div></div>
+      <div class="qa"><button class="q">Will checking my eligibility affect my credit score?<span class="qi">+</span></button><div class="a"><p>No. Checking your eligibility on NAVIX does not impact your credit score — a formal credit enquiry only happens if you choose to accept an offer.</p></div></div>
     </div>
     <div style="text-align:center;margin-top:40px" class="reveal d1"><a href="/faq" class="btn btn-navy" data-link="">View all FAQs</a></div>
+  </div></div>
+
+<style>
+/* ===== repayment calendar ===== */
+.cal-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r-xl);box-shadow:var(--shadow-md);padding:clamp(22px,3vw,34px);display:grid;grid-template-columns:1.25fr .9fr;gap:clamp(24px,3vw,38px);align-items:stretch}
+.cal-main{min-width:0}
+.cal-divide{height:1px;background:var(--line);margin:4px 0 24px}
+.cal-preset{padding:7px 15px;border-radius:var(--pill);border:1px solid var(--line-2);background:#fff;font-size:.82rem;font-weight:600;color:var(--slate);cursor:pointer;transition:.2s}
+.cal-preset:hover,.cal-preset.on{background:var(--navy-800);color:#fff;border-color:var(--navy-800)}
+.cal-sublabel{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gold-700);font-weight:500;margin-bottom:5px}
+.cal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.cal-title{font-family:var(--font-display);font-size:clamp(1.2rem,2.3vw,1.5rem);font-weight:700;color:var(--navy-800);letter-spacing:-.02em;line-height:1}
+.cal-nav{display:flex;align-items:center;gap:8px}
+.cal-iconbtn{width:40px;height:40px;border-radius:11px;border:1px solid var(--line);background:var(--paper);color:var(--navy-700);display:grid;place-items:center;cursor:pointer;transition:background .2s,border-color .2s,color .2s}
+.cal-iconbtn:hover{background:var(--cream-100);border-color:var(--line-2);color:var(--navy-900)}
+.cal-iconbtn:disabled{opacity:.32;pointer-events:none}
+.cal-dows{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:8px}
+.cal-dows span{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center;font-weight:500}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;grid-auto-rows:clamp(42px,5.4vw,50px)}
+.cal-day{display:grid;place-items:center;border:1px solid transparent;border-radius:12px;background:transparent;font-family:var(--font-display);font-weight:600;font-size:1.02rem;color:var(--navy-800);cursor:pointer;transition:background .18s,color .18s,box-shadow .18s;font-feature-settings:"tnum";-webkit-tap-highlight-color:transparent}
+.cal-day:hover{background:var(--cream-100)}
+.cal-day.muted{color:var(--muted);opacity:.4;cursor:default;pointer-events:none}
+.cal-day.today{box-shadow:inset 0 0 0 1.5px var(--gold-500);color:var(--gold-700)}
+.cal-day.sel{background:var(--grad-navy);color:#fff;box-shadow:var(--shadow-sm)}
+.cal-day.sel.today{color:#fff;box-shadow:var(--shadow-sm),inset 0 0 0 1.5px var(--gold-400)}
+.cal-legend{display:flex;align-items:center;gap:18px;margin-top:18px;font-size:.78rem;color:var(--slate);flex-wrap:wrap}
+.cal-legend span{display:inline-flex;align-items:center;gap:8px}
+.cal-legend i{width:16px;height:16px;border-radius:6px;display:inline-block}
+.cal-legend .lg-sel{background:var(--grad-navy)}
+.cal-hintnote{color:var(--muted)}
+.cal-side{position:relative;overflow:hidden;background:var(--grad-navy);border-radius:var(--r-lg);padding:clamp(22px,2.6vw,28px);display:flex;flex-direction:column;color:#fff}
+.cal-side::before{content:"";position:absolute;top:-40%;right:-30%;width:75%;height:75%;background:radial-gradient(circle,rgba(244,201,91,.20),transparent 70%);pointer-events:none}
+.cal-side > *{position:relative}
+.cal-side .eyebrow{color:var(--gold-400)}
+.cal-side .eyebrow::before{background:var(--gold-400)}
+.cal-bigdate{font-family:var(--font-display);font-weight:800;font-size:clamp(2.4rem,5.4vw,3.1rem);line-height:1;letter-spacing:-.03em;margin-top:14px}
+.cal-subdate{color:#9fb3cc;font-size:.92rem;margin-top:7px}
+.cal-note{font-size:.8rem;color:#9fb3cc;margin:18px 0 0;line-height:1.55}
+.cal-side .btn{margin-top:auto}
+@media(max-width:840px){.cal-card{grid-template-columns:1fr}}
+</style>
+
+  <!-- REPAYMENT CALENDAR -->
+  <div class="sec" id="s-calendar"><div class="wrap">
+    <div class="sec-head"><span class="eyebrow center reveal">Plan ahead</span><h2 class="reveal d1">Mark your repayment date</h2><p class="reveal d2">Set your amount, pick a repayment date, and see your exact interest, APR and total payable — calculated at a fixed 1% per day, the same way our calculator works.</p></div>
+    <div class="cal-card reveal d1">
+      <div class="cal-main">
+        <div class="cc-row">
+          <div class="cc-top"><span class="cl"><span class="ci"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3.5a1.5 1.5 0 0 0 0 3H15"></path></svg></span> Loan amount</span><span class="cc-val" id="calAmtV">₹10,000</span></div>
+          <input type="range" id="calAmt" min="5000" max="100000" step="1000" value="10000">
+          <div class="cc-scale"><span>₹5,000</span><span>₹1,00,000</span></div>
+          <div class="cc-presets"><button class="cal-preset" data-v="5000" type="button">₹5K</button><button class="cal-preset on" data-v="10000" type="button">₹10K</button><button class="cal-preset" data-v="25000" type="button">₹25K</button><button class="cal-preset" data-v="50000" type="button">₹50K</button><button class="cal-preset" data-v="100000" type="button">₹1L</button></div>
+        </div>
+        <div class="cal-divide"></div>
+        <div class="cal-head">
+          <div><div class="cal-sublabel">Repayment date</div><div class="cal-title" id="calTitle">Month YYYY</div></div>
+          <div class="cal-nav">
+            <button id="calPrev" class="cal-iconbtn" type="button" aria-label="Previous month"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"></path></svg></button>
+            <button id="calNext" class="cal-iconbtn" type="button" aria-label="Next month"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 6l6 6-6 6"></path></svg></button>
+          </div>
+        </div>
+        <div class="cal-dows"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-legend"><span><i class="lg-sel"></i> Selected repayment date</span><span class="cal-hintnote">Choose a date 7–40 days from today</span></div>
+      </div>
+      <div class="cal-side">
+        <span class="eyebrow">Your repayment plan</span>
+        <div class="cal-bigdate" id="calBig">—</div>
+        <div class="cal-subdate" id="calSub">—</div>
+        <div class="cr-rows" style="margin-top:24px">
+          <div class="cr-line"><span>Loan amount</span><b id="calOA">₹10,000</b></div>
+          <div class="cr-line"><span>Tenure</span><b id="calOT">30 days</b></div>
+          <div class="cr-line"><span>Interest rate</span><b id="calOR">1% / day</b></div>
+          <div class="cr-line"><span>Interest payable</span><b id="calOI">₹3,000</b></div>
+          <div class="cr-line apr"><span>Representative APR</span><b id="calOApr">365.0%</b></div>
+          <div class="cr-total"><span class="t-lbl">Total payable</span><span class="t-val" id="calOTotal">₹13,000</span></div>
+        </div>
+        <p class="cal-note">Interest is a fixed 1% per day across your selected tenure. Figures are indicative — your exact due date and APR are confirmed before you accept, with no pre-closure or prepayment charge.</p>
+        <a href="/signup/mobile-otp" class="btn btn-gold btn-block" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+      </div>
+    </div>
   </div></div>
 
   <!-- FINAL CTA -->
@@ -252,4 +274,7 @@ export const html = `<section class="page active" id="home">
     </div>
   </div></div></div>
 
-</section>`;
+</section>
+
+<!-- ==================== CALCULATOR & RATES ==================== -->
+`;
