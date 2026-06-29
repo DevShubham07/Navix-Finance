@@ -180,6 +180,10 @@ export interface ProfileView {
   employmentStatus: string | null;
   monthlySalaryPaise: number | null;
   salaryBank: string | null;
+  /** Salary management (Phase 2.1). Annual figure in paise; percentages as numbers. */
+  annualSalaryPaise?: number | null;
+  salaryPercentage?: number | null;
+  incrementPercentage?: number | null;
   email?: string | null;
   /** Staff-only credit headline (score + 1–5★ rating + verdict). Null until the bureau is pulled. */
   creditScore?: number | null;
@@ -299,14 +303,28 @@ export interface CreditBriefView {
   facts: CreditBriefFacts | null;
 }
 
-/** Admin edit of a customer's KYC data (identity fields excluded — they stay locked). */
+/** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */
 export interface UpdateCustomerInput {
   fullName?: string | null;
   address?: string | null;
   employer?: string | null;
   employmentStatus?: string | null;
   monthlySalaryPaise?: number | null;
+  annualSalaryPaise?: number | null;
+  salaryPercentage?: number | null;
+  incrementPercentage?: number | null;
   salaryBank?: string | null;
+}
+
+/** One audited profile/salary change (Phase 2.1) — mirrors backend ProfileChangeView. */
+export interface ProfileChangeView {
+  id: number;
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  modifiedBy: string | null;
+  /** ISO timestamp. */
+  modifiedAt: string | null;
 }
 
 /**
@@ -699,9 +717,13 @@ export const customersApi = {
   /** One customer's full history (profile + applications + loans + payments). */
   get: (applicantId: number) => bff<CustomerDetail>(`${CUSTOMERS_BASE}/${applicantId}`, "GET"),
 
-  /** ADMIN corrects a customer's KYC data (non-identity fields). */
+  /** ADMIN corrects a customer's KYC / salary data (non-identity fields); changes are audited. */
   updateProfile: (applicantId: number, body: UpdateCustomerInput) =>
     bff<ProfileView>(`${CUSTOMERS_BASE}/${applicantId}/profile`, "PUT", body),
+
+  /** One customer's audited profile/salary change history (newest first). */
+  changes: (applicantId: number) =>
+    bff<ProfileChangeView[]>(`${CUSTOMERS_BASE}/${applicantId}/changes`, "GET"),
 };
 
 // ---------------------------------------------------------------------------

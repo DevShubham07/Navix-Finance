@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
@@ -15,10 +17,12 @@ import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.common.risk.RiskPort;
 import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
+import com.navix.loan.repository.ProfileChangeLogRepository;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
@@ -36,13 +40,15 @@ class CustomerServiceTest {
     @Mock private ApplicantProfileRepository profileRepository;
     @Mock private PaymentRepository paymentRepository;
     @Mock private RepaymentService repaymentService;
+    @Mock private ProfileChangeLogRepository changeLogRepository;
+    @Mock private RiskPort risk;
 
     private CustomerService service;
 
     @BeforeEach
     void setUp() {
         service = new CustomerService(applicationRepository, loanRepository, profileRepository,
-                paymentRepository, repaymentService);
+                paymentRepository, repaymentService, changeLogRepository, risk);
     }
 
     @AfterEach
@@ -107,7 +113,7 @@ class CustomerServiceTest {
     void updateProfileRejectedForNonAdmin() {
         ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
         assertThatThrownBy(() -> service.updateProfile(9000001L,
-                new UpdateCustomerRequest("New Name", null, null, null, null, null)))
+                new UpdateCustomerRequest("New Name", null, null, null, null, null, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("ADMIN");
     }
@@ -121,11 +127,29 @@ class CustomerServiceTest {
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         service.updateProfile(9000001L,
-                new UpdateCustomerRequest("Asha R. Rao", "12 MG Road", "Globex", "SALARIED", 6_000_000L, "HDFC"));
+                new UpdateCustomerRequest("Asha R. Rao", "12 MG Road", "Globex", "SALARIED", 6_000_000L, null, null, null, "HDFC"));
 
         assertThat(p.getFullName()).isEqualTo("Asha R. Rao");
         assertThat(p.getEmployer()).isEqualTo("Globex");
         assertThat(p.getMonthlySalaryPaise()).isEqualTo(6_000_000L);
         assertThat(p.getPan()).isEqualTo("ABCDE1234F");          // identity untouched
+    }
+
+    @Test
+    void salaryEditLogsChangeAndRecomputesEligibilityForPreDisbursementApp() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        ApplicantProfile p = profile(2, "Asha", "ABCDE1234F");
+        p.setMonthlySalaryPaise(5_000_000L);
+        LoanApplication a = app(2, 9000001L, ApplicationStatus.KYC_APPROVED); // loanId null = pre-disbursement
+        when(applicationRepository.findByApplicantId(9000001L)).thenReturn(List.of(a));
+        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(risk.eligibleLimitPaise(6_000_000L)).thenReturn(1_500_000L);
+
+        service.updateProfile(9000001L,
+                new UpdateCustomerRequest("Asha", null, null, null, 6_000_000L, null, null, null, null));
+
+        verify(changeLogRepository, atLeastOnce()).save(any());   // the salary change is recorded
+        assertThat(a.getEligibleLimit()).isEqualTo(1_500_000L);   // eligibility recomputed from new salary
     }
 }

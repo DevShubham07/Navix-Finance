@@ -3,6 +3,7 @@ package com.navix.loan.controller;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
+import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.service.CustomerService;
@@ -42,10 +43,16 @@ public class CustomerController {
         return ApiResponse.ok(customerService.detail(applicantId));
     }
 
-    /** ADMIN corrects a customer's KYC data (non-identity fields). */
+    /** ADMIN corrects a customer's KYC / salary data (non-identity fields); changes are audited. */
     @PutMapping("/{applicantId}/profile")
     public ApiResponse<ProfileView> updateProfile(@PathVariable Long applicantId,
                                                   @RequestBody UpdateCustomerRequest req) {
         return ApiResponse.ok(customerService.updateProfile(applicantId, req));
+    }
+
+    /** One customer's audited profile/salary change history (previous→new, who, when). */
+    @GetMapping("/{applicantId}/changes")
+    public ApiResponse<List<ProfileChangeView>> changes(@PathVariable Long applicantId) {
+        return ApiResponse.ok(customerService.changeHistory(applicantId));
     }
 }

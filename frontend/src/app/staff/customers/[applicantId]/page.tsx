@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, User, Banknote, Receipt, Workflow, Pencil, Ban, XCircle } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, User, Banknote, Receipt, Workflow, Pencil, Ban, XCircle, History } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
@@ -24,7 +24,7 @@ import {
   type ApplicationStatus,
   type BlocklistType,
 } from "@/lib/api/applications";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 /** Application statuses that can still be cancelled (pre-disbursement). */
 const CANCELLABLE: Set<ApplicationStatus> = new Set([
@@ -74,6 +74,7 @@ export default function CustomerDetailPage() {
               <PastLoansCard loans={pastLoans} />
               <PaymentsCard payments={c.payments} />
               <ApplicationsCard applications={c.applications} onChanged={invalidate} />
+              <ChangeHistoryCard applicantId={id} />
             </div>
             <div className="space-y-6">
               <ProfileCard detail={c} />
@@ -131,6 +132,9 @@ function ProfileCard({ detail }: { detail: CustomerDetail }) {
           <Row label="Employer" value={p.employer} />
           <Row label="Employment" value={p.employmentStatus} />
           <Row label="Monthly salary" value={p.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null} />
+          <Row label="Annual salary" value={p.annualSalaryPaise != null ? paiseToINR(p.annualSalaryPaise) : null} />
+          <Row label="Salary %" value={p.salaryPercentage != null ? `${p.salaryPercentage}%` : null} />
+          <Row label="Increment %" value={p.incrementPercentage != null ? `${p.incrementPercentage}%` : null} />
           <Row label="Salary bank" value={p.salaryBank} />
           <Row label="CIBIL score" value={p.creditScore != null ? String(p.creditScore) : null} mono />
           <Row label="Risk category" value={p.riskCategory} />
@@ -259,12 +263,76 @@ function CancelButton({ appId, onDone }: { appId: number; onDone: () => void }) 
   );
 }
 
+/** Human label for an audited profile field (camelCase → words; salary/percentage friendly). */
+function humanizeField(field: string): string {
+  const map: Record<string, string> = {
+    monthlySalaryPaise: "Monthly salary",
+    annualSalaryPaise: "Annual salary",
+    salaryPercentage: "Salary %",
+    incrementPercentage: "Increment %",
+    salaryBank: "Salary bank",
+    fullName: "Full name",
+    employmentStatus: "Employment status",
+  };
+  return map[field] ?? field.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+}
+
+/** Render an audited old/new value: paise → ₹, percentages → %, else as-is. */
+function formatChangeValue(field: string, value: string | null): string {
+  if (value == null || value === "") return "—";
+  if (field.endsWith("Paise")) {
+    const n = Number(value);
+    return Number.isFinite(n) ? paiseToINR(n) : value;
+  }
+  if (field.endsWith("Percentage")) return `${value}%`;
+  return value;
+}
+
+/** Audited profile/salary change history (Phase 2.1): previous→new, who, when. */
+function ChangeHistoryCard({ applicantId }: { applicantId: number }) {
+  const q = useQuery({
+    queryKey: ["customer-changes", applicantId],
+    queryFn: () => customersApi.changes(applicantId),
+    enabled: Number.isFinite(applicantId),
+  });
+  const rows = q.data ?? [];
+  return (
+    <Card title={`Change history (${rows.length})`} icon={<History size={16} />}>
+      {q.isLoading ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted">No profile edits recorded.</p>
+      ) : (
+        <ul className="divide-y divide-line text-sm">
+          {rows.map((c) => (
+            <li key={c.id} className="py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-ink">{humanizeField(c.field)}</span>
+                <span className="text-xs text-muted">{c.modifiedAt ? formatDateTime(c.modifiedAt) : ""}</span>
+              </div>
+              <div className="mt-0.5 text-xs text-muted">
+                <span className="line-through">{formatChangeValue(c.field, c.oldValue)}</span>
+                {" → "}
+                <span className="font-medium text-ink">{formatChangeValue(c.field, c.newValue)}</span>
+                {c.modifiedBy ? ` · by ${c.modifiedBy}` : ""}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: () => void }) {
   const p = detail.profile;
   const [fullName, setFullName] = React.useState(p?.fullName ?? "");
   const [employer, setEmployer] = React.useState(p?.employer ?? "");
   const [employmentStatus, setEmploymentStatus] = React.useState(p?.employmentStatus ?? "");
   const [salary, setSalary] = React.useState(p?.monthlySalaryPaise != null ? String(Math.round(p.monthlySalaryPaise / 100)) : "");
+  const [annualSalary, setAnnualSalary] = React.useState(p?.annualSalaryPaise != null ? String(Math.round(p.annualSalaryPaise / 100)) : "");
+  const [salaryPct, setSalaryPct] = React.useState(p?.salaryPercentage != null ? String(p.salaryPercentage) : "");
+  const [incrementPct, setIncrementPct] = React.useState(p?.incrementPercentage != null ? String(p.incrementPercentage) : "");
   const [salaryBank, setSalaryBank] = React.useState(p?.salaryBank ?? "");
   const [address, setAddress] = React.useState(p?.address ?? "");
 
@@ -275,6 +343,9 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
         employer: employer.trim() || null,
         employmentStatus: employmentStatus.trim() || null,
         monthlySalaryPaise: salary ? rupeesToPaise(Number(salary.replace(/[^\d.]/g, ""))) : null,
+        annualSalaryPaise: annualSalary ? rupeesToPaise(Number(annualSalary.replace(/[^\d.]/g, ""))) : null,
+        salaryPercentage: salaryPct ? Number(salaryPct) : null,
+        incrementPercentage: incrementPct ? Number(incrementPct) : null,
         salaryBank: salaryBank.trim() || null,
         address: address.trim() || null,
       }),
@@ -282,12 +353,15 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
   });
 
   return (
-    <Card title="Edit KYC (admin)" icon={<Pencil size={16} />}>
-      <p className="mb-3 text-xs text-muted">Identity (PAN/Aadhaar/mobile) is locked. Edits update the latest profile.</p>
+    <Card title="Edit KYC / salary (admin)" icon={<Pencil size={16} />}>
+      <p className="mb-3 text-xs text-muted">Identity (PAN/Aadhaar/mobile) is locked. Salary edits are audited and recompute the eligible limit.</p>
       <Input label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} className="!mb-2" />
       <Input label="Employer" value={employer} onChange={(e) => setEmployer(e.target.value)} className="!mb-2" />
       <Input label="Employment status" value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} className="!mb-2" />
       <Input label="Monthly salary (₹)" inputMode="numeric" value={salary} onChange={(e) => setSalary(e.target.value.replace(/[^\d]/g, ""))} className="!mb-2" />
+      <Input label="Annual salary (₹)" inputMode="numeric" value={annualSalary} onChange={(e) => setAnnualSalary(e.target.value.replace(/[^\d]/g, ""))} className="!mb-2" />
+      <Input label="Salary percentage (%)" inputMode="decimal" value={salaryPct} onChange={(e) => setSalaryPct(e.target.value.replace(/[^\d.]/g, ""))} className="!mb-2" />
+      <Input label="Increment percentage (%)" inputMode="decimal" value={incrementPct} onChange={(e) => setIncrementPct(e.target.value.replace(/[^\d.]/g, ""))} className="!mb-2" />
       <Input label="Salary bank" value={salaryBank} onChange={(e) => setSalaryBank(e.target.value)} className="!mb-2" />
       <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} className="!mb-3" />
       {m.error && <p className="mb-2 text-sm text-error-700">{errMessage(m.error)}</p>}

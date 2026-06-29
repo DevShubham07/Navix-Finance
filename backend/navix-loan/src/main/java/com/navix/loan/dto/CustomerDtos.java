@@ -4,7 +4,10 @@ import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.entity.ProfileChangeLog;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -46,7 +49,8 @@ public final class CustomerDtos {
 
     /**
      * Admin edit of a customer's KYC data. Identity fields (PAN/Aadhaar/mobile) are intentionally
-     * <b>not</b> editable here — they carry uniqueness constraints and stay locked.
+     * <b>not</b> editable here — they carry uniqueness constraints and stay locked. Salary changes
+     * are audited (previous→new) and recompute the eligible limit.
      */
     public record UpdateCustomerRequest(
             String fullName,
@@ -54,6 +58,24 @@ public final class CustomerDtos {
             String employer,
             String employmentStatus,
             Long monthlySalaryPaise,
+            Long annualSalaryPaise,
+            BigDecimal salaryPercentage,
+            BigDecimal incrementPercentage,
             String salaryBank) {
+    }
+
+    /** One audited profile/salary change for the customer detail history pane (Phase 2.1). */
+    public record ProfileChangeView(
+            Long id,
+            String field,
+            String oldValue,
+            String newValue,
+            String modifiedBy,
+            Instant modifiedAt) {
+
+        public static ProfileChangeView of(ProfileChangeLog c) {
+            return new ProfileChangeView(c.getId(), c.getField(), c.getOldValue(), c.getNewValue(),
+                    c.getCreatedBy(), c.getCreatedAt());
+        }
     }
 }

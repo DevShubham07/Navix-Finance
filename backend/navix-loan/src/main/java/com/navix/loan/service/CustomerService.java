@@ -2,11 +2,13 @@ package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
+import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
@@ -15,10 +17,12 @@ import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
+import com.navix.loan.entity.ProfileChangeLog;
 import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
+import com.navix.loan.repository.ProfileChangeLogRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +54,8 @@ public class CustomerService {
     private final ApplicantProfileRepository profileRepository;
     private final PaymentRepository paymentRepository;
     private final RepaymentService repaymentService;
+    private final ProfileChangeLogRepository changeLogRepository;
+    private final RiskPort risk;
 
     /**
      * All customers (distinct applicants), optionally filtered by {@code q} matching the name
@@ -134,8 +140,10 @@ public class CustomerService {
     }
 
     /**
-     * ADMIN-only correction of a customer's KYC data (non-identity fields). Updates the latest
-     * profile; PAN/Aadhaar/mobile are left untouched (they hold uniqueness constraints).
+     * ADMIN-only correction of a customer's KYC / salary data (non-identity fields). Updates the latest
+     * profile; PAN/Aadhaar/mobile are left untouched (they hold uniqueness constraints). Every changed
+     * field is recorded to the {@link ProfileChangeLog} (previous→new, who, when), and a salary change
+     * recomputes the eligible limit on the applicant's not-yet-disbursed applications.
      */
     @Transactional
     public ProfileView updateProfile(Long applicantId, UpdateCustomerRequest req) {
@@ -144,16 +152,94 @@ public class CustomerService {
         if (profile == null) {
             throw new ResourceNotFoundException("ApplicantProfile", "applicant:" + applicantId);
         }
-        profile.setFullName(trimToNull(req.fullName()));
-        profile.setAddress(trimToNull(req.address()));
-        profile.setEmployer(trimToNull(req.employer()));
-        profile.setEmploymentStatus(trimToNull(req.employmentStatus()));
+        Long appId = profile.getApplicationId();
+        Long oldSalary = profile.getMonthlySalaryPaise();
+
+        String fullName = trimToNull(req.fullName());
+        logIfChanged(applicantId, appId, "fullName", profile.getFullName(), fullName);
+        profile.setFullName(fullName);
+
+        String address = trimToNull(req.address());
+        logIfChanged(applicantId, appId, "address", profile.getAddress(), address);
+        profile.setAddress(address);
+
+        String employer = trimToNull(req.employer());
+        logIfChanged(applicantId, appId, "employer", profile.getEmployer(), employer);
+        profile.setEmployer(employer);
+
+        String employmentStatus = trimToNull(req.employmentStatus());
+        logIfChanged(applicantId, appId, "employmentStatus", profile.getEmploymentStatus(), employmentStatus);
+        profile.setEmploymentStatus(employmentStatus);
+
+        String salaryBank = trimToNull(req.salaryBank());
+        logIfChanged(applicantId, appId, "salaryBank", profile.getSalaryBank(), salaryBank);
+        profile.setSalaryBank(salaryBank);
+
+        logIfChanged(applicantId, appId, "monthlySalaryPaise", str(oldSalary), str(req.monthlySalaryPaise()));
         profile.setMonthlySalaryPaise(req.monthlySalaryPaise());
-        profile.setSalaryBank(trimToNull(req.salaryBank()));
-        return ProfileView.of(profileRepository.save(profile));
+
+        logIfChanged(applicantId, appId, "annualSalaryPaise", str(profile.getAnnualSalaryPaise()), str(req.annualSalaryPaise()));
+        profile.setAnnualSalaryPaise(req.annualSalaryPaise());
+
+        logIfChanged(applicantId, appId, "salaryPercentage", str(profile.getSalaryPercentage()), str(req.salaryPercentage()));
+        profile.setSalaryPercentage(req.salaryPercentage());
+
+        logIfChanged(applicantId, appId, "incrementPercentage", str(profile.getIncrementPercentage()), str(req.incrementPercentage()));
+        profile.setIncrementPercentage(req.incrementPercentage());
+
+        ApplicantProfile saved = profileRepository.save(profile);
+
+        if (!Objects.equals(oldSalary, saved.getMonthlySalaryPaise())) {
+            recomputeEligibility(applicantId, saved.getMonthlySalaryPaise());
+        }
+        return ProfileView.of(saved);
+    }
+
+    /** One customer's audited profile/salary change history (newest first). Staff-readable. */
+    @Transactional(readOnly = true)
+    public List<ProfileChangeView> changeHistory(Long applicantId) {
+        return changeLogRepository.findByApplicantIdOrderByIdDesc(applicantId).stream()
+                .map(ProfileChangeView::of)
+                .toList();
     }
 
     // ---- internals -----------------------------------------------------------------
+
+    /** Append a change-log row when {@code old != new} (no-op when unchanged). */
+    private void logIfChanged(Long applicantId, Long applicationId, String field, String oldVal, String newVal) {
+        if (Objects.equals(oldVal, newVal)) {
+            return;
+        }
+        ProfileChangeLog entry = new ProfileChangeLog();
+        entry.setApplicantId(applicantId);
+        entry.setApplicationId(applicationId);
+        entry.setField(field);
+        entry.setOldValue(oldVal);
+        entry.setNewValue(newVal);
+        changeLogRepository.save(entry);
+    }
+
+    /**
+     * Recompute the eligible limit (RiskPort's firm 25%-of-salary cap) on the applicant's
+     * <b>not-yet-disbursed</b> applications, so an admin salary edit propagates to eligibility. A
+     * disbursed loan's limit is historical and left untouched.
+     */
+    private void recomputeEligibility(Long applicantId, Long monthlySalaryPaise) {
+        if (monthlySalaryPaise == null || monthlySalaryPaise <= 0) {
+            return;
+        }
+        long eligible = risk.eligibleLimitPaise(monthlySalaryPaise);
+        for (LoanApplication a : applicationRepository.findByApplicantId(applicantId)) {
+            if (a.getLoanId() == null) {
+                a.setEligibleLimit(eligible);
+                applicationRepository.save(a);
+            }
+        }
+    }
+
+    private static String str(Object v) {
+        return v == null ? null : v.toString();
+    }
 
     /** The applicant's most recent saved KYC profile (newest application first), or null. */
     private ApplicantProfile latestProfile(List<LoanApplication> apps) {

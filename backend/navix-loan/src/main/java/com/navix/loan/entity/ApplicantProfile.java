@@ -61,6 +61,18 @@ public class ApplicantProfile extends BaseAuditEntity {
     @Column(name = "monthly_salary_paise")
     private Long monthlySalaryPaise;
 
+    /** Recorded annual salary in paise (informational; defaults to monthly×12 when absent). V26. */
+    @Column(name = "annual_salary_paise")
+    private Long annualSalaryPaise;
+
+    /** Recorded salary/eligibility percentage (HR datum; the firm eligibility cap is RiskPort's 25%). V26. */
+    @Column(name = "salary_percentage", precision = 5, scale = 2)
+    private BigDecimal salaryPercentage;
+
+    /** Recorded expected annual increment percentage (HR datum). V26. */
+    @Column(name = "increment_percentage", precision = 5, scale = 2)
+    private BigDecimal incrementPercentage;
+
     @Column(name = "salary_bank", length = 120)
     private String salaryBank;
 

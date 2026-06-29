@@ -3,6 +3,7 @@ package com.navix.loan.dto;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.ApplicationDocument;
 import jakarta.validation.constraints.NotBlank;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Base64;
@@ -51,6 +52,9 @@ public final class ReviewDtos {
             String employmentStatus,
             Long monthlySalaryPaise,
             String salaryBank,
+            Long annualSalaryPaise,
+            BigDecimal salaryPercentage,
+            BigDecimal incrementPercentage,
             String email,
             Integer creditScore,
             Double starRating,
@@ -71,7 +75,9 @@ public final class ReviewDtos {
                     p.getApplicationId(), p.getFullName(), p.getPan(),
                     p.getAadhaar(), p.getMobile(), p.getDob(),
                     p.getAddress(), p.getEmployer(), p.getEmploymentStatus(),
-                    p.getMonthlySalaryPaise(), p.getSalaryBank(), p.getEmail(),
+                    p.getMonthlySalaryPaise(), p.getSalaryBank(),
+                    p.getAnnualSalaryPaise(), p.getSalaryPercentage(), p.getIncrementPercentage(),
+                    p.getEmail(),
                     p.getBureauScore() != null ? p.getBureauScore().intValue() : null,
                     p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
                     p.getCreditRecommendation(), p.getBureauSource(), p.getRiskCategory(),
@@ -86,7 +92,8 @@ public final class ReviewDtos {
          */
         public ProfileView withoutCredit() {
             return new ProfileView(applicationId, fullName, pan, aadhaar, mobile, dob,
-                    address, employer, employmentStatus, monthlySalaryPaise, salaryBank, email,
+                    address, employer, employmentStatus, monthlySalaryPaise, salaryBank,
+                    annualSalaryPaise, salaryPercentage, incrementPercentage, email,
                     null, null, null, null, null,
                     panVerified, aadhaarLinked, emailVerified, addressVerified, pennyDropVerified,
                     null, null, null);
