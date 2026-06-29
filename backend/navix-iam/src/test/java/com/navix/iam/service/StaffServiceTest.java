@@ -42,11 +42,24 @@ class StaffServiceTest {
     @BeforeEach
     void setUp() {
         staffService = new StaffService(staffUserRepository, passwordEncoder, event -> {});
+        // All staff-management ops are ADMIN-only; default the actor to ADMIN (negative tests override).
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
     }
 
     @AfterEach
     void tearDown() {
         ActorContext.clear();
+    }
+
+    @Test
+    void staffManagementRejectsNonAdmin() {
+        ActorContext.set(new CurrentActor("9", "Dev", "DEVELOPER"));
+        assertThatThrownBy(() -> staffService.listStaff())
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("FORBIDDEN_ROLE");
+        assertThatThrownBy(() -> staffService.disableStaff(1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("FORBIDDEN_ROLE");
     }
 
     private static StaffUser staff(Long id, StaffRole role, StaffStatus status) {

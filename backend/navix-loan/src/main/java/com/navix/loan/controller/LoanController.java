@@ -1,5 +1,7 @@
 package com.navix.loan.controller;
 
+import com.navix.common.exception.BusinessException;
+import com.navix.common.security.ActorContext;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.OutstandingView;
@@ -58,7 +60,22 @@ public class LoanController {
     public ApiResponse<List<TransactionView>> transactions(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String direction) {
+        // The company-wide ledger carries borrower PII (names + masked PAN) — staff-only, and scoped to
+        // the roles the UI exposes it to (Accountant + Admin). Closes a leak where any authenticated
+        // token (incl. a BORROWER JWT) could read every borrower's transactions.
+        requireRole("ACCOUNTANT", "ADMIN");
         return ApiResponse.ok(transactionService.listTransactions(q, direction));
+    }
+
+    /** Reject any actor whose role isn't in {@code allowed} (ADMIN included explicitly where needed). */
+    private void requireRole(String... allowed) {
+        String role = ActorContext.get().role();
+        for (String r : allowed) {
+            if (r.equals(role)) {
+                return;
+            }
+        }
+        throw new BusinessException("FORBIDDEN_ROLE", "This action requires role " + String.join(" or ", allowed));
     }
 
     /** Authoritative compute-on-read balance (prepayment + penalty aware). */

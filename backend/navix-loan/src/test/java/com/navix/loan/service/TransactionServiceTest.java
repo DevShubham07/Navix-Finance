@@ -103,7 +103,7 @@ class TransactionServiceTest {
         assertThat(disbursal.amountPaise()).isEqualTo(882_000L);
         assertThat(disbursal.txnRef()).isEqualTo("UTR-OUT-1");
         assertThat(disbursal.borrowerName()).isEqualTo("Aman");
-        assertThat(disbursal.pan()).isEqualTo("ABCDE1234F"); // staff ledger shows the full PAN
+        assertThat(disbursal.pan()).isEqualTo("ABCDE1234F"); // staff-only ledger shows the full PAN
 
         assertThat(repayment.direction()).isEqualTo("INCOMING");
         assertThat(repayment.amountPaise()).isEqualTo(100_000L);

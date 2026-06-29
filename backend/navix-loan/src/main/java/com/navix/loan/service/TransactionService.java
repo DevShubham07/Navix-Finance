@@ -30,8 +30,10 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li><b>INCOMING</b> REPAYMENT rows from every {@link Payment}.</li>
  * </ul>
  *
- * Borrower name/PAN are resolved loan → application → {@link ApplicantProfile}; PAN is masked.
- * Supports filtering by direction and a free-text query (borrower name / mobile / loan id).
+ * Borrower name/PAN are resolved loan → application → {@link ApplicantProfile}. The full PAN is
+ * returned — this is a <b>staff-only</b> ledger (Accountant/Admin; enforced in {@code LoanController});
+ * masking is a customer-facing concern only. Supports filtering by direction and a free-text query
+ * (borrower name / mobile / loan id).
  */
 @Service
 @RequiredArgsConstructor

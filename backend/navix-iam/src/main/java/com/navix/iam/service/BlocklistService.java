@@ -1,6 +1,8 @@
 package com.navix.iam.service;
 
+import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.security.ActorContext;
 import com.navix.iam.domain.BlocklistType;
 import com.navix.iam.entity.BlocklistEntry;
 import com.navix.iam.repository.BlocklistEntryRepository;
@@ -34,6 +36,7 @@ public class BlocklistService {
      */
     @Transactional
     public BlocklistEntry add(BlocklistType type, String value, String reason) {
+        requireAdmin();
         BlocklistEntry entry = blocklistRepository.findByTypeAndValue(type, value)
                 .orElseGet(BlocklistEntry::new);
         entry.setType(type);
@@ -46,6 +49,7 @@ public class BlocklistService {
     /** Deactivate a blocklist entry by id (soft remove: {@code active = false}). */
     @Transactional
     public void remove(Long id) {
+        requireAdmin();
         BlocklistEntry entry = blocklistRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("BlocklistEntry", String.valueOf(id)));
         entry.setActive(false);
@@ -55,6 +59,15 @@ public class BlocklistService {
     /** List all active blocklist entries. */
     @Transactional(readOnly = true)
     public List<BlocklistEntry> listActive() {
+        requireAdmin();
         return blocklistRepository.findByActiveTrue();
+    }
+
+    /** Guard: only an ADMIN may add/remove/list blocklist entries ({@link #isBlocked} stays open
+     *  for the internal sign-up / pre-approval screening path). */
+    private void requireAdmin() {
+        if (!"ADMIN".equals(ActorContext.get().role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role ADMIN");
+        }
     }
 }

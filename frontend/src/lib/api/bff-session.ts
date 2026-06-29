@@ -37,8 +37,9 @@ const COOKIE_OPTS = {
   httpOnly: true,
   path: "/",
   sameSite: "lax" as const,
-  // 1 day — demo sessions; not secure-only so it works on http://localhost.
-  maxAge: 60 * 60 * 24,
+  // Secure (HTTPS-only) in production; left off in dev so it works on http://localhost.
+  secure: process.env.NODE_ENV === "production",
+  maxAge: 60 * 60 * 24, // 1 day
 };
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
 import com.navix.iam.domain.StaffRole;
 import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.dto.StaffDtos.AcceptInviteRequest;
@@ -19,6 +21,7 @@ import com.navix.iam.repository.StaffUserRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +41,22 @@ class InviteServiceTest {
     @BeforeEach
     void setUp() {
         inviteService = new InviteService(inviteRepository, staffUserRepository, event -> {});
+        // listInvites/createInvite are ADMIN-only; default the actor to ADMIN (accept stays open).
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+    }
+
+    @AfterEach
+    void tearDown() {
+        ActorContext.clear();
+    }
+
+    @Test
+    void createInviteRejectsNonAdmin() {
+        ActorContext.set(new CurrentActor("9", "Exec", "CREDIT_EXECUTIVE"));
+        assertThatThrownBy(() -> inviteService.createInvite(
+                new CreateInviteRequest("x@navix.test", StaffRole.ACCOUNTANT)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("FORBIDDEN_ROLE");
     }
 
     private static StaffInvite invite(StaffRole role, Instant expiresAt, Instant acceptedAt) {

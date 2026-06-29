@@ -2,6 +2,7 @@ package com.navix.iam.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.notification.event.StaffAccountEvent;
+import com.navix.common.security.ActorContext;
 import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.dto.StaffDtos.AcceptInviteRequest;
 import com.navix.iam.dto.StaffDtos.CreateInviteRequest;
@@ -44,6 +45,7 @@ public class InviteService {
     /** All invites (pending + accepted), most recent first, for the admin invites list. */
     @Transactional(readOnly = true)
     public List<InviteResponse> listInvites() {
+        requireAdmin();
         return inviteRepository.findAll().stream()
                 .sorted((a, b) -> Long.compare(
                         b.getId() == null ? 0 : b.getId(),
@@ -52,9 +54,10 @@ public class InviteService {
                 .toList();
     }
 
-    /** Persist a new {@link StaffInvite} with a fresh unique token and a 7-day expiry. */
+    /** Persist a new {@link StaffInvite} with a fresh unique token and a 7-day expiry. ADMIN-only. */
     @Transactional
     public InviteResponse createInvite(CreateInviteRequest request) {
+        requireAdmin();
         StaffInvite invite = new StaffInvite();
         invite.setEmail(request.email());
         invite.setRole(request.role());
@@ -96,5 +99,12 @@ public class InviteService {
         inviteRepository.save(invite);
 
         return StaffResponse.of(saved);
+    }
+
+    /** Guard: only an ADMIN may issue or list staff invites (accept stays open for the invitee). */
+    private void requireAdmin() {
+        if (!"ADMIN".equals(ActorContext.get().role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role ADMIN");
+        }
     }
 }

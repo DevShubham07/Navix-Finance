@@ -7,12 +7,16 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
 import com.navix.iam.domain.BlocklistType;
 import com.navix.iam.entity.BlocklistEntry;
 import com.navix.iam.repository.BlocklistEntryRepository;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +34,24 @@ class BlocklistServiceTest {
     @BeforeEach
     void setUp() {
         blocklistService = new BlocklistService(blocklistRepository);
+        // add/remove/listActive are ADMIN-only; default the actor to ADMIN (isBlocked stays open).
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+    }
+
+    @AfterEach
+    void tearDown() {
+        ActorContext.clear();
+    }
+
+    @Test
+    void mutationsRejectNonAdmin() {
+        ActorContext.set(new CurrentActor("9", "Officer", "COLLECTION_EXECUTIVE"));
+        assertThatThrownBy(() -> blocklistService.add(BlocklistType.PAN, "ABCDE1234F", "x"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("FORBIDDEN_ROLE");
+        assertThatThrownBy(() -> blocklistService.listActive())
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("FORBIDDEN_ROLE");
     }
 
     @Test

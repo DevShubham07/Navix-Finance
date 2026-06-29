@@ -60,6 +60,7 @@ public class StaffService {
 
     @Transactional(readOnly = true)
     public List<StaffResponse> listStaff() {
+        requireAdmin();
         return staffUserRepository.findAll().stream()
                 .map(StaffResponse::of)
                 .toList();
@@ -67,12 +68,14 @@ public class StaffService {
 
     @Transactional(readOnly = true)
     public StaffResponse getStaff(Long id) {
+        requireAdmin();
         return StaffResponse.of(requireStaff(id));
     }
 
     /** Update an existing staff member's role and status. */
     @Transactional
     public StaffResponse updateStaff(Long id, UpdateStaffRequest request) {
+        requireAdmin();
         StaffUser staff = requireStaff(id);
         StaffRole previousRole = staff.getRole();
         staff.setRole(request.role());
@@ -88,6 +91,7 @@ public class StaffService {
     /** Deactivate a staff member (status → {@link StaffStatus#DISABLED}); idempotent. */
     @Transactional
     public void disableStaff(Long id) {
+        requireAdmin();
         StaffUser staff = requireStaff(id);
         staff.setStatus(StaffStatus.DISABLED);
         staffUserRepository.save(staff);
