@@ -759,6 +759,8 @@ export interface ExpenseResponse {
   createdAt: string | null;
   /** Name of the admin who recorded it. */
   addedBy: string | null;
+  /** Short-lived presigned URL for an uploaded receipt/attachment, or null when none. */
+  receiptUrl: string | null;
 }
 
 const ADMIN_STAFF_BASE = "/api/staff/users";
@@ -798,6 +800,8 @@ export const adminApi = {
     paidTo: string;
     notes?: string;
     expenseDate?: string;
+    /** S3 key of an already-uploaded receipt/attachment (optional). */
+    receiptObjectKey?: string;
   }) => bff<ExpenseResponse>(ADMIN_EXPENSES_BASE, "POST", payload),
   removeExpense: (id: number) => bff<null>(`${ADMIN_EXPENSES_BASE}/${id}`, "DELETE"),
 };

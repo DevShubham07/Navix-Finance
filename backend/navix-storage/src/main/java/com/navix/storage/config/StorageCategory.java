@@ -20,7 +20,9 @@ public enum StorageCategory {
     /** Collections interaction proof. */
     COLLECTIONS_PROOF("collections/proof"),
     /** Admin-managed company payment assets (UPI QR image, payee account-info PDF). */
-    PAYMENT_SETTINGS("payment/settings");
+    PAYMENT_SETTINGS("payment/settings"),
+    /** Receipt/attachment for an admin company-expense entry (bill, invoice, payment screenshot). */
+    EXPENSE_RECEIPT("admin/expense-receipt");
 
     private final String prefix;
 

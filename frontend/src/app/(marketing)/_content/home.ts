@@ -230,9 +230,9 @@ export const html = `<section class="page active" id="home">
       <div class="cal-main">
         <div class="cc-row">
           <div class="cc-top"><span class="cl"><span class="ci"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3.5a1.5 1.5 0 0 0 0 3H15"></path></svg></span> Loan amount</span><span class="cc-val" id="calAmtV">₹10,000</span></div>
-          <input type="range" id="calAmt" min="5000" max="100000" step="1000" value="10000">
-          <div class="cc-scale"><span>₹5,000</span><span>₹1,00,000</span></div>
-          <div class="cc-presets"><button class="cal-preset" data-v="5000" type="button">₹5K</button><button class="cal-preset on" data-v="10000" type="button">₹10K</button><button class="cal-preset" data-v="25000" type="button">₹25K</button><button class="cal-preset" data-v="50000" type="button">₹50K</button><button class="cal-preset" data-v="100000" type="button">₹1L</button></div>
+          <input type="range" id="calAmt" min="5000" max="1000000" step="5000" value="10000">
+          <div class="cc-scale"><span>₹5,000</span><span>₹10,00,000</span></div>
+          <div class="cc-presets"><button class="cal-preset" data-v="5000" type="button">₹5K</button><button class="cal-preset on" data-v="10000" type="button">₹10K</button><button class="cal-preset" data-v="100000" type="button">₹1L</button><button class="cal-preset" data-v="500000" type="button">₹5L</button><button class="cal-preset" data-v="1000000" type="button">₹10L</button></div>
         </div>
         <div class="cal-divide"></div>
         <div class="cal-head">

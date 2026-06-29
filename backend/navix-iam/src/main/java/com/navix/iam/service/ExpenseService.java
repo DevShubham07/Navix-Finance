@@ -4,6 +4,8 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.storage.DocumentStoragePort;
+import com.navix.iam.dto.ExpenseDtos.ExpenseResponse;
 import com.navix.iam.entity.CompanyExpense;
 import com.navix.iam.repository.CompanyExpenseRepository;
 import java.time.LocalDate;
@@ -11,6 +13,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * Company expense ledger administration, backed by {@link CompanyExpenseRepository}.
@@ -23,18 +26,24 @@ import org.springframework.transaction.annotation.Transactional;
 public class ExpenseService {
 
     private final CompanyExpenseRepository expenseRepository;
+    private final DocumentStoragePort storage;
 
-    /** Every expense, most recent first. */
+    /** Every expense, most recent first, with attachment keys turned into presigned URLs. */
     @Transactional(readOnly = true)
-    public List<CompanyExpense> list() {
+    public List<ExpenseResponse> list() {
         requireAdmin();
-        return expenseRepository.findAllByOrderByExpenseDateDescIdDesc();
+        return expenseRepository.findAllByOrderByExpenseDateDescIdDesc().stream()
+                .map(this::toResponse)
+                .toList();
     }
 
-    /** Record a new expense. {@code expenseDate} defaults to today when not supplied. */
+    /**
+     * Record a new expense. {@code expenseDate} defaults to today when not supplied;
+     * {@code receiptObjectKey} is an optional already-uploaded attachment's S3 key.
+     */
     @Transactional
-    public CompanyExpense add(String description, long amountPaise, String paidTo, String notes,
-                             LocalDate expenseDate) {
+    public ExpenseResponse add(String description, long amountPaise, String paidTo, String notes,
+                             LocalDate expenseDate, String receiptObjectKey) {
         requireAdmin();
         if (amountPaise <= 0) {
             throw new BusinessException("INVALID_AMOUNT", "Expense amount must be positive");
@@ -45,7 +54,8 @@ public class ExpenseService {
         expense.setPaidTo(paidTo.trim());
         expense.setNotes(trimToNull(notes));
         expense.setExpenseDate(expenseDate != null ? expenseDate : LocalDate.now());
-        return expenseRepository.save(expense);
+        expense.setReceiptObjectKey(trimToNull(receiptObjectKey));
+        return toResponse(expenseRepository.save(expense));
     }
 
     /** Delete an expense by id. */
@@ -55,6 +65,14 @@ public class ExpenseService {
         CompanyExpense expense = expenseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("CompanyExpense", String.valueOf(id)));
         expenseRepository.delete(expense);
+    }
+
+    /** Map an entity to a DTO, presigning the attachment key into a short-lived URL (or null). */
+    private ExpenseResponse toResponse(CompanyExpense e) {
+        String url = StringUtils.hasText(e.getReceiptObjectKey())
+                ? storage.presignDownload(e.getReceiptObjectKey())
+                : null;
+        return ExpenseResponse.of(e, url);
     }
 
     private static void requireAdmin() {

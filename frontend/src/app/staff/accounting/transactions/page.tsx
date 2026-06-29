@@ -17,6 +17,40 @@ const TABS: { key: "ALL" | TransactionDirection; label: string }[] = [
   { key: "OUTGOING", label: "Outgoing" },
 ];
 
+type Period = "DAY" | "WEEK" | "MONTH" | "QUARTER" | "YEAR" | "ALL";
+
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "DAY", label: "Today" },
+  { key: "WEEK", label: "Last 7 days" },
+  { key: "MONTH", label: "This month" },
+  { key: "QUARTER", label: "This quarter" },
+  { key: "YEAR", label: "This year" },
+  { key: "ALL", label: "All time" },
+];
+
+/** The inclusive start Date for a calendar period, or null for "all time". */
+function periodStart(period: Period): Date | null {
+  const now = new Date();
+  switch (period) {
+    case "DAY":
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    case "WEEK": {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      d.setDate(d.getDate() - 6); // rolling 7-day window including today
+      return d;
+    }
+    case "MONTH":
+      return new Date(now.getFullYear(), now.getMonth(), 1);
+    case "QUARTER":
+      return new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+    case "YEAR":
+      return new Date(now.getFullYear(), 0, 1);
+    case "ALL":
+    default:
+      return null;
+  }
+}
+
 /**
  * Accountant transactions ledger: every money movement company-wide — OUTGOING disbursals and
  * INCOMING repayments — with a borrower search and direction tabs. Read-only oversight.
@@ -24,6 +58,7 @@ const TABS: { key: "ALL" | TransactionDirection; label: string }[] = [
 export default function TransactionsPage() {
   const role = useStaffMe().data?.role;
   const [tab, setTab] = React.useState<"ALL" | TransactionDirection>("ALL");
+  const [period, setPeriod] = React.useState<Period>("MONTH");
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
 
@@ -39,9 +74,17 @@ export default function TransactionsPage() {
     refetchInterval: 10_000,
   });
 
-  const rows = q.data ?? [];
+  const data = q.data;
+  const start = React.useMemo(() => periodStart(period), [period]);
+  const rows = React.useMemo(() => {
+    const all = data ?? [];
+    if (!start) return all;
+    return all.filter((r) => r.date != null && new Date(r.date) >= start);
+  }, [data, start]);
+  const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "All time";
   const totalIn = rows.filter((r) => r.direction === "INCOMING").reduce((s, r) => s + r.amountPaise, 0);
   const totalOut = rows.filter((r) => r.direction === "OUTGOING").reduce((s, r) => s + r.amountPaise, 0);
+  const net = totalIn - totalOut;
 
   return (
     <div>
@@ -71,6 +114,21 @@ export default function TransactionsPage() {
           <Link href="/staff/accounting" className="inline-flex items-center gap-1 text-sm text-navy hover:underline">
             <ArrowLeft size={14} /> Back to accounting
           </Link>
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Period</span>
+          <div className="flex flex-wrap items-center gap-1 rounded-full border border-line bg-white p-1">
+            {PERIODS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setPeriod(p.key)}
+                className={`rounded-full px-3 py-1 text-sm font-semibold transition ${period === p.key ? "bg-gold text-navy" : "text-muted hover:text-navy"}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -104,14 +162,20 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        <div className="mb-4 grid grid-cols-2 gap-4 sm:max-w-md">
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3 sm:max-w-2xl">
           <div className="rounded border border-success-100 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowDownLeft size={14} className="text-success-600" /> Incoming (shown)</div>
-            <div className="mt-1 font-serif text-xl font-bold text-navy">{paiseToINR(totalIn)}</div>
+            <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowDownLeft size={14} className="text-success-600" /> Inflow · {periodLabel}</div>
+            <div className="mt-1 font-serif text-xl font-bold text-success-700">{paiseToINR(totalIn)}</div>
           </div>
           <div className="rounded border border-line bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowUpRight size={14} className="text-navy" /> Outgoing (shown)</div>
+            <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowUpRight size={14} className="text-navy" /> Outflow · {periodLabel}</div>
             <div className="mt-1 font-serif text-xl font-bold text-navy">{paiseToINR(totalOut)}</div>
+          </div>
+          <div className="rounded border border-line bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 text-xs text-muted">Net · {periodLabel}</div>
+            <div className={`mt-1 font-serif text-xl font-bold ${net >= 0 ? "text-success-700" : "text-error-700"}`}>
+              {net < 0 ? "−" : "+"}{paiseToINR(Math.abs(net))}
+            </div>
           </div>
         </div>
 

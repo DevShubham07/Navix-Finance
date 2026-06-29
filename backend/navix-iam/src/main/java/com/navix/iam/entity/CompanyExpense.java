@@ -40,4 +40,11 @@ public class CompanyExpense extends BaseAuditEntity {
     /** The date the expense was incurred / paid. */
     @Column(name = "expense_date", nullable = false)
     private LocalDate expenseDate;
+
+    /**
+     * Optional S3 object key for an uploaded receipt/attachment (bill, invoice, payment screenshot).
+     * Turned into a short-lived presigned download URL on read; the key itself is never returned.
+     */
+    @Column(name = "receipt_object_key", length = 512)
+    private String receiptObjectKey;
 }

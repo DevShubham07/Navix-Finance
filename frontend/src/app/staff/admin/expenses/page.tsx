@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Wallet, Trash2 } from "lucide-react";
+import { Loader2, RefreshCw, Wallet, Trash2, Paperclip, FileText } from "lucide-react";
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
-import { adminApi, paiseToINR, rupeesToPaise, type ExpenseResponse } from "@/lib/api/applications";
+import { adminApi, storageApi, paiseToINR, rupeesToPaise, type ExpenseResponse } from "@/lib/api/applications";
 
 /** Today as ISO yyyy-mm-dd (local), for the date field default. */
 function todayIso(): string {
@@ -30,6 +30,8 @@ export default function AdminExpensesPage() {
   const [paidTo, setPaidTo] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [date, setDate] = React.useState<string>(todayIso);
+  const [receipt, setReceipt] = React.useState<File | null>(null);
+  const receiptInputRef = React.useRef<HTMLInputElement>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-expenses"] });
   const amountRupees = Number(amount);
@@ -41,20 +43,35 @@ export default function AdminExpensesPage() {
     date !== "";
 
   const add = useMutation({
-    mutationFn: () =>
-      adminApi.addExpense({
+    mutationFn: async () => {
+      // Upload the optional receipt straight to S3 first, then attach its key to the expense.
+      let receiptObjectKey: string | undefined;
+      if (receipt) {
+        const up = await storageApi.presignUpload({
+          category: "EXPENSE_RECEIPT",
+          filename: receipt.name,
+          contentType: receipt.type || "application/octet-stream",
+        });
+        await storageApi.putToPresignedUrl(up.url, receipt);
+        receiptObjectKey = up.key;
+      }
+      return adminApi.addExpense({
         description: description.trim(),
         amountPaise: rupeesToPaise(amountRupees),
         paidTo: paidTo.trim(),
         notes: notes.trim() || undefined,
         expenseDate: date || undefined,
-      }),
+        receiptObjectKey,
+      });
+    },
     onSuccess: () => {
       setDescription("");
       setAmount("");
       setPaidTo("");
       setNotes("");
       setDate(todayIso());
+      setReceipt(null);
+      if (receiptInputRef.current) receiptInputRef.current.value = "";
       invalidate();
     },
   });
@@ -83,6 +100,7 @@ export default function AdminExpensesPage() {
             { header: "Paid to", value: (e) => e.paidTo },
             { header: "Amount (₹)", value: (e) => (e.amountPaise / 100).toFixed(2) },
             { header: "Notes", value: (e) => e.notes ?? "" },
+            { header: "Receipt", value: (e) => (e.receiptUrl ? "Yes" : "No") },
             { header: "Added by", value: (e) => e.addedBy ?? "" },
           ]}
           rows={rows}
@@ -103,10 +121,21 @@ export default function AdminExpensesPage() {
           <Input label="Paid to" required value={paidTo} onChange={(e) => setPaidTo(e.target.value)} placeholder="ACT Fibernet" className="!mb-0" inputClassName="w-48" />
           <Input label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reference / remarks" className="!mb-0" inputClassName="w-52" />
           <Input label="Date" required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="!mb-0" inputClassName="w-40" />
+          <label className="!mb-0">
+            <span className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-ink"><Paperclip size={13} /> Receipt (optional)</span>
+            <input
+              ref={receiptInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
+              className="block w-64 text-sm text-muted file:mr-3 file:rounded file:border file:border-line file:bg-grey-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-navy hover:file:bg-grey-100"
+            />
+          </label>
           <button onClick={() => add.mutate()} disabled={add.isPending || !canAdd} className="btn btn-gold disabled:opacity-50">
             {add.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Add expense
           </button>
         </div>
+        {receipt && <p className="mt-2 text-xs text-success-700">Attached: {receipt.name}</p>}
         {add.error && <p className="mt-2 text-sm text-error-700">{errMessage(add.error)}</p>}
       </div>
 
@@ -125,6 +154,7 @@ export default function AdminExpensesPage() {
                   <th className="px-4 py-2.5">Paid to</th>
                   <th className="whitespace-nowrap px-4 py-2.5 text-right">Amount</th>
                   <th className="px-4 py-2.5">Notes</th>
+                  <th className="px-4 py-2.5">Receipt</th>
                   <th className="whitespace-nowrap px-4 py-2.5">Added by</th>
                   <th className="px-4 py-2.5 text-right">Action</th>
                 </tr>
@@ -143,6 +173,20 @@ export default function AdminExpensesPage() {
                     <td className="px-4 py-3">
                       <span className="block max-w-[16rem] truncate text-muted" title={e.notes ?? ""}>{e.notes || "—"}</span>
                     </td>
+                    <td className="px-4 py-3">
+                      {e.receiptUrl ? (
+                        <a
+                          href={e.receiptUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm font-medium text-navy hover:underline"
+                        >
+                          <FileText size={13} /> View
+                        </a>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-muted">{e.addedBy || "—"}</td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => remove.mutate(e.id)} disabled={remove.isPending} className="btn btn-sm btn-outline disabled:opacity-50">
@@ -152,7 +196,7 @@ export default function AdminExpensesPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-6 text-center text-muted">No expenses recorded yet.</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-6 text-center text-muted">No expenses recorded yet.</td></tr>
                 )}
               </tbody>
               {rows.length > 0 && (
@@ -162,7 +206,7 @@ export default function AdminExpensesPage() {
                       Total · {rows.length} {rows.length === 1 ? "expense" : "expenses"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-navy">{paiseToINR(total)}</td>
-                    <td colSpan={3} />
+                    <td colSpan={4} />
                   </tr>
                 </tfoot>
               )}

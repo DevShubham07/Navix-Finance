@@ -15,17 +15,25 @@ public final class ExpenseDtos {
     private ExpenseDtos() {
     }
 
-    /** Admin records a company expense. {@code expenseDate} is optional (defaults to today). */
+    /**
+     * Admin records a company expense. {@code expenseDate} is optional (defaults to today);
+     * {@code receiptObjectKey} is the S3 key of an already-uploaded attachment (optional).
+     */
     public record AddExpenseRequest(
             @NotBlank String description,
             @Positive long amountPaise,
             @NotBlank String paidTo,
             String notes,
-            LocalDate expenseDate
+            LocalDate expenseDate,
+            String receiptObjectKey
     ) {
     }
 
-    /** Standard expense representation returned to clients ({@code addedBy} = the recording admin). */
+    /**
+     * Standard expense representation returned to clients ({@code addedBy} = the recording admin).
+     * {@code receiptUrl} is a short-lived presigned download URL for the attachment, or null when
+     * none is stored — the underlying S3 key is never exposed.
+     */
     public record ExpenseResponse(
             Long id,
             String description,
@@ -34,12 +42,15 @@ public final class ExpenseDtos {
             String notes,
             LocalDate expenseDate,
             Instant createdAt,
-            String addedBy
+            String addedBy,
+            String receiptUrl
     ) {
 
-        public static ExpenseResponse of(CompanyExpense e) {
+        /** Map an entity, supplying the already-presigned {@code receiptUrl} (or null). */
+        public static ExpenseResponse of(CompanyExpense e, String receiptUrl) {
             return new ExpenseResponse(e.getId(), e.getDescription(), e.getAmountPaise(),
-                    e.getPaidTo(), e.getNotes(), e.getExpenseDate(), e.getCreatedAt(), e.getCreatedBy());
+                    e.getPaidTo(), e.getNotes(), e.getExpenseDate(), e.getCreatedAt(), e.getCreatedBy(),
+                    receiptUrl);
         }
     }
 }

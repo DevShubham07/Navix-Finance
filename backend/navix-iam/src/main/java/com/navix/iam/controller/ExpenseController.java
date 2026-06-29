@@ -29,17 +29,15 @@ public class ExpenseController {
     /** List all expenses, most recent first. */
     @GetMapping
     public ApiResponse<List<ExpenseResponse>> list() {
-        return ApiResponse.ok(expenseService.list().stream()
-                .map(ExpenseResponse::of)
-                .toList());
+        return ApiResponse.ok(expenseService.list());
     }
 
     /** Record a new expense. */
     @PostMapping
     public ApiResponse<ExpenseResponse> add(@Valid @RequestBody AddExpenseRequest request) {
-        return ApiResponse.ok(ExpenseResponse.of(expenseService.add(
+        return ApiResponse.ok(expenseService.add(
                 request.description(), request.amountPaise(), request.paidTo(),
-                request.notes(), request.expenseDate())));
+                request.notes(), request.expenseDate(), request.receiptObjectKey()));
     }
 
     /** Delete an expense. */

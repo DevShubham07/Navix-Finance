@@ -268,15 +268,30 @@ export default function RepayPage() {
           <div className="mb-4 rounded bg-grey-100 p-3 text-xs text-muted">
             {method === "UPI" ? (
               <div className="flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={qrSrc}
-                  alt="UPI QR code"
-                  className="h-24 w-24 flex-shrink-0 rounded border border-line bg-white object-contain p-1"
-                />
+                <div className="group relative flex-shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={qrSrc}
+                    alt="UPI QR code"
+                    className="h-24 w-24 cursor-zoom-in rounded border border-line bg-white object-contain p-1"
+                  />
+                  {/* Hover-to-enlarge: a large, scannable QR pops up over the small thumbnail. */}
+                  <div className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 hidden group-hover:block">
+                    <div className="rounded-lg border border-line bg-white p-3 shadow-xl">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={qrSrc}
+                        alt="UPI QR code enlarged"
+                        className="h-60 w-60 object-contain"
+                      />
+                      <p className="mt-2 text-center text-xs text-muted">Scan to pay with any UPI app</p>
+                    </div>
+                  </div>
+                </div>
                 <div>
                   Scan the QR or pay to <strong className="text-ink">{upiId}</strong>, then paste the
                   UPI reference below.
+                  <span className="mt-1 block text-[11px] text-muted">Hover the QR to enlarge it for scanning.</span>
                 </div>
               </div>
             ) : (
