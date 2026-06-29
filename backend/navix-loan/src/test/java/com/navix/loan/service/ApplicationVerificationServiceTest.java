@@ -21,6 +21,7 @@ import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,8 +69,9 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
-    void panVerify_mapsAndMarksProfileVerified() {
-        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+    void panVerify_mapsAndMarksProfileVerified_andPersistsDob() {
+        ApplicantProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
                 .thenReturn(new VerificationPort.PanCheck("TXN1", true, "SHUBHAM", "2003-03-24", "M",
                         true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
@@ -78,7 +80,36 @@ class ApplicationVerificationServiceTest {
 
         assertThat(result.status()).isEqualTo("PASS");
         assertThat(result.derived()).containsEntry("aadhaarLinked", true);
+        // The DOB the PAN record carries is persisted onto the profile from this first step.
+        assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 3, 24));
         verify(profileRepo).save(any(ApplicantProfile.class));
+    }
+
+    @Test
+    void panVerify_parsesDayFirstDobFormat() {
+        ApplicantProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyPan(anyString(), anyString()))
+                .thenReturn(new VerificationPort.PanCheck("TXN1", true, "SHUBHAM", "15/08/1992", "M",
+                        true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
+
+        service.verifyPan(APP, "QVEPS0901K");
+
+        assertThat(p.getDob()).isEqualTo(LocalDate.of(1992, 8, 15));
+    }
+
+    @Test
+    void panVerify_doesNotOverwriteAnExistingDob() {
+        ApplicantProfile p = profile();
+        p.setDob(LocalDate.of(1990, 1, 1)); // already on file (e.g. earlier DigiLocker / borrower-entered)
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyPan(anyString(), anyString()))
+                .thenReturn(new VerificationPort.PanCheck("TXN1", true, "SHUBHAM", "2003-03-24", "M",
+                        true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
+
+        service.verifyPan(APP, "QVEPS0901K");
+
+        assertThat(p.getDob()).isEqualTo(LocalDate.of(1990, 1, 1));
     }
 
     @Test

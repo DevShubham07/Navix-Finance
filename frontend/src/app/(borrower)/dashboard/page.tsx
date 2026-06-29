@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
+  Wallet, CalendarClock, CalendarDays, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
 import type { BorrowerStatus } from "@/lib/domain/borrower";
@@ -48,6 +48,10 @@ export default function DashboardPage() {
     profileQuery.data?.monthlySalaryPaise ??
     (draft.monthlySalary ? rupeesToPaise(draft.monthlySalary) : 0);
   const limitRupees = eligibleLimit(Math.round(salaryPaise / 100));
+
+  // Date of birth from the backend identity record (captured at the PAN/Aadhaar step). Shown
+  // whenever it's on file — regardless of whether KYC is fully verified or a loan is active.
+  const dobDisplay = formatDOB(profileQuery.data?.dob ?? null);
 
   // "Repaid" is the sum of VERIFIED payments — not total − outstanding, since the (now penalty- and
   // prepayment-aware) outstanding can be below the on-time total without any payment being made.
@@ -148,6 +152,16 @@ export default function DashboardPage() {
         </div>
 
         <aside className="flex flex-col gap-4">
+          {dobDisplay && (
+            <div className="rounded border border-line bg-white p-5 shadow-sm">
+              <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-navy">
+                <CalendarDays size={16} /> Date of birth
+              </div>
+              <div className="font-serif text-2xl font-bold text-navy">{dobDisplay}</div>
+              <p className="mt-1 text-xs text-muted">As per your identity records</p>
+            </div>
+          )}
+
           <div className="rounded border border-line bg-white p-5 shadow-sm">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-navy">
               <Wallet size={16} /> Eligible limit
@@ -172,6 +186,22 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Format an ISO `yyyy-MM-dd` date of birth for display (e.g. "15 Aug 1992"). Builds a *local*
+ * Date from the parts so the day never shifts across timezones (`new Date("yyyy-MM-dd")` parses
+ * as UTC midnight, which can roll back a day in negative-offset zones). Returns null when absent.
+ */
+function formatDOB(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-").map((n) => Number(n));
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 /** One-line, customer-friendly description of where the application currently stands. */

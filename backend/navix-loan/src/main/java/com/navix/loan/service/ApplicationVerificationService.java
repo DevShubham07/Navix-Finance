@@ -15,6 +15,9 @@ import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -95,6 +98,15 @@ public class ApplicationVerificationService {
         ApplicantProfile profile = profile(appId);
         profile.setPanVerified(r.valid());
         profile.setAadhaarLinked(r.aadhaarLinked());
+        // Capture the date of birth the PAN record returns so it's part of the borrower's stored
+        // details from the very first identity step — surfaced even before KYC approval. Don't
+        // overwrite a value the borrower or a richer source (DigiLocker) already set.
+        if (profile.getDob() == null) {
+            LocalDate panDob = parseDob(r.dob());
+            if (panDob != null) {
+                profile.setDob(panDob);
+            }
+        }
         profileRepo.save(profile);
 
         Map<String, Object> derived = new LinkedHashMap<>();
@@ -212,6 +224,39 @@ public class ApplicationVerificationService {
         return "bin";
     }
 
+    /** Date-of-birth formats the upstream identity APIs emit, in order of preference. */
+    private static final List<DateTimeFormatter> DOB_FORMATS = List.of(
+            DateTimeFormatter.ISO_LOCAL_DATE,            // 1992-08-15
+            DateTimeFormatter.ofPattern("dd/MM/yyyy"),   // 15/08/1992
+            DateTimeFormatter.ofPattern("dd-MM-yyyy"));  // 15-08-1992
+
+    /**
+     * Best-effort parse of a verification-supplied date of birth into a {@link LocalDate}.
+     * Tolerates ISO {@code yyyy-MM-dd}, {@code dd/MM/yyyy}, {@code dd-MM-yyyy} and the 8-digit
+     * {@code yyyyMMdd} the bureau emits. Returns {@code null} for anything unparseable so a bad
+     * upstream value can never break a verification step.
+     */
+    private static LocalDate parseDob(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String t = raw.trim();
+        if (t.isEmpty()) {
+            return null;
+        }
+        if (t.length() == 8 && t.chars().allMatch(Character::isDigit)) {
+            t = t.substring(0, 4) + "-" + t.substring(4, 6) + "-" + t.substring(6, 8);
+        }
+        for (DateTimeFormatter f : DOB_FORMATS) {
+            try {
+                return LocalDate.parse(t, f);
+            } catch (DateTimeParseException ignore) {
+                // try the next supported format
+            }
+        }
+        return null;
+    }
+
     /** Start a DigiLocker consent session; returns the redirect URL. */
     @Transactional
     public StepResult digilockerInit(Long appId, String redirectUrl) {
@@ -259,6 +304,14 @@ public class ApplicationVerificationService {
             throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
         }
         VerificationPort.AadhaarResult a = verification.digilockerAadhaar(clientId);
+
+        // Aadhaar is the authoritative DOB source — persist it onto the profile (overriding any
+        // earlier PAN-derived value) so the borrower's stored date of birth reflects KYC.
+        LocalDate aadhaarDob = parseDob(a.dob());
+        if (aadhaarDob != null) {
+            profile.setDob(aadhaarDob);
+            profileRepo.save(profile);
+        }
 
         // Server-side ingest of the Aadhaar PDF (bytes never reach the browser).
         String s3Key = null;
