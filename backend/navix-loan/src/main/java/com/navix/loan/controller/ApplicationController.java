@@ -250,13 +250,14 @@ public class ApplicationController {
 
     // ---- internals -----------------------------------------------------------------
 
-    /** Attach the applicant's credit headline (score + 1–5★ + verdict) to each queue row. */
+    /** Attach the applicant's credit headline (score + 1–5★ + verdict) to each queue row. Falls back to
+     *  the applicant's latest profile for an application without its own snapshot (e.g. a reborrow), so
+     *  the headline is consistent across every staff surface. */
     private List<ApplicationView> enrich(List<LoanApplication> apps) {
         if (apps.isEmpty()) {
             return List.of();
         }
-        Map<Long, ApplicantProfile> byApp = review.profilesByApplicationIds(
-                apps.stream().map(LoanApplication::getId).toList());
+        Map<Long, ApplicantProfile> byApp = review.effectiveProfilesByApplications(apps);
         return apps.stream().map(a -> ApplicationView.of(a, byApp.get(a.getId()))).toList();
     }
 

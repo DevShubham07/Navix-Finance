@@ -78,8 +78,9 @@ public class CreditBriefService {
         try {
             Long applicantId = applicationRepo.findById(appId)
                     .map(LoanApplication::getApplicantId).orElse(null);
-            byte[] pdf = renderer.render(appId, applicantId, profile.getBureauSource(), facts, rating,
-                    LocalDate.now());
+            // Render with the borrower's REAL KYC identity (not the bureau report's copy / demo fixture).
+            byte[] pdf = renderer.render(appId, applicantId, profile.getBureauSource(),
+                    displayFacts(facts, profile), rating, LocalDate.now());
             String key = "applications/" + appId + "/credit_brief/" + FILE_NAME;
             storage.store(key, pdf, CONTENT_TYPE);
             upsertDocument(appId, key, pdf.length);
@@ -122,7 +123,12 @@ public class CreditBriefService {
             return new CreditBriefView(appId, false, null, null, null, null, null, null, null);
         }
         ensureBrief(appId, profile);
-        BureauReportFacts f = factsOf(profile);
+        // The identity shown on the brief must be the borrower's REAL KYC — the same profile the staff
+        // profile / applicant-details card shows — not the bureau report's copy of it. In the local demo
+        // (NAVIX_BUREAU_FIXTURE) every pull returns the same samplepan.json, so the report's
+        // PAN/mobile/DOB/name belong to the fixture person (the same for everyone). Override the identity
+        // from the profile; the bureau's credit-health / exposure numbers pass through unchanged.
+        BureauReportFacts f = displayFacts(factsOf(profile), profile);
         Long docId = briefDocument(appId).map(ApplicationDocument::getId).orElse(null);
         CreditBriefView.Facts facts = f == null ? null : new CreditBriefView.Facts(
                 f.name(), f.pan(), f.mobile(), f.dob(), f.city(),
@@ -155,6 +161,37 @@ public class CreditBriefService {
                     profile.getApplicationId(), e.toString());
             return null;
         }
+    }
+
+    /**
+     * The identity shown on the brief (on-screen card + the rendered PDF) comes from the borrower's
+     * real KYC {@link ApplicantProfile}, not the bureau report. The bureau's copy can differ, and in the
+     * local demo ({@code NAVIX_BUREAU_FIXTURE}) every pull returns the same sample report — so its
+     * PAN / mobile / DOB / name belong to the fixture person, wrong for everyone. The profile value wins
+     * when present (it's exactly what the staff profile card shows), falling back to the bureau only if a
+     * profile field is blank. City / PIN have no KYC equivalent, so they're dropped rather than surfaced
+     * from the (possibly-mismatched / fixture) report. Credit-health (B) and exposure (C) are genuine
+     * bureau data and pass through unchanged.
+     */
+    private BureauReportFacts displayFacts(BureauReportFacts bureau, ApplicantProfile profile) {
+        if (bureau == null || profile == null) {
+            return bureau;
+        }
+        String dob = profile.getDob() != null ? profile.getDob().toString() : null;
+        return new BureauReportFacts(
+                firstNonBlank(profile.getFullName(), bureau.name()),
+                firstNonBlank(profile.getPan(), bureau.pan()),
+                firstNonBlank(profile.getMobile(), bureau.mobile()),
+                firstNonBlank(dob, bureau.dob()),
+                null, null,
+                bureau.creditScore(), bureau.totalAccounts(), bureau.activeAccounts(),
+                bureau.closedAccounts(), bureau.defaults(),
+                bureau.totalBalanceRupees(), bureau.securedBalanceRupees(),
+                bureau.unsecuredBalanceRupees(), bureau.recentInquiries30d(), bureau.reportNumber());
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        return a != null && !a.isBlank() ? a : b;
     }
 
     private void upsertDocument(Long appId, String key, long sizeBytes) {

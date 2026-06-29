@@ -107,9 +107,13 @@ public class CustomerService {
         Map<Long, ApplicantProfile> profByApp = profileRepository
                 .findByApplicationIdIn(apps.stream().map(LoanApplication::getId).toList()).stream()
                 .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
+        // Every application here belongs to this one customer, so an application without its OWN profile
+        // snapshot (e.g. a reborrow) falls back to the customer's latest profile — keeping the per-row
+        // credit headline consistent with the Profile card.
+        ApplicantProfile profile = latestProfile(apps);
         List<ApplicationView> appViews = apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
-                .map(a -> ApplicationView.of(a, profByApp.get(a.getId())))
+                .map(a -> ApplicationView.of(a, profByApp.getOrDefault(a.getId(), profile)))
                 .toList();
 
         LocalDate today = LocalDate.now();
@@ -125,7 +129,6 @@ public class CustomerService {
                 .map(PaymentView::of)
                 .toList();
 
-        ApplicantProfile profile = latestProfile(apps);
         ProfileView profileView = profile != null ? ProfileView.of(profile) : null;
         return new CustomerDetail(applicantId, profileView, appViews, loanViews, payments);
     }

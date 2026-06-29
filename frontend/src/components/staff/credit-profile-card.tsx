@@ -35,11 +35,12 @@ function Facts({ f }: { f: CreditBriefFacts }) {
     <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-3">
       <dl>
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">A · Identity</div>
+        {/* Identity comes from the borrower's real KYC profile (consistent with the Profile card),
+            not the bureau report. City/PIN have no KYC equivalent, so they're not shown here. */}
+        <Row label="Name" value={f.name} />
         <Row label="PAN" value={f.pan} />
         <Row label="Mobile" value={f.mobile} />
         <Row label="DOB" value={f.dob} />
-        <Row label="City" value={f.city} />
-        <Row label="PIN" value={f.pin} />
       </dl>
       <dl>
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">B · Credit health</div>

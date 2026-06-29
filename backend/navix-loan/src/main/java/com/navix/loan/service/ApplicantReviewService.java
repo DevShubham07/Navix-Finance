@@ -16,6 +16,7 @@ import com.navix.loan.repository.LoanApplicationRepository;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -119,6 +120,35 @@ public class ApplicantReviewService {
         }
         return profileRepository.findByApplicationIdIn(appIds).stream()
                 .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
+    }
+
+    /**
+     * Per-application <em>effective</em> profile keyed by {@code applicationId}: the application's own
+     * KYC snapshot when it has one, otherwise the applicant's most recent saved profile. Mirrors the
+     * fallback in {@link #getProfile} so list / queue / customer views stay consistent — a reborrow (or
+     * any application without its own snapshot) still shows the applicant's credit headline instead of a
+     * blank, matching the profile the single-application read returns.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, ApplicantProfile> effectiveProfilesByApplications(List<LoanApplication> apps) {
+        if (apps == null || apps.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, ApplicantProfile> own = profilesByApplicationIds(
+                apps.stream().map(LoanApplication::getId).toList());
+        Map<Long, ApplicantProfile> latestByApplicant = new HashMap<>();
+        Map<Long, ApplicantProfile> out = new HashMap<>();
+        for (LoanApplication a : apps) {
+            ApplicantProfile p = own.get(a.getId());
+            if (p == null) {
+                p = latestByApplicant.computeIfAbsent(a.getApplicantId(),
+                        aid -> latestProfileForApplicant(aid).orElse(null));
+            }
+            if (p != null) {
+                out.put(a.getId(), p);
+            }
+        }
+        return out;
     }
 
     /**

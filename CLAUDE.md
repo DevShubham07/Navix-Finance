@@ -191,6 +191,21 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
   enriched queue endpoints are staff-guarded, and **nothing** is added to the borrower `/profile`
   (honours the "never show score to the borrower" rule). Local demo: the Fintrix sandbox is thin-file,
   so set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`** to drive a rich brief end-to-end (§14).
+- ✅ **Credit-brief identity = the real KYC profile, consistent everywhere (live, 2026-06-29)** — the
+  credit-brief card / PDF previously showed the **bureau report's** copy of the applicant identity
+  (Category A: name/PAN/mobile/DOB/city/PIN). That's the wrong source: the bureau copy can differ, and
+  under `NAVIX_BUREAU_FIXTURE` **every** pull returns the same `samplepan.json`, so the identity belonged
+  to the **fixture person** (same for everyone) — it disagreed with the (correct) profile / applicant-
+  review card right beside it. Fixed in `CreditBriefService.displayFacts`: the brief's **identity now
+  comes from the borrower's `ApplicantProfile`** (name/PAN/mobile/DOB; profile-wins-else-bureau) for both
+  the on-screen `CreditProfileCard` (`view`) **and** the rendered PDF (`generate`); city/PIN (no KYC
+  equivalent) are dropped from the identity block. The bureau's **credit-health (B) + exposure (C) +
+  score** pass through unchanged (still the bureau's data). Also unified the credit **headline** (score
+  + ★) on application rows: `ApplicantReviewService.effectiveProfilesByApplications` (own snapshot →
+  applicant's latest profile fallback, mirroring `getProfile`) backs `ApplicationController.enrich` +
+  `CustomerService.detail`, so a reborrow / snapshot-less application shows the same headline as the
+  Profile card instead of a blank. No schema/endpoint change. (Already-generated PDFs keep the old
+  identity until regenerated; the on-screen brief is always recomputed correct.)
 - ✅ **Notification engine — in-app + SMS + email (live, 2026-06-28)** — a new **`navix-notification`**
   module (depends only on navix-common; `navix-app → navix-notification` is the only new Maven edge) turns
   every lifecycle moment into a notification, **fully decoupled** from business logic. Domain services
@@ -786,6 +801,10 @@ For local end-to-end demos set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`
 `navix-app`/`navix-verification` resources) — every pull then returns that report, yielding a real
 4.0★ brief + PDF without calling Fintrix. The rating math + field map live in `CreditRatingCalculator`
 (see §2); the PDF needs **OpenPDF** (`com.github.librepdf:openpdf`, in the parent BOM + `navix-loan`).
+The bureau facts drive the **rating + credit-health + exposure** numbers, but the brief's **displayed
+identity** (name/PAN/mobile/DOB) is overridden from the borrower's `ApplicantProfile`
+(`CreditBriefService.displayFacts`) — never the report's copy — so it can't show the fixture person
+(see the 2026-06-29 entry in §2). Because of the fixture, the report's identity is the same for everyone.
 
 **DigiLocker live-flow gotchas (verified 2026-06-28, `signup/digilocker/page.tsx`):**
 - **`digilocker_initialize` caches the consent session keyed by `redirect_url`.** The provider
