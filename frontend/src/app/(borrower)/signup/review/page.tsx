@@ -106,20 +106,20 @@ export default function SignupReviewPage() {
       <p className="lead mb-5">Check everything is right before you submit. You can edit any section.</p>
 
       <div className="grid gap-4">
-        <SummarySection title="Identity" editHref="/signup/pan">
+        <SummarySection title="Identity" editHref="/signup/pan?return=review">
           <InfoRow label="Full name" value={draft.fullName} />
           <InfoRow label="PAN" value={draft.pan} />
           <InfoRow label="Aadhaar" value={draft.aadhaar} />
           <InfoRow label="Mobile" value={draft.mobile} />
         </SummarySection>
 
-        <SummarySection title="Employment & email" editHref="/signup/email">
+        <SummarySection title="Employment & email" editHref="/signup/email?return=review">
           <InfoRow label="Employer" value={draft.employer} />
           <InfoRow label="Personal email" value={draft.personalEmail} />
           <InfoRow label="Official email" value={draft.officialEmail} />
         </SummarySection>
 
-        <SummarySection title="Income" editHref="/signup/salary">
+        <SummarySection title="Income" editHref="/signup/salary?return=review">
           <InfoRow label="Monthly salary" value={draft.monthlySalary ? formatINR0(draft.monthlySalary) : "—"} />
           <InfoRow label="Salary day" value={draft.salaryDay ? `${draft.salaryDay} of each month` : "—"} />
           <InfoRow
@@ -128,13 +128,13 @@ export default function SignupReviewPage() {
           />
         </SummarySection>
 
-        <SummarySection title="Bank" editHref="/signup/penny-drop">
+        <SummarySection title="Bank" editHref="/signup/penny-drop?return=review">
           <InfoRow label="Bank" value={draft.bankName} />
           <InfoRow label="Account" value={acct} />
           <InfoRow label="IFSC" value={draft.ifsc} />
         </SummarySection>
 
-        <SummarySection title="Address" editHref="/signup/address">
+        <SummarySection title="Address" editHref="/signup/address?return=review">
           <InfoRow label="Address" value={draft.address || "—"} />
         </SummarySection>
       </div>
@@ -157,7 +157,7 @@ export default function SignupReviewPage() {
                   <span className="text-ink">{checkLabel(s.checkType)}</span>
                   <div className="flex items-center gap-3">
                     {needsRetry && route && (
-                      <a href={route} className="text-xs font-semibold text-gold-dark hover:underline">
+                      <a href={`${route}?return=review`} className="text-xs font-semibold text-gold-dark hover:underline">
                         Retry this step
                       </a>
                     )}
@@ -184,7 +184,7 @@ export default function SignupReviewPage() {
                 <li key={ct} className="flex items-center justify-between gap-3 py-1.5">
                   <span>{checkLabel(ct)}</span>
                   {route && (
-                    <a href={route} className="font-semibold text-warning-800 underline hover:no-underline">
+                    <a href={`${route}?return=review`} className="font-semibold text-warning-800 underline hover:no-underline">
                       Retry this step
                     </a>
                   )}

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
-import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
+import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
 import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
 export default function SignupAddressPage() {
@@ -33,7 +33,7 @@ export default function SignupAddressPage() {
     if (resolved) {
       draft.patch({ address: resolved });
     }
-    if (r.status === "PASS" || r.status === "REVIEW") router.push("/signup/digilocker");
+    if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/digilocker"));
   };
 
   const verifyCoords = async (latitude: number, longitude: number) => {

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Camera, Loader2, RefreshCw, ArrowRight } from "lucide-react";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
-import { useOnboarding } from "@/lib/onboarding";
+import { useOnboarding, nextAfterStep } from "@/lib/onboarding";
 import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
 type Phase = "idle" | "live" | "uploading" | "done";
@@ -76,14 +76,14 @@ export default function SignupSelfiePage() {
       if (r.status === "PASS" || r.status === "REVIEW") {
         stopCamera();
         setPhase("done");
-        setTimeout(() => router.push("/signup/agreement"), 700);
+        setTimeout(() => router.push(nextAfterStep("/signup/agreement")), 700);
         return;
       }
       // FAIL: allow up to 2 retries (3 total attempts), then proceed for manual review.
       if (failCount >= 2) {
         stopCamera();
         setPhase("done");
-        setTimeout(() => router.push("/signup/agreement"), 900);
+        setTimeout(() => router.push(nextAfterStep("/signup/agreement")), 900);
       } else {
         setFailCount((n) => n + 1);
         setPhase("live");

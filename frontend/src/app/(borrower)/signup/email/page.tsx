@@ -8,7 +8,7 @@ import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
-import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
+import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
 import { updateBorrowerName } from "@/lib/api/live-journey";
 import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
@@ -62,7 +62,7 @@ export default function SignupEmailPage() {
       queryClient.invalidateQueries({ queryKey: ["borrower-me"] });
       const r = await verificationApi.email(appId, officialEmail.trim());
       setResult(r);
-      if (r.status === "PASS" || r.status === "REVIEW") router.push("/signup/address");
+      if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/address"));
     } catch (err) {
       setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your email — please try again.");
     } finally {

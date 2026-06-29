@@ -7,7 +7,7 @@ import { Input, Select } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
-import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
+import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
 import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
 const BANKS = [
@@ -63,7 +63,7 @@ export default function SignupPennyDropPage() {
       await saveProfileSlice(appId, { salaryBank: bankName });
       const r = await verificationApi.pennyDrop(appId, accountClean, ifsc);
       setResult(r);
-      if (r.status === "PASS" || r.status === "REVIEW") router.push("/signup/selfie");
+      if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/selfie"));
     } catch (err) {
       setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your account — please try again.");
     } finally {

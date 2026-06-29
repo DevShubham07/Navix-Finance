@@ -49,6 +49,20 @@ export function useOnboarding() {
   return { mounted, draft, appId, setAppId };
 }
 
+/**
+ * Where to navigate after a wizard step succeeds. When the step was opened from the review page to
+ * fix a single failed check (the URL carries `?return=review`), go straight back to review instead
+ * of walking the rest of the wizard again — so retrying one step (e.g. DigiLocker) doesn't drag the
+ * borrower through the entire flow. Otherwise advance to the given linear next step.
+ */
+export function nextAfterStep(defaultNext: string): string {
+  if (typeof window !== "undefined") {
+    const ret = new URLSearchParams(window.location.search).get("return");
+    if (ret === "review") return "/signup/review";
+  }
+  return defaultNext;
+}
+
 /** Persist a profile slice, dropping empty/undefined fields so we never clobber stored data. */
 export async function saveProfileSlice(appId: number, slice: ProfileInput): Promise<void> {
   const compact: ProfileInput = {};

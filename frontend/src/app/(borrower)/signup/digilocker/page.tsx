@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Building2, Lock, ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
-import { useOnboarding } from "@/lib/onboarding";
+import { useOnboarding, nextAfterStep } from "@/lib/onboarding";
 import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
 type Phase = "idle" | "connecting" | "polling" | "done" | "failed";
@@ -38,7 +38,7 @@ export default function SignupDigiLockerPage() {
       setResult(r);
       setPhase(r.status === "FAIL" ? "failed" : "done");
       if (r.status === "PASS" || r.status === "REVIEW") {
-        setTimeout(() => router.push("/signup/pan"), 700);
+        setTimeout(() => router.push(nextAfterStep("/signup/pan")), 700);
       }
     } catch (err) {
       setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not finalise DigiLocker.");
@@ -62,7 +62,7 @@ export default function SignupDigiLockerPage() {
         // separate callback tab finalises the Aadhaar fetch. Stop polling and continue.
         stop();
         setPhase("done");
-        setTimeout(() => router.push("/signup/pan"), 600);
+        setTimeout(() => router.push(nextAfterStep("/signup/pan")), 600);
       } else if (r.derived?.failed === true || r.status === "FAIL") {
         stop();
         setPhase("failed");

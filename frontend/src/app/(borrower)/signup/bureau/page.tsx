@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Gauge, Loader2, CheckCircle2, RefreshCw, ArrowRight } from "lucide-react";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { useOnboarding } from "@/lib/onboarding";
+import { useOnboarding, nextAfterStep } from "@/lib/onboarding";
 import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
 type Phase = "running" | "done" | "failed";
@@ -59,7 +59,7 @@ export default function SignupBureauPage() {
         </p>
 
         {phase === "done" ? (
-          <button onClick={() => router.push("/signup/salary")} className="btn btn-gold">
+          <button onClick={() => router.push(nextAfterStep("/signup/salary"))} className="btn btn-gold">
             Continue <ArrowRight size={16} />
           </button>
         ) : phase === "failed" ? (
