@@ -427,6 +427,21 @@ export function isTerminalBad(app: ApplicationView | null | undefined): boolean 
   return !!app && TERMINAL_BAD.includes(app.status);
 }
 
+/** Statuses in which the borrower has no live or in-flight application and may start a new loan. */
+const DONE_STATUSES: ApplicationStatus[] = [
+  "CLOSED",
+  "REJECTED",
+  "CANCELLED",
+  "KYC_REJECTED",
+  "DISBURSEMENT_FAILED",
+  "WRITTEN_OFF",
+];
+
+/** One advance at a time: true only when the borrower holds no live loan and no in-flight application. */
+export function canStartNewLoan(apps: ApplicationView[] | undefined): boolean {
+  return !apps || apps.every((a) => DONE_STATUSES.includes(a.status));
+}
+
 export { TERMINAL as LIVE_TERMINAL_STATUSES };
 
 // ---------------------------------------------------------------------------

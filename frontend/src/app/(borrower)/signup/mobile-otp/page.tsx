@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Smartphone, CheckCircle2 } from "lucide-react";
+import { Smartphone, CheckCircle2, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
-import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, clearBorrowerClientState, type OtpRequestResult } from "@/lib/api/live-journey";
+import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, clearBorrowerClientState, fetchBorrowerSession, writeStoredAppId, type OtpRequestResult } from "@/lib/api/live-journey";
 import { ApplicationApiError } from "@/lib/api/applications";
 import { normalizeMobile } from "@/lib/utils";
 
@@ -22,6 +22,35 @@ export default function SignupMobileOtpPage() {
   const [error, setError] = React.useState<string>();
   const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
   const [resendCount, setResendCount] = React.useState(0);
+  // An already-logged-in borrower (e.g. arriving here via "Borrow again" → full re-KYC) shouldn't be
+  // re-asked for an OTP — skip straight into the wizard. `checking` gates the OTP form so logged-in
+  // users never flash it; a ran-once ref keeps the session probe from firing twice.
+  const [checking, setChecking] = React.useState(true);
+  const probedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!mounted || probedRef.current) return;
+    probedRef.current = true;
+    (async () => {
+      const session = await fetchBorrowerSession();
+      if (session) {
+        try {
+          // createOrResumeDraft persists the pointer and mints a fresh DRAFT when the stored app is
+          // non-DRAFT, so a returning borrower correctly starts a new application before /signup/email.
+          const app = await createOrResumeDraft(session);
+          setAppId(app.id);
+          writeStoredAppId(app.id);
+          router.replace("/signup/email");
+        } catch {
+          // The backend blocks a new draft when a loan/application is already live or in flight
+          // (one advance at a time) — there's nothing to onboard, so send them to their dashboard.
+          router.replace("/dashboard");
+        }
+        return;
+      }
+      setChecking(false);
+    })();
+  }, [mounted, router, setAppId]);
 
   React.useEffect(() => {
     if (mounted && draft.mobile) setMobile(draft.mobile);
@@ -88,6 +117,19 @@ export default function SignupMobileOtpPage() {
       setBusy(false);
     }
   };
+
+  if (checking) {
+    return (
+      <div>
+        <div className="form-card">
+          <p className="lead flex items-center gap-2">
+            <Loader2 size={16} className="animate-spin" /> Checking your session…
+          </p>
+        </div>
+        <Reassurance />
+      </div>
+    );
+  }
 
   return (
     <div>

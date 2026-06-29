@@ -23,6 +23,7 @@ import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -240,9 +241,9 @@ class ApplicationFlowServiceTest {
         assertThat(result.getSalaryCreditDay()).isEqualTo(30);
     }
 
-    /** Any past delinquency — here a loan repaid LATE (now closed) — forces a KYC re-review. */
+    /** Any past delinquency — here a loan repaid LATE (now closed) — forces a full KYC re-run (DRAFT). */
     @Test
-    void reborrowWithLateRepaymentNeedsReview() {
+    void reborrowWithLateRepaymentNeedsFullKyc() {
         actor("7", "BORROWER");
         when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(priorApp()));
         when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
@@ -254,7 +255,23 @@ class ApplicationFlowServiceTest {
         late.setPaidOn(LocalDate.now().minusDays(5)); // after the due date
         when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(late));
 
-        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REVIEW_PENDING);
+        // Delinquent → re-run full KYC: stays in DRAFT (the wizard drives DRAFT → KYC_PENDING).
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.DRAFT);
+    }
+
+    /** Clean history but a credit rating below the 4.0★ threshold → full KYC re-run (DRAFT), not pre-approved. */
+    @Test
+    void reborrowCleanHistoryButLowStarNeedsFullKyc() {
+        actor("7", "BORROWER");
+        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(priorApp()));
+        ApplicantProfile lowStar = priorProfile();
+        lowStar.setCreditStarRating(new BigDecimal("3.5")); // below the 4.0★ threshold
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(lowStar));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
+        when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of()); // paid on time
+
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.DRAFT);
     }
 
     /** A pre-loan application still in the pipeline (e.g. awaiting KYC) blocks a fresh reborrow. */
@@ -273,31 +290,21 @@ class ApplicationFlowServiceTest {
     }
 
     /**
-     * A borrower holding a live (ACTIVE) loan MAY reborrow — the new eligible limit is the base
-     * (25% of salary) reduced by their current outstanding, never blocked.
+     * One advance at a time: a borrower holding a live (ACTIVE) loan is now <b>blocked</b> from a fresh
+     * reborrow — they must fully repay first (ACTIVE_LOAN). Checked before any profile lookup.
      */
     @Test
-    void reborrowAllowedWithActiveLoanReducesLimit() {
+    void reborrowBlockedWhileLoanActive() {
         actor("7", "BORROWER");
         LoanApplication activeApp = new LoanApplication();
         activeApp.setId(10L);
         activeApp.setApplicantId(7L);
-        activeApp.setStatus(ApplicationStatus.ACTIVE); // a live loan — does not block
-        activeApp.setSalaryCreditDay(30);
+        activeApp.setStatus(ApplicationStatus.ACTIVE); // a live loan blocks a fresh reborrow
         when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(activeApp));
-        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
-        Loan active = loanAt(50L, LoanStatus.ACTIVE, LocalDate.now().plusDays(30));
-        active.setPrincipal(500_000L);            // ₹5,000, disbursed today → no interest accrued yet
-        active.setDisbursedOn(LocalDate.now());
-        when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(active));
-        when(paymentRepository.sumAmountByLoanIdAndStatus(50L, PaymentStatus.VERIFIED)).thenReturn(0L);
-        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of()); // paid on time
 
-        LoanApplication result = flow.reborrow();
-
-        assertThat(result.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
-        // base 25% of ₹60,000 = ₹15,000 (1_500_000) − ₹5,000 outstanding = ₹10,000
-        assertThat(result.getEligibleLimit()).isEqualTo(1_000_000L);
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("ACTIVE_LOAN");
     }
 
     @Test
@@ -363,6 +370,7 @@ class ApplicationFlowServiceTest {
         ApplicantProfile p = new ApplicantProfile();
         p.setApplicationId(10L);
         p.setMonthlySalaryPaise(6_000_000L); // ₹60,000
+        p.setCreditStarRating(new BigDecimal("4.0")); // good standing → pre-approvable
         return p;
     }
 

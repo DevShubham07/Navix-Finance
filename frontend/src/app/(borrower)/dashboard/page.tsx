@@ -16,7 +16,13 @@ import {
   canChooseAmount,
   isTerminalBad,
 } from "@/lib/api/live-journey";
-import { borrowerApi, rupeesToPaise } from "@/lib/api/applications";
+import {
+  borrowerApi,
+  rupeesToPaise,
+  paiseToINR,
+  statusLabel,
+  type ApplicationStatus,
+} from "@/lib/api/applications";
 import { useOnboardingStore } from "@/stores/application-store";
 import { eligibleLimit, daysBetween } from "@/lib/calc/loan-math";
 import { formatINR0, formatDate } from "@/lib/utils";
@@ -184,8 +190,94 @@ export default function DashboardPage() {
           </div>
         </aside>
       </div>
+
+      <ApplicationsHistory />
     </div>
   );
+}
+
+/**
+ * A compact, newest-first roll-up of every application the borrower has made, shown full-width
+ * below the main grid. Shares the React-Query cache with `/loans` (same `["my-apps"]` key), so the
+ * two stay in sync. Each row links to the live status page; "View all" deep-links to `/loans` for
+ * the full per-loan economics.
+ */
+function ApplicationsHistory() {
+  const q = useQuery({ queryKey: ["my-apps"], queryFn: borrowerApi.myApplications });
+  const apps = q.data ?? [];
+
+  return (
+    <section className="mt-10">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-navy">
+          <FileClock size={18} /> Your applications
+        </h2>
+        {apps.length > 0 && (
+          <Link href="/loans" className="text-sm font-semibold text-gold-dark hover:underline">
+            View all →
+          </Link>
+        )}
+      </div>
+
+      {q.isLoading ? (
+        <div className="space-y-3">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-16 animate-pulse rounded border border-line bg-white" />
+          ))}
+        </div>
+      ) : q.error ? (
+        <div className="rounded border border-error-100 bg-error-50 p-5 text-sm text-error-700">
+          Could not load your applications. Please refresh and try again.
+        </div>
+      ) : apps.length === 0 ? (
+        <p className="rounded border border-dashed border-line bg-white px-5 py-4 text-sm text-muted">
+          No applications yet.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {apps.map((app) => (
+            <Link
+              key={app.id}
+              href="/loan/status"
+              className="flex flex-wrap items-center justify-between gap-3 rounded border border-line bg-white p-5 shadow-sm transition hover:border-gold hover:shadow"
+            >
+              <div className="min-w-0">
+                <div className="font-serif text-base font-semibold text-navy">Application #{app.id}</div>
+                <div className="mt-0.5 text-sm text-muted">
+                  Requested {paiseToINR(app.amountRequestedPaise)}
+                  {app.purpose ? ` · ${app.purpose}` : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant={appStatusVariant(app.status)}>{statusLabel(app.status)}</Badge>
+                <ArrowRight size={16} className="text-muted" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Colour an application status: active=green, bad=red, terminal-neutral=grey, in-flight=blue. */
+function appStatusVariant(status: ApplicationStatus): React.ComponentProps<typeof Badge>["variant"] {
+  switch (status) {
+    case "ACTIVE":
+      return "success";
+    case "CLOSED":
+    case "CANCELLED":
+      return "neutral";
+    case "OVERDUE":
+    case "DEFAULTED":
+    case "WRITTEN_OFF":
+    case "REJECTED":
+    case "KYC_REJECTED":
+    case "DISBURSEMENT_FAILED":
+      return "error";
+    default:
+      return "info";
+  }
 }
 
 /**

@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { LayoutDashboard, Wallet } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { AccountMenu } from "@/components/app/account-menu";
 import { NotificationBell } from "@/components/notifications/notification-bell";
-import { useBorrowerSession } from "@/lib/api/live-journey";
+import { borrowerApi } from "@/lib/api/applications";
+import { useBorrowerSession, canStartNewLoan } from "@/lib/api/live-journey";
 
 const APP_NAV = [
   { label: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
@@ -17,6 +19,11 @@ const APP_NAV = [
 export function AppHeader() {
   const pathname = usePathname();
   const { data: session } = useBorrowerSession();
+  const { data: apps } = useQuery({
+    queryKey: ["my-apps"],
+    queryFn: borrowerApi.myApplications,
+    enabled: !!session,
+  });
 
   return (
     <header className="site-header">
@@ -39,9 +46,11 @@ export function AppHeader() {
                   </Link>
                 );
               })}
-              <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm ml-2">
-                New loan
-              </Link>
+              {canStartNewLoan(apps) && (
+                <Link href="/reloan" className="btn btn-gold btn-sm ml-2">
+                  New loan
+                </Link>
+              )}
               <div className="ml-1">
                 <NotificationBell scope="borrower" />
               </div>

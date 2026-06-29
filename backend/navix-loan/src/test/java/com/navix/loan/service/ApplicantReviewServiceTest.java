@@ -11,6 +11,7 @@ import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
@@ -26,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ApplicantReviewServiceTest {
 
     private static final long APP_ID = 4L;
+    private static final long APPLICANT_ID = 7L;
     private static final CurrentActor BORROWER =
             new CurrentActor("9001001", "Asha Verma", "BORROWER");
 
@@ -56,10 +58,18 @@ class ApplicantReviewServiceTest {
                 null, null, null, null, null, null, null);
     }
 
+    /** A persisted application owned by APPLICANT_ID — saveProfile now resolves the applicant via findById. */
+    private LoanApplication application() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP_ID);
+        app.setApplicantId(APPLICANT_ID);
+        return app;
+    }
+
     @Test
     void rejectsDuplicatePan() {
-        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
-        when(profileRepository.existsByPanAndApplicationIdNot("ABCDE1234F", APP_ID)).thenReturn(true);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.existsPanForOtherApplicant("ABCDE1234F", APPLICANT_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", null, null)))
                 .isInstanceOf(BusinessException.class)
@@ -68,9 +78,9 @@ class ApplicantReviewServiceTest {
 
     @Test
     void rejectsDuplicateAadhaar() {
-        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
-        when(profileRepository.existsByPanAndApplicationIdNot("ABCDE1234F", APP_ID)).thenReturn(false);
-        when(profileRepository.existsByAadhaarAndApplicationIdNot("123456789012", APP_ID)).thenReturn(true);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.existsPanForOtherApplicant("ABCDE1234F", APPLICANT_ID)).thenReturn(false);
+        when(profileRepository.existsAadhaarForOtherApplicant("123456789012", APPLICANT_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "1234 5678 9012", null)))
                 .isInstanceOf(BusinessException.class)
@@ -79,10 +89,10 @@ class ApplicantReviewServiceTest {
 
     @Test
     void rejectsDuplicateMobile() {
-        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
-        when(profileRepository.existsByPanAndApplicationIdNot("ABCDE1234F", APP_ID)).thenReturn(false);
-        when(profileRepository.existsByAadhaarAndApplicationIdNot("123456789012", APP_ID)).thenReturn(false);
-        when(profileRepository.existsByMobileAndApplicationIdNot("9876543210", APP_ID)).thenReturn(true);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.existsPanForOtherApplicant("ABCDE1234F", APPLICANT_ID)).thenReturn(false);
+        when(profileRepository.existsAadhaarForOtherApplicant("123456789012", APPLICANT_ID)).thenReturn(false);
+        when(profileRepository.existsMobileForOtherApplicant("9876543210", APPLICANT_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "123456789012", "98765 43210")))
                 .isInstanceOf(BusinessException.class)
@@ -91,7 +101,7 @@ class ApplicantReviewServiceTest {
 
     @Test
     void rejectsMalformedAadhaar() {
-        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
 
         assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "123", null)))
                 .isInstanceOf(BusinessException.class)
@@ -100,10 +110,10 @@ class ApplicantReviewServiceTest {
 
     @Test
     void acceptsUniqueIdentityAndNormalises() {
-        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
-        when(profileRepository.existsByPanAndApplicationIdNot("ABCDE1234F", APP_ID)).thenReturn(false);
-        when(profileRepository.existsByAadhaarAndApplicationIdNot("123456789012", APP_ID)).thenReturn(false);
-        when(profileRepository.existsByMobileAndApplicationIdNot("9876543210", APP_ID)).thenReturn(false);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.existsPanForOtherApplicant("ABCDE1234F", APPLICANT_ID)).thenReturn(false);
+        when(profileRepository.existsAadhaarForOtherApplicant("123456789012", APPLICANT_ID)).thenReturn(false);
+        when(profileRepository.existsMobileForOtherApplicant("9876543210", APPLICANT_ID)).thenReturn(false);
         when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 

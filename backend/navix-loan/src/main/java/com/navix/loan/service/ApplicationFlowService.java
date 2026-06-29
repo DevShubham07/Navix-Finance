@@ -18,9 +18,9 @@ import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -67,9 +67,9 @@ public class ApplicationFlowService {
             Set.of(LoanStatus.OVERDUE, LoanStatus.IN_COLLECTIONS);
 
     /**
-     * Application statuses that represent an already-disbursed, still-live loan. A returning borrower
-     * MAY take a fresh advance against these (their headroom is reduced by the outstanding) — only a
-     * pre-loan application still in the pipeline blocks a new reborrow.
+     * Application statuses that represent an already-disbursed, still-live loan. One advance at a time:
+     * a returning borrower holding a live loan is <b>blocked</b> from starting a new application — they
+     * must fully repay first.
      */
     private static final Set<ApplicationStatus> LIVE_LOAN_STATUSES =
             Set.of(ApplicationStatus.ACTIVE, ApplicationStatus.OVERDUE, ApplicationStatus.DEFAULTED);
@@ -82,6 +82,7 @@ public class ApplicationFlowService {
 
     @Transactional
     public LoanApplication createDraft(Long applicantId) {
+        assertCanStartNewApplication(applicantId);
         LoanApplication app = new LoanApplication();
         app.setApplicantId(applicantId);
         app.setStatus(ApplicationStatus.DRAFT);
@@ -94,35 +95,31 @@ public class ApplicationFlowService {
      * Returning-borrower reborrow (W?): a repeat borrower starts a new advance reusing their saved
      * KYC profile — no re-collection. The actor's id is the applicantId (the BFF injects it).
      *
+     * <p>One advance at a time: a borrower holding a live loan (ACTIVE/OVERDUE/DEFAULTED) — or with a
+     * pre-loan application still moving through the pipeline — is <b>blocked</b> and must fully repay /
+     * finish first ({@link #assertCanStartNewApplication}). Rejected if there is no prior application to
+     * borrow against (the caller then falls back to a fresh signup).
+     *
      * <p>Routing by standing, computed from loan history (no stored flag):
      * <ul>
-     *   <li>clean history → {@link ApplicationStatus#PRE_APPROVED} (skips KYC + credit; on apply it
-     *       goes straight to the Disbursement Head);</li>
-     *   <li>any past delinquency (a loan currently/ever overdue, in collections, or repaid late) →
-     *       {@link ApplicationStatus#REVIEW_PENDING} for a KYC-approver re-review every time.</li>
+     *   <li>clean history <b>and</b> a good credit rating (≥ 4.0★) →
+     *       {@link ApplicationStatus#PRE_APPROVED} (skips KYC + credit; on apply it goes straight to
+     *       the Disbursement Head);</li>
+     *   <li>everyone else (any past delinquency, or a rating below the threshold) → stays in
+     *       {@code DRAFT} and re-runs the full KYC wizard (which drives {@code DRAFT → KYC_PENDING}).</li>
      * </ul>
      *
-     * <p>A borrower who already holds a live loan (ACTIVE/OVERDUE/DEFAULTED) <b>may</b> take another
-     * advance — the eligible limit is reduced by their current outstanding so a second loan can never
-     * exceed {@code (25% of salary − what they still owe)}. Only a pre-loan application still moving
-     * through the pipeline blocks a fresh reborrow; rejected if there is no prior application to
-     * borrow against (the caller then falls back to a fresh signup). Deliberately does <b>not</b>
-     * create a new {@code applicant_profile} row — identity carries over (V12 keeps pan/aadhaar/mobile
-     * globally unique) and profile reads fall back to the prior one.
+     * <p>Deliberately does <b>not</b> create a new {@code applicant_profile} row — identity carries over
+     * (V12 keeps pan/aadhaar/mobile globally unique) and profile reads fall back to the prior one.
      */
     @Transactional
     public LoanApplication reborrow() {
         requireRole("BORROWER");
         Long applicantId = Long.valueOf(ActorContext.get().id());
 
-        // Only an unfinished pre-loan application (not yet disbursed) blocks a new advance. An
-        // existing live loan does not — its outstanding just shrinks the new eligible limit.
-        boolean hasPendingApplication = applicationRepository.findByApplicantId(applicantId).stream()
-                .anyMatch(a -> !a.getStatus().isTerminal() && !LIVE_LOAN_STATUSES.contains(a.getStatus()));
-        if (hasPendingApplication) {
-            throw new BusinessException("ACTIVE_APPLICATION",
-                    "Finish your in-progress application before starting a new one");
-        }
+        // One advance at a time: a live loan or an in-flight application blocks a fresh reborrow
+        // (checked before the prior-profile lookup so ACTIVE_LOAN takes precedence).
+        assertCanStartNewApplication(applicantId);
 
         ApplicantProfile prior = latestProfileForApplicant(applicantId)
                 .orElseThrow(() -> new BusinessException("NO_PRIOR_LOAN",
@@ -130,25 +127,20 @@ public class ApplicationFlowService {
         Long salaryPaise = prior.getMonthlySalaryPaise();
         Long eligibleLimit = salaryPaise != null ? loanMath.eligibleLimitPaise(salaryPaise) : null;
 
-        // Headroom = base limit − current outstanding across the borrower's live loans (penalty-aware).
-        if (eligibleLimit != null) {
-            long outstanding = totalOpenOutstanding(applicantId, LocalDate.now());
-            long headroom = Math.max(0L, eligibleLimit - outstanding);
-            if (outstanding > 0 && headroom < LoanMath.MIN_LOAN_PAISE) {
-                throw new BusinessException("NO_HEADROOM",
-                        "Your current outstanding uses up your eligible limit — repay before borrowing again");
-            }
-            eligibleLimit = headroom;
-        }
-
         LoanApplication app = createDraft(applicantId);
         app.setEligibleLimit(eligibleLimit);
         app.setSalaryCreditDay(latestSalaryCreditDay(applicantId));
 
-        boolean needsReview = hasPastDelinquency(applicantId);
-        transition(app, needsReview ? ApplicationStatus.REVIEW_PENDING : ApplicationStatus.PRE_APPROVED,
-                "REBORROW",
-                needsReview ? "Past delinquency — KYC review required" : "Pre-approved returning borrower");
+        boolean delinquent = hasPastDelinquency(applicantId);
+        BigDecimal star = prior.getCreditStarRating();
+        boolean goodStar = star != null && star.compareTo(new BigDecimal("4.0")) >= 0;
+        if (!delinquent && goodStar) {
+            transition(app, ApplicationStatus.PRE_APPROVED, "REBORROW", "Pre-approved returning borrower");
+        } else {
+            // Not good standing -> re-run the full KYC wizard. Stay in DRAFT; the wizard drives DRAFT -> KYC_PENDING.
+            logEvent(app, ApplicationStatus.DRAFT, ApplicationStatus.DRAFT, "REBORROW_FULL_KYC",
+                    delinquent ? "Past delinquency - full KYC required" : "Credit rating below threshold - full KYC required");
+        }
         return applicationRepository.save(app);
     }
 
@@ -472,6 +464,21 @@ public class ApplicationFlowService {
     // ---- reborrow standing (computed from history; no stored flag) -----------------
 
     /**
+     * One advance at a time: a borrower may not start a new application while they hold a live loan
+     * (they must fully repay it first) or while a previous pre-disbursement application is still in
+     * flight. Server-enforced so a direct create call can't bypass the UI gating.
+     */
+    private void assertCanStartNewApplication(Long applicantId) {
+        List<LoanApplication> apps = applicationRepository.findByApplicantId(applicantId);
+        if (apps.stream().anyMatch(a -> LIVE_LOAN_STATUSES.contains(a.getStatus()))) {
+            throw new BusinessException("ACTIVE_LOAN", "Repay your current advance before borrowing again");
+        }
+        if (apps.stream().anyMatch(a -> !a.getStatus().isTerminal() && !LIVE_LOAN_STATUSES.contains(a.getStatus()))) {
+            throw new BusinessException("ACTIVE_APPLICATION", "Finish your in-progress application before starting a new one");
+        }
+    }
+
+    /**
      * Whether the applicant has ever been delinquent — a loan currently/ever overdue or in
      * collections, or one that was ultimately repaid <em>late</em> (now closed). Such a borrower is
      * re-reviewed by a KYC approver on every reborrow.
@@ -494,32 +501,6 @@ public class ApplicationFlowService {
         return paymentRepository.findByLoanId(loan.getId()).stream()
                 .anyMatch(p -> p.getStatus() == PaymentStatus.VERIFIED
                         && p.getPaidOn() != null && p.getPaidOn().isAfter(loan.getDueDate()));
-    }
-
-    /** Sum of the penalty-aware outstanding across the borrower's loans (settled loans contribute 0). */
-    private long totalOpenOutstanding(Long applicantId, LocalDate asOf) {
-        long total = 0L;
-        for (Loan loan : loanRepository.findByApplicantId(applicantId)) {
-            total += outstandingForHeadroom(loan, asOf);
-        }
-        return total;
-    }
-
-    /**
-     * Penalty-aware outstanding for one loan, mirroring {@code RepaymentService.outstandingAsOf}
-     * without the settlement cap — a conservative exposure figure used only to size reborrow headroom.
-     * (RepaymentService can't be injected here: it already depends on this service.)
-     */
-    private long outstandingForHeadroom(Loan loan, LocalDate asOf) {
-        if (loan.getDisbursedOn() == null || loan.getDueDate() == null) {
-            return loan.getOutstanding() != null ? Math.max(0L, loan.getOutstanding()) : 0L;
-        }
-        int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
-        int daysToAsOf = (int) Math.max(0L, ChronoUnit.DAYS.between(loan.getDisbursedOn(), asOf));
-        int interestDays = Math.min(daysToAsOf, tenureDays);
-        int penaltyDays = Math.max(0, loanMath.daysPastDue(loan.getDueDate(), asOf) - LoanMath.SALARY_GRACE_DAYS);
-        long verified = paymentRepository.sumAmountByLoanIdAndStatus(loan.getId(), PaymentStatus.VERIFIED);
-        return loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
     }
 
     /** The applicant's most recent saved KYC profile (newest application first), if any. */

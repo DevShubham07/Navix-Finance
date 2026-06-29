@@ -86,6 +86,14 @@ class NotificationEventListenerTest {
     }
 
     @Test
+    void reborrowFullKycIsNoOp() {
+        // The not-good reborrow path logs a same-status DRAFT→DRAFT "REBORROW_FULL_KYC" event; it must
+        // NOT notify — the borrower re-runs the wizard, which emits its own (SUBMIT_KYC…) events.
+        listener.onApplicationTransitioned(transition("REBORROW_FULL_KYC", "DRAFT"));
+        verify(dispatcher, never()).dispatch(any(), any());
+    }
+
+    @Test
     void autoRoutedActionsAreNoOps() {
         listener.onApplicationTransitioned(transition("AUTO_ROUTE", "CREDIT_HEAD_PENDING"));
         listener.onApplicationTransitioned(transition("CREATE", "DRAFT"));

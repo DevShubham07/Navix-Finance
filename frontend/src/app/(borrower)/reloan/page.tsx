@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { RotateCw, Zap, ShieldCheck, ArrowRight, Loader2, AlertTriangle } from "lucide-react";
+import { RotateCw, Zap, ShieldCheck, ArrowRight, Loader2, AlertTriangle, Wallet } from "lucide-react";
 import { useMounted } from "@/hooks/use-mounted";
 import { useLiveApplication, writeStoredAppId } from "@/lib/api/live-journey";
 import { borrowerApi, paiseToINR, ApplicationApiError } from "@/lib/api/applications";
@@ -30,9 +30,26 @@ export default function ReloanPage() {
     );
   }
 
-  // A borrower with a live advance can still borrow again — their available amount is just reduced
-  // by what they currently owe (computed server-side on reborrow), so we don't block here anymore.
-  const hasLiveLoan = app?.status === "ACTIVE" || app?.status === "OVERDUE";
+  // One advance at a time: a borrower who holds a live loan must repay it before borrowing again.
+  const hasLiveLoan =
+    app?.status === "ACTIVE" || app?.status === "OVERDUE" || app?.status === "DEFAULTED";
+
+  if (hasLiveLoan) {
+    return (
+      <div className="container max-w-content py-10">
+        <div className="rounded border border-line bg-white p-8 text-center shadow-sm">
+          <span className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full bg-navy-tint text-navy">
+            <Wallet size={20} />
+          </span>
+          <h1 className="text-2xl">You already have an active advance</h1>
+          <p className="mb-5 text-muted">Repay your current advance before borrowing again.</p>
+          <Link href="/repay" className="btn btn-gold">
+            Repay now <ArrowRight size={16} />
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (noPrior) {
     return (
@@ -52,17 +69,20 @@ export default function ReloanPage() {
     try {
       const result = await borrowerApi.reborrow();
       writeStoredAppId(result.id);
-      // Flagged (past delinquency) → KYC review on the status page. Pre-approved → upload the latest
-      // salary slip (the only thing we re-collect), then choose an amount.
-      router.push(result.status === "REVIEW_PENDING" ? "/loan/status" : "/reborrow/salary");
+      // Pre-approved (clean history + strong credit) → salary-slip-only fast path. Otherwise DRAFT →
+      // re-enter the onboarding wizard at the email step (the stored app-id makes the /signup/email
+      // guard pass, so OTP is skipped) for a full re-verification.
+      router.push(result.status === "PRE_APPROVED" ? "/reborrow/salary" : "/signup/email");
     } catch (e) {
       if (e instanceof ApplicationApiError && e.code === "NO_PRIOR_LOAN") {
         setNoPrior(true);
       } else if (e instanceof ApplicationApiError && e.code === "ACTIVE_APPLICATION") {
         // An unfinished application is already in flight — send them to track it.
         router.push("/loan/status");
+      } else if (e instanceof ApplicationApiError && e.code === "ACTIVE_LOAN") {
+        // A live advance is still outstanding — they must repay it before borrowing again.
+        router.push("/repay");
       } else if (e instanceof ApplicationApiError) {
-        // NO_HEADROOM and friends carry a borrower-friendly message.
         setError(e.message);
       } else {
         setError(e instanceof Error ? e.message : "Something went wrong — please try again.");
@@ -81,28 +101,18 @@ export default function ReloanPage() {
       </div>
       <h1 className="mb-1">Borrow again, instantly</h1>
       <p className="mb-6 text-muted">
-        Your details carry over — no re-KYC. If your past repayments were on time you go straight to
-        choosing an amount; otherwise we run a quick review first.
+        In good standing — a clean repayment history and a strong credit score — you skip KYC
+        entirely: just re-share your latest salary slip and pick an amount. Otherwise we run a full
+        re-verification before your next advance.
       </p>
 
       <div className="rounded border border-gold-soft bg-gold-50/50 p-7 text-center shadow-sm">
-        {hasLiveLoan ? (
-          <div className="mb-5">
-            <div className="text-sm text-muted">You have a live advance</div>
-            <div className="my-1 font-serif text-xl font-semibold text-navy">You can still borrow more</div>
-            <div className="text-sm text-muted">
-              We&apos;ll deduct your current outstanding from your 25%-of-salary limit and show your
-              available amount on the next step.
-            </div>
-          </div>
-        ) : (
-          limitPaise != null && (
-            <>
-              <div className="text-sm text-muted">Available to borrow now</div>
-              <div className="my-1 font-serif text-3xl font-bold text-navy sm:text-4xl">{paiseToINR(limitPaise)}</div>
-              <div className="mb-5 text-sm text-muted">Up to 25% of your monthly salary</div>
-            </>
-          )
+        {limitPaise != null && (
+          <>
+            <div className="text-sm text-muted">Available to borrow now</div>
+            <div className="my-1 font-serif text-3xl font-bold text-navy sm:text-4xl">{paiseToINR(limitPaise)}</div>
+            <div className="mb-5 text-sm text-muted">Up to 25% of your monthly salary</div>
+          </>
         )}
         <button onClick={borrowAgain} disabled={busy} className="btn btn-gold">
           {busy ? <Loader2 size={16} className="animate-spin" /> : <RotateCw size={16} />}

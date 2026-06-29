@@ -46,23 +46,27 @@ public class ApplicantReviewService {
     @Transactional
     public ApplicantProfile saveProfile(Long appId, ProfileRequest req) {
         requireRole("BORROWER");
-        requireApplication(appId);
+        LoanApplication app = applicationRepository.findById(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
+        Long applicantId = app.getApplicantId();
 
         String pan = normalizePan(req.pan());
         String aadhaar = normalizeAadhaar(req.aadhaar());
         String mobile = normalizeMobile(req.mobile());
 
-        // A mobile / PAN / Aadhaar may belong to only one applicant (uniqueness at
-        // signup). The "...Not(appId)" exclusion lets the same application re-save.
-        if (pan != null && profileRepository.existsByPanAndApplicationIdNot(pan, appId)) {
+        // A mobile / PAN / Aadhaar may belong to only one applicant. Uniqueness is now enforced
+        // ACROSS applicants (not per-application): the same applicant re-onboarding through a NEW
+        // application — which creates a fresh profile row carrying the same identity — is allowed,
+        // while a different person reusing the PAN / Aadhaar / mobile is still rejected.
+        if (pan != null && profileRepository.existsPanForOtherApplicant(pan, applicantId)) {
             throw new BusinessException("DUPLICATE_PAN",
                     "This PAN is already registered with another applicant.");
         }
-        if (aadhaar != null && profileRepository.existsByAadhaarAndApplicationIdNot(aadhaar, appId)) {
+        if (aadhaar != null && profileRepository.existsAadhaarForOtherApplicant(aadhaar, applicantId)) {
             throw new BusinessException("DUPLICATE_AADHAAR",
                     "This Aadhaar number is already registered with another applicant.");
         }
-        if (mobile != null && profileRepository.existsByMobileAndApplicationIdNot(mobile, appId)) {
+        if (mobile != null && profileRepository.existsMobileForOtherApplicant(mobile, applicantId)) {
             throw new BusinessException("DUPLICATE_MOBILE",
                     "This mobile number is already registered with another applicant.");
         }

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import {
   User,
   ChevronDown,
@@ -15,7 +16,8 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
-import { useBorrowerSession, useBorrowerLogout } from "@/lib/api/live-journey";
+import { borrowerApi } from "@/lib/api/applications";
+import { useBorrowerSession, useBorrowerLogout, canStartNewLoan } from "@/lib/api/live-journey";
 
 type Item = { label: string; href: string; Icon: typeof User };
 
@@ -48,11 +50,26 @@ const GROUPS: Item[][] = [
 export function AccountMenu() {
   const logout = useBorrowerLogout();
   const { data: session } = useBorrowerSession();
+  const { data: apps } = useQuery({
+    queryKey: ["my-apps"],
+    queryFn: borrowerApi.myApplications,
+    enabled: !!session,
+  });
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
 
   const name = session?.name?.trim() || "Account";
   const firstName = name.split(" ")[0] || "Account";
+
+  // One advance at a time: hide "Borrow again" while a loan/application is live or in flight.
+  const allowReborrow = canStartNewLoan(apps);
+  const groups = React.useMemo(
+    () =>
+      GROUPS.map((group) =>
+        allowReborrow ? group : group.filter((item) => item.href !== "/reloan"),
+      ).filter((group) => group.length > 0),
+    [allowReborrow],
+  );
 
   React.useEffect(() => {
     if (!open) return;
@@ -103,7 +120,7 @@ export function AccountMenu() {
             {session?.mobile && <div className="truncate text-xs text-muted">{session.mobile}</div>}
           </div>
 
-          {GROUPS.map((group, gi) => (
+          {groups.map((group, gi) => (
             <div key={gi} className={gi > 0 ? "border-t border-line py-1" : "py-1"}>
               {group.map(({ label, href, Icon }) => (
                 <Link
