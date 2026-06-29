@@ -293,20 +293,33 @@ function pickCurrentAppId(apps: ApplicationView[]): number | null {
 export function useLiveApplication(): LiveApplication {
   const [appId, setAppId] = useStoredAppId();
 
-  // Self-heal: with no stored pointer (a fresh login clears it, or a new device), resolve the
-  // caller's OWN latest application from the ownership-scoped /mine endpoint and adopt it. /mine is
-  // scoped server-side to the JWT subject, so this can never surface another user's application —
-  // unlike a localStorage app-id pointer, which could be stale from a previous user on this browser.
+  // Resolve the caller's OWN applications from the ownership-scoped /mine endpoint (shared cache with
+  // the header + dashboard, keyed ["my-apps"]). /mine is scoped server-side to the JWT subject, so it
+  // can never surface another user's application — unlike a localStorage app-id pointer, which could
+  // be stale from a previous user, OR lag behind a just-created reborrow on the same browser.
   const mineQuery = useQuery({
-    queryKey: ["mine-latest"],
+    queryKey: ["my-apps"],
     queryFn: () => borrowerApi.myApplications(),
-    enabled: appId == null,
   });
   React.useEffect(() => {
-    if (appId == null && mineQuery.data) {
-      const resolved = pickCurrentAppId(mineQuery.data);
+    const mine = mineQuery.data;
+    if (!mine || mine.length === 0) return;
+    // (a) No stored pointer (fresh login / new device): adopt the current application. Defer to a
+    //     localStorage pointer that is still being hydrated this mount (useStoredAppId's mount effect
+    //     hasn't run yet) — otherwise we'd briefly clobber a freshly-written id (e.g. a just-created
+    //     reborrow) with a /mine pick off the stale shared cache, flashing the prior application.
+    if (appId == null) {
+      if (readStoredAppId() != null) return;
+      const resolved = pickCurrentAppId(mine);
       if (resolved != null) setAppId(resolved);
+      return;
     }
+    // (b) Stale pointer: a reborrow just minted a NEWER in-flight application than the one we point
+    //     at. Move FORWARD to it (ids are monotonic) so the status page + dashboard follow the
+    //     current advance rather than the prior (closed) one. Forward-only — we never switch back to
+    //     an older application while the pointed-at one is still the latest.
+    const newestLive = mine.find((a) => !TERMINAL.includes(a.status));
+    if (newestLive && newestLive.id > appId) setAppId(newestLive.id);
   }, [appId, mineQuery.data, setAppId]);
 
   const appQuery = useQuery({
@@ -437,9 +450,15 @@ const DONE_STATUSES: ApplicationStatus[] = [
   "WRITTEN_OFF",
 ];
 
-/** One advance at a time: true only when the borrower holds no live loan and no in-flight application. */
+/**
+ * One advance at a time: true only when the borrower has at least one application and EVERY one of
+ * them is in a DONE status — i.e. a returning borrower whose prior advance is fully settled and who
+ * has nothing in flight. Requires the list to be loaded and non-empty so the "New loan"/"Borrow
+ * again" CTA never flashes while applications are still loading, nor for a brand-new borrower who has
+ * no application yet (mid first-time onboarding) — only an in-between-loans borrower may start one.
+ */
 export function canStartNewLoan(apps: ApplicationView[] | undefined): boolean {
-  return !apps || apps.every((a) => DONE_STATUSES.includes(a.status));
+  return !!apps && apps.length > 0 && apps.every((a) => DONE_STATUSES.includes(a.status));
 }
 
 export { TERMINAL as LIVE_TERMINAL_STATUSES };

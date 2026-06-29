@@ -3,10 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { RotateCw, Zap, ShieldCheck, ArrowRight, Loader2, AlertTriangle, Wallet } from "lucide-react";
 import { useMounted } from "@/hooks/use-mounted";
 import { useLiveApplication, writeStoredAppId } from "@/lib/api/live-journey";
-import { borrowerApi, paiseToINR, ApplicationApiError } from "@/lib/api/applications";
+import { borrowerApi, paiseToINR, ApplicationApiError, type ApplicationView } from "@/lib/api/applications";
 
 /**
  * Returning-borrower reborrow (live). A repeat borrower in good standing is pre-approved — one tap
@@ -17,6 +18,7 @@ import { borrowerApi, paiseToINR, ApplicationApiError } from "@/lib/api/applicat
 export default function ReloanPage() {
   const router = useRouter();
   const mounted = useMounted();
+  const queryClient = useQueryClient();
   const { app } = useLiveApplication();
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -69,6 +71,14 @@ export default function ReloanPage() {
     try {
       const result = await borrowerApi.reborrow();
       writeStoredAppId(result.id);
+      // Seed the shared application list optimistically so the header/account-menu "New loan" CTA
+      // hides immediately (the new app is now in-flight) with no flash, then invalidate to reconcile
+      // with server truth — together this also points the status page at this brand-new application
+      // rather than the prior, closed one.
+      queryClient.setQueryData<ApplicationView[]>(["my-apps"], (old) =>
+        old ? [result, ...old.filter((a) => a.id !== result.id)] : [result],
+      );
+      queryClient.invalidateQueries({ queryKey: ["my-apps"] });
       // Pre-approved (clean history + strong credit) → salary-slip-only fast path. Otherwise DRAFT →
       // re-enter the onboarding wizard at the email step (the stored app-id makes the /signup/email
       // guard pass, so OTP is skipped) for a full re-verification.

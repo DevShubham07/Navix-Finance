@@ -136,6 +136,10 @@ public class ApplicationFlowService {
         boolean goodStar = star != null && star.compareTo(new BigDecimal("4.0")) >= 0;
         if (!delinquent && goodStar) {
             transition(app, ApplicationStatus.PRE_APPROVED, "REBORROW", "Pre-approved returning borrower");
+            // Pre-approved fast path skips the wizard, so clone the carried-over KYC into a profile row
+            // of its OWN for this application. The reborrow flow then re-runs penny-drop against it (the
+            // verify step needs this application's profile), and staff review the reborrow with full KYC.
+            copyProfileForReborrow(prior, app.getId());
         } else {
             // Not good standing -> re-run the full KYC wizard. Stay in DRAFT; the wizard drives DRAFT -> KYC_PENDING.
             logEvent(app, ApplicationStatus.DRAFT, ApplicationStatus.DRAFT, "REBORROW_FULL_KYC",
@@ -494,6 +498,49 @@ public class ApplicationFlowService {
             }
         }
         return false;
+    }
+
+    /**
+     * Clone a prior KYC profile into a fresh {@code applicant_profile} row keyed to the new (reborrow)
+     * application. Carries over identity, employment, salary and the credit brief so the pre-approved
+     * borrower needn't re-enter anything and staff see the full picture — but resets {@code pennyDrop}
+     * verification, which the reborrow flow re-runs against this application's own account. No-op if a
+     * profile already exists for the new application (defensive; a fresh draft never has one).
+     */
+    private void copyProfileForReborrow(ApplicantProfile prior, Long newAppId) {
+        if (profileRepository.findByApplicationId(newAppId).isPresent()) {
+            return;
+        }
+        ApplicantProfile copy = new ApplicantProfile();
+        copy.setApplicationId(newAppId);
+        copy.setFullName(prior.getFullName());
+        copy.setPan(prior.getPan());
+        copy.setAadhaar(prior.getAadhaar());
+        copy.setMobile(prior.getMobile());
+        copy.setDob(prior.getDob());
+        copy.setAddress(prior.getAddress());
+        copy.setEmployer(prior.getEmployer());
+        copy.setEmploymentStatus(prior.getEmploymentStatus());
+        copy.setMonthlySalaryPaise(prior.getMonthlySalaryPaise());
+        copy.setSalaryBank(prior.getSalaryBank());
+        copy.setEmail(prior.getEmail());
+        copy.setBureauScore(prior.getBureauScore());
+        copy.setBureauSource(prior.getBureauSource());
+        copy.setRiskCategory(prior.getRiskCategory());
+        copy.setPanVerified(prior.getPanVerified());
+        copy.setAadhaarLinked(prior.getAadhaarLinked());
+        copy.setEmailVerified(prior.getEmailVerified());
+        copy.setAddressVerified(prior.getAddressVerified());
+        copy.setPennyDropVerified(false);
+        copy.setNameMatchScore(prior.getNameMatchScore());
+        copy.setDigilockerClientId(prior.getDigilockerClientId());
+        copy.setAgreementAccepted(prior.getAgreementAccepted());
+        copy.setCreditStarRating(prior.getCreditStarRating());
+        copy.setCreditRecommendation(prior.getCreditRecommendation());
+        copy.setCreditBriefSummary(prior.getCreditBriefSummary());
+        copy.setCreditBriefGeneratedAt(prior.getCreditBriefGeneratedAt());
+        copy.setCreditBriefFacts(prior.getCreditBriefFacts());
+        profileRepository.save(copy);
     }
 
     /** True if any verified repayment on the loan landed after its due date. */
