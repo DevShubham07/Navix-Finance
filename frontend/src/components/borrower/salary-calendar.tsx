@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 /**
  * Salary-linked repayment calendar — the borrower taps the date their salary is
@@ -181,19 +181,7 @@ export function SalaryCalendar({ value, onPick }: SalaryCalendarProps) {
           We link your due date to your salary credit. Pick the day you&apos;re next paid — your
           advance is repaid in a single instalment on that day. Prepay anytime, no penalty.
         </p>
-        <div
-          className="cal-note"
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--gold-400)", fontWeight: 600 }}
-        >
-          <CalendarDays size={15} /> Salary day: {sel.getDate()}{ordinal(sel.getDate())} of each month
-        </div>
       </aside>
     </div>
   );
-}
-
-function ordinal(n: number) {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return s[(v - 20) % 10] || s[v] || s[0];
 }
