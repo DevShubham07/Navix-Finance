@@ -1,6 +1,5 @@
 package com.navix.loan.dto;
 
-import com.navix.common.util.Masking;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.ApplicationDocument;
 import jakarta.validation.constraints.NotBlank;
@@ -10,7 +9,9 @@ import java.util.Base64;
 
 /**
  * DTOs for the applicant-review surface: the KYC profile and uploaded documents a staff reviewer
- * sees for an application. PAN is only ever returned masked.
+ * sees for an application. Staff see the borrower's full, unmasked identity + verification detail;
+ * the borrower's own read goes through {@link ProfileView#withoutCredit()}, which strips the
+ * staff-only credit/risk/bureau headline.
  */
 public final class ReviewDtos {
 
@@ -33,41 +34,62 @@ public final class ReviewDtos {
     }
 
     /**
-     * Staff-facing KYC view — PAN/Aadhaar/mobile masked (e.g. ABXXXXX34F, XXXXXXXX1234). Carries the
-     * staff-only credit headline (score + 1–5★ rating + verdict) so customer/applicant cards can show
-     * it without a second call; never returned on a borrower-facing path.
+     * Staff-facing KYC view — full, UNMASKED PAN/Aadhaar/mobile plus contact, verification flags and
+     * the staff-only credit headline (score + 1–5★ rating + verdict) so customer/applicant cards can
+     * show everything without a second call. The borrower's own read uses {@link #withoutCredit()},
+     * which nulls the credit/risk/bureau fields; never return the staff form on a borrower path.
      */
     public record ProfileView(
             Long applicationId,
             String fullName,
-            String panMasked,
-            String aadhaarMasked,
-            String mobileMasked,
+            String pan,
+            String aadhaar,
+            String mobile,
             LocalDate dob,
             String address,
             String employer,
             String employmentStatus,
             Long monthlySalaryPaise,
             String salaryBank,
+            String email,
             Integer creditScore,
             Double starRating,
-            String recommendation) {
+            String recommendation,
+            String bureauSource,
+            String riskCategory,
+            Boolean panVerified,
+            Boolean aadhaarLinked,
+            Boolean emailVerified,
+            Boolean addressVerified,
+            Boolean pennyDropVerified,
+            Double nameMatchScore,
+            String creditBriefSummary,
+            Instant creditBriefGeneratedAt) {
 
         public static ProfileView of(ApplicantProfile p) {
             return new ProfileView(
-                    p.getApplicationId(), p.getFullName(), Masking.maskPan(p.getPan()),
-                    Masking.maskAadhaar(p.getAadhaar()), Masking.maskPhone(p.getMobile()), p.getDob(),
+                    p.getApplicationId(), p.getFullName(), p.getPan(),
+                    p.getAadhaar(), p.getMobile(), p.getDob(),
                     p.getAddress(), p.getEmployer(), p.getEmploymentStatus(),
-                    p.getMonthlySalaryPaise(), p.getSalaryBank(),
+                    p.getMonthlySalaryPaise(), p.getSalaryBank(), p.getEmail(),
                     p.getBureauScore() != null ? p.getBureauScore().intValue() : null,
                     p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
-                    p.getCreditRecommendation());
+                    p.getCreditRecommendation(), p.getBureauSource(), p.getRiskCategory(),
+                    p.getPanVerified(), p.getAadhaarLinked(), p.getEmailVerified(),
+                    p.getAddressVerified(), p.getPennyDropVerified(), p.getNameMatchScore(),
+                    p.getCreditBriefSummary(), p.getCreditBriefGeneratedAt());
         }
 
-        /** Copy with the staff-only credit headline stripped — for borrower-facing responses. */
+        /**
+         * Copy with the staff-only credit/risk/bureau headline stripped — for borrower-facing
+         * responses. Identity + own verification flags stay (the borrower may see their own).
+         */
         public ProfileView withoutCredit() {
-            return new ProfileView(applicationId, fullName, panMasked, aadhaarMasked, mobileMasked, dob,
-                    address, employer, employmentStatus, monthlySalaryPaise, salaryBank, null, null, null);
+            return new ProfileView(applicationId, fullName, pan, aadhaar, mobile, dob,
+                    address, employer, employmentStatus, monthlySalaryPaise, salaryBank, email,
+                    null, null, null, null, null,
+                    panVerified, aadhaarLinked, emailVerified, addressVerified, pennyDropVerified,
+                    null, null, null);
         }
     }
 

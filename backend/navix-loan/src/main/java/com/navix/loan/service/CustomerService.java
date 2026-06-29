@@ -4,7 +4,6 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
-import com.navix.common.util.Masking;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
@@ -78,8 +77,8 @@ public class CustomerService {
             CustomerSummary cs = new CustomerSummary(
                     applicantId,
                     profile != null ? profile.getFullName() : null,
-                    profile != null ? Masking.maskPan(profile.getPan()) : null,
-                    profile != null ? Masking.maskPhone(profile.getMobile()) : null,
+                    profile != null ? profile.getPan() : null,
+                    profile != null ? profile.getMobile() : null,
                     apps.size(),
                     loans.size(),
                     latestStatus,

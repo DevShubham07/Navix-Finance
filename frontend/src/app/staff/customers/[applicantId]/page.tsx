@@ -122,15 +122,20 @@ function ProfileCard({ detail }: { detail: CustomerDetail }) {
       ) : (
         <dl className="divide-y divide-line">
           <Row label="Full name" value={p.fullName} />
-          <Row label="PAN" value={p.panMasked} mono />
-          <Row label="Aadhaar" value={p.aadhaarMasked} mono />
-          <Row label="Mobile" value={p.mobileMasked} mono />
+          <Row label="PAN" value={p.pan} mono />
+          <Row label="Aadhaar" value={p.aadhaar} mono />
+          <Row label="Mobile" value={p.mobile} mono />
+          <Row label="Email" value={p.email} />
           <Row label="Date of birth" value={p.dob} />
+          <Row label="Address" value={p.address} />
           <Row label="Employer" value={p.employer} />
           <Row label="Employment" value={p.employmentStatus} />
           <Row label="Monthly salary" value={p.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null} />
           <Row label="Salary bank" value={p.salaryBank} />
-          <Row label="Address" value={p.address} />
+          <Row label="CIBIL score" value={p.creditScore != null ? String(p.creditScore) : null} mono />
+          <Row label="Risk category" value={p.riskCategory} />
+          <Row label="Bureau" value={p.bureauSource} />
+          <Row label="Identity match" value={p.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null} />
         </dl>
       )}
     </Card>
@@ -169,7 +174,7 @@ function PastLoansCard({ loans }: { loans: LoanView[] }) {
             <li key={l.id} className="flex items-center justify-between gap-3 py-2">
               <span className="min-w-0">
                 <span className="text-ink">Loan #{l.id} · {paiseToINR(l.principalPaise)}</span>
-                <span className="block text-xs text-muted">due {l.dueDate ? formatDate(l.dueDate) : "—"} · outstanding {paiseToINR(l.outstandingPaise)}</span>
+                <span className="block text-xs text-muted">net {paiseToINR(l.netDisbursedPaise)} · disbursed {l.disbursedOn ? formatDate(l.disbursedOn) : "—"} · due {l.dueDate ? formatDate(l.dueDate) : "—"} · outstanding {paiseToINR(l.outstandingPaise)}</span>
               </span>
               <span className="flex-shrink-0 rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">{l.status}</span>
             </li>

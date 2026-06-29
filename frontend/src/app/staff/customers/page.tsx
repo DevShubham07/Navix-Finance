@@ -41,8 +41,8 @@ export default function CustomersPage() {
           columns={[
             { header: "Applicant ID", value: (c: CustomerSummary) => c.applicantId },
             { header: "Name", value: (c) => c.name ?? "" },
-            { header: "PAN", value: (c) => c.panMasked ?? "" },
-            { header: "Mobile", value: (c) => c.mobileMasked ?? "" },
+            { header: "PAN", value: (c) => c.pan ?? "" },
+            { header: "Mobile", value: (c) => c.mobile ?? "" },
             { header: "Applications", value: (c) => c.applicationCount },
             { header: "Loans", value: (c) => c.loanCount },
             { header: "Latest status", value: (c) => (c.latestStatus ? statusLabel(c.latestStatus as ApplicationStatus) : "") },
@@ -90,7 +90,7 @@ export default function CustomersPage() {
                   <th className="px-4 py-2.5">Mobile</th>
                   <th className="px-4 py-2.5">Loans</th>
                   <th className="px-4 py-2.5">Outstanding</th>
-                  <th className="px-4 py-2.5">Credit</th>
+                  <th className="px-4 py-2.5">CIBIL</th>
                   <th className="px-4 py-2.5">Latest status</th>
                   <th className="px-4 py-2.5 text-right">Open</th>
                 </tr>
@@ -105,11 +105,11 @@ export default function CustomersPage() {
                         </span>
                         <span className="min-w-0">
                           <span className="block font-semibold text-ink">{c.name ?? "—"}</span>
-                          <span className="block text-xs text-muted">#{c.applicantId} · {c.panMasked ?? "no PAN"}</span>
+                          <span className="block text-xs text-muted">#{c.applicantId} · {c.pan ?? "no PAN"}</span>
                         </span>
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-muted">{c.mobileMasked ?? "—"}</td>
+                    <td className="px-4 py-3 font-mono text-muted">{c.mobile ?? "—"}</td>
                     <td className="px-4 py-3 text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
                     <td className="px-4 py-3 font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
                     <td className="px-4 py-3">

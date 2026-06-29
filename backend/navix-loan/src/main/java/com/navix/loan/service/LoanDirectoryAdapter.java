@@ -2,7 +2,6 @@ package com.navix.loan.service;
 
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
-import com.navix.common.util.Masking;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.Loan;
@@ -91,7 +90,7 @@ public class LoanDirectoryAdapter implements LoanDirectory {
                 loan.getDisbursedOn(),
                 loan.getDueDate(),
                 profile != null ? profile.getFullName() : null,
-                profile != null ? Masking.maskPan(profile.getPan()) : null,
+                profile != null ? profile.getPan() : null,
                 profile != null ? profile.getEmployer() : null,
                 profile != null ? profile.getEmploymentStatus() : null,
                 profile != null ? profile.getMonthlySalaryPaise() : null,

@@ -90,7 +90,7 @@ class TransactionServiceTest {
     }
 
     @Test
-    void mapsDisbursalsAndRepaymentsWithMaskedBorrower() {
+    void mapsDisbursalsAndRepaymentsWithFullBorrowerPan() {
         stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
 
         List<TransactionView> txns = service.listTransactions(null, null);
@@ -103,7 +103,7 @@ class TransactionServiceTest {
         assertThat(disbursal.amountPaise()).isEqualTo(882_000L);
         assertThat(disbursal.txnRef()).isEqualTo("UTR-OUT-1");
         assertThat(disbursal.borrowerName()).isEqualTo("Aman");
-        assertThat(disbursal.panMasked()).isNotEqualTo("ABCDE1234F"); // masked, never raw
+        assertThat(disbursal.pan()).isEqualTo("ABCDE1234F"); // staff ledger shows the full PAN
 
         assertThat(repayment.direction()).isEqualTo("INCOMING");
         assertThat(repayment.amountPaise()).isEqualTo(100_000L);

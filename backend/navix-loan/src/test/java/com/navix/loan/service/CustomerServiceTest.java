@@ -69,7 +69,7 @@ class CustomerServiceTest {
     }
 
     @Test
-    void listGroupsByApplicantPicksLatestProfileAndMasksPan() {
+    void listGroupsByApplicantPicksLatestProfileAndShowsFullPan() {
         // Applicant 9000001 has two applications; the newer (id 2) carries the current name.
         when(applicationRepository.findAll()).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.CLOSED),
@@ -86,7 +86,7 @@ class CustomerServiceTest {
         assertThat(cs.name()).isEqualTo("Asha Rao");           // from the latest application's profile
         assertThat(cs.applicationCount()).isEqualTo(2);
         assertThat(cs.latestStatus()).isEqualTo("ACTIVE");      // newest application's status
-        assertThat(cs.panMasked()).isNotEqualTo("ABCDE1234F");  // never the raw PAN
+        assertThat(cs.pan()).isEqualTo("ABCDE1234F");           // staff see the full, unmasked PAN
     }
 
     @Test

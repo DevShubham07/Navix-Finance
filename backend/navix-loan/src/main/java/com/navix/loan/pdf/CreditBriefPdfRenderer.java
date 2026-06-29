@@ -14,7 +14,6 @@ import com.lowagie.text.pdf.PdfPCellEvent;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 import com.lowagie.text.pdf.draw.LineSeparator;
-import com.navix.common.util.Masking;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.loan.service.CreditRatingCalculator.Rating;
 import java.awt.Color;
@@ -135,8 +134,8 @@ public class CreditBriefPdfRenderer {
 
         t.addCell(category("A · Identity", new String[][] {
                 {"Name", titleCase(f.name())},
-                {"PAN", Masking.maskPan(f.pan())},
-                {"Mobile", Masking.maskPhone(f.mobile())},
+                {"PAN", f.pan()},
+                {"Mobile", f.mobile()},
                 {"DOB", f.dob()},
                 {"City", f.city()},
                 {"PIN", f.pin()}}));

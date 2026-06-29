@@ -34,8 +34,23 @@ function statusVariant(status: ApplicationStatus): React.ComponentProps<typeof B
   }
 }
 
+const ACTIVE_STATUSES = new Set<ApplicationStatus>(["ACTIVE", "OVERDUE"]);
+const PAST_STATUSES = new Set<ApplicationStatus>([
+  "CLOSED",
+  "DEFAULTED",
+  "WRITTEN_OFF",
+  "REJECTED",
+  "KYC_REJECTED",
+  "CANCELLED",
+]);
+
 export default function LoansPage() {
   const q = useQuery({ queryKey: ["my-apps"], queryFn: borrowerApi.myApplications });
+
+  const apps = q.data ?? [];
+  const active = apps.filter((a) => ACTIVE_STATUSES.has(a.status));
+  const past = apps.filter((a) => PAST_STATUSES.has(a.status));
+  const inProgress = apps.filter((a) => !ACTIVE_STATUSES.has(a.status) && !PAST_STATUSES.has(a.status));
 
   return (
     <div className="container max-w-content py-10">
@@ -54,16 +69,36 @@ export default function LoansPage() {
         <div className="rounded border border-error-100 bg-error-50 p-5 text-sm text-error-700">
           Could not load your loans. Please refresh and try again.
         </div>
-      ) : (q.data ?? []).length === 0 ? (
+      ) : apps.length === 0 ? (
         <EmptyState />
       ) : (
+        <div className="space-y-8">
+          <Section title="Active advances" apps={active} emptyHint="No active advance right now." />
+          <Section title="In progress" apps={inProgress} />
+          <Section title="Past loans" apps={past} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Section({ title, apps, emptyHint }: { title: string; apps: ApplicationView[]; emptyHint?: string }) {
+  if (apps.length === 0 && !emptyHint) return null;
+  return (
+    <section>
+      <h2 className="mb-3 font-serif text-lg font-semibold text-navy">
+        {title} <span className="text-sm font-normal text-muted">({apps.length})</span>
+      </h2>
+      {apps.length === 0 ? (
+        <p className="rounded border border-dashed border-line bg-white px-5 py-4 text-sm text-muted">{emptyHint}</p>
+      ) : (
         <div className="space-y-4">
-          {q.data!.map((app) => (
+          {apps.map((app) => (
             <LoanApplicationCard key={app.id} app={app} />
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -98,18 +133,30 @@ function LoanDetails({ loanId }: { loanId: number }) {
   const loan = q.data;
 
   return (
-    <div className="mt-4 grid gap-3 border-t border-grey-200 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Stat label="Principal" value={paiseToINR(loan.principalPaise)} />
-      <Stat label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
-      <Stat label="Outstanding" value={paiseToINR(loan.outstandingPaise)} />
-      <div>
-        <div className="flex items-center gap-1 text-xs text-muted">
-          <CalendarClock size={13} /> Due date
+    <div className="mt-4 border-t border-grey-200 pt-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Principal" value={paiseToINR(loan.principalPaise)} />
+        <Stat label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
+        <Stat label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
+        <Stat label="Outstanding" value={paiseToINR(loan.outstandingPaise)} />
+        <div>
+          <div className="flex items-center gap-1 text-xs text-muted">
+            <CalendarClock size={13} /> Due date
+          </div>
+          <div className="font-serif text-base font-semibold text-navy">
+            {loan.dueDate ? formatDate(loan.dueDate) : "—"}
+          </div>
+          <div className="text-[11px] text-muted">due on your salary day</div>
         </div>
-        <div className="font-serif text-base font-semibold text-navy">
-          {loan.dueDate ? formatDate(loan.dueDate) : "—"}
+        <Stat label="Disbursed on" value={loan.disbursedOn ? formatDate(loan.disbursedOn) : "—"} />
+        <Stat label="Loan #" value={`#${loan.id}`} />
+        <div>
+          <div className="text-xs text-muted">Loan status</div>
+          <Badge variant={statusVariant(loan.status as ApplicationStatus)}>{loan.status}</Badge>
         </div>
-        <div className="text-[11px] text-muted">due on your salary day</div>
+      </div>
+      <div className="mt-3 text-[11px] text-muted">
+        Upfront deductions: processing fee {paiseToINR(loan.processingFeePaise)} · GST {paiseToINR(loan.gstPaise)}
       </div>
     </div>
   );

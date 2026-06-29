@@ -257,18 +257,47 @@ class ApplicationFlowServiceTest {
         assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REVIEW_PENDING);
     }
 
+    /** A pre-loan application still in the pipeline (e.g. awaiting KYC) blocks a fresh reborrow. */
     @Test
-    void reborrowBlockedWhileAnApplicationIsLive() {
+    void reborrowBlockedWhileApplicationInPipeline() {
         actor("7", "BORROWER");
-        LoanApplication live = new LoanApplication();
-        live.setId(10L);
-        live.setApplicantId(7L);
-        live.setStatus(ApplicationStatus.ACTIVE); // not terminal
-        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(live));
+        LoanApplication pending = new LoanApplication();
+        pending.setId(10L);
+        pending.setApplicantId(7L);
+        pending.setStatus(ApplicationStatus.KYC_PENDING); // not yet a loan
+        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(pending));
 
         assertThatThrownBy(() -> flow.reborrow())
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("current advance");
+                .hasMessageContaining("in-progress application");
+    }
+
+    /**
+     * A borrower holding a live (ACTIVE) loan MAY reborrow — the new eligible limit is the base
+     * (25% of salary) reduced by their current outstanding, never blocked.
+     */
+    @Test
+    void reborrowAllowedWithActiveLoanReducesLimit() {
+        actor("7", "BORROWER");
+        LoanApplication activeApp = new LoanApplication();
+        activeApp.setId(10L);
+        activeApp.setApplicantId(7L);
+        activeApp.setStatus(ApplicationStatus.ACTIVE); // a live loan — does not block
+        activeApp.setSalaryCreditDay(30);
+        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(activeApp));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan active = loanAt(50L, LoanStatus.ACTIVE, LocalDate.now().plusDays(30));
+        active.setPrincipal(500_000L);            // ₹5,000, disbursed today → no interest accrued yet
+        active.setDisbursedOn(LocalDate.now());
+        when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(active));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(50L, PaymentStatus.VERIFIED)).thenReturn(0L);
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of()); // paid on time
+
+        LoanApplication result = flow.reborrow();
+
+        assertThat(result.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
+        // base 25% of ₹60,000 = ₹15,000 (1_500_000) − ₹5,000 outstanding = ₹10,000
+        assertThat(result.getEligibleLimit()).isEqualTo(1_000_000L);
     }
 
     @Test

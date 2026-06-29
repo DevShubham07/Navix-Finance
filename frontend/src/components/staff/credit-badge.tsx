@@ -11,7 +11,8 @@ function tone(rating: number | null | undefined): string {
 }
 
 /**
- * Compact staff-only credit pill: 1–5★ rating + numeric + bureau score, e.g. "★★★★☆ 4.0 · 778".
+ * Staff-only credit pill: the CIBIL/bureau score + 1–5★ rating, e.g. "CIBIL 778 · ★★★★☆ 4.0".
+ * The score is always labelled "CIBIL" and shown at full contrast so it can't be missed.
  * Renders nothing when there's no rating or score (so it can be dropped into any row safely).
  */
 export function CreditBadge({
@@ -26,26 +27,29 @@ export function CreditBadge({
   className?: string;
 }) {
   if (starRating == null && creditScore == null) return null;
+  const title = [creditScore != null ? `CIBIL ${creditScore}` : null, recommendation]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
         tone(starRating),
         className,
       )}
-      title={recommendation ?? undefined}
+      title={title || undefined}
     >
+      {creditScore != null && (
+        <span className="tabular-nums">
+          CIBIL <span className="font-bold">{creditScore}</span>
+        </span>
+      )}
       {starRating != null && (
         <>
-          <StarRating value={starRating} size="0.8em" />
+          {creditScore != null && <span aria-hidden className="opacity-50">·</span>}
+          <StarRating value={starRating} size="0.85em" />
           <span className="tabular-nums">{starRating.toFixed(1)}</span>
         </>
-      )}
-      {creditScore != null && (
-        <span className="tabular-nums opacity-80">
-          {starRating != null ? "· " : "Score "}
-          {creditScore}
-        </span>
       )}
     </span>
   );

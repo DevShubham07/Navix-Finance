@@ -35,7 +35,8 @@ function Facts({ f }: { f: CreditBriefFacts }) {
     <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-3">
       <dl>
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">A · Identity</div>
-        <Row label="PAN" value={f.panMasked} />
+        <Row label="PAN" value={f.pan} />
+        <Row label="Mobile" value={f.mobile} />
         <Row label="DOB" value={f.dob} />
         <Row label="City" value={f.city} />
         <Row label="PIN" value={f.pin} />

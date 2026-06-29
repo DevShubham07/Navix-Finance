@@ -23,11 +23,11 @@ public final class CreditBriefDtos {
             Long documentId,
             Facts facts) {
 
-        /** Categorized facts for the card. PAN/mobile masked; amounts in rupees (the bureau's unit). */
+        /** Categorized facts for the card. Full PAN/mobile (staff-only); amounts in rupees (the bureau's unit). */
         public record Facts(
                 String name,
-                String panMasked,
-                String mobileMasked,
+                String pan,
+                String mobile,
                 String dob,
                 String city,
                 String pin,

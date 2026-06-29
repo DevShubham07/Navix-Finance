@@ -1,6 +1,5 @@
 package com.navix.loan.service;
 
-import com.navix.common.util.Masking;
 import com.navix.loan.dto.LoanDtos.TransactionView;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.Loan;
@@ -72,7 +71,7 @@ public class TransactionService {
                     "D-" + loan.getId(), "DISBURSAL", "OUTGOING",
                     loan.getId(), loan.getApplicantId(),
                     p != null ? p.getFullName() : null,
-                    p != null ? Masking.maskPan(p.getPan()) : null,
+                    p != null ? p.getPan() : null,
                     loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
                     loan.getDisbursalTxnRef(),
                     loan.getStatus() != null ? loan.getStatus().name() : null,
@@ -88,7 +87,7 @@ public class TransactionService {
                     pay.getLoanId(),
                     loan != null ? loan.getApplicantId() : null,
                     p != null ? p.getFullName() : null,
-                    p != null ? Masking.maskPan(p.getPan()) : null,
+                    p != null ? p.getPan() : null,
                     pay.getAmount() != null ? pay.getAmount() : 0L,
                     pay.getTxnRef(),
                     pay.getStatus() != null ? pay.getStatus().name() : null,

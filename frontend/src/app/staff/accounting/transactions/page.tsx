@@ -53,7 +53,7 @@ export default function TransactionsPage() {
           columns={[
             { header: "Date", value: (t: TransactionView) => (t.date ? formatDate(t.date) : "") },
             { header: "Borrower", value: (t) => t.borrowerName ?? "" },
-            { header: "PAN", value: (t) => t.panMasked ?? "" },
+            { header: "PAN", value: (t) => t.pan ?? "" },
             { header: "Type", value: (t) => (t.type === "REPAYMENT" ? "Repayment" : "Disbursal") },
             { header: "Direction", value: (t) => t.direction },
             { header: "Amount (₹)", value: (t) => (t.amountPaise / 100).toFixed(2) },
@@ -159,7 +159,7 @@ function TxnRow({ t }: { t: TransactionView }) {
       <td className="px-4 py-2.5 text-muted">{t.date ? formatDate(t.date) : "—"}</td>
       <td className="px-4 py-2.5">
         <span className="font-medium text-ink">{t.borrowerName ?? "—"}</span>
-        {t.panMasked && <span className="ml-1 font-mono text-xs text-muted">{t.panMasked}</span>}
+        {t.pan && <span className="ml-1 font-mono text-xs text-muted">{t.pan}</span>}
       </td>
       <td className="px-4 py-2.5">
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${incoming ? "bg-success-50 text-success-700" : "bg-navy-tint text-navy"}`}>

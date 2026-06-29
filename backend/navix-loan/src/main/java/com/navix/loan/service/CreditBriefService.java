@@ -2,7 +2,6 @@ package com.navix.loan.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.storage.DocumentStoragePort;
-import com.navix.common.util.Masking;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.entity.ApplicantProfile;
@@ -126,7 +125,7 @@ public class CreditBriefService {
         BureauReportFacts f = factsOf(profile);
         Long docId = briefDocument(appId).map(ApplicationDocument::getId).orElse(null);
         CreditBriefView.Facts facts = f == null ? null : new CreditBriefView.Facts(
-                f.name(), Masking.maskPan(f.pan()), Masking.maskPhone(f.mobile()), f.dob(), f.city(),
+                f.name(), f.pan(), f.mobile(), f.dob(), f.city(),
                 f.pin(), f.creditScore(), f.totalAccounts(), f.activeAccounts(), f.closedAccounts(),
                 f.defaults(), f.totalBalanceRupees(), f.securedBalanceRupees(), f.unsecuredBalanceRupees(),
                 f.recentInquiries30d());

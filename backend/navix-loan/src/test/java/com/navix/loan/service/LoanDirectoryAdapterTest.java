@@ -60,7 +60,7 @@ class LoanDirectoryAdapterTest {
     }
 
     @Test
-    void findLoanResolvesBorrowerAndMasksPan() {
+    void findLoanResolvesBorrowerAndShowsFullPan() {
         LoanApplication app = new LoanApplication();
         app.setId(1L);
         app.setApplicantId(7L);
@@ -89,7 +89,7 @@ class LoanDirectoryAdapterTest {
         assertThat(s.netDisbursedPaise()).isEqualTo(705_600L);
         assertThat(s.outstandingPaise()).isEqualTo(1_040_000L);
         assertThat(s.borrowerName()).isEqualTo("Asha Verma");
-        assertThat(s.panMasked()).isEqualTo("ABXXXXX34F");
+        assertThat(s.panMasked()).isEqualTo("ABCDE1234F"); // collections now sees the full PAN
         assertThat(s.employer()).isEqualTo("Acme Corp");
     }
 

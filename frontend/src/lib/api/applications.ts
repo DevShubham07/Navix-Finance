@@ -118,30 +118,45 @@ export interface TransactionView {
   loanId: number | null;
   applicantId: number | null;
   borrowerName: string | null;
-  panMasked: string | null;
+  pan: string | null;
   amountPaise: number;
   txnRef: string | null;
   status: string | null;
   date: string | null;
 }
 
-/** Applicant KYC snapshot for an application. PAN/Aadhaar/mobile arrive masked from the backend. */
+/**
+ * Applicant KYC snapshot for an application. Staff see the full, unmasked identity + verification
+ * detail; on the borrower's own read the credit/risk/bureau fields come back null.
+ */
 export interface ProfileView {
   applicationId: number;
   fullName: string | null;
-  panMasked: string | null;
-  aadhaarMasked: string | null;
-  mobileMasked: string | null;
+  pan: string | null;
+  aadhaar: string | null;
+  mobile: string | null;
   dob: string | null;
   address: string | null;
   employer: string | null;
   employmentStatus: string | null;
   monthlySalaryPaise: number | null;
   salaryBank: string | null;
+  email?: string | null;
   /** Staff-only credit headline (score + 1–5★ rating + verdict). Null until the bureau is pulled. */
   creditScore?: number | null;
   starRating?: number | null;
   recommendation?: string | null;
+  /** Staff-only verification + risk detail (null on borrower-facing reads). */
+  bureauSource?: string | null;
+  riskCategory?: string | null;
+  panVerified?: boolean | null;
+  aadhaarLinked?: boolean | null;
+  emailVerified?: boolean | null;
+  addressVerified?: boolean | null;
+  pennyDropVerified?: boolean | null;
+  nameMatchScore?: number | null;
+  creditBriefSummary?: string | null;
+  creditBriefGeneratedAt?: string | null;
 }
 
 /** What the borrower submits for their KYC profile (all fields optional). */
@@ -192,8 +207,8 @@ export interface DocumentContent {
 export interface CustomerSummary {
   applicantId: number;
   name: string | null;
-  panMasked: string | null;
-  mobileMasked: string | null;
+  pan: string | null;
+  mobile: string | null;
   applicationCount: number;
   loanCount: number;
   latestStatus: string | null;
@@ -215,8 +230,8 @@ export interface CustomerDetail {
 /** Parsed bureau facts behind the credit brief (Categories A/B/C). Amounts are rupees (bureau unit). */
 export interface CreditBriefFacts {
   name: string | null;
-  panMasked: string | null;
-  mobileMasked: string | null;
+  pan: string | null;
+  mobile: string | null;
   dob: string | null;
   city: string | null;
   pin: string | null;

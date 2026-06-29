@@ -31,7 +31,12 @@ export default function LoanApplyPage() {
     profileQuery.data?.monthlySalaryPaise ??
     (draft.monthlySalary ? rupeesToPaise(draft.monthlySalary) : 0);
   const salaryRupees = Math.round(salaryPaise / 100);
-  const limit = eligibleLimit(salaryRupees);
+  // Prefer the application's backend-sanctioned eligible limit — for a reborrow it's already reduced
+  // by the borrower's current outstanding — and only fall back to the 25%-of-salary figure when the
+  // application hasn't set one yet (a brand-new borrower before salary verification).
+  const appLimitRupees =
+    app?.eligibleLimitPaise != null ? Math.round(app.eligibleLimitPaise / 100) : null;
+  const limit = appLimitRupees != null ? appLimitRupees : eligibleLimit(salaryRupees);
   // Salary credit day — seeded from the onboarding draft, then driven live by the
   // SalaryCalendar so the borrower confirms exactly which salary day repays the advance.
   const [salaryDay, setSalaryDay] = React.useState(draft.salaryDay || 1);
@@ -75,7 +80,12 @@ export default function LoanApplyPage() {
     setSubmitting(true);
     setError(undefined);
     try {
-      await applyForAmount(appId, { amountRupees: amount, salaryDay, monthlySalary: salaryRupees });
+      await applyForAmount(appId, {
+        amountRupees: amount,
+        salaryDay,
+        monthlySalary: salaryRupees,
+        eligibleLimitRupees: limit,
+      });
       router.push("/loan/status");
     } catch (e) {
       setError(

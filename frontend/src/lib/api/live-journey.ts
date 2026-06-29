@@ -526,17 +526,33 @@ export async function submitOnboarding(
   return app;
 }
 
-/** Submit the desired amount once KYC is approved (enters the credit queue). */
+/**
+ * Submit the desired amount once KYC is approved (enters the credit queue). The eligible limit sent
+ * to the backend (which both enforces it and stores it) is the explicit {@code eligibleLimitRupees}
+ * when given — this is the application's sanctioned limit, already reduced by any current outstanding
+ * for a reborrow — and only falls back to the 25%-of-salary figure for a fresh borrower.
+ */
 export async function applyForAmount(
   appId: number,
-  params: { amountRupees: number; purpose?: string; salaryDay?: number; monthlySalary?: number },
+  params: {
+    amountRupees: number;
+    purpose?: string;
+    salaryDay?: number;
+    monthlySalary?: number;
+    eligibleLimitRupees?: number;
+  },
 ): Promise<ApplicationView> {
-  const eligibleRupees = params.monthlySalary ? eligibleLimitRupees(params.monthlySalary) : undefined;
+  const eligibleRupees =
+    params.eligibleLimitRupees != null
+      ? params.eligibleLimitRupees
+      : params.monthlySalary
+        ? eligibleLimitRupees(params.monthlySalary)
+        : undefined;
   const day = params.salaryDay;
   return borrowerApi.apply(appId, {
     amountPaise: rupeesToPaise(params.amountRupees),
     purpose: params.purpose?.trim() || undefined,
     salaryCreditDay: day != null && day >= 1 && day <= 31 ? day : undefined,
-    eligibleLimitPaise: eligibleRupees ? rupeesToPaise(eligibleRupees) : undefined,
+    eligibleLimitPaise: eligibleRupees != null ? rupeesToPaise(eligibleRupees) : undefined,
   });
 }
