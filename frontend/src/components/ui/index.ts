@@ -7,3 +7,4 @@ export * from "./badge";
 export * from "./table";
 export * from "./dialog";
 export * from "./tooltip";
+export * from "./zoomable-qr";

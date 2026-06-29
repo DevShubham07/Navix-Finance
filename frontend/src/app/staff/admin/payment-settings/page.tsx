@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, QrCode, FileText, Save, CheckCircle2 } from "lucide-react";
-import { Input } from "@/components/ui";
+import { Input, ZoomableQr } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { hasPermission } from "@/lib/auth/rbac";
@@ -163,12 +163,10 @@ export default function AdminPaymentSettingsPage() {
             </dl>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <div className="mb-1 text-xs font-semibold text-muted">UPI QR</div>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <div className="mb-1 text-xs font-semibold text-muted">UPI QR <span className="font-normal text-muted/70">(hover to enlarge)</span></div>
+                <ZoomableQr
                   src={current?.qrUrl || "/payment/upi-qr.jpg"}
-                  alt="UPI QR code"
-                  className="h-32 w-32 rounded border border-line bg-white object-contain p-1"
+                  thumbClassName="h-32 w-32 rounded border border-line bg-white object-contain p-1"
                 />
                 {!current?.qrUrl && <p className="mt-1 text-xs text-muted">Static fallback (no upload yet)</p>}
               </div>

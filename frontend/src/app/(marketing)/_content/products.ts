@@ -15,7 +15,7 @@ export const html = `<section class="page active" id="products">
         <a href="/signup/mobile-otp" class="btn btn-gold" data-link="">Apply Now</a>
       </div>
       <div class="grid-3" style="width:100%;margin-top:26px;gap:16px">
-        <div style="background:var(--cream-50);border:1px solid var(--line);border-radius:16px;padding:22px;text-align:center"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Amount</div><div style="font-family:var(--font-display);font-size:1.5rem;color:var(--navy-800);font-weight:600">₹5,000 – ₹1,00,000</div></div>
+        <div style="background:var(--cream-50);border:1px solid var(--line);border-radius:16px;padding:22px;text-align:center"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Amount</div><div style="font-family:var(--font-display);font-size:1.5rem;color:var(--navy-800);font-weight:600">₹5,000 – ₹10,00,000</div></div>
         <div style="background:var(--cream-50);border:1px solid var(--line);border-radius:16px;padding:22px;text-align:center"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Tenure</div><div style="font-family:var(--font-display);font-size:1.5rem;color:var(--navy-800);font-weight:600">7 – 40 days</div></div>
         <div style="background:var(--cream-50);border:1px solid var(--line);border-radius:16px;padding:22px;text-align:center"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Interest from</div><div style="font-family:var(--font-display);font-size:1.5rem;color:var(--navy-800);font-weight:600">1% / day</div></div>
       </div>

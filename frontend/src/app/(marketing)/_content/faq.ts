@@ -20,7 +20,7 @@ export const html = `<section class="page active" id="faq">
     <div class="faq" style="margin-bottom:48px">
       <div class="qa"><button class="q">What documents do I need?<span class="qi">+</span></button><div class="a"><p>Typically your PAN, Aadhaar (for e-KYC) and bank account details. Everything is verified digitally — no physical paperwork or branch visits.</p></div></div>
       <div class="qa"><button class="q">Who is eligible to apply?<span class="qi">+</span></button><div class="a"><p>Indian citizens aged 21–58, salaried with a net monthly income of at least ₹40,000, with valid PAN &amp; Aadhaar and an active bank account. Final eligibility is set by the partner NBFC.</p></div></div>
-      <div class="qa"><button class="q">How much can I borrow?<span class="qi">+</span></button><div class="a"><p>Between ₹5,000 and ₹1,00,000, for a tenure of 7 to 40 days. Your approved limit depends on the NBFC's assessment of your profile.</p></div></div>
+      <div class="qa"><button class="q">How much can I borrow?<span class="qi">+</span></button><div class="a"><p>Between ₹5,000 and ₹10,00,000, for a tenure of 7 to 40 days. Your approved limit depends on the NBFC's assessment of your profile.</p></div></div>
     </div>
 
     <div class="sec-head left" style="margin-bottom:24px"><span class="eyebrow">Charges &amp; repayment</span></div>
