@@ -4,6 +4,7 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationView;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.ApplicationDtos.ApplyRequest;
 import com.navix.loan.dto.ApplicationDtos.AssignRequest;
@@ -19,6 +20,7 @@ import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.service.AdminApplicationService;
 import com.navix.loan.service.ApplicantReviewService;
 import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService;
@@ -50,6 +52,7 @@ public class ApplicationController {
     private final ApplicantReviewService review;
     private final ApplicationVerificationService verification;
     private final CreditBriefService creditBrief;
+    private final AdminApplicationService adminApplications;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
@@ -84,6 +87,13 @@ public class ApplicationController {
     @GetMapping("/mine")
     public ApiResponse<List<ApplicationView>> mine() {
         return ApiResponse.ok(flow.myApplications().stream().map(ApplicationView::of).toList());
+    }
+
+    /** ADMIN-only register: EVERY application — complete and incomplete — with full KYC detail and an
+     *  onboarding-completeness summary (newest first). Non-admin callers get {@code FORBIDDEN_ROLE}. */
+    @GetMapping("/all")
+    public ApiResponse<List<AdminApplicationView>> all() {
+        return ApiResponse.ok(adminApplications.listAll());
     }
 
     @GetMapping("/{id}")

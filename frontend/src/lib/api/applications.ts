@@ -56,6 +56,45 @@ export interface ApplicationView {
   recommendation?: string | null;
 }
 
+/**
+ * ADMIN-only flat view of an application with full KYC detail + onboarding completeness — covers
+ * complete AND incomplete (DRAFT / partially filled) applications. Mirrors backend AdminApplicationView.
+ */
+export interface AdminApplicationView {
+  id: number;
+  applicantId: number;
+  status: ApplicationStatus;
+  amountRequestedPaise: number | null;
+  eligibleLimitPaise: number | null;
+  purpose: string | null;
+  salaryCreditDay: number | null;
+  assignedExecutiveId: number | null;
+  loanId: number | null;
+  hasProfile: boolean;
+  fullName: string | null;
+  pan: string | null;
+  aadhaar: string | null;
+  mobile: string | null;
+  email: string | null;
+  dob: string | null;
+  address: string | null;
+  employer: string | null;
+  employmentStatus: string | null;
+  monthlySalaryPaise: number | null;
+  salaryBank: string | null;
+  creditScore: number | null;
+  starRating: number | null;
+  recommendation: string | null;
+  riskCategory: string | null;
+  /** Required verification checks currently PASS/REVIEW, out of stepsRequired. */
+  stepsCompleted: number;
+  stepsRequired: number;
+  agreementAccepted: boolean;
+  /** True once every required step is cleared and the agreement accepted. */
+  complete: boolean;
+  kycCapturedAt: string | null;
+}
+
 export interface EventView {
   id: number;
   fromStatus: ApplicationStatus | null;
@@ -559,6 +598,9 @@ export const staffApi = {
   /** The credit head's assignment queue (KYC_APPROVED + applied). */
   creditQueue: () => bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue`, "GET"),
 
+  /** ADMIN-only: every application (complete + incomplete) with full KYC detail + completeness. */
+  listAllApplications: () => bff<AdminApplicationView[]>(`${STAFF_BASE}/all`, "GET"),
+
   get: (id: number) => bff<ApplicationView>(`${STAFF_BASE}/${id}`, "GET"),
 
   events: (id: number) => bff<EventView[]>(`${STAFF_BASE}/${id}/events`, "GET"),
@@ -705,9 +747,24 @@ export interface BlocklistResponse {
   active: boolean;
 }
 
+/** One company expense (ADMIN-tracked spend). Mirrors backend ExpenseResponse. Money is paise. */
+export interface ExpenseResponse {
+  id: number;
+  description: string;
+  amountPaise: number;
+  paidTo: string;
+  notes: string | null;
+  /** ISO yyyy-mm-dd. */
+  expenseDate: string;
+  createdAt: string | null;
+  /** Name of the admin who recorded it. */
+  addedBy: string | null;
+}
+
 const ADMIN_STAFF_BASE = "/api/staff/users";
 const ADMIN_INVITES_BASE = "/api/staff/invites";
 const ADMIN_BLOCKLIST_BASE = "/api/admin/blocklist";
+const ADMIN_EXPENSES_BASE = "/api/admin/expenses";
 
 export const adminApi = {
   // --- staff users ---
@@ -732,6 +789,17 @@ export const adminApi = {
   addBlocklist: (payload: { type: BlocklistType; value: string; reason?: string }) =>
     bff<BlocklistResponse>(ADMIN_BLOCKLIST_BASE, "POST", payload),
   removeBlocklist: (id: number) => bff<null>(`${ADMIN_BLOCKLIST_BASE}/${id}`, "DELETE"),
+
+  // --- company expenses (ADMIN only) ---
+  listExpenses: () => bff<ExpenseResponse[]>(ADMIN_EXPENSES_BASE, "GET"),
+  addExpense: (payload: {
+    description: string;
+    amountPaise: number;
+    paidTo: string;
+    notes?: string;
+    expenseDate?: string;
+  }) => bff<ExpenseResponse>(ADMIN_EXPENSES_BASE, "POST", payload),
+  removeExpense: (id: number) => bff<null>(`${ADMIN_EXPENSES_BASE}/${id}`, "DELETE"),
 };
 
 // ---------------------------------------------------------------------------

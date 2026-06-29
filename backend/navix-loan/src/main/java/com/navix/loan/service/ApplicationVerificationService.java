@@ -533,6 +533,28 @@ public class ApplicationVerificationService {
         }
     }
 
+    /** Number of verification checks an applicant must clear (PASS/REVIEW) to submit KYC. */
+    public static int requiredCount() {
+        return REQUIRED.size();
+    }
+
+    /** How many of the {@link #requiredCount()} required checks are currently PASS/REVIEW for an
+     *  application — the onboarding-completeness signal used by the admin all-applications register. */
+    @Transactional(readOnly = true)
+    public int requiredPassedCount(Long appId) {
+        Map<String, String> byType = verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
+                .collect(Collectors.toMap(ApplicationVerification::getCheckType,
+                        ApplicationVerification::getStatus, (a, b) -> b));
+        int done = 0;
+        for (String required : REQUIRED) {
+            String status = byType.get(required);
+            if (PASS.equals(status) || REVIEW.equals(status)) {
+                done++;
+            }
+        }
+        return done;
+    }
+
     /** All verification rows for an application as borrower-safe step results. */
     @Transactional(readOnly = true)
     public List<StepResult> summary(Long appId) {
