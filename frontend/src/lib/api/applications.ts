@@ -48,6 +48,8 @@ export interface ApplicationView {
   purpose: string | null;
   assignedExecutiveId: number | null;
   loanId: number | null;
+  /** Salary-credit day-of-month (1–31) — fixed on the first loan and reused on reborrow (no re-pick). */
+  salaryCreditDay?: number | null;
   /** A pre-approved reborrow that reached disbursement without credit review (fast-track section). */
   fastTrack?: boolean;
   /** Staff-only credit headline (populated on staff queue rows; never on borrower paths). */

@@ -4,13 +4,20 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, ArrowLeft, Loader2, AlertTriangle } from "lucide-react";
+import { ArrowRight, ArrowLeft, Loader2, AlertTriangle, CalendarCheck } from "lucide-react";
 import { AmountChooser } from "@/components/borrower/amount-chooser";
 import { SalaryCalendar } from "@/components/borrower/salary-calendar";
 import { useLiveApplication, applyForAmount, canChooseAmount } from "@/lib/api/live-journey";
 import { borrowerApi, rupeesToPaise, ApplicationApiError } from "@/lib/api/applications";
 import { useOnboardingStore } from "@/stores/application-store";
 import { eligibleLimit } from "@/lib/calc/loan-math";
+
+/** 1 → "1st", 2 → "2nd", 3 → "3rd", 21 → "21st" … for the salary day-of-month label. */
+function ordinal(n: number): string {
+  const v = n % 100;
+  const suffix = v >= 11 && v <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
+  return `${n}${suffix}`;
+}
 
 export default function LoanApplyPage() {
   const router = useRouter();
@@ -41,6 +48,14 @@ export default function LoanApplyPage() {
   // SalaryCalendar so the borrower confirms exactly which salary day repays the advance.
   const [salaryDay, setSalaryDay] = React.useState(draft.salaryDay || 1);
   const handlePickDay = React.useCallback((d: Date) => setSalaryDay(d.getDate()), []);
+  // A returning borrower (PRE_APPROVED reborrow) keeps the salary day they set on their first loan — we
+  // don't ask again. Adopt it from the application once it loads; fresh borrowers pick it on the
+  // calendar below.
+  const isReborrow = app?.status === "PRE_APPROVED";
+  const fixedDay = app?.salaryCreditDay ?? null;
+  React.useEffect(() => {
+    if (isReborrow && fixedDay != null) setSalaryDay(fixedDay);
+  }, [isReborrow, fixedDay]);
 
   React.useEffect(() => {
     if (limit > 0) setAmount((prev) => (prev > 0 && prev <= limit ? prev : limit));
@@ -103,8 +118,9 @@ export default function LoanApplyPage() {
     <div className="container max-w-container py-10">
       <h1 className="mb-1">Set up your advance</h1>
       <p className="mb-7 text-muted">
-        Pick the day your salary lands, then choose your amount. Your due date and full cost update
-        live — repaid in one instalment, no hidden charges.
+        {isReborrow
+          ? "Your salary day carries over from before — just choose your amount. Your due date and full cost update live, repaid in one instalment."
+          : "Pick the day your salary lands, then choose your amount. Your due date and full cost update live — repaid in one instalment, no hidden charges."}
       </p>
 
       {limit <= 0 ? (
@@ -114,9 +130,24 @@ export default function LoanApplyPage() {
         </div>
       ) : (
         <div className="space-y-8">
-          <SalaryCalendar value={salaryDay} onPick={handlePickDay} />
+          {isReborrow && fixedDay != null ? (
+            <div className="flex items-start gap-3 rounded border border-line bg-white p-5 shadow-sm">
+              <span className="mt-0.5 grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-navy-tint text-navy">
+                <CalendarCheck size={18} />
+              </span>
+              <div>
+                <div className="font-semibold text-ink">Salary day · {ordinal(salaryDay)} of each month</div>
+                <p className="m-0 text-sm text-muted">
+                  Carried over from your first advance — repaid in one instalment on your next salary, no
+                  need to set it again.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <SalaryCalendar value={salaryDay} onPick={handlePickDay} />
+          )}
           <div>
-            <h2 className="mb-1 text-xl">Step 2 · Choose your amount</h2>
+            <h2 className="mb-1 text-xl">{isReborrow ? "Choose your amount" : "Step 2 · Choose your amount"}</h2>
             <p className="mb-4 text-sm text-muted">Drag to set your advance within your sanctioned limit.</p>
             <AmountChooser limit={limit} salaryDay={salaryDay} value={amount} onChange={setAmount} />
           </div>

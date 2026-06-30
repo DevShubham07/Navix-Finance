@@ -18,7 +18,6 @@ import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -103,17 +102,18 @@ public class ApplicationFlowService {
      * finish first ({@link #assertCanStartNewApplication}). Rejected if there is no prior application to
      * borrow against (the caller then falls back to a fresh signup).
      *
-     * <p>Routing by standing, computed from loan history (no stored flag):
+     * <p>Routing by standing, computed from loan history (no stored flag) — <b>past delinquency is the
+     * only trigger</b>:
      * <ul>
-     *   <li>clean history <b>and</b> a good credit rating (≥ 4.0★) →
-     *       {@link ApplicationStatus#PRE_APPROVED} (skips KYC + credit; on apply it goes straight to
-     *       the Disbursement Head);</li>
-     *   <li>everyone else (any past delinquency, or a rating below the threshold) → stays in
-     *       {@code DRAFT} and re-runs the full KYC wizard (which drives {@code DRAFT → KYC_PENDING}).</li>
+     *   <li>ever overdue / repaid late → {@link ApplicationStatus#REVIEW_PENDING}: a KYC approver must
+     *       clear them ({@code REVIEW_PENDING → PRE_APPROVED}) before they can proceed;</li>
+     *   <li>clean history → {@link ApplicationStatus#PRE_APPROVED} (skips KYC + credit; on apply it goes
+     *       straight to the Disbursement Head). Credit score does <b>not</b> gate reborrow.</li>
      * </ul>
      *
-     * <p>Deliberately does <b>not</b> create a new {@code applicant_profile} row — identity carries over
-     * (V12 keeps pan/aadhaar/mobile globally unique) and profile reads fall back to the prior one.
+     * <p>The carried-over KYC is cloned into a fresh {@code applicant_profile} row for the new
+     * application ({@link #copyProfileForReborrow}) so both the re-review and the disbursement review see
+     * the full picture; the salary day is reused from the prior application (never re-collected).
      */
     @Transactional
     public LoanApplication reborrow() {
@@ -132,21 +132,23 @@ public class ApplicationFlowService {
 
         LoanApplication app = createDraft(applicantId);
         app.setEligibleLimit(eligibleLimit);
-        app.setSalaryCreditDay(latestSalaryCreditDay(applicantId));
+        app.setSalaryCreditDay(latestSalaryCreditDay(applicantId)); // reuse the borrower's original salary day
 
-        boolean delinquent = hasPastDelinquency(applicantId);
-        BigDecimal star = prior.getCreditStarRating();
-        boolean goodStar = star != null && star.compareTo(new BigDecimal("4.0")) >= 0;
-        if (!delinquent && goodStar) {
-            transition(app, ApplicationStatus.PRE_APPROVED, "REBORROW", "Pre-approved returning borrower");
-            // Pre-approved fast path skips the wizard, so clone the carried-over KYC into a profile row
-            // of its OWN for this application. The reborrow flow then re-runs penny-drop against it (the
-            // verify step needs this application's profile), and staff review the reborrow with full KYC.
-            copyProfileForReborrow(prior, app.getId());
+        // Clone the carried-over KYC into a profile row of THIS application's own — needed for both the
+        // fast-track disbursement review and the KYC re-review (no onboarding wizard runs on either path).
+        copyProfileForReborrow(prior, app.getId());
+
+        // Past delinquency is the ONLY trigger for re-review: a borrower who was ever overdue (or repaid
+        // late) must be cleared by a KYC approver; everyone else is pre-approved straight through. Credit
+        // score does not gate reborrow.
+        // Action is "REBORROW" for both forks — the notification listener (NotificationEventListener
+        // .mapAction) keys on the action + toStatus to pick REBORROW_REVIEW_PENDING vs REBORROW_PREAPPROVED.
+        if (hasPastDelinquency(applicantId)) {
+            transition(app, ApplicationStatus.REVIEW_PENDING, "REBORROW",
+                    "Past delinquency - KYC re-review required");
         } else {
-            // Not good standing -> re-run the full KYC wizard. Stay in DRAFT; the wizard drives DRAFT -> KYC_PENDING.
-            logEvent(app, ApplicationStatus.DRAFT, ApplicationStatus.DRAFT, "REBORROW_FULL_KYC",
-                    delinquent ? "Past delinquency - full KYC required" : "Credit rating below threshold - full KYC required");
+            // Clean history → pre-approved; choosing an amount goes straight to the Disbursement Head.
+            transition(app, ApplicationStatus.PRE_APPROVED, "REBORROW", "Pre-approved returning borrower");
         }
         return applicationRepository.save(app);
     }
@@ -207,7 +209,9 @@ public class ApplicationFlowService {
         app.setPurpose(purpose);
         // Keep the reborrow-computed limit if the caller didn't supply one.
         app.setEligibleLimit(eligibleLimitPaise != null ? eligibleLimitPaise : app.getEligibleLimit());
-        app.setSalaryCreditDay(salaryCreditDay);
+        // Keep the reborrow-carried salary day if the caller didn't supply one (a reborrow reuses the
+        // borrower's original day and never re-asks); a fresh borrower always sends the picked value.
+        app.setSalaryCreditDay(salaryCreditDay != null ? salaryCreditDay : app.getSalaryCreditDay());
         if (st == ApplicationStatus.PRE_APPROVED) {
             // Pre-approved returning borrower → straight to the Disbursement Head (skips credit).
             transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "APPLY_FAST_TRACK",
@@ -508,9 +512,9 @@ public class ApplicationFlowService {
 
     /**
      * Clone a prior KYC profile into a fresh {@code applicant_profile} row keyed to the new (reborrow)
-     * application. Carries over identity, employment, salary and the credit brief so the pre-approved
-     * borrower needn't re-enter anything and staff see the full picture — but resets {@code pennyDrop}
-     * verification, which the reborrow flow re-runs against this application's own account. No-op if a
+     * application. Carries over identity, employment, salary, the credit brief AND the prior penny-drop
+     * verification (the bank account is unchanged and the reborrow flow no longer re-runs penny-drop) so
+     * the borrower needn't re-enter or re-verify anything and staff see the full picture. No-op if a
      * profile already exists for the new application (defensive; a fresh draft never has one).
      */
     private void copyProfileForReborrow(ApplicantProfile prior, Long newAppId) {
@@ -537,7 +541,7 @@ public class ApplicationFlowService {
         copy.setAadhaarLinked(prior.getAadhaarLinked());
         copy.setEmailVerified(prior.getEmailVerified());
         copy.setAddressVerified(prior.getAddressVerified());
-        copy.setPennyDropVerified(false);
+        copy.setPennyDropVerified(prior.getPennyDropVerified());
         copy.setNameMatchScore(prior.getNameMatchScore());
         copy.setDigilockerClientId(prior.getDigilockerClientId());
         copy.setAgreementAccepted(prior.getAgreementAccepted());

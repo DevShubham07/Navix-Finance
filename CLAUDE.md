@@ -92,9 +92,11 @@ as one aggregate and wired to the frontend end-to-end through a BFF.**
   (`ApplicationFlowService.closeForLoan`, ACTIVE/OVERDUE → CLOSED). The repay page shows the
   **prepayment-aware** "pay today" amount (interest only to the day paid) via `GET …/outstanding`.
 - ✅ **Returning-borrower reborrow + review gate (live)** — `/reloan` calls
-  `POST /api/applications/reborrow`, which reuses the saved KYC profile (no re-entry) and routes by
-  loan history: a borrower in **good standing** → `PRE_APPROVED` (skips KYC **and** credit; choosing an
-  amount goes **straight to the Disbursement Head**, shown in a fast-track section), while a borrower
+  `POST /api/applications/reborrow`, which reuses the saved KYC profile (no re-entry, **salary day
+  carried over from the first loan — never re-asked**) and routes purely on **past delinquency** (credit
+  score does **not** gate it): a borrower with **no past overdue** → `PRE_APPROVED` (skips KYC **and**
+  credit, **no payslip/penny-drop re-steps** — "Borrow again" lands straight on choose-amount and
+  submitting goes **straight to the Disbursement Head**, shown in a fast-track section), while a borrower
   who **ever had an overdue** → `REVIEW_PENDING`, a **separate** KYC-approver queue (`/staff/kyc-review`)
   that must clear them on **every** reborrow. New states `PRE_APPROVED`/`REVIEW_PENDING` (Flyway **V14**);
   standing is **computed from loan history**, no new table. (A deliberate credit-SoD relaxation for
@@ -417,10 +419,11 @@ the Accountant (`…/repayments/{pid}/verify`); when Σ verified payments ≥ to
 `ApplicationFlowService.closeForLoan` transitions the application `ACTIVE/OVERDUE → CLOSED`.
 
 **Reborrow (returning borrower):** `ApplicationFlowService.reborrow` mints a **new** application for an
-existing borrower, reusing their saved profile (no re-collection; eligible limit recomputed from the
+existing borrower, reusing their saved profile (no re-collection — **salary day carried over from the
+prior loan and never re-asked**, prior penny-drop carried over; eligible limit recomputed from the
 stored salary). Standing is computed from loan history (`hasPastDelinquency` — any loan ever
-OVERDUE/IN_COLLECTIONS, or a verified repayment made after its due date): clean → `DRAFT → PRE_APPROVED`,
-flagged → `DRAFT → REVIEW_PENDING`. A `KYC_APPROVER` clears a review (`REVIEW_PENDING → PRE_APPROVED`)
+OVERDUE/IN_COLLECTIONS, or a verified repayment made after its due date) and is the **only** gate
+(credit score does **not** gate reborrow): clean → `DRAFT → PRE_APPROVED`, flagged → `DRAFT → REVIEW_PENDING`. A `KYC_APPROVER` clears a review (`REVIEW_PENDING → PRE_APPROVED`)
 or rejects it. From `PRE_APPROVED`, the borrower's `apply` routes **straight to `DISBURSEMENT_PENDING`**
 (skips the credit maker-checker — a deliberate relaxation for pre-approved repeat borrowers, surfaced
 to the Disbursement Head as a separate fast-track section via `ApplicationView.fastTrack`). Reborrow is
@@ -467,9 +470,10 @@ How a real applicant moves through the product — this is now the **designed, b
    amount (interest only to the day paid).
 8. **Reborrow** — **live**: a returning borrower taps "Borrow again" on `/reloan`, which calls
    `borrowerApi.reborrow()`. With a clean history they're **pre-approved** (reuse profile, skip KYC +
-   credit) and land on `/loan/apply` → choosing an amount routes **straight to the Disbursement Head**;
-   if they **ever had an overdue** they're sent to a KYC-approver **review** (`/staff/kyc-review`) first.
-   See §5 (`PRE_APPROVED`/`REVIEW_PENDING`) and §11 (`/reborrow`, `/review-decision`).
+   credit, **salary day carried over — no re-pick**) and land **straight on `/loan/apply`** → choosing an
+   amount routes **straight to the Disbursement Head**; if they **ever had an overdue** they're sent to a
+   KYC-approver **review** (`/staff/kyc-review`) first. See §5 (`PRE_APPROVED`/`REVIEW_PENDING`) and §11
+   (`/reborrow`, `/review-decision`).
 
 The borrower can only call **borrower** actions (`requireRole("BORROWER")`); `apply` is rejected
 unless the application is `KYC_APPROVED`, the amount is ≥ ₹1,000, and (if an eligible limit is set)

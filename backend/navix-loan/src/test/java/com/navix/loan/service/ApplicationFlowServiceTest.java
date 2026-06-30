@@ -246,9 +246,9 @@ class ApplicationFlowServiceTest {
         assertThat(result.getSalaryCreditDay()).isEqualTo(30);
     }
 
-    /** Any past delinquency — here a loan repaid LATE (now closed) — forces a full KYC re-run (DRAFT). */
+    /** Any past delinquency — here a loan repaid LATE (now closed) — routes to a KYC re-review. */
     @Test
-    void reborrowWithLateRepaymentNeedsFullKyc() {
+    void reborrowWithLateRepaymentNeedsReview() {
         actor("7", "BORROWER");
         when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(priorApp()));
         when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
@@ -260,23 +260,23 @@ class ApplicationFlowServiceTest {
         late.setPaidOn(LocalDate.now().minusDays(5)); // after the due date
         when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(late));
 
-        // Delinquent → re-run full KYC: stays in DRAFT (the wizard drives DRAFT → KYC_PENDING).
-        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.DRAFT);
+        // Delinquent → a KYC approver must clear them (REVIEW_PENDING → PRE_APPROVED).
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REVIEW_PENDING);
     }
 
-    /** Clean history but a credit rating below the 4.0★ threshold → full KYC re-run (DRAFT), not pre-approved. */
+    /** Credit score does NOT gate reborrow: a clean-history borrower with a low rating is still pre-approved. */
     @Test
-    void reborrowCleanHistoryButLowStarNeedsFullKyc() {
+    void reborrowCleanHistoryLowStarStillPreApproved() {
         actor("7", "BORROWER");
         when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(priorApp()));
         ApplicantProfile lowStar = priorProfile();
-        lowStar.setCreditStarRating(new BigDecimal("3.5")); // below the 4.0★ threshold
+        lowStar.setCreditStarRating(new BigDecimal("3.5")); // below the old 4.0★ threshold — no longer gates
         when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(lowStar));
         Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
         when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(closed));
         when(paymentRepository.findByLoanId(50L)).thenReturn(List.of()); // paid on time
 
-        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.DRAFT);
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
     }
 
     /** A pre-loan application still in the pipeline (e.g. awaiting KYC) blocks a fresh reborrow. */
@@ -360,6 +360,17 @@ class ApplicationFlowServiceTest {
         flow.apply(1L, 1_000_000L, "medical", 1_500_000L, 30);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
         assertThat(app.getAssignedExecutiveId()).isNull(); // the fast-track discriminator
+    }
+
+    /** Reborrow reuse: applying without a salary day keeps the one carried onto the application. */
+    @Test
+    void applyWithoutSalaryDayKeepsCarriedDay() {
+        LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
+        app.setSalaryCreditDay(15); // carried over by reborrow() from the borrower's first loan
+        actor("7", "BORROWER");
+        flow.apply(1L, 1_000_000L, "medical", 1_500_000L, null);
+        assertThat(app.getSalaryCreditDay()).isEqualTo(15); // not wiped by the null
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
     }
 
     private LoanApplication priorApp() {

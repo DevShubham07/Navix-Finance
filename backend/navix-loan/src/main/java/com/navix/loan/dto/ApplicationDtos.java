@@ -46,6 +46,7 @@ public final class ApplicationDtos {
             String purpose,
             Long assignedExecutiveId,
             Long loanId,
+            Integer salaryCreditDay,
             boolean fastTrack,
             Integer creditScore,
             Double starRating,
@@ -66,7 +67,7 @@ public final class ApplicationDtos {
                     && a.getAssignedExecutiveId() == null;
             return new ApplicationView(a.getId(), a.getApplicantId(), a.getStatus(),
                     a.getAmountRequested(), a.getEligibleLimit(), a.getPurpose(),
-                    a.getAssignedExecutiveId(), a.getLoanId(), fastTrack,
+                    a.getAssignedExecutiveId(), a.getLoanId(), a.getSalaryCreditDay(), fastTrack,
                     p != null && p.getBureauScore() != null ? p.getBureauScore().intValue() : null,
                     p != null && p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
                     p != null ? p.getCreditRecommendation() : null);

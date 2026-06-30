@@ -79,10 +79,11 @@ export default function ReloanPage() {
         old ? [result, ...old.filter((a) => a.id !== result.id)] : [result],
       );
       queryClient.invalidateQueries({ queryKey: ["my-apps"] });
-      // Pre-approved (clean history + strong credit) → salary-slip-only fast path. Otherwise DRAFT →
-      // re-enter the onboarding wizard at the email step (the stored app-id makes the /signup/email
-      // guard pass, so OTP is skipped) for a full re-verification.
-      router.push(result.status === "PRE_APPROVED" ? "/reborrow/salary" : "/signup/email");
+      // Clean history → PRE_APPROVED: straight to choosing an amount (KYC + salary day carry over, no
+      // re-KYC, no payslip/penny-drop re-steps). Past overdue → REVIEW_PENDING: a KYC approver must
+      // clear them first, so send them to the status page (it shows "Under review", then a "Choose your
+      // amount" CTA once approved).
+      router.push(result.status === "PRE_APPROVED" ? "/loan/apply" : "/loan/status");
     } catch (e) {
       if (e instanceof ApplicationApiError && e.code === "NO_PRIOR_LOAN") {
         setNoPrior(true);
@@ -111,9 +112,8 @@ export default function ReloanPage() {
       </div>
       <h1 className="mb-1">Borrow again, instantly</h1>
       <p className="mb-6 text-muted">
-        In good standing — a clean repayment history and a strong credit score — you skip KYC
-        entirely: just re-share your latest salary slip and pick an amount. Otherwise we run a full
-        re-verification before your next advance.
+        Your KYC and salary day carry over from before — just pick an amount and the money&apos;s on its
+        way. If you&apos;ve ever missed a repayment, a quick approver review runs first.
       </p>
 
       <div className="rounded border border-gold-soft bg-gold-50/50 p-7 text-center shadow-sm">
