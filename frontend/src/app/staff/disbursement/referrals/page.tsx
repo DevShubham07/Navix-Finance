@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
-import { staffReferralApi, paiseToINR, type ReferralPayout } from "@/lib/api/applications";
+import { staffReferralApi, featureFlagsApi, paiseToINR, type ReferralPayout } from "@/lib/api/applications";
 
 /** Short date for a nullable ISO timestamp. */
 function fmtDate(iso: string | null): string {
@@ -35,15 +35,24 @@ export default function ReferralPayoutsPage() {
 
   const allowed = role ? hasPermission(role, "referral:payout") : false;
 
+  // Dev-controlled kill-switch: when the referral flag is off the whole feature (incl. these staff
+  // endpoints) is disabled, so don't fire the payout/expense reads — show the disabled state instead.
+  const flagsQ = useQuery({
+    queryKey: ["feature-flags"],
+    queryFn: () => featureFlagsApi.get(),
+    staleTime: 60_000,
+  });
+  const referralOff = flagsQ.data?.referral === false;
+
   const payoutsQ = useQuery({
     queryKey: ["referral-payouts", tab],
     queryFn: () => staffReferralApi.payouts(tab),
-    enabled: allowed,
+    enabled: allowed && !referralOff,
   });
   const expensesQ = useQuery({
     queryKey: ["referral-expenses"],
     queryFn: staffReferralApi.expenses,
-    enabled: allowed,
+    enabled: allowed && !referralOff,
   });
 
   const invalidate = () => {
@@ -65,6 +74,21 @@ export default function ReferralPayoutsPage() {
 
   if (role && !allowed) {
     return <NoAccessNotice message="Disbursement Head access only." />;
+  }
+
+  if (referralOff) {
+    return (
+      <div>
+        <PageHeader title="Referral payouts" subtitle="The refer-a-friend program is currently disabled." />
+        <div className="rounded border border-line bg-white p-10 text-center shadow-sm">
+          <Gift size={28} className="mx-auto mb-3 text-muted" />
+          <p className="text-sm text-muted">
+            The referral program is turned off, so payout management is unavailable. It can be re-enabled
+            by a developer.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const rows = payoutsQ.data ?? [];

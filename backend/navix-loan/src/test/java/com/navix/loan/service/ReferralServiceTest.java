@@ -3,6 +3,9 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -10,6 +13,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
 import com.navix.common.notification.event.ReferralRewardCreditedEvent;
 import com.navix.common.security.ActorContext;
@@ -52,11 +56,24 @@ class ReferralServiceTest {
     @Mock private ReferralPayoutRepository payoutRepository;
     @Mock private LoanRepository loanRepository;
     @Mock private ApplicantReviewService reviewService;
+    @Mock private FeatureFlagService featureFlags;
     @Mock private ApplicationEventPublisher eventPublisher;
 
+    /** Property and DB flag agree (the common case): the referral feature is {@code enabled} or not. */
     private ReferralService service(boolean enabled) {
+        return serviceFlag(enabled, enabled);
+    }
+
+    /**
+     * Build the service with an independent static-property value and dev-controlled DB-flag value, so a
+     * test can prove the {@code feature_flag} row overrides {@code navix.referral.enabled}. The mock
+     * mirrors {@link FeatureFlagService#isEnabled(String, boolean)}: returns {@code flagEnabled} for the
+     * "referral" key (the DB row wins, ignoring the supplied default).
+     */
+    private ReferralService serviceFlag(boolean propertyEnabled, boolean flagEnabled) {
+        lenient().when(featureFlags.isEnabled(eq("referral"), anyBoolean())).thenReturn(flagEnabled);
         return new ReferralService(codeRepository, referralRepository, payoutRepository, loanRepository,
-                reviewService, new ReferralProperties(enabled, REWARD), eventPublisher);
+                reviewService, new ReferralProperties(propertyEnabled, REWARD), featureFlags, eventPublisher);
     }
 
     @AfterEach
@@ -352,5 +369,82 @@ class ReferralServiceTest {
         ValidateCodeView v = service(true).validate("OWNCODE1");
 
         assertThat(v.valid()).isFalse();
+    }
+
+    // ---- dev-controlled feature flag overrides the static property ------------------
+
+    @Test
+    void applyCode_disabledByDbFlag_evenWhenPropertyEnabled() {
+        asBorrower(9002);
+
+        assertThatThrownBy(() -> serviceFlag(true, false).applyCode("FRIEND12"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("REFERRAL_DISABLED");
+        verifyNoInteractions(codeRepository);
+    }
+
+    @Test
+    void validate_disabledByDbFlag_evenWhenPropertyEnabled() {
+        asBorrower(9002);
+
+        ValidateCodeView v = serviceFlag(true, false).validate("FRIEND12");
+
+        assertThat(v.valid()).isFalse();
+        assertThat(v.message()).contains("not available");
+        verifyNoInteractions(codeRepository);
+    }
+
+    @Test
+    void onLoanDisbursed_noopByDbFlag_evenWhenPropertyEnabled() {
+        serviceFlag(true, false).onLoanDisbursed(9002L, 77L);
+
+        verifyNoInteractions(referralRepository, payoutRepository, eventPublisher);
+    }
+
+    @Test
+    void myReferral_reportsDisabledByDbFlag_evenWhenPropertyEnabled() {
+        asBorrower(9001);
+        when(codeRepository.findByApplicantId(9001L)).thenReturn(Optional.empty());
+        when(codeRepository.existsByCode(any())).thenReturn(false);
+        when(codeRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(referralRepository.countByReferrerApplicantIdAndStatus(9001L, ReferralStatus.QUALIFIED))
+                .thenReturn(0L);
+        when(payoutRepository.findByBeneficiaryApplicantId(9001L)).thenReturn(List.of());
+
+        MyReferralView view = serviceFlag(true, false).myReferral();
+
+        assertThat(view.enabled()).isFalse();
+    }
+
+    // ---- full kill-switch: staff payout management is off when the flag is off ------
+
+    @Test
+    void listPayouts_disabledByDbFlag() {
+        ActorContext.set(new CurrentActor("5", "Devang", "DISBURSEMENT_HEAD"));
+
+        assertThatThrownBy(() -> serviceFlag(true, false).listPayouts(null))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("REFERRAL_DISABLED");
+        verifyNoInteractions(payoutRepository);
+    }
+
+    @Test
+    void payPayout_disabledByDbFlag() {
+        ActorContext.set(new CurrentActor("5", "Devang", "DISBURSEMENT_HEAD"));
+
+        assertThatThrownBy(() -> serviceFlag(true, false).payPayout(10L, "UTR123"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("REFERRAL_DISABLED");
+        verifyNoInteractions(payoutRepository);
+    }
+
+    @Test
+    void expenseSummary_disabledByDbFlag() {
+        ActorContext.set(new CurrentActor("5", "Devang", "DISBURSEMENT_HEAD"));
+
+        assertThatThrownBy(() -> serviceFlag(true, false).expenseSummary())
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("REFERRAL_DISABLED");
+        verifyNoInteractions(payoutRepository);
     }
 }

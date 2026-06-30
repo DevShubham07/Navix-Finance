@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
 import com.navix.common.notification.event.ReferralRewardCreditedEvent;
 import com.navix.common.security.ActorContext;
@@ -65,7 +66,18 @@ public class ReferralService {
     private final LoanRepository loanRepository;
     private final ApplicantReviewService reviewService;
     private final ReferralProperties properties;
+    private final FeatureFlagService featureFlags;
     private final ApplicationEventPublisher eventPublisher;
+
+    /**
+     * Whether the referral program is on. The dev-controlled {@code feature_flag} row ("referral") is the
+     * live source of truth; when no row exists it falls back to the static {@code navix.referral.enabled}
+     * property, so behaviour is unchanged until a developer touches the table. A SQL update flips this on
+     * the next call, no redeploy.
+     */
+    private boolean referralEnabled() {
+        return featureFlags.isEnabled("referral", properties.enabled());
+    }
 
     // ---- borrower ------------------------------------------------------------------
 
@@ -85,7 +97,7 @@ public class ReferralService {
                 pending += p.getAmountPaise();
             }
         }
-        return new MyReferralView(properties.enabled(), code, properties.rewardPaise(),
+        return new MyReferralView(referralEnabled(), code, properties.rewardPaise(),
                 properties.rewardRupees(), shareMessage(code), qualified, earned, pending);
     }
 
@@ -94,7 +106,7 @@ public class ReferralService {
     @Transactional
     public ApplyCodeResult applyCode(String rawCode) {
         Long applicantId = currentBorrowerId();
-        if (!properties.enabled()) {
+        if (!referralEnabled()) {
             throw new BusinessException("REFERRAL_DISABLED", "The referral program is not available right now.");
         }
         String code = normalizeCode(rawCode);
@@ -132,7 +144,7 @@ public class ReferralService {
     @Transactional(readOnly = true)
     public ValidateCodeView validate(String rawCode) {
         Long applicantId = currentBorrowerId();
-        if (!properties.enabled()) {
+        if (!referralEnabled()) {
             return new ValidateCodeView(false, null, properties.rewardPaise(),
                     "The referral program is not available right now.");
         }
@@ -165,7 +177,7 @@ public class ReferralService {
      */
     @Transactional
     public void onLoanDisbursed(Long referredApplicantId, Long loanId) {
-        if (!properties.enabled() || referredApplicantId == null) {
+        if (!referralEnabled() || referredApplicantId == null) {
             return;
         }
         Optional<Referral> match = referralRepository.findByReferredApplicantId(referredApplicantId);
@@ -207,6 +219,7 @@ public class ReferralService {
     @Transactional(readOnly = true)
     public List<PayoutView> listPayouts(ReferralPayoutStatus status) {
         requireDisbursementHead();
+        requireReferralEnabled();
         List<ReferralPayout> payouts = status != null
                 ? payoutRepository.findByStatusOrderByIdAsc(status)
                 : payoutRepository.findAllByOrderByIdDesc();
@@ -223,6 +236,7 @@ public class ReferralService {
     @Transactional
     public PayoutView payPayout(Long id, String txnRef) {
         requireDisbursementHead();
+        requireReferralEnabled();
         if (txnRef == null || txnRef.isBlank()) {
             throw new BusinessException("MISSING_TXN_REF", "A transaction id is required to mark a payout paid.");
         }
@@ -248,6 +262,7 @@ public class ReferralService {
     @Transactional(readOnly = true)
     public ExpenseSummaryView expenseSummary() {
         requireDisbursementHead();
+        requireReferralEnabled();
         long pendingCount = 0;
         long pendingPaise = 0;
         long paidCount = 0;
@@ -321,6 +336,13 @@ public class ReferralService {
             throw new BusinessException("FORBIDDEN_ROLE", "This action requires role BORROWER");
         }
         return Long.valueOf(actor.id());
+    }
+
+    /** Full kill-switch gate: when the referral flag is off, staff payout management is disabled too. */
+    private void requireReferralEnabled() {
+        if (!referralEnabled()) {
+            throw new BusinessException("REFERRAL_DISABLED", "The referral program is currently disabled.");
+        }
     }
 
     /** Staff gate for payout management — the Disbursement Head, or ADMIN (oversight). */

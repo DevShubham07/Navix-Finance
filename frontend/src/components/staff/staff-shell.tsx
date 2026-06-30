@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   ShieldCheck,
@@ -29,13 +29,32 @@ import { Brand } from "@/components/site/brand";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { StaffRoleBar } from "@/components/staff/staff-role-bar";
 import { hasPermission, STAFF_ROLE_LABELS, type Permission } from "@/lib/auth/rbac";
+import { featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { cn } from "@/lib/utils";
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate"];
 
-type NavItem = { label: string; href: string; Icon: typeof LayoutDashboard; perm?: Permission };
+type NavItem = {
+  label: string;
+  href: string;
+  Icon: typeof LayoutDashboard;
+  perm?: Permission;
+  /** Hide this item when the named dev-controlled feature flag is off (in addition to RBAC). */
+  flag?: string;
+};
 type NavGroup = { heading: string; items: NavItem[] };
+
+/** A nav item shows when its RBAC perm passes AND its feature flag (if any) is not explicitly off. */
+function navVisible(
+  it: NavItem,
+  role: Parameters<typeof hasPermission>[0],
+  flags?: FeatureFlags,
+): boolean {
+  if (it.perm && !hasPermission(role, it.perm)) return false;
+  if (it.flag && flags?.[it.flag] === false) return false;
+  return true;
+}
 
 const NAV: NavGroup[] = [
   {
@@ -49,7 +68,7 @@ const NAV: NavGroup[] = [
       { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
       { label: "Credit Queue", href: "/staff/credit/queue", Icon: ClipboardList, perm: "loan:review" },
       { label: "Disbursement", href: "/staff/disbursement", Icon: Banknote, perm: "loan:disburse" },
-      { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout" },
+      { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },
       { label: "Accounting", href: "/staff/accounting", Icon: Receipt, perm: "loan:activate" },
     ],
   },
@@ -76,8 +95,8 @@ const NAV: NavGroup[] = [
 
 /** Flattened horizontal nav for the mobile strip — icon + label pills that
  *  scroll sideways, no group headings (those only make sense in the sidebar). */
-function MobileNavLinks({ role, pathname }: { role: Parameters<typeof hasPermission>[0]; pathname: string }) {
-  const items = NAV.flatMap((g) => g.items).filter((it) => !it.perm || hasPermission(role, it.perm));
+function MobileNavLinks({ role, pathname, flags }: { role: Parameters<typeof hasPermission>[0]; pathname: string; flags?: FeatureFlags }) {
+  const items = NAV.flatMap((g) => g.items).filter((it) => navVisible(it, role, flags));
   return (
     <>
       {items.map(({ label, href, Icon }) => {
@@ -102,11 +121,11 @@ function MobileNavLinks({ role, pathname }: { role: Parameters<typeof hasPermiss
   );
 }
 
-function NavLinks({ role, pathname, onNavigate }: { role: Parameters<typeof hasPermission>[0]; pathname: string; onNavigate?: () => void }) {
+function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<typeof hasPermission>[0]; pathname: string; onNavigate?: () => void; flags?: FeatureFlags }) {
   return (
     <>
       {NAV.map((group) => {
-        const items = group.items.filter((it) => !it.perm || hasPermission(role, it.perm));
+        const items = group.items.filter((it) => navVisible(it, role, flags));
         if (!items.length) return null;
         return (
           <div key={group.heading} className="mb-5">
@@ -147,6 +166,14 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const { session, loading } = useStaffSession();
   const isPublic = PUBLIC_STAFF.some((p) => pathname.startsWith(p));
 
+  // Dev-controlled feature flags — used to hide nav for a disabled feature (e.g. referral payouts).
+  const { data: flags } = useQuery({
+    queryKey: ["feature-flags"],
+    queryFn: () => featureFlagsApi.get(),
+    enabled: !isPublic && !!session,
+    staleTime: 60_000,
+  });
+
   // Login / activation pages: bare, centered, ivory.
   if (isPublic) {
     return <div className="min-h-screen bg-ivory">{children}</div>;
@@ -184,7 +211,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           <Brand href="/staff/dashboard" tag="Staff Console" light />
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-5">
-          <NavLinks role={session.role} pathname={pathname} />
+          <NavLinks role={session.role} pathname={pathname} flags={flags} />
         </nav>
       </aside>
 
@@ -217,7 +244,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         {/* Mobile nav strip — flat, horizontally scrollable */}
         <div className="border-b border-line bg-navy-900 lg:hidden">
           <div className="flex gap-1 overflow-x-auto px-2 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none]">
-            <MobileNavLinks role={session.role} pathname={pathname} />
+            <MobileNavLinks role={session.role} pathname={pathname} flags={flags} />
           </div>
         </div>
 
