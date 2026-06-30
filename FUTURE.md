@@ -1,15 +1,15 @@
 # FUTURE.md — Go-live roadmap (deferred work)
 
 The forward plan for taking NAVIX to production. This file owns only the **not-yet-built** items.
-Completed work is recorded in `handoff.md` §15 and `CLAUDE.md` §2.
+Completed work is recorded in `CLAUDE.md` §2 (and the git history).
 
-> Companion docs: `CLAUDE.md` (onboarding / current state), `handoff.md` (execution plan + change
-> log, esp. **§15** = the migration record), `dfd.md` (authoritative lifecycle + roles).
+> Companion docs: `CLAUDE.md` (onboarding / current state; §10 has the full migration record),
+> `dfd.md` (authoritative lifecycle + roles).
 
 > ## ⚑ Update 2026-06-27 — P0–P8 production migration SHIPPED (most of A/B/C is now 🟢)
 >
 > The `finalplan.md` migration + the OTP integration landed and were **live-verified against AWS RDS,
-> S3, the Fintrix sandbox, and the JWT auth chain** (see `handoff.md` §15). This supersedes large parts
+> S3, the Fintrix sandbox, and the JWT auth chain** (see `CLAUDE.md` §2/§10). This supersedes large parts
 > of the roadmap below — read the per-section 🟢 notes:
 > - **A (auth):** 🟢 **Real JWT + Spring Security.** `JwtAuthFilter` replaced `DemoActorFilter`;
 >   `SecurityConfig` requires a bearer on `/api/**` (401 otherwise); `AuthController` issues staff
@@ -262,5 +262,4 @@ with real API calls. One integration remains:
 
 _Last updated 2026-06-28 (notification engine — in-app + SMS + email — shipped; see the 2026-06-28
 notification banner → follow-ups G1–G5. Credit brief + 1–5★ rating + PDF also shipped this day →
-F1–F5). As each remaining item ships, mark it 🟢 and migrate the detail into `handoff.md`'s change
-log + `CLAUDE.md`._
+F1–F5). As each remaining item ships, mark it 🟢 and migrate the detail into `CLAUDE.md`._

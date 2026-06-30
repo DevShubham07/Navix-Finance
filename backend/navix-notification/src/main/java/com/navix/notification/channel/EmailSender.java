@@ -6,23 +6,28 @@ import com.navix.notification.config.EmailProperties;
 import com.navix.notification.email.EmailClient;
 import com.navix.notification.email.EmailMessage;
 import com.navix.notification.email.EmailResult;
+import com.navix.notification.suppression.EmailSuppressionService;
 import com.navix.notification.template.RenderedMessage;
 import org.springframework.stereotype.Component;
 
 /**
  * Email transport over the {@link EmailClient} port ({@code LogEmailClient} by default, {@code
- * SmtpEmailClient} when {@code navix.email.provider=smtp}). Honours the global enabled flag and
- * address-gates a missing email; never throws.
+ * SmtpEmailClient}/{@code SesEmailClient} when configured). Honours the global enabled flag,
+ * address-gates a missing email, and skips addresses on the bounce/complaint suppression list;
+ * never throws.
  */
 @Component
 public class EmailSender implements ChannelSender {
 
     private final EmailClient client;
     private final EmailProperties props;
+    private final EmailSuppressionService suppressionService;
 
-    public EmailSender(EmailClient client, EmailProperties props) {
+    public EmailSender(EmailClient client, EmailProperties props,
+                       EmailSuppressionService suppressionService) {
         this.client = client;
         this.props = props;
+        this.suppressionService = suppressionService;
     }
 
     @Override
@@ -38,6 +43,9 @@ public class EmailSender implements ChannelSender {
         String to = recipient.email();
         if (to == null || to.isBlank()) {
             return DeliveryOutcome.skipped("NO_EMAIL");
+        }
+        if (suppressionService.isSuppressed(to)) {
+            return DeliveryOutcome.skipped("SUPPRESSED");
         }
         try {
             EmailResult result = client.send(new EmailMessage(to, message.subject(), message.body()));

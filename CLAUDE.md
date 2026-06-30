@@ -5,8 +5,7 @@ onboarding doc** — read it first on a fresh machine and you have the full pict
 is, the end-to-end workflow, how the borrower flow works, how the staff/admin login flow works,
 how to run it, and what is real vs. deferred.
 
-> Companion docs: **`handoff.md`** (the running execution plan + detailed change log) and
-> **`dfd.md`** (the authoritative state-machine + roles spec). When this file and `dfd.md`
+> Companion doc: **`dfd.md`** (the authoritative state-machine + roles spec). When this file and `dfd.md`
 > disagree on the lifecycle, `dfd.md` wins — except the two product decisions explicitly
 > recorded below (salary-linked due date, role names), which are final.
 
@@ -45,9 +44,9 @@ This is a monorepo:
 NAVIX runs the **full loan lifecycle end-to-end** — a single `loan_application` aggregate (§5) wired to
 a polished frontend through a BFF (§8), on **real JWT + Spring Security** (§7), with real
 Fintrix/DigiLocker clients, **S3-backed** documents, and a **9-step verified onboarding**. It is
-deployed (Vercel frontend → AWS ALB → ECS Fargate → RDS/S3/SSM; see `aws.md`). The dated, blow-by-blow
-change log lives in **`handoff.md` §15** — this section is the at-a-glance map of what's live; detail
-on the lifecycle, roles, math, schema and endpoints lives once in §5/§7/§9/§10/§11.
+deployed (Vercel frontend → AWS ALB → ECS Fargate → RDS/S3/SSM; see `aws.md`). This section is the
+at-a-glance map of what's live (the blow-by-blow history is in git); detail on the lifecycle, roles,
+math, schema and endpoints lives once in §5/§7/§9/§10/§11.
 
 **Lifecycle & money**
 - **Lifecycle engine** — `ApplicationFlowService` walks the canonical state machine (§5), enforcing
@@ -89,7 +88,9 @@ on the lifecycle, roles, math, schema and endpoints lives once in §5/§7/§9/§
 - **Salary management** — ADMIN edits a customer's salary data with a `profile_change_log` audit; a
   monthly-salary change recomputes the eligible limit.
 - **Notifications** — an event-driven, non-blocking in-app + SMS + email engine (`navix-notification`),
-  surfaced to both audiences by a shared `NotificationBell` (§11/§12).
+  surfaced to both audiences by a shared `NotificationBell` (§11/§12). Email delivers via a pluggable
+  `EmailClient` (`log` default · `smtp` · **AWS `ses`**); SES **bounce/complaint feedback** is ingested
+  over SNS→SQS into an `email_suppression` list that the sender skips on future sends (§14).
 - **Feature flags** — dev-only **DB-backed** flags (`feature_flag`, read-only API), changed via SQL with
   no redeploy; first used as a kill-switch for the referral program (§11/§12).
 - **Referral** — refer-a-friend (codes, rewards, staff payout settlement), gated by the feature flag.
@@ -139,7 +140,6 @@ navix_final/
 │       │   └── mock/             # Zustand demo data + personas
 │       └── middleware.ts         # gates /staff/* on cookie presence
 ├── docker-compose.yml            # Postgres 16 + Adminer
-├── handoff.md                    # running execution plan + change log
 └── dfd.md                        # authoritative lifecycle + roles spec
 ```
 
@@ -174,7 +174,7 @@ npm run dev
 The BFF route handlers reach the backend via **`BACKEND_BASE_URL`** (server-only, default
 `http://localhost:8080`); every page calls the real backend through it.
 
-### 4.4 Demo logins (post-migration — real JWT, see `handoff.md` §15)
+### 4.4 Demo logins (real JWT)
 - **Borrower:** `/login` → any 10-digit mobile → **Send code** → enter the OTP. Real OTP is delivered
   by the **UltronSMS** gateway, but is **blocked on DLT-template registration**, so for demo/testing
   run the backend with **`NAVIX_SMS_MOCK=true`** → the fixed code **`123456`** always works (also shown
@@ -488,7 +488,7 @@ navix-common). Applied on every boot:
 | `V12__applicant_profile_unique_identity.sql` | add `aadhaar` + `mobile` to `applicant_profile`; partial **unique** indexes on pan/aadhaar/mobile |
 | `V13__loan_disbursal_txn_ref.sql` | add `loan.disbursal_txn_ref` (the outgoing disbursal's transaction id) |
 | `V14__application_reborrow_states.sql` | extend the `status` CHECK with `PRE_APPROVED` / `REVIEW_PENDING` (returning-borrower reborrow); no new column/table |
-| `V15`–`V19` | the **P0–P8 production-migration** set (S3 `s3_object_key`, `application_verification` + applicant-profile verification fields, staff `password_hash`, payment settings, admin/staff seed) — **detailed in `handoff.md` §15** |
+| `V15`–`V19` | the **P0–P8 production-migration** set: **V15** `application_verification` + `application_document.s3_object_key`, **V16** applicant-profile derived verification fields, **V17** `staff_user.password_hash` (BCrypt login seed), **V18** singleton `payment_settings`, **V19** admin/staff seed |
 | `V20__applicant_profile_credit_brief.sql` | add `applicant_profile.{credit_star_rating, credit_recommendation, credit_brief_summary, credit_brief_generated_at, credit_brief_facts jsonb}` (the bureau credit brief; credit **score reuses `bureau_score`**) |
 | `V21__notification_core.sql` | `notification` (per-recipient in-app inbox) + `notification_delivery` (per-channel send audit); partial unread index `where in_app and read_at is null` |
 | `V22__applicant_profile_email.sql` | add `applicant_profile.email` (the borrower's contact email — gates the EMAIL channel) |
@@ -501,6 +501,7 @@ navix-common). Applied on every boot:
 | `V29__applicant_profile_aadhaar_verified.sql` | add `applicant_profile.aadhaar_verified` (mirrors pan/address verified; set on DigiLocker completion) |
 | `V30__settlement_status.sql` | add `settlement.{status, rejected_by, rejected_at}` (maker-checker **reject** for settlements + repayments) |
 | `V31__feature_flag.sql` | `feature_flag` — dev-only DB feature flags (SQL-controlled, read-only API; no write path) |
+| `V32__email_suppression.sql` | `email_suppression` (bounced/complained addresses, unique on `lower(email)`) — fed by the SES SNS→SQS listener; the email sender skips suppressed addresses (§14) |
 
 **The aggregate** `loan_application`: `id`, `applicant_id`, `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
@@ -653,7 +654,8 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 - **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `AWS_PROFILE`, `NAVIX_ENV`,
   `FINTRIX_*`, `DIGILOCKER_*`, `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
-  `NAVIX_EMAIL_*` (`PROVIDER` log|smtp · `ENABLED` · `FROM`), `NAVIX_NOTIF_*` (async pool sizing),
+  `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES),
+  `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
   `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs).
 
 ---
@@ -662,7 +664,7 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 
 > **The full roadmap is in [`FUTURE.md`](FUTURE.md); the go/no-go production checklist is
 > [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).** Most of the original deferred set **shipped**
-> (real auth, S3, Fintrix/DigiLocker, notifications, reborrow, referral, expenses — `handoff.md` §15);
+> (real auth, S3, Fintrix/DigiLocker, notifications, reborrow, referral, expenses);
 > the bullets below are what genuinely **remains**.
 
 - ✅ **Done in the migration:** real auth (JWT + Spring Security, `JwtAuthFilter` replaced
@@ -702,7 +704,7 @@ identity** (name/PAN/mobile/DOB) is overridden from the borrower's `ApplicantPro
 (`CreditBriefService.displayFacts`) — never the report's copy — so it can't show the fixture person;
 the on-screen brief is always recomputed from the profile.
 
-**DigiLocker live-flow gotchas** (full postmortem in `handoff.md`; touch points
+**DigiLocker live-flow gotchas** (touch points
 `ApplicationVerificationService.{digilockerStatus,digilockerComplete}`, `signup/digilocker/page.tsx`,
 `kyc/digilocker/callback/page.tsx`):
 - **`digilocker_initialize` caches the consent session by `redirect_url`** and re-serves a stale,
@@ -715,11 +717,37 @@ the on-screen brief is always recomputed from the profile.
   `digilockerStatus` short-circuits to PASS once the `AADHAAR` row exists. The signup tab polls until
   PASS with a ~3-min fallback to staff manual review.
 
+**AWS SES — email delivery + bounce/complaint suppression (live, 2026-07-01):** the email channel's
+`EmailClient` port (`navix-notification`) has three impls selected by `navix.email.provider`:
+`log` (default, masked-log no-send), `smtp` (Boot `JavaMailSender`), and **`ses`** (`SesEmailClient` over
+the SES v2 SDK, reusing the **same region + default credential chain as S3** — no separate SMTP creds).
+When `navix.email.configuration-set` is set, sends are tagged with a SES **configuration set**
+(`navix-notifications`) so deliverability events fire.
+
+- **Bounce/complaint loop:** SES config-set → **SNS topic `navix-ses-events`** → **SQS queue
+  `navix-ses-events`** (raw delivery, + DLQ) → `SesEventSqsListener` (`@SqsListener`, gated by
+  `navix.ses.events.enabled`). A **permanent** bounce or any complaint adds the address to the
+  `email_suppression` table (`EmailSuppressionService`, idempotent) and flips the originating
+  `notification_delivery` row to `BOUNCED`/`COMPLAINED` (matched by the SES messageId in `provider_ref`).
+  `EmailSender` then **skips** suppressed addresses (`SKIPPED("SUPPRESSED")`). Transient bounces are
+  logged, not suppressed. SES account-level suppression is also on, so this is belt-and-suspenders +
+  app-side visibility.
+- **Run it (sandbox):** `AWS_PROFILE=navix-dev NAVIX_EMAIL_PROVIDER=ses
+  NAVIX_EMAIL_FROM="NAVIX Finance <noreply@navixfinance.com>" NAVIX_SES_CONFIG_SET=navix-notifications
+  NAVIX_SES_EVENTS_ENABLED=true`. The verified identity is the **domain** `navixfinance.com`, so any
+  alias on it (e.g. `noreply@`) is a valid `From`. Test bounce/complaint/success without verifying
+  recipients via the SES mailbox simulator (`{bounce,complaint,success}@simulator.amazonses.com`).
+- **Caveats (both environmental, not code):** (1) with `NAVIX_SES_EVENTS_ENABLED=true` the app needs
+  working AWS credentials **at startup** — the SQS listener resolves the queue URL eagerly and the boot
+  **fails** without them (in prod that's the task role; locally pass `AWS_PROFILE=navix-dev`).
+  (2) With those creds the SSM import succeeds and points the app at **RDS**, not local Docker — know
+  which DB you're hitting when you test. The account is still in the **SES sandbox** (production access
+  pending); real recipients need that approval.
+
 ---
 
 ## 15. Reference
 
-- **`handoff.md`** — running execution plan, phase tracker, detailed dated change log.
 - **`aws.md`** — the live cloud deployment (Vercel → ALB → ECS → RDS/S3/SSM): every resource id, the
   redeploy recipe, and the smoke tests.
 - **`PRODUCTION_READINESS.md`** — go/no-go checklist for real production exposure.

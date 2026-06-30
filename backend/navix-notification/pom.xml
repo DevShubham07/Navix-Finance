@@ -45,6 +45,22 @@
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
 
+        <!-- AWS SES (SDK v2) for the SesEmailClient (off until navix.email.provider=ses).
+             Auto-configures SesV2Client off the same region + default credential chain as S3;
+             version managed by the spring-cloud-aws BOM in the parent pom. -->
+        <dependency>
+            <groupId>io.awspring.cloud</groupId>
+            <artifactId>spring-cloud-aws-starter-ses</artifactId>
+        </dependency>
+
+        <!-- AWS SQS for the SesEventSqsListener — consumes SES bounce/complaint events (SES
+             config-set -> SNS -> SQS). Listener is off until navix.ses.events.enabled=true;
+             version managed by the spring-cloud-aws BOM in the parent pom. -->
+        <dependency>
+            <groupId>io.awspring.cloud</groupId>
+            <artifactId>spring-cloud-aws-starter-sqs</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
