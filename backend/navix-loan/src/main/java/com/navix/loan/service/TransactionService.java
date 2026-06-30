@@ -46,6 +46,16 @@ public class TransactionService {
 
     @Transactional(readOnly = true)
     public List<TransactionView> listTransactions(String q, String direction) {
+        return listTransactions(q, direction, null, null);
+    }
+
+    /**
+     * As {@link #listTransactions(String, String)} with an optional inclusive date range ({@code from}
+     * / {@code to}, by the transaction's {@code date}). A row with no date is excluded once either bound
+     * is set. Lets the ledger filter a statement period server-side (timezone-free — dates are LocalDate).
+     */
+    @Transactional(readOnly = true)
+    public List<TransactionView> listTransactions(String q, String direction, LocalDate from, LocalDate to) {
         Map<Long, Loan> loanById = new HashMap<>();
         for (Loan l : loanRepository.findAll()) {
             loanById.put(l.getId(), l);
@@ -99,6 +109,14 @@ public class TransactionService {
         String dir = direction != null ? direction.trim().toUpperCase() : null;
         if ("INCOMING".equals(dir) || "OUTGOING".equals(dir)) {
             out.removeIf(t -> !t.direction().equals(dir));
+        }
+
+        // Inclusive statement-period window (by transaction date). Null-date rows drop once bounded.
+        if (from != null) {
+            out.removeIf(t -> t.date() == null || t.date().isBefore(from));
+        }
+        if (to != null) {
+            out.removeIf(t -> t.date() == null || t.date().isAfter(to));
         }
 
         if (q != null && !q.isBlank()) {

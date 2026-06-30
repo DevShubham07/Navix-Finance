@@ -28,27 +28,43 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "ALL", label: "All time" },
 ];
 
-/** The inclusive start Date for a calendar period, or null for "all time". */
-function periodStart(period: Period): Date | null {
+/** Local-time ISO yyyy-mm-dd for a Date (timezone-safe — never UTC-shifts at day boundaries). */
+function toLocalISO(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * The inclusive {@code [from, to]} ISO date window for a period (current period to today, in local
+ * time), or null for "all time". Returning ISO strings lets us filter by string comparison against the
+ * backend's {@code yyyy-mm-dd} dates — no {@code new Date("yyyy-mm-dd")} UTC-midnight off-by-one.
+ */
+function periodRange(period: Period): { from: string; to: string } | null {
   const now = new Date();
+  const to = toLocalISO(now);
   switch (period) {
     case "DAY":
-      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return { from: to, to };
     case "WEEK": {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      d.setDate(d.getDate() - 6); // rolling 7-day window including today
-      return d;
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6); // rolling 7 days incl. today
+      return { from: toLocalISO(d), to };
     }
     case "MONTH":
-      return new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: toLocalISO(new Date(now.getFullYear(), now.getMonth(), 1)), to };
     case "QUARTER":
-      return new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+      return { from: toLocalISO(new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1)), to };
     case "YEAR":
-      return new Date(now.getFullYear(), 0, 1);
+      return { from: toLocalISO(new Date(now.getFullYear(), 0, 1)), to };
     case "ALL":
     default:
       return null;
   }
+}
+
+/** Human "30 Jun 2026" from a local ISO yyyy-mm-dd (parsed by parts to avoid UTC drift). */
+function humanISO(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 /**
@@ -68,19 +84,16 @@ export default function TransactionsPage() {
   }, [search]);
 
   const direction = tab === "ALL" ? undefined : tab;
+  const range = React.useMemo(() => periodRange(period), [period]);
   const q = useQuery({
-    queryKey: ["staff-transactions", debounced, direction],
-    queryFn: () => staffApi.transactions(debounced || undefined, direction),
+    // Period filtering is now server-side (timezone-free), so the query keys on the range too.
+    queryKey: ["staff-transactions", debounced, direction, range?.from ?? "", range?.to ?? ""],
+    queryFn: () =>
+      staffApi.transactions(debounced || undefined, direction, range ? { from: range.from, to: range.to } : undefined),
     refetchInterval: 10_000,
   });
 
-  const data = q.data;
-  const start = React.useMemo(() => periodStart(period), [period]);
-  const rows = React.useMemo(() => {
-    const all = data ?? [];
-    if (!start) return all;
-    return all.filter((r) => r.date != null && new Date(r.date) >= start);
-  }, [data, start]);
+  const rows = q.data ?? [];
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "All time";
   const totalIn = rows.filter((r) => r.direction === "INCOMING").reduce((s, r) => s + r.amountPaise, 0);
   const totalOut = rows.filter((r) => r.direction === "OUTGOING").reduce((s, r) => s + r.amountPaise, 0);
@@ -105,6 +118,12 @@ export default function TransactionsPage() {
             { header: "Loan", value: (t) => (t.loanId != null ? `#${t.loanId}` : "") },
           ]}
           rows={rows}
+          meta={{
+            periodLabel,
+            from: range ? humanISO(range.from) : undefined,
+            to: range ? humanISO(range.to) : undefined,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }}
         />
         {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
       </PageHeader>

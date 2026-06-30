@@ -740,10 +740,12 @@ export const staffApi = {
   pendingRepayments: () => bff<PaymentView[]>(`${STAFF_LOAN_BASE}/pending-repayments`, "GET"),
 
   /** Company-wide transactions ledger (disbursals + repayments); optional borrower/direction filter. */
-  transactions: (q?: string, direction?: TransactionDirection) => {
+  transactions: (q?: string, direction?: TransactionDirection, range?: { from?: string; to?: string }) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (direction) params.set("direction", direction);
+    if (range?.from) params.set("from", range.from);
+    if (range?.to) params.set("to", range.to);
     const qs = params.toString();
     return bff<TransactionView[]>(`${STAFF_LOAN_BASE}/transactions${qs ? `?${qs}` : ""}`, "GET");
   },

@@ -21,6 +21,19 @@ export interface ExportActor {
   role: string;
 }
 
+/**
+ * Optional statement-period metadata (e.g. for the transactions ledger): the period label and the
+ * inclusive from/to dates the rows cover, plus the timezone the dates are read in. Rendered on the PDF
+ * so the document states exactly which window it represents.
+ */
+export interface ExportMeta {
+  periodLabel: string;
+  /** Human "from" / "to" (e.g. "30 Jun 2026"); omitted for an all-time export. */
+  from?: string;
+  to?: string;
+  timezone?: string;
+}
+
 // NAVIX design tokens (2026 "calendar" system) — navy #0C2540 · gold #D49A24 ·
 // warm-cream row #F7F2E9. Keeps branded PDFs aligned with the re-skinned UI.
 const NAVY: [number, number, number] = [12, 37, 64];
@@ -65,8 +78,10 @@ export function exportPdf<Row>(opts: {
   actor: ExportActor;
   /** ISO-ish timestamp string; the caller passes one so this stays deterministic/testable. */
   generatedAt: string;
+  /** Optional statement-period block (period label + from/to + timezone). */
+  meta?: ExportMeta;
 }): void {
-  const { fileBase, title, subtitle, columns, rows, actor, generatedAt } = opts;
+  const { fileBase, title, subtitle, columns, rows, actor, generatedAt, meta } = opts;
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -109,14 +124,27 @@ export function exportPdf<Row>(opts: {
   doc.setFontSize(8);
   doc.setTextColor(90, 90, 90);
   doc.text(
-    `Downloaded by ${actor.name} · ${actor.role}  ·  ${generatedAt}  ·  ${rows.length} row${rows.length === 1 ? "" : "s"}`,
+    `Downloaded by ${actor.name} · ${actor.role}  ·  Generated ${generatedAt}  ·  ${rows.length} row${rows.length === 1 ? "" : "s"}`,
     40,
     78,
   );
 
+  // --- statement-period block (optional) ---
+  let tableStart = 90;
+  if (meta) {
+    const period = meta.from && meta.to
+      ? `Statement period: ${meta.periodLabel}  ·  ${meta.from} – ${meta.to}`
+      : `Statement period: ${meta.periodLabel}`;
+    const tz = meta.timezone ? `  ·  Timezone: ${meta.timezone}` : "";
+    doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${period}${tz}  ·  ${rows.length} transaction${rows.length === 1 ? "" : "s"}`, 40, 90);
+    tableStart = 102;
+  }
+
   // --- table ---
   autoTable(doc, {
-    startY: 90,
+    startY: tableStart,
     head: [columns.map((c) => c.header)],
     body: rows.map((r) => columns.map((c) => cell(c.value(r)))),
     styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },

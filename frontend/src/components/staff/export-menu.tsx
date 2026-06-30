@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Download, ChevronDown, FileText, FileSpreadsheet } from "lucide-react";
 import { useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
-import { exportCsv, exportPdf, type ExportColumn } from "@/lib/export/exporters";
+import { exportCsv, exportPdf, type ExportColumn, type ExportMeta } from "@/lib/export/exporters";
 
 /**
  * "Export ▾" dropdown for staff dashboards — offers CSV and a NAVIX-branded PDF of the rows
@@ -17,6 +17,7 @@ export function ExportMenu<Row>({
   columns,
   rows,
   disabled,
+  meta,
 }: {
   title: string;
   subtitle?: string;
@@ -24,6 +25,8 @@ export function ExportMenu<Row>({
   columns: ExportColumn<Row>[];
   rows: Row[];
   disabled?: boolean;
+  /** Optional statement-period metadata stamped onto the PDF. */
+  meta?: ExportMeta;
 }) {
   const me = useStaffMe().data;
   const [open, setOpen] = React.useState(false);
@@ -47,6 +50,7 @@ export function ExportMenu<Row>({
       rows,
       actor,
       generatedAt: new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }),
+      meta,
     });
     setOpen(false);
   };

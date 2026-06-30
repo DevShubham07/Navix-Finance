@@ -127,4 +127,20 @@ class TransactionServiceTest {
         assertThat(service.listTransactions("aman", null)).hasSize(2); // case-insensitive
         assertThat(service.listTransactions("zzz", null)).isEmpty();
     }
+
+    @Test
+    void dateRangeFiltersToTheStatementPeriod() {
+        // Disbursal on 2026-05-20, repayment on 2026-06-20.
+        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
+
+        // June only → just the repayment.
+        List<TransactionView> june = service.listTransactions(
+                null, null, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+        assertThat(june).hasSize(1);
+        assertThat(june.get(0).type()).isEqualTo("REPAYMENT");
+
+        // Inclusive bounds → both days included; an out-of-range window → empty.
+        assertThat(service.listTransactions(null, null, LocalDate.of(2026, 5, 20), LocalDate.of(2026, 6, 20))).hasSize(2);
+        assertThat(service.listTransactions(null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31))).isEmpty();
+    }
 }

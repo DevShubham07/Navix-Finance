@@ -59,12 +59,15 @@ public class LoanController {
     @GetMapping("/transactions")
     public ApiResponse<List<TransactionView>> transactions(
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) String direction) {
-        // The company-wide ledger carries borrower PII (names + masked PAN) — staff-only, and scoped to
+            @RequestParam(required = false) String direction,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        // The company-wide ledger carries borrower PII (names + full PAN) — staff-only, and scoped to
         // the roles the UI exposes it to (Accountant + Admin). Closes a leak where any authenticated
-        // token (incl. a BORROWER JWT) could read every borrower's transactions.
+        // token (incl. a BORROWER JWT) could read every borrower's transactions. Optional from/to filter
+        // a statement period server-side.
         requireRole("ACCOUNTANT", "ADMIN");
-        return ApiResponse.ok(transactionService.listTransactions(q, direction));
+        return ApiResponse.ok(transactionService.listTransactions(q, direction, from, to));
     }
 
     /** Reject any actor whose role isn't in {@code allowed} (ADMIN included explicitly where needed). */
