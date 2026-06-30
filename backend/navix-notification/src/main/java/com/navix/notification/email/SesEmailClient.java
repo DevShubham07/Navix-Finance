@@ -40,12 +40,16 @@ public class SesEmailClient implements EmailClient {
         try {
             String subject = message.subject() == null ? "NAVIX Finance" : message.subject();
             String body = message.body() == null ? "" : message.body();
+            Body.Builder bodyBuilder = Body.builder().text(utf8(body));
+            if (message.html() != null && !message.html().isBlank()) {
+                bodyBuilder.html(utf8(message.html()));
+            }
             SendEmailRequest.Builder req = SendEmailRequest.builder()
                     .source(props.from())
                     .destination(Destination.builder().toAddresses(message.to()).build())
                     .message(Message.builder()
                             .subject(utf8(subject))
-                            .body(Body.builder().text(utf8(body)).build())
+                            .body(bodyBuilder.build())
                             .build());
             // Tag the send with the SES configuration set so bounce/complaint events fire to SNS.
             if (props.configurationSet() != null) {
