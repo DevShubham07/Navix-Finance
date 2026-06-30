@@ -6,7 +6,7 @@ to touch infra, redeploy the backend, debug an outage, or look up an endpoint/cr
 > Verified live & working **2026-06-27**: borrower + ADMIN staff JWT login, mock OTP `123456`,
 > Vercel → BFF → ALB → ECS → RDS, all green end-to-end.
 >
-> Companion docs: `CLAUDE.md` (product/architecture), `handoff.md` §15 (the P0–P8 migration),
+> Companion docs: `CLAUDE.md` (product/architecture; §10 has the P0–P8 migration record),
 > `FUTURE.md` (go-live backlog). The legacy `DEPLOYMENT.md` / `deploy/deploy-backend.sh` describe
 > an **EC2-on-box** model that is **NOT what's live** — see §9.
 
