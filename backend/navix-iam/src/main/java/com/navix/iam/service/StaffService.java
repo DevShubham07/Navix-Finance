@@ -8,6 +8,7 @@ import com.navix.iam.domain.StaffRole;
 import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.dto.StaffDtos.CreateStaffRequest;
 import com.navix.iam.dto.StaffDtos.StaffResponse;
+import com.navix.iam.dto.StaffDtos.UpdateMyProfileRequest;
 import com.navix.iam.dto.StaffDtos.UpdateStaffRequest;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
@@ -97,6 +98,49 @@ public class StaffService {
         staffUserRepository.save(staff);
         eventPublisher.publishEvent(new StaffAccountEvent(staff.getId(), staff.getEmail(), staff.getName(),
                 staff.getRole().name(), StaffAccountEvent.ChangeType.DISABLED, null, Instant.now()));
+    }
+
+    /** The calling staffer's own account (resolved from the JWT subject). Any authenticated staff. */
+    @Transactional(readOnly = true)
+    public StaffResponse getMyProfile() {
+        return StaffResponse.of(requireStaff(currentStaffId()));
+    }
+
+    /**
+     * The calling staffer self-edits their own display name + org fields (department/designation).
+     * Role and status are NOT editable here (admin-only via {@link #updateStaff}).
+     */
+    @Transactional
+    public StaffResponse updateMyProfile(UpdateMyProfileRequest req) {
+        StaffUser staff = requireStaff(currentStaffId());
+        String name = trimToNull(req.name());
+        if (name != null) {
+            staff.setName(name);
+        }
+        staff.setDepartment(trimToNull(req.department()));
+        staff.setDesignation(trimToNull(req.designation()));
+        return StaffResponse.of(staffUserRepository.save(staff));
+    }
+
+    private static Long currentStaffId() {
+        var actor = ActorContext.get();
+        String role = actor.role();
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role) || "SYSTEM".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff authentication required");
+        }
+        try {
+            return Long.valueOf(actor.id());
+        } catch (NumberFormatException e) {
+            throw new BusinessException("FORBIDDEN", "Could not resolve staff identity");
+        }
+    }
+
+    private static String trimToNull(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 
     private StaffUser requireStaff(Long id) {

@@ -50,6 +50,8 @@ class NotificationDispatcherTest {
     private NotificationDeliveryRepository deliveryRepo;
     @Mock
     private LoanDirectory loanDirectory;
+    @Mock
+    private com.navix.common.loan.BorrowerPreferenceDirectory borrowerPreferences;
 
     private NotificationDispatcher dispatcher;
 
@@ -71,8 +73,10 @@ class NotificationDispatcherTest {
     @BeforeEach
     void setUp() {
         TemplateRenderer renderer = new TemplateRenderer(new NotificationTemplates());
+        lenient().when(borrowerPreferences.optedOutChannels(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.Set.of());
         dispatcher = new NotificationDispatcher(renderer, audienceResolver, notificationRepo, deliveryRepo,
-                loanDirectory,
+                loanDirectory, borrowerPreferences,
                 List.of(okSender(NotificationChannel.IN_APP),
                         throwingSender(NotificationChannel.SMS),
                         okSender(NotificationChannel.EMAIL)));

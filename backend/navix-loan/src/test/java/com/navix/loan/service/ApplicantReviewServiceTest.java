@@ -3,12 +3,16 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.LoanApplication;
@@ -39,12 +43,17 @@ class ApplicantReviewServiceTest {
     private ApplicationDocumentRepository documentRepository;
     @Mock
     private DocumentStoragePort storage;
+    @Mock
+    private VerificationInvalidationService verificationInvalidation;
+    @Mock
+    private EligibilityService eligibilityService;
 
     private ApplicantReviewService service;
 
     @BeforeEach
     void setUp() {
-        service = new ApplicantReviewService(applicationRepository, profileRepository, documentRepository, storage);
+        service = new ApplicantReviewService(applicationRepository, profileRepository, documentRepository,
+                storage, verificationInvalidation, eligibilityService);
         ActorContext.set(BORROWER);
     }
 
@@ -64,6 +73,29 @@ class ApplicantReviewServiceTest {
         app.setId(APP_ID);
         app.setApplicantId(APPLICANT_ID);
         return app;
+    }
+
+    @Test
+    void editOwnProfileInvalidatesChecksAndRecomputesEligibilityOnSalaryChange() {
+        ApplicantProfile existing = new ApplicantProfile();
+        existing.setApplicationId(APP_ID);
+        existing.setAddress("Old address");
+        existing.setMonthlySalaryPaise(5_000_000L);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(existing));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        // Change address + salary; identity fields are not part of EditProfileRequest (locked).
+        service.editOwnProfile(APP_ID, new EditProfileRequest(
+                "New address", null, null, 6_000_000L, null, null, "Mom", "9990001111", "Mother"));
+
+        assertThat(existing.getAddress()).isEqualTo("New address");
+        assertThat(existing.getMonthlySalaryPaise()).isEqualTo(6_000_000L);
+        assertThat(existing.getEmergencyContactName()).isEqualTo("Mom");
+        // ADDRESS + SALARY checks reset; eligibility recomputed from the new salary.
+        verify(verificationInvalidation).invalidateForFields(eq(APP_ID),
+                argThat(s -> s.contains("address") && s.contains("monthlySalaryPaise")));
+        verify(eligibilityService).recomputeForApplicant(APPLICANT_ID, 6_000_000L);
     }
 
     @Test

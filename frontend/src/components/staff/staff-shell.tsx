@@ -193,13 +193,15 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             <Brand href="/staff/dashboard" tag="Staff" />
           </div>
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <div className="hidden text-right sm:block">
-              <div className="text-sm font-semibold text-ink">{session.name}</div>
-              <div className="text-xs text-gold-dark">{STAFF_ROLE_LABELS[session.role]}</div>
-            </div>
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-navy-tint font-serif font-bold text-navy">
-              {session.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-            </div>
+            <Link href="/staff/profile" className="flex items-center gap-2 rounded-full px-1 py-0.5 hover:bg-grey-100" title="My profile">
+              <div className="hidden text-right sm:block">
+                <div className="text-sm font-semibold text-ink">{session.name}</div>
+                <div className="text-xs text-gold-dark">{STAFF_ROLE_LABELS[session.role]}</div>
+              </div>
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-navy-tint font-serif font-bold text-navy">
+                {session.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+              </div>
+            </Link>
             <NotificationBell scope="staff" />
             <button
               onClick={signOut}

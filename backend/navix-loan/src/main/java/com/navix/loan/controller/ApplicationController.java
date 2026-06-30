@@ -16,6 +16,7 @@ import com.navix.loan.dto.ReviewDtos.DocumentContentView;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.DocumentUrlView;
 import com.navix.loan.dto.ReviewDtos.DocumentView;
+import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.entity.ApplicantProfile;
@@ -229,11 +230,19 @@ public class ApplicationController {
 
     // ---- applicant review: KYC profile + documents -------------------------------------
 
-    /** Borrower saves/updates their KYC details for this application. */
+    /** Borrower saves/updates their KYC details for this application (onboarding slice-save). */
     @PutMapping("/{id}/profile")
     public ApiResponse<ProfileView> saveProfile(@PathVariable Long id, @RequestBody ProfileRequest req) {
         requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ProfileView.of(review.saveProfile(id, req)));
+    }
+
+    /** Borrower self-edits their own profile (non-identity fields). Verification-linked edits reset the
+     *  matching check; a salary change recomputes eligibility (Phase 2.2). */
+    @PutMapping("/{id}/profile/self")
+    public ApiResponse<ProfileView> editOwnProfile(@PathVariable Long id, @RequestBody EditProfileRequest req) {
+        requireBorrowerOwnsOrStaff(id);
+        return ApiResponse.ok(ProfileView.of(review.editOwnProfile(id, req)));
     }
 
     /** Any reviewing role reads the applicant's KYC details (PAN masked). The staff-only credit

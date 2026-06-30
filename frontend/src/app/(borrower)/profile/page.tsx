@@ -1,13 +1,14 @@
 "use client";
 
-import { LogOut, ShieldCheck } from "lucide-react";
+import * as React from "react";
+import { LogOut, ShieldCheck, Save, Loader2, Lock, AlertTriangle } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { InfoRow, SummarySection } from "@/components/borrower/summary";
 import { KycProgress } from "@/components/borrower/kyc-progress";
-import { useOnboarding } from "@/lib/onboarding";
+import { Input } from "@/components/ui";
 import { useLiveApplication, useBorrowerLogout } from "@/lib/api/live-journey";
-import type { ApplicationStatus } from "@/lib/api/applications";
+import { borrowerApi, rupeesToPaise, ApplicationApiError, type ApplicationStatus } from "@/lib/api/applications";
 import type { KycCheck, KycState } from "@/lib/domain/borrower";
-import { formatINR0 } from "@/lib/utils";
 
 /** Statuses at/after KYC clearance — all checks read as verified. */
 const KYC_CLEARED: ApplicationStatus[] = [
@@ -16,7 +17,6 @@ const KYC_CLEARED: ApplicationStatus[] = [
   "DISBURSEMENT_FAILED", "DISBURSED", "ACTIVE", "OVERDUE", "DEFAULTED", "CLOSED", "WRITTEN_OFF",
 ];
 
-/** Map the live application lifecycle stage to the 5-check KYC widget state. */
 function kycFromStatus(status: ApplicationStatus | undefined): KycState {
   let check: KycCheck = "PENDING";
   if (status === "KYC_PENDING" || status === "REVIEW_PENDING") check = "IN_PROGRESS";
@@ -27,56 +27,138 @@ function kycFromStatus(status: ApplicationStatus | undefined): KycState {
 
 export default function ProfilePage() {
   const logout = useBorrowerLogout();
-  const { mounted, draft } = useOnboarding();
-  const { app } = useLiveApplication();
+  const { appId, app } = useLiveApplication();
+  const qc = useQueryClient();
 
-  if (!mounted) {
-    return <div className="container max-w-content py-10"><div className="h-72 rounded border border-line bg-white" /></div>;
+  const profileQ = useQuery({
+    queryKey: ["live-profile", appId],
+    queryFn: () => borrowerApi.getProfile(appId as number),
+    enabled: appId != null,
+  });
+  const p = profileQ.data;
+
+  // Editable fields (initialised from the loaded profile).
+  const [address, setAddress] = React.useState("");
+  const [employer, setEmployer] = React.useState("");
+  const [employmentStatus, setEmploymentStatus] = React.useState("");
+  const [salary, setSalary] = React.useState("");
+  const [salaryBank, setSalaryBank] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [ecName, setEcName] = React.useState("");
+  const [ecPhone, setEcPhone] = React.useState("");
+  const [ecRelation, setEcRelation] = React.useState("");
+
+  React.useEffect(() => {
+    if (!p) return;
+    setAddress(p.address ?? "");
+    setEmployer(p.employer ?? "");
+    setEmploymentStatus(p.employmentStatus ?? "");
+    setSalary(p.monthlySalaryPaise != null ? String(Math.round(p.monthlySalaryPaise / 100)) : "");
+    setSalaryBank(p.salaryBank ?? "");
+    setEmail(p.email ?? "");
+    setEcName(p.emergencyContactName ?? "");
+    setEcPhone(p.emergencyContactPhone ?? "");
+    setEcRelation(p.emergencyContactRelation ?? "");
+  }, [p]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      borrowerApi.editProfile(appId as number, {
+        address: address.trim() || null,
+        employer: employer.trim() || null,
+        employmentStatus: employmentStatus.trim() || null,
+        monthlySalaryPaise: salary ? rupeesToPaise(Number(salary.replace(/[^\d.]/g, ""))) : null,
+        salaryBank: salaryBank.trim() || null,
+        email: email.trim() || null,
+        emergencyContactName: ecName.trim() || null,
+        emergencyContactPhone: ecPhone.trim() || null,
+        emergencyContactRelation: ecRelation.trim() || null,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["live-profile", appId] }),
+  });
+
+  if (appId == null && !profileQ.isLoading) {
+    return (
+      <div className="container max-w-content py-10">
+        <div className="rounded border border-line bg-white p-8 text-center shadow-sm">
+          <h1 className="text-2xl">Your profile</h1>
+          <p className="mb-4 text-muted">Complete your application to set up your profile.</p>
+          <button onClick={() => logout()} className="btn btn-outline"><LogOut size={16} /> Sign out</button>
+        </div>
+      </div>
+    );
   }
-
-  const accountLast4 = draft.accountNumber ? draft.accountNumber.replace(/\D/g, "").slice(-4) : "";
-  const signOut = async () => {
-    await logout();
-  };
 
   return (
     <div className="container max-w-content py-10">
-      <div className="mb-7 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="mb-0">{draft.fullName || "Your profile"}</h1>
-          <p className="mt-1 text-muted">{draft.personalEmail || "Verified borrower"}</p>
-        </div>
-        {/* Risk category (A/B/C/D) and credit score are staff-only signals — never shown to the
-            borrower (product rule: one price for all). */}
+      <div className="mb-7">
+        <h1 className="mb-0">{p?.fullName || "Your profile"}</h1>
+        <p className="mt-1 text-muted">{p?.email || "Verified borrower"}</p>
       </div>
 
-      <div className="grid gap-4">
-        <SummarySection title="Identity">
-          <InfoRow label="Full name" value={draft.fullName} />
-          <InfoRow label="PAN" value={draft.pan} />
-          <InfoRow label="Mobile" value={<span className="flex items-center justify-end gap-1.5">{draft.mobile} {draft.mobile && <ShieldCheck size={14} className="text-success-600" />}</span>} />
-        </SummarySection>
+      {profileQ.isLoading ? (
+        <div className="h-72 animate-pulse rounded border border-line bg-white" />
+      ) : (
+        <div className="grid gap-4">
+          {/* Identity — locked. */}
+          <SummarySection title="Identity">
+            <InfoRow label="Full name" value={p?.fullName} />
+            <InfoRow label="PAN" value={<span className="flex items-center justify-end gap-1.5">{p?.pan} <Lock size={12} className="text-muted" /></span>} />
+            <InfoRow label="Aadhaar" value={<span className="flex items-center justify-end gap-1.5">{p?.aadhaar} <Lock size={12} className="text-muted" /></span>} />
+            <InfoRow label="Mobile" value={<span className="flex items-center justify-end gap-1.5">{p?.mobile} {p?.mobile && <ShieldCheck size={14} className="text-success-600" />}</span>} />
+            <p className="pt-1 text-xs text-muted">Identity details are locked. Contact support to change your PAN, Aadhaar or mobile.</p>
+          </SummarySection>
 
-        <SummarySection title="Employment & income">
-          <InfoRow label="Employer" value={draft.employer} />
-          <InfoRow label="Monthly salary" value={draft.monthlySalary ? formatINR0(draft.monthlySalary) : "—"} />
-          <InfoRow label="Salary day" value={draft.salaryDay ? `${draft.salaryDay} of each month` : "—"} />
-        </SummarySection>
+          {/* Editable fields. */}
+          <SummarySection title="Contact & address">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="!mb-0" />
+              <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} className="!mb-0" />
+            </div>
+          </SummarySection>
 
-        <SummarySection title="Bank & address">
-          <InfoRow label="Bank" value={draft.bankName} />
-          <InfoRow label="Account" value={accountLast4 ? `•••• ${accountLast4}` : "—"} />
-          <InfoRow label="IFSC" value={draft.ifsc} />
-          <InfoRow label="Address" value={draft.address} />
-        </SummarySection>
+          <SummarySection title="Employment & income">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input label="Employer" value={employer} onChange={(e) => setEmployer(e.target.value)} className="!mb-0" />
+              <Input label="Employment status" value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} className="!mb-0" />
+              <Input label="Monthly salary (₹)" inputMode="numeric" value={salary} onChange={(e) => setSalary(e.target.value.replace(/[^\d]/g, ""))} className="!mb-0" />
+              <Input label="Salary bank" value={salaryBank} onChange={(e) => setSalaryBank(e.target.value)} className="!mb-0" />
+            </div>
+            <div className="mt-3 flex items-start gap-2 rounded border border-gold-soft bg-gold-50/60 px-3 py-2 text-xs text-ink">
+              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-gold-dark" />
+              Changing your address, salary or bank will require those checks to be re-verified before your next loan.
+            </div>
+          </SummarySection>
 
-        <div>
-          <div className="mb-2 text-sm font-semibold text-navy">KYC status</div>
-          <KycProgress kyc={kycFromStatus(app?.status)} />
+          <SummarySection title="Emergency contact">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Input label="Name" value={ecName} onChange={(e) => setEcName(e.target.value)} className="!mb-0" />
+              <Input label="Phone" inputMode="tel" value={ecPhone} onChange={(e) => setEcPhone(e.target.value)} className="!mb-0" />
+              <Input label="Relationship" value={ecRelation} onChange={(e) => setEcRelation(e.target.value)} className="!mb-0" />
+            </div>
+          </SummarySection>
+
+          {save.error && (
+            <p className="text-sm text-error-700">
+              {save.error instanceof ApplicationApiError ? `${save.error.message} (${save.error.code})` : "Could not save your changes."}
+            </p>
+          )}
+          {save.isSuccess && <p className="text-sm text-success-700">Profile updated.</p>}
+
+          <div>
+            <button onClick={() => save.mutate()} disabled={save.isPending || appId == null} className="btn btn-gold disabled:opacity-50">
+              {save.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save changes
+            </button>
+          </div>
+
+          <div>
+            <div className="mb-2 text-sm font-semibold text-navy">KYC status</div>
+            <KycProgress kyc={kycFromStatus(app?.status)} />
+          </div>
         </div>
-      </div>
+      )}
 
-      <button onClick={signOut} className="btn btn-outline mt-7">
+      <button onClick={() => logout()} className="btn btn-outline mt-7">
         <LogOut size={16} /> Sign out
       </button>
     </div>

@@ -80,6 +80,17 @@ public class ApplicantProfile extends BaseAuditEntity {
     @Column(name = "email", length = 255)
     private String email;
 
+    // --- emergency contact (editable on the borrower profile; not verified). V27 ---
+
+    @Column(name = "emergency_contact_name", length = 160)
+    private String emergencyContactName;
+
+    @Column(name = "emergency_contact_phone", length = 20)
+    private String emergencyContactPhone;
+
+    @Column(name = "emergency_contact_relation", length = 60)
+    private String emergencyContactRelation;
+
     // --- derived verification fields (populated by ApplicationVerificationService; V16) ---
 
     /** Credit bureau score (never surfaced to the borrower). */

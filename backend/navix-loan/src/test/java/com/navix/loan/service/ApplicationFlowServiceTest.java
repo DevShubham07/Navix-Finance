@@ -52,6 +52,8 @@ class ApplicationFlowServiceTest {
     private PaymentRepository paymentRepository;
     @Mock
     private ApplicantProfileRepository profileRepository;
+    @Mock
+    private com.navix.common.risk.RiskPort riskPort;
 
     private ApplicationFlowService flow;
     private final List<ApplicationEvent> events = new ArrayList<>();
@@ -59,7 +61,7 @@ class ApplicationFlowServiceTest {
     @BeforeEach
     void setUp() {
         flow = new ApplicationFlowService(applicationRepository, eventRepository,
-                new EligibilityService(), loanService, staffDirectory,
+                new EligibilityService(applicationRepository, riskPort), loanService, staffDirectory,
                 loanRepository, paymentRepository, profileRepository, new LoanMath(), event -> {});
         // Default: assignee passes activation gating; negative case overrides below.
         lenient().when(staffDirectory.isActiveWithRole(any(), any())).thenReturn(true);

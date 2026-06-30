@@ -185,6 +185,10 @@ export interface ProfileView {
   salaryPercentage?: number | null;
   incrementPercentage?: number | null;
   email?: string | null;
+  /** Emergency contact (Phase 2.2) — editable on the borrower profile. */
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelation?: string | null;
   /** Staff-only credit headline (score + 1–5★ rating + verdict). Null until the bureau is pulled. */
   creditScore?: number | null;
   starRating?: number | null;
@@ -215,6 +219,29 @@ export interface ProfileInput {
   employmentStatus?: string;
   monthlySalaryPaise?: number;
   salaryBank?: string;
+}
+
+/**
+ * Borrower self-edit of their own profile (Phase 2.2) — non-identity fields only. Verification-linked
+ * edits reset the matching check; a salary change recomputes eligibility.
+ */
+export interface EditProfileInput {
+  address?: string | null;
+  employer?: string | null;
+  employmentStatus?: string | null;
+  monthlySalaryPaise?: number | null;
+  salaryBank?: string | null;
+  email?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelation?: string | null;
+}
+
+/** Borrower notification preferences (Phase 2.2) — server-persisted; honored by the engine. */
+export interface BorrowerPreferences {
+  emailOptIn: boolean;
+  smsOptIn: boolean;
+  offersOptIn: boolean;
 }
 
 /** Document metadata (no bytes). */
@@ -496,8 +523,17 @@ export const borrowerApi = {
   saveProfile: (id: number, profile: ProfileInput) =>
     bff<ProfileView>(`${BORROWER_BASE}/${id}/profile`, "PUT", profile),
 
+  /** Self-edit own profile (non-identity fields); verification-linked edits reset the matching check. */
+  editProfile: (id: number, edit: EditProfileInput) =>
+    bff<ProfileView>(`${BORROWER_BASE}/${id}/profile/self`, "PUT", edit),
+
   /** Read back the (masked) profile. */
   getProfile: (id: number) => bff<ProfileView>(`${BORROWER_BASE}/${id}/profile`, "GET"),
+
+  /** The borrower's notification preferences (server-persisted; honored by the engine). */
+  getPreferences: () => bff<BorrowerPreferences>(`/api/borrower/preferences`, "GET"),
+  updatePreferences: (prefs: BorrowerPreferences) =>
+    bff<BorrowerPreferences>(`/api/borrower/preferences`, "PUT", prefs),
 
   /** Upload one document (bytes as base64). */
   uploadDocument: (
@@ -806,6 +842,9 @@ export interface StaffResponse {
   name: string;
   role: StaffRoleName;
   status: StaffStatus;
+  /** Self-editable org fields (Phase 2.2). */
+  department?: string | null;
+  designation?: string | null;
 }
 
 export interface InviteResponse {
@@ -849,6 +888,11 @@ export const adminApi = {
   // --- staff users ---
   listStaff: () => bff<StaffResponse[]>(ADMIN_STAFF_BASE, "GET"),
   getStaff: (id: number) => bff<StaffResponse>(`${ADMIN_STAFF_BASE}/${id}`, "GET"),
+  /** The calling staffer's own account (any staff role). */
+  myProfile: () => bff<StaffResponse>(`${ADMIN_STAFF_BASE}/me`, "GET"),
+  /** Self-edit own display name + department/designation (not role/status). */
+  updateMyProfile: (payload: { name?: string; department?: string | null; designation?: string | null }) =>
+    bff<StaffResponse>(`${ADMIN_STAFF_BASE}/me`, "PUT", payload),
   /** Create a staff account with an email + password so they can sign in (ADMIN only). */
   createStaff: (payload: { email: string; name: string; role: StaffRoleName; password: string }) =>
     bff<StaffResponse>(ADMIN_STAFF_BASE, "POST", payload),

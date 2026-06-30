@@ -3,6 +3,7 @@ package com.navix.iam.controller;
 import com.navix.common.web.ApiResponse;
 import com.navix.iam.dto.StaffDtos.CreateStaffRequest;
 import com.navix.iam.dto.StaffDtos.StaffResponse;
+import com.navix.iam.dto.StaffDtos.UpdateMyProfileRequest;
 import com.navix.iam.dto.StaffDtos.UpdateStaffRequest;
 import com.navix.iam.service.StaffService;
 import jakarta.validation.Valid;
@@ -35,6 +36,18 @@ public class StaffController {
     @GetMapping
     public ApiResponse<List<StaffResponse>> list() {
         return ApiResponse.ok(staffService.listStaff());
+    }
+
+    /** The calling staffer's own account (literal path → ranks above {@code /{id}}). Any staff. */
+    @GetMapping("/me")
+    public ApiResponse<StaffResponse> me() {
+        return ApiResponse.ok(staffService.getMyProfile());
+    }
+
+    /** The calling staffer self-edits their display name + department/designation (not role/status). */
+    @PutMapping("/me")
+    public ApiResponse<StaffResponse> updateMe(@RequestBody UpdateMyProfileRequest request) {
+        return ApiResponse.ok(staffService.updateMyProfile(request));
     }
 
     @GetMapping("/{id}")

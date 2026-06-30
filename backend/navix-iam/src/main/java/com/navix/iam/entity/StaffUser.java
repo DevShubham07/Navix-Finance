@@ -40,4 +40,11 @@ public class StaffUser extends BaseAuditEntity {
     /** BCrypt hash; null until the staffer sets a password (invite-accept). */
     @Column(name = "password_hash")
     private String passwordHash;
+
+    /** Self-editable org fields (Phase 2.2); not tied to role/permissions. */
+    @Column(name = "department", length = 120)
+    private String department;
+
+    @Column(name = "designation", length = 120)
+    private String designation;
 }

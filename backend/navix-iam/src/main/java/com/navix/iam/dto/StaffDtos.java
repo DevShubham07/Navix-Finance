@@ -76,13 +76,23 @@ public final class StaffDtos {
             String email,
             String name,
             StaffRole role,
-            StaffStatus status
+            StaffStatus status,
+            String department,
+            String designation
     ) {
 
         public static StaffResponse of(StaffUser user) {
             return new StaffResponse(user.getId(), user.getEmail(), user.getName(),
-                    user.getRole(), user.getStatus());
+                    user.getRole(), user.getStatus(), user.getDepartment(), user.getDesignation());
         }
+    }
+
+    /** A staffer self-edits their own profile (display name + org fields). Role/status stay admin-only. */
+    public record UpdateMyProfileRequest(
+            String name,
+            String department,
+            String designation
+    ) {
     }
 
     /** Admin adds an identifier (PAN, Aadhaar ref, phone, device, bank account) to the blocklist. */

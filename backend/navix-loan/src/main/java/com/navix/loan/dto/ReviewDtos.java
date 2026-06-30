@@ -35,6 +35,24 @@ public final class ReviewDtos {
     }
 
     /**
+     * Borrower self-edit of their own profile (Phase 2.2) — <b>non-identity fields only</b>. Identity
+     * (PAN / Aadhaar / mobile / DOB / name) is locked. Editing a verification-linked field invalidates
+     * the matching check (re-verification required); a salary change recomputes eligibility. A null
+     * field is left unchanged (partial update).
+     */
+    public record EditProfileRequest(
+            String address,
+            String employer,
+            String employmentStatus,
+            Long monthlySalaryPaise,
+            String salaryBank,
+            String email,
+            String emergencyContactName,
+            String emergencyContactPhone,
+            String emergencyContactRelation) {
+    }
+
+    /**
      * Staff-facing KYC view — full, UNMASKED PAN/Aadhaar/mobile plus contact, verification flags and
      * the staff-only credit headline (score + 1–5★ rating + verdict) so customer/applicant cards can
      * show everything without a second call. The borrower's own read uses {@link #withoutCredit()},
@@ -56,6 +74,9 @@ public final class ReviewDtos {
             BigDecimal salaryPercentage,
             BigDecimal incrementPercentage,
             String email,
+            String emergencyContactName,
+            String emergencyContactPhone,
+            String emergencyContactRelation,
             Integer creditScore,
             Double starRating,
             String recommendation,
@@ -78,6 +99,7 @@ public final class ReviewDtos {
                     p.getMonthlySalaryPaise(), p.getSalaryBank(),
                     p.getAnnualSalaryPaise(), p.getSalaryPercentage(), p.getIncrementPercentage(),
                     p.getEmail(),
+                    p.getEmergencyContactName(), p.getEmergencyContactPhone(), p.getEmergencyContactRelation(),
                     p.getBureauScore() != null ? p.getBureauScore().intValue() : null,
                     p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
                     p.getCreditRecommendation(), p.getBureauSource(), p.getRiskCategory(),
@@ -94,6 +116,7 @@ public final class ReviewDtos {
             return new ProfileView(applicationId, fullName, pan, aadhaar, mobile, dob,
                     address, employer, employmentStatus, monthlySalaryPaise, salaryBank,
                     annualSalaryPaise, salaryPercentage, incrementPercentage, email,
+                    emergencyContactName, emergencyContactPhone, emergencyContactRelation,
                     null, null, null, null, null,
                     panVerified, aadhaarLinked, emailVerified, addressVerified, pennyDropVerified,
                     null, null, null);

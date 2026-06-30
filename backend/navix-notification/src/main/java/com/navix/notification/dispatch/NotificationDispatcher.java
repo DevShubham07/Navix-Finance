@@ -1,8 +1,10 @@
 package com.navix.notification.dispatch;
 
+import com.navix.common.loan.BorrowerPreferenceDirectory;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.notification.ContactInfo;
 import com.navix.common.notification.NotificationChannel;
+import com.navix.common.notification.RecipientType;
 import com.navix.notification.audience.AudienceResolver;
 import com.navix.notification.catalog.NotificationType;
 import com.navix.notification.channel.ChannelSender;
@@ -41,17 +43,20 @@ public class NotificationDispatcher {
     private final NotificationRepository notificationRepo;
     private final NotificationDeliveryRepository deliveryRepo;
     private final LoanDirectory loanDirectory;
+    private final BorrowerPreferenceDirectory borrowerPreferences;
     private final Map<NotificationChannel, ChannelSender> senders = new EnumMap<>(NotificationChannel.class);
 
     public NotificationDispatcher(TemplateRenderer renderer, AudienceResolver audienceResolver,
                                   NotificationRepository notificationRepo,
                                   NotificationDeliveryRepository deliveryRepo,
-                                  LoanDirectory loanDirectory, List<ChannelSender> channelSenders) {
+                                  LoanDirectory loanDirectory, BorrowerPreferenceDirectory borrowerPreferences,
+                                  List<ChannelSender> channelSenders) {
         this.renderer = renderer;
         this.audienceResolver = audienceResolver;
         this.notificationRepo = notificationRepo;
         this.deliveryRepo = deliveryRepo;
         this.loanDirectory = loanDirectory;
+        this.borrowerPreferences = borrowerPreferences;
         for (ChannelSender sender : channelSenders) {
             senders.put(sender.channel(), sender);
         }
@@ -72,9 +77,33 @@ public class NotificationDispatcher {
             model.put("role", recipient.role());
 
             Notification saved = persistNotification(type, ctx, recipient, model);
+            // Borrowers may opt out of SMS / EMAIL (server-persisted prefs); IN_APP (the inbox row
+            // above) is never suppressed. Staff recipients are unaffected.
+            java.util.Set<NotificationChannel> optedOut = recipient.type() == RecipientType.BORROWER
+                    ? borrowerPreferences.optedOutChannels(recipient.id())
+                    : java.util.Set.of();
             for (NotificationChannel channel : type.channels()) {
+                if (channel != NotificationChannel.IN_APP && optedOut.contains(channel)) {
+                    recordSkippedOptOut(saved, channel, recipient);
+                    continue;
+                }
                 deliver(saved, channel, type, recipient, model);
             }
+        }
+    }
+
+    /** Persist a {@code SKIPPED} delivery for an opted-out channel (audit trail, mirrors NO_MOBILE). */
+    private void recordSkippedOptOut(Notification saved, NotificationChannel channel, ContactInfo recipient) {
+        try {
+            NotificationDelivery d = new NotificationDelivery();
+            d.setNotificationId(saved.getId());
+            d.setChannel(channel);
+            d.setStatus(DeliveryStatus.SKIPPED);
+            d.setError("OPTED_OUT");
+            deliveryRepo.save(d);
+        } catch (Exception e) {
+            log.warn("Could not record opted-out delivery for notification {} channel {}: {}",
+                    saved.getId(), channel, e.toString());
         }
     }
 

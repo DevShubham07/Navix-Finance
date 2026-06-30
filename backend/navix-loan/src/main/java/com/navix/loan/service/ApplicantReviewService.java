@@ -6,6 +6,7 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
+import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.ApplicantProfile;
 import com.navix.loan.entity.ApplicationDocument;
@@ -43,6 +44,8 @@ public class ApplicantReviewService {
     private final ApplicantProfileRepository profileRepository;
     private final ApplicationDocumentRepository documentRepository;
     private final DocumentStoragePort storage;
+    private final VerificationInvalidationService verificationInvalidation;
+    private final EligibilityService eligibilityService;
 
     @Transactional
     public ApplicantProfile saveProfile(Long appId, ProfileRequest req) {
@@ -96,6 +99,70 @@ public class ApplicantReviewService {
         String email = trimToNull(req.email());
         if (email != null) p.setEmail(email);
         return profileRepository.save(p);
+    }
+
+    /**
+     * Borrower self-edit of their own profile (Phase 2.2). Identity fields (name/PAN/Aadhaar/mobile/DOB)
+     * are <b>locked</b> — only contact, address, employment, salary, bank and emergency-contact fields
+     * are editable. Editing a verification-linked field resets the matching check to PENDING (re-
+     * verification required, via {@link VerificationInvalidationService}); a salary change recomputes
+     * the eligible limit. A null field is left unchanged (partial update). BORROWER-only (ADMIN bypass);
+     * ownership is enforced at the controller.
+     */
+    @Transactional
+    public ApplicantProfile editOwnProfile(Long appId, EditProfileRequest req) {
+        requireRole("BORROWER");
+        LoanApplication app = applicationRepository.findById(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
+        // Edit the application's own profile snapshot (must exist — onboarding created it).
+        ApplicantProfile p = profileRepository.findByApplicationId(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("ApplicantProfile", "application:" + appId));
+
+        java.util.Set<String> changed = new java.util.HashSet<>();
+        String address = trimToNull(req.address());
+        if (address != null && !address.equals(p.getAddress())) {
+            p.setAddress(address);
+            changed.add("address");
+        }
+        String employer = trimToNull(req.employer());
+        if (employer != null && !employer.equals(p.getEmployer())) {
+            p.setEmployer(employer);
+            changed.add("employer");
+        }
+        String employmentStatus = trimToNull(req.employmentStatus());
+        if (employmentStatus != null && !employmentStatus.equals(p.getEmploymentStatus())) {
+            p.setEmploymentStatus(employmentStatus);
+            changed.add("employmentStatus");
+        }
+        boolean salaryChanged = false;
+        if (req.monthlySalaryPaise() != null
+                && !req.monthlySalaryPaise().equals(p.getMonthlySalaryPaise())) {
+            p.setMonthlySalaryPaise(req.monthlySalaryPaise());
+            changed.add("monthlySalaryPaise");
+            salaryChanged = true;
+        }
+        String salaryBank = trimToNull(req.salaryBank());
+        if (salaryBank != null && !salaryBank.equals(p.getSalaryBank())) {
+            p.setSalaryBank(salaryBank);
+            changed.add("salaryBank");
+        }
+        String email = trimToNull(req.email());
+        if (email != null && !email.equals(p.getEmail())) {
+            p.setEmail(email);
+            changed.add("email");
+        }
+        // Emergency contact — editable, not verified (no invalidation).
+        p.setEmergencyContactName(trimToNull(req.emergencyContactName()));
+        p.setEmergencyContactPhone(trimToNull(req.emergencyContactPhone()));
+        p.setEmergencyContactRelation(trimToNull(req.emergencyContactRelation()));
+
+        ApplicantProfile saved = profileRepository.save(p);
+        // Re-verification + eligibility side effects.
+        verificationInvalidation.invalidateForFields(appId, changed);
+        if (salaryChanged) {
+            eligibilityService.recomputeForApplicant(app.getApplicantId(), saved.getMonthlySalaryPaise());
+        }
+        return saved;
     }
 
     /**
