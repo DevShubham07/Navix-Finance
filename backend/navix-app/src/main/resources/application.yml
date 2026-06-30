@@ -98,11 +98,13 @@ navix:
   # philosophy): in-app is fully persisted, SMS reuses the gateway (mock-aware), and email logs via
   # LogEmailClient. Flip email to real SMTP with NAVIX_EMAIL_PROVIDER=smtp + spring.mail.* configured.
   email:
-    provider: ${NAVIX_EMAIL_PROVIDER:log}      # log | smtp | ses
+    provider: ${NAVIX_EMAIL_PROVIDER:log}      # log | smtp | ses | resend
     enabled: ${NAVIX_EMAIL_ENABLED:true}
     from: ${NAVIX_EMAIL_FROM:NAVIX Finance <no-reply@navixfinance.example>}
     # SES only: tag sends with a SES configuration set so bounce/complaint events fire to SNS->SQS.
     configuration-set: ${NAVIX_SES_CONFIG_SET:}
+    # Resend only: API key for the Resend HTTP provider (interim while SES is sandbox-blocked).
+    resend-api-key: ${RESEND_API_KEY:}
   # SES bounce/complaint ingestion (SES config-set -> SNS -> SQS -> SesEventSqsListener). Off by
   # default so the app boots without an SQS queue; flip on in AWS environments.
   ses:
