@@ -70,6 +70,13 @@ public enum NotificationType {
     // ---- SYSTEM ----
     APPLICATION_CANCELLED(SYSTEM, Set.of(IN_APP), Set.of(TO_BORROWER)),
 
+    // ---- REFERRAL ----
+    // A referral qualified (referred borrower's first loan disbursed) — alert the Disbursement Heads
+    // who settle the two pending ₹-reward payouts.
+    REFERRAL_PAYOUT_PENDING(SYSTEM, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS)),
+    // The Disbursement Head paid a reward — tell the beneficiary their reward is credited.
+    REFERRAL_REWARD_CREDITED(SYSTEM, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+
     // ---- STAFF / IAM (the subject themselves) ----
     STAFF_INVITED(STAFF_IAM, Set.of(EMAIL), Set.of(TO_STAFF_SUBJECT)),
     STAFF_CREATED(STAFF_IAM, Set.of(EMAIL), Set.of(TO_STAFF_SUBJECT)),

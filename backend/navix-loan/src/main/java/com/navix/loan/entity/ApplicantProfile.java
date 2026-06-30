@@ -112,6 +112,10 @@ public class ApplicantProfile extends BaseAuditEntity {
     @Column(name = "aadhaar_linked")
     private Boolean aadhaarLinked;
 
+    /** Aadhaar verified via DigiLocker (consent completed + Aadhaar fetched + document ingested). V29. */
+    @Column(name = "aadhaar_verified")
+    private Boolean aadhaarVerified;
+
     @Column(name = "email_verified")
     private Boolean emailVerified;
 

@@ -5,6 +5,8 @@ import com.navix.common.notification.RecipientType;
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.notification.event.CollectionCaseOpenedEvent;
 import com.navix.common.notification.event.KycReminderEvent;
+import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
+import com.navix.common.notification.event.ReferralRewardCreditedEvent;
 import com.navix.common.notification.event.RepaymentRecordedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
 import com.navix.common.notification.event.SettlementApprovedEvent;
@@ -115,6 +117,26 @@ public class NotificationEventListener {
                 .loanId(e.loanId())
                 .caseId(e.caseId())
                 .put("settlementAmount", NotificationFormat.inr(e.amountPaise()))
+                .build());
+    }
+
+    /** A referral qualified at disbursement — nudge the Disbursement Heads to settle the two payouts. */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onReferralPayoutCreated(ReferralPayoutCreatedEvent e) {
+        dispatcher.dispatch(NotificationType.REFERRAL_PAYOUT_PENDING, NotificationContext.builder()
+                .put("amount", NotificationFormat.inr(e.amountPaise()))
+                .build());
+    }
+
+    /** A reward payout was paid — tell the beneficiary their referral reward is credited. */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onReferralRewardCredited(ReferralRewardCreditedEvent e) {
+        dispatcher.dispatch(NotificationType.REFERRAL_REWARD_CREDITED, NotificationContext.builder()
+                .applicantId(e.beneficiaryApplicantId())
+                .put("amount", NotificationFormat.inr(e.amountPaise()))
+                .put("txnRef", e.txnRef())
                 .build());
     }
 

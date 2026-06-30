@@ -153,6 +153,15 @@ public class NotificationTemplates {
         inApp(NotificationType.APPLICATION_CANCELLED, "Application cancelled",
                 "Your loan application #{applicationId} has been cancelled.");
 
+        // ---------------- REFERRAL ----------------
+        inApp(NotificationType.REFERRAL_PAYOUT_PENDING, "Referral reward to pay",
+                "A referral qualified — two rewards of {amount} each are pending payout. Settle them in Referral payouts.");
+
+        inApp(NotificationType.REFERRAL_REWARD_CREDITED, "Referral reward credited",
+                "Your referral reward of {amount} has been credited (ref {txnRef}). Thanks for spreading the word!");
+        sms(NotificationType.REFERRAL_REWARD_CREDITED,
+                "NAVIX: Your referral reward of {amount} has been credited (ref {txnRef}). Thank you!");
+
         // ---------------- STAFF / IAM ----------------
         email(NotificationType.STAFF_INVITED, "You're invited to NAVIX",
                 "Hi {name},\n\nYou've been invited to NAVIX as {role}. Accept your invite and set your "

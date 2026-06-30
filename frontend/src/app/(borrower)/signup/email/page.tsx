@@ -3,14 +3,14 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Mail, Building2 } from "lucide-react";
+import { Mail, Building2, Gift } from "lucide-react";
 import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
 import { updateBorrowerName } from "@/lib/api/live-journey";
-import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, referralApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -26,6 +26,12 @@ export default function SignupEmailPage() {
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<StepResult | null>(null);
   const [error, setError] = React.useState<string>();
+  // Refer-a-friend (optional). Shown only when the program is enabled (config-driven); the reward
+  // amount follows the SSM config. The code is applied best-effort on submit and never blocks signup.
+  const [referralCode, setReferralCode] = React.useState("");
+  const [referralEnabled, setReferralEnabled] = React.useState(true);
+  const [rewardRupees, setRewardRupees] = React.useState(200);
+  const [referralNote, setReferralNote] = React.useState<{ ok: boolean; text: string } | null>(null);
 
   React.useEffect(() => {
     if (!mounted) return;
@@ -33,7 +39,42 @@ export default function SignupEmailPage() {
     setEmployer(draft.employer);
     setPersonalEmail(draft.personalEmail);
     setOfficialEmail(draft.officialEmail);
+    setReferralCode(draft.referralCode);
   }, [mounted]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resolve the program toggle + reward amount (config-driven) for the copy below.
+  React.useEffect(() => {
+    let active = true;
+    referralApi
+      .me()
+      .then((r) => {
+        if (active) {
+          setReferralEnabled(r.enabled);
+          setRewardRupees(r.rewardRupees);
+        }
+      })
+      .catch(() => {
+        /* referral is optional — leave defaults / hide on failure is not needed */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /** Preview the typed code (live feedback); never throws. */
+  const checkReferral = async () => {
+    const code = referralCode.trim();
+    if (!code) {
+      setReferralNote(null);
+      return;
+    }
+    try {
+      const r = await referralApi.validate(code);
+      setReferralNote({ ok: r.valid, text: r.message });
+    } catch {
+      setReferralNote(null);
+    }
+  };
 
   React.useEffect(() => {
     if (mounted && appId == null) router.replace("/signup/mobile-otp");
@@ -51,7 +92,7 @@ export default function SignupEmailPage() {
     if (appId == null) return;
     setBusy(true);
     setError(undefined);
-    draft.patch({ fullName: fullName.trim(), employer: employer.trim(), personalEmail: personalEmail.trim(), officialEmail: officialEmail.trim() });
+    draft.patch({ fullName: fullName.trim(), employer: employer.trim(), personalEmail: personalEmail.trim(), officialEmail: officialEmail.trim(), referralCode: referralCode.trim() });
     // Contact email for notifications (sanction letter + statements): prefer the personal
     // inbox the borrower actually reads, fall back to the verified work email.
     const contactEmail = (personalEmail.trim() || officialEmail.trim());
@@ -62,7 +103,17 @@ export default function SignupEmailPage() {
       queryClient.invalidateQueries({ queryKey: ["borrower-me"] });
       const r = await verificationApi.email(appId, officialEmail.trim());
       setResult(r);
-      if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/address"));
+      if (r.status === "PASS" || r.status === "REVIEW") {
+        // Apply the referral code best-effort — a bad/duplicate code must never block onboarding.
+        if (referralEnabled && referralCode.trim()) {
+          try {
+            await referralApi.apply(referralCode.trim());
+          } catch {
+            /* non-blocking */
+          }
+        }
+        router.push(nextAfterStep("/signup/address"));
+      }
     } catch (err) {
       setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your email — please try again.");
     } finally {
@@ -117,6 +168,28 @@ export default function SignupEmailPage() {
           helperText="Used to confirm your employer. We never email your workplace."
           error={touched && !officialOk ? "Enter your valid work email" : undefined}
         />
+        {referralEnabled ? (
+          <>
+            <Input
+              label="Referral code (optional)"
+              value={referralCode}
+              onChange={(e) => {
+                setReferralCode(e.target.value.toUpperCase());
+                setReferralNote(null);
+              }}
+              onBlur={checkReferral}
+              placeholder="e.g. NAVIX123"
+              leftIcon={<Gift size={16} />}
+              autoCapitalize="characters"
+              helperText={`You and your friend each get ₹${rewardRupees} once your first loan is disbursed.`}
+            />
+            {referralNote ? (
+              <p className={`-mt-2 mb-3 text-sm ${referralNote.ok ? "text-success-600" : "text-error-600"}`}>
+                {referralNote.text}
+              </p>
+            ) : null}
+          </>
+        ) : null}
         <StepResultBanner result={result} />
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>

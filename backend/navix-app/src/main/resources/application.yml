@@ -61,6 +61,13 @@ navix:
     # otherwise applies. Leave blank to use the bucket default.
     kms-key-id: ${NAVIX_S3_KMS_KEY_ID:}
 
+  # Refer-a-friend program. enabled gates the whole feature; reward-paise is the per-person reward
+  # (₹200 = 20000 paise). Read at boot — override per env via the SSM params
+  # /navix/<env>/navix/referral/{enabled,reward-paise} (a change needs a restart/redeploy).
+  referral:
+    enabled: ${NAVIX_REFERRAL_ENABLED:true}
+    reward-paise: ${NAVIX_REFERRAL_REWARD_PAISE:20000}
+
   # Borrower OTP delivery via the UltronSMS gateway. The doc demo creds are placeholders
   # ("username or password is invalid") — set real NAVIX_SMS_USER/PASSWORD or NAVIX_SMS_API_KEY.
   sms:

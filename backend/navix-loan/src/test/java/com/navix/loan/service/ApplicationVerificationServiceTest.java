@@ -207,4 +207,41 @@ class ApplicationVerificationServiceTest {
         v.setMessage(type + " " + status);
         return v;
     }
+
+    private VerificationPort.AadhaarResult aadhaar(String masked) {
+        return new VerificationPort.AadhaarResult("TXN-DL", "SHUBHAM", "2003-03-24", "M", masked,
+                "addr", "Haryana", "131001", null, null);
+    }
+
+    @Test
+    void digilockerComplete_marksAadhaarVerified_andPersistsMaskedAadhaarWhenBlank() {
+        ApplicantProfile p = profile();
+        p.setDigilockerClientId("CL1"); // session started; aadhaar is blank (borrower didn't type it)
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234"));
+        // Skip the S3 ingest cleanly: the doc-list lookup throws and is swallowed by the ingest try/catch.
+        when(verification.digilockerList("CL1")).thenThrow(new RuntimeException("no docs in test"));
+
+        var result = service.digilockerComplete(APP);
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(p.getAadhaarVerified()).isTrue();             // the new denormalized flag
+        assertThat(p.getAadhaar()).isEqualTo("XXXXXXXX1234");    // masked number persisted (was blank)
+        assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 3, 24));
+    }
+
+    @Test
+    void digilockerComplete_doesNotOverwriteAFullManuallyEnteredAadhaar() {
+        ApplicantProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        p.setAadhaar("123456789012"); // borrower already typed the full 12-digit Aadhaar
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234"));
+        when(verification.digilockerList("CL1")).thenThrow(new RuntimeException("no docs in test"));
+
+        service.digilockerComplete(APP);
+
+        assertThat(p.getAadhaarVerified()).isTrue();
+        assertThat(p.getAadhaar()).isEqualTo("123456789012");   // full Aadhaar NOT clobbered by the masked one
+    }
 }

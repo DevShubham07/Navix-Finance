@@ -32,6 +32,8 @@ export interface OnboardingDraft {
   ifsc: string;
   /** Resolved (geocoded) or manually typed current address. */
   address: string;
+  /** Optional refer-a-friend code typed at signup (applied best-effort; never blocks onboarding). */
+  referralCode: string;
   /**
    * Whether the (otherwise hidden) co-applicant step should be shown. The
    * backend does not drive this yet, so it defaults to hidden.
@@ -58,6 +60,7 @@ const EMPTY: OnboardingDraft = {
   accountNumber: "",
   ifsc: "",
   address: "",
+  referralCode: "",
   coApplicantRequired: false,
 };
 

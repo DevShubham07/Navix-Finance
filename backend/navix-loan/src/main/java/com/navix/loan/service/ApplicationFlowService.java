@@ -61,6 +61,9 @@ public class ApplicationFlowService {
     private final ApplicantProfileRepository profileRepository;
     private final LoanMath loanMath;
     private final ApplicationEventPublisher eventPublisher;
+    // Refer-a-friend: at the referred borrower's first disbursal this grants both parties their reward
+    // (in-band, atomic with the loan mint). A no-op when the program is off or there's no referral.
+    private final ReferralService referralService;
 
     /** Loan statuses that mean the borrower was (or is) delinquent — triggers reborrow review. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -317,6 +320,9 @@ public class ApplicationFlowService {
         transition(app, ApplicationStatus.DISBURSED, "VALIDATE_SUCCESS", notes);
         Loan loan = loanService.disburse(app, LocalDate.now(), txnRef);
         app.setLoanId(loan.getId());
+        // Refer-a-friend reward: if this borrower was referred and this is their first disbursal, grant
+        // both parties their ₹reward (creates the pending payouts) — atomic with the loan mint.
+        referralService.onLoanDisbursed(app.getApplicantId(), loan.getId());
         transition(app, ApplicationStatus.ACTIVE, "ACTIVATE", "loanId=" + loan.getId());
     }
 

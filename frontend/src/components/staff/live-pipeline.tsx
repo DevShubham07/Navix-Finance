@@ -354,7 +354,17 @@ export function ApplicantReview({ applicationId }: { applicationId: number }) {
         <dl className="divide-y divide-line text-sm">
           <Row label="Full name" value={p.fullName} />
           <Row label="PAN" value={p.pan} mono />
-          <Row label="Aadhaar" value={p.aadhaar} mono />
+          <Row
+            label="Aadhaar"
+            mono
+            value={
+              p.aadhaar || p.aadhaarVerified ? (
+                <span className="inline-flex items-center justify-end gap-1.5">
+                  {p.aadhaar || "—"} {p.aadhaarVerified && <VerifiedPill />}
+                </span>
+              ) : null
+            }
+          />
           <Row label="Mobile" value={p.mobile} mono />
           <Row label="Email" value={p.email} />
           <Row label="Date of birth" value={p.dob} />
@@ -392,12 +402,21 @@ export function ApplicantReview({ applicationId }: { applicationId: number }) {
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
+function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2">
       <dt className="text-muted">{label}</dt>
       <dd className={mono ? "text-right font-mono text-ink" : "text-right text-ink"}>{value || "—"}</dd>
     </div>
+  );
+}
+
+/** Small green "Verified" pill shown next to an identity field that's been verified. */
+function VerifiedPill() {
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[10px] font-semibold text-success-700">
+      <Check size={10} /> Verified
+    </span>
   );
 }
 

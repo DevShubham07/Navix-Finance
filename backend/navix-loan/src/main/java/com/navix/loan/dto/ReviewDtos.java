@@ -84,6 +84,7 @@ public final class ReviewDtos {
             String riskCategory,
             Boolean panVerified,
             Boolean aadhaarLinked,
+            Boolean aadhaarVerified,
             Boolean emailVerified,
             Boolean addressVerified,
             Boolean pennyDropVerified,
@@ -103,7 +104,7 @@ public final class ReviewDtos {
                     p.getBureauScore() != null ? p.getBureauScore().intValue() : null,
                     p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
                     p.getCreditRecommendation(), p.getBureauSource(), p.getRiskCategory(),
-                    p.getPanVerified(), p.getAadhaarLinked(), p.getEmailVerified(),
+                    p.getPanVerified(), p.getAadhaarLinked(), p.getAadhaarVerified(), p.getEmailVerified(),
                     p.getAddressVerified(), p.getPennyDropVerified(), p.getNameMatchScore(),
                     p.getCreditBriefSummary(), p.getCreditBriefGeneratedAt());
         }
@@ -118,7 +119,7 @@ public final class ReviewDtos {
                     annualSalaryPaise, salaryPercentage, incrementPercentage, email,
                     emergencyContactName, emergencyContactPhone, emergencyContactRelation,
                     null, null, null, null, null,
-                    panVerified, aadhaarLinked, emailVerified, addressVerified, pennyDropVerified,
+                    panVerified, aadhaarLinked, aadhaarVerified, emailVerified, addressVerified, pennyDropVerified,
                     null, null, null);
         }
     }

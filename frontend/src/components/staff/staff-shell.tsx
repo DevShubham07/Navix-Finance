@@ -22,6 +22,7 @@ import {
   Wallet,
   Files,
   ListChecks,
+  Gift,
   LogOut,
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
@@ -48,6 +49,7 @@ const NAV: NavGroup[] = [
       { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
       { label: "Credit Queue", href: "/staff/credit/queue", Icon: ClipboardList, perm: "loan:review" },
       { label: "Disbursement", href: "/staff/disbursement", Icon: Banknote, perm: "loan:disburse" },
+      { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout" },
       { label: "Accounting", href: "/staff/accounting", Icon: Receipt, perm: "loan:activate" },
     ],
   },

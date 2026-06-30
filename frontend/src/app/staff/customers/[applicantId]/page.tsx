@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, User, Banknote, Receipt, Workflow, Pencil, Ban, XCircle, History } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, User, Banknote, Receipt, Workflow, Pencil, Ban, XCircle, History, Check } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
@@ -124,7 +124,22 @@ function ProfileCard({ detail }: { detail: CustomerDetail }) {
         <dl className="divide-y divide-line">
           <Row label="Full name" value={p.fullName} />
           <Row label="PAN" value={p.pan} mono />
-          <Row label="Aadhaar" value={p.aadhaar} mono />
+          <Row
+            label="Aadhaar"
+            mono
+            value={
+              p.aadhaar || p.aadhaarVerified ? (
+                <span className="inline-flex items-center justify-end gap-1.5">
+                  {p.aadhaar || "—"}
+                  {p.aadhaarVerified && (
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[10px] font-semibold text-success-700">
+                      <Check size={10} /> Verified
+                    </span>
+                  )}
+                </span>
+              ) : null
+            }
+          />
           <Row label="Mobile" value={p.mobile} mono />
           <Row label="Email" value={p.email} />
           <Row label="Date of birth" value={p.dob} />

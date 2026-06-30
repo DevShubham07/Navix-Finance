@@ -363,8 +363,19 @@ public class ApplicationVerificationService {
         LocalDate aadhaarDob = parseDob(a.dob());
         if (aadhaarDob != null) {
             profile.setDob(aadhaarDob);
-            profileRepo.save(profile);
         }
+        // Surface the Aadhaar on the profile-details card: mark it verified (DigiLocker consent
+        // completed + Aadhaar fetched) and persist the (masked) number when the profile has none yet,
+        // so staff see the Aadhaar value + status, not a blank "—". A full Aadhaar the borrower already
+        // entered during manual KYC is never overwritten with the masked one.
+        profile.setAadhaarVerified(true);
+        // Persist the masked number only when the profile has none and it fits the (12-char) column —
+        // a formatted/oversized masked value is skipped (the verified flag still shows the status).
+        String masked = a.maskedAadhaar() != null ? a.maskedAadhaar().trim() : null;
+        if (isBlank(profile.getAadhaar()) && !isBlank(masked) && masked.length() <= 12) {
+            profile.setAadhaar(masked);
+        }
+        profileRepo.save(profile);
 
         // Server-side ingest of the Aadhaar PDF (bytes never reach the browser).
         String s3Key = null;

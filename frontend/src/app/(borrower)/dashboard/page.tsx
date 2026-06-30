@@ -26,6 +26,7 @@ import {
 import { useOnboardingStore } from "@/stores/application-store";
 import { eligibleLimit, daysBetween } from "@/lib/calc/loan-math";
 import { formatINR0, formatDate } from "@/lib/utils";
+import { ReferralCard } from "@/components/borrower/referral-card";
 
 export default function DashboardPage() {
   const session = useBorrowerSession();
@@ -188,6 +189,8 @@ export default function DashboardPage() {
               <li><Link href="/profile" className="-mx-2 block rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">Profile &amp; KYC</Link></li>
             </ul>
           </div>
+
+          <ReferralCard />
         </aside>
       </div>
 

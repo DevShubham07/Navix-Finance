@@ -198,6 +198,8 @@ export interface ProfileView {
   riskCategory?: string | null;
   panVerified?: boolean | null;
   aadhaarLinked?: boolean | null;
+  /** Aadhaar verified via DigiLocker (consent done + Aadhaar fetched + document ingested). */
+  aadhaarVerified?: boolean | null;
   emailVerified?: boolean | null;
   addressVerified?: boolean | null;
   pennyDropVerified?: boolean | null;
@@ -940,6 +942,107 @@ export const paymentSettingsApi = {
   /** ADMIN edit of the payee fields / uploaded asset keys. */
   update: (body: UpdatePaymentSettingsInput) =>
     bff<PaymentSettings>("/api/payment-settings", "PUT", body),
+};
+
+// ---------------------------------------------------------------------------
+// Referral (refer-a-friend) — borrower /api/borrower/referral/*, staff /api/staff/referral/*
+// ---------------------------------------------------------------------------
+
+/** The borrower's own referral panel: their code, reward, share copy + earnings roll-up. */
+export interface MyReferral {
+  enabled: boolean;
+  code: string;
+  rewardPaise: number;
+  rewardRupees: number;
+  shareMessage: string;
+  /** Friends whose first loan was disbursed (the referral qualified). */
+  referredQualifiedCount: number;
+  /** Total ₹ already credited to me (paise). */
+  totalEarnedPaise: number;
+  /** Total ₹ owed to me but not yet paid (paise). */
+  pendingPaise: number;
+}
+
+/** Outcome of applying a code at signup (the happy path; guard failures throw ApplicationApiError). */
+export interface ApplyReferralResult {
+  accepted: boolean;
+  message: string;
+  referrerName: string | null;
+  rewardPaise: number;
+}
+
+/** Lenient code preview for live signup feedback. */
+export interface ValidateReferralResult {
+  valid: boolean;
+  referrerName: string | null;
+  rewardPaise: number;
+  message: string;
+}
+
+export type ReferralBeneficiaryRole = "REFERRER" | "REFERRED";
+export type ReferralPayoutStatus = "PENDING" | "PAID";
+
+/** One ₹-reward payout row (Disbursement-Head approval dashboard + referral-expense view). */
+export interface ReferralPayout {
+  id: number;
+  referralId: number;
+  beneficiaryApplicantId: number;
+  beneficiaryName: string | null;
+  beneficiaryRole: ReferralBeneficiaryRole;
+  counterpartyApplicantId: number | null;
+  counterpartyName: string | null;
+  amountPaise: number;
+  status: ReferralPayoutStatus;
+  txnRef: string | null;
+  paidAt: string | null;
+  paidBy: string | null;
+  qualifyingLoanId: number | null;
+  createdAt: string | null;
+}
+
+/** Totals for the referral-expense dashboard. */
+export interface ReferralExpenseSummary {
+  pendingCount: number;
+  pendingPaise: number;
+  paidCount: number;
+  paidPaise: number;
+  totalCount: number;
+  totalPaise: number;
+}
+
+const BORROWER_REFERRAL_BASE = "/api/borrower/referral";
+
+/** Borrower-facing referral client. */
+export const referralApi = {
+  /** The caller's own code + reward + earnings (code minted lazily on first read). */
+  me: () => bff<MyReferral>(`${BORROWER_REFERRAL_BASE}/me`, "GET"),
+
+  /** Apply a referral code to the calling borrower (best-effort from the signup UI). */
+  apply: (code: string) =>
+    bff<ApplyReferralResult>(`${BORROWER_REFERRAL_BASE}/apply`, "POST", { code }),
+
+  /** Preview a code for live signup feedback (never throws on a bad code; returns valid=false). */
+  validate: (code: string) =>
+    bff<ValidateReferralResult>(
+      `${BORROWER_REFERRAL_BASE}/validate?code=${encodeURIComponent(code)}`,
+      "GET",
+    ),
+};
+
+const STAFF_REFERRAL_BASE = "/api/staff/referral";
+
+/** Disbursement-Head / Admin referral payout client. */
+export const staffReferralApi = {
+  /** Payout queue / expense list. `status` PENDING|PAID filters; omitted → all (newest first). */
+  payouts: (status?: ReferralPayoutStatus) =>
+    bff<ReferralPayout[]>(`${STAFF_REFERRAL_BASE}/payouts${status ? `?status=${status}` : ""}`, "GET"),
+
+  /** Mark a payout paid, logging the bank/UPI transaction id. */
+  pay: (id: number, txnRef: string) =>
+    bff<ReferralPayout>(`${STAFF_REFERRAL_BASE}/payouts/${id}/pay`, "POST", { txnRef }),
+
+  /** Totals for the referral-expense dashboard. */
+  expenses: () => bff<ReferralExpenseSummary>(`${STAFF_REFERRAL_BASE}/expenses`, "GET"),
 };
 
 // ---------------------------------------------------------------------------
