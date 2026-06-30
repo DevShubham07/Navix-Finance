@@ -957,6 +957,18 @@ export const paymentSettingsApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Feature flags (dev-controlled, read-only) — route under /api/feature-flags
+// ---------------------------------------------------------------------------
+
+/** Dev-controlled feature flags as { key: enabled }. Changed only via SQL; the UI just reads them. */
+export type FeatureFlags = Record<string, boolean>;
+
+export const featureFlagsApi = {
+  /** The current flag states, so the UI can hide a disabled feature (e.g. referral). */
+  get: () => bff<FeatureFlags>("/api/feature-flags", "GET"),
+};
+
+// ---------------------------------------------------------------------------
 // Referral (refer-a-friend) — borrower /api/borrower/referral/*, staff /api/staff/referral/*
 // ---------------------------------------------------------------------------
 
