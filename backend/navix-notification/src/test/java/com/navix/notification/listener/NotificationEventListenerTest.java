@@ -6,12 +6,15 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
+import com.navix.common.notification.event.RepaymentRejectedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
+import com.navix.common.notification.event.SettlementRejectedEvent;
 import com.navix.common.notification.event.StaffAccountEvent;
 import com.navix.notification.catalog.NotificationType;
 import com.navix.notification.dispatch.NotificationContext;
 import com.navix.notification.dispatch.NotificationDispatcher;
 import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -109,6 +112,32 @@ class NotificationEventListenerTest {
         verify(dispatcher).dispatch(type.capture(), ctx.capture());
         assertThat(type.getValue()).isEqualTo(NotificationType.REPAYMENT_VERIFIED);
         assertThat(ctx.getValue().model()).containsEntry("amount", "₹500");
+    }
+
+    @Test
+    void rejectedRepaymentNotifiesBorrowerWithAmount() {
+        listener.onRepaymentRejected(new RepaymentRejectedEvent(2L, 5L, 88L, 50_000L, Instant.now()));
+
+        ArgumentCaptor<NotificationType> type = ArgumentCaptor.forClass(NotificationType.class);
+        ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
+        verify(dispatcher).dispatch(type.capture(), ctx.capture());
+        assertThat(type.getValue()).isEqualTo(NotificationType.REPAYMENT_REJECTED);
+        assertThat(ctx.getValue().applicantId()).isEqualTo(5L);
+        assertThat(ctx.getValue().model()).containsEntry("amount", "₹500");
+    }
+
+    @Test
+    void rejectedSettlementNotifiesTheProposer() {
+        listener.onSettlementRejected(new SettlementRejectedEvent(
+                UUID.randomUUID(), UUID.randomUUID(), 2L, 5L, 700_000L, 9L, Instant.now()));
+
+        ArgumentCaptor<NotificationType> type = ArgumentCaptor.forClass(NotificationType.class);
+        ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
+        verify(dispatcher).dispatch(type.capture(), ctx.capture());
+        assertThat(type.getValue()).isEqualTo(NotificationType.SETTLEMENT_REJECTED);
+        // Targets the specific staff member who proposed it (not a role fan-out).
+        assertThat(ctx.getValue().staffSubjectId()).isEqualTo(9L);
+        assertThat(ctx.getValue().model()).containsKey("settlementAmount");
     }
 
     @Test

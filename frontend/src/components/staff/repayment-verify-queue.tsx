@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, AlertTriangle, Clock } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Clock, X } from "lucide-react";
 import { staffApi, paiseToINR, ApplicationApiError, type PaymentView } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
 
@@ -23,6 +23,14 @@ export function RepaymentVerifyQueue() {
     mutationFn: (p: PaymentView) => staffApi.verifyRepayment(p.loanId, p.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-pending-repayments"] }),
   });
+  const reject = useMutation({
+    mutationFn: (p: PaymentView) => staffApi.rejectRepayment(p.loanId, p.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-pending-repayments"] }),
+  });
+  const actionError = verify.error ?? reject.error;
+  const busy = (p: PaymentView) =>
+    (verify.isPending && verify.variables?.id === p.id) ||
+    (reject.isPending && reject.variables?.id === p.id);
 
   const rows = q.data ?? [];
 
@@ -33,12 +41,12 @@ export function RepaymentVerifyQueue() {
         <span className="text-xs text-muted">{rows.length} pending</span>
       </div>
 
-      {verify.isError && (
+      {actionError && (
         <div className="mb-3 flex items-start gap-2 rounded border border-error-100 bg-error-50 p-3 text-sm text-error-700">
           <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" />
-          {verify.error instanceof ApplicationApiError
-            ? `${verify.error.message} (${verify.error.code})`
-            : "Could not verify the payment."}
+          {actionError instanceof ApplicationApiError
+            ? `${actionError.message} (${actionError.code})`
+            : "Could not update the payment."}
         </div>
       )}
 
@@ -75,15 +83,26 @@ export function RepaymentVerifyQueue() {
                   <td className="py-2.5 pr-3 text-muted">{p.txnRef || "—"}</td>
                   <td className="py-2.5 pr-3 text-muted">{p.paidOn ? formatDate(p.paidOn) : "—"}</td>
                   <td className="py-2.5 text-right">
-                    <button
-                      type="button"
-                      onClick={() => verify.mutate(p)}
-                      disabled={verify.isPending && verify.variables?.id === p.id}
-                      className="btn btn-gold btn-sm"
-                    >
-                      <CheckCircle2 size={15} />{" "}
-                      {verify.isPending && verify.variables?.id === p.id ? "Verifying…" : "Verify"}
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => verify.mutate(p)}
+                        disabled={busy(p)}
+                        className="btn btn-gold btn-sm"
+                      >
+                        <CheckCircle2 size={15} />{" "}
+                        {verify.isPending && verify.variables?.id === p.id ? "Verifying…" : "Verify"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => reject.mutate(p)}
+                        disabled={busy(p)}
+                        className="btn btn-sm border-error-600 bg-error-600 text-white hover:bg-error-700 disabled:opacity-50"
+                      >
+                        <X size={15} />{" "}
+                        {reject.isPending && reject.variables?.id === p.id ? "Rejecting…" : "Reject"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -94,7 +113,7 @@ export function RepaymentVerifyQueue() {
 
       <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
         <Clock size={13} /> Verifying confirms the transfer landed; it reduces the borrower&apos;s balance and
-        closes the loan at zero.
+        closes the loan at zero. Reject if the proof doesn&apos;t match — the balance is left unchanged.
       </p>
     </section>
   );

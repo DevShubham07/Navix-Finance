@@ -115,6 +115,12 @@ public class CollectionsController {
         return ApiResponse.ok(settlementService.approve(settlementId));
     }
 
+    /** Collections Head rejects a proposed settlement (separation of duties enforced). */
+    @PostMapping("/settlements/{settlementId}/reject")
+    public ApiResponse<SettlementView> rejectSettlement(@PathVariable UUID settlementId) {
+        return ApiResponse.ok(settlementService.reject(settlementId));
+    }
+
     /** Live DPD-bucket helper: days-past-due + bucket for a due date as of a date. */
     @GetMapping("/dpd")
     public ApiResponse<DpdView> dpd(

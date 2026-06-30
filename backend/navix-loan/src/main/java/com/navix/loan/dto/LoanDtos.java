@@ -79,9 +79,15 @@ public final class LoanDtos {
      * The authoritative balance for a loan as of a date. {@code settledAmountPaise} is non-null only
      * when collections has an approved partial settlement — then {@code outstandingPaise} is the
      * settlement-capped "pay today" figure (full-and-final), letting the UI label it a settlement.
+     *
+     * <p>{@code interestPaise} / {@code penaltyPaise} / {@code verifiedPaise} itemize how the net
+     * balance is made up — the accrued interest and late penalty as of {@code asOf}, and the sum of
+     * verified payments so far — so a loan-details popup can show the full cost breakdown. When a
+     * settlement caps the figure, these components may sum to more than {@code outstandingPaise}.
      */
     public record OutstandingView(Long loanId, LocalDate asOf, long outstandingPaise,
-                                  Long settledAmountPaise) {
+                                  Long settledAmountPaise, long interestPaise, long penaltyPaise,
+                                  long verifiedPaise) {
     }
 
     /**

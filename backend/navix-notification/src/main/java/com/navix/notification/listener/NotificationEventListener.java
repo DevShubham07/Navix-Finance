@@ -8,9 +8,11 @@ import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
 import com.navix.common.notification.event.ReferralRewardCreditedEvent;
 import com.navix.common.notification.event.RepaymentRecordedEvent;
+import com.navix.common.notification.event.RepaymentRejectedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
 import com.navix.common.notification.event.SettlementApprovedEvent;
 import com.navix.common.notification.event.SettlementProposedEvent;
+import com.navix.common.notification.event.SettlementRejectedEvent;
 import com.navix.common.notification.event.StaffAccountEvent;
 import com.navix.notification.catalog.NotificationType;
 import com.navix.notification.dispatch.NotificationContext;
@@ -90,6 +92,16 @@ public class NotificationEventListener {
 
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onRepaymentRejected(RepaymentRejectedEvent e) {
+        dispatcher.dispatch(NotificationType.REPAYMENT_REJECTED, NotificationContext.builder()
+                .applicantId(e.applicantId())
+                .loanId(e.loanId())
+                .put("amount", NotificationFormat.inr(e.amountPaise()))
+                .build());
+    }
+
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onCollectionCaseOpened(CollectionCaseOpenedEvent e) {
         dispatcher.dispatch(NotificationType.COLLECTION_CASE_OPENED, NotificationContext.builder()
                 .applicantId(e.applicantId())
@@ -114,6 +126,18 @@ public class NotificationEventListener {
     public void onSettlementApproved(SettlementApprovedEvent e) {
         dispatcher.dispatch(NotificationType.SETTLEMENT_APPROVED, NotificationContext.builder()
                 .applicantId(e.applicantId())
+                .loanId(e.loanId())
+                .caseId(e.caseId())
+                .put("settlementAmount", NotificationFormat.inr(e.amountPaise()))
+                .build());
+    }
+
+    /** A proposed settlement was rejected — notify the proposer (a specific staff member). */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onSettlementRejected(SettlementRejectedEvent e) {
+        dispatcher.dispatch(NotificationType.SETTLEMENT_REJECTED, NotificationContext.builder()
+                .staffSubjectId(e.proposedBy())
                 .loanId(e.loanId())
                 .caseId(e.caseId())
                 .put("settlementAmount", NotificationFormat.inr(e.amountPaise()))

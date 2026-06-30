@@ -3,8 +3,10 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -118,6 +120,37 @@ class RepaymentServiceTest {
     }
 
     @Test
+    void rejectPaymentSetsRejectedAndLeavesBalanceUnchanged() {
+        Payment payment = new Payment();
+        payment.setLoanId(1L);
+        payment.setAmount(500_000L);
+        payment.setStatus(PaymentStatus.PENDING_VERIFICATION);
+        when(paymentRepository.findById(99L)).thenReturn(Optional.of(payment));
+        when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+
+        repaymentService.rejectPayment(99L);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REJECTED);
+        // A rejected payment never affected the balance, so the loan is not recomputed/closed.
+        verify(loanRepository, never()).save(any());
+        verify(applicationFlowService, never()).closeForLoan(anyLong());
+    }
+
+    @Test
+    void rejectVerifiedPaymentFails() {
+        Payment payment = new Payment();
+        payment.setLoanId(1L);
+        payment.setAmount(500_000L);
+        payment.setStatus(PaymentStatus.VERIFIED);
+        when(paymentRepository.findById(99L)).thenReturn(Optional.of(payment));
+
+        assertThatThrownBy(() -> repaymentService.rejectPayment(99L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("verified");
+    }
+
+    @Test
     void outstandingAsOfReflectsPrepaymentAndPenalty() {
         when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
         when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
@@ -127,6 +160,26 @@ class RepaymentServiceTest {
 
         // Overdue on 5 Jul: full 27d interest + penalty for (5 − 1 grace) = 4 days
         assertThat(repaymentService.outstandingAsOf(1L, LocalDate.of(2026, 7, 5))).isEqualTo(1_350_000L);
+    }
+
+    @Test
+    void outstandingBreakdownItemizesInterestAndPenalty() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
+
+        // On time (13 Jun, day 10): interest ₹1,000, no penalty.
+        var onTime = repaymentService.outstandingBreakdownAsOf(1L, LocalDate.of(2026, 6, 13));
+        assertThat(onTime.interestPaise()).isEqualTo(100_000L);
+        assertThat(onTime.penaltyPaise()).isZero();
+        assertThat(onTime.verifiedPaise()).isZero();
+        assertThat(onTime.outstandingPaise()).isEqualTo(1_100_000L);
+        assertThat(onTime.settledAmountPaise()).isNull();
+
+        // Overdue (5 Jul): full 27d interest ₹2,700 + penalty for (5 − 1 grace) = 4 days → ₹800.
+        var overdue = repaymentService.outstandingBreakdownAsOf(1L, LocalDate.of(2026, 7, 5));
+        assertThat(overdue.interestPaise()).isEqualTo(270_000L);
+        assertThat(overdue.penaltyPaise()).isEqualTo(80_000L);
+        assertThat(overdue.outstandingPaise()).isEqualTo(1_350_000L);
     }
 
     @Test

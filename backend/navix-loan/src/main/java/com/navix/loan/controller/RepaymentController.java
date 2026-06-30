@@ -1,5 +1,7 @@
 package com.navix.loan.controller;
 
+import com.navix.common.exception.BusinessException;
+import com.navix.common.security.ActorContext;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.LoanDtos.RepaymentRequest;
@@ -47,5 +49,22 @@ public class RepaymentController {
     @PostMapping("/{paymentId}/verify")
     public ApiResponse<PaymentView> verify(@PathVariable Long loanId, @PathVariable Long paymentId) {
         return ApiResponse.ok(PaymentView.of(repaymentService.verifyPayment(paymentId)));
+    }
+
+    /** Reject a recorded payment (proof didn't match the transfer). Accountant/Admin only. */
+    @PostMapping("/{paymentId}/reject")
+    public ApiResponse<PaymentView> reject(@PathVariable Long loanId, @PathVariable Long paymentId) {
+        requireRole("ACCOUNTANT", "ADMIN");
+        return ApiResponse.ok(PaymentView.of(repaymentService.rejectPayment(paymentId)));
+    }
+
+    private void requireRole(String... allowed) {
+        String role = ActorContext.get().role();
+        for (String r : allowed) {
+            if (r.equals(role)) {
+                return;
+            }
+        }
+        throw new BusinessException("FORBIDDEN_ROLE", "This action requires role " + String.join(" or ", allowed));
     }
 }

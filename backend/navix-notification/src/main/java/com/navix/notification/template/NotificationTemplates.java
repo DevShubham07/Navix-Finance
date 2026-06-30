@@ -129,6 +129,12 @@ public class NotificationTemplates {
         sms(NotificationType.REPAYMENT_VERIFIED,
                 "NAVIX: Your payment of {amount} is confirmed. Outstanding: {outstanding}.");
 
+        inApp(NotificationType.REPAYMENT_REJECTED, "Payment not verified",
+                "Your payment of {amount} for loan #{loanId} couldn't be verified. Please check the "
+                        + "reference and record it again.");
+        sms(NotificationType.REPAYMENT_REJECTED,
+                "NAVIX: Your payment of {amount} couldn't be verified. Please check the reference and try again.");
+
         inApp(NotificationType.LOAN_CLOSED, "Loan closed",
                 "Your loan is fully repaid and closed. Thank you!");
         sms(NotificationType.LOAN_CLOSED,
@@ -148,6 +154,9 @@ public class NotificationTemplates {
                 "A full & final settlement of {settlementAmount} is approved on your loan. Pay it to close.");
         sms(NotificationType.SETTLEMENT_APPROVED,
                 "NAVIX: A full & final settlement of {settlementAmount} is approved on your loan. Pay it to close.");
+
+        inApp(NotificationType.SETTLEMENT_REJECTED, "Settlement rejected",
+                "Your proposed settlement of {settlementAmount} on loan #{loanId} was not approved.");
 
         // ---------------- SYSTEM ----------------
         inApp(NotificationType.APPLICATION_CANCELLED, "Application cancelled",

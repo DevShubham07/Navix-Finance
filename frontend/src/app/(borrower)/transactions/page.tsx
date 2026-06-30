@@ -6,6 +6,7 @@ import { useQuery, useQueries } from "@tanstack/react-query";
 import { ArrowRight, ArrowLeftRight, Loader2 } from "lucide-react";
 import { borrowerApi, paiseToINR, type PaymentStatusName } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
+import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
 
 type LedgerRow = {
   id: string;
@@ -25,6 +26,7 @@ const PAY_STATUS: Record<PaymentStatusName, { label: string; cls: string }> = {
 
 export default function TransactionsPage() {
   const appsQ = useQuery({ queryKey: ["my-apps"], queryFn: borrowerApi.myApplications });
+  const [detailsLoanId, setDetailsLoanId] = React.useState<number | null>(null);
 
   // Every application that reached disbursal carries a loan id; build the ledger from those.
   const loanIds = (appsQ.data ?? []).filter((a) => a.loanId != null).map((a) => a.loanId as number);
@@ -104,7 +106,11 @@ export default function TransactionsPage() {
                 </thead>
                 <tbody className="divide-y divide-line">
                   {rows.map((r) => (
-                    <tr key={r.id} className="hover:bg-grey-100">
+                    <tr
+                      key={r.id}
+                      onClick={() => setDetailsLoanId(r.loanId)}
+                      className="cursor-pointer hover:bg-grey-100"
+                    >
                       <td className="px-4 py-3">
                         <span className="font-semibold text-ink">
                           {r.type === "DISBURSAL" ? "Disbursal" : "Repayment"}
@@ -135,6 +141,12 @@ export default function TransactionsPage() {
           )}
         </div>
       )}
+
+      <LoanDetailsDialog
+        loanId={detailsLoanId}
+        open={detailsLoanId != null}
+        onClose={() => setDetailsLoanId(null)}
+      />
     </div>
   );
 }

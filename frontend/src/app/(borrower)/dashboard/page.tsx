@@ -27,12 +27,16 @@ import { useOnboardingStore } from "@/stores/application-store";
 import { eligibleLimit, daysBetween } from "@/lib/calc/loan-math";
 import { formatINR0, formatDate } from "@/lib/utils";
 import { ReferralCard } from "@/components/borrower/referral-card";
+import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
 
 export default function DashboardPage() {
   const session = useBorrowerSession();
   const { appId, app, loan, isLoading } = useLiveApplication();
   const draft = useOnboardingStore();
   const queryClient = useQueryClient();
+
+  // Loan-details popup: any clickable loan surface on this page drives this single instance.
+  const [detailsLoanId, setDetailsLoanId] = React.useState<number | null>(null);
 
   // Eligible limit (25% of salary) — from the persisted backend profile, else the onboarding draft.
   const profileQuery = useQuery({
@@ -118,6 +122,7 @@ export default function DashboardPage() {
               principal={loan.principalPaise / 100}
               repaid={repaidRupees}
               dueISO={loan.dueDate ?? new Date().toISOString()}
+              onViewDetails={() => setDetailsLoanId(loan.id)}
             />
           ) : closed ? (
             <PreApprovedBanner
@@ -194,7 +199,13 @@ export default function DashboardPage() {
         </aside>
       </div>
 
-      <ApplicationsHistory />
+      <ApplicationsHistory onView={setDetailsLoanId} />
+
+      <LoanDetailsDialog
+        loanId={detailsLoanId}
+        open={detailsLoanId != null}
+        onClose={() => setDetailsLoanId(null)}
+      />
     </div>
   );
 }
@@ -205,7 +216,7 @@ export default function DashboardPage() {
  * two stay in sync. Each row links to the live status page; "View all" deep-links to `/loans` for
  * the full per-loan economics.
  */
-function ApplicationsHistory() {
+function ApplicationsHistory({ onView }: { onView: (loanId: number) => void }) {
   const q = useQuery({ queryKey: ["my-apps"], queryFn: borrowerApi.myApplications });
   const apps = q.data ?? [];
 
@@ -238,25 +249,35 @@ function ApplicationsHistory() {
         </p>
       ) : (
         <div className="space-y-3">
-          {apps.map((app) => (
-            <Link
-              key={app.id}
-              href="/loan/status"
-              className="flex flex-wrap items-center justify-between gap-3 rounded border border-line bg-white p-5 shadow-sm transition hover:border-gold hover:shadow"
-            >
-              <div className="min-w-0">
-                <div className="font-serif text-base font-semibold text-navy">Application #{app.id}</div>
-                <div className="mt-0.5 text-sm text-muted">
-                  Requested {paiseToINR(app.amountRequestedPaise)}
-                  {app.purpose ? ` · ${app.purpose}` : ""}
+          {apps.map((app) => {
+            const rowInner = (
+              <>
+                <div className="min-w-0 text-left">
+                  <div className="font-serif text-base font-semibold text-navy">Application #{app.id}</div>
+                  <div className="mt-0.5 text-sm text-muted">
+                    Requested {paiseToINR(app.amountRequestedPaise)}
+                    {app.purpose ? ` · ${app.purpose}` : ""}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Badge variant={appStatusVariant(app.status)}>{statusLabel(app.status)}</Badge>
-                <ArrowRight size={16} className="text-muted" />
-              </div>
-            </Link>
-          ))}
+                <div className="flex items-center gap-3">
+                  <Badge variant={appStatusVariant(app.status)}>{statusLabel(app.status)}</Badge>
+                  <ArrowRight size={16} className="text-muted" />
+                </div>
+              </>
+            );
+            const cls =
+              "flex w-full flex-wrap items-center justify-between gap-3 rounded border border-line bg-white p-5 shadow-sm transition hover:border-gold hover:shadow";
+            // A disbursed application opens its full loan breakdown; one still in flight links to status.
+            return app.loanId != null ? (
+              <button key={app.id} type="button" onClick={() => onView(app.loanId as number)} className={cls}>
+                {rowInner}
+              </button>
+            ) : (
+              <Link key={app.id} href="/loan/status" className={cls}>
+                {rowInner}
+              </Link>
+            );
+          })}
         </div>
       )}
     </section>
@@ -331,10 +352,11 @@ function StatusChip({ status }: { status: BorrowerStatus }) {
 }
 
 function LoanCard({
-  status, total, outstanding, penalty, principal, repaid, dueISO,
+  status, total, outstanding, penalty, principal, repaid, dueISO, onViewDetails,
 }: {
   status: BorrowerStatus;
   total: number; outstanding: number; penalty: number; principal: number; repaid: number; dueISO: string;
+  onViewDetails?: () => void;
 }) {
   const pct = total > 0 ? Math.min(100, Math.round((repaid / total) * 100)) : 0;
   const due = new Date(dueISO);
@@ -384,6 +406,15 @@ function LoanCard({
         <Link href="/repay" className="btn btn-gold btn-block mt-5">
           <Wallet size={16} /> {overdue ? "Pay now" : "Repay / prepay"}
         </Link>
+        {onViewDetails && (
+          <button
+            type="button"
+            onClick={onViewDetails}
+            className="mt-3 block w-full text-center text-sm font-semibold text-navy hover:underline"
+          >
+            View full breakdown
+          </button>
+        )}
       </div>
     </div>
   );

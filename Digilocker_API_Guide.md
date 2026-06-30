@@ -426,3 +426,7 @@ Initialize → [URL sent to user] → Status polling → Completed
 ```
 
 > **Important:** The `client_id` from Step 1 must be passed to all subsequent API calls. Store it immediately after initialization.
+
+
+X-Client-ID='cli_rZz4yd0vIvCKPI2k'
+X-Client-Secret='E7SSlidSAwwT-9-IKEYHIDl3ocqtbyLvVjWoTE1TAj8'

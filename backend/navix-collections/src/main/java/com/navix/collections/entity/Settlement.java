@@ -2,6 +2,8 @@ package com.navix.collections.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -15,10 +17,9 @@ import java.util.UUID;
 
 /**
  * A partial settlement proposal on a collection case. An officer proposes it and
- * the Collections Head must approve it (maker-checker). Records the agreed
- * settlement amount and approval metadata.
- *
- * TODO: add status enum (PROPOSED/APPROVED/REJECTED) if richer flow is needed.
+ * the Collections Head must approve <i>or reject</i> it (maker-checker). Records the
+ * agreed settlement amount and the proposal/approval/rejection metadata; {@link #status}
+ * is the source of truth for the maker-checker state.
  */
 @Entity
 @Table(name = "settlement")
@@ -38,6 +39,11 @@ public class Settlement {
     @Column(name = "settlement_amount", nullable = false)
     private Long settlementAmount;
 
+    /** Maker-checker state: PROPOSED until the Head approves or rejects it. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private SettlementStatus status = SettlementStatus.PROPOSED;
+
     /** Collections officer who proposed it (FK to {@code staff_user.id}, a bigint). */
     @Column(name = "proposed_by", nullable = false)
     private Long proposedBy;
@@ -51,4 +57,11 @@ public class Settlement {
 
     @Column(name = "approved_at")
     private Instant approvedAt;
+
+    /** Collections Head who rejected (FK to {@code staff_user.id}); null unless rejected. */
+    @Column(name = "rejected_by")
+    private Long rejectedBy;
+
+    @Column(name = "rejected_at")
+    private Instant rejectedAt;
 }

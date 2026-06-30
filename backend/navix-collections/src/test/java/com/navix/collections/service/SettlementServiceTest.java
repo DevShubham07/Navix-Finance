@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.navix.collections.dto.CollectionsDtos.SettlementView;
 import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.Settlement;
+import com.navix.collections.entity.SettlementStatus;
 import com.navix.collections.repository.CollectionCaseRepository;
 import com.navix.collections.repository.SettlementRepository;
 import com.navix.common.exception.BusinessException;
@@ -145,5 +146,59 @@ class SettlementServiceTest {
         assertThatThrownBy(() -> service.approve(settlementId))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("COLLECTION_HEAD");
+    }
+
+    @Test
+    void rejectByHeadSetsRejectedStatusAndActor() {
+        ActorContext.set(HEAD);
+        when(settlementRepository.findById(settlementId)).thenReturn(Optional.of(proposedByOfficer()));
+        when(settlementRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(caseRepository.findById(caseId)).thenReturn(Optional.of(caseWithLoan()));
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.empty());
+        when(staffDirectory.findStaff(9L))
+                .thenReturn(Optional.of(new StaffSummary(9L, "Sana Khan", "COLLECTION_EXECUTIVE", true)));
+        when(staffDirectory.findStaff(8L))
+                .thenReturn(Optional.of(new StaffSummary(8L, "Arjun Patel", "COLLECTION_HEAD", true)));
+
+        SettlementView rejected = service.reject(settlementId);
+
+        assertThat(rejected.status()).isEqualTo("REJECTED");
+        assertThat(rejected.rejectedBy()).isEqualTo(8L);
+        assertThat(rejected.rejectedByName()).isEqualTo("Arjun Patel");
+        assertThat(rejected.approvedBy()).isNull();
+        assertThat(rejected.rejectedAt()).isNotNull();
+    }
+
+    @Test
+    void rejectBySameActorWhoProposedViolatesSod() {
+        ActorContext.set(HEAD); // id 8
+        Settlement proposedByHead = proposedByOfficer();
+        proposedByHead.setProposedBy(8L); // same staff id as the rejecter
+        when(settlementRepository.findById(settlementId)).thenReturn(Optional.of(proposedByHead));
+
+        assertThatThrownBy(() -> service.reject(settlementId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("separation of duties");
+    }
+
+    @Test
+    void rejectByNonHeadIsForbidden() {
+        ActorContext.set(OFFICER);
+
+        assertThatThrownBy(() -> service.reject(settlementId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("COLLECTION_HEAD");
+    }
+
+    @Test
+    void decidingAnAlreadyDecidedSettlementIsRejected() {
+        ActorContext.set(HEAD);
+        Settlement alreadyApproved = proposedByOfficer();
+        alreadyApproved.setStatus(SettlementStatus.APPROVED);
+        when(settlementRepository.findById(settlementId)).thenReturn(Optional.of(alreadyApproved));
+
+        assertThatThrownBy(() -> service.reject(settlementId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("already been");
     }
 }

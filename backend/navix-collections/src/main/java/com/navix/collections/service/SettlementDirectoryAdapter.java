@@ -1,6 +1,7 @@
 package com.navix.collections.service;
 
 import com.navix.collections.entity.Settlement;
+import com.navix.collections.entity.SettlementStatus;
 import com.navix.collections.repository.CollectionCaseRepository;
 import com.navix.collections.repository.SettlementRepository;
 import com.navix.common.collections.SettlementDirectory;
@@ -32,7 +33,7 @@ public class SettlementDirectoryAdapter implements SettlementDirectory {
         }
         return caseRepository.findByLoanId(loanId)
                 .flatMap(c -> settlementRepository.findByCollectionCaseId(c.getId()).stream()
-                        .filter(s -> s.getApprovedBy() != null)
+                        .filter(s -> s.getStatus() == SettlementStatus.APPROVED)
                         // The most recently approved settlement is the operative full-and-final figure.
                         .max(Comparator.comparing(Settlement::getApprovedAt,
                                 Comparator.nullsFirst(Comparator.naturalOrder())))

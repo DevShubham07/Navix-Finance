@@ -4,6 +4,7 @@ import com.navix.common.collections.SettlementDirectory;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.RepaymentRecordedEvent;
+import com.navix.common.notification.event.RepaymentRejectedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentMethod;
@@ -94,6 +95,28 @@ public class RepaymentService {
         return payment;
     }
 
+    /**
+     * Reject a recorded payment (the accountant couldn't match the proof / transfer). Terminal —
+     * a rejected payment never counts toward the outstanding (only VERIFIED payments are summed),
+     * so no balance recompute is needed. A VERIFIED payment cannot be rejected. Notifies the borrower.
+     */
+    @Transactional
+    public Payment rejectPayment(Long paymentId) {
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment", String.valueOf(paymentId)));
+        if (payment.getStatus() == PaymentStatus.VERIFIED) {
+            throw new BusinessException("PAYMENT_ALREADY_VERIFIED", "A verified payment cannot be rejected");
+        }
+        if (payment.getStatus() != PaymentStatus.REJECTED) {
+            payment.setStatus(PaymentStatus.REJECTED);
+            paymentRepository.save(payment);
+        }
+        Loan loan = requireLoan(payment.getLoanId());
+        eventPublisher.publishEvent(new RepaymentRejectedEvent(
+                loan.getId(), loan.getApplicantId(), payment.getId(), payment.getAmount(), Instant.now()));
+        return payment;
+    }
+
     @Transactional(readOnly = true)
     public List<Payment> listPayments(Long loanId) {
         return paymentRepository.findByLoanId(loanId);
@@ -119,6 +142,23 @@ public class RepaymentService {
      */
     @Transactional(readOnly = true)
     public long outstandingAsOf(Long loanId, LocalDate asOf) {
+        return outstandingBreakdownAsOf(loanId, asOf).outstandingPaise();
+    }
+
+    /**
+     * The itemized make-up of {@link #outstandingAsOf}: the same accrued-interest, late-penalty and
+     * verified-payment figures the net balance is built from, exposed individually so the UI can show
+     * a full cost breakdown without re-deriving (and forking) the math. {@code interestPaise} and
+     * {@code penaltyPaise} are the <i>scheduled/accrued</i> amounts as of {@code asOf}; when
+     * {@code settledAmountPaise} is non-null the net {@code outstandingPaise} is the settlement-capped
+     * full-and-final figure, so the components may then sum to more than the net.
+     */
+    public record OutstandingBreakdown(long outstandingPaise, long interestPaise, long penaltyPaise,
+                                       long verifiedPaise, Long settledAmountPaise) {
+    }
+
+    @Transactional(readOnly = true)
+    public OutstandingBreakdown outstandingBreakdownAsOf(Long loanId, LocalDate asOf) {
         Loan loan = requireLoan(loanId);
         LocalDate at = asOf != null ? asOf : LocalDate.now();
         int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
@@ -127,10 +167,12 @@ public class RepaymentService {
         int rawDpd = loanMath.daysPastDue(loan.getDueDate(), at);
         int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
         long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
+        long interest = loanMath.interestPaise(loan.getPrincipal(), interestDays);
+        long penalty = loanMath.latePenaltyPaise(loan.getPrincipal(), penaltyDays);
         long formulaOwed = loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
-        return settlementDirectory.approvedSettlementAmount(loanId)
-                .map(settled -> Math.min(formulaOwed, Math.max(0L, settled - verified)))
-                .orElse(formulaOwed);
+        Long settled = settlementDirectory.approvedSettlementAmount(loanId).orElse(null);
+        long owed = settled != null ? Math.min(formulaOwed, Math.max(0L, settled - verified)) : formulaOwed;
+        return new OutstandingBreakdown(owed, interest, penalty, verified, settled);
     }
 
     /**

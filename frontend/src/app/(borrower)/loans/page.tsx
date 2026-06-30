@@ -13,6 +13,7 @@ import {
   type ApplicationView,
 } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
+import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
 
 /** Colour an application status: active=green, bad=red, terminal-neutral=grey, in-flight=blue. */
 function statusVariant(status: ApplicationStatus): React.ComponentProps<typeof Badge>["variant"] {
@@ -46,6 +47,7 @@ const PAST_STATUSES = new Set<ApplicationStatus>([
 
 export default function LoansPage() {
   const q = useQuery({ queryKey: ["my-apps"], queryFn: borrowerApi.myApplications });
+  const [detailsLoanId, setDetailsLoanId] = React.useState<number | null>(null);
 
   const apps = q.data ?? [];
   const active = apps.filter((a) => ACTIVE_STATUSES.has(a.status));
@@ -73,16 +75,24 @@ export default function LoansPage() {
         <EmptyState />
       ) : (
         <div className="space-y-8">
-          <Section title="Active advances" apps={active} emptyHint="No active advance right now." />
-          <Section title="In progress" apps={inProgress} />
-          <Section title="Past loans" apps={past} />
+          <Section title="Active advances" apps={active} emptyHint="No active advance right now." onView={setDetailsLoanId} />
+          <Section title="In progress" apps={inProgress} onView={setDetailsLoanId} />
+          <Section title="Past loans" apps={past} onView={setDetailsLoanId} />
         </div>
       )}
+
+      <LoanDetailsDialog
+        loanId={detailsLoanId}
+        open={detailsLoanId != null}
+        onClose={() => setDetailsLoanId(null)}
+      />
     </div>
   );
 }
 
-function Section({ title, apps, emptyHint }: { title: string; apps: ApplicationView[]; emptyHint?: string }) {
+function Section({
+  title, apps, emptyHint, onView,
+}: { title: string; apps: ApplicationView[]; emptyHint?: string; onView: (loanId: number) => void }) {
   if (apps.length === 0 && !emptyHint) return null;
   return (
     <section>
@@ -94,7 +104,7 @@ function Section({ title, apps, emptyHint }: { title: string; apps: ApplicationV
       ) : (
         <div className="space-y-4">
           {apps.map((app) => (
-            <LoanApplicationCard key={app.id} app={app} />
+            <LoanApplicationCard key={app.id} app={app} onView={onView} />
           ))}
         </div>
       )}
@@ -102,7 +112,8 @@ function Section({ title, apps, emptyHint }: { title: string; apps: ApplicationV
   );
 }
 
-function LoanApplicationCard({ app }: { app: ApplicationView }) {
+function LoanApplicationCard({ app, onView }: { app: ApplicationView; onView: (loanId: number) => void }) {
+  const hasLoan = app.loanId != null;
   return (
     <div className="rounded border border-line bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -113,10 +124,21 @@ function LoanApplicationCard({ app }: { app: ApplicationView }) {
             {app.purpose ? ` · ${app.purpose}` : ""}
           </div>
         </div>
-        <Badge variant={statusVariant(app.status)}>{statusLabel(app.status)}</Badge>
+        <div className="flex items-center gap-3">
+          <Badge variant={statusVariant(app.status)}>{statusLabel(app.status)}</Badge>
+          {hasLoan && (
+            <button
+              type="button"
+              onClick={() => onView(app.loanId as number)}
+              className="text-sm font-semibold text-navy hover:underline"
+            >
+              View full details
+            </button>
+          )}
+        </div>
       </div>
 
-      {app.loanId != null && <LoanDetails loanId={app.loanId} />}
+      {hasLoan && <LoanDetails loanId={app.loanId as number} />}
     </div>
   );
 }

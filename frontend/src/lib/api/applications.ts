@@ -130,6 +130,12 @@ export interface OutstandingView {
   /** Non-null when collections has an approved settlement: outstandingPaise is then the
    *  settlement-capped full-and-final figure. */
   settledAmountPaise?: number | null;
+  /** Itemized make-up of the balance as of `asOf` (optional for back-compat with older backends):
+   *  accrued interest, accrued late penalty, and the sum of verified payments so far. When a
+   *  settlement caps the figure, these may sum to more than `outstandingPaise`. */
+  interestPaise?: number;
+  penaltyPaise?: number;
+  verifiedPaise?: number;
 }
 
 export type PaymentMethodName = "UPI" | "BANK_TRANSFER" | "NACH";
@@ -761,6 +767,10 @@ export const staffApi = {
   verifyRepayment: (loanId: number, paymentId: number) =>
     bff<PaymentView>(`${STAFF_LOAN_BASE}/${loanId}/repayments/${paymentId}/verify`, "POST"),
 
+  /** Reject a payment (proof didn't match the transfer); the balance is unchanged. */
+  rejectRepayment: (loanId: number, paymentId: number) =>
+    bff<PaymentView>(`${STAFF_LOAN_BASE}/${loanId}/repayments/${paymentId}/reject`, "POST"),
+
   // --- applicant review (any reviewing role) ---
   /** The applicant's KYC details (PAN masked). */
   getProfile: (id: number) => bff<ProfileView>(`${STAFF_BASE}/${id}/profile`, "GET"),
@@ -1178,6 +1188,8 @@ export interface InteractionView {
   loggedAt: string;
 }
 
+export type SettlementStatusName = "PROPOSED" | "APPROVED" | "REJECTED";
+
 export interface SettlementView {
   id: string;
   collectionCaseId: string;
@@ -1186,8 +1198,12 @@ export interface SettlementView {
   proposedByName: string | null;
   approvedBy: number | null;
   approvedByName: string | null;
+  rejectedBy: number | null;
+  rejectedByName: string | null;
+  status: SettlementStatusName;
   createdAt: string;
   approvedAt: string | null;
+  rejectedAt: string | null;
 }
 
 export interface DpdView {
@@ -1227,6 +1243,8 @@ export const collectionsApi = {
   listSettlements: () => bff<SettlementView[]>(`${COLLECTIONS_BASE}/settlements`, "GET"),
   approveSettlement: (settlementId: string) =>
     bff<SettlementView>(`${COLLECTIONS_BASE}/settlements/${settlementId}/approve`, "POST"),
+  rejectSettlement: (settlementId: string) =>
+    bff<SettlementView>(`${COLLECTIONS_BASE}/settlements/${settlementId}/reject`, "POST"),
 
   dpd: (dueDate: string, asOf?: string) =>
     bff<DpdView>(

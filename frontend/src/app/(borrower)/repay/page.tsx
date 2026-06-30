@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Wallet, Smartphone, Landmark, CheckCircle2, ArrowRight, AlertTriangle, Clock } from "lucide-react";
 import { Input } from "@/components/ui";
+import { ZoomableImage } from "@/components/ui/image-lightbox";
 import { InfoRow } from "@/components/borrower/summary";
 import { useMounted } from "@/hooks/use-mounted";
 import { useLiveApplication } from "@/lib/api/live-journey";
@@ -268,30 +269,18 @@ export default function RepayPage() {
           <div className="mb-4 rounded bg-grey-100 p-3 text-xs text-muted">
             {method === "UPI" ? (
               <div className="flex items-center gap-3">
-                <div className="group relative flex-shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={qrSrc}
-                    alt="UPI QR code"
-                    className="h-24 w-24 cursor-zoom-in rounded border border-line bg-white object-contain p-1"
-                  />
-                  {/* Hover-to-enlarge: a large, scannable QR pops up over the small thumbnail. */}
-                  <div className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 hidden group-hover:block">
-                    <div className="rounded-lg border border-line bg-white p-3 shadow-xl">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={qrSrc}
-                        alt="UPI QR code enlarged"
-                        className="h-60 w-60 object-contain"
-                      />
-                      <p className="mt-2 text-center text-xs text-muted">Scan to pay with any UPI app</p>
-                    </div>
-                  </div>
-                </div>
+                {/* Tap/click the QR to open a full-screen, scannable lightbox (works on mobile). */}
+                <ZoomableImage
+                  src={qrSrc}
+                  alt="UPI QR code"
+                  caption="Scan to pay with any UPI app"
+                  wrapperClassName="flex-shrink-0"
+                  thumbClassName="h-24 w-24 rounded border border-line bg-white object-contain p-1"
+                />
                 <div>
                   Scan the QR or pay to <strong className="text-ink">{upiId}</strong>, then paste the
                   UPI reference below.
-                  <span className="mt-1 block text-[11px] text-muted">Hover the QR to enlarge it for scanning.</span>
+                  <span className="mt-1 block text-[11px] text-muted">Tap the QR to enlarge it for scanning.</span>
                 </div>
               </div>
             ) : (

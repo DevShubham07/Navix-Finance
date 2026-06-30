@@ -97,8 +97,8 @@ public final class CollectionsDtos {
     }
 
     /**
-     * A settlement with proposer/approver resolved to real staff names (the bigint
-     * ids are kept too). Built by {@code SettlementService}.
+     * A settlement with proposer/approver/rejecter resolved to real staff names (the bigint
+     * ids are kept too) plus its maker-checker {@code status}. Built by {@code SettlementService}.
      */
     public record SettlementView(
             UUID id,
@@ -108,8 +108,12 @@ public final class CollectionsDtos {
             String proposedByName,
             Long approvedBy,
             String approvedByName,
+            Long rejectedBy,
+            String rejectedByName,
+            String status,
             Instant createdAt,
-            Instant approvedAt) {
+            Instant approvedAt,
+            Instant rejectedAt) {
     }
 
     /** Live DPD helper result: days-past-due plus the derived bucket. */

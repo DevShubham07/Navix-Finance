@@ -3,6 +3,7 @@ package com.navix.collections.service;
 import com.navix.collections.dto.CollectionsDtos.SettlementView;
 import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.Settlement;
+import com.navix.collections.entity.SettlementStatus;
 import com.navix.collections.repository.CollectionCaseRepository;
 import com.navix.collections.repository.SettlementRepository;
 import com.navix.common.exception.BusinessException;
@@ -11,6 +12,7 @@ import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
 import com.navix.common.notification.event.SettlementApprovedEvent;
 import com.navix.common.notification.event.SettlementProposedEvent;
+import com.navix.common.notification.event.SettlementRejectedEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
@@ -108,12 +110,14 @@ public class SettlementService {
         requireOneOf(MANAGER_ROLE);
         Settlement s = settlementRepository.findById(settlementId)
                 .orElseThrow(() -> new ResourceNotFoundException("Settlement", String.valueOf(settlementId)));
+        requirePending(s);
         long approver = actorStaffId();
         Long proposedBy = s.getProposedBy();
         if (proposedBy != null && proposedBy == approver) {
             throw new BusinessException("SOD_VIOLATION",
                     "The approver must differ from the proposer (separation of duties)");
         }
+        s.setStatus(SettlementStatus.APPROVED);
         s.setApprovedBy(approver);
         s.setApprovedAt(Instant.now());
         Settlement saved = settlementRepository.save(s);
@@ -121,6 +125,48 @@ public class SettlementService {
                 .map(CollectionCase::getLoanId).orElse(null);
         publishSettlement(saved, loanId, true);
         return toView(saved);
+    }
+
+    /**
+     * Collections Head rejects a proposed settlement. Enforces the same maker-checker rules as
+     * {@link #approve}: only the Head (or ADMIN) may act, and the rejecter must differ from the
+     * proposer. A rejected settlement is terminal and never caps the borrower's payable.
+     *
+     * @throws BusinessException {@code SETTLEMENT_NOT_PENDING} if already decided, or
+     *                           {@code SOD_VIOLATION} if the rejecter also proposed it
+     */
+    @Transactional
+    public SettlementView reject(UUID settlementId) {
+        requireOneOf(MANAGER_ROLE);
+        Settlement s = settlementRepository.findById(settlementId)
+                .orElseThrow(() -> new ResourceNotFoundException("Settlement", String.valueOf(settlementId)));
+        requirePending(s);
+        long rejecter = actorStaffId();
+        Long proposedBy = s.getProposedBy();
+        if (proposedBy != null && proposedBy == rejecter) {
+            throw new BusinessException("SOD_VIOLATION",
+                    "The approver must differ from the proposer (separation of duties)");
+        }
+        s.setStatus(SettlementStatus.REJECTED);
+        s.setRejectedBy(rejecter);
+        s.setRejectedAt(Instant.now());
+        Settlement saved = settlementRepository.save(s);
+        Long loanId = caseRepository.findById(saved.getCollectionCaseId())
+                .map(CollectionCase::getLoanId).orElse(null);
+        Long applicantId = loanId == null ? null
+                : loanDirectory.findLoan(loanId).map(LoanSummary::applicantId).orElse(null);
+        eventPublisher.publishEvent(new SettlementRejectedEvent(
+                saved.getId(), saved.getCollectionCaseId(), loanId, applicantId,
+                saved.getSettlementAmount(), saved.getProposedBy(), Instant.now()));
+        return toView(saved);
+    }
+
+    /** Guard: only a PROPOSED settlement can be approved or rejected. */
+    private static void requirePending(Settlement s) {
+        if (s.getStatus() != SettlementStatus.PROPOSED) {
+            throw new BusinessException("SETTLEMENT_NOT_PENDING",
+                    "This settlement has already been " + s.getStatus().name().toLowerCase());
+        }
     }
 
     /** Publish the proposed/approved settlement event, resolving the borrower via the loan. */
@@ -151,11 +197,14 @@ public class SettlementService {
     }
 
     private SettlementView toView(Settlement s) {
+        SettlementStatus status = s.getStatus() != null ? s.getStatus() : SettlementStatus.PROPOSED;
         return new SettlementView(
                 s.getId(), s.getCollectionCaseId(), s.getSettlementAmount(),
                 s.getProposedBy(), staffName(s.getProposedBy()),
                 s.getApprovedBy(), staffName(s.getApprovedBy()),
-                s.getCreatedAt(), s.getApprovedAt());
+                s.getRejectedBy(), staffName(s.getRejectedBy()),
+                status.name(),
+                s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt());
     }
 
     private String staffName(Long staffId) {
