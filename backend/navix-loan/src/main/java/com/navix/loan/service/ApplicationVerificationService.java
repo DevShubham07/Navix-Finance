@@ -310,12 +310,27 @@ public class ApplicationVerificationService {
         if (clientId == null) {
             throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
         }
+        // Our own finalized state is authoritative. Once the Aadhaar has actually been fetched
+        // (by either tab — see digilockerComplete) the step is done, regardless of the provider's
+        // status flag. The Fintrix/Surepass status endpoint is unreliable here: it routinely stalls
+        // at "client_initiated" and never reports completed=true, so trusting that flag leaves the
+        // poll spinning forever. Short-circuit on the finalized AADHAAR row and skip the provider
+        // call entirely (also avoids a stale-session error after the session has been consumed).
+        if (passed(appId, AADHAAR).isPresent()) {
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("status", "completed");
+            derived.put("completed", true);
+            derived.put("failed", false);
+            derived.put("finalized", true);
+            return new StepResult(DIGILOCKER, PASS, "DigiLocker completed", derived);
+        }
         VerificationPort.DigiLockerStatus s = verification.digilockerStatus(clientId);
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("status", s.status());
         derived.put("completed", s.completed());
         derived.put("failed", s.failed());
         derived.put("aadhaarLinked", s.aadhaarLinked());
+        derived.put("finalized", false);
         return new StepResult(DIGILOCKER, s.completed() ? PASS : (s.failed() ? FAIL : PENDING),
                 "DigiLocker " + s.status(), derived);
     }
@@ -333,6 +348,15 @@ public class ApplicationVerificationService {
             throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
         }
         VerificationPort.AadhaarResult a = verification.digilockerAadhaar(clientId);
+
+        // Readiness gate. The redirect back to our callback is the real "user finished consent"
+        // signal — but the provider may not have materialised the Aadhaar XML the instant we ask.
+        // If no usable demographics came back, treat it as not-ready-yet and fail RETRYABLY rather
+        // than persisting a bogus PASS with blank fields. The caller polls this until data lands.
+        if (isBlank(a.fullName()) && isBlank(a.maskedAadhaar())) {
+            throw new BusinessException("DIGILOCKER_NOT_READY",
+                    "DigiLocker consent not completed yet — Aadhaar data not available");
+        }
 
         // Aadhaar is the authoritative DOB source — persist it onto the profile (overriding any
         // earlier PAN-derived value) so the borrower's stored date of birth reflects KYC.
@@ -853,6 +877,10 @@ public class ApplicationVerificationService {
 
     private static String nz(String s) {
         return s == null ? "" : s;
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     private static double round2(double v) {

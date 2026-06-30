@@ -4,14 +4,21 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle2, ArrowRight, AlertTriangle } from "lucide-react";
 import { readStoredAppId } from "@/lib/api/live-journey";
-import { verificationApi } from "@/lib/api/applications";
+import { verificationApi, ApplicationApiError } from "@/lib/api/applications";
 
 type Phase = "working" | "done" | "failed";
 
+const RETRY_MS = 4000;
+const MAX_ATTEMPTS = 8; // ~30s of retrying while the provider materialises the Aadhaar XML
+
 /**
  * Real DigiLocker return target (the `redirectUrl` passed to verify/digilocker/init).
- * Resumes the consent flow: polls status until completed, then finalises. The main
- * onboarding tab also polls, so either tab can complete the step.
+ *
+ * Landing here IS the post-consent signal (DigiLocker redirected the user back), so we
+ * finalise directly — `digilockerComplete` probes the Aadhaar XML, which is the true
+ * source of truth — instead of waiting for the provider's status flag, which is unreliable
+ * and routinely never reports completed. If the XML isn't ready the instant we ask, the
+ * backend returns a retryable DIGILOCKER_NOT_READY and we poll a bounded number of times.
  */
 export default function KycDigiLockerCallbackPage() {
   const router = useRouter();
@@ -19,38 +26,29 @@ export default function KycDigiLockerCallbackPage() {
 
   React.useEffect(() => {
     let cancelled = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const appId = readStoredAppId();
     if (appId == null) { setPhase("failed"); return; }
 
-    const finalise = async () => {
+    let attempts = 0;
+    const attempt = async () => {
+      attempts += 1;
       try {
         const r = await verificationApi.digilockerComplete(appId);
         if (!cancelled) setPhase(r.status === "FAIL" ? "failed" : "done");
-      } catch {
-        if (!cancelled) setPhase("failed");
-      }
-    };
-
-    const tick = async () => {
-      try {
-        const s = await verificationApi.digilockerStatus(appId);
-        if (s.derived?.completed === true) {
-          if (timer) { clearInterval(timer); timer = null; }
-          await finalise();
-        } else if (s.derived?.failed === true || s.status === "FAIL") {
-          if (timer) { clearInterval(timer); timer = null; }
-          if (!cancelled) setPhase("failed");
+      } catch (err) {
+        if (cancelled) return;
+        const retryable = err instanceof ApplicationApiError && err.code === "DIGILOCKER_NOT_READY";
+        if (retryable && attempts < MAX_ATTEMPTS) {
+          timer = setTimeout(() => { void attempt(); }, RETRY_MS);
+        } else {
+          setPhase("failed");
         }
-      } catch {
-        if (timer) { clearInterval(timer); timer = null; }
-        if (!cancelled) setPhase("failed");
       }
     };
 
-    timer = setInterval(() => { void tick(); }, 4000);
-    void tick();
-    return () => { cancelled = true; if (timer) clearInterval(timer); };
+    void attempt();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, []);
 
   return (

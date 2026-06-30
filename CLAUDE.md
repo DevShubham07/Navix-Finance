@@ -815,10 +815,27 @@ identity** (name/PAN/mobile/DOB) is overridden from the borrower's `ApplicantPro
   `{client_id,gateway,type}`, no redirect binding). **Fix:** make `redirect_url` **unique per attempt**
   (we append `?app=<id>&sid=<nonce>`); the callback page resolves the app from `localStorage`, so the
   extra params are ignored. A never-before-used `redirect_url` always mints a fresh, valid token.
-- **Status polling advances on `derived.status === "client_initiated"`**, not on `completed`. Once the
-  user is handed to the consent tab the status sits at `client_initiated` (`completed:false`), so the
-  wizard would poll forever; we stop and move to the next step (the separate
-  `/kyc/digilocker/callback` tab finalises the Aadhaar fetch). A failed status call surfaces a retry.
+- **Completion is redirect-driven, not status-poll-driven (reworked 2026-06-30).** The
+  `digilocker_status` poll is unreliable — it routinely **stalls at `client_initiated` and never
+  reports `completed:true`**, so trusting that flag left the Aadhaar unfetched (the app silently fell
+  to the "manual review" branch at `submit-kyc` while *looking* successful). The flow now treats the
+  **redirect back to `/kyc/digilocker/callback` as the post-consent signal** and the **data endpoints
+  as the source of truth**:
+  - **Callback tab is the single finaliser:** on mount it calls `digilockerComplete` **directly**
+    (which probes `digilocker_aadhar_xml`), with bounded retry (8× / ~30s) on a retryable
+    `DIGILOCKER_NOT_READY`. The backend `digilockerComplete` now **gates on readiness** — blank
+    name *and* masked-Aadhaar → throw `DIGILOCKER_NOT_READY` instead of persisting a bogus `PASS`.
+  - **`digilockerStatus` is now finalized-aware:** once the `AADHAAR` row exists it **short-circuits
+    to `PASS`** (skipping the flaky provider call), so the signup tab resolves off **our own DB**, not
+    the provider flag. Derived carries a `finalized` boolean.
+  - **Signup tab no longer advances optimistically on `client_initiated`:** it keeps polling until
+    status is `PASS` (set by the callback tab), with a generous `POLL_LIMIT` (~3 min) fallback so the
+    wizard never hard-blocks — on timeout it advances and the unfinished Aadhaar legitimately drops to
+    staff manual review. A failed status call surfaces a retry.
+  - _Touch points:_ `ApplicationVerificationService.{digilockerStatus,digilockerComplete}`,
+    `signup/digilocker/page.tsx`, `kyc/digilocker/callback/page.tsx`. The alternative API on
+    `solution.fintrix.tech` (a possibly-newer DigiLocker–Aadhaar flow) is **unevaluated** — it's a
+    JS-rendered SPA, not fetchable headlessly.
 
 ---
 

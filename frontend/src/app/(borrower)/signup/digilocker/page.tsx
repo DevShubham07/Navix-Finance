@@ -19,7 +19,12 @@ export default function SignupDigiLockerPage() {
   const [error, setError] = React.useState<string>();
   const [retryCount, setRetryCount] = React.useState(0);
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const polls = React.useRef(0);
   const MAX_RETRIES = 3;
+  // ~3 min at POLL_MS. The status resolves to PASS once the DigiLocker tab redirects to our
+  // callback and that tab fetches the Aadhaar. If consent is never finished, fall back to
+  // advancing — the unfinished Aadhaar drops to staff manual review at submit-kyc.
+  const POLL_LIMIT = 45;
 
   React.useEffect(() => {
     if (mounted && appId == null) router.replace("/signup/mobile-otp");
@@ -49,25 +54,31 @@ export default function SignupDigiLockerPage() {
   const poll = React.useCallback(async () => {
     if (appId == null) return;
     try {
+      polls.current += 1;
       const r = await verificationApi.digilockerStatus(appId);
       setResult(r);
-      const status = r.derived?.status;
-      if (r.derived?.completed === true) {
-        // Fully completed in this tab — fetch the Aadhaar and route.
-        stop();
-        await finalise();
-      } else if (status === "client_initiated") {
-        // The DigiLocker session is live with the provider (the user has been handed off
-        // to the consent tab). Don't block the wizard waiting for full completion — the
-        // separate callback tab finalises the Aadhaar fetch. Stop polling and continue.
+      if (r.status === "PASS") {
+        // The callback tab fetched the Aadhaar and our status now reflects it — done.
         stop();
         setPhase("done");
         setTimeout(() => router.push(nextAfterStep("/signup/pan")), 600);
+      } else if (r.derived?.completed === true) {
+        // The provider reports completion but the Aadhaar hasn't been fetched yet (e.g. the
+        // callback tab was blocked). Finalise from here.
+        stop();
+        await finalise();
       } else if (r.derived?.failed === true || r.status === "FAIL") {
         stop();
         setPhase("failed");
+      } else if (polls.current >= POLL_LIMIT) {
+        // Consent not confirmed in time. Don't hard-block the wizard — advance; the
+        // unfinished Aadhaar falls to staff manual review at submit-kyc.
+        stop();
+        setPhase("done");
+        setTimeout(() => router.push(nextAfterStep("/signup/pan")), 600);
       }
-      // Any other status (e.g. "pending") → keep polling until the session is initiated.
+      // Otherwise (pending / client_initiated / in_progress) keep polling: the user is still
+      // finishing consent in the DigiLocker tab.
     } catch (err) {
       // Status API failed — stop and surface a retry rather than spinning silently.
       stop();
@@ -100,6 +111,7 @@ export default function SignupDigiLockerPage() {
       if (url) window.open(url, "_blank", "noopener,noreferrer");
       setPhase("polling");
       stop();
+      polls.current = 0;
       timer.current = setInterval(() => { void poll(); }, POLL_MS);
       void poll();
     } catch (err) {
