@@ -129,6 +129,22 @@ public class ApplicationController {
         return ApiResponse.ok(verification.manualDecision(id, checkType, req.decision(), req.notes()));
     }
 
+    /** Pending-API dashboard: cross-application verification overview + status tallies (Phase 3.3). Staff. */
+    @GetMapping("/verifications/overview")
+    public ApiResponse<ApplicationVerificationService.VerificationOverview> verificationOverview(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String checkType,
+            @RequestParam(required = false) String q) {
+        requireStaff();
+        return ApiResponse.ok(verification.overview(status, checkType, q));
+    }
+
+    /** Staff nudges the borrower with their pending verification steps (Phase 3.4). KYC approver / admin. */
+    @PostMapping("/{id}/send-reminder")
+    public ApiResponse<ApplicationVerificationService.ReminderResult> sendReminder(@PathVariable Long id) {
+        return ApiResponse.ok(verification.sendKycReminder(id));
+    }
+
     /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
     @GetMapping("/{id}/credit-brief")
     public ApiResponse<CreditBriefView> creditBrief(@PathVariable Long id) {

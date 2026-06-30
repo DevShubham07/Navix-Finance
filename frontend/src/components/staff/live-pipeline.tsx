@@ -13,7 +13,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, X, Loader2, RefreshCw, ChevronDown, FileText, Download, ExternalLink, User, Banknote, ArrowRight } from "lucide-react";
+import { Check, X, Loader2, RefreshCw, ChevronDown, FileText, Download, ExternalLink, User, Banknote, ArrowRight, Bell } from "lucide-react";
 import { Input, Select, InfoTooltip } from "@/components/ui";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
@@ -464,6 +464,8 @@ function VerificationCards({ applicationId }: { applicationId: number }) {
       qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
     },
   });
+  // KYC-approver / admin nudge the borrower with their pending steps (Phase 3.4).
+  const remind = useMutation({ mutationFn: () => staffApi.sendReminder(applicationId) });
 
   const steps: StepResult[] = q.data ?? [];
   const p = progressQ.data;
@@ -471,7 +473,20 @@ function VerificationCards({ applicationId }: { applicationId: number }) {
   return (
     <div className="mt-5">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Verification checks</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Verification checks</span>
+          <PermissionGate permission="kyc:approve">
+            <button
+              onClick={() => remind.mutate()}
+              disabled={remind.isPending || remind.isSuccess}
+              title="Remind the borrower of their pending verification steps"
+              className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-navy hover:bg-navy-tint disabled:opacity-50"
+            >
+              {remind.isPending ? <Loader2 size={11} className="animate-spin" /> : <Bell size={11} />}
+              {remind.isSuccess ? (remind.data?.sent ? "Reminded" : "Nothing pending") : "Send reminder"}
+            </button>
+          </PermissionGate>
+        </div>
         {p && (
           <span className="text-xs text-muted">
             <span className="font-semibold text-navy">{p.completed}/{p.required}</span> done · {p.percent}%

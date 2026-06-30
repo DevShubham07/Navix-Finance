@@ -4,6 +4,7 @@ import com.navix.common.notification.ContactInfo;
 import com.navix.common.notification.RecipientType;
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.notification.event.CollectionCaseOpenedEvent;
+import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.RepaymentRecordedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
 import com.navix.common.notification.event.SettlementApprovedEvent;
@@ -48,6 +49,17 @@ public class NotificationEventListener {
                 .assignedExecutiveId(e.assignedExecutiveId())
                 .actorId(e.actorId())
                 .actorRole(e.actorRole())
+                .build());
+    }
+
+    /** Staff-triggered nudge to a borrower with outstanding verification steps (Phase 3.4). */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onKycReminder(KycReminderEvent e) {
+        dispatcher.dispatch(NotificationType.KYC_REMINDER, NotificationContext.builder()
+                .applicantId(e.applicantId())
+                .applicationId(e.applicationId())
+                .put("pendingSteps", e.pendingSteps())
                 .build());
     }
 

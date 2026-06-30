@@ -533,6 +533,35 @@ export interface VerificationProgress {
   percent: number;
 }
 
+/** One row in the pending-API dashboard (Phase 3.3) — mirrors backend VerificationOverviewRow. */
+export interface VerificationOverviewRow {
+  applicationId: number;
+  applicantId: number | null;
+  borrowerName: string | null;
+  checkType: string;
+  status: CheckStatus;
+  provider: string | null;
+  message: string | null;
+  updatedAt: string | null;
+}
+
+/** Pending-API dashboard payload (Phase 3.3) — status tallies + rows. */
+export interface VerificationOverview {
+  passed: number;
+  review: number;
+  failed: number;
+  pending: number;
+  neverRun: number;
+  rows: VerificationOverviewRow[];
+}
+
+/** Result of a staff-triggered KYC reminder (Phase 3.4). */
+export interface ReminderResult {
+  sent: boolean;
+  pendingCount: number;
+  pendingSteps: string;
+}
+
 /** Result of asking the app-scoped verify endpoint for a presigned PUT URL. */
 export interface VerifyPresign {
   key: string;
@@ -713,6 +742,17 @@ export const staffApi = {
   /** Staff manual override of a verification step (KYC approver / admin): PASS or FAIL with a note. */
   manualVerificationDecision: (id: number, checkType: string, decision: boolean, notes?: string) =>
     bff<StepResult>(`${STAFF_BASE}/${id}/verifications/${checkType}/decision`, "POST", { decision, notes }),
+  /** Pending-API dashboard: cross-application verification overview + tallies (Phase 3.3). */
+  verificationOverview: (filters?: { status?: string; checkType?: string; q?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.checkType) params.set("checkType", filters.checkType);
+    if (filters?.q) params.set("q", filters.q);
+    const qs = params.toString();
+    return bff<VerificationOverview>(`${STAFF_BASE}/verifications/overview${qs ? `?${qs}` : ""}`, "GET");
+  },
+  /** KYC approver / admin nudges the borrower with their pending verification steps (Phase 3.4). */
+  sendReminder: (id: number) => bff<ReminderResult>(`${STAFF_BASE}/${id}/send-reminder`, "POST"),
 
   /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
   creditBrief: (id: number) => bff<CreditBriefView>(`${STAFF_BASE}/${id}/credit-brief`, "GET"),

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
@@ -16,9 +17,11 @@ import com.navix.loan.repository.ApplicantProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +30,7 @@ import java.util.Set;
 import java.util.HashSet;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -84,6 +88,7 @@ public class ApplicationVerificationService {
     private final RiskPort risk;
     private final ObjectMapper objectMapper;
     private final CreditBriefService creditBriefService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     public record StepResult(String checkType, String status, String message, Map<String, Object> derived) {
@@ -91,6 +96,21 @@ public class ApplicationVerificationService {
 
     /** Required-step completion snapshot for the progress tracker (Phase 3.2). */
     public record VerificationProgress(int required, int completed, int failed, int pending, int percent) {
+    }
+
+    /** Result of a staff-triggered KYC reminder (Phase 3.4). */
+    public record ReminderResult(boolean sent, int pendingCount, String pendingSteps) {
+    }
+
+    /** One row in the cross-application pending-API dashboard (Phase 3.3). */
+    public record VerificationOverviewRow(Long applicationId, Long applicantId, String borrowerName,
+                                          String checkType, String status, String provider,
+                                          String message, Instant updatedAt) {
+    }
+
+    /** Pending-API dashboard payload: status tallies + the (filtered) rows (Phase 3.3). */
+    public record VerificationOverview(int passed, int review, int failed, int pending, int neverRun,
+                                       List<VerificationOverviewRow> rows) {
     }
 
     // ---------------------------------------------------------------- steps
@@ -621,6 +641,115 @@ public class ApplicationVerificationService {
                 + (trimmed.isEmpty() ? "" : " — " + trimmed);
         return view(upsert(appId, type, pass ? PASS : FAIL, "MANUAL",
                 null, null, null, null, null, Map.of(), message));
+    }
+
+    /**
+     * Staff-triggered reminder (Phase 3.4): nudge a borrower with the list of verification steps still
+     * outstanding. Publishes a {@link KycReminderEvent} (the notification engine fans it out IN_APP/
+     * SMS/EMAIL to the borrower). No-op when nothing is pending. KYC approver / admin only.
+     */
+    @Transactional
+    public ReminderResult sendKycReminder(Long appId) {
+        String role = ActorContext.get().role();
+        if (!"KYC_APPROVER".equals(role) && !"ADMIN".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Sending a reminder requires KYC_APPROVER");
+        }
+        LoanApplication app = requireApplication(appId);
+        Map<String, String> byType = verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
+                .collect(Collectors.toMap(ApplicationVerification::getCheckType,
+                        ApplicationVerification::getStatus, (a, b) -> b));
+        List<String> pending = new ArrayList<>();
+        for (String r : REQUIRED) {
+            String s = byType.get(r);
+            if (!PASS.equals(s) && !REVIEW.equals(s)) {
+                pending.add(humanizeCheckType(r));
+            }
+        }
+        if (pending.isEmpty()) {
+            return new ReminderResult(false, 0, "none");
+        }
+        String pendingSteps = String.join(", ", pending);
+        eventPublisher.publishEvent(new KycReminderEvent(app.getApplicantId(), appId, pendingSteps, Instant.now()));
+        return new ReminderResult(true, pending.size(), pendingSteps);
+    }
+
+    /**
+     * Cross-application pending-API dashboard (Phase 3.3): status tallies (passed / review / failed /
+     * pending / never-run) plus the verification rows, enriched with borrower context and filterable by
+     * status, check type and a free-text query (borrower name / application id / applicant id).
+     */
+    @Transactional(readOnly = true)
+    public VerificationOverview overview(String statusFilter, String checkTypeFilter, String q) {
+        List<ApplicationVerification> all = verificationRepo.findAll();
+        Map<Long, LoanApplication> appById = applicationRepo.findAll().stream()
+                .collect(Collectors.toMap(LoanApplication::getId, a -> a, (a, b) -> a));
+        Map<Long, ApplicantProfile> profByApp = profileRepo.findAll().stream()
+                .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
+
+        int passed = 0, review = 0, failed = 0, pending = 0;
+        Map<Long, Set<String>> presentByApp = new java.util.HashMap<>();
+        for (ApplicationVerification v : all) {
+            String s = v.getStatus();
+            if (PASS.equals(s)) {
+                passed++;
+            } else if (REVIEW.equals(s)) {
+                review++;
+            } else if (FAIL.equals(s)) {
+                failed++;
+            } else {
+                pending++;
+            }
+            presentByApp.computeIfAbsent(v.getApplicationId(), k -> new HashSet<>()).add(v.getCheckType());
+        }
+        // Never-run: required checks with no row, on applications that have at least started verification.
+        int neverRun = 0;
+        for (Set<String> present : presentByApp.values()) {
+            for (String r : REQUIRED) {
+                if (!present.contains(r)) {
+                    neverRun++;
+                }
+            }
+        }
+
+        String statusF = norm(statusFilter);
+        String typeF = norm(checkTypeFilter);
+        String needle = q != null ? q.trim().toLowerCase() : "";
+        List<VerificationOverviewRow> rows = all.stream()
+                .filter(v -> statusF.isEmpty() || statusF.equals(v.getStatus()))
+                .filter(v -> typeF.isEmpty() || typeF.equals(v.getCheckType()))
+                .map(v -> {
+                    LoanApplication a = appById.get(v.getApplicationId());
+                    ApplicantProfile p = profByApp.get(v.getApplicationId());
+                    Instant ts = v.getUpdatedAt() != null ? v.getUpdatedAt() : v.getCreatedAt();
+                    return new VerificationOverviewRow(v.getApplicationId(),
+                            a != null ? a.getApplicantId() : null,
+                            p != null ? p.getFullName() : null,
+                            v.getCheckType(), v.getStatus(), v.getProvider(), v.getMessage(), ts);
+                })
+                .filter(r -> needle.isEmpty() || overviewMatches(r, needle))
+                .sorted(java.util.Comparator.comparing(VerificationOverviewRow::updatedAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .toList();
+        return new VerificationOverview(passed, review, failed, pending, neverRun, rows);
+    }
+
+    private static boolean overviewMatches(VerificationOverviewRow r, String needle) {
+        if (r.borrowerName() != null && r.borrowerName().toLowerCase().contains(needle)) {
+            return true;
+        }
+        if (r.applicationId() != null && String.valueOf(r.applicationId()).contains(needle)) {
+            return true;
+        }
+        return r.applicantId() != null && String.valueOf(r.applicantId()).contains(needle);
+    }
+
+    private static String norm(String s) {
+        return s == null ? "" : s.trim().toUpperCase();
+    }
+
+    private static String humanizeCheckType(String t) {
+        String s = t.toLowerCase().replace('_', ' ');
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     // ---------------------------------------------------------------- helpers

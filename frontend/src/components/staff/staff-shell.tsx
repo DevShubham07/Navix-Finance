@@ -21,6 +21,7 @@ import {
   CreditCard,
   Wallet,
   Files,
+  ListChecks,
   LogOut,
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
@@ -44,6 +45,7 @@ const NAV: NavGroup[] = [
       { label: "Customers", href: "/staff/customers", Icon: Contact, perm: "customer:view" },
       { label: "KYC Approvals", href: "/staff/kyc-approvals", Icon: ShieldCheck, perm: "kyc:approve" },
       { label: "Reborrow Reviews", href: "/staff/kyc-review", Icon: UserCheck, perm: "kyc:approve" },
+      { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
       { label: "Credit Queue", href: "/staff/credit/queue", Icon: ClipboardList, perm: "loan:review" },
       { label: "Disbursement", href: "/staff/disbursement", Icon: Banknote, perm: "loan:disburse" },
       { label: "Accounting", href: "/staff/accounting", Icon: Receipt, perm: "loan:activate" },

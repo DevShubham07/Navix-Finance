@@ -45,6 +45,14 @@ public class NotificationTemplates {
                 "Hi {name},\n\nWe weren't able to verify your KYC this time. Please log in to review "
                         + "your details and resubmit.\n\n— NAVIX Finance");
 
+        inApp(NotificationType.KYC_REMINDER, "Finish your verification",
+                "You still have pending verification steps: {pendingSteps}. Log in to complete them.");
+        sms(NotificationType.KYC_REMINDER,
+                "NAVIX: Please complete your pending verification: {pendingSteps}. Log in to finish.");
+        email(NotificationType.KYC_REMINDER, "Complete your NAVIX verification",
+                "Hi {name},\n\nA few verification steps are still pending on your application: "
+                        + "{pendingSteps}.\n\nPlease log in to complete them so we can proceed.\n\n— NAVIX Finance");
+
         inApp(NotificationType.REBORROW_PREAPPROVED, "You're pre-approved",
                 "Welcome back! You're pre-approved — choose your amount to continue.");
         sms(NotificationType.REBORROW_PREAPPROVED,
