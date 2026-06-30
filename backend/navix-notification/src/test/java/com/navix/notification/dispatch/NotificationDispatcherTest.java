@@ -149,4 +149,27 @@ class NotificationDispatcherTest {
         verify(notificationRepo, times(0)).save(any());
         verify(deliveryRepo, times(0)).save(any());
     }
+
+    @Test
+    void suppressesAChannelTheBorrowerOptedOutOf() {
+        when(audienceResolver.resolve(any(), any())).thenReturn(List.of(borrower(7)));
+        when(loanDirectory.findLoan(anyLong())).thenReturn(Optional.empty());
+        // Borrower opted out of SMS → IN_APP + EMAIL still send; SMS records SKIPPED=OPTED_OUT (not sent).
+        when(borrowerPreferences.optedOutChannels(7L)).thenReturn(java.util.Set.of(NotificationChannel.SMS));
+
+        dispatcher.dispatch(NotificationType.LOAN_DISBURSED,
+                NotificationContext.builder().applicantId(7L).loanId(2L).build());
+
+        ArgumentCaptor<NotificationDelivery> cap = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo, times(3)).save(cap.capture());
+        List<NotificationDelivery> deliveries = cap.getAllValues();
+        // SMS is suppressed (opted out) — never reaches the throwing sender, recorded as SKIPPED.
+        assertThat(deliveries).anySatisfy(d -> {
+            assertThat(d.getChannel()).isEqualTo(NotificationChannel.SMS);
+            assertThat(d.getStatus()).isEqualTo(DeliveryStatus.SKIPPED);
+            assertThat(d.getError()).isEqualTo("OPTED_OUT");
+        });
+        // IN_APP + EMAIL still went out.
+        assertThat(deliveries).filteredOn(d -> d.getStatus() == DeliveryStatus.SENT).hasSize(2);
+    }
 }

@@ -47,7 +47,8 @@ class ApprovalChainServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ApprovalChainService(requestRepository, stepRepository, new PennyDropGate());
+        // Legacy chain end-to-end: enable the penny-drop stub (it fails closed by default in prod).
+        service = new ApprovalChainService(requestRepository, stepRepository, new PennyDropGate(true));
 
         request = new DisbursementRequest();
         request.setId(UUID.randomUUID());
