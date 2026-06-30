@@ -443,17 +443,48 @@ function stringifyDerived(value: unknown): string {
  * `derived` fields the reviewer needs. Loaded on demand inside {@link ApplicantReview}.
  */
 function VerificationCards({ applicationId }: { applicationId: number }) {
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["staff-verifications", applicationId],
     queryFn: () => staffApi.verifications(applicationId),
     retry: false,
   });
+  // Required-step completion snapshot (Phase 3.2 progress tracker).
+  const progressQ = useQuery({
+    queryKey: ["staff-verification-progress", applicationId],
+    queryFn: () => staffApi.verificationProgress(applicationId),
+    retry: false,
+  });
+  // KYC-approver / admin manual override of a stuck or inconclusive step (Phase 3.1).
+  const decide = useMutation({
+    mutationFn: (vars: { checkType: string; decision: boolean }) =>
+      staffApi.manualVerificationDecision(applicationId, vars.checkType, vars.decision),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
+      qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
+    },
+  });
 
   const steps: StepResult[] = q.data ?? [];
+  const p = progressQ.data;
 
   return (
     <div className="mt-5">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Verification checks</div>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Verification checks</span>
+        {p && (
+          <span className="text-xs text-muted">
+            <span className="font-semibold text-navy">{p.completed}/{p.required}</span> done · {p.percent}%
+            {p.failed > 0 ? <span className="text-error-700"> · {p.failed} failed</span> : null}
+            {p.pending > 0 ? <span className="text-warning-800"> · {p.pending} pending</span> : null}
+          </span>
+        )}
+      </div>
+      {p && (
+        <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-grey-200">
+          <div className="h-full rounded-full bg-success-600 transition-all" style={{ width: `${p.percent}%` }} />
+        </div>
+      )}
       {q.isLoading ? (
         <p className="text-sm text-muted">Loading…</p>
       ) : q.error ? (
@@ -483,11 +514,31 @@ function VerificationCards({ applicationId }: { applicationId: number }) {
                     ))}
                   </dl>
                 )}
+                <PermissionGate permission="kyc:approve">
+                  <div className="mt-2 flex items-center gap-1.5 border-t border-line pt-2">
+                    <button
+                      onClick={() => decide.mutate({ checkType: s.checkType, decision: true })}
+                      disabled={decide.isPending}
+                      className="rounded border border-success-600 px-2 py-0.5 text-xs font-semibold text-success-700 hover:bg-success-50 disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => decide.mutate({ checkType: s.checkType, decision: false })}
+                      disabled={decide.isPending}
+                      className="rounded border border-error-600 px-2 py-0.5 text-xs font-semibold text-error-700 hover:bg-error-50 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                    <span className="text-[11px] text-muted">manual override</span>
+                  </div>
+                </PermissionGate>
               </div>
             );
           })}
         </div>
       )}
+      {decide.error && <p className="mt-2 text-xs text-error-700">{errMessage(decide.error)}</p>}
     </div>
   );
 }

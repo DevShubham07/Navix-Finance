@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.risk.RiskPort;
+import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.ApplicantProfile;
@@ -67,6 +68,10 @@ public class ApplicationVerificationService {
     static final List<String> REQUIRED =
             List.of(PAN, EMAIL, ADDRESS, AADHAAR, BUREAU, SALARY, PENNY_DROP, SELFIE);
 
+    /** Every recognised check type — guards the staff manual-override target. */
+    static final Set<String> KNOWN_CHECKS =
+            Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU, SALARY, PENNY_DROP, SELFIE, AGREEMENT);
+
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
 
@@ -82,6 +87,10 @@ public class ApplicationVerificationService {
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     public record StepResult(String checkType, String status, String message, Map<String, Object> derived) {
+    }
+
+    /** Required-step completion snapshot for the progress tracker (Phase 3.2). */
+    public record VerificationProgress(int required, int completed, int failed, int pending, int percent) {
     }
 
     // ---------------------------------------------------------------- steps
@@ -561,6 +570,57 @@ public class ApplicationVerificationService {
         return verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
                 .map(this::view)
                 .toList();
+    }
+
+    /**
+     * Completion snapshot over the {@link #REQUIRED} checks (Phase 3.2): how many are cleared
+     * (PASS/REVIEW), failed (FAIL), or pending (PENDING / never-run), plus a 0–100 percent.
+     */
+    @Transactional(readOnly = true)
+    public VerificationProgress progress(Long appId) {
+        Map<String, String> byType = verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
+                .collect(Collectors.toMap(ApplicationVerification::getCheckType,
+                        ApplicationVerification::getStatus, (a, b) -> b));
+        int completed = 0;
+        int failed = 0;
+        int pending = 0;
+        for (String r : REQUIRED) {
+            String s = byType.get(r);
+            if (PASS.equals(s) || REVIEW.equals(s)) {
+                completed++;
+            } else if (FAIL.equals(s)) {
+                failed++;
+            } else {
+                pending++; // PENDING or never-run
+            }
+        }
+        int required = REQUIRED.size();
+        int percent = required == 0 ? 100 : (int) Math.round(completed * 100.0 / required);
+        return new VerificationProgress(required, completed, failed, pending, percent);
+    }
+
+    /**
+     * Staff manual override of a verification step (Phase 3.1): a KYC approver (or ADMIN) sets a check
+     * to PASS or FAIL with a note — used when an external check is stuck/inconclusive and needs human
+     * judgement. Recorded via {@link #upsert} with provider {@code MANUAL} (idempotent per check type).
+     */
+    @Transactional
+    public StepResult manualDecision(Long appId, String checkType, boolean pass, String notes) {
+        String role = ActorContext.get().role();
+        if (!"KYC_APPROVER".equals(role) && !"ADMIN".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Manual verification override requires KYC_APPROVER");
+        }
+        String type = checkType == null ? "" : checkType.trim().toUpperCase();
+        if (!KNOWN_CHECKS.contains(type)) {
+            throw new BusinessException("UNKNOWN_CHECK", "Unknown verification check: " + checkType);
+        }
+        requireApplication(appId);
+        String actor = ActorContext.get().name();
+        String trimmed = notes != null ? notes.trim() : "";
+        String message = (pass ? "Manually approved" : "Manually rejected") + " by " + actor
+                + (trimmed.isEmpty() ? "" : " — " + trimmed);
+        return view(upsert(appId, type, pass ? PASS : FAIL, "MANUAL",
+                null, null, null, null, null, Map.of(), message));
     }
 
     // ---------------------------------------------------------------- helpers

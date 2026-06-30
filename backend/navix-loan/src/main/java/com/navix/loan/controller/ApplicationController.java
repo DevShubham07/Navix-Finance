@@ -115,6 +115,20 @@ public class ApplicationController {
         return ApiResponse.ok(verification.summary(id));
     }
 
+    /** Required-step completion snapshot for the progress tracker (Phase 3.2). Owner borrower or staff. */
+    @GetMapping("/{id}/verification-progress")
+    public ApiResponse<ApplicationVerificationService.VerificationProgress> verificationProgress(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
+        return ApiResponse.ok(verification.progress(id));
+    }
+
+    /** Staff manual override of a verification step (KYC approver / admin) — PASS or FAIL with a note. */
+    @PostMapping("/{id}/verifications/{checkType}/decision")
+    public ApiResponse<ApplicationVerificationService.StepResult> manualVerificationDecision(
+            @PathVariable Long id, @PathVariable String checkType, @RequestBody DecisionRequest req) {
+        return ApiResponse.ok(verification.manualDecision(id, checkType, req.decision(), req.notes()));
+    }
+
     /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
     @GetMapping("/{id}/credit-brief")
     public ApiResponse<CreditBriefView> creditBrief(@PathVariable Long id) {

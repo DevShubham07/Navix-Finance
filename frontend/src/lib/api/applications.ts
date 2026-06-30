@@ -524,6 +524,15 @@ export interface StepResult {
   derived: Record<string, unknown>;
 }
 
+/** Required-step completion snapshot (Phase 3.2) — mirrors backend VerificationProgress. */
+export interface VerificationProgress {
+  required: number;
+  completed: number;
+  failed: number;
+  pending: number;
+  percent: number;
+}
+
 /** Result of asking the app-scoped verify endpoint for a presigned PUT URL. */
 export interface VerifyPresign {
   key: string;
@@ -698,6 +707,12 @@ export const staffApi = {
 
   /** The application's verification step results (PAN/email/address/salary/…). */
   verifications: (id: number) => bff<StepResult[]>(`${STAFF_BASE}/${id}/verifications`, "GET"),
+  /** Required-step completion snapshot for the progress tracker (Phase 3.2). */
+  verificationProgress: (id: number) =>
+    bff<VerificationProgress>(`${STAFF_BASE}/${id}/verification-progress`, "GET"),
+  /** Staff manual override of a verification step (KYC approver / admin): PASS or FAIL with a note. */
+  manualVerificationDecision: (id: number, checkType: string, decision: boolean, notes?: string) =>
+    bff<StepResult>(`${STAFF_BASE}/${id}/verifications/${checkType}/decision`, "POST", { decision, notes }),
 
   /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
   creditBrief: (id: number) => bff<CreditBriefView>(`${STAFF_BASE}/${id}/credit-brief`, "GET"),
