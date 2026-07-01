@@ -89,7 +89,8 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
   monthly-salary change recomputes the eligible limit.
 - **Notifications** — an event-driven, non-blocking in-app + SMS + email engine (`navix-notification`),
   surfaced to both audiences by a shared `NotificationBell` (§11/§12). Email delivers via a pluggable
-  `EmailClient` (`log` default · `smtp` · **AWS `ses`**); SES **bounce/complaint feedback** is ingested
+  `EmailClient` (`log` default · `smtp` · **AWS `ses`** · `resend`), each message carrying a plain-text
+  body + an optional branded **HTML** alternative; SES **bounce/complaint feedback** is ingested
   over SNS→SQS into an `email_suppression` list that the sender skips on future sends (§14).
 - **Payment reminders** — a daily `@Scheduled` sweep (`PaymentReminderScheduler`, navix-app; the app's only
   `@EnableScheduling`) nudges every live loan: **due-soon** (`PAYMENT_DUE_SOON`, from 7 days before due through
@@ -669,9 +670,11 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   is no write API and no admin UI (not even ADMIN). Code reads `FeatureFlagService.isEnabled(key)`
   (navix-common, no cache → instant, no redeploy); gate a feature by adding a row + the check.
 - **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
-  `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `AWS_PROFILE`, `NAVIX_ENV`,
+  `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `BORROWER_AUTH_TTL_SECONDS`
+  (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
+  `AWS_PROFILE`, `NAVIX_ENV`,
   `FINTRIX_*`, `DIGILOCKER_*`, `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
-  `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES),
+  `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
   `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs).
 
@@ -735,9 +738,12 @@ the on-screen brief is always recomputed from the profile.
   PASS with a ~3-min fallback to staff manual review.
 
 **AWS SES — email delivery + bounce/complaint suppression (live, 2026-07-01):** the email channel's
-`EmailClient` port (`navix-notification`) has three impls selected by `navix.email.provider`:
-`log` (default, masked-log no-send), `smtp` (Boot `JavaMailSender`), and **`ses`** (`SesEmailClient` over
-the SES v2 SDK, reusing the **same region + default credential chain as S3** — no separate SMTP creds).
+`EmailClient` port (`navix-notification`) has four impls selected by `navix.email.provider`:
+`log` (default, masked-log no-send), `smtp` (Boot `JavaMailSender`), **`ses`** (`SesEmailClient` over
+the SES v2 SDK, reusing the **same region + default credential chain as S3** — no separate SMTP creds),
+and `resend` (`ResendEmailClient` over the Resend HTTP API — interim while SES is sandbox-limited). Each
+message carries a plain-text body + an optional branded **HTML** alternative (`EmailMessage.html`,
+built by `EmailHtmlRenderer`).
 When `navix.email.configuration-set` is set, sends are tagged with a SES **configuration set**
 (`navix-notifications`) so deliverability events fire.
 
