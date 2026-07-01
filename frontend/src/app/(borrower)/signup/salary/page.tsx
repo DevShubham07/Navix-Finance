@@ -8,7 +8,8 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
-import { verificationApi, rupeesToPaise, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, rupeesToPaise, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 import { eligibleLimit } from "@/lib/calc/loan-math";
 import { formatINR0 } from "@/lib/utils";
 
@@ -83,7 +84,7 @@ export default function SignupSalaryPage() {
       setResult(r);
       if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/penny-drop"));
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your salary — please try again.");
+      setError(formatApiError(err, "Could not verify your salary — please try again."));
     } finally {
       setBusy(false);
     }

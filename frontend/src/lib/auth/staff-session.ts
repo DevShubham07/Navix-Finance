@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import type { StaffRole } from "@/lib/auth/rbac";
+import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 
 /**
  * Client-side accessor for the REAL staff session.
@@ -46,17 +47,7 @@ export async function loginStaff(email: string, password: string): Promise<Staff
     body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {
-    let message = "Sign-in failed. Please try again.";
-    try {
-      const body = (await res.json()) as { error?: { message?: string } | string; message?: string };
-      message =
-        (typeof body?.error === "object" ? body?.error?.message : body?.error) ??
-        body?.message ??
-        message;
-    } catch {
-      /* non-JSON error body — keep the default */
-    }
-    throw new Error(message);
+    throw new Error(formatEnvelopeError(await readEnvelopeError(res, "Sign-in failed. Please try again.")));
   }
   const session = (await res.json()) as StaffSession;
   if (typeof window !== "undefined") window.dispatchEvent(new Event(STAFF_SESSION_EVENT));

@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { ShieldCheck, Lock, CheckCircle2 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { Input } from "@/components/ui";
+import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 
 const policyOk = (pw: string) => pw.length >= 10 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
 
@@ -32,9 +33,7 @@ function StaffResetInner() {
         body: JSON.stringify({ token, password }),
       });
       if (!res.ok) {
-        let msg = "Could not reset your password.";
-        try { const env = await res.json(); msg = env?.error?.message ?? env?.error ?? msg; } catch { /* keep default */ }
-        setError(typeof msg === "string" ? msg : "Could not reset your password.");
+        setError(formatEnvelopeError(await readEnvelopeError(res, "Could not reset your password.")));
         setBusy(false);
         return;
       }

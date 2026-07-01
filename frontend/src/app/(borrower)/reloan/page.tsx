@@ -8,6 +8,7 @@ import { RotateCw, Zap, ShieldCheck, ArrowRight, Loader2, AlertTriangle } from "
 import { useMounted } from "@/hooks/use-mounted";
 import { useLiveApplication, writeStoredAppId } from "@/lib/api/live-journey";
 import { borrowerApi, paiseToINR, ApplicationApiError, type ApplicationView } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 import { ActiveLoanNotice } from "@/components/borrower/active-loan-notice";
 
 /**
@@ -81,10 +82,8 @@ export default function ReloanPage() {
       } else if (e instanceof ApplicationApiError && e.code === "ACTIVE_LOAN") {
         // A live advance is still outstanding — they must repay it before borrowing again.
         router.push("/repay");
-      } else if (e instanceof ApplicationApiError) {
-        setError(e.message);
       } else {
-        setError(e instanceof Error ? e.message : "Something went wrong — please try again.");
+        setError(formatApiError(e, "Something went wrong — please try again."));
       }
     } finally {
       setBusy(false);

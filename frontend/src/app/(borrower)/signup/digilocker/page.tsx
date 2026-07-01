@@ -6,7 +6,8 @@ import { Building2, Lock, ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, nextAfterStep } from "@/lib/onboarding";
-import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 
 type Phase = "idle" | "connecting" | "polling" | "done" | "failed";
 const POLL_MS = 4000;
@@ -48,7 +49,7 @@ export default function SignupDigiLockerPage() {
         setTimeout(() => router.push(nextAfterStep("/signup/pan")), 700);
       }
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not finalise DigiLocker.");
+      setError(formatApiError(err, "Could not finalise DigiLocker."));
       setPhase("failed");
     }
   }, [appId, router]);
@@ -84,7 +85,7 @@ export default function SignupDigiLockerPage() {
     } catch (err) {
       // Status API failed — stop and surface a retry rather than spinning silently.
       stop();
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Lost connection to DigiLocker.");
+      setError(formatApiError(err, "Lost connection to DigiLocker."));
       setPhase("failed");
     }
   }, [appId, stop, finalise, router]);
@@ -117,7 +118,7 @@ export default function SignupDigiLockerPage() {
       timer.current = setInterval(() => { void poll(); }, POLL_MS);
       void poll();
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not start DigiLocker.");
+      setError(formatApiError(err, "Could not start DigiLocker."));
       setPhase("failed");
     }
   };

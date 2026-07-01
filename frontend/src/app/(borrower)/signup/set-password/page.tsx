@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Lock, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui";
+import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 
 const policyOk = (pw: string) => pw.length >= 10 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
 
@@ -32,9 +33,7 @@ export default function SignupSetPasswordPage() {
         body: JSON.stringify({ password }),
       });
       if (!res.ok) {
-        let msg = "Could not set your password.";
-        try { const env = await res.json(); msg = env?.error?.message ?? env?.error ?? msg; } catch { /* keep default */ }
-        setError(typeof msg === "string" ? msg : "Could not set your password.");
+        setError(formatEnvelopeError(await readEnvelopeError(res, "Could not set your password.")));
         setBusy(false);
         return;
       }

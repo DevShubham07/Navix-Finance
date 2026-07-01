@@ -407,12 +407,15 @@ export class ApplicationApiError extends Error {
   /** Backend `error.code` when present, otherwise an HTTP-derived code. */
   readonly code: string;
   readonly status: number;
+  /** Cross-tier correlation id from the `X-Request-Id` response header, when present. */
+  readonly requestId?: string;
 
-  constructor(message: string, code: string, status: number) {
+  constructor(message: string, code: string, status: number, requestId?: string) {
     super(message);
     this.name = "ApplicationApiError";
     this.code = code;
     this.status = status;
+    this.requestId = requestId;
   }
 }
 
@@ -437,6 +440,10 @@ async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> 
     );
   }
 
+  // Cross-tier correlation id echoed by the BFF/backend (X-Request-Id) — attached to every thrown
+  // error so the UI can show a "ref" that greps straight to the backend logs.
+  const requestId = res.headers.get("X-Request-Id") ?? undefined;
+
   const text = await res.text();
   let parsed: ApiResponse<T> | undefined;
   try {
@@ -449,7 +456,7 @@ async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> 
   if (parsed && parsed.success === false) {
     const code = parsed.error?.code ?? `HTTP_${res.status}`;
     const message = parsed.error?.message ?? parsed.message ?? "Request failed.";
-    throw new ApplicationApiError(message, code, res.status);
+    throw new ApplicationApiError(message, code, res.status, requestId);
   }
 
   if (!res.ok) {
@@ -457,11 +464,12 @@ async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> 
       parsed?.message ?? `Request failed with status ${res.status}.`,
       parsed?.error?.code ?? `HTTP_${res.status}`,
       res.status,
+      requestId,
     );
   }
 
   if (!parsed) {
-    throw new ApplicationApiError("Empty response from server.", "EMPTY_RESPONSE", res.status);
+    throw new ApplicationApiError("Empty response from server.", "EMPTY_RESPONSE", res.status, requestId);
   }
 
   return parsed.data;

@@ -70,7 +70,6 @@ export default function ForgotPasswordPage() {
               <Input
                 label="Mobile number"
                 inputMode="numeric"
-                maxLength={10}
                 value={mobile}
                 onChange={(e) => { setMobile(normalizeMobile(e.target.value)); setError(undefined); }}
                 placeholder="98765 43210"

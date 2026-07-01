@@ -9,6 +9,7 @@ import { Button } from "@/components/ui";
 import { StepStatusPill } from "@/components/borrower/step-result-banner";
 import { useOnboarding } from "@/lib/onboarding";
 import { borrowerApi, verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 import { eligibleLimit } from "@/lib/calc/loan-math";
 import { formatINR0 } from "@/lib/utils";
 
@@ -89,7 +90,7 @@ export default function SignupReviewPage() {
             : "Please complete the remaining verification steps before submitting.",
         );
       } else {
-        setError(e instanceof ApplicationApiError ? `${e.message} (${e.code})` : "Something went wrong submitting your application.");
+        setError(formatApiError(e, "Something went wrong submitting your application."));
       }
       setSubmitting(false);
     }

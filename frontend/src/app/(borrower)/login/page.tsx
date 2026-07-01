@@ -10,6 +10,7 @@ import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { requestBorrowerOtp, clearBorrowerClientState, type OtpRequestResult } from "@/lib/api/live-journey";
 import { borrowerApi, type ApplicationStatus } from "@/lib/api/applications";
+import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 import { normalizeMobile } from "@/lib/utils";
 
 /** An application is past KYC (verified by an approver) once it's in any of these states. */
@@ -94,12 +95,7 @@ export default function LoginPage() {
         body: JSON.stringify({ mobile, otp: code }),
       });
       if (!res.ok) {
-        let msg = "Incorrect code — please try again.";
-        try {
-          const env = await res.json();
-          msg = env?.error?.message ?? env?.error ?? msg;
-        } catch { /* keep default */ }
-        setError(typeof msg === "string" ? msg : "Incorrect code — please try again.");
+        setError(formatEnvelopeError(await readEnvelopeError(res, "Incorrect code — please try again.")));
         setBusy(false);
         return;
       }
@@ -130,12 +126,7 @@ export default function LoginPage() {
         body: JSON.stringify({ mobile, password }),
       });
       if (!res.ok) {
-        let msg = "Invalid mobile or password.";
-        try {
-          const env = await res.json();
-          msg = env?.error?.message ?? env?.error ?? msg;
-        } catch { /* keep default */ }
-        setError(typeof msg === "string" ? msg : "Invalid mobile or password.");
+        setError(formatEnvelopeError(await readEnvelopeError(res, "Invalid mobile or password.")));
         setBusy(false);
         return;
       }
@@ -187,7 +178,6 @@ export default function LoginPage() {
                 label="Mobile number"
                 required
                 inputMode="numeric"
-                maxLength={10}
                 value={mobile}
                 onChange={(e) => { setMobile(normalizeMobile(e.target.value)); setError(undefined); }}
                 placeholder="98765 43210"
@@ -218,7 +208,6 @@ export default function LoginPage() {
                 label="Mobile number"
                 required
                 inputMode="numeric"
-                maxLength={10}
                 value={mobile}
                 onChange={(e) => { setMobile(normalizeMobile(e.target.value)); setError(undefined); }}
                 placeholder="98765 43210"

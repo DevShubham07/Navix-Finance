@@ -9,7 +9,8 @@ import { AmountChooser } from "@/components/borrower/amount-chooser";
 import { SalaryCalendar } from "@/components/borrower/salary-calendar";
 import { ActiveLoanNotice } from "@/components/borrower/active-loan-notice";
 import { useLiveApplication, applyForAmount, canChooseAmount } from "@/lib/api/live-journey";
-import { borrowerApi, rupeesToPaise, ApplicationApiError } from "@/lib/api/applications";
+import { borrowerApi, rupeesToPaise } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 import { useOnboardingStore } from "@/stores/application-store";
 import { eligibleLimit } from "@/lib/calc/loan-math";
 
@@ -108,13 +109,7 @@ export default function LoanApplyPage() {
       });
       router.push("/loan/status");
     } catch (e) {
-      setError(
-        e instanceof ApplicationApiError
-          ? `${e.message} (${e.code})`
-          : e instanceof Error
-            ? e.message
-            : "Could not submit your amount.",
-      );
+      setError(formatApiError(e, "Could not submit your amount."));
       setSubmitting(false);
     }
   };

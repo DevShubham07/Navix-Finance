@@ -496,8 +496,21 @@ async function resolveApplication(session: BorrowerSession): Promise<Application
       // Continue an in-flight application; only a terminal one warrants a fresh start.
       if (!TERMINAL.includes(app.status)) return app;
     } catch {
-      // fall through and create a new draft
+      // fall through and try /mine, then create a new draft
     }
+  }
+  // No usable local pointer (e.g. onboarding submitted on a fresh device / cleared localStorage):
+  // adopt any still-in-flight application from the ownership-scoped /mine list before creating, so we
+  // resume it instead of tripping the backend's one-live-application guard (ACTIVE_APPLICATION).
+  try {
+    const mine = await borrowerApi.myApplications();
+    const live = mine.find((a) => !TERMINAL.includes(a.status));
+    if (live) {
+      writeStoredAppId(live.id);
+      return live;
+    }
+  } catch {
+    // /mine unavailable — fall through to create (the server guard still applies)
   }
   const created = await borrowerApi.create(session.customerId);
   writeStoredAppId(created.id);
@@ -517,8 +530,22 @@ export async function createOrResumeDraft(session: BorrowerSession): Promise<App
       const app = await borrowerApi.get(existing);
       if (app.status === "DRAFT") return app;
     } catch {
-      // fall through and create a fresh draft
+      // fall through and try /mine, then create a fresh draft
     }
+  }
+  // No usable local pointer (fresh login / new device): consult the ownership-scoped /mine list
+  // before creating. Adopt a resumable DRAFT so an abandoned onboarding continues cross-device; a
+  // further-along application is deliberately left for the backend guard to reject (createDraft throws
+  // ACTIVE_APPLICATION), which the mobile-otp callers route to /dashboard instead of minting a second app.
+  try {
+    const mine = await borrowerApi.myApplications();
+    const draftApp = mine.find((a) => a.status === "DRAFT");
+    if (draftApp) {
+      writeStoredAppId(draftApp.id);
+      return draftApp;
+    }
+  } catch {
+    // /mine unavailable — fall through to create (the server guard still applies)
   }
   const created = await borrowerApi.create(session.customerId);
   writeStoredAppId(created.id);

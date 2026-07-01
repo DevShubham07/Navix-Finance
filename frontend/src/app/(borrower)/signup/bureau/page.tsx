@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Gauge, Loader2, CheckCircle2, RefreshCw, ArrowRight } from "lucide-react";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, nextAfterStep } from "@/lib/onboarding";
-import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 
 type Phase = "running" | "done" | "failed";
 
@@ -29,7 +30,7 @@ export default function SignupBureauPage() {
       // Score / risk category are intentionally never surfaced to the borrower.
       setPhase(r.status === "FAIL" ? "failed" : "done");
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not run the credit check.");
+      setError(formatApiError(err, "Could not run the credit check."));
       setPhase("failed");
     }
   }, [appId]);

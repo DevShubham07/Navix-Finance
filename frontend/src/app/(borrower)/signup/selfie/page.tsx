@@ -6,7 +6,8 @@ import { Camera, Loader2, RefreshCw, ArrowRight } from "lucide-react";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, nextAfterStep } from "@/lib/onboarding";
-import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 
 type Phase = "idle" | "live" | "uploading" | "done";
 
@@ -89,7 +90,7 @@ export default function SignupSelfiePage() {
         setPhase("live");
       }
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your selfie — please try again.");
+      setError(formatApiError(err, "Could not verify your selfie — please try again."));
       setPhase("live");
     }
   };
