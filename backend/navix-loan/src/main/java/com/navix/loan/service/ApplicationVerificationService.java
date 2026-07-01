@@ -639,8 +639,29 @@ public class ApplicationVerificationService {
     /** All verification rows for an application as borrower-safe step results. */
     @Transactional(readOnly = true)
     public List<StepResult> summary(Long appId) {
-        return verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
-                .map(this::view)
+        List<ApplicationVerification> rows = verificationRepo.findByApplicationIdOrderByIdAsc(appId);
+        // DigiLocker is the transport that produces the Aadhaar verification, but its row is written
+        // PENDING once at init and never re-persisted (digilockerComplete only writes the AADHAAR
+        // row). Reconcile at read-time so the DIGILOCKER row reflects the Aadhaar outcome — mirrors
+        // the digilockerStatus short-circuit and avoids a confusing "DigiLocker pending / Aadhaar
+        // verified" display. Still PENDING before an Aadhaar row exists (correct).
+        String aadhaarStatus = rows.stream()
+                .filter(v -> AADHAAR.equals(v.getCheckType()))
+                .map(ApplicationVerification::getStatus)
+                .findFirst()
+                .orElse(null);
+        boolean aadhaarSettled = PASS.equals(aadhaarStatus) || REVIEW.equals(aadhaarStatus);
+        return rows.stream()
+                .map(row -> {
+                    if (DIGILOCKER.equals(row.getCheckType()) && aadhaarSettled
+                            && !PASS.equals(row.getStatus()) && !REVIEW.equals(row.getStatus())) {
+                        return new StepResult(DIGILOCKER, aadhaarStatus,
+                                PASS.equals(aadhaarStatus) ? "DigiLocker completed"
+                                        : "DigiLocker completed — Aadhaar under manual review",
+                                fromJson(row.getDerived()));
+                    }
+                    return view(row);
+                })
                 .toList();
     }
 

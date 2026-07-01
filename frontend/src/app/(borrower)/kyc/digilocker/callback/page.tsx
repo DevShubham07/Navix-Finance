@@ -9,7 +9,7 @@ import { verificationApi, ApplicationApiError } from "@/lib/api/applications";
 type Phase = "working" | "done" | "failed";
 
 const RETRY_MS = 4000;
-const MAX_ATTEMPTS = 8; // ~30s of retrying while the provider materialises the Aadhaar XML
+const MAX_ATTEMPTS = 45; // ~3min of retrying while the provider materialises the Aadhaar XML
 
 /**
  * Real DigiLocker return target (the `redirectUrl` passed to verify/digilocker/init).
