@@ -63,10 +63,19 @@ export default function SignupPennyDropPage() {
       await saveProfileSlice(appId, { salaryBank: bankName });
       const r = await verificationApi.pennyDrop(appId, accountClean, ifsc);
       setResult(r);
-      if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/selfie"));
+      if (r.status === "PASS") {
+        router.push(nextAfterStep("/signup/selfie")); // verified — continue (keep busy through nav)
+        return;
+      }
+      if (r.status === "REVIEW") {
+        // Couldn't confirm the account (e.g. a wrong account, or a provider hiccup). Don't block the
+        // borrower: show the "you can continue — we'll verify it later" banner briefly, then advance.
+        setTimeout(() => router.push(nextAfterStep("/signup/selfie")), 1600);
+        return; // keep busy true so the button reads as continuing during the short delay
+      }
+      setBusy(false);
     } catch (err) {
       setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your account — please try again.");
-    } finally {
       setBusy(false);
     }
   };

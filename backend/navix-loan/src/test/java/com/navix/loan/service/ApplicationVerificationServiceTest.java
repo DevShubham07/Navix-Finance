@@ -150,6 +150,23 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void pennyDrop_providerFailure_isReview_notError() {
+        ApplicantProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        // A wrong/unverifiable account makes the provider throw (surfaces as HTTP 500 today).
+        when(verification.pennyDrop(anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("HTTP 500 from verification_pennydrop"));
+
+        var result = service.verifyPennyDrop(APP, "000wrong", "HDFC0002557");
+
+        // Must not hard-block onboarding: the step is REVIEW (borrower proceeds), the account is
+        // flagged unverified for staff to check before disbursal.
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("providerError", true);
+        assertThat(p.getPennyDropVerified()).isFalse();
+    }
+
+    @Test
     void salary_setsEligibleLimitOnApplication() {
         ApplicantProfile p = profile();
         LoanApplication app = new LoanApplication();
