@@ -190,7 +190,7 @@ public class PasswordResetService {
         String body = "Hi,\n\nWe received a request to reset your NAVIX password. Use the link below within "
                 + "30 minutes to set a new one:\n\n" + link + "\n\nIf you didn't request this, you can safely "
                 + "ignore this email — your password won't change.\n\n— NAVIX Finance";
-        EmailResult result = emailClient.send(new EmailMessage(to, "Reset your NAVIX password", body));
+        EmailResult result = emailClient.send(new EmailMessage(to, "Reset your NAVIX password", body, null));
         if (!result.ok()) {
             log.warn("password-reset email to {} failed: {}", Masking.maskEmail(to), result.error());
         }

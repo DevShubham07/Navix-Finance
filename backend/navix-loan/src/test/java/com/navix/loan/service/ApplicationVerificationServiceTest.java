@@ -151,7 +151,7 @@ class ApplicationVerificationServiceTest {
 
     @Test
     void pennyDrop_providerFailure_isReview_notError() {
-        ApplicantProfile p = profile();
+        CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         // A wrong/unverifiable account makes the provider throw (surfaces as HTTP 500 today).
         when(verification.pennyDrop(anyString(), anyString(), anyString()))
