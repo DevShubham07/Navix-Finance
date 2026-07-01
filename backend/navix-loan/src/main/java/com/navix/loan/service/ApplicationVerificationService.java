@@ -496,7 +496,23 @@ public class ApplicationVerificationService {
         }
         ApplicantProfile profile = profile(appId);
         String ref = ref(appId, PENNY_DROP);
-        VerificationPort.PennyDropCheck r = verification.pennyDrop(accountNumber, ifsc, ref);
+        VerificationPort.PennyDropCheck r;
+        try {
+            r = verification.pennyDrop(accountNumber, ifsc, ref);
+        } catch (RuntimeException providerFailure) {
+            // The provider couldn't verify the account (a bad/non-existent account, or an upstream
+            // error). Don't hard-block onboarding with a 500 — record the account for manual review
+            // and let the borrower continue; the payout still gates on a verified account before any
+            // money is sent. (Product decision: never stop the borrower at this step.)
+            profile.setPennyDropVerified(false);
+            profileRepo.save(profile);
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("accountExists", false);
+            derived.put("providerError", true);
+            return view(upsert(appId, PENNY_DROP, REVIEW, "FINTRIX", null, ref,
+                    null, null, null, derived,
+                    "We couldn't verify this account right now — you can continue; we'll verify it before your advance is sent."));
+        }
         double nameMatch = nameSimilarity(profile.getFullName(), r.fullName());
         boolean ok = r.accountExists() && nameMatch >= NAME_MATCH_THRESHOLD;
         profile.setPennyDropVerified(ok);
@@ -510,7 +526,8 @@ public class ApplicationVerificationService {
         derived.put("bank", r.bank());
         derived.put("nameMatch", round2(nameMatch));
         String status = ok ? PASS : REVIEW;
-        String msg = !r.accountExists() ? "Account not found"
+        String msg = !r.accountExists()
+                ? "We couldn't confirm this account — you can continue; we'll verify it before your advance is sent."
                 : (ok ? "Account + name matched" : "Name mismatch at bank — manual review");
         ApplicationVerification row = upsert(appId, PENNY_DROP, status, "FINTRIX", r.txnId(), ref,
                 nameMatch, null, null, derived, msg);
