@@ -4,6 +4,7 @@ import com.navix.common.notification.ContactInfo;
 import com.navix.common.notification.NotificationChannel;
 import com.navix.notification.config.EmailProperties;
 import com.navix.notification.email.EmailClient;
+import com.navix.notification.email.EmailHtmlRenderer;
 import com.navix.notification.email.EmailMessage;
 import com.navix.notification.email.EmailResult;
 import com.navix.notification.suppression.EmailSuppressionService;
@@ -12,9 +13,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Email transport over the {@link EmailClient} port ({@code LogEmailClient} by default, {@code
- * SmtpEmailClient}/{@code SesEmailClient} when configured). Honours the global enabled flag,
- * address-gates a missing email, and skips addresses on the bounce/complaint suppression list;
- * never throws.
+ * SmtpEmailClient}/{@code SesEmailClient}/{@code ResendEmailClient} when configured). Honours the
+ * global enabled flag, address-gates a missing email, skips addresses on the bounce/complaint
+ * suppression list, and wraps the body in a branded HTML layout ({@link EmailHtmlRenderer}); never throws.
  */
 @Component
 public class EmailSender implements ChannelSender {
@@ -22,12 +23,14 @@ public class EmailSender implements ChannelSender {
     private final EmailClient client;
     private final EmailProperties props;
     private final EmailSuppressionService suppressionService;
+    private final EmailHtmlRenderer htmlRenderer;
 
     public EmailSender(EmailClient client, EmailProperties props,
-                       EmailSuppressionService suppressionService) {
+                       EmailSuppressionService suppressionService, EmailHtmlRenderer htmlRenderer) {
         this.client = client;
         this.props = props;
         this.suppressionService = suppressionService;
+        this.htmlRenderer = htmlRenderer;
     }
 
     @Override
@@ -48,7 +51,8 @@ public class EmailSender implements ChannelSender {
             return DeliveryOutcome.skipped("SUPPRESSED");
         }
         try {
-            EmailResult result = client.send(new EmailMessage(to, message.subject(), message.body()));
+            String html = htmlRenderer.render(message.subject(), message.body());
+            EmailResult result = client.send(new EmailMessage(to, message.subject(), message.body(), html));
             return result.ok()
                     ? DeliveryOutcome.sent(result.providerRef())
                     : DeliveryOutcome.failed(result.error());

@@ -11,6 +11,7 @@ import com.navix.common.notification.NotificationChannel;
 import com.navix.common.notification.RecipientType;
 import com.navix.notification.config.EmailProperties;
 import com.navix.notification.email.EmailClient;
+import com.navix.notification.email.EmailHtmlRenderer;
 import com.navix.notification.email.EmailMessage;
 import com.navix.notification.email.EmailResult;
 import com.navix.notification.email.LogEmailClient;
@@ -23,6 +24,7 @@ class EmailSenderTest {
 
     private static final RenderedMessage MSG =
             new RenderedMessage(NotificationChannel.EMAIL, "Subject", "Body");
+    private static final EmailHtmlRenderer RENDERER = new EmailHtmlRenderer();
 
     private final EmailSuppressionService allowAll = noSuppression();
 
@@ -43,7 +45,7 @@ class EmailSenderTest {
 
     @Test
     void skipsWhenEmailDisabledGlobally() {
-        EmailSender sender = new EmailSender(new LogEmailClient(), props(false), allowAll);
+        EmailSender sender = new EmailSender(new LogEmailClient(), props(false), allowAll, RENDERER);
 
         DeliveryOutcome outcome = sender.send(MSG, withEmail("asha@x.test"));
 
@@ -53,7 +55,7 @@ class EmailSenderTest {
 
     @Test
     void skipsWhenRecipientHasNoEmail() {
-        EmailSender sender = new EmailSender(new LogEmailClient(), props(true), allowAll);
+        EmailSender sender = new EmailSender(new LogEmailClient(), props(true), allowAll, RENDERER);
 
         DeliveryOutcome outcome = sender.send(MSG, withEmail(null));
 
@@ -66,7 +68,7 @@ class EmailSenderTest {
         EmailClient client = mock(EmailClient.class);
         EmailSuppressionService suppressed = mock(EmailSuppressionService.class);
         when(suppressed.isSuppressed("asha@x.test")).thenReturn(true);
-        EmailSender sender = new EmailSender(client, props(true), suppressed);
+        EmailSender sender = new EmailSender(client, props(true), suppressed, RENDERER);
 
         DeliveryOutcome outcome = sender.send(MSG, withEmail("asha@x.test"));
 
@@ -77,7 +79,7 @@ class EmailSenderTest {
 
     @Test
     void sendsViaClientWhenEnabledAndAddressed() {
-        EmailSender sender = new EmailSender(new LogEmailClient(), props(true), allowAll);
+        EmailSender sender = new EmailSender(new LogEmailClient(), props(true), allowAll, RENDERER);
 
         DeliveryOutcome outcome = sender.send(MSG, withEmail("asha@x.test"));
 
@@ -88,7 +90,7 @@ class EmailSenderTest {
     @Test
     void mapsClientFailureToFailedOutcome() {
         EmailClient failing = message -> EmailResult.fail("smtp down");
-        EmailSender sender = new EmailSender(failing, props(true), allowAll);
+        EmailSender sender = new EmailSender(failing, props(true), allowAll, RENDERER);
 
         DeliveryOutcome outcome = sender.send(MSG, withEmail("asha@x.test"));
 
@@ -98,7 +100,7 @@ class EmailSenderTest {
 
     @Test
     void logClientReturnsOkWithMockReference() {
-        EmailResult result = new LogEmailClient().send(new EmailMessage("asha@x.test", "Hi", "Body"));
+        EmailResult result = new LogEmailClient().send(new EmailMessage("asha@x.test", "Hi", "Body", null));
 
         assertThat(result.ok()).isTrue();
         assertThat(result.providerRef()).startsWith("log-");

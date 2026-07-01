@@ -27,12 +27,18 @@ public class SmtpEmailClient implements EmailClient {
     @Override
     public EmailResult send(EmailMessage message) {
         try {
+            boolean hasHtml = message.html() != null && !message.html().isBlank();
             MimeMessage mime = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
+            MimeMessageHelper helper = new MimeMessageHelper(mime, hasHtml, "UTF-8");
             helper.setFrom(props.from());
             helper.setTo(message.to());
             helper.setSubject(message.subject() == null ? "NAVIX Finance" : message.subject());
-            helper.setText(message.body() == null ? "" : message.body(), false);
+            String text = message.body() == null ? "" : message.body();
+            if (hasHtml) {
+                helper.setText(text, message.html());
+            } else {
+                helper.setText(text, false);
+            }
             mailSender.send(mime);
             return EmailResult.ok("smtp");
         } catch (Exception e) {
