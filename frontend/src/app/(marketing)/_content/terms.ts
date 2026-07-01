@@ -17,13 +17,12 @@ export const html = `<section class="page active" id="terms">
     <h2>4. Fees &amp; charges</h2>
     <p>NAVIX does not charge any advance fee. All interest and charges are determined by the partner NBFC and disclosed in the Key Fact Statement before you accept an offer.</p>
     <h2>5. Repayment</h2>
-    <p>You agree to repay as per your loan agreement. There are no pre-closure or prepayment charges. Late payments may attract charges as disclosed by the NBFC and may affect your credit score.</p>
+    <p>You agree to repay as per your loan agreement. There are no pre-closure or prepayment charges. Late payments attract a late-payment fee of 2% per day on the overdue principal (capped at 30 days), as set out in your Key Fact Statement, and may affect your credit score.</p>
     <h2>6. Acceptable use</h2>
     <p>You agree not to misuse the platform, provide false information, or use it for unlawful purposes.</p>
     <h2>7. Limitation of liability</h2>
     <p>To the extent permitted by law, NAVIX is not liable for the lending decisions of partner NBFCs or for indirect or consequential losses.</p>
     <h2>8. Governing law</h2>
-    <p>These Terms are governed by the laws of India, with jurisdiction in Bengaluru, Karnataka.</p>
-    <div class="callout" style="border-left-color:var(--navy-600)"><b>Note:</b> Prototype terms for demonstration only — not legal advice. Have qualified counsel review before launch.</div>
+    <p>These Terms are governed by the laws of India, with jurisdiction in Gurugram, Haryana.</p>
   </div></div></div>
 </section>`;

@@ -28,6 +28,5 @@ export const html = `<section class="page active" id="privacy">
     <p>You may access, correct or request deletion of your data, and withdraw consent, subject to legal and regulatory retention requirements. Contact info@navixfinance.com.</p>
     <h2>7. Data retention &amp; consent</h2>
     <p>We retain data only as long as necessary for the purposes above and as required by RBI and applicable law. By using NAVIX you consent to this policy.</p>
-    <div class="callout" style="border-left-color:var(--navy-600)"><b>Note:</b> This is a design-prototype policy for demonstration and is not legal advice. Final policies must be reviewed by qualified counsel before launch.</div>
   </div></div></div>
 </section>`;

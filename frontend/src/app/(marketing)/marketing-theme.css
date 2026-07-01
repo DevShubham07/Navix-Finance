@@ -140,3 +140,5 @@
 @media(max-width:1024px){.navix-mkt .offer-card{max-width:440px;margin:0 auto}}
 @media(max-width:640px){.navix-mkt .oa-value{font-size:2.4rem}.navix-mkt .ost b{font-size:1.3rem}}
 @media(prefers-reduced-motion:reduce){.navix-mkt .hero-h1 .w,.navix-mkt .hero-trust .ht{opacity:1!important;transform:none!important}.navix-mkt .offer-card,.navix-mkt .hero-blob{animation:none!important}.navix-mkt .offer-approved{opacity:1!important;transform:none!important}.navix-mkt .oac-tick{stroke-dashoffset:0!important}}
+/* FAQ question heading wrapper: neutralize default h3 margins so the accordion layout is unchanged (the .q button carries all visual styling). */
+.navix-mkt .qa .qh{margin:0}

@@ -5,6 +5,7 @@ import { MarketingHtml } from "@/components/site/marketing-html";
 export const metadata: Metadata = {
   title: 'Grievance Redressal — NAVIX',
   description: 'How to raise a complaint and reach our Grievance Officer.',
+  alternates: { canonical: '/grievance' },
 };
 
 export default function Page() {

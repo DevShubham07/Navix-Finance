@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "indexnow": "node scripts/indexnow-submit.mjs",
+    "postbuild": "node scripts/indexnow-submit.mjs --postbuild"
   },
   "dependencies": {
     "@tanstack/react-query": "5.62.0",

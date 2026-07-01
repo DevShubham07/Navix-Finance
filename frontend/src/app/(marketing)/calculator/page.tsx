@@ -5,6 +5,7 @@ import { MarketingHtml } from "@/components/site/marketing-html";
 export const metadata: Metadata = {
   title: 'Loan Calculator & Transparent Rates — NAVIX',
   description: 'See your exact repayment before you borrow. Transparent, upfront, fair pricing.',
+  alternates: { canonical: '/calculator' },
 };
 
 export default function Page() {

@@ -27,7 +27,7 @@ export const html = `<section class="page active" id="contact">
         <div class="field"><label>Topic</label><select><option>General enquiry</option><option>Application help</option><option>Repayment</option><option>Grievance</option><option>Report fraud</option></select></div>
         <div class="field"><label>Message *</label><textarea rows="4" placeholder="How can we help?"></textarea></div>
         <button class="btn btn-gold btn-block btn-lg" type="submit">Send message <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></button>
-        <p style="font-size:.78rem;color:var(--muted);margin-top:14px;text-align:center">This is a design prototype — the form is not connected.</p>
+        <p style="font-size:.78rem;color:var(--muted);margin-top:14px;text-align:center">Prefer email? Write to us any time at info@navixfinance.com.</p>
       </form>
     </div>
   </div></div></div>

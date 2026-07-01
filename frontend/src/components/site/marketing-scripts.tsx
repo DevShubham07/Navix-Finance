@@ -19,12 +19,14 @@ export function MarketingScripts() {
     const onClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
-      // FAQ accordion
+      // FAQ accordion. `.q` is wrapped in an <h3 class="qh"> for heading semantics, so resolve
+      // the container via closest(".qa") rather than parentElement (which is now the <h3>).
       const q = target.closest<HTMLElement>(".qa .q");
       if (q) {
-        const qa = q.parentElement as HTMLElement;
+        const qa = q.closest<HTMLElement>(".qa") as HTMLElement;
         const a = qa.querySelector<HTMLElement>(".a");
         const open = qa.classList.toggle("open");
+        q.setAttribute("aria-expanded", String(open));
         if (a) a.style.maxHeight = open ? a.scrollHeight + "px" : "0";
         return;
       }

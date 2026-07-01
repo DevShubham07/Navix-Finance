@@ -37,9 +37,32 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.navixfinance.com"),
   title: "NAVIX — Instant Personal Loans, Fully Digital",
   description:
     "NAVIX is a digital lending platform offering instant, fully-digital, salary-linked personal loans. Paperless process, direct bank disbursal, single repayment, zero advance fees.",
+  // Site-wide default canonical. Each (marketing) page sets its own self-canonical; a page
+  // that omits one would inherit "/" here (deindex risk) — a per-page assertion guards that.
+  alternates: { canonical: "/" },
+  // Google Search Console verification. Renders <meta name="google-site-verification"> only when
+  // GOOGLE_SITE_VERIFICATION is set (undefined → omitted). Set it in Vercel env (and .env.local
+  // locally) to the token GSC gives on the URL-prefix property. The token is not secret.
+  verification: { google: process.env.GOOGLE_SITE_VERIFICATION },
+  openGraph: {
+    type: "website",
+    siteName: "NAVIX",
+    locale: "en_IN",
+    url: "/",
+    title: "NAVIX — Instant Personal Loans, Fully Digital",
+    description:
+      "Instant, fully-digital, salary-linked personal loans — single repayment, no advance fees.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "NAVIX — Instant Personal Loans, Fully Digital",
+    description:
+      "Instant, fully-digital, salary-linked personal loans — single repayment, no advance fees.",
+  },
 };
 
 export default function RootLayout({
