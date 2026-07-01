@@ -45,6 +45,10 @@ const urlList = PATHS.map((p) => `${BASE}${p}`);
 const payload = { host: HOST, key: KEY, keyLocation: KEY_LOCATION, urlList };
 
 const dryRun = process.argv.includes("--dry-run");
+// --postbuild: run automatically after `next build`. Submits ONLY on Vercel production
+// deploys (VERCEL_ENV === "production") so local builds and preview deploys don't ping
+// IndexNow, and NEVER exits non-zero — a submission hiccup must not fail the deploy.
+const postbuild = process.argv.includes("--postbuild");
 
 if (dryRun) {
   console.log("[indexnow] DRY RUN — payload that would be POSTed to", ENDPOINT);
@@ -53,15 +57,26 @@ if (dryRun) {
   process.exit(0);
 }
 
-const res = await fetch(ENDPOINT, {
-  method: "POST",
-  headers: { "Content-Type": "application/json; charset=utf-8" },
-  body: JSON.stringify(payload),
-});
+if (postbuild && process.env.VERCEL_ENV !== "production") {
+  console.log(
+    `[indexnow] postbuild skip — VERCEL_ENV=${process.env.VERCEL_ENV ?? "unset"} (submits on production only)`,
+  );
+  process.exit(0);
+}
 
-// IndexNow returns 200 or 202 on success; 4xx indicates a key/host problem.
-console.log(`[indexnow] ${res.status} ${res.statusText} for ${urlList.length} URLs`);
-if (!res.ok) {
-  console.error("[indexnow] submission failed — check the key file is live at", KEY_LOCATION);
-  process.exit(1);
+try {
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  // IndexNow returns 200 or 202 on success; 4xx indicates a key/host problem.
+  console.log(`[indexnow] ${res.status} ${res.statusText} for ${urlList.length} URLs`);
+  if (!res.ok) {
+    console.error("[indexnow] submission failed — check the key file is live at", KEY_LOCATION);
+    if (!postbuild) process.exit(1); // manual run surfaces the failure; postbuild stays soft
+  }
+} catch (err) {
+  console.error("[indexnow] submission error:", err?.message ?? err);
+  if (!postbuild) process.exit(1); // never break a Vercel build on a network hiccup
 }
