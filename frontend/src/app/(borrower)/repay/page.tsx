@@ -19,6 +19,7 @@ import {
 } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
+import { daysBetween } from "@/lib/calc/loan-math";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const addDaysISO = (iso: string, days: number) => {
@@ -148,6 +149,19 @@ export default function RepayPage() {
   const isSettlement = settlementPaise != null;
   const overdue = !isSettlement && (app?.status === "OVERDUE" || dueToday > loan.totalRepayablePaise);
 
+  // Presentation-only interest breakdown for the "What you owe" card.
+  const daysSince = loan.disbursedOn ? daysBetween(new Date(loan.disbursedOn), new Date()) : null;
+  const interestPaise = outQuery.data?.interestPaise ?? null;
+  const dueInFuture = loan.dueDate ? daysBetween(new Date(), new Date(loan.dueDate)) > 0 : false;
+  // Interest accrues only up to the tenure (the backend caps it at the due date), so an overdue loan's
+  // interest reflects the full tenure, not days-held — cap the label's day count to match interestPaise.
+  const tenureDays =
+    loan.disbursedOn && loan.dueDate ? daysBetween(new Date(loan.disbursedOn), new Date(loan.dueDate)) : null;
+  const interestDays =
+    daysSince == null ? 0 : tenureDays == null ? daysSince : Math.min(daysSince, tenureDays);
+  // Each day of accrual costs the borrower principal × 1%/day; paying a day earlier saves this.
+  const perDayInterestPaise = Math.round(loan.principalPaise * 0.01);
+
   const customPaise = rupeesToPaise(Number(custom.replace(/\D/g, "")) || 0);
   const amountPaise = mode === "full" ? dueToday : Math.min(customPaise, dueToday);
   const canPay = amountPaise > 0 && txnRef.trim().length >= 4 && !record.isPending;
@@ -232,10 +246,25 @@ export default function RepayPage() {
           <InfoRow label="Principal" value={paiseToINR(loan.principalPaise)} />
           <InfoRow label="Total repayable (on salary day)" value={paiseToINR(loan.totalRepayablePaise)} />
           {loan.dueDate && <InfoRow label="Due date" value={formatDate(loan.dueDate)} />}
+          {daysSince != null && (
+            <InfoRow label="Days since disbursement" value={`${daysSince} ${daysSince === 1 ? "day" : "days"}`} />
+          )}
+          {interestPaise != null && (
+            <InfoRow
+              label={`Interest so far (principal × 1%/day × ${interestDays} days)`}
+              value={paiseToINR(interestPaise)}
+            />
+          )}
           <div className="mt-2 flex items-baseline justify-between rounded bg-navy px-4 py-3 text-white">
             <span className="text-sm font-semibold text-white/90">{isSettlement ? "Settlement — full & final" : overdue ? "Pay now (incl. penalty)" : "Pay today"}</span>
             <span className="font-serif text-2xl font-bold text-gold">{paiseToINR(dueToday)}</span>
           </div>
+          {!overdue && !isSettlement && dueInFuture && (
+            <p className="mt-3 flex items-start gap-2 text-xs text-success-700">
+              <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />
+              Pay earlier &rarr; pay less interest. Every day saved = <strong>{paiseToINR(perDayInterestPaise)}</strong> less.
+            </p>
+          )}
           {isSettlement && (
             <p className="mt-3 flex items-start gap-2 text-xs text-navy">
               <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0" />

@@ -89,7 +89,7 @@ public class ApplicationVerificationController {
     @PostMapping("/salary")
     public ApiResponse<StepResult> salary(@PathVariable Long id, @Valid @RequestBody SalaryVerifyRequest req) {
         authorize(id);
-        return ApiResponse.ok(verification.verifySalary(id, req.monthlySalaryPaise(), req.slipObjectKeys()));
+        return ApiResponse.ok(verification.verifySalary(id, req.monthlySalaryPaise(), req.slipObjectKeys(), req.salaryCreditDay()));
     }
 
     @PostMapping("/penny-drop")

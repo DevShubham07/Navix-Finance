@@ -1,6 +1,6 @@
 "use client";
 
-import { PageHeader } from "@/components/staff/staff-ui";
+import { PageHeader, RefreshButton } from "@/components/staff/staff-ui";
 import { StatusQueue, ReviewActions, PermissionGate, NoAccessNotice } from "@/components/staff/live-pipeline";
 
 /**
@@ -14,7 +14,9 @@ export default function KycReviewPage() {
       <PageHeader
         title="Reborrow reviews"
         subtitle="Returning borrowers with a past overdue. Review their history and clear them to borrow again, or reject."
-      />
+      >
+        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-counts"], ["staff-dashboard-queue"]]} />
+      </PageHeader>
       <PermissionGate
         permission="kyc:approve"
         fallback={<NoAccessNotice message="Only KYC approvers can review returning borrowers." />}

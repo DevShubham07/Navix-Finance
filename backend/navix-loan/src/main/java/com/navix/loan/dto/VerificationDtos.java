@@ -27,7 +27,8 @@ public final class VerificationDtos {
     public record PanVerifyRequest(@NotBlank String pan) {
     }
 
-    public record SalaryVerifyRequest(@Positive long monthlySalaryPaise, List<String> slipObjectKeys) {
+    public record SalaryVerifyRequest(@Positive long monthlySalaryPaise, List<String> slipObjectKeys,
+                                      Integer salaryCreditDay) {
     }
 
     public record PennyDropVerifyRequest(@NotBlank String accountNumber, @NotBlank String ifsc) {

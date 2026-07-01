@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { RotateCw, Zap, ShieldCheck, ArrowRight, Loader2, AlertTriangle } from "lucide-react";
 import { useMounted } from "@/hooks/use-mounted";
-import { useLiveApplication, writeStoredAppId } from "@/lib/api/live-journey";
+import { useLiveApplication, writeStoredAppId, routeForBlockedStart } from "@/lib/api/live-journey";
 import { borrowerApi, paiseToINR, ApplicationApiError, type ApplicationView } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { ActiveLoanNotice } from "@/components/borrower/active-loan-notice";
@@ -68,22 +68,22 @@ export default function ReloanPage() {
         old ? [result, ...old.filter((a) => a.id !== result.id)] : [result],
       );
       queryClient.invalidateQueries({ queryKey: ["my-apps"] });
-      // Clean history → PRE_APPROVED: straight to choosing an amount (KYC + salary day carry over, no
-      // re-KYC, no payslip/penny-drop re-steps). Past overdue → REVIEW_PENDING: a KYC approver must
-      // clear them first, so send them to the status page (it shows "Under review", then a "Choose your
-      // amount" CTA once approved).
-      router.push(result.status === "PRE_APPROVED" ? "/loan/apply" : "/loan/status");
+      // Both forks first confirm their current salary (day + payslips) on a dedicated step; that step
+      // then decides the next hop from the live status — PRE_APPROVED → choose amount, REVIEW_PENDING →
+      // track the KYC re-review. So route both to /loan/salary here.
+      router.push("/loan/salary");
     } catch (e) {
       if (e instanceof ApplicationApiError && e.code === "NO_PRIOR_LOAN") {
         setNoPrior(true);
-      } else if (e instanceof ApplicationApiError && e.code === "ACTIVE_APPLICATION") {
-        // An unfinished application is already in flight — send them to track it.
-        router.push("/loan/status");
-      } else if (e instanceof ApplicationApiError && e.code === "ACTIVE_LOAN") {
-        // A live advance is still outstanding — they must repay it before borrowing again.
-        router.push("/repay");
       } else {
-        setError(formatApiError(e, "Something went wrong — please try again."));
+        // A live-app block (an application/loan already in flight) → the matching existing screen;
+        // any other backend error surfaces inline.
+        const dest = e instanceof ApplicationApiError ? routeForBlockedStart(e.code) : null;
+        if (dest) {
+          router.push(dest);
+        } else {
+          setError(formatApiError(e, "Something went wrong — please try again."));
+        }
       }
     } finally {
       setBusy(false);
@@ -99,8 +99,8 @@ export default function ReloanPage() {
       </div>
       <h1 className="mb-1">Borrow again, instantly</h1>
       <p className="mb-6 text-muted">
-        Your KYC and salary day carry over from before — just pick an amount and the money&apos;s on its
-        way. If you&apos;ve ever missed a repayment, a quick approver review runs first.
+        Your KYC carries over from before — just re-confirm your current salary, pick an amount, and the
+        money&apos;s on its way. If you&apos;ve ever missed a repayment, a quick approver review runs first.
       </p>
 
       <div className="rounded border border-gold-soft bg-gold-50/50 p-7 text-center shadow-sm">

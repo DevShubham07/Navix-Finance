@@ -119,7 +119,7 @@ export default function LoanApplyPage() {
       <h1 className="mb-1">Set up your advance</h1>
       <p className="mb-7 text-muted">
         {isReborrow
-          ? "Your salary day carries over from before — just choose your amount. Your due date and full cost update live, repaid in one instalment."
+          ? "You've confirmed your salary day — just choose your amount. Your due date and full cost update live, repaid in one instalment."
           : "Pick the day your salary lands, then choose your amount. Your due date and full cost update live — repaid in one instalment, no hidden charges."}
       </p>
 
@@ -138,8 +138,8 @@ export default function LoanApplyPage() {
               <div>
                 <div className="font-semibold text-ink">Salary day · {ordinal(salaryDay)} of each month</div>
                 <p className="m-0 text-sm text-muted">
-                  Carried over from your first advance — repaid in one instalment on your next salary, no
-                  need to set it again.
+                  Confirmed on the previous step — repaid in one instalment on your next salary, no need
+                  to set it again here.
                 </p>
               </div>
             </div>

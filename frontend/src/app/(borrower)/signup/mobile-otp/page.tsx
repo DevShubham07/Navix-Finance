@@ -8,7 +8,7 @@ import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
-import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, clearBorrowerClientState, fetchBorrowerSession, writeStoredAppId, type OtpRequestResult } from "@/lib/api/live-journey";
+import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, clearBorrowerClientState, fetchBorrowerSession, writeStoredAppId, routeForBlockedStart, type OtpRequestResult } from "@/lib/api/live-journey";
 import { ApplicationApiError, type ApplicationView } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { normalizeMobile } from "@/lib/utils";
@@ -42,10 +42,12 @@ export default function SignupMobileOtpPage() {
           setAppId(app.id);
           writeStoredAppId(app.id);
           router.replace("/signup/email");
-        } catch {
+        } catch (e) {
           // The backend blocks a new draft when a loan/application is already live or in flight
-          // (one advance at a time) — there's nothing to onboard, so send them to their dashboard.
-          router.replace("/dashboard");
+          // (one advance at a time). Send them to the matching existing screen (track it / repay it);
+          // for anything else there's nothing to onboard, so fall back to their dashboard.
+          const dest = e instanceof ApplicationApiError ? routeForBlockedStart(e.code) : null;
+          router.replace(dest ?? "/dashboard");
         }
         return;
       }
@@ -112,8 +114,11 @@ export default function SignupMobileOtpPage() {
       let app: ApplicationView;
       try {
         app = await createOrResumeDraft(session);
-      } catch {
-        router.replace("/dashboard");
+      } catch (e) {
+        // Live application/loan already in flight → the matching existing screen (track it / repay it),
+        // else the dashboard. Real OTP/validation errors are thrown before this point.
+        const dest = e instanceof ApplicationApiError ? routeForBlockedStart(e.code) : null;
+        router.replace(dest ?? "/dashboard");
         return;
       }
       setAppId(app.id);

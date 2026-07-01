@@ -1,4 +1,8 @@
+"use client";
+
 import * as React from "react";
+import { useQueryClient, useIsFetching } from "@tanstack/react-query";
+import { RefreshCw, Loader2 } from "lucide-react";
 import { Badge, InfoTooltip } from "@/components/ui";
 import type { AppStage } from "@/lib/domain/application";
 import type { KycCheckStatus } from "@/lib/domain/kyc";
@@ -22,6 +26,33 @@ export function PageHeader({
       </div>
       {children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null}
     </div>
+  );
+}
+
+/**
+ * Page-level refresh: invalidates every react-query key backing a pipeline page
+ * (all the composed queue panels at once), and reflects in-flight fetches with a
+ * spinner keyed off the first query key. Uses the established inline-toolbar style
+ * shared by the per-panel refreshers.
+ */
+export function RefreshButton({
+  queryKeys,
+  label = "Refresh",
+}: {
+  queryKeys: unknown[][];
+  label?: string;
+}) {
+  const qc = useQueryClient();
+  const fetching = useIsFetching({ queryKey: queryKeys[0] });
+  return (
+    <button
+      type="button"
+      onClick={() => queryKeys.forEach((k) => qc.invalidateQueries({ queryKey: k }))}
+      className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
+    >
+      {fetching > 0 ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+      {label}
+    </button>
   );
 }
 

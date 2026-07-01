@@ -461,6 +461,20 @@ export function canStartNewLoan(apps: ApplicationView[] | undefined): boolean {
   return !!apps && apps.length > 0 && apps.every((a) => DONE_STATUSES.includes(a.status));
 }
 
+/**
+ * Where to send a borrower whose attempt to start a *new* advance was blocked because they already
+ * have one (the backend "one advance at a time" guard). Maps the guard's error code to the right
+ * existing screen, or returns null when the code isn't a live-app block — so the caller can fall back
+ * to its own handling (a real error message, or a default route):
+ *   - `ACTIVE_APPLICATION` → an unfinished application is in flight → track it on `/loan/status`
+ *   - `ACTIVE_LOAN`        → a live advance is still outstanding → repay it first on `/repay`
+ */
+export function routeForBlockedStart(code: string | undefined): string | null {
+  if (code === "ACTIVE_APPLICATION") return "/loan/status";
+  if (code === "ACTIVE_LOAN") return "/repay";
+  return null;
+}
+
 export { TERMINAL as LIVE_TERMINAL_STATUSES };
 
 // ---------------------------------------------------------------------------

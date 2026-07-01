@@ -655,9 +655,17 @@ export const verificationApi = {
   /** Credit bureau pull (automatic — no input; score/category never surfaced to the borrower). */
   bureau: (id: number) => bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau`, "POST"),
 
-  /** Declared salary + uploaded slip object keys (min 3 months). */
-  salary: (id: number, monthlySalaryPaise: number, slipObjectKeys: string[]) =>
-    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/salary`, "POST", { monthlySalaryPaise, slipObjectKeys }),
+  /**
+   * Declared salary + uploaded slip object keys (min 3 months). Optionally sets the salary-credit day
+   * (1–31) in the same call — used by the reborrow salary step so the customer confirms their salary
+   * day alongside re-verifying income; omitted on the first-time onboarding path (day set at apply).
+   */
+  salary: (id: number, monthlySalaryPaise: number, slipObjectKeys: string[], salaryCreditDay?: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/salary`, "POST", {
+      monthlySalaryPaise,
+      slipObjectKeys,
+      salaryCreditDay,
+    }),
 
   /** Penny-drop on the salary account → name match. */
   pennyDrop: (id: number, accountNumber: string, ifsc: string) =>

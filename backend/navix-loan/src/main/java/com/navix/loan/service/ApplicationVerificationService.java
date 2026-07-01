@@ -89,6 +89,7 @@ public class ApplicationVerificationService {
     private final ObjectMapper objectMapper;
     private final CreditBriefService creditBriefService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProfileChangeLogger changeLogger;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     public record StepResult(String checkType, String status, String message, Map<String, Object> derived) {
@@ -451,20 +452,43 @@ public class ApplicationVerificationService {
         return new StepResult(BUREAU, PASS, row.getMessage(), Map.of());
     }
 
-    /** Declared salary + salary-slip keys (min 3 months) → provisional eligible limit (25% cap). */
+    /**
+     * Declared salary + salary-slip keys (min 3 months) → provisional eligible limit (25% cap). On a
+     * reborrow the customer may re-declare salary and/or salary-credit day: when {@code salaryCreditDay}
+     * is supplied it overwrites the application's day, the eligible limit is recomputed inline, and any
+     * change to a previously-recorded salary/day is audited to {@code profile_change_log}.
+     */
     @Transactional
-    public StepResult verifySalary(Long appId, long monthlySalaryPaise, List<String> slipObjectKeys) {
+    public StepResult verifySalary(Long appId, long monthlySalaryPaise, List<String> slipObjectKeys,
+                                   Integer salaryCreditDay) {
         if (monthlySalaryPaise <= 0) {
             throw new BusinessException("INVALID_SALARY", "Monthly salary must be positive");
         }
         CustomerProfile profile = profile(appId);
+        Long oldSalary = profile.getMonthlySalaryPaise();
         profile.setMonthlySalaryPaise(monthlySalaryPaise);
         profileRepo.save(profile);
 
         long eligible = risk.eligibleLimitPaise(monthlySalaryPaise);
         LoanApplication app = requireApplication(appId);
+        Integer oldDay = app.getSalaryCreditDay();
         app.setEligibleLimit(eligible);
+        if (salaryCreditDay != null) {
+            app.setSalaryCreditDay(salaryCreditDay);
+        }
         applicationRepo.save(app);
+
+        // Audit a re-declared salary / salary-day only when a prior value existed AND it changed
+        // (a first-time declaration on a fresh application is not a "change"). The customer id comes
+        // from the application (the profile snapshot has none).
+        if (oldSalary != null && !oldSalary.equals(monthlySalaryPaise)) {
+            changeLogger.logIfChanged(app.getCustomerId(), appId, "monthlySalaryPaise",
+                    String.valueOf(oldSalary), String.valueOf(monthlySalaryPaise));
+        }
+        if (oldDay != null && salaryCreditDay != null && !oldDay.equals(salaryCreditDay)) {
+            changeLogger.logIfChanged(app.getCustomerId(), appId, "salaryCreditDay",
+                    String.valueOf(oldDay), String.valueOf(salaryCreditDay));
+        }
 
         if (slipObjectKeys != null) {
             for (int i = 0; i < slipObjectKeys.size(); i++) {

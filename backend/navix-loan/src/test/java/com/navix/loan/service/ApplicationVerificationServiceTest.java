@@ -42,6 +42,7 @@ class ApplicationVerificationServiceTest {
     @Mock private RiskPort risk;
     @Mock private CreditBriefService creditBriefService;
     @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock private ProfileChangeLogger changeLogger;
 
     private ApplicationVerificationService service;
 
@@ -51,7 +52,7 @@ class ApplicationVerificationServiceTest {
     void setUp() {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
                 documentRepo, verification, storage, risk, new ObjectMapper(), creditBriefService,
-                eventPublisher);
+                eventPublisher, changeLogger);
         // save() echoes its argument
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(profileRepo.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -174,7 +175,7 @@ class ApplicationVerificationServiceTest {
         when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
         when(risk.eligibleLimitPaise(4_000_000L)).thenReturn(1_000_000L);
 
-        var result = service.verifySalary(APP, 4_000_000L, List.of("applications/42/salary_slip/1.pdf"));
+        var result = service.verifySalary(APP, 4_000_000L, List.of("applications/42/salary_slip/1.pdf"), null);
 
         assertThat(result.status()).isEqualTo("PASS");
         assertThat(app.getEligibleLimit()).isEqualTo(1_000_000L);
