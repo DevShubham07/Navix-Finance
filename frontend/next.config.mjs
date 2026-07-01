@@ -1,20 +1,28 @@
 /** @type {import('next').NextConfig} */
 
-// Content-Security-Policy. The app has NO external resource origins (next/font self-hosts; the BFF
-// is same-origin /api; no third-party scripts/analytics/frames). `'unsafe-inline'` is required for
-// both script (Next's inline hydration bootstrap) and style (200+ inline style= attrs in the
-// design-export marketing HTML). `data:`/`blob:` cover the KYC selfie capture (canvas → data URL,
-// getUserMedia stream) and client-side jsPDF exports. `'unsafe-eval'` is added in DEV only (React
-// Refresh/HMR). A nonce-based script-src is the future hardening (needs middleware).
+// Content-Security-Policy. The only external resource origin is Google Analytics 4 (gtag.js): the
+// loader is served from googletagmanager.com and beacons post to *.google-analytics.com (region-
+// redirected `/g/collect` endpoints) + *.analytics.google.com. Everything else is same-origin
+// (next/font self-hosts; the BFF is same-origin /api). `'unsafe-inline'` is required for both script
+// (Next's inline hydration bootstrap + the gtag config snippet) and style (200+ inline style= attrs
+// in the design-export marketing HTML). `data:`/`blob:` cover the KYC selfie capture (canvas → data
+// URL, getUserMedia stream) and client-side jsPDF exports. `'unsafe-eval'` is added in DEV only
+// (React Refresh/HMR). A nonce-based script-src is the future hardening (needs middleware).
 const isDev = process.env.NODE_ENV !== "production";
+// Google Analytics origins, split by directive.
+const gaScript = "https://www.googletagmanager.com";
+const gaConnect =
+  "https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com";
+const gaImg =
+  "https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com";
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' ${gaScript}${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  `img-src 'self' data: blob: ${gaImg}`,
   "media-src 'self' blob:",
   "font-src 'self'",
-  "connect-src 'self'",
+  `connect-src 'self' ${gaConnect}`,
   "worker-src 'self' blob:",
   "frame-src 'self'",
   "frame-ancestors 'self'",

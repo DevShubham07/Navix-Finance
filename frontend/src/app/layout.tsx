@@ -7,6 +7,7 @@ import {
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { RouteProgress } from "@/components/app/route-progress";
+import { GoogleAnalytics } from "@/components/analytics/google-analytics";
 
 /**
  * Unified brand typefaces (2026 "calendar" design system) — Bricolage Grotesque
@@ -80,6 +81,7 @@ export default function RootLayout({
           producing a benign server/client attribute mismatch. This silences only
           that top-level attribute diff; it does not affect children. */}
       <body suppressHydrationWarning>
+        <GoogleAnalytics />
         <RouteProgress />
         <Providers>{children}</Providers>
       </body>
