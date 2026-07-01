@@ -33,6 +33,7 @@ class AuthControllerTest {
     @Mock private CustomerProfileRepository profileRepository;
     @Mock private BorrowerCredentialRepository credentialRepository;
     @Mock private PasswordResetService passwordResetService;
+    @Mock private com.navix.iam.service.InviteService inviteService;
 
     private AuthController controller;
     private JwtService jwt;
@@ -42,7 +43,7 @@ class AuthControllerTest {
         jwt = new JwtService("test-secret-test-secret-test-secret", 3600, 3600);
         PasswordEncoder encoder = new BCryptPasswordEncoder();
         controller = new AuthController(staffRepository, jwt, encoder, otpService, profileRepository,
-                credentialRepository, passwordResetService);
+                credentialRepository, passwordResetService, inviteService);
     }
 
     private StaffUser admin() {

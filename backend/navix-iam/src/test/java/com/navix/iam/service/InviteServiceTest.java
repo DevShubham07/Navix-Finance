@@ -3,6 +3,7 @@ package com.navix.iam.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -101,6 +103,27 @@ class InviteServiceTest {
         assertThat(result.email()).isEqualTo("new@navix.test");
         assertThat(result.role()).isEqualTo(StaffRole.CREDIT_HEAD);
         assertThat(result.status()).isEqualTo(StaffStatus.ACTIVE);
+        assertThat(pending.getAcceptedAt()).isNotNull();
+    }
+
+    @Test
+    void acceptInviteWithCredentialsPersistsPasswordAndMobile() {
+        StaffInvite pending = invite(StaffRole.ACCOUNTANT,
+                Instant.now().plus(1, ChronoUnit.DAYS), null);
+        when(inviteRepository.findByToken("tok-123")).thenReturn(Optional.of(pending));
+        when(staffUserRepository.findByEmail("new@navix.test")).thenReturn(Optional.empty());
+        when(staffUserRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(inviteRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        ArgumentCaptor<StaffUser> saved = ArgumentCaptor.forClass(StaffUser.class);
+        StaffResponse result = inviteService.acceptInvite("tok-123", "Alice", "hashed-pw", "98-190 00001");
+
+        assertThat(result.name()).isEqualTo("Alice");
+        assertThat(result.status()).isEqualTo(StaffStatus.ACTIVE);
+        verify(staffUserRepository).save(saved.capture());
+        assertThat(saved.getValue().getPasswordHash()).isEqualTo("hashed-pw");
+        // mobile is stored digits-only
+        assertThat(saved.getValue().getMobile()).isEqualTo("9819000001");
         assertThat(pending.getAcceptedAt()).isNotNull();
     }
 

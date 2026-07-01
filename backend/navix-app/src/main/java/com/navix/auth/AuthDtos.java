@@ -44,6 +44,14 @@ public final class AuthDtos {
     public record ResetPasswordRequest(@NotBlank String token, @NotBlank String password) {
     }
 
+    /**
+     * Staff invite activation: the one-time token from the invite email, the invitee's display name,
+     * the password they choose, and an optional contact mobile (enables their own forgot-password).
+     */
+    public record AcceptInviteRequest(@NotBlank String token, @NotBlank String name,
+                                      @NotBlank String password, String mobile) {
+    }
+
     /** A generic, non-enumerating acknowledgement (forgot/reset/set responses). */
     public record MessageResponse(String message) {
     }

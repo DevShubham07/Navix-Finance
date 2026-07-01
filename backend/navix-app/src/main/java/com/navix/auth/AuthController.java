@@ -1,5 +1,6 @@
 package com.navix.auth;
 
+import com.navix.auth.AuthDtos.AcceptInviteRequest;
 import com.navix.auth.AuthDtos.AuthResponse;
 import com.navix.auth.AuthDtos.BorrowerLoginRequest;
 import com.navix.auth.AuthDtos.BorrowerPasswordLoginRequest;
@@ -16,8 +17,10 @@ import com.navix.common.security.JwtService;
 import com.navix.common.util.Masking;
 import com.navix.common.web.ApiResponse;
 import com.navix.iam.domain.StaffStatus;
+import com.navix.iam.dto.StaffDtos.StaffResponse;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
+import com.navix.iam.service.InviteService;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.repository.CustomerProfileRepository;
 import jakarta.validation.Valid;
@@ -53,6 +56,7 @@ public class AuthController {
     private final CustomerProfileRepository profileRepository;
     private final BorrowerCredentialRepository credentialRepository;
     private final PasswordResetService passwordResetService;
+    private final InviteService inviteService;
 
     @PostMapping("/staff/login")
     public ApiResponse<AuthResponse> staffLogin(@Valid @RequestBody StaffLoginRequest req) {
@@ -75,6 +79,22 @@ public class AuthController {
         String token = jwtService.issue(id, staff.getName(), staff.getRole().name(), JwtService.AUDIENCE_STAFF);
         log.info("staff login ok staffId={} role={}", id, staff.getRole());
         return ApiResponse.ok(new AuthResponse(token, id, staff.getName(), staff.getRole().name(), null));
+    }
+
+    /**
+     * Activate a staff account from a one-time invite token and set the chosen password. Public (an
+     * invitee has no session yet) — the token is the credential. On success the staffer is signed in
+     * immediately (a staff JWT is issued, mirroring {@code /staff/login}) so they land in the console.
+     */
+    @PostMapping("/staff/accept-invite")
+    public ApiResponse<AuthResponse> staffAcceptInvite(@Valid @RequestBody AcceptInviteRequest req) {
+        PasswordPolicy.validate(req.password());
+        String passwordHash = passwordEncoder.encode(req.password());
+        StaffResponse staff = inviteService.acceptInvite(req.token(), req.name().trim(), passwordHash, req.mobile());
+        String id = String.valueOf(staff.id());
+        String token = jwtService.issue(id, staff.name(), staff.role().name(), JwtService.AUDIENCE_STAFF);
+        log.info("staff invite accepted staffId={} role={}", id, staff.role());
+        return ApiResponse.ok(new AuthResponse(token, id, staff.name(), staff.role().name(), null));
     }
 
     /** Generate an OTP and SMS it to the borrower's mobile (UltronSMS). Call before login. */

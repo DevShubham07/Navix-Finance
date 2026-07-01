@@ -19,6 +19,7 @@ import com.navix.notification.catalog.NotificationType;
 import com.navix.notification.dispatch.NotificationContext;
 import com.navix.notification.dispatch.NotificationDispatcher;
 import com.navix.notification.template.NotificationFormat;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -35,9 +36,14 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class NotificationEventListener {
 
     private final NotificationDispatcher dispatcher;
+    /** Base URL the staff-invite activation link is built from (same property as the reset links). */
+    private final String frontendBaseUrl;
 
-    public NotificationEventListener(NotificationDispatcher dispatcher) {
+    public NotificationEventListener(NotificationDispatcher dispatcher,
+            @Value("${navix.app.frontend-base-url:http://localhost:3000}") String frontendBaseUrl) {
         this.dispatcher = dispatcher;
+        this.frontendBaseUrl = frontendBaseUrl.endsWith("/")
+                ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1) : frontendBaseUrl;
     }
 
     /** The application state-machine: one event per transition, mapped by {@code action} (§5). */
@@ -199,7 +205,8 @@ public class NotificationEventListener {
         dispatcher.dispatch(type, NotificationContext.builder()
                 .staffSubjectId(subjectId)
                 .explicitStaffSubject(subject)
-                .put("inviteLink", e.inviteToken() == null ? null : "/staff/accept-invite?token=" + e.inviteToken())
+                .put("inviteLink", e.inviteToken() == null ? null
+                        : frontendBaseUrl + "/staff/activate?token=" + e.inviteToken())
                 .build());
     }
 
