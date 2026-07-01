@@ -2,6 +2,7 @@ package com.navix.notification.email;
 
 import com.navix.common.util.Masking;
 import com.navix.notification.config.EmailProperties;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -43,11 +44,14 @@ public class ResendEmailClient implements EmailClient {
             return EmailResult.fail("RESEND_API_KEY not configured");
         }
         try {
-            Map<String, Object> body = Map.of(
-                    "from", props.from(),
-                    "to", List.of(message.to()),
-                    "subject", message.subject() == null ? "NAVIX Finance" : message.subject(),
-                    "text", message.body() == null ? "" : message.body());
+            Map<String, Object> body = new HashMap<>();
+            body.put("from", props.from());
+            body.put("to", List.of(message.to()));
+            body.put("subject", message.subject() == null ? "NAVIX Finance" : message.subject());
+            body.put("text", message.body() == null ? "" : message.body());
+            if (message.html() != null && !message.html().isBlank()) {
+                body.put("html", message.html());
+            }
 
             @SuppressWarnings("unchecked")
             Map<String, Object> resp = http.post()
