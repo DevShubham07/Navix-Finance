@@ -12,11 +12,10 @@ const QUICK_LINKS = [
 ];
 
 const POLICY_LINKS = [
-  { label: "Privacy Policy", href: "/policies#privacy" },
-  { label: "Terms & Conditions", href: "/policies#terms" },
-  { label: "Grievance Redressal Policy", href: "/policies#grievance-policy" },
-  { label: "Fair Lending Commitment", href: "/policies#fair-lending" },
-  { label: "Grievance Redressal", href: "/grievance" },
+  { label: "Privacy Policy", href: "/privacy" },
+  { label: "Terms & Conditions", href: "/terms" },
+  { label: "Grievance Redressal Policy", href: "/grievance" },
+  { label: "Fair Lending Commitment", href: "/fair-practices" },
 ];
 
 export function SiteFooter() {
@@ -96,8 +95,8 @@ export function SiteFooter() {
         <div className="container">
           <span>© 2026 {BRAND.legalName}. All rights reserved.</span>
           <span className="footer-legal-links">
-            <Link href="/policies#privacy">Privacy</Link>
-            <Link href="/policies#terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
             <Link href="/grievance">Grievance</Link>
           </span>
         </div>
