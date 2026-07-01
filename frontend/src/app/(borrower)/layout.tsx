@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { AppHeader } from "@/components/app/app-header";
 import { BRAND } from "@/lib/brand";
+
+// The borrower app + its public auth-entry pages (login/signup/forgot/reset) are not search
+// content — keep them out of the index (crawlable so the noindex is seen; see robots.ts).
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 /** Borrower app shell: slim header + content + compact footer. */
 export default function BorrowerLayout({ children }: { children: React.ReactNode }) {

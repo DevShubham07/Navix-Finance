@@ -5,6 +5,7 @@ import { MarketingHtml } from "@/components/site/marketing-html";
 export const metadata: Metadata = {
   title: 'Frequently Asked Questions — NAVIX',
   description: 'Answers on applications, rates, repayments and grievance redressal.',
+  alternates: { canonical: '/faq' },
 };
 
 export default function Page() {

@@ -11,19 +11,19 @@ export const html = `<section class="page active" id="partners">
   <div class="sec"><div class="wrap"><div class="grid-2" style="gap:26px">
     <div class="pcard reveal">
       <div class="plogo">NBFC<br>logo</div>
-      <div><span class="ptag">Lending Partner</span><h3>Arthveda Capital Private Limited</h3><p class="cor">RBI CoR No.: <b>N-14.03XXXX</b></p><p style="font-size:.92rem">Lender of record · sanction letter &amp; Key Fact Statement issued by the NBFC.</p><a href="/grievance" class="plink" data-link="">View disclosures →</a></div>
+      <div><span class="ptag">Lending Partner</span><h3>Arthveda Capital Private Limited</h3><p style="font-size:.92rem">Lender of record · sanction letter &amp; Key Fact Statement issued by the NBFC.</p><a href="/grievance" class="plink" data-link="">View disclosures →</a></div>
     </div>
     <div class="pcard reveal d1">
       <div class="plogo">NBFC<br>logo</div>
-      <div><span class="ptag">Lending Partner</span><h3>Sentinel Finserv Limited</h3><p class="cor">RBI CoR No.: <b>N-13.02XXXX</b></p><p style="font-size:.92rem">Lender of record · sanction letter &amp; Key Fact Statement issued by the NBFC.</p><a href="/grievance" class="plink" data-link="">View disclosures →</a></div>
+      <div><span class="ptag">Lending Partner</span><h3>Sentinel Finserv Limited</h3><p style="font-size:.92rem">Lender of record · sanction letter &amp; Key Fact Statement issued by the NBFC.</p><a href="/grievance" class="plink" data-link="">View disclosures →</a></div>
     </div>
     <div class="pcard reveal">
       <div class="plogo">NBFC<br>logo</div>
-      <div><span class="ptag">Lending Partner</span><h3>Pragati Credit Solutions Pvt. Ltd.</h3><p class="cor">RBI CoR No.: <b>N-09.01XXXX</b></p><p style="font-size:.92rem">Lender of record · sanction letter &amp; Key Fact Statement issued by the NBFC.</p><a href="/grievance" class="plink" data-link="">View disclosures →</a></div>
+      <div><span class="ptag">Lending Partner</span><h3>Pragati Credit Solutions Pvt. Ltd.</h3><p style="font-size:.92rem">Lender of record · sanction letter &amp; Key Fact Statement issued by the NBFC.</p><a href="/grievance" class="plink" data-link="">View disclosures →</a></div>
     </div>
     <div class="pcard reveal d1">
       <div class="plogo">NBFC<br>logo</div>
-      <div><span class="ptag">Lending Partner</span><h3>Meridian Finance Limited</h3><p class="cor">RBI CoR No.: <b>N-05.07XXXX</b></p><p style="font-size:.92rem">Lender of record · sanction letter &amp; Key Fact Statement issued by the NBFC.</p><a href="/grievance" class="plink" data-link="">View disclosures →</a></div>
+      <div><span class="ptag">Lending Partner</span><h3>Meridian Finance Limited</h3><p style="font-size:.92rem">Lender of record · sanction letter &amp; Key Fact Statement issued by the NBFC.</p><a href="/grievance" class="plink" data-link="">View disclosures →</a></div>
     </div>
   </div></div></div>
 

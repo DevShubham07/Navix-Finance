@@ -27,7 +27,7 @@ export const html = `<section class="page active" id="faq">
     <div class="faq" style="margin-bottom:48px">
       <div class="qa"><button class="q">Are there any hidden charges or advance fees?<span class="qi">+</span></button><div class="a"><p>Never. NAVIX does not charge any advance or upfront fee. All applicable interest and charges are disclosed in the Key Fact Statement before you accept the offer.</p></div></div>
       <div class="qa"><button class="q">Can I repay my loan early?<span class="qi">+</span></button><div class="a"><p>Yes — and there are no pre-closure or prepayment charges. Repaying early reduces the total interest you pay.</p></div></div>
-      <div class="qa"><button class="q">What happens if I miss a payment?<span class="qi">+</span></button><div class="a"><p>Late payments may attract charges as disclosed by the partner NBFC and can affect your credit score. If you're struggling, contact us early — we'll help you find a way forward respectfully.</p></div></div>
+      <div class="qa"><button class="q">What happens if I miss a payment?<span class="qi">+</span></button><div class="a"><p>Late payments attract a late-payment fee of 2% per day on the overdue principal (capped at 30 days), as set out in your Key Fact Statement, and can affect your credit score. If you're struggling, contact us early — we'll help you find a way forward respectfully.</p></div></div>
     </div>
 
     <div class="sec-head left" style="margin-bottom:24px"><span class="eyebrow">Security</span></div>

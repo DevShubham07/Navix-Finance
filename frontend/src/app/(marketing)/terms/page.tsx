@@ -5,6 +5,7 @@ import { MarketingHtml } from "@/components/site/marketing-html";
 export const metadata: Metadata = {
   title: 'Terms & Conditions — NAVIX',
   description: 'The terms governing your use of the NAVIX platform.',
+  alternates: { canonical: '/terms' },
 };
 
 export default function Page() {

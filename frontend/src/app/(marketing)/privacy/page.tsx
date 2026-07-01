@@ -5,6 +5,7 @@ import { MarketingHtml } from "@/components/site/marketing-html";
 export const metadata: Metadata = {
   title: 'Privacy Policy — NAVIX',
   description: 'How NAVIX collects, uses, shares and protects your information.',
+  alternates: { canonical: '/privacy' },
 };
 
 export default function Page() {

@@ -5,22 +5,12 @@ export const html = `<section class="page active" id="reviews">
   <div class="page-hero"><div class="wrap">
     <div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Reviews</div>
     <h1>Borrowers, in their own words</h1>
-    <p>Real stories from people who needed a hand and found a calmer, clearer way to borrow.</p>
-    <div class="mini-stats">
-      <div class="ms"><b>4.8★</b><small>Average rating</small></div>
-      <div class="ms"><b>12,400+</b><small>Verified reviews</small></div>
-      <div class="ms"><b>96%</b><small>Would recommend</small></div>
-    </div>
+    <p>We're a new platform earning trust the honest way. Verified borrower reviews will appear here as our community grows.</p>
   </div></div>
 
-  <div class="sec"><div class="wrap"><div class="grid-3">
-    <div class="tcard reveal"><div class="stars">★★★★★</div><q>I was skeptical about online loans, but NAVIX changed my mind. Smooth process, funds within hours, total clarity on fees.</q><div class="tperson"><span class="tav">N</span><div><b>Neha Gupta</b><small>Business Owner, Delhi</small></div></div></div>
-    <div class="tcard reveal d1"><div class="stars">★★★★★</div><q>Needed a quick loan for my daughter's school fees. Application to disbursal took less than a day. Highly recommended.</q><div class="tperson"><span class="tav">R</span><div><b>Rajesh Kumar</b><small>Teacher, Mumbai</small></div></div></div>
-    <div class="tcard reveal d2"><div class="stars">★★★★★</div><q>The calculator showed me exactly what I'd repay. No hidden charges, no advance fee. This is how lending should feel.</q><div class="tperson"><span class="tav">A</span><div><b>Ananya Rao</b><small>Designer, Bengaluru</small></div></div></div>
-    <div class="tcard reveal"><div class="stars">★★★★★</div><q>Support actually picked up the phone and helped me understand my repayment. Felt human, not like a faceless app.</q><div class="tperson"><span class="tav">S</span><div><b>Suresh Iyer</b><small>Sales Manager, Chennai</small></div></div></div>
-    <div class="tcard reveal d1"><div class="stars">★★★★★</div><q>Repaid early and there were zero pre-closure charges, exactly as promised. Trust earned.</q><div class="tperson"><span class="tav">P</span><div><b>Priya Nair</b><small>Nurse, Kochi</small></div></div></div>
-    <div class="tcard reveal d2"><div class="stars">★★★★☆</div><q>Clean app and fast money. Would love even longer tenures — but for a short-term need, it was perfect.</q><div class="tperson"><span class="tav">V</span><div><b>Vikram Singh</b><small>Engineer, Pune</small></div></div></div>
-  </div></div></div>
+  <div class="sec"><div class="wrap">
+    <div class="tcard reveal" style="text-align:center;max-width:640px;margin:0 auto"><h3>Verified reviews are coming soon</h3><q>We'd rather show you real, verified borrower reviews than invent them. As customers complete their loans, their verified feedback and independent ratings will be published here. In the meantime, see exactly what you'll repay on our <a href="/calculator" data-link="">calculator</a>.</q></div>
+  </div></div>
 
   <div class="sec" style="background:var(--grad-cream);padding-top:72px"><div class="wrap">
     <div class="sec-head"><span class="eyebrow center reveal">Find us everywhere</span><h2 class="reveal d1">Where people talk about us</h2><p class="reveal d2">Reviews, reels and conversations across every platform we show up on.</p></div>

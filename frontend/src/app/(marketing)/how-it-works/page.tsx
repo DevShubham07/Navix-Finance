@@ -5,6 +5,7 @@ import { MarketingHtml } from "@/components/site/marketing-html";
 export const metadata: Metadata = {
   title: 'How It Works — NAVIX',
   description: 'From application to your account in four simple steps — fully digital.',
+  alternates: { canonical: '/how-it-works' },
 };
 
 export default function Page() {

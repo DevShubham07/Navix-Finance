@@ -5,6 +5,7 @@ import { MarketingHtml } from "@/components/site/marketing-html";
 export const metadata: Metadata = {
   title: 'Loan Products — NAVIX',
   description: 'Loan products built for real life: personal, salary advance, business and education.',
+  alternates: { canonical: '/products' },
 };
 
 export default function Page() {
