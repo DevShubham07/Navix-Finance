@@ -1,4 +1,4 @@
-# NAVIX Finance
+ # NAVIX Finance
 
 Salary-linked, single-repayment lending platform. A borrower can draw a short-term
 advance capped at **25% of monthly salary**, repaid in a **single installment on the
