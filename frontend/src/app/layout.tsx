@@ -44,6 +44,10 @@ export const metadata: Metadata = {
   // Site-wide default canonical. Each (marketing) page sets its own self-canonical; a page
   // that omits one would inherit "/" here (deindex risk) — a per-page assertion guards that.
   alternates: { canonical: "/" },
+  // Google Search Console verification. Renders <meta name="google-site-verification"> only when
+  // GOOGLE_SITE_VERIFICATION is set (undefined → omitted). Set it in Vercel env (and .env.local
+  // locally) to the token GSC gives on the URL-prefix property. The token is not secret.
+  verification: { google: process.env.GOOGLE_SITE_VERIFICATION },
   openGraph: {
     type: "website",
     siteName: "NAVIX",

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { html } from "../_content/faq";
 import { MarketingHtml } from "@/components/site/marketing-html";
+import { FaqSchema } from "@/components/site/faq-schema";
 
 export const metadata: Metadata = {
   title: 'Frequently Asked Questions — NAVIX',
@@ -9,5 +10,10 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <MarketingHtml html={html} />;
+  return (
+    <>
+      <FaqSchema />
+      <MarketingHtml html={html} />
+    </>
+  );
 }
