@@ -8,10 +8,10 @@ import static org.mockito.Mockito.when;
 
 import com.navix.common.loan.LoanSummary;
 import com.navix.loan.domain.LoanStatus;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import java.time.LocalDate;
@@ -31,7 +31,7 @@ class LoanDirectoryAdapterTest {
     @Mock
     private LoanApplicationRepository applicationRepository;
     @Mock
-    private ApplicantProfileRepository profileRepository;
+    private CustomerProfileRepository profileRepository;
     @Mock
     private RepaymentService repaymentService;
 
@@ -46,7 +46,7 @@ class LoanDirectoryAdapterTest {
     private Loan loan(long id, LoanStatus status) {
         Loan loan = new Loan();
         loan.setId(id);
-        loan.setApplicantId(7L);
+        loan.setCustomerId(7L);
         loan.setPrincipal(800_000L);
         loan.setProcessingFee(80_000L);
         loan.setGst(14_400L);
@@ -63,9 +63,9 @@ class LoanDirectoryAdapterTest {
     void findLoanResolvesBorrowerAndShowsFullPan() {
         LoanApplication app = new LoanApplication();
         app.setId(1L);
-        app.setApplicantId(7L);
+        app.setCustomerId(7L);
         app.setLoanId(2L);
-        ApplicantProfile profile = new ApplicantProfile();
+        CustomerProfile profile = new CustomerProfile();
         profile.setApplicationId(1L);
         profile.setFullName("Asha Verma");
         profile.setPan("ABCDE1234F");

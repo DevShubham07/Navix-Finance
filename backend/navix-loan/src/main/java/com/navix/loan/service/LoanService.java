@@ -50,7 +50,7 @@ public class LoanService {
         int tenureDays = (int) java.time.temporal.ChronoUnit.DAYS.between(disbursed, dueDate);
 
         Loan loan = new Loan();
-        loan.setApplicantId(application.getApplicantId());
+        loan.setCustomerId(application.getCustomerId());
         loan.setPrincipal(principal);
         loan.setProcessingFee(loanMath.processingFeePaise(principal));
         loan.setGst(loanMath.gstPaise(principal));

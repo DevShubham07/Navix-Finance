@@ -8,10 +8,10 @@ import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.util.Base64;
@@ -28,54 +28,54 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Owns the applicant-review data attached to an application: the KYC profile and uploaded
+ * Owns the customer-review data attached to an application: the KYC profile and uploaded
  * documents. Writes are borrower-only (ADMIN may act for the borrower); reads are open to any
  * authenticated actor so every reviewing staff role can view them. Document bytes are base64 in /
  * base64 out, kept inline ({@code bytea}) for the demo.
  */
 @Service
 @RequiredArgsConstructor
-public class ApplicantReviewService {
+public class CustomerReviewService {
 
     /** Inline document cap — keeps base64-over-JSON sane for the demo. */
     static final int MAX_DOC_BYTES = 5 * 1024 * 1024;
 
     private final LoanApplicationRepository applicationRepository;
-    private final ApplicantProfileRepository profileRepository;
+    private final CustomerProfileRepository profileRepository;
     private final ApplicationDocumentRepository documentRepository;
     private final DocumentStoragePort storage;
     private final VerificationInvalidationService verificationInvalidation;
     private final EligibilityService eligibilityService;
 
     @Transactional
-    public ApplicantProfile saveProfile(Long appId, ProfileRequest req) {
+    public CustomerProfile saveProfile(Long appId, ProfileRequest req) {
         requireRole("BORROWER");
         LoanApplication app = applicationRepository.findById(appId)
                 .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
-        Long applicantId = app.getApplicantId();
+        Long customerId = app.getCustomerId();
 
         String pan = normalizePan(req.pan());
         String aadhaar = normalizeAadhaar(req.aadhaar());
         String mobile = normalizeMobile(req.mobile());
 
-        // A mobile / PAN / Aadhaar may belong to only one applicant. Uniqueness is now enforced
-        // ACROSS applicants (not per-application): the same applicant re-onboarding through a NEW
+        // A mobile / PAN / Aadhaar may belong to only one customer. Uniqueness is now enforced
+        // ACROSS customers (not per-application): the same customer re-onboarding through a NEW
         // application — which creates a fresh profile row carrying the same identity — is allowed,
         // while a different person reusing the PAN / Aadhaar / mobile is still rejected.
-        if (pan != null && profileRepository.existsPanForOtherApplicant(pan, applicantId)) {
+        if (pan != null && profileRepository.existsPanForOtherCustomer(pan, customerId)) {
             throw new BusinessException("DUPLICATE_PAN",
-                    "This PAN is already registered with another applicant.");
+                    "This PAN is already registered with another customer.");
         }
-        if (aadhaar != null && profileRepository.existsAadhaarForOtherApplicant(aadhaar, applicantId)) {
+        if (aadhaar != null && profileRepository.existsAadhaarForOtherCustomer(aadhaar, customerId)) {
             throw new BusinessException("DUPLICATE_AADHAAR",
-                    "This Aadhaar number is already registered with another applicant.");
+                    "This Aadhaar number is already registered with another customer.");
         }
-        if (mobile != null && profileRepository.existsMobileForOtherApplicant(mobile, applicantId)) {
+        if (mobile != null && profileRepository.existsMobileForOtherCustomer(mobile, customerId)) {
             throw new BusinessException("DUPLICATE_MOBILE",
-                    "This mobile number is already registered with another applicant.");
+                    "This mobile number is already registered with another customer.");
         }
 
-        ApplicantProfile p = profileRepository.findByApplicationId(appId).orElseGet(ApplicantProfile::new);
+        CustomerProfile p = profileRepository.findByApplicationId(appId).orElseGet(CustomerProfile::new);
         p.setApplicationId(appId);
         // PARTIAL MERGE: onboarding saves the profile in slices (name on the email step, salary on
         // the salary step, bank on the penny-drop step, …). Only overwrite a field when this request
@@ -110,13 +110,13 @@ public class ApplicantReviewService {
      * ownership is enforced at the controller.
      */
     @Transactional
-    public ApplicantProfile editOwnProfile(Long appId, EditProfileRequest req) {
+    public CustomerProfile editOwnProfile(Long appId, EditProfileRequest req) {
         requireRole("BORROWER");
         LoanApplication app = applicationRepository.findById(appId)
                 .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
         // Edit the application's own profile snapshot (must exist — onboarding created it).
-        ApplicantProfile p = profileRepository.findByApplicationId(appId)
-                .orElseThrow(() -> new ResourceNotFoundException("ApplicantProfile", "application:" + appId));
+        CustomerProfile p = profileRepository.findByApplicationId(appId)
+                .orElseThrow(() -> new ResourceNotFoundException("CustomerProfile", "application:" + appId));
 
         java.util.Set<String> changed = new java.util.HashSet<>();
         String address = trimToNull(req.address());
@@ -156,60 +156,60 @@ public class ApplicantReviewService {
         p.setEmergencyContactPhone(trimToNull(req.emergencyContactPhone()));
         p.setEmergencyContactRelation(trimToNull(req.emergencyContactRelation()));
 
-        ApplicantProfile saved = profileRepository.save(p);
+        CustomerProfile saved = profileRepository.save(p);
         // Re-verification + eligibility side effects.
         verificationInvalidation.invalidateForFields(appId, changed);
         if (salaryChanged) {
-            eligibilityService.recomputeForApplicant(app.getApplicantId(), saved.getMonthlySalaryPaise());
+            eligibilityService.recomputeForCustomer(app.getCustomerId(), saved.getMonthlySalaryPaise());
         }
         return saved;
     }
 
     /**
-     * Read the applicant KYC snapshot for an application. A reborrow application has no profile row
-     * of its own (identity carries over from the prior loan), so fall back to the applicant's most
+     * Read the customer KYC snapshot for an application. A reborrow application has no profile row
+     * of its own (identity carries over from the prior loan), so fall back to the customer's most
      * recent saved profile — this is what the KYC reviewer and the borrower's amount page see.
      */
     @Transactional(readOnly = true)
-    public ApplicantProfile getProfile(Long appId) {
+    public CustomerProfile getProfile(Long appId) {
         LoanApplication app = applicationRepository.findById(appId)
                 .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
         return profileRepository.findByApplicationId(appId)
-                .or(() -> latestProfileForApplicant(app.getApplicantId()))
-                .orElseThrow(() -> new ResourceNotFoundException("ApplicantProfile", "application:" + appId));
+                .or(() -> latestProfileForCustomer(app.getCustomerId()))
+                .orElseThrow(() -> new ResourceNotFoundException("CustomerProfile", "application:" + appId));
     }
 
     /** Profiles for a set of applications, keyed by {@code applicationId} — to enrich list/queue views. */
     @Transactional(readOnly = true)
-    public Map<Long, ApplicantProfile> profilesByApplicationIds(Collection<Long> appIds) {
+    public Map<Long, CustomerProfile> profilesByApplicationIds(Collection<Long> appIds) {
         if (appIds == null || appIds.isEmpty()) {
             return Map.of();
         }
         return profileRepository.findByApplicationIdIn(appIds).stream()
-                .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
+                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
     }
 
     /**
      * Per-application <em>effective</em> profile keyed by {@code applicationId}: the application's own
-     * KYC snapshot when it has one, otherwise the applicant's most recent saved profile. Mirrors the
+     * KYC snapshot when it has one, otherwise the customer's most recent saved profile. Mirrors the
      * fallback in {@link #getProfile} so list / queue / customer views stay consistent — a reborrow (or
-     * any application without its own snapshot) still shows the applicant's credit headline instead of a
+     * any application without its own snapshot) still shows the customer's credit headline instead of a
      * blank, matching the profile the single-application read returns.
      */
     @Transactional(readOnly = true)
-    public Map<Long, ApplicantProfile> effectiveProfilesByApplications(List<LoanApplication> apps) {
+    public Map<Long, CustomerProfile> effectiveProfilesByApplications(List<LoanApplication> apps) {
         if (apps == null || apps.isEmpty()) {
             return Map.of();
         }
-        Map<Long, ApplicantProfile> own = profilesByApplicationIds(
+        Map<Long, CustomerProfile> own = profilesByApplicationIds(
                 apps.stream().map(LoanApplication::getId).toList());
-        Map<Long, ApplicantProfile> latestByApplicant = new HashMap<>();
-        Map<Long, ApplicantProfile> out = new HashMap<>();
+        Map<Long, CustomerProfile> latestByCustomer = new HashMap<>();
+        Map<Long, CustomerProfile> out = new HashMap<>();
         for (LoanApplication a : apps) {
-            ApplicantProfile p = own.get(a.getId());
+            CustomerProfile p = own.get(a.getId());
             if (p == null) {
-                p = latestByApplicant.computeIfAbsent(a.getApplicantId(),
-                        aid -> latestProfileForApplicant(aid).orElse(null));
+                p = latestByCustomer.computeIfAbsent(a.getCustomerId(),
+                        aid -> latestProfileForCustomer(aid).orElse(null));
             }
             if (p != null) {
                 out.put(a.getId(), p);
@@ -219,17 +219,17 @@ public class ApplicantReviewService {
     }
 
     /**
-     * The applicant's most recent saved KYC profile, if any — public entry point for the
-     * notification {@code BorrowerContactDirectory} adapter (name + mobile + email by applicant id).
+     * The customer's most recent saved KYC profile, if any — public entry point for the
+     * notification {@code BorrowerContactDirectory} adapter (name + mobile + email by customer id).
      */
     @Transactional(readOnly = true)
-    public Optional<ApplicantProfile> latestProfile(Long applicantId) {
-        return latestProfileForApplicant(applicantId);
+    public Optional<CustomerProfile> latestProfile(Long customerId) {
+        return latestProfileForCustomer(customerId);
     }
 
-    /** The applicant's most recent saved KYC profile (newest application first), if any. */
-    private Optional<ApplicantProfile> latestProfileForApplicant(Long applicantId) {
-        return applicationRepository.findByApplicantId(applicantId).stream()
+    /** The customer's most recent saved KYC profile (newest application first), if any. */
+    private Optional<CustomerProfile> latestProfileForCustomer(Long customerId) {
+        return applicationRepository.findByCustomerId(customerId).stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
                 .filter(Objects::nonNull)

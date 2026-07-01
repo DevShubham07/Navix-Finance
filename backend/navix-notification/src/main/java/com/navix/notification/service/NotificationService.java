@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Read/write surface for the current recipient's in-app inbox. The recipient is resolved from the
- * {@link CurrentActor} ({@code BORROWER} → applicant inbox, else staff inbox) and <b>every</b> query
+ * {@link CurrentActor} ({@code BORROWER} → customer inbox, else staff inbox) and <b>every</b> query
  * is scoped by {@code (recipientType, recipientId)}, so one recipient can never see or mutate another's.
  */
 @Service

@@ -5,7 +5,7 @@ import { StatusQueue, ReviewActions, PermissionGate, NoAccessNotice } from "@/co
 
 /**
  * Reborrow review queue (KYC Approver) — returning borrowers flagged for a PAST overdue. Kept
- * SEPARATE from the fresh-applicant KYC queue: every reborrow by a borrower who was ever delinquent
+ * SEPARATE from the fresh-customer KYC queue: every reborrow by a borrower who was ever delinquent
  * lands here for a manual clear (→ pre-approved) or reject before it can proceed.
  */
 export default function KycReviewPage() {

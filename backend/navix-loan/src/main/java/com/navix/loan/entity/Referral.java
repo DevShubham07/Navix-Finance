@@ -16,7 +16,7 @@ import lombok.Setter;
  * A captured referrer→referred relationship. Created {@code PENDING} when a new borrower redeems a
  * code at signup; flips to {@code QUALIFIED} (with the qualifying loan) when that borrower's first
  * loan is disbursed, at which point two {@link ReferralPayout} rows are created. Unique on
- * {@code referred_applicant_id} — a person can be referred at most once.
+ * {@code referred_customer_id} — a person can be referred at most once.
  */
 @Entity
 @Table(name = "referral")
@@ -25,13 +25,13 @@ import lombok.Setter;
 @NoArgsConstructor
 public class Referral extends BaseAuditEntity {
 
-    /** The applicant who shared the code (the reward's first beneficiary). */
-    @Column(name = "referrer_applicant_id", nullable = false)
-    private Long referrerApplicantId;
+    /** The customer who shared the code (the reward's first beneficiary). */
+    @Column(name = "referrer_customer_id", nullable = false)
+    private Long referrerCustomerId;
 
     /** The new borrower who redeemed the code (unique — referred only once). */
-    @Column(name = "referred_applicant_id", nullable = false)
-    private Long referredApplicantId;
+    @Column(name = "referred_customer_id", nullable = false)
+    private Long referredCustomerId;
 
     /** The code that was redeemed (snapshot — the referrer's {@link ReferralCode#getCode()}). */
     @Column(name = "code_used", nullable = false, length = 16)

@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Result of running the risk engine for an applicant.
+ * Result of running the risk engine for an customer.
  *
  * TODO: persist the structured factor breakdown (currently a free-text/JSON
  * blob) once the scoring model is defined.
@@ -30,9 +30,9 @@ public class RiskAssessment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Applicant / borrower reference (FK to IAM user). */
-    @Column(name = "applicant_id", nullable = false)
-    private Long applicantId;
+    /** Customer / borrower reference (FK to IAM user). */
+    @Column(name = "customer_id", nullable = false)
+    private Long customerId;
 
     /** Assigned risk category A/B/C/D. */
     @Enumerated(EnumType.STRING)

@@ -14,7 +14,7 @@ import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type Appli
 /**
  * Customers — a borrower-centric roll-up across the loan aggregate. Every staff role can view it
  * (product decision); ADMIN can edit a customer and take lifecycle actions on the detail page.
- * Search matches name or applicant id (server-side).
+ * Search matches name or customer id (server-side).
  */
 export default function CustomersPage() {
   const [search, setSearch] = React.useState("");
@@ -39,7 +39,7 @@ export default function CustomersPage() {
           title="Customers"
           fileBase="navix-customers"
           columns={[
-            { header: "Applicant ID", value: (c: CustomerSummary) => c.applicantId },
+            { header: "Customer ID", value: (c: CustomerSummary) => c.customerId },
             { header: "Name", value: (c) => c.name ?? "" },
             { header: "PAN", value: (c) => c.pan ?? "" },
             { header: "Mobile", value: (c) => c.mobile ?? "" },
@@ -66,7 +66,7 @@ export default function CustomersPage() {
             aria-label="Search customers"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or applicant ID"
+            placeholder="Search by name or customer ID"
             leftIcon={<Search size={15} />}
             className="!mb-0"
             inputClassName="w-72"
@@ -97,15 +97,15 @@ export default function CustomersPage() {
               </thead>
               <tbody className="divide-y divide-line">
                 {rows.map((c) => (
-                  <tr key={c.applicantId} className="hover:bg-grey-50">
+                  <tr key={c.customerId} className="hover:bg-grey-50">
                     <td className="px-4 py-3">
-                      <Link href={`/staff/customers/${c.applicantId}`} className="flex items-center gap-2">
+                      <Link href={`/staff/customers/${c.customerId}`} className="flex items-center gap-2">
                         <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full bg-navy-tint text-navy">
                           <Contact size={15} />
                         </span>
                         <span className="min-w-0">
                           <span className="block font-semibold text-ink">{c.name ?? "—"}</span>
-                          <span className="block text-xs text-muted">#{c.applicantId} · {c.pan ?? "no PAN"}</span>
+                          <span className="block text-xs text-muted">#{c.customerId} · {c.pan ?? "no PAN"}</span>
                         </span>
                       </Link>
                     </td>
@@ -127,7 +127,7 @@ export default function CustomersPage() {
                       ) : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link href={`/staff/customers/${c.applicantId}`} className="inline-flex items-center gap-1 text-navy hover:underline">
+                      <Link href={`/staff/customers/${c.customerId}`} className="inline-flex items-center gap-1 text-navy hover:underline">
                         Open <ArrowRight size={14} />
                       </Link>
                     </td>

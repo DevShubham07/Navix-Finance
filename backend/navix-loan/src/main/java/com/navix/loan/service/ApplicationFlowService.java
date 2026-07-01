@@ -9,11 +9,11 @@ import com.navix.common.staff.StaffDirectory;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentStatus;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
@@ -57,7 +57,7 @@ public class ApplicationFlowService {
     // saved KYC profile (identity/salary reuse — no re-collection).
     private final LoanRepository loanRepository;
     private final PaymentRepository paymentRepository;
-    private final ApplicantProfileRepository profileRepository;
+    private final CustomerProfileRepository profileRepository;
     private final LoanMath loanMath;
     private final ApplicationEventPublisher eventPublisher;
     // Refer-a-friend: at the referred borrower's first disbursal this grants both parties their reward
@@ -83,10 +83,10 @@ public class ApplicationFlowService {
     // ---- creation & borrower steps -------------------------------------------------
 
     @Transactional
-    public LoanApplication createDraft(Long applicantId) {
-        assertCanStartNewApplication(applicantId);
+    public LoanApplication createDraft(Long customerId) {
+        assertCanStartNewApplication(customerId);
         LoanApplication app = new LoanApplication();
-        app.setApplicantId(applicantId);
+        app.setCustomerId(customerId);
         app.setStatus(ApplicationStatus.DRAFT);
         LoanApplication saved = applicationRepository.save(app);
         logEvent(saved, null, ApplicationStatus.DRAFT, "CREATE", null);
@@ -95,7 +95,7 @@ public class ApplicationFlowService {
 
     /**
      * Returning-borrower reborrow (W?): a repeat borrower starts a new advance reusing their saved
-     * KYC profile — no re-collection. The actor's id is the applicantId (the BFF injects it).
+     * KYC profile — no re-collection. The actor's id is the customerId (the BFF injects it).
      *
      * <p>One advance at a time: a borrower holding a live loan (ACTIVE/OVERDUE/DEFAULTED) — or with a
      * pre-loan application still moving through the pipeline — is <b>blocked</b> and must fully repay /
@@ -111,28 +111,28 @@ public class ApplicationFlowService {
      *       straight to the Disbursement Head). Credit score does <b>not</b> gate reborrow.</li>
      * </ul>
      *
-     * <p>The carried-over KYC is cloned into a fresh {@code applicant_profile} row for the new
+     * <p>The carried-over KYC is cloned into a fresh {@code customer_profile} row for the new
      * application ({@link #copyProfileForReborrow}) so both the re-review and the disbursement review see
      * the full picture; the salary day is reused from the prior application (never re-collected).
      */
     @Transactional
     public LoanApplication reborrow() {
         requireRole("BORROWER");
-        Long applicantId = Long.valueOf(ActorContext.get().id());
+        Long customerId = Long.valueOf(ActorContext.get().id());
 
         // One advance at a time: a live loan or an in-flight application blocks a fresh reborrow
         // (checked before the prior-profile lookup so ACTIVE_LOAN takes precedence).
-        assertCanStartNewApplication(applicantId);
+        assertCanStartNewApplication(customerId);
 
-        ApplicantProfile prior = latestProfileForApplicant(applicantId)
+        CustomerProfile prior = latestProfileForCustomer(customerId)
                 .orElseThrow(() -> new BusinessException("NO_PRIOR_LOAN",
                         "No previous application found to borrow against"));
         Long salaryPaise = prior.getMonthlySalaryPaise();
         Long eligibleLimit = salaryPaise != null ? loanMath.eligibleLimitPaise(salaryPaise) : null;
 
-        LoanApplication app = createDraft(applicantId);
+        LoanApplication app = createDraft(customerId);
         app.setEligibleLimit(eligibleLimit);
-        app.setSalaryCreditDay(latestSalaryCreditDay(applicantId)); // reuse the borrower's original salary day
+        app.setSalaryCreditDay(latestSalaryCreditDay(customerId)); // reuse the borrower's original salary day
 
         // Clone the carried-over KYC into a profile row of THIS application's own — needed for both the
         // fast-track disbursement review and the KYC re-review (no onboarding wizard runs on either path).
@@ -143,7 +143,7 @@ public class ApplicationFlowService {
         // score does not gate reborrow.
         // Action is "REBORROW" for both forks — the notification listener (NotificationEventListener
         // .mapAction) keys on the action + toStatus to pick REBORROW_REVIEW_PENDING vs REBORROW_PREAPPROVED.
-        if (hasPastDelinquency(applicantId)) {
+        if (hasPastDelinquency(customerId)) {
             transition(app, ApplicationStatus.REVIEW_PENDING, "REBORROW",
                     "Past delinquency - KYC re-review required");
         } else {
@@ -326,7 +326,7 @@ public class ApplicationFlowService {
         app.setLoanId(loan.getId());
         // Refer-a-friend reward: if this borrower was referred and this is their first disbursal, grant
         // both parties their ₹reward (creates the pending payouts) — atomic with the loan mint.
-        referralService.onLoanDisbursed(app.getApplicantId(), loan.getId());
+        referralService.onLoanDisbursed(app.getCustomerId(), loan.getId());
         transition(app, ApplicationStatus.ACTIVE, "ACTIVATE", "loanId=" + loan.getId());
     }
 
@@ -358,7 +358,7 @@ public class ApplicationFlowService {
             return;
         }
         if ("BORROWER".equals(role)) {
-            if (!String.valueOf(app.getApplicantId()).equals(actor.id())) {
+            if (!String.valueOf(app.getCustomerId()).equals(actor.id())) {
                 throw new BusinessException("FORBIDDEN", "A borrower can only cancel their own application");
             }
             return;
@@ -410,8 +410,8 @@ public class ApplicationFlowService {
     @Transactional(readOnly = true)
     public List<LoanApplication> myApplications() {
         requireRole("BORROWER");
-        Long applicantId = Long.valueOf(ActorContext.get().id());
-        return applicationRepository.findByApplicantId(applicantId).stream()
+        Long customerId = Long.valueOf(ActorContext.get().id());
+        return applicationRepository.findByCustomerId(customerId).stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .toList();
     }
@@ -454,7 +454,7 @@ public class ApplicationFlowService {
         // data is carried inline — the async listener has no ActorContext/transaction. This single
         // publish covers every transition (incl. same-status APPLY → LOAN_APPLIED).
         eventPublisher.publishEvent(new ApplicationTransitionedEvent(
-                app.getId(), app.getApplicantId(), app.getLoanId(),
+                app.getId(), app.getCustomerId(), app.getLoanId(),
                 from != null ? from.name() : null, to != null ? to.name() : null,
                 action, app.getAssignedExecutiveId(), actor.id(), actor.role(), event.getAt()));
     }
@@ -482,8 +482,8 @@ public class ApplicationFlowService {
      * (they must fully repay it first) or while a previous pre-disbursement application is still in
      * flight. Server-enforced so a direct create call can't bypass the UI gating.
      */
-    private void assertCanStartNewApplication(Long applicantId) {
-        List<LoanApplication> apps = applicationRepository.findByApplicantId(applicantId);
+    private void assertCanStartNewApplication(Long customerId) {
+        List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
         if (apps.stream().anyMatch(a -> LIVE_LOAN_STATUSES.contains(a.getStatus()))) {
             throw new BusinessException("ACTIVE_LOAN", "Repay your current advance before borrowing again");
         }
@@ -493,13 +493,13 @@ public class ApplicationFlowService {
     }
 
     /**
-     * Whether the applicant has ever been delinquent — a loan currently/ever overdue or in
+     * Whether the customer has ever been delinquent — a loan currently/ever overdue or in
      * collections, or one that was ultimately repaid <em>late</em> (now closed). Such a borrower is
      * re-reviewed by a KYC approver on every reborrow.
      */
-    private boolean hasPastDelinquency(Long applicantId) {
+    private boolean hasPastDelinquency(Long customerId) {
         LocalDate today = LocalDate.now();
-        for (Loan loan : loanRepository.findByApplicantId(applicantId)) {
+        for (Loan loan : loanRepository.findByCustomerId(customerId)) {
             if (DELINQUENT_LOAN_STATUSES.contains(loan.effectiveStatus(today))) {
                 return true;
             }
@@ -511,17 +511,17 @@ public class ApplicationFlowService {
     }
 
     /**
-     * Clone a prior KYC profile into a fresh {@code applicant_profile} row keyed to the new (reborrow)
+     * Clone a prior KYC profile into a fresh {@code customer_profile} row keyed to the new (reborrow)
      * application. Carries over identity, employment, salary, the credit brief AND the prior penny-drop
      * verification (the bank account is unchanged and the reborrow flow no longer re-runs penny-drop) so
      * the borrower needn't re-enter or re-verify anything and staff see the full picture. No-op if a
      * profile already exists for the new application (defensive; a fresh draft never has one).
      */
-    private void copyProfileForReborrow(ApplicantProfile prior, Long newAppId) {
+    private void copyProfileForReborrow(CustomerProfile prior, Long newAppId) {
         if (profileRepository.findByApplicationId(newAppId).isPresent()) {
             return;
         }
-        ApplicantProfile copy = new ApplicantProfile();
+        CustomerProfile copy = new CustomerProfile();
         copy.setApplicationId(newAppId);
         copy.setFullName(prior.getFullName());
         copy.setPan(prior.getPan());
@@ -560,18 +560,18 @@ public class ApplicationFlowService {
                         && p.getPaidOn() != null && p.getPaidOn().isAfter(loan.getDueDate()));
     }
 
-    /** The applicant's most recent saved KYC profile (newest application first), if any. */
-    private Optional<ApplicantProfile> latestProfileForApplicant(Long applicantId) {
-        return applicationRepository.findByApplicantId(applicantId).stream()
+    /** The customer's most recent saved KYC profile (newest application first), if any. */
+    private Optional<CustomerProfile> latestProfileForCustomer(Long customerId) {
+        return applicationRepository.findByCustomerId(customerId).stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
                 .filter(Objects::nonNull)
                 .findFirst();
     }
 
-    /** The salary-credit day from the applicant's most recent application that captured one. */
-    private Integer latestSalaryCreditDay(Long applicantId) {
-        return applicationRepository.findByApplicantId(applicantId).stream()
+    /** The salary-credit day from the customer's most recent application that captured one. */
+    private Integer latestSalaryCreditDay(Long customerId) {
+        return applicationRepository.findByCustomerId(customerId).stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(LoanApplication::getSalaryCreditDay)
                 .filter(Objects::nonNull)

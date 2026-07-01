@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface LoanApplicationRepository extends JpaRepository<LoanApplication, Long> {
 
-    List<LoanApplication> findByApplicantId(Long applicantId);
+    List<LoanApplication> findByCustomerId(Long customerId);
 
     /** The application that minted a given loan (set at activation); for loan→borrower resolution. */
     Optional<LoanApplication> findByLoanId(Long loanId);

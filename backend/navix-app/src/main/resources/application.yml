@@ -61,6 +61,21 @@ navix:
     # otherwise applies. Leave blank to use the bucket default.
     kms-key-id: ${NAVIX_S3_KMS_KEY_ID:}
 
+  # Auth tokens (HS256 JWT). secret is SHA-256'd into the HMAC key. Borrowers get a longer TTL
+  # (7-day "remember me"); staff keep the shorter one. Set a strong AUTH_SECRET in real environments.
+  auth:
+    secret: ${AUTH_SECRET:navix-local-dev-secret-change-me}
+    ttl-seconds: ${AUTH_TTL_SECONDS:86400}
+    borrower-ttl-seconds: ${BORROWER_AUTH_TTL_SECONDS:604800}
+
+  # App-level URLs. frontend-base-url builds the password-reset links carried in emails.
+  app:
+    frontend-base-url: ${NAVIX_APP_BASE_URL:http://localhost:3000}
+
+  # Daily payment-reminder sweep (PaymentReminderScheduler). Spring cron: sec min hour dom mon dow.
+  reminders:
+    cron: ${NAVIX_REMINDERS_CRON:0 0 9 * * *}
+
   # Refer-a-friend program. enabled gates the whole feature; reward-paise is the per-person reward
   # (₹200 = 20000 paise). Read at boot — override per env via the SSM params
   # /navix/<env>/navix/referral/{enabled,reward-paise} (a change needs a restart/redeploy).
@@ -98,11 +113,13 @@ navix:
   # philosophy): in-app is fully persisted, SMS reuses the gateway (mock-aware), and email logs via
   # LogEmailClient. Flip email to real SMTP with NAVIX_EMAIL_PROVIDER=smtp + spring.mail.* configured.
   email:
-    provider: ${NAVIX_EMAIL_PROVIDER:log}      # log | smtp | ses
+    provider: ${NAVIX_EMAIL_PROVIDER:log}      # log | smtp | ses | resend
     enabled: ${NAVIX_EMAIL_ENABLED:true}
     from: ${NAVIX_EMAIL_FROM:NAVIX Finance <no-reply@navixfinance.example>}
     # SES only: tag sends with a SES configuration set so bounce/complaint events fire to SNS->SQS.
     configuration-set: ${NAVIX_SES_CONFIG_SET:}
+    # Resend only: API key for the Resend HTTP provider (interim while SES is sandbox-blocked).
+    resend-api-key: ${RESEND_API_KEY:}
   # SES bounce/complaint ingestion (SES config-set -> SNS -> SQS -> SesEventSqsListener). Off by
   # default so the app boots without an SQS queue; flip on in AWS environments.
   ses:

@@ -5,6 +5,7 @@ import com.navix.common.notification.RecipientType;
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.notification.event.CollectionCaseOpenedEvent;
 import com.navix.common.notification.event.KycReminderEvent;
+import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
 import com.navix.common.notification.event.ReferralRewardCreditedEvent;
 import com.navix.common.notification.event.RepaymentRecordedEvent;
@@ -18,6 +19,7 @@ import com.navix.notification.catalog.NotificationType;
 import com.navix.notification.dispatch.NotificationContext;
 import com.navix.notification.dispatch.NotificationDispatcher;
 import com.navix.notification.template.NotificationFormat;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -47,7 +49,7 @@ public class NotificationEventListener {
             return; // CREATE / AUTO_ROUTE / VALIDATE_SUCCESS are deliberate no-ops
         }
         dispatcher.dispatch(type, NotificationContext.builder()
-                .applicantId(e.applicantId())
+                .customerId(e.customerId())
                 .applicationId(e.applicationId())
                 .loanId(e.loanId())
                 .assignedExecutiveId(e.assignedExecutiveId())
@@ -61,7 +63,7 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onKycReminder(KycReminderEvent e) {
         dispatcher.dispatch(NotificationType.KYC_REMINDER, NotificationContext.builder()
-                .applicantId(e.applicantId())
+                .customerId(e.customerId())
                 .applicationId(e.applicationId())
                 .put("pendingSteps", e.pendingSteps())
                 .build());
@@ -71,7 +73,7 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onRepaymentRecorded(RepaymentRecordedEvent e) {
         dispatcher.dispatch(NotificationType.REPAYMENT_RECORDED, NotificationContext.builder()
-                .applicantId(e.applicantId())
+                .customerId(e.customerId())
                 .loanId(e.loanId())
                 .put("amount", NotificationFormat.inr(e.amountPaise()))
                 .build());
@@ -84,7 +86,7 @@ public class NotificationEventListener {
             return; // LOAN_CLOSED (the REPAID transition) covers the closing payment
         }
         dispatcher.dispatch(NotificationType.REPAYMENT_VERIFIED, NotificationContext.builder()
-                .applicantId(e.applicantId())
+                .customerId(e.customerId())
                 .loanId(e.loanId())
                 .put("amount", NotificationFormat.inr(e.amountPaise()))
                 .build());
@@ -94,9 +96,26 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onRepaymentRejected(RepaymentRejectedEvent e) {
         dispatcher.dispatch(NotificationType.REPAYMENT_REJECTED, NotificationContext.builder()
-                .applicantId(e.applicantId())
+                .customerId(e.customerId())
                 .loanId(e.loanId())
                 .put("amount", NotificationFormat.inr(e.amountPaise()))
+                .build());
+    }
+
+    /**
+     * Time-driven payment reminder (from the daily {@code PaymentReminderScheduler}). A plain
+     * {@code @Async @EventListener} — there is no business transaction to wait on, so the
+     * {@code AFTER_COMMIT} phase used elsewhere would never fire.
+     */
+    @Async("notificationExecutor")
+    @EventListener
+    public void onPaymentReminder(PaymentReminderEvent e) {
+        NotificationType type = e.overdue() ? NotificationType.PAYMENT_OVERDUE : NotificationType.PAYMENT_DUE_SOON;
+        dispatcher.dispatch(type, NotificationContext.builder()
+                .customerId(e.customerId())
+                .loanId(e.loanId())
+                .put("amount", NotificationFormat.inr(e.outstandingPaise()))
+                .put(e.overdue() ? "daysOverdue" : "daysToDue", e.days())
                 .build());
     }
 
@@ -104,7 +123,7 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onCollectionCaseOpened(CollectionCaseOpenedEvent e) {
         dispatcher.dispatch(NotificationType.COLLECTION_CASE_OPENED, NotificationContext.builder()
-                .applicantId(e.applicantId())
+                .customerId(e.customerId())
                 .loanId(e.loanId())
                 .caseId(e.caseId())
                 .build());
@@ -114,7 +133,7 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onSettlementProposed(SettlementProposedEvent e) {
         dispatcher.dispatch(NotificationType.SETTLEMENT_PROPOSED, NotificationContext.builder()
-                .applicantId(e.applicantId())
+                .customerId(e.customerId())
                 .loanId(e.loanId())
                 .caseId(e.caseId())
                 .put("settlementAmount", NotificationFormat.inr(e.amountPaise()))
@@ -125,7 +144,7 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onSettlementApproved(SettlementApprovedEvent e) {
         dispatcher.dispatch(NotificationType.SETTLEMENT_APPROVED, NotificationContext.builder()
-                .applicantId(e.applicantId())
+                .customerId(e.customerId())
                 .loanId(e.loanId())
                 .caseId(e.caseId())
                 .put("settlementAmount", NotificationFormat.inr(e.amountPaise()))
@@ -158,7 +177,7 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onReferralRewardCredited(ReferralRewardCreditedEvent e) {
         dispatcher.dispatch(NotificationType.REFERRAL_REWARD_CREDITED, NotificationContext.builder()
-                .applicantId(e.beneficiaryApplicantId())
+                .customerId(e.beneficiaryCustomerId())
                 .put("amount", NotificationFormat.inr(e.amountPaise()))
                 .put("txnRef", e.txnRef())
                 .build());

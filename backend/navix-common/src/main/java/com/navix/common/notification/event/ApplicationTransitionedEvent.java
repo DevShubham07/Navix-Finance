@@ -11,7 +11,7 @@ import java.time.Instant;
  */
 public record ApplicationTransitionedEvent(
         Long applicationId,
-        Long applicantId,
+        Long customerId,
         Long loanId,
         String fromStatus,
         String toStatus,

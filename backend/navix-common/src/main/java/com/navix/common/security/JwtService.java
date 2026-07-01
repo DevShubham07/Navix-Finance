@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Issues and verifies the HS256 JWTs that carry NAVIX identity. Two audiences —
- * {@code staff} (subject = staffId) and {@code borrower} (subject = applicantId) —
+ * {@code staff} (subject = staffId) and {@code borrower} (subject = customerId) —
  * stay in separate namespaces (a borrower token can never satisfy a staff route).
  *
  * <p>The signing key is derived (SHA-256) from {@code navix.auth.secret} so any
@@ -30,28 +30,36 @@ public class JwtService {
 
     private final SecretKey key;
     private final long ttlSeconds;
+    private final long borrowerTtlSeconds;
 
     public JwtService(
             @Value("${navix.auth.secret:navix-local-dev-secret-change-me}") String secret,
-            @Value("${navix.auth.ttl-seconds:86400}") long ttlSeconds) {
+            @Value("${navix.auth.ttl-seconds:86400}") long ttlSeconds,
+            @Value("${navix.auth.borrower-ttl-seconds:604800}") long borrowerTtlSeconds) {
         this.key = Keys.hmacShaKeyFor(sha256(secret));
         this.ttlSeconds = ttlSeconds;
+        this.borrowerTtlSeconds = borrowerTtlSeconds;
     }
 
-    /** A verified token's identity. {@code id} is the actor id (staffId / applicantId). */
+    /** A verified token's identity. {@code id} is the actor id (staffId / customerId). */
     public record Principal(String id, String name, String role, String audience) {
     }
 
-    /** Issue a signed token. {@code role} is the actor role; {@code audience} = staff|borrower. */
+    /**
+     * Issue a signed token. {@code role} is the actor role; {@code audience} = staff|borrower.
+     * Borrower tokens get the longer {@code borrower-ttl-seconds} (7-day "remember me"); staff keep
+     * the shorter {@code ttl-seconds}.
+     */
     public String issue(String subjectId, String name, String role, String audience) {
         long now = System.currentTimeMillis();
+        long ttl = AUDIENCE_BORROWER.equals(audience) ? borrowerTtlSeconds : ttlSeconds;
         return Jwts.builder()
                 .subject(subjectId)
                 .claim("name", name)
                 .claim("role", role)
                 .audience().add(audience).and()
                 .issuedAt(new Date(now))
-                .expiration(new Date(now + ttlSeconds * 1000))
+                .expiration(new Date(now + ttl * 1000))
                 .signWith(key)
                 .compact();
     }

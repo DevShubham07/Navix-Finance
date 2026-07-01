@@ -32,7 +32,7 @@ class RiskScoringServiceTest {
 
     private IncomeProfile profile(long salaryPaise, Integer uanTenure) {
         IncomeProfile p = new IncomeProfile();
-        p.setApplicantId(7L);
+        p.setCustomerId(7L);
         p.setMonthlySalary(salaryPaise);
         p.setUanTenure(uanTenure);
         return p;
@@ -72,6 +72,6 @@ class RiskScoringServiceTest {
         assertThat(ra.getCategory()).isEqualTo(RiskCategory.A);
         assertThat(ra.getLimitGranted()).isEqualTo(1_000_000L);
         assertThat(ra.getScore()).isGreaterThanOrEqualTo(75);
-        assertThat(ra.getApplicantId()).isEqualTo(7L);
+        assertThat(ra.getCustomerId()).isEqualTo(7L);
     }
 }

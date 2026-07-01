@@ -54,7 +54,7 @@ export interface Settlement {
 export interface CollectionCase {
   id: string;
   loanId: string;
-  applicantId: string;
+  customerId: string;
   outstanding: number;
   daysPastDue: number;
   bucket: DpdBucket;

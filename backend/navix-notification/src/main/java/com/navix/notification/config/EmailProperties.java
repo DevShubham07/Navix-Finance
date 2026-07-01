@@ -4,13 +4,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Email configuration ({@code navix.email.*}). {@code provider} selects the {@code EmailClient}
- * ({@code log} default, or {@code smtp}/{@code ses}); {@code enabled} gates delivery; {@code from} is
- * the sender address; {@code configurationSet} (SES only, optional) tags sends with a SES
- * configuration set so bounce/complaint events are emitted to SNS. Defaults are applied so the engine
- * works with no config present.
+ * ({@code log} default, or {@code smtp}/{@code ses}/{@code resend}); {@code enabled} gates delivery;
+ * {@code from} is the sender address; {@code configurationSet} (SES only, optional) tags sends with a
+ * SES configuration set so bounce/complaint events are emitted to SNS; {@code resendApiKey} (Resend
+ * only) authenticates the Resend HTTP API. Defaults are applied so the engine works with no config
+ * present.
  */
 @ConfigurationProperties(prefix = "navix.email")
-public record EmailProperties(String provider, Boolean enabled, String from, String configurationSet) {
+public record EmailProperties(String provider, Boolean enabled, String from, String configurationSet,
+                              String resendApiKey) {
 
     public EmailProperties {
         if (provider == null || provider.isBlank()) {
@@ -24,6 +26,9 @@ public record EmailProperties(String provider, Boolean enabled, String from, Str
         }
         if (configurationSet != null && configurationSet.isBlank()) {
             configurationSet = null;
+        }
+        if (resendApiKey != null && resendApiKey.isBlank()) {
+            resendApiKey = null;
         }
     }
 }

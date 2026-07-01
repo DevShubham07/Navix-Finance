@@ -3,10 +3,10 @@ package com.navix.loan.service;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
 import com.navix.loan.domain.LoanStatus;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +20,7 @@ import java.util.Optional;
 /**
  * Loan-module implementation of the {@link LoanDirectory} port: resolves a real
  * loan plus its borrower (via the application that minted it and that application's
- * KYC {@link ApplicantProfile}) into a cross-module {@link LoanSummary}. Mirrors
+ * KYC {@link CustomerProfile}) into a cross-module {@link LoanSummary}. Mirrors
  * {@code StaffDirectoryAdapter} — wired by component scan, consumed by collections.
  */
 @Component
@@ -32,7 +32,7 @@ public class LoanDirectoryAdapter implements LoanDirectory {
 
     private final LoanRepository loanRepository;
     private final LoanApplicationRepository applicationRepository;
-    private final ApplicantProfileRepository profileRepository;
+    private final CustomerProfileRepository profileRepository;
     private final RepaymentService repaymentService;
 
     @Override
@@ -71,7 +71,7 @@ public class LoanDirectoryAdapter implements LoanDirectory {
     private LoanSummary toSummary(Loan loan) {
         LoanApplication app = applicationRepository.findByLoanId(loan.getId()).orElse(null);
         Long applicationId = app != null ? app.getId() : null;
-        ApplicantProfile profile = applicationId != null
+        CustomerProfile profile = applicationId != null
                 ? profileRepository.findByApplicationId(applicationId).orElse(null)
                 : null;
         // Effective status (ACTIVE → OVERDUE past due) and the penalty/prepayment-aware balance, so
@@ -80,7 +80,7 @@ public class LoanDirectoryAdapter implements LoanDirectory {
         long owed = repaymentService.outstandingAsOf(loan.getId(), null);
         return new LoanSummary(
                 loan.getId(),
-                loan.getApplicantId(),
+                loan.getCustomerId(),
                 applicationId,
                 effective != null ? effective.name() : null,
                 loan.getPrincipal(),

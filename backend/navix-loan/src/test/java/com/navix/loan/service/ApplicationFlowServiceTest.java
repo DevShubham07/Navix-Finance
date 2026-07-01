@@ -13,12 +13,12 @@ import com.navix.common.staff.StaffDirectory;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentStatus;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
@@ -51,7 +51,7 @@ class ApplicationFlowServiceTest {
     @Mock
     private PaymentRepository paymentRepository;
     @Mock
-    private ApplicantProfileRepository profileRepository;
+    private CustomerProfileRepository profileRepository;
     @Mock
     private com.navix.common.risk.RiskPort riskPort;
     @Mock
@@ -88,7 +88,7 @@ class ApplicationFlowServiceTest {
     private LoanApplication appAt(ApplicationStatus status) {
         LoanApplication app = new LoanApplication();
         app.setId(1L);
-        app.setApplicantId(7L);
+        app.setCustomerId(7L);
         app.setAmountRequested(1_000_000L);
         app.setStatus(status);
         lenient().when(applicationRepository.findById(1L)).thenReturn(Optional.of(app));
@@ -233,10 +233,10 @@ class ApplicationFlowServiceTest {
     void reborrowCleanHistoryIsPreApproved() {
         actor("7", "BORROWER");
         LoanApplication prior = priorApp(); // CLOSED, salary day 30
-        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(prior));
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
         when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
         Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
-        when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(closed));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
         when(paymentRepository.findByLoanId(50L)).thenReturn(List.of()); // paid on time
 
         LoanApplication result = flow.reborrow();
@@ -250,10 +250,10 @@ class ApplicationFlowServiceTest {
     @Test
     void reborrowWithLateRepaymentNeedsReview() {
         actor("7", "BORROWER");
-        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(priorApp()));
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
         when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
         Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(10));
-        when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(closed));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
         Payment late = new Payment();
         late.setLoanId(50L);
         late.setStatus(PaymentStatus.VERIFIED);
@@ -268,12 +268,12 @@ class ApplicationFlowServiceTest {
     @Test
     void reborrowCleanHistoryLowStarStillPreApproved() {
         actor("7", "BORROWER");
-        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(priorApp()));
-        ApplicantProfile lowStar = priorProfile();
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
+        CustomerProfile lowStar = priorProfile();
         lowStar.setCreditStarRating(new BigDecimal("3.5")); // below the old 4.0★ threshold — no longer gates
         when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(lowStar));
         Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
-        when(loanRepository.findByApplicantId(7L)).thenReturn(List.of(closed));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
         when(paymentRepository.findByLoanId(50L)).thenReturn(List.of()); // paid on time
 
         assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
@@ -285,9 +285,9 @@ class ApplicationFlowServiceTest {
         actor("7", "BORROWER");
         LoanApplication pending = new LoanApplication();
         pending.setId(10L);
-        pending.setApplicantId(7L);
+        pending.setCustomerId(7L);
         pending.setStatus(ApplicationStatus.KYC_PENDING); // not yet a loan
-        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(pending));
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(pending));
 
         assertThatThrownBy(() -> flow.reborrow())
                 .isInstanceOf(BusinessException.class)
@@ -303,9 +303,9 @@ class ApplicationFlowServiceTest {
         actor("7", "BORROWER");
         LoanApplication activeApp = new LoanApplication();
         activeApp.setId(10L);
-        activeApp.setApplicantId(7L);
+        activeApp.setCustomerId(7L);
         activeApp.setStatus(ApplicationStatus.ACTIVE); // a live loan blocks a fresh reborrow
-        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(activeApp));
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(activeApp));
 
         assertThatThrownBy(() -> flow.reborrow())
                 .isInstanceOf(BusinessException.class)
@@ -317,9 +317,9 @@ class ApplicationFlowServiceTest {
         actor("7", "BORROWER");
         LoanApplication prior = new LoanApplication();
         prior.setId(10L);
-        prior.setApplicantId(7L);
+        prior.setCustomerId(7L);
         prior.setStatus(ApplicationStatus.CANCELLED); // terminal, but no profile
-        when(applicationRepository.findByApplicantId(7L)).thenReturn(List.of(prior));
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
         when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> flow.reborrow())
@@ -376,14 +376,14 @@ class ApplicationFlowServiceTest {
     private LoanApplication priorApp() {
         LoanApplication prior = new LoanApplication();
         prior.setId(10L);
-        prior.setApplicantId(7L);
+        prior.setCustomerId(7L);
         prior.setStatus(ApplicationStatus.CLOSED); // terminal — reborrow allowed
         prior.setSalaryCreditDay(30);
         return prior;
     }
 
-    private ApplicantProfile priorProfile() {
-        ApplicantProfile p = new ApplicantProfile();
+    private CustomerProfile priorProfile() {
+        CustomerProfile p = new CustomerProfile();
         p.setApplicationId(10L);
         p.setMonthlySalaryPaise(6_000_000L); // ₹60,000
         p.setCreditStarRating(new BigDecimal("4.0")); // good standing → pre-approvable
@@ -393,7 +393,7 @@ class ApplicationFlowServiceTest {
     private Loan loanAt(Long id, LoanStatus status, LocalDate dueDate) {
         Loan loan = new Loan();
         loan.setId(id);
-        loan.setApplicantId(7L);
+        loan.setCustomerId(7L);
         loan.setStatus(status);
         loan.setDueDate(dueDate);
         return loan;

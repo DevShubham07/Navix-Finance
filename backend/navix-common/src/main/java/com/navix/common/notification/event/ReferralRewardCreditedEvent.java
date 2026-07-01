@@ -11,8 +11,8 @@ import java.time.Instant;
  */
 public record ReferralRewardCreditedEvent(
         Long payoutId,
-        Long beneficiaryApplicantId,
-        Long counterpartyApplicantId,
+        Long beneficiaryCustomerId,
+        Long counterpartyCustomerId,
         String beneficiaryRole,
         long amountPaise,
         String txnRef,

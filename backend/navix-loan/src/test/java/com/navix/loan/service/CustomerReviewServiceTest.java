@@ -14,9 +14,9 @@ import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.util.Optional;
@@ -28,17 +28,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class ApplicantReviewServiceTest {
+class CustomerReviewServiceTest {
 
     private static final long APP_ID = 4L;
-    private static final long APPLICANT_ID = 7L;
+    private static final long CUSTOMER_ID = 7L;
     private static final CurrentActor BORROWER =
             new CurrentActor("9001001", "Asha Verma", "BORROWER");
 
     @Mock
     private LoanApplicationRepository applicationRepository;
     @Mock
-    private ApplicantProfileRepository profileRepository;
+    private CustomerProfileRepository profileRepository;
     @Mock
     private ApplicationDocumentRepository documentRepository;
     @Mock
@@ -48,11 +48,11 @@ class ApplicantReviewServiceTest {
     @Mock
     private EligibilityService eligibilityService;
 
-    private ApplicantReviewService service;
+    private CustomerReviewService service;
 
     @BeforeEach
     void setUp() {
-        service = new ApplicantReviewService(applicationRepository, profileRepository, documentRepository,
+        service = new CustomerReviewService(applicationRepository, profileRepository, documentRepository,
                 storage, verificationInvalidation, eligibilityService);
         ActorContext.set(BORROWER);
     }
@@ -67,17 +67,17 @@ class ApplicantReviewServiceTest {
                 null, null, null, null, null, null, null);
     }
 
-    /** A persisted application owned by APPLICANT_ID — saveProfile now resolves the applicant via findById. */
+    /** A persisted application owned by CUSTOMER_ID — saveProfile now resolves the customer via findById. */
     private LoanApplication application() {
         LoanApplication app = new LoanApplication();
         app.setId(APP_ID);
-        app.setApplicantId(APPLICANT_ID);
+        app.setCustomerId(CUSTOMER_ID);
         return app;
     }
 
     @Test
     void editOwnProfileInvalidatesChecksAndRecomputesEligibilityOnSalaryChange() {
-        ApplicantProfile existing = new ApplicantProfile();
+        CustomerProfile existing = new CustomerProfile();
         existing.setApplicationId(APP_ID);
         existing.setAddress("Old address");
         existing.setMonthlySalaryPaise(5_000_000L);
@@ -95,13 +95,13 @@ class ApplicantReviewServiceTest {
         // ADDRESS + SALARY checks reset; eligibility recomputed from the new salary.
         verify(verificationInvalidation).invalidateForFields(eq(APP_ID),
                 argThat(s -> s.contains("address") && s.contains("monthlySalaryPaise")));
-        verify(eligibilityService).recomputeForApplicant(APPLICANT_ID, 6_000_000L);
+        verify(eligibilityService).recomputeForCustomer(CUSTOMER_ID, 6_000_000L);
     }
 
     @Test
     void rejectsDuplicatePan() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-        when(profileRepository.existsPanForOtherApplicant("ABCDE1234F", APPLICANT_ID)).thenReturn(true);
+        when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", null, null)))
                 .isInstanceOf(BusinessException.class)
@@ -111,8 +111,8 @@ class ApplicantReviewServiceTest {
     @Test
     void rejectsDuplicateAadhaar() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-        when(profileRepository.existsPanForOtherApplicant("ABCDE1234F", APPLICANT_ID)).thenReturn(false);
-        when(profileRepository.existsAadhaarForOtherApplicant("123456789012", APPLICANT_ID)).thenReturn(true);
+        when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(false);
+        when(profileRepository.existsAadhaarForOtherCustomer("123456789012", CUSTOMER_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "1234 5678 9012", null)))
                 .isInstanceOf(BusinessException.class)
@@ -122,9 +122,9 @@ class ApplicantReviewServiceTest {
     @Test
     void rejectsDuplicateMobile() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-        when(profileRepository.existsPanForOtherApplicant("ABCDE1234F", APPLICANT_ID)).thenReturn(false);
-        when(profileRepository.existsAadhaarForOtherApplicant("123456789012", APPLICANT_ID)).thenReturn(false);
-        when(profileRepository.existsMobileForOtherApplicant("9876543210", APPLICANT_ID)).thenReturn(true);
+        when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(false);
+        when(profileRepository.existsAadhaarForOtherCustomer("123456789012", CUSTOMER_ID)).thenReturn(false);
+        when(profileRepository.existsMobileForOtherCustomer("9876543210", CUSTOMER_ID)).thenReturn(true);
 
         assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "123456789012", "98765 43210")))
                 .isInstanceOf(BusinessException.class)
@@ -143,14 +143,14 @@ class ApplicantReviewServiceTest {
     @Test
     void acceptsUniqueIdentityAndNormalises() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-        when(profileRepository.existsPanForOtherApplicant("ABCDE1234F", APPLICANT_ID)).thenReturn(false);
-        when(profileRepository.existsAadhaarForOtherApplicant("123456789012", APPLICANT_ID)).thenReturn(false);
-        when(profileRepository.existsMobileForOtherApplicant("9876543210", APPLICANT_ID)).thenReturn(false);
+        when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(false);
+        when(profileRepository.existsAadhaarForOtherCustomer("123456789012", CUSTOMER_ID)).thenReturn(false);
+        when(profileRepository.existsMobileForOtherCustomer("9876543210", CUSTOMER_ID)).thenReturn(false);
         when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         // lower-case PAN, spaced Aadhaar, +91-prefixed mobile -> all normalised
-        ApplicantProfile saved = service.saveProfile(APP_ID, req("abcde1234f", "1234-5678-9012", "+91 98765 43210"));
+        CustomerProfile saved = service.saveProfile(APP_ID, req("abcde1234f", "1234-5678-9012", "+91 98765 43210"));
 
         assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
         assertThat(saved.getPan()).isEqualTo("ABCDE1234F");

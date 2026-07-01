@@ -9,11 +9,11 @@ import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.VerificationPort;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
@@ -80,7 +80,7 @@ public class ApplicationVerificationService {
     static final double NAME_MATCH_THRESHOLD = 0.60;
 
     private final ApplicationVerificationRepository verificationRepo;
-    private final ApplicantProfileRepository profileRepo;
+    private final CustomerProfileRepository profileRepo;
     private final LoanApplicationRepository applicationRepo;
     private final ApplicationDocumentRepository documentRepo;
     private final VerificationPort verification;
@@ -103,7 +103,7 @@ public class ApplicationVerificationService {
     }
 
     /** One row in the cross-application pending-API dashboard (Phase 3.3). */
-    public record VerificationOverviewRow(Long applicationId, Long applicantId, String borrowerName,
+    public record VerificationOverviewRow(Long applicationId, Long customerId, String borrowerName,
                                           String checkType, String status, String provider,
                                           String message, Instant updatedAt) {
     }
@@ -124,7 +124,7 @@ public class ApplicationVerificationService {
         }
         String ref = ref(appId, PAN);
         VerificationPort.PanCheck r = verification.verifyPan(pan, ref);
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         profile.setPanVerified(r.valid());
         profile.setAadhaarLinked(r.aadhaarLinked());
         // Capture the date of birth the PAN record returns so it's part of the borrower's stored
@@ -157,7 +157,7 @@ public class ApplicationVerificationService {
         if (existing.isPresent()) {
             return view(existing.get());
         }
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         String ref = ref(appId, EMAIL);
         VerificationPort.EmailCheck r = verification.verifyEmail(
                 email, nz(profile.getFullName()), nz(profile.getEmployer()), ref);
@@ -191,7 +191,7 @@ public class ApplicationVerificationService {
         requireApplication(appId);
         String ref = ref(appId, ADDRESS);
         VerificationPort.AddressCheck r = verification.verifyAddress(lat, lng, ref);
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         // The geocoder's within-India flag is unreliable (valid Indian addresses sometimes resolve
         // false), so it no longer gates the step — a successfully resolved address PASSes. The raw
         // flag is still recorded in the audit `derived` for staff. Only an address that fails to
@@ -219,7 +219,7 @@ public class ApplicationVerificationService {
         if (manualAddress == null || manualAddress.isBlank()) {
             throw new BusinessException("ADDRESS_REQUIRED", "Provide coordinates or a manual address");
         }
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         profile.setAddress(manualAddress);
         profile.setAddressVerified(Boolean.FALSE);
         profileRepo.save(profile);
@@ -291,7 +291,7 @@ public class ApplicationVerificationService {
     public StepResult digilockerInit(Long appId, String redirectUrl) {
         requireApplication(appId);
         VerificationPort.DigiLockerSession s = verification.digilockerInit(redirectUrl, 20, true);
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         profile.setDigilockerClientId(s.clientId());
         profileRepo.save(profile);
 
@@ -305,7 +305,7 @@ public class ApplicationVerificationService {
     /** Poll the DigiLocker session status. */
     @Transactional(readOnly = true)
     public StepResult digilockerStatus(Long appId) {
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         String clientId = profile.getDigilockerClientId();
         if (clientId == null) {
             throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
@@ -342,7 +342,7 @@ public class ApplicationVerificationService {
         if (existing.isPresent()) {
             return view(existing.get());
         }
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         String clientId = profile.getDigilockerClientId();
         if (clientId == null) {
             throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
@@ -423,7 +423,7 @@ public class ApplicationVerificationService {
         if (existing.isPresent()) {
             return new StepResult(BUREAU, existing.get().getStatus(), existing.get().getMessage(), Map.of());
         }
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         String ref = ref(appId, BUREAU);
         VerificationPort.BureauCheck r = verification.pullBureau(
                 profile.getPan(), nz(profile.getFullName()), nz(profile.getMobile()),
@@ -457,7 +457,7 @@ public class ApplicationVerificationService {
         if (monthlySalaryPaise <= 0) {
             throw new BusinessException("INVALID_SALARY", "Monthly salary must be positive");
         }
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         profile.setMonthlySalaryPaise(monthlySalaryPaise);
         profileRepo.save(profile);
 
@@ -494,7 +494,7 @@ public class ApplicationVerificationService {
         if (existing.isPresent()) {
             return view(existing.get());
         }
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         String ref = ref(appId, PENNY_DROP);
         VerificationPort.PennyDropCheck r = verification.pennyDrop(accountNumber, ifsc, ref);
         double nameMatch = nameSimilarity(profile.getFullName(), r.fullName());
@@ -551,7 +551,7 @@ public class ApplicationVerificationService {
     /** Record agreement consent (the 3 documents the borrower accepted). */
     @Transactional
     public StepResult recordAgreement(Long appId, List<String> versions) {
-        ApplicantProfile profile = profile(appId);
+        CustomerProfile profile = profile(appId);
         profile.setAgreementAccepted(Boolean.TRUE);
         profileRepo.save(profile);
         Map<String, Object> derived = new LinkedHashMap<>();
@@ -597,7 +597,7 @@ public class ApplicationVerificationService {
         }
     }
 
-    /** Number of verification checks an applicant must clear (PASS/REVIEW) to submit KYC. */
+    /** Number of verification checks an customer must clear (PASS/REVIEW) to submit KYC. */
     public static int requiredCount() {
         return REQUIRED.size();
     }
@@ -704,22 +704,22 @@ public class ApplicationVerificationService {
             return new ReminderResult(false, 0, "none");
         }
         String pendingSteps = String.join(", ", pending);
-        eventPublisher.publishEvent(new KycReminderEvent(app.getApplicantId(), appId, pendingSteps, Instant.now()));
+        eventPublisher.publishEvent(new KycReminderEvent(app.getCustomerId(), appId, pendingSteps, Instant.now()));
         return new ReminderResult(true, pending.size(), pendingSteps);
     }
 
     /**
      * Cross-application pending-API dashboard (Phase 3.3): status tallies (passed / review / failed /
      * pending / never-run) plus the verification rows, enriched with borrower context and filterable by
-     * status, check type and a free-text query (borrower name / application id / applicant id).
+     * status, check type and a free-text query (borrower name / application id / customer id).
      */
     @Transactional(readOnly = true)
     public VerificationOverview overview(String statusFilter, String checkTypeFilter, String q) {
         List<ApplicationVerification> all = verificationRepo.findAll();
         Map<Long, LoanApplication> appById = applicationRepo.findAll().stream()
                 .collect(Collectors.toMap(LoanApplication::getId, a -> a, (a, b) -> a));
-        Map<Long, ApplicantProfile> profByApp = profileRepo.findAll().stream()
-                .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
+        Map<Long, CustomerProfile> profByApp = profileRepo.findAll().stream()
+                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
 
         int passed = 0, review = 0, failed = 0, pending = 0;
         Map<Long, Set<String>> presentByApp = new java.util.HashMap<>();
@@ -754,10 +754,10 @@ public class ApplicationVerificationService {
                 .filter(v -> typeF.isEmpty() || typeF.equals(v.getCheckType()))
                 .map(v -> {
                     LoanApplication a = appById.get(v.getApplicationId());
-                    ApplicantProfile p = profByApp.get(v.getApplicationId());
+                    CustomerProfile p = profByApp.get(v.getApplicationId());
                     Instant ts = v.getUpdatedAt() != null ? v.getUpdatedAt() : v.getCreatedAt();
                     return new VerificationOverviewRow(v.getApplicationId(),
-                            a != null ? a.getApplicantId() : null,
+                            a != null ? a.getCustomerId() : null,
                             p != null ? p.getFullName() : null,
                             v.getCheckType(), v.getStatus(), v.getProvider(), v.getMessage(), ts);
                 })
@@ -775,7 +775,7 @@ public class ApplicationVerificationService {
         if (r.applicationId() != null && String.valueOf(r.applicationId()).contains(needle)) {
             return true;
         }
-        return r.applicantId() != null && String.valueOf(r.applicantId()).contains(needle);
+        return r.customerId() != null && String.valueOf(r.customerId()).contains(needle);
     }
 
     private static String norm(String s) {
@@ -871,7 +871,7 @@ public class ApplicationVerificationService {
                         .orElse("aadhaar"));
     }
 
-    private ApplicantProfile profile(Long appId) {
+    private CustomerProfile profile(Long appId) {
         return profileRepo.findByApplicationId(appId)
                 .orElseThrow(() -> new BusinessException("PROFILE_REQUIRED",
                         "Save KYC profile before running verification"));

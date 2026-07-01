@@ -6,7 +6,7 @@ export async function GET() {
   const session = await getBorrowerSession();
   return NextResponse.json({
     session: session
-      ? { id: session.id, applicantId: session.applicantId, name: session.name, mobile: session.mobile }
+      ? { id: session.id, customerId: session.customerId, name: session.name, mobile: session.mobile }
       : null,
   });
 }
@@ -25,6 +25,6 @@ export async function POST(req: Request) {
   if (name) await setBorrowerSession({ ...session, name });
   const next = name ? { ...session, name } : session;
   return NextResponse.json({
-    session: { id: next.id, applicantId: next.applicantId, name: next.name, mobile: next.mobile },
+    session: { id: next.id, customerId: next.customerId, name: next.name, mobile: next.mobile },
   });
 }

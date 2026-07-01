@@ -12,5 +12,5 @@ import java.util.Set;
 public interface BorrowerPreferenceDirectory {
 
     /** The channels this borrower has opted out of (never includes IN_APP). Empty when all-on / unknown. */
-    Set<NotificationChannel> optedOutChannels(Long applicantId);
+    Set<NotificationChannel> optedOutChannels(Long customerId);
 }

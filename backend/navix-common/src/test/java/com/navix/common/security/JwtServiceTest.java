@@ -17,7 +17,7 @@ class JwtServiceTest {
 
     @Test
     void issueVerify_roundTrip_forStaffToken() {
-        JwtService jwt = new JwtService(SECRET_A, 3600);
+        JwtService jwt = new JwtService(SECRET_A, 3600, 3600);
 
         String token = jwt.issue("42", "Meera Krishnan", "ADMIN", JwtService.AUDIENCE_STAFF);
         JwtService.Principal p = jwt.verify(token);
@@ -30,7 +30,7 @@ class JwtServiceTest {
 
     @Test
     void issueVerify_roundTrip_forBorrowerToken() {
-        JwtService jwt = new JwtService(SECRET_A, 3600);
+        JwtService jwt = new JwtService(SECRET_A, 3600, 3600);
 
         String token = jwt.issue("9000001", "Asha", "BORROWER", JwtService.AUDIENCE_BORROWER);
         JwtService.Principal p = jwt.tryVerify(token);
@@ -44,8 +44,8 @@ class JwtServiceTest {
 
     @Test
     void tokenSignedByOneSecret_failsVerificationUnderAnother() {
-        JwtService signer = new JwtService(SECRET_A, 3600);
-        JwtService other = new JwtService(SECRET_B, 3600);
+        JwtService signer = new JwtService(SECRET_A, 3600, 3600);
+        JwtService other = new JwtService(SECRET_B, 3600, 3600);
 
         String token = signer.issue("42", "Meera", "ADMIN", JwtService.AUDIENCE_STAFF);
 
@@ -56,7 +56,7 @@ class JwtServiceTest {
     @Test
     void expiredToken_isRejected() {
         // ttl = -1s → the token's expiry is already in the past at issue time.
-        JwtService jwt = new JwtService(SECRET_A, -1);
+        JwtService jwt = new JwtService(SECRET_A, -1, -1);
 
         String token = jwt.issue("42", "Meera", "ADMIN", JwtService.AUDIENCE_STAFF);
 
@@ -66,7 +66,7 @@ class JwtServiceTest {
 
     @Test
     void garbageString_tryVerify_returnsNull() {
-        JwtService jwt = new JwtService(SECRET_A, 3600);
+        JwtService jwt = new JwtService(SECRET_A, 3600, 3600);
 
         assertThat(jwt.tryVerify("not-a-jwt")).isNull();
     }

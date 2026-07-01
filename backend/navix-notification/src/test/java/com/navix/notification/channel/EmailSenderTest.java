@@ -31,7 +31,7 @@ class EmailSenderTest {
     }
 
     private static EmailProperties props(boolean enabled) {
-        return new EmailProperties("log", enabled, null, null);
+        return new EmailProperties("log", enabled, null, null, null);
     }
 
     /** A suppression service that suppresses nothing (the default for most cases). */

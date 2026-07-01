@@ -1,6 +1,6 @@
 package com.navix.loan.dto;
 
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
@@ -9,7 +9,7 @@ import java.time.LocalDate;
 import java.util.Base64;
 
 /**
- * DTOs for the applicant-review surface: the KYC profile and uploaded documents a staff reviewer
+ * DTOs for the customer-review surface: the KYC profile and uploaded documents a staff reviewer
  * sees for an application. Staff see the borrower's full, unmasked identity + verification detail;
  * the borrower's own read goes through {@link ProfileView#withoutCredit()}, which strips the
  * staff-only credit/risk/bureau headline.
@@ -54,7 +54,7 @@ public final class ReviewDtos {
 
     /**
      * Staff-facing KYC view — full, UNMASKED PAN/Aadhaar/mobile plus contact, verification flags and
-     * the staff-only credit headline (score + 1–5★ rating + verdict) so customer/applicant cards can
+     * the staff-only credit headline (score + 1–5★ rating + verdict) so customer/customer cards can
      * show everything without a second call. The borrower's own read uses {@link #withoutCredit()},
      * which nulls the credit/risk/bureau fields; never return the staff form on a borrower path.
      */
@@ -92,7 +92,7 @@ public final class ReviewDtos {
             String creditBriefSummary,
             Instant creditBriefGeneratedAt) {
 
-        public static ProfileView of(ApplicantProfile p) {
+        public static ProfileView of(CustomerProfile p) {
             return new ProfileView(
                     p.getApplicationId(), p.getFullName(), p.getPan(),
                     p.getAadhaar(), p.getMobile(), p.getDob(),

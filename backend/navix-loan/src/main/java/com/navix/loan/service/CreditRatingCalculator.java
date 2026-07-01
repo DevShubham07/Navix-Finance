@@ -89,7 +89,7 @@ public class CreditRatingCalculator {
 
     private String summarize(BureauReportFacts f, int score, int defaults, long total, long secured,
                              long unsecured, int inquiries, double stars) {
-        String name = (f.name() != null && !f.name().isBlank()) ? titleCase(f.name()) : "The applicant";
+        String name = (f.name() != null && !f.name().isBlank()) ? titleCase(f.name()) : "The customer";
         String tier = score >= 750 ? "an excellent"
                 : score >= 700 ? "a strong"
                 : score >= 650 ? "a fair" : "a weak";

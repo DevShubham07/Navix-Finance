@@ -35,6 +35,7 @@ import {
   type CheckStatus,
 } from "@/lib/api/applications";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 
 /** Loan statuses that mean the loan is still live (vs. a past/closed loan). */
 const OPEN_LOAN_STATUSES = new Set(["ACTIVE", "OVERDUE", "IN_COLLECTIONS", "DISBURSED", "DEFAULTED"]);
@@ -220,7 +221,7 @@ function AppRow({
         <div className="min-w-0">
           <div className="font-serif text-base font-semibold text-navy">
             Application #{app.id}
-            <span className="ml-2 align-middle text-xs font-normal text-muted">applicant #{app.applicantId}</span>
+            <span className="ml-2 align-middle text-xs font-normal text-muted">customer #{app.customerId}</span>
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">{statusLabel(app.status)}</span>
@@ -238,8 +239,8 @@ function AppRow({
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <ApplicantReview applicationId={app.id} />
-        <LoanHistory applicantId={app.applicantId} />
+        <CustomerReview applicationId={app.id} />
+        <LoanHistory customerId={app.customerId} />
       </div>
 
       <button
@@ -287,11 +288,11 @@ function EventsTrail({ id }: { id: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// Applicant review: KYC details + documents (any reviewing role)
+// Customer review: KYC details + documents (any reviewing role)
 // ---------------------------------------------------------------------------
 
 /**
- * Permissions that legitimately need to read applicant PII (name, masked PAN/Aadhaar, salary,
+ * Permissions that legitimately need to read customer PII (name, masked PAN/Aadhaar, salary,
  * employer, address, documents). Collection roles (only `collections:*`) and DEVELOPER (no perms)
  * are intentionally excluded — they have no need-to-know for a borrower's salary/employer.
  */
@@ -303,7 +304,7 @@ const REVIEW_PERMS: Permission[] = [
   "loan:activate",
 ];
 
-export function ApplicantReview({ applicationId }: { applicationId: number }) {
+export function CustomerReview({ applicationId }: { applicationId: number }) {
   const role = useStaffMe().data?.role;
   const canReview = role != null && REVIEW_PERMS.some((p) => hasPermission(role, p));
   const [load, setLoad] = React.useState(false);
@@ -322,13 +323,13 @@ export function ApplicantReview({ applicationId }: { applicationId: number }) {
 
   if (role == null) return null;
   if (!canReview) {
-    return <NoAccessNotice message="Applicant details (incl. PII) aren't available to your role." />;
+    return <NoAccessNotice message="Customer details (incl. PII) aren't available to your role." />;
   }
 
   if (!load) {
     return (
       <button onClick={() => setLoad(true)} className="btn btn-sm btn-outline">
-        <User size={14} /> Show applicant details &amp; documents
+        <User size={14} /> Show customer details &amp; documents
       </button>
     );
   }
@@ -339,7 +340,7 @@ export function ApplicantReview({ applicationId }: { applicationId: number }) {
     <div className="w-full space-y-3">
     <div className="rounded border border-line bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2 font-serif text-base font-semibold text-navy">
-        <User size={16} /> Applicant details
+        <User size={16} /> Customer details
         {(profileQ.isFetching || docsQ.isFetching) && <Loader2 size={14} className="animate-spin text-muted" />}
         <button onClick={() => setLoad(false)} className="ml-auto text-xs font-normal text-muted hover:text-ink">
           Hide
@@ -459,7 +460,7 @@ function stringifyDerived(value: unknown): string {
 /**
  * Verification cards for an application's automated checks (PAN, email, address, salary, …).
  * One card per {@link StepResult}: the check name, a status pill, the message, and the key
- * `derived` fields the reviewer needs. Loaded on demand inside {@link ApplicantReview}.
+ * `derived` fields the reviewer needs. Loaded on demand inside {@link CustomerReview}.
  */
 function VerificationCards({ applicationId }: { applicationId: number }) {
   const qc = useQueryClient();
@@ -577,7 +578,7 @@ function VerificationCards({ applicationId }: { applicationId: number }) {
   );
 }
 
-/** Open any application by ID to load its applicant review — gated to reviewer roles (not collections/dev). */
+/** Open any application by ID to load its customer review — gated to reviewer roles (not collections/dev). */
 export function ReviewLookup() {
   const [input, setInput] = React.useState("");
   const [openId, setOpenId] = React.useState<number | null>(null);
@@ -587,7 +588,7 @@ export function ReviewLookup() {
       <header className="border-b border-line px-5 py-3">
         <h2 className="font-serif text-lg font-semibold text-navy">Review an application</h2>
         <p className="mt-0.5 text-xs text-muted">
-          Open any application by its ID to view the applicant&apos;s details and documents — loaded on demand.
+          Open any application by its ID to view the customer&apos;s details and documents — loaded on demand.
         </p>
       </header>
       <div className="flex flex-wrap items-end gap-2 px-5 py-4">
@@ -610,7 +611,7 @@ export function ReviewLookup() {
       {openId != null && (
         <div className="border-t border-line px-5 py-4">
           <div className="mb-2 text-sm font-semibold text-navy">Application #{openId}</div>
-          <ApplicantReview key={openId} applicationId={openId} />
+          <CustomerReview key={openId} applicationId={openId} />
         </div>
       )}
     </section>
@@ -666,18 +667,19 @@ function formatBytes(n: number): string {
 }
 
 /**
- * The applicant's loan history (current + past), loaded on demand so a queue of N rows doesn't fan
+ * The customer's loan history (current + past), loaded on demand so a queue of N rows doesn't fan
  * out N borrower-history fetches. Open to every staff role (the customers roll-up is). Keyed on the
- * applicant id so a staffer inspecting an application sees the borrower's amount/due-date context.
+ * customer id so a staffer inspecting an application sees the borrower's amount/due-date context.
  */
-function LoanHistory({ applicantId }: { applicantId: number }) {
+function LoanHistory({ customerId }: { customerId: number }) {
   const [load, setLoad] = React.useState(false);
   const q = useQuery({
-    queryKey: ["customer-loans", applicantId],
-    queryFn: () => customersApi.get(applicantId),
+    queryKey: ["customer-loans", customerId],
+    queryFn: () => customersApi.get(customerId),
     enabled: load,
     retry: false,
   });
+  const [selected, setSelected] = React.useState<{ loan: LoanView; applicationId: number | null } | null>(null);
 
   if (!load) {
     return (
@@ -690,13 +692,15 @@ function LoanHistory({ applicantId }: { applicantId: number }) {
   const c = q.data;
   const current = c?.loans.find((l) => OPEN_LOAN_STATUSES.has(l.status)) ?? null;
   const past = c ? c.loans.filter((l) => l !== current) : [];
+  const appIdFor = (loanId: number) => c?.applications.find((a) => a.loanId === loanId)?.id ?? null;
+  const open = (loan: LoanView) => setSelected({ loan, applicationId: appIdFor(loan.id) });
 
   return (
     <div className="w-full rounded border border-line bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2 font-serif text-base font-semibold text-navy">
         <Banknote size={16} /> Loan history
         {q.isFetching && <Loader2 size={14} className="animate-spin text-muted" />}
-        <Link href={`/staff/customers/${applicantId}`} className="ml-auto inline-flex items-center gap-1 text-xs font-normal text-navy hover:underline">
+        <Link href={`/staff/customers/${customerId}`} className="ml-auto inline-flex items-center gap-1 text-xs font-normal text-navy hover:underline">
           Full profile <ArrowRight size={12} />
         </Link>
       </div>
@@ -706,12 +710,16 @@ function LoanHistory({ applicantId }: { applicantId: number }) {
       ) : q.error ? (
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : !c || c.loans.length === 0 ? (
-        <p className="text-sm text-muted">No loans yet for this applicant.</p>
+        <p className="text-sm text-muted">No loans yet for this customer.</p>
       ) : (
         <div className="space-y-3 text-sm">
           {current && (
-            <div className="rounded border border-navy/20 bg-navy-tint/40 p-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-navy">Current loan</div>
+            <button
+              type="button"
+              onClick={() => open(current)}
+              className="w-full rounded border border-navy/20 bg-navy-tint/40 p-3 text-left transition hover:border-navy hover:bg-navy-tint/70"
+            >
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-navy">Current loan · view details</div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-ink">Loan #{current.id} · {paiseToINR(current.principalPaise)}</span>
                 <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">{current.status}</span>
@@ -719,7 +727,7 @@ function LoanHistory({ applicantId }: { applicantId: number }) {
               <div className="mt-0.5 text-xs text-muted">
                 net {paiseToINR(current.netDisbursedPaise)} · disbursed {current.disbursedOn ? formatDate(current.disbursedOn) : "—"} · due {current.dueDate ? formatDate(current.dueDate) : "—"} · outstanding {paiseToINR(current.outstandingPaise)}
               </div>
-            </div>
+            </button>
           )}
           <div>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Past loans ({past.length})</div>
@@ -728,20 +736,34 @@ function LoanHistory({ applicantId }: { applicantId: number }) {
             ) : (
               <ul className="divide-y divide-line">
                 {past.map((l: LoanView) => (
-                  <li key={l.id} className="py-1.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-ink">Loan #{l.id} · {paiseToINR(l.principalPaise)}</span>
-                      <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">{l.status}</span>
-                    </div>
-                    <div className="mt-0.5 text-xs text-muted">
-                      net {paiseToINR(l.netDisbursedPaise)} · disbursed {l.disbursedOn ? formatDate(l.disbursedOn) : "—"} · due {l.dueDate ? formatDate(l.dueDate) : "—"} · outstanding {paiseToINR(l.outstandingPaise)}
-                    </div>
+                  <li key={l.id}>
+                    <button
+                      type="button"
+                      onClick={() => open(l)}
+                      className="w-full rounded py-1.5 text-left transition hover:bg-grey-50"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-ink underline-offset-2 hover:underline">Loan #{l.id} · {paiseToINR(l.principalPaise)}</span>
+                        <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">{l.status}</span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted">
+                        net {paiseToINR(l.netDisbursedPaise)} · disbursed {l.disbursedOn ? formatDate(l.disbursedOn) : "—"} · due {l.dueDate ? formatDate(l.dueDate) : "—"} · outstanding {paiseToINR(l.outstandingPaise)}
+                      </div>
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
           </div>
         </div>
+      )}
+
+      {selected && (
+        <LoanDetailDialog
+          loan={selected.loan}
+          applicationId={selected.applicationId}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   );

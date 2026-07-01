@@ -135,6 +135,28 @@ public class NotificationTemplates {
         sms(NotificationType.REPAYMENT_REJECTED,
                 "NAVIX: Your payment of {amount} couldn't be verified. Please check the reference and try again.");
 
+        inApp(NotificationType.PAYMENT_DUE_SOON, "Payment due soon",
+                "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on your salary "
+                        + "day or the day after — no penalty. Prepay anytime to save on interest.");
+        sms(NotificationType.PAYMENT_DUE_SOON,
+                "NAVIX: {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on/after your salary day — "
+                        + "no penalty. Prepay anytime to save interest.");
+        email(NotificationType.PAYMENT_DUE_SOON, "Your NAVIX payment is due soon",
+                "Hi {name},\n\nYour payment of {amount} is due in {daysToDue} day(s), by {dueDate}. You can "
+                        + "pay on your salary day or the day after with no penalty — or prepay anytime to save "
+                        + "on interest (you only pay interest up to the day you repay).\n\n— NAVIX Finance");
+
+        inApp(NotificationType.PAYMENT_OVERDUE, "Payment overdue",
+                "Your payment of {amount} is overdue by {daysOverdue} day(s). Please pay now — a late "
+                        + "penalty of 2%/day is accruing and your credit score may be impacted.");
+        sms(NotificationType.PAYMENT_OVERDUE,
+                "NAVIX: {amount} is overdue by {daysOverdue} day(s). Pay now to stop the 2%/day penalty and "
+                        + "protect your credit score.");
+        email(NotificationType.PAYMENT_OVERDUE, "Your NAVIX payment is overdue",
+                "Hi {name},\n\nYour payment of {amount} is overdue by {daysOverdue} day(s). Please pay as "
+                        + "soon as possible — a late penalty of 2% per day is accruing and continued "
+                        + "non-payment will impact your credit score.\n\n— NAVIX Finance");
+
         inApp(NotificationType.LOAN_CLOSED, "Loan closed",
                 "Your loan is fully repaid and closed. Thank you!");
         sms(NotificationType.LOAN_CLOSED,

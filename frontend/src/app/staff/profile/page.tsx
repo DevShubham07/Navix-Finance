@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, UserCog, Lock } from "lucide-react";
 import { Input } from "@/components/ui";
@@ -79,6 +80,14 @@ export default function StaffProfilePage() {
             {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save changes
           </button>
           <p className="mt-3 text-xs text-muted">Role and status are managed by an administrator.</p>
+
+          <div className="mt-5 border-t border-line pt-4">
+            <div className="text-sm font-semibold text-ink">Security</div>
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted">Reset your password — we&apos;ll email you a secure reset link.</p>
+              <Link href="/staff/forgot-password" className="btn btn-outline btn-sm">Reset password</Link>
+            </div>
+          </div>
         </div>
       )}
     </div>

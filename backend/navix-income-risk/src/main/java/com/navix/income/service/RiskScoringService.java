@@ -29,11 +29,11 @@ public class RiskScoringService {
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final LimitCalculator limitCalculator;
 
-    /** Assess an applicant from their income profile, persisting and returning the assessment. */
+    /** Assess an customer from their income profile, persisting and returning the assessment. */
     @Transactional
-    public RiskAssessment assess(Long applicantId) {
-        IncomeProfile profile = incomeProfileRepository.findByApplicantId(applicantId)
-                .orElseThrow(() -> new ResourceNotFoundException("IncomeProfile", String.valueOf(applicantId)));
+    public RiskAssessment assess(Long customerId) {
+        IncomeProfile profile = incomeProfileRepository.findByCustomerId(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("IncomeProfile", String.valueOf(customerId)));
         return assess(profile, DEFAULT_BUREAU_SCORE);
     }
 
@@ -46,7 +46,7 @@ public class RiskScoringService {
         long granted = limitCalculator.limitForCategory(profile.getMonthlySalary(), category);
 
         RiskAssessment assessment = new RiskAssessment();
-        assessment.setApplicantId(profile.getApplicantId());
+        assessment.setCustomerId(profile.getCustomerId());
         assessment.setScore(score);
         assessment.setCategory(category);
         assessment.setLimitGranted(granted);

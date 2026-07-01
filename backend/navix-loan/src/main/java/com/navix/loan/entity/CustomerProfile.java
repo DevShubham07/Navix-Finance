@@ -14,7 +14,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * The applicant's KYC snapshot captured for a single application, so staff reviewers
+ * The customer's KYC snapshot captured for a single application, so staff reviewers
  * (KYC approver, credit executive, credit head, …) can see who they are deciding on.
  *
  * <p>One row per application (1:1). PAN is stored in full but only ever surfaced to staff
@@ -22,11 +22,11 @@ import org.hibernate.type.SqlTypes;
  * module; unifying with the orphaned onboarding/KYC modules is a later step.
  */
 @Entity
-@Table(name = "applicant_profile")
+@Table(name = "customer_profile")
 @Getter
 @Setter
 @NoArgsConstructor
-public class ApplicantProfile extends BaseAuditEntity {
+public class CustomerProfile extends BaseAuditEntity {
 
     @Column(name = "application_id", nullable = false, unique = true)
     private Long applicationId;
@@ -34,15 +34,15 @@ public class ApplicantProfile extends BaseAuditEntity {
     @Column(name = "full_name", length = 160)
     private String fullName;
 
-    /** Stored in full; surfaced to staff masked. Unique across applicants. */
+    /** Stored in full; surfaced to staff masked. Unique across customers. */
     @Column(name = "pan", length = 10)
     private String pan;
 
-    /** Stored in full at the owner's request; surfaced masked. Unique across applicants. */
+    /** Stored in full at the owner's request; surfaced masked. Unique across customers. */
     @Column(name = "aadhaar", length = 12)
     private String aadhaar;
 
-    /** Borrower's mobile (normalised to 10 digits); surfaced masked. Unique across applicants. */
+    /** Borrower's mobile (normalised to 10 digits); surfaced masked. Unique across customers. */
     @Column(name = "mobile", length = 15)
     private String mobile;
 

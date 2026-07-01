@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ArrowLeft, Loader2, AlertTriangle, CalendarCheck } from "lucide-react";
 import { AmountChooser } from "@/components/borrower/amount-chooser";
 import { SalaryCalendar } from "@/components/borrower/salary-calendar";
+import { ActiveLoanNotice } from "@/components/borrower/active-loan-notice";
 import { useLiveApplication, applyForAmount, canChooseAmount } from "@/lib/api/live-journey";
 import { borrowerApi, rupeesToPaise, ApplicationApiError } from "@/lib/api/applications";
 import { useOnboardingStore } from "@/stores/application-store";
@@ -72,18 +73,22 @@ export default function LoanApplyPage() {
 
   // Only KYC-approved-and-not-yet-applied applications can choose an amount.
   if (!canChooseAmount(app)) {
-    const active = app?.status === "ACTIVE";
+    // A borrower who already holds a live advance gets the explicit "one advance at a time" notice.
+    const hasLiveLoan =
+      app?.status === "ACTIVE" || app?.status === "OVERDUE" || app?.status === "DEFAULTED";
+    if (hasLiveLoan && app) {
+      return <ActiveLoanNotice app={app} />;
+    }
     return (
       <div className="container max-w-content py-10">
         <div className="rounded border border-line bg-white p-8 text-center shadow-sm">
-          <h1 className="text-2xl">{active ? "Your advance is active" : "Almost there"}</h1>
+          <h1 className="text-2xl">Almost there</h1>
           <p className="mb-5 text-muted">
-            {active
-              ? "Manage your advance from your dashboard."
-              : "You'll be able to choose an amount once your KYC is approved. Track progress on your status page."}
+            You&apos;ll be able to choose an amount once your KYC is approved. Track progress on your
+            status page.
           </p>
-          <Link href={active ? "/dashboard" : "/loan/status"} className="btn btn-gold">
-            {active ? "Go to dashboard" : "Check application status"} <ArrowRight size={16} />
+          <Link href="/loan/status" className="btn btn-gold">
+            Check application status <ArrowRight size={16} />
           </Link>
         </div>
       </div>

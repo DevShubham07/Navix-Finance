@@ -43,9 +43,9 @@ public class AudienceResolver {
 
     private List<ContactInfo> resolveOne(RecipientPolicy policy, NotificationContext ctx) {
         return switch (policy) {
-            case TO_BORROWER -> ctx.applicantId() == null
+            case TO_BORROWER -> ctx.customerId() == null
                     ? List.of()
-                    : borrower.borrowerContact(ctx.applicantId()).map(List::of).orElseGet(List::of);
+                    : borrower.borrowerContact(ctx.customerId()).map(List::of).orElseGet(List::of);
             case TO_ASSIGNED_EXECUTIVE -> staffOne(ctx.assignedExecutiveId());
             case TO_STAFF_SUBJECT -> ctx.explicitStaffSubject() != null
                     ? List.of(ctx.explicitStaffSubject())

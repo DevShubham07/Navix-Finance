@@ -1,11 +1,11 @@
 package com.navix.loan.service;
 
 import com.navix.loan.dto.LoanDtos.TransactionView;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li><b>INCOMING</b> REPAYMENT rows from every {@link Payment}.</li>
  * </ul>
  *
- * Borrower name/PAN are resolved loan → application → {@link ApplicantProfile}. The full PAN is
+ * Borrower name/PAN are resolved loan → application → {@link CustomerProfile}. The full PAN is
  * returned — this is a <b>staff-only</b> ledger (Accountant/Admin; enforced in {@code LoanController});
  * masking is a customer-facing concern only. Supports filtering by direction and a free-text query
  * (borrower name / mobile / loan id).
@@ -42,7 +42,7 @@ public class TransactionService {
     private final LoanRepository loanRepository;
     private final PaymentRepository paymentRepository;
     private final LoanApplicationRepository applicationRepository;
-    private final ApplicantProfileRepository profileRepository;
+    private final CustomerProfileRepository profileRepository;
 
     @Transactional(readOnly = true)
     public List<TransactionView> listTransactions(String q, String direction) {
@@ -61,13 +61,13 @@ public class TransactionService {
             loanById.put(l.getId(), l);
         }
 
-        // loanId -> the borrower's profile (loan → application → applicant_profile).
-        Map<Long, ApplicantProfile> profileByAppId = profileRepository.findAll().stream()
-                .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
-        Map<Long, ApplicantProfile> profileByLoanId = new HashMap<>();
+        // loanId -> the borrower's profile (loan → application → customer_profile).
+        Map<Long, CustomerProfile> profileByAppId = profileRepository.findAll().stream()
+                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
+        Map<Long, CustomerProfile> profileByLoanId = new HashMap<>();
         for (LoanApplication a : applicationRepository.findAll()) {
             if (a.getLoanId() != null) {
-                ApplicantProfile p = profileByAppId.get(a.getId());
+                CustomerProfile p = profileByAppId.get(a.getId());
                 if (p != null) {
                     profileByLoanId.put(a.getLoanId(), p);
                 }
@@ -78,10 +78,10 @@ public class TransactionService {
 
         // Outgoing: each loan is one disbursal.
         for (Loan loan : loanById.values()) {
-            ApplicantProfile p = profileByLoanId.get(loan.getId());
+            CustomerProfile p = profileByLoanId.get(loan.getId());
             out.add(new TransactionView(
                     "D-" + loan.getId(), "DISBURSAL", "OUTGOING",
-                    loan.getId(), loan.getApplicantId(),
+                    loan.getId(), loan.getCustomerId(),
                     p != null ? p.getFullName() : null,
                     p != null ? p.getPan() : null,
                     loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
@@ -93,11 +93,11 @@ public class TransactionService {
         // Incoming: each payment is one repayment.
         for (Payment pay : paymentRepository.findAll()) {
             Loan loan = loanById.get(pay.getLoanId());
-            ApplicantProfile p = profileByLoanId.get(pay.getLoanId());
+            CustomerProfile p = profileByLoanId.get(pay.getLoanId());
             out.add(new TransactionView(
                     "P-" + pay.getId(), "REPAYMENT", "INCOMING",
                     pay.getLoanId(),
-                    loan != null ? loan.getApplicantId() : null,
+                    loan != null ? loan.getCustomerId() : null,
                     p != null ? p.getFullName() : null,
                     p != null ? p.getPan() : null,
                     pay.getAmount() != null ? pay.getAmount() : 0L,
@@ -131,14 +131,14 @@ public class TransactionService {
     }
 
     /** Match the search needle against borrower name, mobile, or loan id. */
-    private boolean matches(TransactionView t, String needle, Map<Long, ApplicantProfile> profileByLoanId) {
+    private boolean matches(TransactionView t, String needle, Map<Long, CustomerProfile> profileByLoanId) {
         if (t.borrowerName() != null && t.borrowerName().toLowerCase().contains(needle)) {
             return true;
         }
         if (t.loanId() != null && String.valueOf(t.loanId()).contains(needle)) {
             return true;
         }
-        ApplicantProfile p = t.loanId() != null ? profileByLoanId.get(t.loanId()) : null;
+        CustomerProfile p = t.loanId() != null ? profileByLoanId.get(t.loanId()) : null;
         return p != null && p.getMobile() != null && p.getMobile().contains(needle);
     }
 }

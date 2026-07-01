@@ -4,11 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.pdf.CreditBriefPdfRenderer;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.service.CreditRatingCalculator.Rating;
@@ -26,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
  * computes the 1–5★ rating ({@link CreditRatingCalculator}), renders the one-page PDF
  * ({@link CreditBriefPdfRenderer}), stores it to S3 at a deterministic key, upserts a
  * {@code CREDIT_BRIEF} {@link ApplicationDocument} so it sits with the customer's uploaded documents,
- * and writes the rating + summary + facts back onto the {@link ApplicantProfile}.
+ * and writes the rating + summary + facts back onto the {@link CustomerProfile}.
  *
  * <p>Generation is <b>best-effort</b>: any failure (PDF, S3, serialization) is swallowed with a log so
  * it can never break the bureau pull / onboarding it hangs off.
@@ -44,7 +44,7 @@ public class CreditBriefService {
     private final CreditBriefPdfRenderer renderer;
     private final DocumentStoragePort storage;
     private final ApplicationDocumentRepository documentRepo;
-    private final ApplicantProfileRepository profileRepo;
+    private final CustomerProfileRepository profileRepo;
     private final LoanApplicationRepository applicationRepo;
     private final ObjectMapper objectMapper;
 
@@ -53,7 +53,7 @@ public class CreditBriefService {
      * and saves {@code profile}. No-op when {@code facts} is null (thin-file / CRIF).
      */
     @Transactional
-    public void generate(Long appId, ApplicantProfile profile, BureauReportFacts facts) {
+    public void generate(Long appId, CustomerProfile profile, BureauReportFacts facts) {
         if (profile == null || facts == null) {
             return;
         }
@@ -76,10 +76,10 @@ public class CreditBriefService {
         // 2) Best-effort: render the one-page PDF, store it to S3, and register the CREDIT_BRIEF
         //    document so it rides the customer's documents list. A failure here leaves the rating intact.
         try {
-            Long applicantId = applicationRepo.findById(appId)
-                    .map(LoanApplication::getApplicantId).orElse(null);
+            Long customerId = applicationRepo.findById(appId)
+                    .map(LoanApplication::getCustomerId).orElse(null);
             // Render with the borrower's REAL KYC identity (not the bureau report's copy / demo fixture).
-            byte[] pdf = renderer.render(appId, applicantId, profile.getBureauSource(),
+            byte[] pdf = renderer.render(appId, customerId, profile.getBureauSource(),
                     displayFacts(facts, profile), rating, LocalDate.now());
             String key = "applications/" + appId + "/credit_brief/" + FILE_NAME;
             storage.store(key, pdf, CONTENT_TYPE);
@@ -95,7 +95,7 @@ public class CreditBriefService {
      * (e.g. an earlier S3 hiccup, or the row was removed), regenerate it from the stored facts.
      */
     @Transactional
-    public void ensureBrief(Long appId, ApplicantProfile profile) {
+    public void ensureBrief(Long appId, CustomerProfile profile) {
         if (profile == null || profile.getCreditBriefFacts() == null) {
             return;
         }
@@ -118,13 +118,13 @@ public class CreditBriefService {
      */
     @Transactional
     public CreditBriefView view(Long appId) {
-        ApplicantProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
+        CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
         if (profile == null || profile.getCreditStarRating() == null) {
             return new CreditBriefView(appId, false, null, null, null, null, null, null, null);
         }
         ensureBrief(appId, profile);
         // The identity shown on the brief must be the borrower's REAL KYC — the same profile the staff
-        // profile / applicant-details card shows — not the bureau report's copy of it. In the local demo
+        // profile / customer-details card shows — not the bureau report's copy of it. In the local demo
         // (NAVIX_BUREAU_FIXTURE) every pull returns the same samplepan.json, so the report's
         // PAN/mobile/DOB/name belong to the fixture person (the same for everyone). Override the identity
         // from the profile; the bureau's credit-health / exposure numbers pass through unchanged.
@@ -150,7 +150,7 @@ public class CreditBriefService {
     }
 
     /** Deserialize the stored facts JSON back to the typed record (null-safe). */
-    public BureauReportFacts factsOf(ApplicantProfile profile) {
+    public BureauReportFacts factsOf(CustomerProfile profile) {
         if (profile == null || profile.getCreditBriefFacts() == null) {
             return null;
         }
@@ -165,7 +165,7 @@ public class CreditBriefService {
 
     /**
      * The identity shown on the brief (on-screen card + the rendered PDF) comes from the borrower's
-     * real KYC {@link ApplicantProfile}, not the bureau report. The bureau's copy can differ, and in the
+     * real KYC {@link CustomerProfile}, not the bureau report. The bureau's copy can differ, and in the
      * local demo ({@code NAVIX_BUREAU_FIXTURE}) every pull returns the same sample report — so its
      * PAN / mobile / DOB / name belong to the fixture person, wrong for everyone. The profile value wins
      * when present (it's exactly what the staff profile card shows), falling back to the bureau only if a
@@ -173,7 +173,7 @@ public class CreditBriefService {
      * from the (possibly-mismatched / fixture) report. Credit-health (B) and exposure (C) are genuine
      * bureau data and pass through unchanged.
      */
-    private BureauReportFacts displayFacts(BureauReportFacts bureau, ApplicantProfile profile) {
+    private BureauReportFacts displayFacts(BureauReportFacts bureau, CustomerProfile profile) {
         if (bureau == null || profile == null) {
             return bureau;
         }

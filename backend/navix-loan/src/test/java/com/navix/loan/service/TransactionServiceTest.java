@@ -7,11 +7,11 @@ import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentMethod;
 import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.dto.LoanDtos.TransactionView;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
@@ -33,7 +33,7 @@ class TransactionServiceTest {
     @Mock
     private LoanApplicationRepository applicationRepository;
     @Mock
-    private ApplicantProfileRepository profileRepository;
+    private CustomerProfileRepository profileRepository;
 
     private TransactionService service;
 
@@ -45,7 +45,7 @@ class TransactionServiceTest {
     private Loan loan2() {
         Loan loan = new Loan();
         loan.setId(2L);
-        loan.setApplicantId(7L);
+        loan.setCustomerId(7L);
         loan.setNetDisbursed(882_000L);
         loan.setDisbursalTxnRef("UTR-OUT-1");
         loan.setDisbursedOn(LocalDate.of(2026, 5, 20));
@@ -57,12 +57,12 @@ class TransactionServiceTest {
         LoanApplication a = new LoanApplication();
         a.setId(5L);
         a.setLoanId(2L);
-        a.setApplicantId(7L);
+        a.setCustomerId(7L);
         return a;
     }
 
-    private ApplicantProfile profile5() {
-        ApplicantProfile p = new ApplicantProfile();
+    private CustomerProfile profile5() {
+        CustomerProfile p = new CustomerProfile();
         p.setApplicationId(5L);
         p.setFullName("Aman");
         p.setPan("ABCDE1234F");
@@ -82,7 +82,7 @@ class TransactionServiceTest {
         return pay;
     }
 
-    private void stubAll(List<Loan> loans, List<LoanApplication> apps, List<ApplicantProfile> profiles, List<Payment> payments) {
+    private void stubAll(List<Loan> loans, List<LoanApplication> apps, List<CustomerProfile> profiles, List<Payment> payments) {
         when(loanRepository.findAll()).thenReturn(loans);
         when(applicationRepository.findAll()).thenReturn(apps);
         when(profileRepository.findAll()).thenReturn(profiles);

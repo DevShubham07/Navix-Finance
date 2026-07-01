@@ -15,5 +15,5 @@ public interface ReferralPayoutRepository extends JpaRepository<ReferralPayout, 
     List<ReferralPayout> findAllByOrderByIdDesc();
 
     /** A borrower's own reward payouts (for their earnings card). */
-    List<ReferralPayout> findByBeneficiaryApplicantId(Long beneficiaryApplicantId);
+    List<ReferralPayout> findByBeneficiaryCustomerId(Long beneficiaryCustomerId);
 }

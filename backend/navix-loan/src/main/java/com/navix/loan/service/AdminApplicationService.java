@@ -4,9 +4,9 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationView;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.util.Comparator;
 import java.util.List;
@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminApplicationService {
 
     private final LoanApplicationRepository applicationRepository;
-    private final ApplicantProfileRepository profileRepository;
+    private final CustomerProfileRepository profileRepository;
     private final ApplicationVerificationService verification;
 
     /** Every application with full detail + completeness, newest first. ADMIN only. */
@@ -40,14 +40,14 @@ public class AdminApplicationService {
         if (apps.isEmpty()) {
             return List.of();
         }
-        Map<Long, ApplicantProfile> byApp = profileRepository
+        Map<Long, CustomerProfile> byApp = profileRepository
                 .findByApplicationIdIn(apps.stream().map(LoanApplication::getId).toList()).stream()
-                .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
+                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
         int required = ApplicationVerificationService.requiredCount();
         return apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> {
-                    ApplicantProfile p = byApp.get(a.getId());
+                    CustomerProfile p = byApp.get(a.getId());
                     int completed = verification.requiredPassedCount(a.getId());
                     boolean agreement = p != null && Boolean.TRUE.equals(p.getAgreementAccepted());
                     boolean complete = completed >= required && agreement;

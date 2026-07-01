@@ -2,7 +2,7 @@
  * Customer-facing borrower domain types.
  *
  * These describe the designed borrower journey (status timeline, KYC checks, the
- * onboarding applicant shape). They were previously colocated with the mock
+ * onboarding customer shape). They were previously colocated with the mock
  * Zustand store; they now live here as plain domain types, independent of any
  * data layer, so the live pages/components can use them without importing mock.
  */
@@ -39,8 +39,8 @@ export interface CoApplicant {
   relationship: string;
 }
 
-/** Everything captured during onboarding for one applicant. */
-export interface ApplicantProfile {
+/** Everything captured during onboarding for one customer. */
+export interface CustomerProfile {
   fullName: string;
   pan: string;
   aadhaar: string;

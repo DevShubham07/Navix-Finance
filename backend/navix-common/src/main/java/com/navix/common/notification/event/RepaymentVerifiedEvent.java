@@ -9,7 +9,7 @@ import java.time.Instant;
  */
 public record RepaymentVerifiedEvent(
         Long loanId,
-        Long applicantId,
+        Long customerId,
         Long paymentId,
         long amountPaise,
         boolean closedTheLoan,

@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { staffApi, statusLabel, paiseToINR, type ApplicationView } from "@/lib/api/applications";
 import {
-  ApplicantReview,
+  CustomerReview,
   KycActions,
   AssignActions,
   ExecActions,
@@ -67,7 +67,7 @@ export default function CreditReviewPage() {
       <Link href="/staff/credit/queue" className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-navy">
         <ArrowLeft size={15} /> Credit queue
       </Link>
-      <PageHeader title={`Application #${Number.isFinite(id) ? id : "—"}`} subtitle="Review the applicant and act on the current pipeline stage.">
+      <PageHeader title={`Application #${Number.isFinite(id) ? id : "—"}`} subtitle="Review the customer and act on the current pipeline stage.">
         <button
           onClick={() => q.refetch()}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
@@ -89,7 +89,7 @@ export default function CreditReviewPage() {
               <div className="font-serif text-lg font-semibold text-navy">Application #{app.id}</div>
               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">{statusLabel(app.status)}</span>
-                <span>applicant #{app.applicantId}</span>
+                <span>customer #{app.customerId}</span>
                 <span>· requested {paiseToINR(app.amountRequestedPaise)}</span>
                 {app.assignedExecutiveId != null && <span>· exec #{app.assignedExecutiveId}</span>}
                 {app.loanId != null && <span>· loan #{app.loanId}</span>}
@@ -109,7 +109,7 @@ export default function CreditReviewPage() {
             <p className="text-sm text-muted">No maker-checker action is available at the {statusLabel(app.status)} stage.</p>
           )}
 
-          <ApplicantReview applicationId={app.id} />
+          <CustomerReview applicationId={app.id} />
         </div>
       )}
     </div>

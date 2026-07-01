@@ -4,26 +4,62 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Smartphone, CheckCircle2 } from "lucide-react";
+import { Smartphone, CheckCircle2, Lock, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { requestBorrowerOtp, clearBorrowerClientState, type OtpRequestResult } from "@/lib/api/live-journey";
+import { borrowerApi, type ApplicationStatus } from "@/lib/api/applications";
 import { normalizeMobile } from "@/lib/utils";
+
+/** An application is past KYC (verified by an approver) once it's in any of these states. */
+const KYC_DONE = new Set<ApplicationStatus>([
+  "KYC_APPROVED", "PRE_APPROVED", "REVIEW_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_EXEC_APPROVED",
+  "CREDIT_HEAD_PENDING", "CREDIT_HEAD_APPROVED", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING",
+  "DISBURSEMENT_FAILED", "DISBURSED", "ACTIVE", "OVERDUE", "DEFAULTED", "CLOSED", "WRITTEN_OFF",
+]);
 
 export default function LoginPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [method, setMethod] = React.useState<"otp" | "password">("otp");
   const [stage, setStage] = React.useState<"enter" | "verify">("enter");
   const [mobile, setMobile] = React.useState("");
   const [otp, setOtp] = React.useState("");
+  const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
   const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
   const [resendCount, setResendCount] = React.useState(0);
+  // "Remember me": a returning, KYC-verified borrower who logged in within the 7-day cookie window
+  // skips the login form entirely. We check this once on mount; show nothing until it resolves.
+  const [checking, setChecking] = React.useState(true);
 
   const mobileOk = mobile.length === 10;
   const MAX_RESENDS = 3;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const meRes = await fetch("/api/auth/borrower/me", { cache: "no-store" });
+        const me = (await meRes.json()) as { session?: unknown };
+        if (me?.session) {
+          const apps = await borrowerApi.myApplications().catch(() => []);
+          if (apps.some((a) => KYC_DONE.has(a.status)) && !cancelled) {
+            router.replace("/dashboard");
+            return;
+          }
+        }
+      } catch {
+        /* fall through to showing the login form */
+      }
+      if (!cancelled) setChecking(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const send = async () => {
     if (!mobileOk) { setError("Enter a valid 10-digit mobile number"); return; }
@@ -82,6 +118,44 @@ export default function LoginPage() {
     }
   };
 
+  const passwordLogin = async () => {
+    if (!mobileOk) { setError("Enter a valid 10-digit mobile number"); return; }
+    if (!password) { setError("Enter your password."); return; }
+    setBusy(true);
+    setError(undefined);
+    try {
+      const res = await fetch("/api/auth/borrower/password-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile, password }),
+      });
+      if (!res.ok) {
+        let msg = "Invalid mobile or password.";
+        try {
+          const env = await res.json();
+          msg = env?.error?.message ?? env?.error ?? msg;
+        } catch { /* keep default */ }
+        setError(typeof msg === "string" ? msg : "Invalid mobile or password.");
+        setBusy(false);
+        return;
+      }
+      clearBorrowerClientState();
+      queryClient.clear();
+      router.push("/dashboard");
+    } catch {
+      setError("Something went wrong — please try again.");
+      setBusy(false);
+    }
+  };
+
+  if (checking) {
+    return (
+      <div className="container flex min-h-[calc(100vh-180px)] max-w-content items-center justify-center py-12">
+        <Loader2 size={24} className="animate-spin text-muted" />
+      </div>
+    );
+  }
+
   return (
     <div className="container flex min-h-[calc(100vh-180px)] max-w-content items-center py-12">
       <div className="mx-auto w-full max-w-md">
@@ -91,7 +165,54 @@ export default function LoginPage() {
         </div>
 
         <div className="form-card">
-          {stage === "enter" ? (
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => { setMethod("otp"); setError(undefined); }}
+              className={`rounded border px-3 py-2 text-sm font-semibold transition ${method === "otp" ? "border-navy bg-navy-tint text-navy" : "border-line text-muted hover:border-navy"}`}
+            >
+              <Smartphone size={14} className="mr-1 inline" /> Mobile OTP
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMethod("password"); setError(undefined); }}
+              className={`rounded border px-3 py-2 text-sm font-semibold transition ${method === "password" ? "border-navy bg-navy-tint text-navy" : "border-line text-muted hover:border-navy"}`}
+            >
+              <Lock size={14} className="mr-1 inline" /> Password
+            </button>
+          </div>
+          {method === "password" ? (
+            <>
+              <Input
+                label="Mobile number"
+                required
+                inputMode="numeric"
+                maxLength={10}
+                value={mobile}
+                onChange={(e) => { setMobile(normalizeMobile(e.target.value)); setError(undefined); }}
+                placeholder="98765 43210"
+                leftIcon={<Smartphone size={16} />}
+                autoComplete="tel"
+              />
+              <Input
+                label="Password"
+                type="password"
+                required
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(undefined); }}
+                placeholder="Your password"
+                leftIcon={<Lock size={16} />}
+                autoComplete="current-password"
+                error={error}
+              />
+              <button onClick={passwordLogin} disabled={!mobileOk || !password || busy} className="btn btn-gold btn-block">
+                {busy ? "Signing in…" : "Sign in"}
+              </button>
+              <p className="mt-3 text-center text-sm">
+                <Link href="/forgot-password" className="font-semibold text-navy hover:underline">Forgot password?</Link>
+              </p>
+            </>
+          ) : stage === "enter" ? (
             <>
               <Input
                 label="Mobile number"

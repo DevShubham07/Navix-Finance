@@ -22,28 +22,28 @@ public final class IncomeDtos {
 
     public record ProfileView(
             Long id,
-            Long applicantId,
+            Long customerId,
             long monthlySalaryPaise,
             Integer salaryCreditDay,
             String employer,
             Integer uanTenure) {
 
         public static ProfileView of(IncomeProfile p) {
-            return new ProfileView(p.getId(), p.getApplicantId(), p.getMonthlySalary(),
+            return new ProfileView(p.getId(), p.getCustomerId(), p.getMonthlySalary(),
                     p.getSalaryCreditDay(), p.getEmployer(), p.getUanTenure());
         }
     }
 
     public record RiskView(
             Long id,
-            Long applicantId,
+            Long customerId,
             RiskCategory category,
             Integer score,
             Long limitGrantedPaise,
             String factors) {
 
         public static RiskView of(RiskAssessment r) {
-            return new RiskView(r.getId(), r.getApplicantId(), r.getCategory(), r.getScore(),
+            return new RiskView(r.getId(), r.getCustomerId(), r.getCategory(), r.getScore(),
                     r.getLimitGranted(), r.getFactors());
         }
     }

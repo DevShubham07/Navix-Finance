@@ -22,11 +22,11 @@ public class BorrowerPreferenceAdapter implements BorrowerPreferenceDirectory {
 
     @Override
     @Transactional(readOnly = true)
-    public Set<NotificationChannel> optedOutChannels(Long applicantId) {
-        if (applicantId == null) {
+    public Set<NotificationChannel> optedOutChannels(Long customerId) {
+        if (customerId == null) {
             return Set.of();
         }
-        return repository.findByApplicantId(applicantId)
+        return repository.findByCustomerId(customerId)
                 .map(p -> {
                     Set<NotificationChannel> out = EnumSet.noneOf(NotificationChannel.class);
                     if (!p.isEmailOptIn()) {

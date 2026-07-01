@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Verified income profile for an applicant.
+ * Verified income profile for an customer.
  *
  * <p>Captures salary signals used by risk scoring and limit calculation.
  *
@@ -29,9 +29,9 @@ public class IncomeProfile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Applicant / borrower reference (FK to IAM user). */
-    @Column(name = "applicant_id", nullable = false)
-    private Long applicantId;
+    /** Customer / borrower reference (FK to IAM user). */
+    @Column(name = "customer_id", nullable = false)
+    private Long customerId;
 
     /** Verified gross monthly salary, in paise. */
     @Column(name = "monthly_salary", nullable = false)

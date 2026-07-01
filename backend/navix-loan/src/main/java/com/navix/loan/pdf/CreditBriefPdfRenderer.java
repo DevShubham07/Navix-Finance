@@ -26,7 +26,7 @@ import org.springframework.stereotype.Component;
 /**
  * Renders the one-page, NAVIX-branded credit brief to PDF bytes (OpenPDF). Pure / stateless.
  *
- * <p>Layout: wordmark + title header, applicant line, the 1–5★ recommendation (drawn as vector
+ * <p>Layout: wordmark + title header, customer line, the 1–5★ recommendation (drawn as vector
  * star polygons — no font-glyph dependency), credit score, the spec's three categories (A Identity /
  * B Credit Health / C Exposure) as columns, the underwriter summary, and a confidential footer.
  * Amounts use a "Rs " prefix (the base-14 PDF fonts have no ₹ glyph), Indian digit-grouped.
@@ -55,7 +55,7 @@ public class CreditBriefPdfRenderer {
     private static final NumberFormat IN = NumberFormat.getInstance(new Locale("en", "IN"));
 
     /** Render the brief. {@code generatedOn} is supplied by the caller (keeps the renderer pure). */
-    public byte[] render(long applicationId, Long applicantId, String bureauSource,
+    public byte[] render(long applicationId, Long customerId, String bureauSource,
                          BureauReportFacts f, Rating rating, LocalDate generatedOn) {
         Document doc = new Document(PageSize.A4, 42, 42, 40, 40);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -66,10 +66,10 @@ public class CreditBriefPdfRenderer {
             doc.add(headerTable());
             doc.add(rule());
 
-            doc.add(spaced(new Paragraph(safe(titleCase(f.name()), "Applicant"), NAME), 6, 0));
+            doc.add(spaced(new Paragraph(safe(titleCase(f.name()), "Customer"), NAME), 6, 0));
             doc.add(new Paragraph(
                     "Application #" + applicationId
-                            + (applicantId != null ? "  ·  Applicant #" + applicantId : ""), META));
+                            + (customerId != null ? "  ·  Customer #" + customerId : ""), META));
             doc.add(new Paragraph(
                     "Generated " + generatedOn + "  ·  Bureau: " + safe(bureauSource, "EXPERIAN")
                             + (f.reportNumber() != null ? "  ·  Report " + f.reportNumber() : ""), META));

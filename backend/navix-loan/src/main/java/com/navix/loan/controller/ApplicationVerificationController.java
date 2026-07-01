@@ -131,7 +131,7 @@ public class ApplicationVerificationController {
             throw new BusinessException("FORBIDDEN_ROLE", "Borrower action required");
         }
         if ("BORROWER".equals(role)
-                && !String.valueOf(flow.get(id).getApplicantId()).equals(ActorContext.get().id())) {
+                && !String.valueOf(flow.get(id).getCustomerId()).equals(ActorContext.get().id())) {
             throw new BusinessException("FORBIDDEN_OWNER", "Not your application");
         }
     }

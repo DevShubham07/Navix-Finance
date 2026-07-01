@@ -29,11 +29,11 @@ public class LoanApplication {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Applicant / borrower reference (FK to IAM user). */
-    @Column(name = "applicant_id", nullable = false)
-    private Long applicantId;
+    /** Customer / borrower reference (FK to IAM user). */
+    @Column(name = "customer_id", nullable = false)
+    private Long customerId;
 
-    /** Amount the applicant requested, in paise. Null until the borrower applies. */
+    /** Amount the customer requested, in paise. Null until the borrower applies. */
     @Column(name = "amount_requested")
     private Long amountRequested;
 

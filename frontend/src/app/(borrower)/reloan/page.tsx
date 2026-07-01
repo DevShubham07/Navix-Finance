@@ -4,10 +4,11 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { RotateCw, Zap, ShieldCheck, ArrowRight, Loader2, AlertTriangle, Wallet } from "lucide-react";
+import { RotateCw, Zap, ShieldCheck, ArrowRight, Loader2, AlertTriangle } from "lucide-react";
 import { useMounted } from "@/hooks/use-mounted";
 import { useLiveApplication, writeStoredAppId } from "@/lib/api/live-journey";
 import { borrowerApi, paiseToINR, ApplicationApiError, type ApplicationView } from "@/lib/api/applications";
+import { ActiveLoanNotice } from "@/components/borrower/active-loan-notice";
 
 /**
  * Returning-borrower reborrow (live). A repeat borrower in good standing is pre-approved — one tap
@@ -36,21 +37,8 @@ export default function ReloanPage() {
   const hasLiveLoan =
     app?.status === "ACTIVE" || app?.status === "OVERDUE" || app?.status === "DEFAULTED";
 
-  if (hasLiveLoan) {
-    return (
-      <div className="container max-w-content py-10">
-        <div className="rounded border border-line bg-white p-8 text-center shadow-sm">
-          <span className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full bg-navy-tint text-navy">
-            <Wallet size={20} />
-          </span>
-          <h1 className="text-2xl">You already have an active advance</h1>
-          <p className="mb-5 text-muted">Repay your current advance before borrowing again.</p>
-          <Link href="/repay" className="btn btn-gold">
-            Repay now <ArrowRight size={16} />
-          </Link>
-        </div>
-      </div>
-    );
+  if (hasLiveLoan && app) {
+    return <ActiveLoanNotice app={app} />;
   }
 
   if (noPrior) {

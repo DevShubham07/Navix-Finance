@@ -31,7 +31,7 @@ class LoanServiceTest {
     @Test
     void disburseComputesEconomicsWithSalaryLinkedDueDate() {
         LoanApplication app = new LoanApplication();
-        app.setApplicantId(7L);
+        app.setCustomerId(7L);
         app.setAmountRequested(1_000_000L); // ₹10,000
         app.setSalaryCreditDay(30);          // salary on the 30th
         when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));

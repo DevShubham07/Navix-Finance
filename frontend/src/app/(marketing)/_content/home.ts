@@ -66,7 +66,7 @@ export const html = `<section class="page active" id="home">
 
   <!-- HOW IT WORKS PREVIEW -->
   <div class="sec" id="s-how" style="background:var(--grad-cream)"><div class="wrap">
-    <div class="sec-head"><span class="eyebrow center reveal">How It Works</span><h2 class="reveal d1">From application to your account in 4 steps</h2><p class="reveal d2">A guided, fully online journey. Eligible applicants are typically funded within 1–2 business days.</p></div>
+    <div class="sec-head"><span class="eyebrow center reveal">How It Works</span><h2 class="reveal d1">From application to your account in 4 steps</h2><p class="reveal d2">A guided, fully online journey. Eligible customers are typically funded within 1–2 business days.</p></div>
     <div class="journey reveal d1" id="journey">
       <div class="jrny-rail">
         <span class="jrny-progress" id="jrnyProgress"></span>

@@ -1,7 +1,7 @@
 package com.navix.loan.dto;
 
 import com.navix.loan.domain.ApplicationStatus;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -19,7 +19,7 @@ public final class AdminApplicationDtos {
     public record AdminApplicationView(
             // --- application ---
             Long id,
-            Long applicantId,
+            Long customerId,
             ApplicationStatus status,
             Long amountRequestedPaise,
             Long eligibleLimitPaise,
@@ -51,10 +51,10 @@ public final class AdminApplicationDtos {
             boolean complete,
             Instant kycCapturedAt) {
 
-        public static AdminApplicationView of(LoanApplication a, ApplicantProfile p,
+        public static AdminApplicationView of(LoanApplication a, CustomerProfile p,
                 int stepsCompleted, int stepsRequired, boolean agreementAccepted, boolean complete) {
             return new AdminApplicationView(
-                    a.getId(), a.getApplicantId(), a.getStatus(),
+                    a.getId(), a.getCustomerId(), a.getStatus(),
                     a.getAmountRequested(), a.getEligibleLimit(), a.getPurpose(),
                     a.getSalaryCreditDay(), a.getAssignedExecutiveId(), a.getLoanId(),
                     p != null,

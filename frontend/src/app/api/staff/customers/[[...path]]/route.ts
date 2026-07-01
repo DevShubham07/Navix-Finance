@@ -8,7 +8,7 @@ import { proxyToBackend, joinPath, unauthorized } from "@/lib/api/bff-proxy";
  * injecting STAFF identity from the `navix_staff` cookie. 401 if no session.
  *
  *  - GET : list/search customers, or one customer's full history.
- *  - PUT : ADMIN corrects a customer's KYC data (`{applicantId}/profile`).
+ *  - PUT : ADMIN corrects a customer's KYC data (`{customerId}/profile`).
  *
  * SEPARATE from the borrower proxy: only the staff cookie is honoured here.
  */

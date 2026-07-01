@@ -5,7 +5,7 @@ import { proxyToBackend, joinPath, unauthorized } from "@/lib/api/bff-proxy";
 /**
  * Borrower applications proxy. Catch-all GET/POST ->
  *   `${backendBaseUrl}/api/applications/${path}${search}`
- * injecting BORROWER identity (actor id = applicantId) from the
+ * injecting BORROWER identity (actor id = customerId) from the
  * `navix_borrower` cookie. 401 if no session.
  *
  * SEPARATE from the staff proxy: only the borrower cookie is honoured here.

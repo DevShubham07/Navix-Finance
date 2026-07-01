@@ -8,7 +8,7 @@ public record SettlementApprovedEvent(
         UUID settlementId,
         UUID caseId,
         Long loanId,
-        Long applicantId,
+        Long customerId,
         long amountPaise,
         Long approvedBy,
         Instant at) {

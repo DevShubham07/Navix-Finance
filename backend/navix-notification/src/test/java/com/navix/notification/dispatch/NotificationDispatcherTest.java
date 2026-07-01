@@ -125,7 +125,7 @@ class NotificationDispatcherTest {
 
         // LOAN_DISBURSED fans across IN_APP + SMS + EMAIL; SMS throws but must not abort the others.
         dispatcher.dispatch(NotificationType.LOAN_DISBURSED,
-                NotificationContext.builder().applicantId(7L).loanId(2L).build());
+                NotificationContext.builder().customerId(7L).loanId(2L).build());
 
         verify(notificationRepo, times(1)).save(any(Notification.class));
         ArgumentCaptor<NotificationDelivery> cap = ArgumentCaptor.forClass(NotificationDelivery.class);
@@ -158,7 +158,7 @@ class NotificationDispatcherTest {
         when(borrowerPreferences.optedOutChannels(7L)).thenReturn(java.util.Set.of(NotificationChannel.SMS));
 
         dispatcher.dispatch(NotificationType.LOAN_DISBURSED,
-                NotificationContext.builder().applicantId(7L).loanId(2L).build());
+                NotificationContext.builder().customerId(7L).loanId(2L).build());
 
         ArgumentCaptor<NotificationDelivery> cap = ArgumentCaptor.forClass(NotificationDelivery.class);
         verify(deliveryRepo, times(3)).save(cap.capture());

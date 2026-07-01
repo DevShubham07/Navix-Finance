@@ -30,7 +30,7 @@ public final class LoanDtos {
 
     public record LoanView(
             Long id,
-            Long applicantId,
+            Long customerId,
             long principalPaise,
             Long processingFeePaise,
             Long gstPaise,
@@ -52,7 +52,7 @@ public final class LoanDtos {
          * The on-time {@code totalRepayable} stays the stored figure.
          */
         public static LoanView of(Loan l, long outstandingPaise, LoanStatus status) {
-            return new LoanView(l.getId(), l.getApplicantId(), l.getPrincipal(), l.getProcessingFee(),
+            return new LoanView(l.getId(), l.getCustomerId(), l.getPrincipal(), l.getProcessingFee(),
                     l.getGst(), l.getNetDisbursed(), l.getDailyInterestRate(), l.getDisbursedOn(),
                     l.getDueDate(), l.getTotalRepayable(), outstandingPaise, status);
         }
@@ -100,7 +100,7 @@ public final class LoanDtos {
             String type,          // DISBURSAL | REPAYMENT
             String direction,     // OUTGOING | INCOMING
             Long loanId,
-            Long applicantId,
+            Long customerId,
             String borrowerName,
             String pan,
             long amountPaise,

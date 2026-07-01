@@ -21,6 +21,11 @@ import {
 import { formatDate } from "@/lib/utils";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const addDaysISO = (iso: string, days: number) => {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
 
 export default function RepayPage() {
   const mounted = useMounted();
@@ -57,6 +62,21 @@ export default function RepayPage() {
   const settingsQuery = useQuery({
     queryKey: ["payment-settings"],
     queryFn: () => paymentSettingsApi.get(),
+  });
+  // The penalty-free pay-by dates: the salary day (the loan's due date) and the day after (the
+  // built-in 1-day grace). We read the outstanding *as of* each so the borrower sees the exact
+  // amount for each choice (both are penalty-free; paying today is the cheapest).
+  const dueISO = loanQuery.data?.dueDate ?? null;
+  const graceISO = dueISO ? addDaysISO(dueISO, 1) : null;
+  const outDueQuery = useQuery({
+    queryKey: ["repay-out-due", loanId, dueISO],
+    queryFn: () => borrowerApi.outstanding(loanId as number, dueISO as string),
+    enabled: loanId != null && dueISO != null,
+  });
+  const outGraceQuery = useQuery({
+    queryKey: ["repay-out-grace", loanId, graceISO],
+    queryFn: () => borrowerApi.outstanding(loanId as number, graceISO as string),
+    enabled: loanId != null && graceISO != null,
   });
 
   const record = useMutation({
@@ -154,7 +174,9 @@ export default function RepayPage() {
     <div className="container max-w-content py-10">
       <h1 className="mb-1">Repay your advance</h1>
       <p className="mb-7 text-muted">
-        Single repayment on your salary day — or prepay any amount, anytime, no penalty.
+        Single repayment on your salary day — or prepay any amount, any day.
+        <strong className="text-ink"> No pre-closure or prepayment charges, ever</strong> — you only
+        pay interest up to the day you repay.
       </p>
 
       {record.isSuccess && (
@@ -172,6 +194,37 @@ export default function RepayPage() {
           {record.error instanceof ApplicationApiError
             ? `${record.error.message} (${record.error.code})`
             : "Could not record your payment. Please try again."}
+        </div>
+      )}
+
+      {loan.dueDate && !overdue && !isSettlement && (
+        <div className="mb-6 rounded border border-line bg-white p-6 shadow-sm">
+          <h3 className="mb-1 font-serif text-base text-navy">When will you pay?</h3>
+          <p className="mb-4 text-xs text-muted">
+            Paying on your salary day or the day after is penalty-free — and prepaying any day costs you
+            less interest. Pick whatever suits you; we&apos;ll remind you before it&apos;s due.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <PayByOption
+              title="Prepay today"
+              date={todayISO()}
+              amount={dueToday}
+              note={savingPaise > 0 ? `Save ${paiseToINR(savingPaise)} interest` : "Lowest — least interest"}
+              highlight
+            />
+            <PayByOption
+              title="On salary day"
+              date={loan.dueDate}
+              amount={outDueQuery.data?.outstandingPaise ?? loan.totalRepayablePaise}
+              note="Penalty-free"
+            />
+            <PayByOption
+              title="Day after salary"
+              date={graceISO ?? loan.dueDate}
+              amount={outGraceQuery.data?.outstandingPaise ?? loan.totalRepayablePaise}
+              note="Still penalty-free (grace day)"
+            />
+          </div>
         </div>
       )}
 
@@ -318,6 +371,29 @@ export default function RepayPage() {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PayByOption({
+  title,
+  date,
+  amount,
+  note,
+  highlight,
+}: {
+  title: string;
+  date: string;
+  amount: number;
+  note: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div className={`rounded-lg border p-3 ${highlight ? "border-gold bg-gold-50/40" : "border-line bg-grey-50"}`}>
+      <div className="text-xs font-semibold text-muted">{title}</div>
+      <div className="font-serif text-lg font-bold text-navy">{paiseToINR(amount)}</div>
+      <div className="text-[11px] text-muted">{formatDate(date)}</div>
+      <div className={`mt-1 text-[11px] font-semibold ${highlight ? "text-gold-dark" : "text-success-700"}`}>{note}</div>
     </div>
   );
 }

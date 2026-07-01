@@ -12,8 +12,8 @@ import java.util.List;
 
 /**
  * DTOs for the staff-facing <b>customer</b> (borrower-centric) views — a cross-application roll-up
- * keyed on the bigint {@code applicant_id}. Unlike the per-application surfaces, these aggregate all
- * of an applicant's applications, loans and payments so staff can see a borrower's whole history.
+ * keyed on the bigint {@code customer_id}. Unlike the per-application surfaces, these aggregate all
+ * of an customer's applications, loans and payments so staff can see a borrower's whole history.
  * Identity fields (PAN/mobile) are returned in full — these are staff-only surfaces.
  */
 public final class CustomerDtos {
@@ -22,11 +22,11 @@ public final class CustomerDtos {
     }
 
     /**
-     * One row in the customers list: an applicant plus rolled-up counts and total outstanding (paise),
+     * One row in the customers list: an customer plus rolled-up counts and total outstanding (paise),
      * and their latest credit headline (score + 1–5★ rating) for the staff Customers dashboard.
      */
     public record CustomerSummary(
-            Long applicantId,
+            Long customerId,
             String name,
             String pan,
             String mobile,
@@ -40,7 +40,7 @@ public final class CustomerDtos {
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */
     public record CustomerDetail(
-            Long applicantId,
+            Long customerId,
             ProfileView profile,
             List<ApplicationView> applications,
             List<LoanView> loans,

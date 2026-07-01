@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Borrower-scoped notification preferences (Phase 2.2). The caller is resolved from the JWT
- * ({@code ActorContext} subject = applicantId); a borrower may only read/write their OWN row. Replaces
+ * ({@code ActorContext} subject = customerId); a borrower may only read/write their OWN row. Replaces
  * the old browser-only settings — the notification engine now honours these server-persisted opt-outs.
  */
 @Service
@@ -34,8 +34,8 @@ public class BorrowerPreferencesService {
     /** The calling borrower's preferences (defaults when none saved yet). */
     @Transactional(readOnly = true)
     public PreferencesView getMine() {
-        Long applicantId = currentBorrower();
-        return repository.findByApplicantId(applicantId)
+        Long customerId = currentBorrower();
+        return repository.findByCustomerId(customerId)
                 .map(PreferencesView::of)
                 .orElseGet(PreferencesView::defaults);
     }
@@ -43,10 +43,10 @@ public class BorrowerPreferencesService {
     /** Upsert the calling borrower's preferences. */
     @Transactional
     public PreferencesView updateMine(PreferencesView req) {
-        Long applicantId = currentBorrower();
-        BorrowerPreferences p = repository.findByApplicantId(applicantId)
+        Long customerId = currentBorrower();
+        BorrowerPreferences p = repository.findByCustomerId(customerId)
                 .orElseGet(BorrowerPreferences::new);
-        p.setApplicantId(applicantId);
+        p.setCustomerId(customerId);
         p.setEmailOptIn(req.emailOptIn());
         p.setSmsOptIn(req.smsOptIn());
         p.setOffersOptIn(req.offersOptIn());

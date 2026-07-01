@@ -9,12 +9,12 @@ import java.time.LocalDate;
  *
  * <p>All monetary fields are <b>integer paise</b>. {@code status} is the loan
  * status name (kept as a {@code String} so this record stays free of the loan
- * enum). Borrower fields are sourced from the applicant KYC snapshot; the PAN is
+ * enum). Borrower fields are sourced from the customer KYC snapshot; the PAN is
  * already masked. Any borrower field may be {@code null} when no profile exists.
  */
 public record LoanSummary(
         Long loanId,
-        Long applicantId,
+        Long customerId,
         Long applicationId,
         String status,
         Long principalPaise,

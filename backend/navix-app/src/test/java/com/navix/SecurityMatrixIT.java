@@ -98,11 +98,11 @@ class SecurityMatrixIT {
         return "Bearer " + jwt.issue(id, "Actor " + id, role, audience);
     }
 
-    private long createApplication(long applicantId) throws Exception {
+    private long createApplication(long customerId) throws Exception {
         MvcResult result = mvc.perform(post("/api/applications")
-                        .header("Authorization", bearer(String.valueOf(applicantId), "BORROWER"))
+                        .header("Authorization", bearer(String.valueOf(customerId), "BORROWER"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"applicantId\":" + applicantId + "}"))
+                        .content("{\"customerId\":" + customerId + "}"))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode data = om.readTree(result.getResponse().getContentAsString()).get("data");

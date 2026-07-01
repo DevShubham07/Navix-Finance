@@ -78,7 +78,7 @@ public class CollectionsService {
         if (existing.isEmpty()) {
             // Only a freshly-opened case fires the notification (an idempotent re-open is silent).
             eventPublisher.publishEvent(new CollectionCaseOpenedEvent(
-                    c.getId(), loanId, loan.applicantId(), Instant.now()));
+                    c.getId(), loanId, loan.customerId(), Instant.now()));
         }
         return buildDetail(c);
     }

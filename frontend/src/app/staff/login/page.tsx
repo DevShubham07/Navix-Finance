@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Suspense } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, Lock, Mail } from "lucide-react";
 import { Brand } from "@/components/site/brand";
@@ -68,6 +69,11 @@ function LoginInner() {
             autoComplete="current-password"
             error={error}
           />
+          <div className="mb-3 text-right">
+            <Link href="/staff/forgot-password" className="text-sm font-semibold text-navy hover:underline">
+              Forgot password?
+            </Link>
+          </div>
           <button type="submit" disabled={!canSubmit} className="btn btn-navy btn-block">
             {busy ? "Signing in…" : "Sign in"}
           </button>

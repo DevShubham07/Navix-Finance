@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
+import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import {
   customersApi,
   staffApi,
@@ -37,8 +38,8 @@ const CANCELLABLE: Set<ApplicationStatus> = new Set([
 const OPEN_LOAN = new Set(["ACTIVE", "OVERDUE", "IN_COLLECTIONS", "DISBURSED", "DEFAULTED"]);
 
 export default function CustomerDetailPage() {
-  const { applicantId } = useParams<{ applicantId: string }>();
-  const id = Number(applicantId);
+  const { customerId } = useParams<{ customerId: string }>();
+  const id = Number(customerId);
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["customer", id], queryFn: () => customersApi.get(id), enabled: Number.isFinite(id) });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["customer", id] });
@@ -46,6 +47,10 @@ export default function CustomerDetailPage() {
   const c = q.data;
   const currentLoan = c?.loans.find((l) => OPEN_LOAN.has(l.status)) ?? null;
   const pastLoans = c ? c.loans.filter((l) => l !== currentLoan) : [];
+  // A clicked loan opens the shared detail popup; resolve its application id (for the status
+  // timeline) from the already-loaded applications.
+  const [selectedLoan, setSelectedLoan] = React.useState<LoanView | null>(null);
+  const appIdFor = (loanId: number) => c?.applications.find((a) => a.loanId === loanId)?.id ?? null;
 
   return (
     <div>
@@ -54,7 +59,7 @@ export default function CustomerDetailPage() {
       </Link>
       <PageHeader
         title={c?.profile?.fullName ?? `Customer #${id}`}
-        subtitle={`Applicant #${id} · borrower history`}
+        subtitle={`Customer #${id} · borrower history`}
       >
         <button onClick={() => q.refetch()} className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink">
           {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
@@ -70,22 +75,30 @@ export default function CustomerDetailPage() {
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
             <div className="space-y-6">
               {c.applications[0] && <CreditProfileCard applicationId={c.applications[0].id} />}
-              <CurrentLoanCard loan={currentLoan} />
-              <PastLoansCard loans={pastLoans} />
+              <CurrentLoanCard loan={currentLoan} onOpen={setSelectedLoan} />
+              <PastLoansCard loans={pastLoans} onOpen={setSelectedLoan} />
               <PaymentsCard payments={c.payments} />
               <ApplicationsCard applications={c.applications} onChanged={invalidate} />
-              <ChangeHistoryCard applicantId={id} />
+              <ChangeHistoryCard customerId={id} />
             </div>
             <div className="space-y-6">
               <ProfileCard detail={c} />
               <PermissionGate permission="customer:manage">
                 <AdminEditCard detail={c} onSaved={invalidate} />
-                <BlocklistCard applicantId={id} />
+                <BlocklistCard customerId={id} />
               </PermissionGate>
             </div>
           </div>
         )}
       </PermissionGate>
+
+      {selectedLoan && (
+        <LoanDetailDialog
+          loan={selectedLoan}
+          applicationId={appIdFor(selectedLoan.id)}
+          onClose={() => setSelectedLoan(null)}
+        />
+      )}
     </div>
   );
 }
@@ -114,7 +127,7 @@ function ProfileCard({ detail }: { detail: CustomerDetail }) {
     <Card title="Profile" icon={<User size={16} />}>
       {p && (p.starRating != null || p.creditScore != null) && (
         <div className="mb-3 flex items-center gap-2 border-b border-line pb-3">
-          <span className="text-xs text-muted">#{detail.applicantId}</span>
+          <span className="text-xs text-muted">#{detail.customerId}</span>
           <CreditBadge starRating={p.starRating} creditScore={p.creditScore} recommendation={p.recommendation} />
         </div>
       )}
@@ -161,28 +174,33 @@ function ProfileCard({ detail }: { detail: CustomerDetail }) {
   );
 }
 
-function CurrentLoanCard({ loan }: { loan: LoanView | null }) {
+function CurrentLoanCard({ loan, onOpen }: { loan: LoanView | null; onOpen: (loan: LoanView) => void }) {
   return (
     <Card title="Current loan" icon={<Banknote size={16} />}>
       {!loan ? (
         <p className="text-sm text-muted">No live loan.</p>
       ) : (
-        <dl className="grid grid-cols-2 gap-x-6">
-          <Row label="Loan" value={`#${loan.id}`} />
-          <Row label="Status" value={<span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">{loan.status}</span>} />
-          <Row label="Principal" value={paiseToINR(loan.principalPaise)} />
-          <Row label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
-          <Row label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
-          <Row label="Outstanding" value={<span className="font-semibold">{paiseToINR(loan.outstandingPaise)}</span>} />
-          <Row label="Disbursed on" value={loan.disbursedOn ? formatDate(loan.disbursedOn) : null} />
-          <Row label="Due date" value={loan.dueDate ? formatDate(loan.dueDate) : null} />
-        </dl>
+        <>
+          <dl className="grid grid-cols-2 gap-x-6">
+            <Row label="Loan" value={`#${loan.id}`} />
+            <Row label="Status" value={<span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">{loan.status}</span>} />
+            <Row label="Principal" value={paiseToINR(loan.principalPaise)} />
+            <Row label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
+            <Row label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
+            <Row label="Outstanding" value={<span className="font-semibold">{paiseToINR(loan.outstandingPaise)}</span>} />
+            <Row label="Disbursed on" value={loan.disbursedOn ? formatDate(loan.disbursedOn) : null} />
+            <Row label="Due date" value={loan.dueDate ? formatDate(loan.dueDate) : null} />
+          </dl>
+          <button onClick={() => onOpen(loan)} className="mt-3 text-sm font-semibold text-navy hover:underline">
+            View full details — payments &amp; timeline →
+          </button>
+        </>
       )}
     </Card>
   );
 }
 
-function PastLoansCard({ loans }: { loans: LoanView[] }) {
+function PastLoansCard({ loans, onOpen }: { loans: LoanView[]; onOpen: (loan: LoanView) => void }) {
   return (
     <Card title={`Past loans (${loans.length})`} icon={<Banknote size={16} />}>
       {loans.length === 0 ? (
@@ -190,12 +208,18 @@ function PastLoansCard({ loans }: { loans: LoanView[] }) {
       ) : (
         <ul className="divide-y divide-line text-sm">
           {loans.map((l) => (
-            <li key={l.id} className="flex items-center justify-between gap-3 py-2">
-              <span className="min-w-0">
-                <span className="text-ink">Loan #{l.id} · {paiseToINR(l.principalPaise)}</span>
-                <span className="block text-xs text-muted">net {paiseToINR(l.netDisbursedPaise)} · disbursed {l.disbursedOn ? formatDate(l.disbursedOn) : "—"} · due {l.dueDate ? formatDate(l.dueDate) : "—"} · outstanding {paiseToINR(l.outstandingPaise)}</span>
-              </span>
-              <span className="flex-shrink-0 rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">{l.status}</span>
+            <li key={l.id}>
+              <button
+                type="button"
+                onClick={() => onOpen(l)}
+                className="flex w-full items-center justify-between gap-3 py-2 text-left transition hover:bg-grey-50"
+              >
+                <span className="min-w-0">
+                  <span className="text-ink underline-offset-2 hover:underline">Loan #{l.id} · {paiseToINR(l.principalPaise)}</span>
+                  <span className="block text-xs text-muted">net {paiseToINR(l.netDisbursedPaise)} · disbursed {l.disbursedOn ? formatDate(l.disbursedOn) : "—"} · due {l.dueDate ? formatDate(l.dueDate) : "—"} · outstanding {paiseToINR(l.outstandingPaise)}</span>
+                </span>
+                <span className="flex-shrink-0 rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">{l.status}</span>
+              </button>
             </li>
           ))}
         </ul>
@@ -304,11 +328,11 @@ function formatChangeValue(field: string, value: string | null): string {
 }
 
 /** Audited profile/salary change history (Phase 2.1): previous→new, who, when. */
-function ChangeHistoryCard({ applicantId }: { applicantId: number }) {
+function ChangeHistoryCard({ customerId }: { customerId: number }) {
   const q = useQuery({
-    queryKey: ["customer-changes", applicantId],
-    queryFn: () => customersApi.changes(applicantId),
-    enabled: Number.isFinite(applicantId),
+    queryKey: ["customer-changes", customerId],
+    queryFn: () => customersApi.changes(customerId),
+    enabled: Number.isFinite(customerId),
   });
   const rows = q.data ?? [];
   return (
@@ -353,7 +377,7 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
 
   const m = useMutation({
     mutationFn: () =>
-      customersApi.updateProfile(detail.applicantId, {
+      customersApi.updateProfile(detail.customerId, {
         fullName: fullName.trim() || null,
         employer: employer.trim() || null,
         employmentStatus: employmentStatus.trim() || null,
@@ -390,12 +414,12 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
 
 const BLOCKLIST_TYPES: BlocklistType[] = ["PAN", "AADHAAR_REF", "PHONE", "DEVICE", "BANK_ACCOUNT"];
 
-function BlocklistCard({ applicantId }: { applicantId: number }) {
+function BlocklistCard({ customerId }: { customerId: number }) {
   const [type, setType] = React.useState<BlocklistType>("PAN");
   const [value, setValue] = React.useState("");
   const [reason, setReason] = React.useState("");
   const m = useMutation({
-    mutationFn: () => adminApi.addBlocklist({ type, value: value.trim(), reason: reason.trim() || `Flagged from customer #${applicantId}` }),
+    mutationFn: () => adminApi.addBlocklist({ type, value: value.trim(), reason: reason.trim() || `Flagged from customer #${customerId}` }),
     onSuccess: () => { setValue(""); setReason(""); },
   });
   return (

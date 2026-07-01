@@ -17,7 +17,7 @@ import org.springframework.web.client.RestClient;
 
 /**
  * EPFO-backed employer/email verification via Fintrix ({@code cv_email_verification}).
- * Confirms the applicant's email and that their establishment (employer) matches EPFO records.
+ * Confirms the customer's email and that their establishment (employer) matches EPFO records.
  */
 @Component
 public class EmailVerificationClient {

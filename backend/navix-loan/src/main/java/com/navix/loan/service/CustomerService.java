@@ -13,12 +13,12 @@ import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
 import com.navix.loan.entity.ProfileChangeLog;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
@@ -37,10 +37,10 @@ import java.util.stream.Collectors;
 
 /**
  * Borrower-centric ("customer") roll-up across the loan aggregate, keyed on the bigint
- * {@code applicant_id}. Lists/searches distinct applicants, returns a single applicant's full
+ * {@code customer_id}. Lists/searches distinct customers, returns a single customer's full
  * history (profile + applications + loans + payments), and lets an ADMIN correct KYC data.
  *
- * <p>The {@code applicant_profile} row is 1:1 with an application, so a customer's name/PAN/mobile
+ * <p>The {@code customer_profile} row is 1:1 with an application, so a customer's name/PAN/mobile
  * come from their <b>latest</b> profile. The authoritative penalty/prepayment-aware balance from
  * {@link RepaymentService#outstandingAsOf} is reused so the figures match the repay page and
  * collections. Money is integer paise.
@@ -51,28 +51,28 @@ public class CustomerService {
 
     private final LoanApplicationRepository applicationRepository;
     private final LoanRepository loanRepository;
-    private final ApplicantProfileRepository profileRepository;
+    private final CustomerProfileRepository profileRepository;
     private final PaymentRepository paymentRepository;
     private final RepaymentService repaymentService;
     private final ProfileChangeLogRepository changeLogRepository;
     private final RiskPort risk;
 
     /**
-     * All customers (distinct applicants), optionally filtered by {@code q} matching the name
-     * (case-insensitive contains) or the applicant id. Ordered by applicant id.
+     * All customers (distinct customers), optionally filtered by {@code q} matching the name
+     * (case-insensitive contains) or the customer id. Ordered by customer id.
      */
     @Transactional(readOnly = true)
     public List<CustomerSummary> list(String q) {
         String needle = q != null ? q.trim().toLowerCase() : "";
-        Map<Long, List<LoanApplication>> byApplicant = applicationRepository.findAll().stream()
-                .collect(Collectors.groupingBy(LoanApplication::getApplicantId));
+        Map<Long, List<LoanApplication>> byCustomer = applicationRepository.findAll().stream()
+                .collect(Collectors.groupingBy(LoanApplication::getCustomerId));
 
         List<CustomerSummary> out = new ArrayList<>();
-        for (Map.Entry<Long, List<LoanApplication>> e : byApplicant.entrySet()) {
-            Long applicantId = e.getKey();
+        for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
+            Long customerId = e.getKey();
             List<LoanApplication> apps = e.getValue();
-            ApplicantProfile profile = latestProfile(apps);
-            List<Loan> loans = loanRepository.findByApplicantId(applicantId);
+            CustomerProfile profile = latestProfile(apps);
+            List<Loan> loans = loanRepository.findByCustomerId(customerId);
             long totalOutstanding = loans.stream()
                     .mapToLong(l -> repaymentService.outstandingAsOf(l.getId(), null))
                     .sum();
@@ -81,7 +81,7 @@ public class CustomerService {
                     .map(a -> a.getStatus().name())
                     .orElse(null);
             CustomerSummary cs = new CustomerSummary(
-                    applicantId,
+                    customerId,
                     profile != null ? profile.getFullName() : null,
                     profile != null ? profile.getPan() : null,
                     profile != null ? profile.getMobile() : null,
@@ -97,26 +97,26 @@ public class CustomerService {
                 out.add(cs);
             }
         }
-        out.sort(Comparator.comparing(CustomerSummary::applicantId));
+        out.sort(Comparator.comparing(CustomerSummary::customerId));
         return out;
     }
 
-    /** A single customer's full history (newest first), or 404 if the applicant has nothing on file. */
+    /** A single customer's full history (newest first), or 404 if the customer has nothing on file. */
     @Transactional(readOnly = true)
-    public CustomerDetail detail(Long applicantId) {
-        List<LoanApplication> apps = applicationRepository.findByApplicantId(applicantId);
-        List<Loan> loans = loanRepository.findByApplicantId(applicantId);
+    public CustomerDetail detail(Long customerId) {
+        List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
+        List<Loan> loans = loanRepository.findByCustomerId(customerId);
         if (apps.isEmpty() && loans.isEmpty()) {
-            throw new ResourceNotFoundException("Customer", String.valueOf(applicantId));
+            throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
         }
 
-        Map<Long, ApplicantProfile> profByApp = profileRepository
+        Map<Long, CustomerProfile> profByApp = profileRepository
                 .findByApplicationIdIn(apps.stream().map(LoanApplication::getId).toList()).stream()
-                .collect(Collectors.toMap(ApplicantProfile::getApplicationId, p -> p, (a, b) -> a));
+                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
         // Every application here belongs to this one customer, so an application without its OWN profile
         // snapshot (e.g. a reborrow) falls back to the customer's latest profile — keeping the per-row
         // credit headline consistent with the Profile card.
-        ApplicantProfile profile = latestProfile(apps);
+        CustomerProfile profile = latestProfile(apps);
         List<ApplicationView> appViews = apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> ApplicationView.of(a, profByApp.getOrDefault(a.getId(), profile)))
@@ -136,69 +136,69 @@ public class CustomerService {
                 .toList();
 
         ProfileView profileView = profile != null ? ProfileView.of(profile) : null;
-        return new CustomerDetail(applicantId, profileView, appViews, loanViews, payments);
+        return new CustomerDetail(customerId, profileView, appViews, loanViews, payments);
     }
 
     /**
      * ADMIN-only correction of a customer's KYC / salary data (non-identity fields). Updates the latest
      * profile; PAN/Aadhaar/mobile are left untouched (they hold uniqueness constraints). Every changed
      * field is recorded to the {@link ProfileChangeLog} (previous→new, who, when), and a salary change
-     * recomputes the eligible limit on the applicant's not-yet-disbursed applications.
+     * recomputes the eligible limit on the customer's not-yet-disbursed applications.
      */
     @Transactional
-    public ProfileView updateProfile(Long applicantId, UpdateCustomerRequest req) {
+    public ProfileView updateProfile(Long customerId, UpdateCustomerRequest req) {
         requireAdmin();
-        ApplicantProfile profile = latestProfile(applicationRepository.findByApplicantId(applicantId));
+        CustomerProfile profile = latestProfile(applicationRepository.findByCustomerId(customerId));
         if (profile == null) {
-            throw new ResourceNotFoundException("ApplicantProfile", "applicant:" + applicantId);
+            throw new ResourceNotFoundException("CustomerProfile", "customer:" + customerId);
         }
         Long appId = profile.getApplicationId();
         Long oldSalary = profile.getMonthlySalaryPaise();
 
         String fullName = trimToNull(req.fullName());
-        logIfChanged(applicantId, appId, "fullName", profile.getFullName(), fullName);
+        logIfChanged(customerId, appId, "fullName", profile.getFullName(), fullName);
         profile.setFullName(fullName);
 
         String address = trimToNull(req.address());
-        logIfChanged(applicantId, appId, "address", profile.getAddress(), address);
+        logIfChanged(customerId, appId, "address", profile.getAddress(), address);
         profile.setAddress(address);
 
         String employer = trimToNull(req.employer());
-        logIfChanged(applicantId, appId, "employer", profile.getEmployer(), employer);
+        logIfChanged(customerId, appId, "employer", profile.getEmployer(), employer);
         profile.setEmployer(employer);
 
         String employmentStatus = trimToNull(req.employmentStatus());
-        logIfChanged(applicantId, appId, "employmentStatus", profile.getEmploymentStatus(), employmentStatus);
+        logIfChanged(customerId, appId, "employmentStatus", profile.getEmploymentStatus(), employmentStatus);
         profile.setEmploymentStatus(employmentStatus);
 
         String salaryBank = trimToNull(req.salaryBank());
-        logIfChanged(applicantId, appId, "salaryBank", profile.getSalaryBank(), salaryBank);
+        logIfChanged(customerId, appId, "salaryBank", profile.getSalaryBank(), salaryBank);
         profile.setSalaryBank(salaryBank);
 
-        logIfChanged(applicantId, appId, "monthlySalaryPaise", str(oldSalary), str(req.monthlySalaryPaise()));
+        logIfChanged(customerId, appId, "monthlySalaryPaise", str(oldSalary), str(req.monthlySalaryPaise()));
         profile.setMonthlySalaryPaise(req.monthlySalaryPaise());
 
-        logIfChanged(applicantId, appId, "annualSalaryPaise", str(profile.getAnnualSalaryPaise()), str(req.annualSalaryPaise()));
+        logIfChanged(customerId, appId, "annualSalaryPaise", str(profile.getAnnualSalaryPaise()), str(req.annualSalaryPaise()));
         profile.setAnnualSalaryPaise(req.annualSalaryPaise());
 
-        logIfChanged(applicantId, appId, "salaryPercentage", str(profile.getSalaryPercentage()), str(req.salaryPercentage()));
+        logIfChanged(customerId, appId, "salaryPercentage", str(profile.getSalaryPercentage()), str(req.salaryPercentage()));
         profile.setSalaryPercentage(req.salaryPercentage());
 
-        logIfChanged(applicantId, appId, "incrementPercentage", str(profile.getIncrementPercentage()), str(req.incrementPercentage()));
+        logIfChanged(customerId, appId, "incrementPercentage", str(profile.getIncrementPercentage()), str(req.incrementPercentage()));
         profile.setIncrementPercentage(req.incrementPercentage());
 
-        ApplicantProfile saved = profileRepository.save(profile);
+        CustomerProfile saved = profileRepository.save(profile);
 
         if (!Objects.equals(oldSalary, saved.getMonthlySalaryPaise())) {
-            recomputeEligibility(applicantId, saved.getMonthlySalaryPaise());
+            recomputeEligibility(customerId, saved.getMonthlySalaryPaise());
         }
         return ProfileView.of(saved);
     }
 
     /** One customer's audited profile/salary change history (newest first). Staff-readable. */
     @Transactional(readOnly = true)
-    public List<ProfileChangeView> changeHistory(Long applicantId) {
-        return changeLogRepository.findByApplicantIdOrderByIdDesc(applicantId).stream()
+    public List<ProfileChangeView> changeHistory(Long customerId) {
+        return changeLogRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
                 .map(ProfileChangeView::of)
                 .toList();
     }
@@ -206,12 +206,12 @@ public class CustomerService {
     // ---- internals -----------------------------------------------------------------
 
     /** Append a change-log row when {@code old != new} (no-op when unchanged). */
-    private void logIfChanged(Long applicantId, Long applicationId, String field, String oldVal, String newVal) {
+    private void logIfChanged(Long customerId, Long applicationId, String field, String oldVal, String newVal) {
         if (Objects.equals(oldVal, newVal)) {
             return;
         }
         ProfileChangeLog entry = new ProfileChangeLog();
-        entry.setApplicantId(applicantId);
+        entry.setCustomerId(customerId);
         entry.setApplicationId(applicationId);
         entry.setField(field);
         entry.setOldValue(oldVal);
@@ -220,16 +220,16 @@ public class CustomerService {
     }
 
     /**
-     * Recompute the eligible limit (RiskPort's firm 25%-of-salary cap) on the applicant's
+     * Recompute the eligible limit (RiskPort's firm 25%-of-salary cap) on the customer's
      * <b>not-yet-disbursed</b> applications, so an admin salary edit propagates to eligibility. A
      * disbursed loan's limit is historical and left untouched.
      */
-    private void recomputeEligibility(Long applicantId, Long monthlySalaryPaise) {
+    private void recomputeEligibility(Long customerId, Long monthlySalaryPaise) {
         if (monthlySalaryPaise == null || monthlySalaryPaise <= 0) {
             return;
         }
         long eligible = risk.eligibleLimitPaise(monthlySalaryPaise);
-        for (LoanApplication a : applicationRepository.findByApplicantId(applicantId)) {
+        for (LoanApplication a : applicationRepository.findByCustomerId(customerId)) {
             if (a.getLoanId() == null) {
                 a.setEligibleLimit(eligible);
                 applicationRepository.save(a);
@@ -241,8 +241,8 @@ public class CustomerService {
         return v == null ? null : v.toString();
     }
 
-    /** The applicant's most recent saved KYC profile (newest application first), or null. */
-    private ApplicantProfile latestProfile(List<LoanApplication> apps) {
+    /** The customer's most recent saved KYC profile (newest application first), or null. */
+    private CustomerProfile latestProfile(List<LoanApplication> apps) {
         return apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
@@ -258,7 +258,7 @@ public class CustomerService {
         if (cs.name() != null && cs.name().toLowerCase().contains(needle)) {
             return true;
         }
-        return String.valueOf(cs.applicantId()).contains(needle);
+        return String.valueOf(cs.customerId()).contains(needle);
     }
 
     private static void requireAdmin() {

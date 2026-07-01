@@ -10,11 +10,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ReferralRepository extends JpaRepository<Referral, Long> {
 
     /** The referral that names this borrower as the referred party (unique — referred once). */
-    Optional<Referral> findByReferredApplicantId(Long referredApplicantId);
+    Optional<Referral> findByReferredCustomerId(Long referredCustomerId);
 
     /** All referrals where this borrower is the referrer (for their earnings roll-up). */
-    List<Referral> findByReferrerApplicantId(Long referrerApplicantId);
+    List<Referral> findByReferrerCustomerId(Long referrerCustomerId);
 
     /** Count this referrer's referrals in a given state (e.g. QUALIFIED for the earnings card). */
-    long countByReferrerApplicantIdAndStatus(Long referrerApplicantId, ReferralStatus status);
+    long countByReferrerCustomerIdAndStatus(Long referrerCustomerId, ReferralStatus status);
 }

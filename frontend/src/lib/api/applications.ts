@@ -41,7 +41,7 @@ export type ApplicationStatus =
 
 export interface ApplicationView {
   id: number;
-  applicantId: number;
+  customerId: number;
   status: ApplicationStatus;
   amountRequestedPaise: number | null;
   eligibleLimitPaise: number | null;
@@ -64,7 +64,7 @@ export interface ApplicationView {
  */
 export interface AdminApplicationView {
   id: number;
-  applicantId: number;
+  customerId: number;
   status: ApplicationStatus;
   amountRequestedPaise: number | null;
   eligibleLimitPaise: number | null;
@@ -110,7 +110,7 @@ export interface EventView {
 
 export interface LoanView {
   id: number;
-  applicantId: number;
+  customerId: number;
   principalPaise: number;
   processingFeePaise: number;
   gstPaise: number;
@@ -163,7 +163,7 @@ export interface TransactionView {
   type: TransactionType;
   direction: TransactionDirection;
   loanId: number | null;
-  applicantId: number | null;
+  customerId: number | null;
   borrowerName: string | null;
   pan: string | null;
   amountPaise: number;
@@ -173,7 +173,7 @@ export interface TransactionView {
 }
 
 /**
- * Applicant KYC snapshot for an application. Staff see the full, unmasked identity + verification
+ * Customer KYC snapshot for an application. Staff see the full, unmasked identity + verification
  * detail; on the borrower's own read the credit/risk/bureau fields come back null.
  */
 export interface ProfileView {
@@ -285,7 +285,7 @@ export interface DocumentContent {
 
 /** One row in the staff Customers list (borrower-centric roll-up; mirrors backend CustomerSummary). */
 export interface CustomerSummary {
-  applicantId: number;
+  customerId: number;
   name: string | null;
   pan: string | null;
   mobile: string | null;
@@ -300,7 +300,7 @@ export interface CustomerSummary {
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
 export interface CustomerDetail {
-  applicantId: number;
+  customerId: number;
   profile: ProfileView | null;
   applications: ApplicationView[];
   loans: LoanView[];
@@ -475,12 +475,12 @@ const BORROWER_BASE = "/api/borrower/applications";
 const BORROWER_LOAN_BASE = "/api/borrower/loan";
 
 export const borrowerApi = {
-  /** Create a DRAFT application for the given applicant. */
-  create: (applicantId: number) =>
-    bff<ApplicationView>(`${BORROWER_BASE}`, "POST", { applicantId }),
+  /** Create a DRAFT application for the given customer. */
+  create: (customerId: number) =>
+    bff<ApplicationView>(`${BORROWER_BASE}`, "POST", { customerId }),
 
   /**
-   * Returning-borrower reborrow: start a new advance reusing the saved KYC profile (applicantId is
+   * Returning-borrower reborrow: start a new advance reusing the saved KYC profile (customerId is
    * resolved server-side from the session). Returns PRE_APPROVED (good standing → choose amount) or
    * REVIEW_PENDING (past delinquency → held for KYC review). Throws NO_PRIOR_LOAN / ACTIVE_LOAN.
    */
@@ -529,7 +529,7 @@ export const borrowerApi = {
   /** Repayments recorded against this loan (the borrower's payment history). */
   repayments: (loanId: number) => bff<PaymentView[]>(`${BORROWER_LOAN_BASE}/${loanId}/repayments`, "GET"),
 
-  /** Save/update the applicant KYC details for this application. */
+  /** Save/update the customer KYC details for this application. */
   saveProfile: (id: number, profile: ProfileInput) =>
     bff<ProfileView>(`${BORROWER_BASE}/${id}/profile`, "PUT", profile),
 
@@ -582,7 +582,7 @@ export interface VerificationProgress {
 /** One row in the pending-API dashboard (Phase 3.3) — mirrors backend VerificationOverviewRow. */
 export interface VerificationOverviewRow {
   applicationId: number;
-  applicantId: number | null;
+  customerId: number | null;
   borrowerName: string | null;
   checkType: string;
   status: CheckStatus;
@@ -771,8 +771,8 @@ export const staffApi = {
   rejectRepayment: (loanId: number, paymentId: number) =>
     bff<PaymentView>(`${STAFF_LOAN_BASE}/${loanId}/repayments/${paymentId}/reject`, "POST"),
 
-  // --- applicant review (any reviewing role) ---
-  /** The applicant's KYC details (PAN masked). */
+  // --- customer review (any reviewing role) ---
+  /** The customer's KYC details (PAN masked). */
   getProfile: (id: number) => bff<ProfileView>(`${STAFF_BASE}/${id}/profile`, "GET"),
 
   /** The application's uploaded documents (metadata). */
@@ -817,20 +817,20 @@ export const staffApi = {
 const CUSTOMERS_BASE = "/api/staff/customers";
 
 export const customersApi = {
-  /** All customers, optionally filtered by name / applicant id. */
+  /** All customers, optionally filtered by name / customer id. */
   list: (q?: string) =>
     bff<CustomerSummary[]>(`${CUSTOMERS_BASE}${q ? `?q=${encodeURIComponent(q)}` : ""}`, "GET"),
 
   /** One customer's full history (profile + applications + loans + payments). */
-  get: (applicantId: number) => bff<CustomerDetail>(`${CUSTOMERS_BASE}/${applicantId}`, "GET"),
+  get: (customerId: number) => bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}`, "GET"),
 
   /** ADMIN corrects a customer's KYC / salary data (non-identity fields); changes are audited. */
-  updateProfile: (applicantId: number, body: UpdateCustomerInput) =>
-    bff<ProfileView>(`${CUSTOMERS_BASE}/${applicantId}/profile`, "PUT", body),
+  updateProfile: (customerId: number, body: UpdateCustomerInput) =>
+    bff<ProfileView>(`${CUSTOMERS_BASE}/${customerId}/profile`, "PUT", body),
 
   /** One customer's audited profile/salary change history (newest first). */
-  changes: (applicantId: number) =>
-    bff<ProfileChangeView[]>(`${CUSTOMERS_BASE}/${applicantId}/changes`, "GET"),
+  changes: (customerId: number) =>
+    bff<ProfileChangeView[]>(`${CUSTOMERS_BASE}/${customerId}/changes`, "GET"),
 };
 
 // ---------------------------------------------------------------------------
@@ -1010,10 +1010,10 @@ export type ReferralPayoutStatus = "PENDING" | "PAID";
 export interface ReferralPayout {
   id: number;
   referralId: number;
-  beneficiaryApplicantId: number;
+  beneficiaryCustomerId: number;
   beneficiaryName: string | null;
   beneficiaryRole: ReferralBeneficiaryRole;
-  counterpartyApplicantId: number | null;
+  counterpartyCustomerId: number | null;
   counterpartyName: string | null;
   amountPaise: number;
   status: ReferralPayoutStatus;
@@ -1138,7 +1138,7 @@ export type DpdBucket = "UPCOMING" | "T0_T7" | "T8_T30" | "T30_T60" | "T60_T90" 
 /** Real loan + borrower snapshot surfaced to collections (mirrors backend LoanSummary). */
 export interface LoanSummary {
   loanId: number;
-  applicantId: number | null;
+  customerId: number | null;
   applicationId: number | null;
   status: string | null;
   principalPaise: number | null;

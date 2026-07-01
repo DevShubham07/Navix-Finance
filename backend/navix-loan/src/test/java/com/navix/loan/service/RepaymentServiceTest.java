@@ -49,7 +49,7 @@ class RepaymentServiceTest {
 
     private Loan activeLoan() {
         Loan loan = new Loan();
-        loan.setApplicantId(7L);
+        loan.setCustomerId(7L);
         loan.setPrincipal(1_000_000L);
         loan.setDisbursedOn(LocalDate.of(2026, 6, 3));
         loan.setDueDate(LocalDate.of(2026, 6, 30)); // 27-day tenure

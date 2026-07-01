@@ -30,7 +30,7 @@ function humanize(t: string): string {
 }
 
 /**
- * Pending-API dashboard (Phase 3.3): every verification check across all applicants — pending,
+ * Pending-API dashboard (Phase 3.3): every verification check across all customers — pending,
  * failed, never-run, passed — with status tallies, filters, and a per-row borrower reminder.
  */
 export default function VerificationsDashboardPage() {
@@ -52,7 +52,7 @@ export default function VerificationsDashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Verification dashboard" subtitle="Every verification check across all applicants — pending, failed, never-run and passed.">
+      <PageHeader title="Verification dashboard" subtitle="Every verification check across all customers — pending, failed, never-run and passed.">
         <button
           onClick={() => q.refetch()}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
@@ -83,10 +83,10 @@ export default function VerificationsDashboardPage() {
             ))}
           </div>
           <Input
-            aria-label="Search by borrower / application / applicant id"
+            aria-label="Search by borrower / application / customer id"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search borrower / app # / applicant #"
+            placeholder="Search borrower / app # / customer #"
             leftIcon={<Search size={15} />}
             className="!mb-0"
             inputClassName="w-72"
@@ -145,7 +145,7 @@ function VerifRow({ r }: { r: VerificationOverviewRow }) {
       <td className="px-4 py-2.5">
         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PILL[r.status]}`}>{r.status}</span>
       </td>
-      <td className="px-4 py-2.5 text-ink">{r.borrowerName ?? (r.applicantId != null ? `#${r.applicantId}` : "—")}</td>
+      <td className="px-4 py-2.5 text-ink">{r.borrowerName ?? (r.customerId != null ? `#${r.customerId}` : "—")}</td>
       <td className="px-4 py-2.5 text-muted">#{r.applicationId}</td>
       <td className="px-4 py-2.5 text-muted"><span className="block max-w-[22rem] truncate" title={r.message ?? ""}>{r.message || "—"}</span></td>
       <td className="px-4 py-2.5 text-muted">{r.updatedAt ? formatDateTime(r.updatedAt) : "—"}</td>

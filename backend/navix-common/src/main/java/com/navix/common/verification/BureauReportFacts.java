@@ -10,7 +10,7 @@ package com.navix.common.verification;
  * <i>not</i> NAVIX's internal paise) and are display-only. Any field may be {@code null} when the
  * bureau response is thin / a value was blank.
  *
- * @param name               Category A — applicant name ({@code data.name})
+ * @param name               Category A — customer name ({@code data.name})
  * @param pan                Category A — PAN ({@code data.pan})
  * @param mobile             Category A — mobile ({@code data.mobile})
  * @param dob                Category A — date of birth, normalised to {@code YYYY-MM-DD}

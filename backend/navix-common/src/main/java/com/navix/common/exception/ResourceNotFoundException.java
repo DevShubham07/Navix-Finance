@@ -3,7 +3,7 @@ package com.navix.common.exception;
 import lombok.Getter;
 
 /**
- * Thrown when a requested resource (loan, applicant, document, etc.) does not exist.
+ * Thrown when a requested resource (loan, customer, document, etc.) does not exist.
  *
  * TODO: use across repositories/services for consistent 404 handling.
  */

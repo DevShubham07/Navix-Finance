@@ -19,10 +19,10 @@ import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.service.AdminApplicationService;
-import com.navix.loan.service.ApplicantReviewService;
+import com.navix.loan.service.CustomerReviewService;
 import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService;
 import com.navix.loan.service.CreditBriefService;
@@ -50,18 +50,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class ApplicationController {
 
     private final ApplicationFlowService flow;
-    private final ApplicantReviewService review;
+    private final CustomerReviewService review;
     private final ApplicationVerificationService verification;
     private final CreditBriefService creditBrief;
     private final AdminApplicationService adminApplications;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
-        return ApiResponse.ok(ApplicationView.of(flow.createDraft(request.applicantId())));
+        return ApiResponse.ok(ApplicationView.of(flow.createDraft(request.customerId())));
     }
 
     /**
-     * Returning-borrower reborrow: start a new advance reusing the saved KYC profile (applicantId
+     * Returning-borrower reborrow: start a new advance reusing the saved KYC profile (customerId
      * from the borrower actor). Routes to PRE_APPROVED (clean) or REVIEW_PENDING (past delinquency).
      */
     @PostMapping("/reborrow")
@@ -70,7 +70,7 @@ public class ApplicationController {
     }
 
     /** Stage queue, e.g. ?status=KYC_PENDING / DISBURSEMENT_PENDING / ACCOUNTANT_PENDING. Staff-only:
-     *  rows are enriched with the applicant's credit score + 1–5★ rating (never exposed to borrowers). */
+     *  rows are enriched with the customer's credit score + 1–5★ rating (never exposed to borrowers). */
     @GetMapping
     public ApiResponse<List<ApplicationView>> queue(@RequestParam ApplicationStatus status) {
         requireStaff();
@@ -228,7 +228,7 @@ public class ApplicationController {
         return ApiResponse.ok(ApplicationView.of(flow.cancel(id, req != null ? req.notes() : null)));
     }
 
-    // ---- applicant review: KYC profile + documents -------------------------------------
+    // ---- customer review: KYC profile + documents -------------------------------------
 
     /** Borrower saves/updates their KYC details for this application (onboarding slice-save). */
     @PutMapping("/{id}/profile")
@@ -245,7 +245,7 @@ public class ApplicationController {
         return ApiResponse.ok(ProfileView.of(review.editOwnProfile(id, req)));
     }
 
-    /** Any reviewing role reads the applicant's KYC details (PAN masked). The staff-only credit
+    /** Any reviewing role reads the customer's KYC details (PAN masked). The staff-only credit
      *  headline (score + rating) is stripped for a borrower reading their own profile. */
     @GetMapping("/{id}/profile")
     public ApiResponse<ProfileView> getProfile(@PathVariable Long id) {
@@ -289,14 +289,14 @@ public class ApplicationController {
 
     // ---- internals -----------------------------------------------------------------
 
-    /** Attach the applicant's credit headline (score + 1–5★ + verdict) to each queue row. Falls back to
-     *  the applicant's latest profile for an application without its own snapshot (e.g. a reborrow), so
+    /** Attach the customer's credit headline (score + 1–5★ + verdict) to each queue row. Falls back to
+     *  the customer's latest profile for an application without its own snapshot (e.g. a reborrow), so
      *  the headline is consistent across every staff surface. */
     private List<ApplicationView> enrich(List<LoanApplication> apps) {
         if (apps.isEmpty()) {
             return List.of();
         }
-        Map<Long, ApplicantProfile> byApp = review.effectiveProfilesByApplications(apps);
+        Map<Long, CustomerProfile> byApp = review.effectiveProfilesByApplications(apps);
         return apps.stream().map(a -> ApplicationView.of(a, byApp.get(a.getId()))).toList();
     }
 
@@ -310,15 +310,15 @@ public class ApplicationController {
 
     /**
      * Ownership guard for the by-id reads: a BORROWER may only read their OWN application (its
-     * {@code applicant_id} must equal the JWT subject); any staff role may read any application.
-     * Closes an IDOR — without this a borrower could fetch another applicant's application, audit
+     * {@code customer_id} must equal the JWT subject); any staff role may read any application.
+     * Closes an IDOR — without this a borrower could fetch another customer's application, audit
      * trail, KYC profile or documents by guessing the id. (Anonymous/unauthenticated callers never
      * reach a controller method: {@code SecurityConfig} requires auth on {@code /api/**}.)
      */
     private void requireBorrowerOwnsOrStaff(Long id) {
         var actor = ActorContext.get();
         if ("BORROWER".equals(actor.role())) {
-            Long owner = flow.get(id).getApplicantId();
+            Long owner = flow.get(id).getCustomerId();
             if (owner == null || !owner.toString().equals(actor.id())) {
                 throw new BusinessException("FORBIDDEN", "Not your application");
             }

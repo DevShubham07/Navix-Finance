@@ -57,7 +57,7 @@ export default function StaffApplicationsPage() {
           <div className="flex items-start gap-2 rounded border border-line bg-grey-50 p-4 text-sm text-muted">
             <Lock size={16} className="mt-0.5 flex-shrink-0" />
             The {ROLE_LABEL[role]} role has no application-pipeline queue. Use &ldquo;Review an application&rdquo;
-            above to open any application by ID and view the applicant&apos;s details and documents.
+            above to open any application by ID and view the customer&apos;s details and documents.
           </div>
         )}
       </div>

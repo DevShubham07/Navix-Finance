@@ -9,8 +9,8 @@ import java.time.Instant;
  */
 public record ReferralPayoutCreatedEvent(
         Long referralId,
-        Long referrerApplicantId,
-        Long referredApplicantId,
+        Long referrerCustomerId,
+        Long referredCustomerId,
         Long loanId,
         long amountPaise,
         Instant at) {

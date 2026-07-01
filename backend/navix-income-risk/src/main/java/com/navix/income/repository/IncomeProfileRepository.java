@@ -13,5 +13,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface IncomeProfileRepository extends JpaRepository<IncomeProfile, Long> {
 
-    Optional<IncomeProfile> findByApplicantId(Long applicantId);
+    Optional<IncomeProfile> findByCustomerId(Long customerId);
 }

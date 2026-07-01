@@ -12,7 +12,7 @@ import java.util.UUID;
  * lets staff/IAM events supply the recipient directly (an invited subject has no staff row yet).
  */
 public record NotificationContext(
-        Long applicantId,
+        Long customerId,
         Long applicationId,
         Long loanId,
         UUID caseId,
@@ -29,7 +29,7 @@ public record NotificationContext(
 
     /** Mutable builder — the listeners assemble a context field-by-field. */
     public static final class Builder {
-        private Long applicantId;
+        private Long customerId;
         private Long applicationId;
         private Long loanId;
         private UUID caseId;
@@ -40,7 +40,7 @@ public record NotificationContext(
         private String actorRole;
         private final Map<String, Object> model = new HashMap<>();
 
-        public Builder applicantId(Long v) { this.applicantId = v; return this; }
+        public Builder customerId(Long v) { this.customerId = v; return this; }
         public Builder applicationId(Long v) { this.applicationId = v; return this; }
         public Builder loanId(Long v) { this.loanId = v; return this; }
         public Builder caseId(UUID v) { this.caseId = v; return this; }
@@ -56,7 +56,7 @@ public record NotificationContext(
         }
 
         public NotificationContext build() {
-            return new NotificationContext(applicantId, applicationId, loanId, caseId, assignedExecutiveId,
+            return new NotificationContext(customerId, applicationId, loanId, caseId, assignedExecutiveId,
                     staffSubjectId, explicitStaffSubject, actorId, actorRole, model);
         }
     }

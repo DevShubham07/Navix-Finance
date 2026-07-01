@@ -33,7 +33,7 @@ import { featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { cn } from "@/lib/utils";
 
-const PUBLIC_STAFF = ["/staff/login", "/staff/activate"];
+const PUBLIC_STAFF = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
 
 type NavItem = {
   label: string;

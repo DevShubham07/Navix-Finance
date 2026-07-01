@@ -29,7 +29,7 @@ public class CrifClient {
         this.fintrix = fintrix;
     }
 
-    /** Pull the CRIF credit report for the applicant. */
+    /** Pull the CRIF credit report for the customer. */
     public CrifResponse pull(String pan, String name, String mobile, String dob, String clientRef) {
         JsonNode root = post(fintrix, ENDPOINT, new CrifRequest(
                 pan, name, mobile, dob == null ? "" : dob, "Y", ref(clientRef)));

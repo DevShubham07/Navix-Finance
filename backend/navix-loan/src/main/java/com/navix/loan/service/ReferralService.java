@@ -64,7 +64,7 @@ public class ReferralService {
     private final ReferralRepository referralRepository;
     private final ReferralPayoutRepository payoutRepository;
     private final LoanRepository loanRepository;
-    private final ApplicantReviewService reviewService;
+    private final CustomerReviewService reviewService;
     private final ReferralProperties properties;
     private final FeatureFlagService featureFlags;
     private final ApplicationEventPublisher eventPublisher;
@@ -84,13 +84,13 @@ public class ReferralService {
     /** The calling borrower's referral panel — their code (lazily minted) + reward + earnings. */
     @Transactional
     public MyReferralView myReferral() {
-        Long applicantId = currentBorrowerId();
-        String code = getOrCreateCode(applicantId).getCode();
-        long qualified = referralRepository.countByReferrerApplicantIdAndStatus(
-                applicantId, ReferralStatus.QUALIFIED);
+        Long customerId = currentBorrowerId();
+        String code = getOrCreateCode(customerId).getCode();
+        long qualified = referralRepository.countByReferrerCustomerIdAndStatus(
+                customerId, ReferralStatus.QUALIFIED);
         long earned = 0L;
         long pending = 0L;
-        for (ReferralPayout p : payoutRepository.findByBeneficiaryApplicantId(applicantId)) {
+        for (ReferralPayout p : payoutRepository.findByBeneficiaryCustomerId(customerId)) {
             if (p.getStatus() == ReferralPayoutStatus.PAID) {
                 earned += p.getAmountPaise();
             } else {
@@ -105,7 +105,7 @@ public class ReferralService {
      *  referred, and the caller is a genuinely new borrower (no prior loan). */
     @Transactional
     public ApplyCodeResult applyCode(String rawCode) {
-        Long applicantId = currentBorrowerId();
+        Long customerId = currentBorrowerId();
         if (!referralEnabled()) {
             throw new BusinessException("REFERRAL_DISABLED", "The referral program is not available right now.");
         }
@@ -116,20 +116,20 @@ public class ReferralService {
         ReferralCode referrerCode = codeRepository.findByCode(code)
                 .orElseThrow(() -> new BusinessException("INVALID_REFERRAL_CODE",
                         "That referral code doesn't exist."));
-        Long referrerId = referrerCode.getApplicantId();
-        if (referrerId.equals(applicantId)) {
+        Long referrerId = referrerCode.getCustomerId();
+        if (referrerId.equals(customerId)) {
             throw new BusinessException("SELF_REFERRAL", "You can't use your own referral code.");
         }
-        if (referralRepository.findByReferredApplicantId(applicantId).isPresent()) {
+        if (referralRepository.findByReferredCustomerId(customerId).isPresent()) {
             throw new BusinessException("ALREADY_REFERRED", "You've already applied a referral code.");
         }
-        if (!loanRepository.findByApplicantId(applicantId).isEmpty()) {
+        if (!loanRepository.findByCustomerId(customerId).isEmpty()) {
             throw new BusinessException("NOT_NEW_BORROWER",
                     "Referral codes apply to your first NAVIX loan only.");
         }
         Referral referral = new Referral();
-        referral.setReferrerApplicantId(referrerId);
-        referral.setReferredApplicantId(applicantId);
+        referral.setReferrerCustomerId(referrerId);
+        referral.setReferredCustomerId(customerId);
         referral.setCodeUsed(code);
         referral.setStatus(ReferralStatus.PENDING);
         referralRepository.save(referral);
@@ -143,7 +143,7 @@ public class ReferralService {
     /** Lenient preview of a code for live signup feedback. Never throws. */
     @Transactional(readOnly = true)
     public ValidateCodeView validate(String rawCode) {
-        Long applicantId = currentBorrowerId();
+        Long customerId = currentBorrowerId();
         if (!referralEnabled()) {
             return new ValidateCodeView(false, null, properties.rewardPaise(),
                     "The referral program is not available right now.");
@@ -157,11 +157,11 @@ public class ReferralService {
             return new ValidateCodeView(false, null, properties.rewardPaise(),
                     "That referral code doesn't exist.");
         }
-        if (match.get().getApplicantId().equals(applicantId)) {
+        if (match.get().getCustomerId().equals(customerId)) {
             return new ValidateCodeView(false, null, properties.rewardPaise(),
                     "You can't use your own referral code.");
         }
-        String referrerName = nameOf(match.get().getApplicantId());
+        String referrerName = nameOf(match.get().getCustomerId());
         return new ValidateCodeView(true, referrerName, properties.rewardPaise(),
                 "You and " + (referrerName != null ? referrerName : "your friend")
                         + " each get ₹" + properties.rewardRupees() + " once your first loan is disbursed.");
@@ -176,27 +176,27 @@ public class ReferralService {
      * disbursement transaction — the referral + two payouts commit atomically with the loan.
      */
     @Transactional
-    public void onLoanDisbursed(Long referredApplicantId, Long loanId) {
-        if (!referralEnabled() || referredApplicantId == null) {
+    public void onLoanDisbursed(Long referredCustomerId, Long loanId) {
+        if (!referralEnabled() || referredCustomerId == null) {
             return;
         }
-        Optional<Referral> match = referralRepository.findByReferredApplicantId(referredApplicantId);
+        Optional<Referral> match = referralRepository.findByReferredCustomerId(referredCustomerId);
         if (match.isEmpty() || match.get().getStatus() != ReferralStatus.PENDING) {
             return;
         }
         Referral referral = match.get();
-        Long referrerId = referral.getReferrerApplicantId();
+        Long referrerId = referral.getReferrerCustomerId();
         referral.setStatus(ReferralStatus.QUALIFIED);
         referral.setQualifyingLoanId(loanId);
         referral.setQualifiedAt(Instant.now());
         referralRepository.save(referral);
 
         long reward = properties.rewardPaise();
-        createPayout(referral.getId(), referrerId, ReferralBeneficiaryRole.REFERRER, referredApplicantId, reward, loanId);
-        createPayout(referral.getId(), referredApplicantId, ReferralBeneficiaryRole.REFERRED, referrerId, reward, loanId);
+        createPayout(referral.getId(), referrerId, ReferralBeneficiaryRole.REFERRER, referredCustomerId, reward, loanId);
+        createPayout(referral.getId(), referredCustomerId, ReferralBeneficiaryRole.REFERRED, referrerId, reward, loanId);
 
         eventPublisher.publishEvent(new ReferralPayoutCreatedEvent(
-                referral.getId(), referrerId, referredApplicantId, loanId, reward, Instant.now()));
+                referral.getId(), referrerId, referredCustomerId, loanId, reward, Instant.now()));
         log.info("referral {} qualified by loan {} — two payouts of {} paise created", referral.getId(), loanId, reward);
     }
 
@@ -204,9 +204,9 @@ public class ReferralService {
                               Long counterpartyId, long amountPaise, Long loanId) {
         ReferralPayout payout = new ReferralPayout();
         payout.setReferralId(referralId);
-        payout.setBeneficiaryApplicantId(beneficiaryId);
+        payout.setBeneficiaryCustomerId(beneficiaryId);
         payout.setBeneficiaryRole(role);
-        payout.setCounterpartyApplicantId(counterpartyId);
+        payout.setCounterpartyCustomerId(counterpartyId);
         payout.setAmountPaise(amountPaise);
         payout.setStatus(ReferralPayoutStatus.PENDING);
         payout.setQualifyingLoanId(loanId);
@@ -226,9 +226,9 @@ public class ReferralService {
         Map<Long, String> names = new HashMap<>();
         return payouts.stream()
                 .map(p -> PayoutView.of(p,
-                        names.computeIfAbsent(p.getBeneficiaryApplicantId(), this::nameOf),
-                        p.getCounterpartyApplicantId() == null ? null
-                                : names.computeIfAbsent(p.getCounterpartyApplicantId(), this::nameOf)))
+                        names.computeIfAbsent(p.getBeneficiaryCustomerId(), this::nameOf),
+                        p.getCounterpartyCustomerId() == null ? null
+                                : names.computeIfAbsent(p.getCounterpartyCustomerId(), this::nameOf)))
                 .toList();
     }
 
@@ -252,10 +252,10 @@ public class ReferralService {
         payoutRepository.save(payout);
 
         eventPublisher.publishEvent(new ReferralRewardCreditedEvent(
-                payout.getId(), payout.getBeneficiaryApplicantId(), payout.getCounterpartyApplicantId(),
+                payout.getId(), payout.getBeneficiaryCustomerId(), payout.getCounterpartyCustomerId(),
                 payout.getBeneficiaryRole().name(), payout.getAmountPaise(), payout.getTxnRef(), Instant.now()));
-        return PayoutView.of(payout, nameOf(payout.getBeneficiaryApplicantId()),
-                payout.getCounterpartyApplicantId() == null ? null : nameOf(payout.getCounterpartyApplicantId()));
+        return PayoutView.of(payout, nameOf(payout.getBeneficiaryCustomerId()),
+                payout.getCounterpartyCustomerId() == null ? null : nameOf(payout.getCounterpartyCustomerId()));
     }
 
     /** Totals for the separate referral-expense dashboard. */
@@ -282,10 +282,10 @@ public class ReferralService {
 
     // ---- internals -----------------------------------------------------------------
 
-    private ReferralCode getOrCreateCode(Long applicantId) {
-        return codeRepository.findByApplicantId(applicantId).orElseGet(() -> {
+    private ReferralCode getOrCreateCode(Long customerId) {
+        return codeRepository.findByCustomerId(customerId).orElseGet(() -> {
             ReferralCode rc = new ReferralCode();
-            rc.setApplicantId(applicantId);
+            rc.setCustomerId(customerId);
             rc.setCode(generateUniqueCode());
             return codeRepository.save(rc);
         });
@@ -322,14 +322,14 @@ public class ReferralService {
                 + properties.rewardRupees() + " once your first loan is disbursed.";
     }
 
-    private String nameOf(Long applicantId) {
-        if (applicantId == null) {
+    private String nameOf(Long customerId) {
+        if (customerId == null) {
             return null;
         }
-        return reviewService.latestProfile(applicantId).map(p -> p.getFullName()).orElse(null);
+        return reviewService.latestProfile(customerId).map(p -> p.getFullName()).orElse(null);
     }
 
-    /** Borrower-scoped read: resolves the caller's applicant id from the JWT principal. */
+    /** Borrower-scoped read: resolves the caller's customer id from the JWT principal. */
     private Long currentBorrowerId() {
         CurrentActor actor = ActorContext.get();
         if (!"BORROWER".equals(actor.role())) {

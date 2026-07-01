@@ -31,9 +31,9 @@ export interface SignupApplication {
   mobile: string;
   email?: string;
   pan?: string;
-  /** The step the applicant currently needs to complete. */
+  /** The step the customer currently needs to complete. */
   currentStep: SignupStep;
-  /** Steps the applicant has finished, in order. */
+  /** Steps the customer has finished, in order. */
   completedSteps: SignupStep[];
   monthlySalary?: number;
   createdAt: string;

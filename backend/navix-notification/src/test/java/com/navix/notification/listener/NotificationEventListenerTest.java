@@ -72,7 +72,7 @@ class NotificationEventListenerTest {
         ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
         verify(dispatcher).dispatch(type.capture(), ctx.capture());
         assertThat(type.getValue()).isEqualTo(NotificationType.LOAN_DISBURSED);
-        assertThat(ctx.getValue().applicantId()).isEqualTo(5L);
+        assertThat(ctx.getValue().customerId()).isEqualTo(5L);
         assertThat(ctx.getValue().loanId()).isEqualTo(2L);
     }
 
@@ -122,7 +122,7 @@ class NotificationEventListenerTest {
         ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
         verify(dispatcher).dispatch(type.capture(), ctx.capture());
         assertThat(type.getValue()).isEqualTo(NotificationType.REPAYMENT_REJECTED);
-        assertThat(ctx.getValue().applicantId()).isEqualTo(5L);
+        assertThat(ctx.getValue().customerId()).isEqualTo(5L);
         assertThat(ctx.getValue().model()).containsEntry("amount", "₹500");
     }
 

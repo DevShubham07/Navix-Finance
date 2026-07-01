@@ -14,7 +14,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface LoanRepository extends JpaRepository<Loan, Long> {
 
-    List<Loan> findByApplicantId(Long applicantId);
+    List<Loan> findByCustomerId(Long customerId);
+
+    /** Live loans in any of the given statuses (the daily payment-reminder sweep). */
+    List<Loan> findByStatusIn(Collection<LoanStatus> statuses);
 
     /** Loans eligible for collections: a given set of statuses, due on or before {@code asOf}. */
     List<Loan> findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc(

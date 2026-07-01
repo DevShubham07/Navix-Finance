@@ -20,7 +20,7 @@ const rupees = (p: number | null) => (p == null ? "" : (p / 100).toFixed(2));
 /** Every field, for the CSV / PDF (the on-screen table shows the headline columns). */
 const EXPORT_COLUMNS: ExportColumn<AdminApplicationView>[] = [
   { header: "App ID", value: (a) => a.id },
-  { header: "Applicant ID", value: (a) => a.applicantId },
+  { header: "Customer ID", value: (a) => a.customerId },
   { header: "Status", value: (a) => statusLabel(a.status) },
   { header: "Complete", value: (a) => (a.complete ? "yes" : "no") },
   { header: "Steps", value: (a) => `${a.stepsCompleted}/${a.stepsRequired}` },
@@ -70,7 +70,7 @@ export default function AdminAllApplicationsPage() {
     if (filter === "COMPLETE" && !a.complete) return false;
     if (filter === "INCOMPLETE" && a.complete) return false;
     if (!needle) return true;
-    return [a.id, a.applicantId, a.fullName, a.pan, a.mobile, a.email, statusLabel(a.status)]
+    return [a.id, a.customerId, a.fullName, a.pan, a.mobile, a.email, statusLabel(a.status)]
       .filter((v) => v != null)
       .map((v) => String(v).toLowerCase())
       .some((s) => s.includes(needle));
@@ -129,7 +129,7 @@ export default function AdminAllApplicationsPage() {
               <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-2.5">App</th>
-                  <th className="px-4 py-2.5">Applicant</th>
+                  <th className="px-4 py-2.5">Customer</th>
                   <th className="whitespace-nowrap px-4 py-2.5">PAN</th>
                   <th className="whitespace-nowrap px-4 py-2.5">Mobile</th>
                   <th className="whitespace-nowrap px-4 py-2.5">Status</th>
@@ -146,7 +146,7 @@ export default function AdminAllApplicationsPage() {
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-muted">#{a.id}</td>
                     <td className="px-4 py-3">
                       <span className="block max-w-[14rem] truncate font-semibold text-ink" title={a.fullName ?? ""}>{a.fullName || "—"}</span>
-                      <span className="block text-xs text-muted">#{a.applicantId}{a.email ? ` · ${a.email}` : ""}</span>
+                      <span className="block text-xs text-muted">#{a.customerId}{a.email ? ` · ${a.email}` : ""}</span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-ink">{a.pan || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-muted">{a.mobile || "—"}</td>
@@ -172,7 +172,7 @@ export default function AdminAllApplicationsPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-muted">{a.riskCategory || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
-                      <Link href={`/staff/customers/${a.applicantId}`} className="inline-flex items-center gap-1 text-navy hover:underline">
+                      <Link href={`/staff/customers/${a.customerId}`} className="inline-flex items-center gap-1 text-navy hover:underline">
                         Open <ArrowRight size={14} />
                       </Link>
                     </td>

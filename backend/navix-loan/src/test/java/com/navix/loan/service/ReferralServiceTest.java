@@ -27,7 +27,7 @@ import com.navix.loan.dto.ReferralDtos.ExpenseSummaryView;
 import com.navix.loan.dto.ReferralDtos.MyReferralView;
 import com.navix.loan.dto.ReferralDtos.PayoutView;
 import com.navix.loan.dto.ReferralDtos.ValidateCodeView;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.Referral;
 import com.navix.loan.entity.ReferralCode;
@@ -55,7 +55,7 @@ class ReferralServiceTest {
     @Mock private ReferralRepository referralRepository;
     @Mock private ReferralPayoutRepository payoutRepository;
     @Mock private LoanRepository loanRepository;
-    @Mock private ApplicantReviewService reviewService;
+    @Mock private CustomerReviewService reviewService;
     @Mock private FeatureFlagService featureFlags;
     @Mock private ApplicationEventPublisher eventPublisher;
 
@@ -85,9 +85,9 @@ class ReferralServiceTest {
         ActorContext.set(new CurrentActor(String.valueOf(id), "Borrower " + id, "BORROWER"));
     }
 
-    private static ReferralCode code(long ownerApplicantId, String code) {
+    private static ReferralCode code(long ownerCustomerId, String code) {
         ReferralCode rc = new ReferralCode();
-        rc.setApplicantId(ownerApplicantId);
+        rc.setCustomerId(ownerCustomerId);
         rc.setCode(code);
         return rc;
     }
@@ -95,15 +95,15 @@ class ReferralServiceTest {
     private static Referral referral(long id, long referrer, long referred, ReferralStatus status) {
         Referral r = new Referral();
         r.setId(id);
-        r.setReferrerApplicantId(referrer);
-        r.setReferredApplicantId(referred);
+        r.setReferrerCustomerId(referrer);
+        r.setReferredCustomerId(referred);
         r.setCodeUsed("FRIEND12");
         r.setStatus(status);
         return r;
     }
 
-    private static ApplicantProfile profile(String name) {
-        ApplicantProfile p = new ApplicantProfile();
+    private static CustomerProfile profile(String name) {
+        CustomerProfile p = new CustomerProfile();
         p.setFullName(name);
         return p;
     }
@@ -111,8 +111,8 @@ class ReferralServiceTest {
     private static ReferralPayout payout(long id, long beneficiary, ReferralPayoutStatus status) {
         ReferralPayout p = new ReferralPayout();
         p.setId(id);
-        p.setBeneficiaryApplicantId(beneficiary);
-        p.setCounterpartyApplicantId(beneficiary + 1);
+        p.setBeneficiaryCustomerId(beneficiary);
+        p.setCounterpartyCustomerId(beneficiary + 1);
         p.setBeneficiaryRole(ReferralBeneficiaryRole.REFERRER);
         p.setAmountPaise(REWARD);
         p.setStatus(status);
@@ -124,12 +124,12 @@ class ReferralServiceTest {
     @Test
     void myReferral_mintsCodeAndRollsUpEarnings() {
         asBorrower(9001);
-        when(codeRepository.findByApplicantId(9001L)).thenReturn(Optional.empty());
+        when(codeRepository.findByCustomerId(9001L)).thenReturn(Optional.empty());
         when(codeRepository.existsByCode(any())).thenReturn(false);
         when(codeRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(referralRepository.countByReferrerApplicantIdAndStatus(9001L, ReferralStatus.QUALIFIED))
+        when(referralRepository.countByReferrerCustomerIdAndStatus(9001L, ReferralStatus.QUALIFIED))
                 .thenReturn(2L);
-        when(payoutRepository.findByBeneficiaryApplicantId(9001L)).thenReturn(List.of(
+        when(payoutRepository.findByBeneficiaryCustomerId(9001L)).thenReturn(List.of(
                 payout(1, 9001, ReferralPayoutStatus.PAID),
                 payout(2, 9001, ReferralPayoutStatus.PENDING)));
 
@@ -151,8 +151,8 @@ class ReferralServiceTest {
     void applyCode_createsPendingReferral() {
         asBorrower(9002);
         when(codeRepository.findByCode("FRIEND12")).thenReturn(Optional.of(code(9001, "FRIEND12")));
-        when(referralRepository.findByReferredApplicantId(9002L)).thenReturn(Optional.empty());
-        when(loanRepository.findByApplicantId(9002L)).thenReturn(List.of());
+        when(referralRepository.findByReferredCustomerId(9002L)).thenReturn(Optional.empty());
+        when(loanRepository.findByCustomerId(9002L)).thenReturn(List.of());
         when(reviewService.latestProfile(9001L)).thenReturn(Optional.of(profile("Asha")));
 
         ApplyCodeResult result = service(true).applyCode("friend12"); // case-insensitive
@@ -164,8 +164,8 @@ class ReferralServiceTest {
 
         ArgumentCaptor<Referral> saved = ArgumentCaptor.forClass(Referral.class);
         verify(referralRepository).save(saved.capture());
-        assertThat(saved.getValue().getReferrerApplicantId()).isEqualTo(9001L);
-        assertThat(saved.getValue().getReferredApplicantId()).isEqualTo(9002L);
+        assertThat(saved.getValue().getReferrerCustomerId()).isEqualTo(9001L);
+        assertThat(saved.getValue().getReferredCustomerId()).isEqualTo(9002L);
         assertThat(saved.getValue().getStatus()).isEqualTo(ReferralStatus.PENDING);
     }
 
@@ -183,7 +183,7 @@ class ReferralServiceTest {
     void applyCode_rejectsAlreadyReferred() {
         asBorrower(9002);
         when(codeRepository.findByCode("FRIEND12")).thenReturn(Optional.of(code(9001, "FRIEND12")));
-        when(referralRepository.findByReferredApplicantId(9002L))
+        when(referralRepository.findByReferredCustomerId(9002L))
                 .thenReturn(Optional.of(referral(7, 5000, 9002, ReferralStatus.PENDING)));
 
         assertThatThrownBy(() -> service(true).applyCode("FRIEND12"))
@@ -195,8 +195,8 @@ class ReferralServiceTest {
     void applyCode_rejectsExistingBorrower() {
         asBorrower(9002);
         when(codeRepository.findByCode("FRIEND12")).thenReturn(Optional.of(code(9001, "FRIEND12")));
-        when(referralRepository.findByReferredApplicantId(9002L)).thenReturn(Optional.empty());
-        when(loanRepository.findByApplicantId(9002L)).thenReturn(List.of(new Loan()));
+        when(referralRepository.findByReferredCustomerId(9002L)).thenReturn(Optional.empty());
+        when(loanRepository.findByCustomerId(9002L)).thenReturn(List.of(new Loan()));
 
         assertThatThrownBy(() -> service(true).applyCode("FRIEND12"))
                 .isInstanceOf(BusinessException.class)
@@ -227,7 +227,7 @@ class ReferralServiceTest {
 
     @Test
     void onLoanDisbursed_qualifiesAndCreatesTwoPayouts() {
-        when(referralRepository.findByReferredApplicantId(9002L))
+        when(referralRepository.findByReferredCustomerId(9002L))
                 .thenReturn(Optional.of(referral(5, 9001, 9002, ReferralStatus.PENDING)));
 
         service(true).onLoanDisbursed(9002L, 77L);
@@ -245,7 +245,7 @@ class ReferralServiceTest {
             assertThat(p.getStatus()).isEqualTo(ReferralPayoutStatus.PENDING);
             assertThat(p.getQualifyingLoanId()).isEqualTo(77L);
         });
-        assertThat(created).extracting(ReferralPayout::getBeneficiaryApplicantId)
+        assertThat(created).extracting(ReferralPayout::getBeneficiaryCustomerId)
                 .containsExactlyInAnyOrder(9001L, 9002L);
         assertThat(created).extracting(ReferralPayout::getBeneficiaryRole)
                 .containsExactlyInAnyOrder(ReferralBeneficiaryRole.REFERRER, ReferralBeneficiaryRole.REFERRED);
@@ -254,7 +254,7 @@ class ReferralServiceTest {
 
     @Test
     void onLoanDisbursed_noopWhenNoReferral() {
-        when(referralRepository.findByReferredApplicantId(9002L)).thenReturn(Optional.empty());
+        when(referralRepository.findByReferredCustomerId(9002L)).thenReturn(Optional.empty());
 
         service(true).onLoanDisbursed(9002L, 77L);
 
@@ -264,7 +264,7 @@ class ReferralServiceTest {
 
     @Test
     void onLoanDisbursed_idempotentWhenAlreadyQualified() {
-        when(referralRepository.findByReferredApplicantId(9002L))
+        when(referralRepository.findByReferredCustomerId(9002L))
                 .thenReturn(Optional.of(referral(5, 9001, 9002, ReferralStatus.QUALIFIED)));
 
         service(true).onLoanDisbursed(9002L, 88L);
@@ -404,12 +404,12 @@ class ReferralServiceTest {
     @Test
     void myReferral_reportsDisabledByDbFlag_evenWhenPropertyEnabled() {
         asBorrower(9001);
-        when(codeRepository.findByApplicantId(9001L)).thenReturn(Optional.empty());
+        when(codeRepository.findByCustomerId(9001L)).thenReturn(Optional.empty());
         when(codeRepository.existsByCode(any())).thenReturn(false);
         when(codeRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(referralRepository.countByReferrerApplicantIdAndStatus(9001L, ReferralStatus.QUALIFIED))
+        when(referralRepository.countByReferrerCustomerIdAndStatus(9001L, ReferralStatus.QUALIFIED))
                 .thenReturn(0L);
-        when(payoutRepository.findByBeneficiaryApplicantId(9001L)).thenReturn(List.of());
+        when(payoutRepository.findByBeneficiaryCustomerId(9001L)).thenReturn(List.of());
 
         MyReferralView view = serviceFlag(true, false).myReferral();
 

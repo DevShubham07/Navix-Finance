@@ -91,6 +91,11 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
   surfaced to both audiences by a shared `NotificationBell` (§11/§12). Email delivers via a pluggable
   `EmailClient` (`log` default · `smtp` · **AWS `ses`**); SES **bounce/complaint feedback** is ingested
   over SNS→SQS into an `email_suppression` list that the sender skips on future sends (§14).
+- **Payment reminders** — a daily `@Scheduled` sweep (`PaymentReminderScheduler`, navix-app; the app's only
+  `@EnableScheduling`) nudges every live loan: **due-soon** (`PAYMENT_DUE_SOON`, from 7 days before due through
+  the day-after-salary grace — "due in N days", penalty-free) then **overdue** (`PAYMENT_OVERDUE`, the 7 days
+  past grace — "₹Y overdue, pay now or credit-score + penalty"), stopping the moment the penalty-aware
+  outstanding hits 0. Single-instance only (no distributed lock — TODO before scaling out).
 - **Feature flags** — dev-only **DB-backed** flags (`feature_flag`, read-only API), changed via SQL with
   no redeploy; first used as a kill-switch for the referral program (§11/§12).
 - **Referral** — refer-a-friend (codes, rewards, staff payout settlement), gated by the feature flag.
@@ -337,9 +342,9 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 | | Borrower | Staff / Admin |
 |---|---|---|
-| Login route | `POST /api/auth/borrower/otp/request` then `/borrower/login` (mobile + OTP) | `POST /api/auth/staff/login` (role → seeded email + `Admin@12345`, or email+password) |
-| Token | **borrower JWT** (HS256, audience `borrower`, subject = applicantId) | **staff JWT** (audience `staff`, subject = staffId, role claim) |
-| Cookie | `navix_borrower` `{token, id, applicantId, name, mobile}` | `navix_staff` `{token, id, name, role}` |
+| Login route | mobile + OTP (`/borrower/otp/request` → `/borrower/login`) **or** password (`/borrower/password-login`); forgot/reset via link (§11) | `POST /api/auth/staff/login` (role → seeded email + `Admin@12345`, or email+password); forgot/reset via link (§11) |
+| Token | **borrower JWT** (HS256, audience `borrower`, subject = customerId, **7-day TTL**) | **staff JWT** (audience `staff`, subject = staffId, role claim, 1-day TTL) |
+| Cookie | `navix_borrower` `{token, id, customerId, name, mobile}` (7-day; a KYC-verified returning borrower skips `/login`) | `navix_staff` `{token, id, name, role}` |
 | Logout / me | `/api/auth/borrower/{logout,me}` (me strips the token) | `/api/auth/staff/{logout,me}` |
 | BFF proxy | `/api/borrower/applications/*`, `/api/borrower/loan/*` | `/api/staff/{applications,loan,collections,users,invites}/*`, `/api/admin/blocklist/*`, `/api/payment-settings`, `/api/storage` |
 | UI entry | `/login` → `/dashboard` | `/staff/login` → `/staff/dashboard` |
@@ -502,17 +507,22 @@ navix-common). Applied on every boot:
 | `V30__settlement_status.sql` | add `settlement.{status, rejected_by, rejected_at}` (maker-checker **reject** for settlements + repayments) |
 | `V31__feature_flag.sql` | `feature_flag` — dev-only DB feature flags (SQL-controlled, read-only API; no write path) |
 | `V32__email_suppression.sql` | `email_suppression` (bounced/complained addresses, unique on `lower(email)`) — fed by the SES SNS→SQS listener; the email sender skips suppressed addresses (§14) |
+| `V33__rename_applicant_to_customer.sql` | **rename `applicant` → `customer` across the schema**: `applicant_id → customer_id` (9 tables), `applicant_profile → customer_profile`, all embedded-name indexes/constraints. The id **value** is unchanged (still mobile-derived); only names change. The guarantor `co_applicant` is deliberately **untouched**. |
+| `V34__auth_passwords_and_reset.sql` | password auth: `borrower_credential` (first durable per-customer row, keyed by `customer_id`), `staff_user.mobile` (+ demo backfill `9000000000` for the email+mobile reset gate), `password_reset_token` (one-time, SHA-256-hashed, single-use, 30-min) |
 
-**The aggregate** `loan_application`: `id`, `applicant_id`, `amount_requested` (paise, nullable),
+**The aggregate** `loan_application`: `id`, `customer_id` (was `applicant_id`, renamed in V33), `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
 **Audit** `application_event`: `id`, `application_id`, `from_status`, `to_status`, `actor_id`,
 `actor_role`, `action`, `notes`, `at` — append-only, and the source of truth for SoD checks.
 
 > Known DB debt (deferred): no FK constraints (indexes only). The legacy `disbursement_request` UUID
 > maker-checker chain is **superseded by the single aggregate** and left dormant. (`collection_case` is
-> on the real **bigint** loan id — V11; `loan` carries `disbursal_txn_ref` — V13; `applicant_profile`
-> identity uniqueness is **applicant-scoped** — V12 added it globally, **V23 relaxed it** to per-applicant
-> so returning borrowers can re-onboard.)
+> on the real **bigint** loan id — V11; `loan` carries `disbursal_txn_ref` — V13; `customer_profile`
+> (renamed from `applicant_profile` in V33) identity uniqueness is **customer-scoped** — V12 added it
+> globally, **V23 relaxed it** to per-customer so returning borrowers can re-onboard.)
+> **Naming:** the durable per-person key is `customer_id` (renamed from `applicant_id` in V33); code uses
+> `customerId` / `CustomerProfile` throughout. Only `co_applicant`/`CoApplicant` (the guarantor) keeps the
+> old name. External bureau-API JSON keys (`Current_Applicant_Details`, …) are **not** ours and stay as-is.
 
 ---
 
@@ -524,6 +534,13 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 
 > **Migration-added endpoints (full list in `QA_CHECKLIST.md` §B):**
 > - **Auth:** `POST /api/auth/staff/login`, `POST /api/auth/borrower/otp/request`, `POST /api/auth/borrower/login`.
+> - **Password auth (V34):** borrowers sign in by **password OR OTP** — `POST /api/auth/borrower/password-login`
+>   (mobile+password), `POST …/borrower/set-password` (authed; optional signup step / profile). **Forgot-password**
+>   for both audiences — `POST /api/auth/{borrower,staff}/forgot-password` (email+mobile gate, generic ack, no
+>   enumeration) emails a **one-time reset link** (30-min, single-use, hashed at rest; surfaced in the backend
+>   log when `NAVIX_EMAIL_PROVIDER=log`), redeemed at `POST /api/auth/{borrower,staff}/reset-password`
+>   (token+new password; ≥10-char alnum policy; `subjectType` guards cross-audience reuse). Borrower JWT TTL is
+>   **7 days** (`navix.auth.borrower-ttl-seconds`); staff stays 1 day.
 > - **Onboarding verification** (BORROWER, ownership-checked): `POST /api/applications/{id}/verify/{pan,
 >   email,address,digilocker/init,bureau,salary,penny-drop,selfie,agreement,presign-upload}`,
 >   `POST …/verify/digilocker/complete`, `GET …/verify/{digilocker/status,summary}`; `submit-kyc` is gated
@@ -558,9 +575,9 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 | Method + path | Role | Purpose |
 |---|---|---|
 | `GET /?q=` | staff (all roles) | list/search distinct applicants (name / applicant id); each row rolls up counts + total outstanding |
-| `GET /{applicantId}` | staff (all roles) | one customer's full history: latest profile + all applications + loans + payments |
-| `PUT /{applicantId}/profile` | ADMIN | correct KYC + salary data (non-identity fields; PAN/Aadhaar/mobile locked) — a monthly-salary change recomputes the eligible limit |
-| `GET /{applicantId}/changes` | staff (all roles) | audited profile-change history (`profile_change_log`, previous→new per field) |
+| `GET /{customerId}` | staff (all roles) | one customer's full history: latest profile + all applications + loans + payments |
+| `PUT /{customerId}/profile` | ADMIN | correct KYC + salary data (non-identity fields; PAN/Aadhaar/mobile locked) — a monthly-salary change recomputes the eligible limit |
+| `GET /{customerId}/changes` | staff (all roles) | audited profile-change history (`profile_change_log`, previous→new per field) |
 
 ### Loan ledger, repayments & transactions (`/api/loan`)
 

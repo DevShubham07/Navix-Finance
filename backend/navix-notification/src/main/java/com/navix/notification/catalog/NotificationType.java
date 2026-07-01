@@ -61,6 +61,9 @@ public enum NotificationType {
     REPAYMENT_RECORDED(REPAYMENT, Set.of(IN_APP), Set.of(TO_ACCOUNTANTS, TO_BORROWER)),
     REPAYMENT_VERIFIED(REPAYMENT, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
     REPAYMENT_REJECTED(REPAYMENT, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+    // Time-driven reminders from the daily PaymentReminderScheduler.
+    PAYMENT_DUE_SOON(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    PAYMENT_OVERDUE(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     LOAN_CLOSED(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
 
     // ---- COLLECTIONS ----

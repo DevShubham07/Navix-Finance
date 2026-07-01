@@ -25,7 +25,7 @@ const REFRESH_MS = 10_000;
 const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
   KYC_APPROVER: {
     label: "KYC clearances & reborrow reviews",
-    info: "Review fresh applicants' KYC, plus returning borrowers flagged for a past overdue. Approve to advance, or reject to send it back.",
+    info: "Review fresh customers' KYC, plus returning borrowers flagged for a past overdue. Approve to advance, or reject to send it back.",
   },
   CREDIT_EXECUTIVE: {
     label: "Applications to review",
@@ -218,7 +218,7 @@ export default function StaffDashboardPage() {
                       #{a.id}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-ink">Applicant #{a.applicantId}</span>
+                      <span className="block truncate text-sm font-semibold text-ink">Customer #{a.customerId}</span>
                       <span className="block text-xs text-muted">
                         App #{a.id} · {a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "amount pending"}
                       </span>

@@ -12,7 +12,7 @@ import com.navix.iam.domain.StaffRole;
 import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,16 +30,19 @@ class AuthControllerTest {
 
     @Mock private StaffUserRepository staffRepository;
     @Mock private BorrowerOtpService otpService;
-    @Mock private ApplicantProfileRepository profileRepository;
+    @Mock private CustomerProfileRepository profileRepository;
+    @Mock private BorrowerCredentialRepository credentialRepository;
+    @Mock private PasswordResetService passwordResetService;
 
     private AuthController controller;
     private JwtService jwt;
 
     @BeforeEach
     void setUp() {
-        jwt = new JwtService("test-secret-test-secret-test-secret", 3600);
+        jwt = new JwtService("test-secret-test-secret-test-secret", 3600, 3600);
         PasswordEncoder encoder = new BCryptPasswordEncoder();
-        controller = new AuthController(staffRepository, jwt, encoder, otpService, profileRepository);
+        controller = new AuthController(staffRepository, jwt, encoder, otpService, profileRepository,
+                credentialRepository, passwordResetService);
     }
 
     private StaffUser admin() {
@@ -83,11 +86,11 @@ class AuthControllerTest {
     }
 
     @Test
-    void borrowerLogin_issuesBorrowerToken_derivingApplicantId() {
+    void borrowerLogin_issuesBorrowerToken_derivingCustomerId() {
         when(otpService.verify("98190 00001", "123456")).thenReturn(true);
         var resp = controller.borrowerLogin(new BorrowerLoginRequest("98190 00001", "123456", "Asha", null));
 
-        assertThat(resp.getData().applicantId()).isEqualTo(9000001L); // last 7 digits
+        assertThat(resp.getData().customerId()).isEqualTo(9000001L); // last 7 digits
         JwtService.Principal p = jwt.verify(resp.getData().token());
         assertThat(p.role()).isEqualTo("BORROWER");
         assertThat(p.audience()).isEqualTo(JwtService.AUDIENCE_BORROWER);

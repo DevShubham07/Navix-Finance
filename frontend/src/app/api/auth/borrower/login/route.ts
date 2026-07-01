@@ -6,10 +6,10 @@ import { config } from "@/lib/config";
  * Borrower login (mobile + OTP). SEPARATE from staff auth — never shares a
  * session/cookie.
  *
- * POST `{ mobile, otp, name?, applicantId? }` -> authenticates against the
+ * POST `{ mobile, otp, name?, customerId? }` -> authenticates against the
  * backend `POST /api/auth/borrower/login` (the backend enforces the OTP and
- * derives the applicant id). On success the JWT is stored in the httpOnly
- * `navix_borrower` cookie (`{ token, id, applicantId, name, mobile }`); the
+ * derives the customer id). On success the JWT is stored in the httpOnly
+ * `navix_borrower` cookie (`{ token, id, customerId, name, mobile }`); the
  * response body omits the token.
  */
 
@@ -18,7 +18,7 @@ interface BorrowerLoginData {
   id: string | number;
   name: string;
   role: string;
-  applicantId: number;
+  customerId: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -29,10 +29,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { mobile, otp, applicantId, name } = (body ?? {}) as {
+  const { mobile, otp, customerId, name } = (body ?? {}) as {
     mobile?: unknown;
     otp?: unknown;
-    applicantId?: unknown;
+    customerId?: unknown;
     name?: unknown;
   };
 
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         mobile: cleanMobile,
         otp: typeof otp === "string" ? otp : "",
-        applicantId: typeof applicantId === "number" ? applicantId : undefined,
+        customerId: typeof customerId === "number" ? customerId : undefined,
         name: typeof name === "string" && name.trim() ? name.trim() : undefined,
       }),
       cache: "no-store",
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
   const session = {
     token: data.token,
     id: String(data.id),
-    applicantId: data.applicantId,
+    customerId: data.customerId,
     name: data.name,
     mobile: cleanMobile,
   };
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
   // Never return the token to the browser.
   return NextResponse.json({
     id: session.id,
-    applicantId: session.applicantId,
+    customerId: session.customerId,
     name: session.name,
     mobile: session.mobile,
   });

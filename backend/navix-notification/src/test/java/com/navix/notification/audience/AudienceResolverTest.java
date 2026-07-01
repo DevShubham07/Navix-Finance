@@ -46,10 +46,10 @@ class AudienceResolverTest {
     }
 
     @Test
-    void resolvesBorrowerFromApplicantId() {
+    void resolvesBorrowerFromCustomerId() {
         when(borrower.borrowerContact(77L)).thenReturn(Optional.of(
                 new ContactInfo(RecipientType.BORROWER, 77L, "Asha", "asha@x.test", "9876500000", "BORROWER")));
-        NotificationContext ctx = NotificationContext.builder().applicantId(77L).build();
+        NotificationContext ctx = NotificationContext.builder().customerId(77L).build();
 
         List<ContactInfo> out = resolver().resolve(Set.of(RecipientPolicy.TO_BORROWER), ctx);
 
@@ -60,7 +60,7 @@ class AudienceResolverTest {
     }
 
     @Test
-    void borrowerPolicyWithNoApplicantResolvesEmpty() {
+    void borrowerPolicyWithNoCustomerResolvesEmpty() {
         NotificationContext ctx = NotificationContext.builder().build();
         assertThat(resolver().resolve(Set.of(RecipientPolicy.TO_BORROWER), ctx)).isEmpty();
     }

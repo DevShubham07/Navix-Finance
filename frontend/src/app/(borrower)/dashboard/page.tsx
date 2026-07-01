@@ -422,7 +422,7 @@ function LoanCard({
 
 /**
  * The pre-approved offer a borrower sees on the dashboard whenever no loan is in
- * process — a fresh applicant, or after a previous advance has been fully repaid.
+ * process — a fresh customer, or after a previous advance has been fully repaid.
  * Brand-styled (navy gradient + gold CTA). When the salary-derived eligible limit
  * is known it surfaces the real "up to ₹X pre-approved" amount; otherwise it stays
  * generic. Benefits are product-accurate (single salary-day repayment — no EMI).

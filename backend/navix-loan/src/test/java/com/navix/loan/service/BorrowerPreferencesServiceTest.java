@@ -35,7 +35,7 @@ class BorrowerPreferencesServiceTest {
     @Test
     void defaultsAllOnWhenNoRowSaved() {
         ActorContext.set(new CurrentActor("9001", "Asha", "BORROWER"));
-        when(repository.findByApplicantId(9001L)).thenReturn(Optional.empty());
+        when(repository.findByCustomerId(9001L)).thenReturn(Optional.empty());
 
         PreferencesView v = service().getMine();
 
@@ -47,7 +47,7 @@ class BorrowerPreferencesServiceTest {
     @Test
     void updateUpsertsForCallingBorrower() {
         ActorContext.set(new CurrentActor("9001", "Asha", "BORROWER"));
-        when(repository.findByApplicantId(9001L)).thenReturn(Optional.empty());
+        when(repository.findByCustomerId(9001L)).thenReturn(Optional.empty());
         when(repository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         PreferencesView v = service().updateMine(new PreferencesView(false, true, false));

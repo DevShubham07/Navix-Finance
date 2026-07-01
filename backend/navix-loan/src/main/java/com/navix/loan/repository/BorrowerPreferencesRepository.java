@@ -5,9 +5,9 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-/** Persistence for borrower notification preferences (1:1 with applicant_id). */
+/** Persistence for borrower notification preferences (1:1 with customer_id). */
 @Repository
 public interface BorrowerPreferencesRepository extends JpaRepository<BorrowerPreferences, Long> {
 
-    Optional<BorrowerPreferences> findByApplicantId(Long applicantId);
+    Optional<BorrowerPreferences> findByCustomerId(Long customerId);
 }

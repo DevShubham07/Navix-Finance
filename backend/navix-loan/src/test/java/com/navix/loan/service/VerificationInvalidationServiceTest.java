@@ -6,9 +6,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationVerification;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import java.util.Optional;
 import java.util.Set;
@@ -23,7 +23,7 @@ class VerificationInvalidationServiceTest {
     private static final Long APP = 4L;
 
     @Mock private ApplicationVerificationRepository verificationRepo;
-    @Mock private ApplicantProfileRepository profileRepo;
+    @Mock private CustomerProfileRepository profileRepo;
 
     private VerificationInvalidationService service() {
         return new VerificationInvalidationService(verificationRepo, profileRepo);
@@ -40,7 +40,7 @@ class VerificationInvalidationServiceTest {
     @Test
     void changingAddressResetsAddressCheckToPendingAndClearsFlag() {
         ApplicationVerification address = row("ADDRESS", "PASS");
-        ApplicantProfile profile = new ApplicantProfile();
+        CustomerProfile profile = new CustomerProfile();
         profile.setApplicationId(APP);
         profile.setAddressVerified(true);
         when(verificationRepo.findByApplicationIdAndCheckType(APP, "ADDRESS")).thenReturn(Optional.of(address));
@@ -58,7 +58,7 @@ class VerificationInvalidationServiceTest {
     void salaryAndBankMapToSalaryAndPennyDropChecks() {
         ApplicationVerification salary = row("SALARY", "PASS");
         ApplicationVerification penny = row("PENNY_DROP", "PASS");
-        ApplicantProfile profile = new ApplicantProfile();
+        CustomerProfile profile = new CustomerProfile();
         profile.setApplicationId(APP);
         profile.setPennyDropVerified(true);
         when(verificationRepo.findByApplicationIdAndCheckType(APP, "SALARY")).thenReturn(Optional.of(salary));

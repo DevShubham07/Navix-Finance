@@ -32,8 +32,8 @@ public class ReferralPayout extends BaseAuditEntity {
     private Long referralId;
 
     /** Who is paid. */
-    @Column(name = "beneficiary_applicant_id", nullable = false)
-    private Long beneficiaryApplicantId;
+    @Column(name = "beneficiary_customer_id", nullable = false)
+    private Long beneficiaryCustomerId;
 
     /** Whether the beneficiary is the referrer or the referred borrower. */
     @Enumerated(EnumType.STRING)
@@ -41,8 +41,8 @@ public class ReferralPayout extends BaseAuditEntity {
     private ReferralBeneficiaryRole beneficiaryRole;
 
     /** The other party in the referral (for context/display); may be null. */
-    @Column(name = "counterparty_applicant_id")
-    private Long counterpartyApplicantId;
+    @Column(name = "counterparty_customer_id")
+    private Long counterpartyCustomerId;
 
     /** Reward amount in integer paise (snapshot at creation). */
     @Column(name = "amount_paise", nullable = false)

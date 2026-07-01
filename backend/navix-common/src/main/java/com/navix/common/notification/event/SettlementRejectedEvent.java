@@ -8,7 +8,7 @@ public record SettlementRejectedEvent(
         UUID settlementId,
         UUID caseId,
         Long loanId,
-        Long applicantId,
+        Long customerId,
         long amountPaise,
         Long proposedBy,
         Instant at) {

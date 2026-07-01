@@ -26,7 +26,7 @@ import {
 } from "@/lib/api/applications";
 import { eligibleLimit as eligibleLimitRupees } from "@/lib/calc/loan-math";
 import { useOnboardingStore } from "@/stores/application-store";
-import type { ApplicantProfile, BorrowerStatus } from "@/lib/domain/borrower";
+import type { CustomerProfile, BorrowerStatus } from "@/lib/domain/borrower";
 
 /** Browser-local pointer to the borrower's in-flight live application id. */
 const STORAGE_KEY = "navix.live.applicationId";
@@ -59,7 +59,7 @@ const TERMINAL_BAD: ApplicationStatus[] = [
 
 export interface BorrowerSession {
   id: string;
-  applicantId: number;
+  customerId: number;
   name: string;
   mobile: string;
 }
@@ -464,10 +464,10 @@ export function canStartNewLoan(apps: ApplicationView[] | undefined): boolean {
 export { TERMINAL as LIVE_TERMINAL_STATUSES };
 
 // ---------------------------------------------------------------------------
-// Profile mapping (wizard ApplicantProfile -> backend ProfileInput)
+// Profile mapping (wizard CustomerProfile -> backend ProfileInput)
 // ---------------------------------------------------------------------------
 
-export function buildProfileInput(a: ApplicantProfile): ProfileInput {
+export function buildProfileInput(a: CustomerProfile): ProfileInput {
   const address = [a.addressLine, a.city, a.pin].filter(Boolean).join(", ");
   return {
     fullName: a.fullName?.trim() || undefined,
@@ -499,7 +499,7 @@ async function resolveApplication(session: BorrowerSession): Promise<Application
       // fall through and create a new draft
     }
   }
-  const created = await borrowerApi.create(session.applicantId);
+  const created = await borrowerApi.create(session.customerId);
   writeStoredAppId(created.id);
   return created;
 }
@@ -520,7 +520,7 @@ export async function createOrResumeDraft(session: BorrowerSession): Promise<App
       // fall through and create a fresh draft
     }
   }
-  const created = await borrowerApi.create(session.applicantId);
+  const created = await borrowerApi.create(session.customerId);
   writeStoredAppId(created.id);
   return created;
 }
@@ -531,19 +531,19 @@ export async function createOrResumeDraft(session: BorrowerSession): Promise<App
  * Persists everything in Postgres and advances the application to KYC_PENDING.
  */
 export async function submitOnboarding(
-  applicant: ApplicantProfile,
+  customer: CustomerProfile,
   docs: Array<{ docType: string; fileName: string; contentType?: string; dataBase64: string }> = [],
 ): Promise<ApplicationView> {
-  const mobile = applicant.mobile?.replace(/\s/g, "") || "";
+  const mobile = customer.mobile?.replace(/\s/g, "") || "";
   // The mobile-otp step already established the session with a real OTP; reuse it.
-  const session = await ensureBorrowerSession(mobile, undefined, applicant.fullName);
+  const session = await ensureBorrowerSession(mobile, undefined, customer.fullName);
   if (!session) {
     throw new ApplicationApiError("Could not establish a borrower session — please sign in again.", "NO_SESSION", 0);
   }
 
   let app = await resolveApplication(session);
 
-  const profile = buildProfileInput(applicant);
+  const profile = buildProfileInput(customer);
   if (Object.values(profile).some((v) => v !== undefined)) {
     await borrowerApi.saveProfile(app.id, profile);
   }

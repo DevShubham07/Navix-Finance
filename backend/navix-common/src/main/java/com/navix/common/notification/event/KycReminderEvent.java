@@ -9,7 +9,7 @@ import java.time.Instant;
  * checks still outstanding (e.g. "Pan, Selfie, Penny drop").
  */
 public record KycReminderEvent(
-        Long applicantId,
+        Long customerId,
         Long applicationId,
         String pendingSteps,
         Instant at) {

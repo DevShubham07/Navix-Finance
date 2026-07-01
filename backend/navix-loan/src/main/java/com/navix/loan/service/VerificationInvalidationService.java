@@ -1,8 +1,8 @@
 package com.navix.loan.service;
 
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationVerification;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import java.util.Map;
 import java.util.Set;
@@ -14,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
  * The single seam for <b>invalidating</b> verification when the data behind a check changes (Phase 4).
  * When a borrower (or admin) edits a verification-linked profile field — address, bank, salary,
  * employer/email — the corresponding {@code application_verification} row is reset to {@code PENDING}
- * and the denormalized {@code applicant_profile} flag is cleared, so the check must be re-run / re-cleared
+ * and the denormalized {@code customer_profile} flag is cleared, so the check must be re-run / re-cleared
  * before the application can proceed. Field → check mapping is centralised here:
  *
  * <ul>
@@ -41,7 +41,7 @@ public class VerificationInvalidationService {
             "email", "EMAIL");
 
     private final ApplicationVerificationRepository verificationRepo;
-    private final ApplicantProfileRepository profileRepo;
+    private final CustomerProfileRepository profileRepo;
 
     /**
      * Reset the verification(s) tied to the given changed profile fields back to {@code PENDING} and
@@ -76,7 +76,7 @@ public class VerificationInvalidationService {
         });
     }
 
-    private static void clearFlags(ApplicantProfile p, Set<String> checks) {
+    private static void clearFlags(CustomerProfile p, Set<String> checks) {
         if (checks.contains("ADDRESS")) {
             p.setAddressVerified(false);
         }

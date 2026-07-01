@@ -106,9 +106,9 @@ export default function ReferralPayoutsPage() {
           subtitle={tab === "PAID" ? "Referral expense ledger (paid)" : "Pending referral payouts"}
           fileBase={`navix-referral-payouts-${tab.toLowerCase()}`}
           columns={[
-            { header: "Beneficiary", value: (p: ReferralPayout) => p.beneficiaryName ?? `#${p.beneficiaryApplicantId}` },
+            { header: "Beneficiary", value: (p: ReferralPayout) => p.beneficiaryName ?? `#${p.beneficiaryCustomerId}` },
             { header: "Role", value: (p) => roleLabel(p.beneficiaryRole) },
-            { header: "Friend", value: (p) => p.counterpartyName ?? (p.counterpartyApplicantId ? `#${p.counterpartyApplicantId}` : "—") },
+            { header: "Friend", value: (p) => p.counterpartyName ?? (p.counterpartyCustomerId ? `#${p.counterpartyCustomerId}` : "—") },
             { header: "Amount (₹)", value: (p) => (p.amountPaise / 100).toFixed(2) },
             { header: "Loan #", value: (p) => (p.qualifyingLoanId ? String(p.qualifyingLoanId) : "—") },
             { header: "Status", value: (p) => p.status },
@@ -181,11 +181,11 @@ export default function ReferralPayoutsPage() {
                 {rows.map((p) => (
                   <tr key={p.id} className="hover:bg-grey-50">
                     <td className="px-4 py-3">
-                      <span className="block font-medium text-ink">{p.beneficiaryName ?? `#${p.beneficiaryApplicantId}`}</span>
+                      <span className="block font-medium text-ink">{p.beneficiaryName ?? `#${p.beneficiaryCustomerId}`}</span>
                       <span className="text-xs text-muted">{roleLabel(p.beneficiaryRole)}</span>
                     </td>
                     <td className="px-4 py-3 text-muted">
-                      with {p.counterpartyName ?? (p.counterpartyApplicantId ? `#${p.counterpartyApplicantId}` : "—")}
+                      with {p.counterpartyName ?? (p.counterpartyCustomerId ? `#${p.counterpartyCustomerId}` : "—")}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-ink">{paiseToINR(p.amountPaise)}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-muted">{p.qualifyingLoanId ? `#${p.qualifyingLoanId}` : "—"}</td>

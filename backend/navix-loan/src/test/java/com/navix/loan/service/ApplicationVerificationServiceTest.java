@@ -14,10 +14,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.VerificationPort;
-import com.navix.loan.entity.ApplicantProfile;
+import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.repository.ApplicantProfileRepository;
+import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
@@ -34,7 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ApplicationVerificationServiceTest {
 
     @Mock private ApplicationVerificationRepository verificationRepo;
-    @Mock private ApplicantProfileRepository profileRepo;
+    @Mock private CustomerProfileRepository profileRepo;
     @Mock private LoanApplicationRepository applicationRepo;
     @Mock private ApplicationDocumentRepository documentRepo;
     @Mock private VerificationPort verification;
@@ -61,8 +61,8 @@ class ApplicationVerificationServiceTest {
         lenient().when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of());
     }
 
-    private ApplicantProfile profile() {
-        ApplicantProfile p = new ApplicantProfile();
+    private CustomerProfile profile() {
+        CustomerProfile p = new CustomerProfile();
         p.setApplicationId(APP);
         p.setFullName("SHUBHAM");
         p.setEmployer("Digitap.ai");
@@ -72,7 +72,7 @@ class ApplicationVerificationServiceTest {
 
     @Test
     void panVerify_mapsAndMarksProfileVerified_andPersistsDob() {
-        ApplicantProfile p = profile();
+        CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
                 .thenReturn(new VerificationPort.PanCheck("TXN1", true, "SHUBHAM", "2003-03-24", "M",
@@ -84,12 +84,12 @@ class ApplicationVerificationServiceTest {
         assertThat(result.derived()).containsEntry("aadhaarLinked", true);
         // The DOB the PAN record carries is persisted onto the profile from this first step.
         assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 3, 24));
-        verify(profileRepo).save(any(ApplicantProfile.class));
+        verify(profileRepo).save(any(CustomerProfile.class));
     }
 
     @Test
     void panVerify_parsesDayFirstDobFormat() {
-        ApplicantProfile p = profile();
+        CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(anyString(), anyString()))
                 .thenReturn(new VerificationPort.PanCheck("TXN1", true, "SHUBHAM", "15/08/1992", "M",
@@ -102,7 +102,7 @@ class ApplicationVerificationServiceTest {
 
     @Test
     void panVerify_doesNotOverwriteAnExistingDob() {
-        ApplicantProfile p = profile();
+        CustomerProfile p = profile();
         p.setDob(LocalDate.of(1990, 1, 1)); // already on file (e.g. earlier DigiLocker / borrower-entered)
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(anyString(), anyString()))
@@ -151,7 +151,7 @@ class ApplicationVerificationServiceTest {
 
     @Test
     void salary_setsEligibleLimitOnApplication() {
-        ApplicantProfile p = profile();
+        CustomerProfile p = profile();
         LoanApplication app = new LoanApplication();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
@@ -166,7 +166,7 @@ class ApplicationVerificationServiceTest {
 
     @Test
     void agreement_setsProfileFlag() {
-        ApplicantProfile p = profile();
+        CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
 
         var result = service.recordAgreement(APP, List.of("loan-agreement@1", "sanction@1", "privacy@1"));
@@ -184,7 +184,7 @@ class ApplicationVerificationServiceTest {
         when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
                 row("PAN", "PASS"), row("EMAIL", "REVIEW"), row("ADDRESS", "PASS"), row("AADHAAR", "PASS"),
                 row("BUREAU", "PASS"), row("SALARY", "PASS"), row("PENNY_DROP", "PASS"), row("SELFIE", "REVIEW")));
-        ApplicantProfile agreed = profile();
+        CustomerProfile agreed = profile();
         agreed.setAgreementAccepted(true);
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(agreed));
 
@@ -215,7 +215,7 @@ class ApplicationVerificationServiceTest {
 
     @Test
     void digilockerComplete_marksAadhaarVerified_andPersistsMaskedAadhaarWhenBlank() {
-        ApplicantProfile p = profile();
+        CustomerProfile p = profile();
         p.setDigilockerClientId("CL1"); // session started; aadhaar is blank (borrower didn't type it)
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234"));
@@ -232,7 +232,7 @@ class ApplicationVerificationServiceTest {
 
     @Test
     void digilockerComplete_doesNotOverwriteAFullManuallyEnteredAadhaar() {
-        ApplicantProfile p = profile();
+        CustomerProfile p = profile();
         p.setDigilockerClientId("CL1");
         p.setAadhaar("123456789012"); // borrower already typed the full 12-digit Aadhaar
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));

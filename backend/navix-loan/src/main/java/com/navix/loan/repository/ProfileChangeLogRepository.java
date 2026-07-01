@@ -10,5 +10,5 @@ import org.springframework.stereotype.Repository;
 public interface ProfileChangeLogRepository extends JpaRepository<ProfileChangeLog, Long> {
 
     /** One customer's change history, newest first. */
-    List<ProfileChangeLog> findByApplicantIdOrderByIdDesc(Long applicantId);
+    List<ProfileChangeLog> findByCustomerIdOrderByIdDesc(Long customerId);
 }

@@ -74,7 +74,7 @@ public class RepaymentService {
         payment.setPartial(amountPaise < remaining);
         Payment saved = paymentRepository.save(payment);
         eventPublisher.publishEvent(new RepaymentRecordedEvent(
-                loanId, loan.getApplicantId(), saved.getId(), amountPaise, Instant.now()));
+                loanId, loan.getCustomerId(), saved.getId(), amountPaise, Instant.now()));
         return saved;
     }
 
@@ -90,7 +90,7 @@ public class RepaymentService {
         recomputeOutstanding(payment.getLoanId());
         Loan loan = requireLoan(payment.getLoanId());
         eventPublisher.publishEvent(new RepaymentVerifiedEvent(
-                loan.getId(), loan.getApplicantId(), payment.getId(), payment.getAmount(),
+                loan.getId(), loan.getCustomerId(), payment.getId(), payment.getAmount(),
                 loan.getStatus() == LoanStatus.CLOSED, Instant.now()));
         return payment;
     }
@@ -113,7 +113,7 @@ public class RepaymentService {
         }
         Loan loan = requireLoan(payment.getLoanId());
         eventPublisher.publishEvent(new RepaymentRejectedEvent(
-                loan.getId(), loan.getApplicantId(), payment.getId(), payment.getAmount(), Instant.now()));
+                loan.getId(), loan.getCustomerId(), payment.getId(), payment.getAmount(), Instant.now()));
         return payment;
     }
 

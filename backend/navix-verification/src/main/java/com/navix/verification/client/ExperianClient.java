@@ -48,7 +48,7 @@ public class ExperianClient {
         this.fixturePath = fixturePath;
     }
 
-    /** Pull the Experian credit report for the applicant (or the configured fixture, for demo). */
+    /** Pull the Experian credit report for the customer (or the configured fixture, for demo). */
     public ExperianResponse pull(String pan, String name, String mobile, String clientRef) {
         JsonNode root = (fixturePath != null && !fixturePath.isBlank())
                 ? loadFixture()
@@ -86,7 +86,7 @@ public class ExperianClient {
             return null;
         }
         JsonNode appDetails = report.path("Current_Application").path("Current_Application_Details");
-        JsonNode applicant = appDetails.path("Current_Applicant_Details");
+        JsonNode customer = appDetails.path("Current_Applicant_Details");
         JsonNode addr = appDetails.path("Current_Applicant_Address_Details");
         JsonNode summary = report.path("CAIS_Account").path("CAIS_Summary");
         JsonNode creditAcct = summary.path("Credit_Account");
@@ -99,7 +99,7 @@ public class ExperianClient {
                 text(data.path("name")),
                 text(data.path("pan")),
                 text(data.path("mobile")),
-                formatDob(text(applicant.path("Date_Of_Birth_Applicant"))),
+                formatDob(text(customer.path("Date_Of_Birth_Applicant"))),
                 text(addr.path("City")),
                 text(addr.path("PINCode")),
                 creditScore,

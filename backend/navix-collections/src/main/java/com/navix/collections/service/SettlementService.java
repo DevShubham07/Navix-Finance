@@ -153,10 +153,10 @@ public class SettlementService {
         Settlement saved = settlementRepository.save(s);
         Long loanId = caseRepository.findById(saved.getCollectionCaseId())
                 .map(CollectionCase::getLoanId).orElse(null);
-        Long applicantId = loanId == null ? null
-                : loanDirectory.findLoan(loanId).map(LoanSummary::applicantId).orElse(null);
+        Long customerId = loanId == null ? null
+                : loanDirectory.findLoan(loanId).map(LoanSummary::customerId).orElse(null);
         eventPublisher.publishEvent(new SettlementRejectedEvent(
-                saved.getId(), saved.getCollectionCaseId(), loanId, applicantId,
+                saved.getId(), saved.getCollectionCaseId(), loanId, customerId,
                 saved.getSettlementAmount(), saved.getProposedBy(), Instant.now()));
         return toView(saved);
     }
@@ -171,15 +171,15 @@ public class SettlementService {
 
     /** Publish the proposed/approved settlement event, resolving the borrower via the loan. */
     private void publishSettlement(Settlement s, Long loanId, boolean approved) {
-        Long applicantId = loanId == null ? null
-                : loanDirectory.findLoan(loanId).map(LoanSummary::applicantId).orElse(null);
+        Long customerId = loanId == null ? null
+                : loanDirectory.findLoan(loanId).map(LoanSummary::customerId).orElse(null);
         if (approved) {
             eventPublisher.publishEvent(new SettlementApprovedEvent(
-                    s.getId(), s.getCollectionCaseId(), loanId, applicantId,
+                    s.getId(), s.getCollectionCaseId(), loanId, customerId,
                     s.getSettlementAmount(), s.getApprovedBy(), Instant.now()));
         } else {
             eventPublisher.publishEvent(new SettlementProposedEvent(
-                    s.getId(), s.getCollectionCaseId(), loanId, applicantId,
+                    s.getId(), s.getCollectionCaseId(), loanId, customerId,
                     s.getSettlementAmount(), s.getProposedBy(), Instant.now()));
         }
     }

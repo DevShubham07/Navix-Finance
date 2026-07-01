@@ -34,17 +34,17 @@ public class EligibilityService {
     }
 
     /**
-     * Recompute and persist {@code eligibleLimit} (the firm 25%-of-salary cap) on the applicant's
+     * Recompute and persist {@code eligibleLimit} (the firm 25%-of-salary cap) on the customer's
      * <b>not-yet-disbursed</b> applications from {@code monthlySalaryPaise}. A disbursed loan's limit
      * is historical and untouched. No-op when the salary is null / non-positive.
      */
     @Transactional
-    public void recomputeForApplicant(Long applicantId, Long monthlySalaryPaise) {
-        if (applicantId == null || monthlySalaryPaise == null || monthlySalaryPaise <= 0) {
+    public void recomputeForCustomer(Long customerId, Long monthlySalaryPaise) {
+        if (customerId == null || monthlySalaryPaise == null || monthlySalaryPaise <= 0) {
             return;
         }
         long eligible = risk.eligibleLimitPaise(monthlySalaryPaise);
-        for (LoanApplication a : applicationRepository.findByApplicantId(applicantId)) {
+        for (LoanApplication a : applicationRepository.findByCustomerId(customerId)) {
             if (a.getLoanId() == null) {
                 a.setEligibleLimit(eligible);
                 applicationRepository.save(a);

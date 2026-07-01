@@ -47,4 +47,8 @@ public class StaffUser extends BaseAuditEntity {
 
     @Column(name = "designation", length = 120)
     private String designation;
+
+    /** Contact mobile — the second factor for the email+mobile forgot-password gate (V34). */
+    @Column(name = "mobile", length = 20)
+    private String mobile;
 }

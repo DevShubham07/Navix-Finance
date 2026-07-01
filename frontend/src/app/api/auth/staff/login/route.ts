@@ -23,7 +23,7 @@ interface StaffLoginData {
   id: string | number;
   name: string;
   role: StaffRole;
-  applicantId: number | null;
+  customerId: number | null;
 }
 
 export async function POST(req: NextRequest) {

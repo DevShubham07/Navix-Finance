@@ -26,23 +26,23 @@ public class IncomeController {
     private final RiskScoringService riskScoringService;
 
     /** Income profile + latest risk assessment + current eligible limit. */
-    @GetMapping("/{applicantId}")
-    public ApiResponse<IncomeView> getIncomeProfile(@PathVariable Long applicantId) {
-        return ApiResponse.ok(incomeService.view(applicantId));
+    @GetMapping("/{customerId}")
+    public ApiResponse<IncomeView> getIncomeProfile(@PathVariable Long customerId) {
+        return ApiResponse.ok(incomeService.view(customerId));
     }
 
-    /** Create or update the applicant's verified income profile. */
-    @PostMapping("/{applicantId}/profile")
-    public ApiResponse<ProfileView> saveProfile(@PathVariable Long applicantId,
+    /** Create or update the customer's verified income profile. */
+    @PostMapping("/{customerId}/profile")
+    public ApiResponse<ProfileView> saveProfile(@PathVariable Long customerId,
                                                 @Valid @RequestBody ProfileRequest request) {
-        return ApiResponse.ok(ProfileView.of(incomeService.saveProfile(applicantId,
+        return ApiResponse.ok(ProfileView.of(incomeService.saveProfile(customerId,
                 request.monthlySalaryPaise(), request.salaryCreditDay(), request.employer(),
                 request.uanTenure())));
     }
 
-    /** Run the risk engine for the applicant and persist a fresh assessment. */
-    @PostMapping("/{applicantId}/assess")
-    public ApiResponse<RiskView> assess(@PathVariable Long applicantId) {
-        return ApiResponse.ok(RiskView.of(riskScoringService.assess(applicantId)));
+    /** Run the risk engine for the customer and persist a fresh assessment. */
+    @PostMapping("/{customerId}/assess")
+    public ApiResponse<RiskView> assess(@PathVariable Long customerId) {
+        return ApiResponse.ok(RiskView.of(riskScoringService.assess(customerId)));
     }
 }

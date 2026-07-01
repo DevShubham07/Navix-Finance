@@ -21,13 +21,13 @@ public class IncomeService {
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final LimitCalculator limitCalculator;
 
-    /** Create or update the applicant's income profile (idempotent per applicant). */
+    /** Create or update the customer's income profile (idempotent per customer). */
     @Transactional
-    public IncomeProfile saveProfile(Long applicantId, long monthlySalaryPaise, Integer salaryCreditDay,
+    public IncomeProfile saveProfile(Long customerId, long monthlySalaryPaise, Integer salaryCreditDay,
                                      String employer, Integer uanTenure) {
-        IncomeProfile profile = incomeProfileRepository.findByApplicantId(applicantId)
+        IncomeProfile profile = incomeProfileRepository.findByCustomerId(customerId)
                 .orElseGet(IncomeProfile::new);
-        profile.setApplicantId(applicantId);
+        profile.setCustomerId(customerId);
         profile.setMonthlySalary(monthlySalaryPaise);
         profile.setSalaryCreditDay(salaryCreditDay);
         profile.setEmployer(employer);
@@ -36,11 +36,11 @@ public class IncomeService {
     }
 
     @Transactional(readOnly = true)
-    public IncomeView view(Long applicantId) {
-        IncomeProfile profile = incomeProfileRepository.findByApplicantId(applicantId)
-                .orElseThrow(() -> new ResourceNotFoundException("IncomeProfile", String.valueOf(applicantId)));
+    public IncomeView view(Long customerId) {
+        IncomeProfile profile = incomeProfileRepository.findByCustomerId(customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("IncomeProfile", String.valueOf(customerId)));
         RiskAssessment risk = riskAssessmentRepository
-                .findFirstByApplicantIdOrderByIdDesc(applicantId).orElse(null);
+                .findFirstByCustomerIdOrderByIdDesc(customerId).orElse(null);
         long eligibleLimit = (risk != null && risk.getLimitGranted() != null)
                 ? risk.getLimitGranted()
                 : limitCalculator.eligibleLimitPaise(profile.getMonthlySalary());

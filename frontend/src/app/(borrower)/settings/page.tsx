@@ -140,6 +140,15 @@ export default function SettingsPage() {
           />
         </SummarySection>
 
+        <SummarySection title="Security">
+          <div className="flex flex-wrap items-center justify-between gap-3 py-1">
+            <p className="text-sm text-muted">Reset your password — we&apos;ll email you a secure reset link.</p>
+            <Link href="/forgot-password" className="btn btn-outline btn-sm">
+              Reset password <ArrowRight size={15} />
+            </Link>
+          </div>
+        </SummarySection>
+
         <SummarySection title="Profile">
           <div className="flex flex-wrap items-center justify-between gap-3 py-1">
             <p className="text-sm text-muted">Update your contact, employment, bank and emergency-contact details.</p>

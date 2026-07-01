@@ -130,9 +130,9 @@ function BorrowerCard({ loan }: { loan: LoanSummary | null }) {
   // Credit headline isn't on the collections LoanSummary — pull it from the customer roll-up
   // (same query key as the customer detail page, so it's deduped/cached).
   const creditQ = useQuery({
-    queryKey: ["customer", loan?.applicantId],
-    queryFn: () => customersApi.get(loan!.applicantId as number),
-    enabled: loan?.applicantId != null,
+    queryKey: ["customer", loan?.customerId],
+    queryFn: () => customersApi.get(loan!.customerId as number),
+    enabled: loan?.customerId != null,
   });
   const credit = creditQ.data?.profile;
   return (

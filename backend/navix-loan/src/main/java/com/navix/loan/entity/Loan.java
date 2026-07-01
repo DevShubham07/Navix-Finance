@@ -30,10 +30,10 @@ import lombok.Setter;
 @NoArgsConstructor
 public class Loan extends BaseAuditEntity {
 
-    /** Applicant / borrower reference (FK to IAM user); the loan originates
-     *  from that applicant's approved {@code LoanApplication}. */
-    @Column(name = "applicant_id", nullable = false)
-    private Long applicantId;
+    /** Customer / borrower reference (FK to IAM user); the loan originates
+     *  from that customer's approved {@code LoanApplication}. */
+    @Column(name = "customer_id", nullable = false)
+    private Long customerId;
 
     /** Sanctioned principal, in paise. */
     @Column(name = "principal", nullable = false)

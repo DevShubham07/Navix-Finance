@@ -12,7 +12,7 @@ import type { NextRequest } from "next/server";
  * need `AUTH_SECRET` available to the middleware runtime — a follow-up; the backend already verifies it.)
  */
 const SESSION_COOKIE = "navix_staff";
-const PUBLIC_STAFF_PATHS = ["/staff/login", "/staff/activate"];
+const PUBLIC_STAFF_PATHS = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
 
 /** Decode a JWT's `exp` (seconds since epoch) WITHOUT verifying the signature. Null if unparseable. */
 function jwtExp(token: string): number | null {

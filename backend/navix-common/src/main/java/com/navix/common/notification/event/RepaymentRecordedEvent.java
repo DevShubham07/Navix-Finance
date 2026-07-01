@@ -5,7 +5,7 @@ import java.time.Instant;
 /** Published when a borrower records a manual repayment (→ PENDING_VERIFICATION). */
 public record RepaymentRecordedEvent(
         Long loanId,
-        Long applicantId,
+        Long customerId,
         Long paymentId,
         long amountPaise,
         Instant at) {

@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * A borrower's notification preferences (Phase 2.2), keyed by the stable {@code applicant_id} (not
+ * A borrower's notification preferences (Phase 2.2), keyed by the stable {@code customer_id} (not
  * application_id) so one row survives across reborrows. Opt-ins default to {@code true}; the
  * notification engine suppresses an opted-out SMS/EMAIL channel. IN_APP is the inbox and is never gated.
  */
@@ -20,8 +20,8 @@ import lombok.Setter;
 @NoArgsConstructor
 public class BorrowerPreferences extends BaseAuditEntity {
 
-    @Column(name = "applicant_id", nullable = false, unique = true)
-    private Long applicantId;
+    @Column(name = "customer_id", nullable = false, unique = true)
+    private Long customerId;
 
     @Column(name = "email_opt_in", nullable = false)
     private boolean emailOptIn = true;

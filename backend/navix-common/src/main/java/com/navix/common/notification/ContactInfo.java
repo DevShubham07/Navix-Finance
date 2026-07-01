@@ -6,7 +6,7 @@ package com.navix.common.notification;
  * missing address simply skips that channel (staff carry no mobile, so they never receive SMS).
  *
  * @param type the recipient kind (STAFF or BORROWER) — scopes in-app reads
- * @param id   staff id or applicant id (the in-app inbox owner)
+ * @param id   staff id or customer id (the in-app inbox owner)
  * @param name human-readable name for templating
  * @param email contact email, or null
  * @param mobile 10-digit mobile, or null

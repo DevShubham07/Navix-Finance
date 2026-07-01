@@ -68,8 +68,8 @@ export default function SignupMobileOtpPage() {
       setError("Maximum resend attempts reached. Please try again later or contact support.");
       return;
     }
-    // A different number than the persisted draft means a different applicant is starting onboarding
-    // on this browser — discard the previous applicant's draft (name/PAN/Aadhaar/bank), app pointer,
+    // A different number than the persisted draft means a different customer is starting onboarding
+    // on this browser — discard the previous customer's draft (name/PAN/Aadhaar/bank), app pointer,
     // and cached queries so none of their identity/PII carries over. Same number = the same person
     // resuming, so their draft is preserved.
     if (draft.mobile && draft.mobile !== mobile) {
@@ -99,7 +99,7 @@ export default function SignupMobileOtpPage() {
     try {
       const clean = mobile.replace(/\s/g, "");
       // The backend validates the OTP and issues the JWT session cookie. Do NOT forward a name here:
-      // at this first step the persisted draft name (if any) belongs to a *previous* applicant on this
+      // at this first step the persisted draft name (if any) belongs to a *previous* customer on this
       // browser, and forwarding it would mint this user's session under that name. The backend resolves
       // the display name from the stored profile instead.
       const session = await ensureBorrowerSession(clean, code);
@@ -109,7 +109,8 @@ export default function SignupMobileOtpPage() {
       setAppId(app.id);
       await saveProfileSlice(app.id, { mobile: clean });
       draft.patch({ mobile: clean });
-      router.push("/signup/email");
+      // Offer the optional "set a password" step before the rest of onboarding (skippable).
+      router.push("/signup/set-password");
     } catch (e) {
       setError(
         e instanceof ApplicationApiError ? `${e.message} (${e.code})` : "Something went wrong — please try again.",

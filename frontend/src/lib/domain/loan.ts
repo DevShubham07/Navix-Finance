@@ -53,7 +53,7 @@ export interface LoanCostBreakdown {
 
 export interface LoanApplication {
   id: string;
-  applicantId: string;
+  customerId: string;
   /** Requested principal in INR. */
   requestedAmount: number;
   monthlySalary: number;
@@ -67,7 +67,7 @@ export interface LoanApplication {
 export interface Loan {
   id: string;
   applicationId: string;
-  applicantId: string;
+  customerId: string;
   status: LoanStatus;
   principal: number;
   costBreakdown: LoanCostBreakdown;

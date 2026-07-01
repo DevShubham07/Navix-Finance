@@ -47,10 +47,10 @@ public final class ReferralDtos {
     public record PayoutView(
             Long id,
             Long referralId,
-            Long beneficiaryApplicantId,
+            Long beneficiaryCustomerId,
             String beneficiaryName,
             String beneficiaryRole,
-            Long counterpartyApplicantId,
+            Long counterpartyCustomerId,
             String counterpartyName,
             long amountPaise,
             String status,
@@ -65,8 +65,8 @@ public final class ReferralDtos {
         public static PayoutView of(ReferralPayout p, String beneficiaryName, String counterpartyName) {
             return new PayoutView(
                     p.getId(), p.getReferralId(),
-                    p.getBeneficiaryApplicantId(), beneficiaryName, p.getBeneficiaryRole().name(),
-                    p.getCounterpartyApplicantId(), counterpartyName,
+                    p.getBeneficiaryCustomerId(), beneficiaryName, p.getBeneficiaryRole().name(),
+                    p.getCounterpartyCustomerId(), counterpartyName,
                     p.getAmountPaise(), p.getStatus().name(), p.getTxnRef(),
                     p.getPaidAt(), p.getPaidBy(), p.getQualifyingLoanId(), p.getCreatedAt());
         }

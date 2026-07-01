@@ -7,6 +7,6 @@ import java.util.UUID;
 public record CollectionCaseOpenedEvent(
         UUID caseId,
         Long loanId,
-        Long applicantId,
+        Long customerId,
         Instant at) {
 }
