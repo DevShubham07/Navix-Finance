@@ -71,14 +71,28 @@ public class InviteService {
     }
 
     /**
-     * Activate an account from a one-time invite token: validate the token, mark it accepted, and
-     * create (or re-activate) the matching {@link StaffUser} with the invited role and ACTIVE status.
+     * Activate an account from a one-time invite token, without setting a password (the legacy
+     * admin-driven path). Delegates to {@link #acceptInvite(String, String, String, String)}.
      *
      * @throws BusinessException if the token is invalid, expired, or already accepted
      */
     @Transactional
     public StaffResponse acceptInvite(AcceptInviteRequest request) {
-        StaffInvite invite = inviteRepository.findByToken(request.token())
+        return acceptInvite(request.token(), request.name(), null, null);
+    }
+
+    /**
+     * Activate an account from a one-time invite token: validate the token, mark it accepted, and
+     * create (or re-activate) the matching {@link StaffUser} with the invited role and ACTIVE status.
+     * When a {@code passwordHash} (already BCrypt-encoded by the caller) and/or {@code mobile} are
+     * supplied — the real self-service activation flow — they are persisted so the new staffer can
+     * sign in with a password and later use the email+mobile forgot-password gate.
+     *
+     * @throws BusinessException if the token is invalid, expired, or already accepted
+     */
+    @Transactional
+    public StaffResponse acceptInvite(String token, String name, String passwordHash, String mobile) {
+        StaffInvite invite = inviteRepository.findByToken(token)
                 .orElseThrow(() -> new BusinessException("INVALID_INVITE", "Invite token is invalid"));
         if (invite.getAcceptedAt() != null) {
             throw new BusinessException("INVITE_ALREADY_ACCEPTED", "Invite has already been accepted");
@@ -90,9 +104,15 @@ public class InviteService {
         StaffUser staff = staffUserRepository.findByEmail(invite.getEmail())
                 .orElseGet(StaffUser::new);
         staff.setEmail(invite.getEmail());
-        staff.setName(request.name());
+        staff.setName(name);
         staff.setRole(invite.getRole());
         staff.setStatus(StaffStatus.ACTIVE);
+        if (passwordHash != null) {
+            staff.setPasswordHash(passwordHash);
+        }
+        if (mobile != null && !mobile.isBlank()) {
+            staff.setMobile(mobile.replaceAll("\\D", ""));
+        }
         StaffUser saved = staffUserRepository.save(staff);
 
         invite.setAcceptedAt(Instant.now());

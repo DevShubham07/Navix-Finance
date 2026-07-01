@@ -33,7 +33,7 @@ class NotificationEventListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new NotificationEventListener(dispatcher);
+        listener = new NotificationEventListener(dispatcher, "http://localhost:3000");
     }
 
     private static ApplicationTransitionedEvent transition(String action, String toStatus) {
@@ -153,7 +153,8 @@ class NotificationEventListenerTest {
         // No staff row yet → id 0 sentinel + an explicit contact carrying the email.
         assertThat(ctx.getValue().staffSubjectId()).isEqualTo(0L);
         assertThat(ctx.getValue().explicitStaffSubject().email()).isEqualTo("new@navix.test");
-        assertThat(ctx.getValue().model()).containsEntry("inviteLink", "/staff/accept-invite?token=tok-abc");
+        assertThat(ctx.getValue().model())
+                .containsEntry("inviteLink", "http://localhost:3000/staff/activate?token=tok-abc");
     }
 
     @Test
