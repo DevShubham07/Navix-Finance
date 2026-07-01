@@ -7,7 +7,8 @@ import { InfoRow, SummarySection } from "@/components/borrower/summary";
 import { KycProgress } from "@/components/borrower/kyc-progress";
 import { Input } from "@/components/ui";
 import { useLiveApplication, useBorrowerLogout } from "@/lib/api/live-journey";
-import { borrowerApi, rupeesToPaise, ApplicationApiError, type ApplicationStatus } from "@/lib/api/applications";
+import { borrowerApi, rupeesToPaise, type ApplicationStatus } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 import type { KycCheck, KycState } from "@/lib/domain/borrower";
 
 /** Statuses at/after KYC clearance — all checks read as verified. */
@@ -140,7 +141,7 @@ export default function ProfilePage() {
 
           {save.error && (
             <p className="text-sm text-error-700">
-              {save.error instanceof ApplicationApiError ? `${save.error.message} (${save.error.code})` : "Could not save your changes."}
+              {formatApiError(save.error, "Could not save your changes.")}
             </p>
           )}
           {save.isSuccess && <p className="text-sm text-success-700">Profile updated.</p>}

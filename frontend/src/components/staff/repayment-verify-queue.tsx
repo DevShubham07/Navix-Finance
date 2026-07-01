@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, AlertTriangle, Clock, X } from "lucide-react";
-import { staffApi, paiseToINR, ApplicationApiError, type PaymentView } from "@/lib/api/applications";
+import { staffApi, paiseToINR, type PaymentView } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
 
 /**
@@ -44,9 +45,7 @@ export function RepaymentVerifyQueue() {
       {actionError && (
         <div className="mb-3 flex items-start gap-2 rounded border border-error-100 bg-error-50 p-3 text-sm text-error-700">
           <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" />
-          {actionError instanceof ApplicationApiError
-            ? `${actionError.message} (${actionError.code})`
-            : "Could not update the payment."}
+          {formatApiError(actionError, "Could not update the payment.")}
         </div>
       )}
 

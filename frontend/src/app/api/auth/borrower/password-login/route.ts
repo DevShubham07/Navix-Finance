@@ -43,10 +43,13 @@ export async function POST(req: NextRequest) {
 
   const text = await backendRes.text();
   if (!backendRes.ok) {
-    return new NextResponse(text, {
-      status: backendRes.status,
-      headers: { "Content-Type": backendRes.headers.get("Content-Type") ?? "application/json" },
-    });
+    // Propagate the backend's correlation id so the sign-in error can show a ref that greps to logs.
+    const headers: Record<string, string> = {
+      "Content-Type": backendRes.headers.get("Content-Type") ?? "application/json",
+    };
+    const rid = backendRes.headers.get("X-Request-Id");
+    if (rid) headers["X-Request-Id"] = rid;
+    return new NextResponse(text, { status: backendRes.status, headers });
   }
 
   let data: BorrowerLoginData;

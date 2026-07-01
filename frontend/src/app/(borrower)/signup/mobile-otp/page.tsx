@@ -9,7 +9,8 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
 import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, clearBorrowerClientState, fetchBorrowerSession, writeStoredAppId, type OtpRequestResult } from "@/lib/api/live-journey";
-import { ApplicationApiError } from "@/lib/api/applications";
+import { ApplicationApiError, type ApplicationView } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 import { normalizeMobile } from "@/lib/utils";
 
 export default function SignupMobileOtpPage() {
@@ -104,17 +105,24 @@ export default function SignupMobileOtpPage() {
       // the display name from the stored profile instead.
       const session = await ensureBorrowerSession(clean, code);
       if (!session) throw new ApplicationApiError("Incorrect code or session error — please try again.", "INVALID_OTP", 0);
-      // Create the DRAFT application up front so every later step has a real id to persist against.
-      const app = await createOrResumeDraft(session);
+      // Create/resume the DRAFT up front so every later step has a real id to persist against. A
+      // returning borrower who already has a live/in-flight application (or loan) can't start a new
+      // one — the backend guard throws and there's nothing to onboard, so land them on their dashboard
+      // instead of surfacing the error (mirrors this page's mount effect).
+      let app: ApplicationView;
+      try {
+        app = await createOrResumeDraft(session);
+      } catch {
+        router.replace("/dashboard");
+        return;
+      }
       setAppId(app.id);
       await saveProfileSlice(app.id, { mobile: clean });
       draft.patch({ mobile: clean });
       // Offer the optional "set a password" step before the rest of onboarding (skippable).
       router.push("/signup/set-password");
     } catch (e) {
-      setError(
-        e instanceof ApplicationApiError ? `${e.message} (${e.code})` : "Something went wrong — please try again.",
-      );
+      setError(formatApiError(e, "Something went wrong — please try again."));
       setBusy(false);
     }
   };
@@ -141,7 +149,6 @@ export default function SignupMobileOtpPage() {
             label="Mobile number"
             required
             inputMode="numeric"
-            maxLength={10}
             value={mobile}
             onChange={(e) => { setMobile(normalizeMobile(e.target.value)); setError(undefined); }}
             placeholder="98765 43210"

@@ -18,6 +18,7 @@ import { Input, Select, InfoTooltip } from "@/components/ui";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { hasPermission, type StaffRole, type Permission } from "@/lib/auth/rbac";
+import { formatApiError } from "@/lib/api/errors";
 import {
   staffApi,
   adminApi,
@@ -25,7 +26,6 @@ import {
   paiseToINR,
   statusLabel,
   openDocument,
-  ApplicationApiError,
   type ApplicationStatus,
   type ApplicationView,
   type EventView,
@@ -63,8 +63,7 @@ export function useStaffMe() {
 }
 
 export function errMessage(e: unknown): string {
-  if (e instanceof ApplicationApiError) return `${e.message} (${e.code})`;
-  return e instanceof Error ? e.message : "Action failed.";
+  return formatApiError(e, "Action failed.");
 }
 
 export const ROLE_LABEL: Record<StaffRole, string> = {

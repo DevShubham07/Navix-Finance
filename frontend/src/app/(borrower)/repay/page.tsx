@@ -14,10 +14,10 @@ import {
   paymentSettingsApi,
   paiseToINR,
   rupeesToPaise,
-  ApplicationApiError,
   type PaymentMethodName,
   type PaymentView,
 } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -191,9 +191,7 @@ export default function RepayPage() {
       {record.isError && (
         <div className="mb-6 flex items-start gap-2 rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
           <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
-          {record.error instanceof ApplicationApiError
-            ? `${record.error.message} (${record.error.code})`
-            : "Could not record your payment. Please try again."}
+          {formatApiError(record.error, "Could not record your payment. Please try again.")}
         </div>
       )}
 

@@ -10,7 +10,8 @@ import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
 import { updateBorrowerName } from "@/lib/api/live-journey";
-import { verificationApi, referralApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, referralApi, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -115,7 +116,7 @@ export default function SignupEmailPage() {
         router.push(nextAfterStep("/signup/address"));
       }
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your email — please try again.");
+      setError(formatApiError(err, "Could not verify your email — please try again."));
     } finally {
       setBusy(false);
     }

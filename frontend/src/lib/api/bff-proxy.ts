@@ -23,9 +23,14 @@ export async function proxyToBackend(
   const search = req.nextUrl.search; // includes leading "?" or ""
   const url = `${config.backendBaseUrl}${backendPath}${search}`;
 
+  // Cross-tier correlation: reuse an inbound X-Request-Id (browser) or mint one, forward it to the
+  // backend (RequestLoggingFilter honors + echoes it), and return it to the browser on every path so
+  // a UI error can quote a ref that greps straight to the backend access + business-rejection lines.
+  const requestId = newRequestId(req);
   const headers: Record<string, string> = {
     Accept: "application/json",
     Authorization: `Bearer ${token}`,
+    "X-Request-Id": requestId,
   };
 
   let body: string | undefined;
@@ -55,18 +60,35 @@ export async function proxyToBackend(
         },
         timestamp: new Date().toISOString(),
       },
-      { status: 502 },
+      // Stamp the BFF-generated id even when the backend was never reached.
+      { status: 502, headers: { "X-Request-Id": requestId } },
     );
   }
 
   const text = await backendRes.text();
-  // Pass the backend body through unchanged; default to JSON content-type.
+  // Pass the backend body through unchanged; default to JSON content-type. Propagate the backend's
+  // echoed X-Request-Id (falling back to the id generated for this hop) so the client can surface it.
   return new NextResponse(text, {
     status: backendRes.status,
     headers: {
       "Content-Type": backendRes.headers.get("Content-Type") ?? "application/json",
+      "X-Request-Id": backendRes.headers.get("X-Request-Id") ?? requestId,
     },
   });
+}
+
+/** Reuse an inbound `X-Request-Id` (from the browser) or mint a fresh one for this hop. */
+export function newRequestId(req: Request): string {
+  return req.headers.get("x-request-id") ?? crypto.randomUUID();
+}
+
+/**
+ * Copy the backend's echoed `X-Request-Id` onto an outgoing header map (falling back to the id
+ * generated for this hop). Used by the auth route handlers, which fetch the backend directly rather
+ * than through {@link proxyToBackend}.
+ */
+export function copyRequestId(backendRes: Response, headers: Record<string, string>, id: string): void {
+  headers["X-Request-Id"] = backendRes.headers.get("X-Request-Id") ?? id;
 }
 
 /** Join the catch-all `[...path]` segments into a backend path suffix. */

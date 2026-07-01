@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, KeyRound, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 
 const policyOk = (pw: string) => pw.length >= 10 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
 
@@ -41,9 +42,7 @@ function ActivateInner() {
         body: JSON.stringify({ token: token.trim(), name: name.trim(), password, mobile: mobile.trim() || undefined }),
       });
       if (!res.ok) {
-        let msg = "Could not activate your account.";
-        try { const env = await res.json(); msg = env?.error?.message ?? env?.error ?? msg; } catch { /* keep default */ }
-        setError(typeof msg === "string" ? msg : "Could not activate your account.");
+        setError(formatEnvelopeError(await readEnvelopeError(res, "Could not activate your account.")));
         setBusy(false);
         return;
       }

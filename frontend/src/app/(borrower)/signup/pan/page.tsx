@@ -8,7 +8,8 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
-import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const AADHAAR_RE = /^\d{12}$/;
@@ -49,7 +50,7 @@ export default function SignupPanPage() {
       setResult(r);
       if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/bureau"));
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your PAN — please try again.");
+      setError(formatApiError(err, "Could not verify your PAN — please try again."));
     } finally {
       setBusy(false);
     }

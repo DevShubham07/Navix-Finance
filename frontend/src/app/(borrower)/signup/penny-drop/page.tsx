@@ -8,7 +8,8 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
-import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 
 const BANKS = [
   "HDFC Bank",
@@ -75,7 +76,7 @@ export default function SignupPennyDropPage() {
       }
       setBusy(false);
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not verify your account — please try again.");
+      setError(formatApiError(err, "Could not verify your account — please try again."));
       setBusy(false);
     }
   };

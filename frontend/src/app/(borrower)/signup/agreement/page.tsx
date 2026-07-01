@@ -7,7 +7,8 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, AGREEMENT_DOCS, AGREEMENT_VERSIONS } from "@/lib/onboarding";
-import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
+import { verificationApi, type StepResult } from "@/lib/api/applications";
+import { formatApiError } from "@/lib/api/errors";
 
 export default function SignupAgreementPage() {
   const router = useRouter();
@@ -49,7 +50,7 @@ export default function SignupAgreementPage() {
       setResult(r);
       if (r.status === "PASS" || r.status === "REVIEW") router.push("/signup/review");
     } catch (err) {
-      setError(err instanceof ApplicationApiError ? `${err.message} (${err.code})` : "Could not record your consent — please try again.");
+      setError(formatApiError(err, "Could not record your consent — please try again."));
     } finally {
       setBusy(false);
     }
