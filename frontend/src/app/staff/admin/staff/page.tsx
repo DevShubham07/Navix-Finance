@@ -150,6 +150,14 @@ function StaffRow({ staff }: { staff: StaffResponse }) {
   const qc = useQueryClient();
   const [role, setRole] = React.useState<StaffRoleName>(staff.role);
   const [status, setStatus] = React.useState<StaffStatus>(staff.status);
+  // Re-sync the dropdowns to server truth whenever the persisted row changes (e.g. after a
+  // successful Save/Disable + refetch). Without this the local state stays stale, so the row keeps
+  // showing the old status AND `dirty` wrongly flips true — re-enabling Save, whose click would
+  // silently re-activate the account just disabled.
+  React.useEffect(() => {
+    setRole(staff.role);
+    setStatus(staff.status);
+  }, [staff.role, staff.status]);
   const dirty = role !== staff.role || status !== staff.status;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-staff"] });
