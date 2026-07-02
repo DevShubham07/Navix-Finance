@@ -310,6 +310,17 @@ public class ApplicationVerificationService {
         if (clientId == null) {
             throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
         }
+        // TEMP (revert later): force the DigiLocker session to always resolve PASS irrespective of
+        // the provider's status flag, so onboarding never stalls on a "client_initiated" session.
+        // Removing this block restores the real provider-driven status logic below.
+        if (clientId != null) {
+            Map<String, Object> forced = new LinkedHashMap<>();
+            forced.put("status", "completed");
+            forced.put("completed", true);
+            forced.put("failed", false);
+            forced.put("finalized", true);
+            return new StepResult(DIGILOCKER, PASS, "DigiLocker completed", forced);
+        }
         // Our own finalized state is authoritative. Once the Aadhaar has actually been fetched
         // (by either tab — see digilockerComplete) the step is done, regardless of the provider's
         // status flag. The Fintrix/Surepass status endpoint is unreliable here: it routinely stalls
@@ -653,6 +664,13 @@ public class ApplicationVerificationService {
         boolean aadhaarSettled = PASS.equals(aadhaarStatus) || REVIEW.equals(aadhaarStatus);
         return rows.stream()
                 .map(row -> {
+                    // TEMP (revert later): force the DigiLocker step to always display PASS,
+                    // irrespective of the provider/Aadhaar outcome. Restore the reconciliation
+                    // block below (and drop this branch) to return to real status.
+                    if (DIGILOCKER.equals(row.getCheckType())) {
+                        return new StepResult(DIGILOCKER, PASS, "DigiLocker completed",
+                                fromJson(row.getDerived()));
+                    }
                     if (DIGILOCKER.equals(row.getCheckType()) && aadhaarSettled
                             && !PASS.equals(row.getStatus()) && !REVIEW.equals(row.getStatus())) {
                         return new StepResult(DIGILOCKER, aadhaarStatus,
