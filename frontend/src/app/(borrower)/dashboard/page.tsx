@@ -182,7 +182,7 @@ export default function DashboardPage() {
               {limitRupees > 0 ? formatINR0(limitRupees) : "—"}
             </div>
             <p className="mt-1 text-xs text-muted">
-              {limitRupees > 0 ? "25% of your monthly salary" : "Add your salary to see your limit"}
+              {limitRupees > 0 ? "Instant loan up to ₹10,00,000" : "Add your salary to see your limit"}
             </p>
           </div>
 

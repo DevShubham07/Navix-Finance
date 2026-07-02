@@ -105,9 +105,9 @@ export default function ProfilePage() {
           <SummarySection title="Identity">
             <InfoRow label="Full name" value={p?.fullName} />
             <InfoRow label="PAN" value={<span className="flex items-center justify-end gap-1.5">{p?.pan} <Lock size={12} className="text-muted" /></span>} />
-            <InfoRow label="Aadhaar" value={<span className="flex items-center justify-end gap-1.5">{p?.aadhaar} <Lock size={12} className="text-muted" /></span>} />
+            <InfoRow label="Aadhaar" value={<span className="flex items-center justify-end gap-1.5">{p?.aadhaarVerified ? "DigiLocker verified" : "Not verified"} {p?.aadhaarVerified && <ShieldCheck size={14} className="text-success-600" />}</span>} />
             <InfoRow label="Mobile" value={<span className="flex items-center justify-end gap-1.5">{p?.mobile} {p?.mobile && <ShieldCheck size={14} className="text-success-600" />}</span>} />
-            <p className="pt-1 text-xs text-muted">Identity details are locked. Contact support to change your PAN, Aadhaar or mobile.</p>
+            <p className="pt-1 text-xs text-muted">Identity details are locked. Contact support to change your PAN or mobile.</p>
           </SummarySection>
 
           {/* Editable fields. */}

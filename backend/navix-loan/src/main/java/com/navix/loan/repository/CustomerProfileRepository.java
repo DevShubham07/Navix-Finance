@@ -25,18 +25,14 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
      */
     Optional<CustomerProfile> findFirstByMobileOrderByApplicationIdDesc(String mobile);
 
-    // --- identity uniqueness (a mobile/PAN/Aadhaar may belong to only one customer) ---
+    // --- identity uniqueness (a mobile/PAN may belong to only one customer) ---
     // Scoped to OTHER customers: a profile is matched by joining its application to resolve the
     // owning customerId, then excluding the queried customer. This lets the SAME customer
     // re-onboard through a new application (a second profile row carrying the same identity) while
-    // still blocking a different person from reusing the PAN / Aadhaar / mobile.
+    // still blocking a different person from reusing the PAN / mobile.
     @Query("select (count(p) > 0) from CustomerProfile p, LoanApplication a "
             + "where p.applicationId = a.id and p.pan = :pan and a.customerId <> :customerId")
     boolean existsPanForOtherCustomer(@Param("pan") String pan, @Param("customerId") Long customerId);
-
-    @Query("select (count(p) > 0) from CustomerProfile p, LoanApplication a "
-            + "where p.applicationId = a.id and p.aadhaar = :aadhaar and a.customerId <> :customerId")
-    boolean existsAadhaarForOtherCustomer(@Param("aadhaar") String aadhaar, @Param("customerId") Long customerId);
 
     @Query("select (count(p) > 0) from CustomerProfile p, LoanApplication a "
             + "where p.applicationId = a.id and p.mobile = :mobile and a.customerId <> :customerId")

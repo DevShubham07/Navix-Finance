@@ -11,9 +11,11 @@ import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.entity.ProfileChangeLog;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import com.navix.loan.repository.ProfileChangeLogRepository;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Comparator;
@@ -46,6 +48,7 @@ public class CustomerReviewService {
     private final DocumentStoragePort storage;
     private final VerificationInvalidationService verificationInvalidation;
     private final EligibilityService eligibilityService;
+    private final ProfileChangeLogRepository changeLogRepository;
 
     @Transactional
     public CustomerProfile saveProfile(Long appId, ProfileRequest req) {
@@ -55,20 +58,16 @@ public class CustomerReviewService {
         Long customerId = app.getCustomerId();
 
         String pan = normalizePan(req.pan());
-        String aadhaar = normalizeAadhaar(req.aadhaar());
         String mobile = normalizeMobile(req.mobile());
 
-        // A mobile / PAN / Aadhaar may belong to only one customer. Uniqueness is now enforced
-        // ACROSS customers (not per-application): the same customer re-onboarding through a NEW
-        // application — which creates a fresh profile row carrying the same identity — is allowed,
-        // while a different person reusing the PAN / Aadhaar / mobile is still rejected.
+        // A mobile / PAN may belong to only one customer. Uniqueness is now enforced ACROSS customers
+        // (not per-application): the same customer re-onboarding through a NEW application — which
+        // creates a fresh profile row carrying the same identity — is allowed, while a different person
+        // reusing the PAN / mobile is still rejected. (The Aadhaar number is no longer captured; identity
+        // is anchored on PAN + mobile + DigiLocker verification.)
         if (pan != null && profileRepository.existsPanForOtherCustomer(pan, customerId)) {
             throw new BusinessException("DUPLICATE_PAN",
                     "This PAN is already registered with another customer.");
-        }
-        if (aadhaar != null && profileRepository.existsAadhaarForOtherCustomer(aadhaar, customerId)) {
-            throw new BusinessException("DUPLICATE_AADHAAR",
-                    "This Aadhaar number is already registered with another customer.");
         }
         if (mobile != null && profileRepository.existsMobileForOtherCustomer(mobile, customerId)) {
             throw new BusinessException("DUPLICATE_MOBILE",
@@ -84,7 +83,6 @@ public class CustomerReviewService {
         String fullName = trimToNull(req.fullName());
         if (fullName != null) p.setFullName(fullName);
         if (pan != null) p.setPan(pan);
-        if (aadhaar != null) p.setAadhaar(aadhaar);
         if (mobile != null) p.setMobile(mobile);
         if (req.dob() != null) p.setDob(req.dob());
         String address = trimToNull(req.address());
@@ -117,37 +115,46 @@ public class CustomerReviewService {
         // Edit the application's own profile snapshot (must exist — onboarding created it).
         CustomerProfile p = profileRepository.findByApplicationId(appId)
                 .orElseThrow(() -> new ResourceNotFoundException("CustomerProfile", "application:" + appId));
+        Long customerId = app.getCustomerId();
 
         java.util.Set<String> changed = new java.util.HashSet<>();
         String address = trimToNull(req.address());
         if (address != null && !address.equals(p.getAddress())) {
+            logChange(customerId, appId, "address", p.getAddress(), address);
             p.setAddress(address);
             changed.add("address");
         }
         String employer = trimToNull(req.employer());
         if (employer != null && !employer.equals(p.getEmployer())) {
+            logChange(customerId, appId, "employer", p.getEmployer(), employer);
             p.setEmployer(employer);
             changed.add("employer");
         }
         String employmentStatus = trimToNull(req.employmentStatus());
         if (employmentStatus != null && !employmentStatus.equals(p.getEmploymentStatus())) {
+            logChange(customerId, appId, "employmentStatus", p.getEmploymentStatus(), employmentStatus);
             p.setEmploymentStatus(employmentStatus);
             changed.add("employmentStatus");
         }
         boolean salaryChanged = false;
         if (req.monthlySalaryPaise() != null
                 && !req.monthlySalaryPaise().equals(p.getMonthlySalaryPaise())) {
+            logChange(customerId, appId, "monthlySalaryPaise",
+                    p.getMonthlySalaryPaise() != null ? p.getMonthlySalaryPaise().toString() : null,
+                    req.monthlySalaryPaise().toString());
             p.setMonthlySalaryPaise(req.monthlySalaryPaise());
             changed.add("monthlySalaryPaise");
             salaryChanged = true;
         }
         String salaryBank = trimToNull(req.salaryBank());
         if (salaryBank != null && !salaryBank.equals(p.getSalaryBank())) {
+            logChange(customerId, appId, "salaryBank", p.getSalaryBank(), salaryBank);
             p.setSalaryBank(salaryBank);
             changed.add("salaryBank");
         }
         String email = trimToNull(req.email());
         if (email != null && !email.equals(p.getEmail())) {
+            logChange(customerId, appId, "email", p.getEmail(), email);
             p.setEmail(email);
             changed.add("email");
         }
@@ -163,6 +170,17 @@ public class CustomerReviewService {
             eligibilityService.recomputeForCustomer(app.getCustomerId(), saved.getMonthlySalaryPaise());
         }
         return saved;
+    }
+
+    /** Append a self-edit to the audited change log (so it shows in the customer activity timeline). */
+    private void logChange(Long customerId, Long appId, String field, String oldVal, String newVal) {
+        ProfileChangeLog entry = new ProfileChangeLog();
+        entry.setCustomerId(customerId);
+        entry.setApplicationId(appId);
+        entry.setField(field);
+        entry.setOldValue(oldVal);
+        entry.setNewValue(newVal);
+        changeLogRepository.save(entry);
     }
 
     /**
@@ -276,6 +294,19 @@ public class CustomerReviewService {
     }
 
     /**
+     * ADMIN removes an uploaded document (the delete half of the CRM "replace" flow — an admin deletes
+     * the existing document of a category before uploading a corrected one). Removes the document row
+     * (the CRM's source of truth for the document list). Any S3 object is left for lifecycle cleanup —
+     * it's no longer reachable once the row is gone.
+     */
+    @Transactional
+    public void deleteDocument(Long appId, Long docId) {
+        requireRole("ADMIN");
+        ApplicationDocument d = getDocument(appId, docId);
+        documentRepository.delete(d);
+    }
+
+    /**
      * Short-lived presigned GET URL for an S3-backed document (the live path; staff never stream
      * document bytes through the backend). Throws for legacy inline ({@code bytea}) rows — those are
      * served via {@link #getDocument} as base64.
@@ -316,19 +347,6 @@ public class CustomerReviewService {
     private static String normalizePan(String pan) {
         String t = trimToNull(pan);
         return t == null ? null : t.toUpperCase();
-    }
-
-    /** Digits only; must be exactly 12. Null when not supplied. */
-    private static String normalizeAadhaar(String aadhaar) {
-        String t = trimToNull(aadhaar);
-        if (t == null) {
-            return null;
-        }
-        String digits = t.replaceAll("\\D", "");
-        if (digits.length() != 12) {
-            throw new BusinessException("INVALID_AADHAAR", "Aadhaar must be a 12-digit number");
-        }
-        return digits;
     }
 
     /** Digits only, last 10 (drops a country/STD prefix); must be exactly 10. Null when not supplied. */

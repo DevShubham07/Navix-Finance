@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Search, ArrowRight, Contact } from "lucide-react";
 import { Input } from "@/components/ui";
@@ -9,6 +8,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { CreditBadge } from "@/components/staff/credit-badge";
+import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
 
 /**
@@ -19,6 +19,7 @@ import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type Appli
 export default function CustomersPage() {
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
+  const [openId, setOpenId] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300);
@@ -99,15 +100,15 @@ export default function CustomersPage() {
                 {rows.map((c) => (
                   <tr key={c.customerId} className="hover:bg-grey-50">
                     <td className="px-4 py-3">
-                      <Link href={`/staff/customers/${c.customerId}`} className="flex items-center gap-2">
+                      <button onClick={() => setOpenId(c.customerId)} className="flex items-center gap-2 text-left">
                         <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full bg-navy-tint text-navy">
                           <Contact size={15} />
                         </span>
                         <span className="min-w-0">
-                          <span className="block font-semibold text-ink">{c.name ?? "—"}</span>
+                          <span className="block font-semibold text-ink hover:underline">{c.name ?? "—"}</span>
                           <span className="block text-xs text-muted">#{c.customerId} · {c.pan ?? "no PAN"}</span>
                         </span>
-                      </Link>
+                      </button>
                     </td>
                     <td className="px-4 py-3 font-mono text-muted">{c.mobile ?? "—"}</td>
                     <td className="px-4 py-3 text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
@@ -127,9 +128,9 @@ export default function CustomersPage() {
                       ) : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link href={`/staff/customers/${c.customerId}`} className="inline-flex items-center gap-1 text-navy hover:underline">
+                      <button onClick={() => setOpenId(c.customerId)} className="inline-flex items-center gap-1 text-navy hover:underline">
                         Open <ArrowRight size={14} />
-                      </Link>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -138,6 +139,8 @@ export default function CustomersPage() {
           )}
         </div>
       </PermissionGate>
+
+      <CustomerDetailDialog customerId={openId} onClose={() => setOpenId(null)} />
     </div>
   );
 }

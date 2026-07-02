@@ -248,7 +248,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <main className="flex-1 p-4 lg:p-8">{children}</main>
+        <main className="navix-crm flex-1 p-3 lg:p-6">{children}</main>
       </div>
 
       <StaffRoleBar />

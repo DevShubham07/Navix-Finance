@@ -12,7 +12,7 @@ const SUPPORT_PHONE = "+91 97167 60246";
 const FAQ: Array<{ q: string; a: string }> = [
   {
     q: "How much can I borrow?",
-    a: "Your eligible limit is 25% of your monthly salary, floored to the nearest ₹100, with a minimum advance of ₹1,000. One price applies to everyone.",
+    a: "You're eligible for an instant loan of up to ₹10,00,000, with a minimum advance of ₹1,000. One price applies to everyone.",
   },
   {
     q: "What does it cost?",

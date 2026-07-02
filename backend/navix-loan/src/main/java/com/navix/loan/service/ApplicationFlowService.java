@@ -284,6 +284,35 @@ public class ApplicationFlowService {
         return applicationRepository.save(app);
     }
 
+    /**
+     * KYC-approver credit fast-path (instant-loan model). A KYC approver clears the credit gate on an
+     * <em>applied</em> {@code KYC_APPROVED} application in one step: approve routes straight to
+     * {@code DISBURSEMENT_PENDING} (the Disbursement Head still releases the funds), reject → {@code REJECTED}.
+     * This deliberately collapses the credit exec→head maker-checker for KYC approvers — loans are now a
+     * flat instant limit, so a separate credit underwriting pass isn't required. ADMIN may use it too.
+     */
+    @Transactional
+    public LoanApplication kycCreditDecision(Long appId, boolean approve, Long approvedAmountPaise, String notes) {
+        requireRole("KYC_APPROVER");
+        LoanApplication app = require(appId);
+        if (app.getStatus() != ApplicationStatus.KYC_APPROVED) {
+            throw new BusinessException("NOT_APPLICABLE",
+                    "Only a KYC-approved, applied application can be credit-approved here");
+        }
+        if (app.getAmountRequested() == null) {
+            throw new BusinessException("NOT_APPLIED", "The borrower has not chosen an amount yet");
+        }
+        if (approve) {
+            if (approvedAmountPaise != null) {
+                app.setAmountRequested(approvedAmountPaise);
+            }
+            transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "KYC_CREDIT_APPROVE", notes);
+        } else {
+            transition(app, ApplicationStatus.REJECTED, "KYC_CREDIT_REJECT", notes);
+        }
+        return applicationRepository.save(app);
+    }
+
     // ---- disbursement & accountant validation (W3) ---------------------------------
 
     @Transactional
@@ -525,7 +554,6 @@ public class ApplicationFlowService {
         copy.setApplicationId(newAppId);
         copy.setFullName(prior.getFullName());
         copy.setPan(prior.getPan());
-        copy.setAadhaar(prior.getAadhaar());
         copy.setMobile(prior.getMobile());
         copy.setDob(prior.getDob());
         copy.setAddress(prior.getAddress());

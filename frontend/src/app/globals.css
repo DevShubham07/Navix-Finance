@@ -104,6 +104,10 @@ body {
   text-rendering: optimizeLegibility;
 }
 img { max-width: 100%; display: block; }
+/* Staff CRM density: a slightly smaller base + tighter line-height so screens read data-dense.
+   Only affects text with no explicit Tailwind size class; headings/labels keep their own sizes. */
+.navix-crm { font-size: 0.86rem; line-height: 1.45; }
+.navix-crm p { margin-bottom: 0.6em; }
 a { color: var(--navy); text-decoration: none; }
 a:hover { color: var(--navy-700); }
 ::selection { background: var(--gold-300); color: var(--navy-800); }

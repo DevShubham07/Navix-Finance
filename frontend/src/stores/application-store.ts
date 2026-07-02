@@ -22,7 +22,6 @@ export interface OnboardingDraft {
   officialEmail: string;
   employer: string;
   pan: string;
-  aadhaar: string;
   /** Declared net monthly salary, in rupees. */
   monthlySalary: number;
   /** Day-of-month the salary lands (repayment date driver). */
@@ -53,7 +52,6 @@ const EMPTY: OnboardingDraft = {
   officialEmail: "",
   employer: "",
   pan: "",
-  aadhaar: "",
   monthlySalary: 0,
   salaryDay: 1,
   bankName: "",

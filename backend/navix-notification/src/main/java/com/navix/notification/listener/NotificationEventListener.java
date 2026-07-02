@@ -220,8 +220,8 @@ public class NotificationEventListener {
             case "APPLY_FAST_TRACK" -> NotificationType.LOAN_APPLIED_FAST_TRACK;
             case "ASSIGN" -> NotificationType.CREDIT_ASSIGNED;
             case "EXEC_APPROVE" -> NotificationType.CREDIT_RECOMMENDED;
-            case "EXEC_REJECT", "HEAD_REJECT" -> NotificationType.CREDIT_REJECTED;
-            case "HEAD_APPROVE" -> NotificationType.CREDIT_APPROVED;
+            case "EXEC_REJECT", "HEAD_REJECT", "KYC_CREDIT_REJECT" -> NotificationType.CREDIT_REJECTED;
+            case "HEAD_APPROVE", "KYC_CREDIT_APPROVE" -> NotificationType.CREDIT_APPROVED;
             case "DISB_ACCEPT", "RETRY" -> NotificationType.DISBURSEMENT_PENDING_ACCOUNTANT;
             case "DISB_REJECT" -> NotificationType.DISBURSEMENT_REJECTED;
             case "VALIDATE_FAIL" -> NotificationType.DISBURSEMENT_FAILED;

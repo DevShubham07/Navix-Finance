@@ -3,11 +3,9 @@ import { getStaffSession } from "@/lib/api/bff-session";
 import { proxyToBackend, joinPath, unauthorized } from "@/lib/api/bff-proxy";
 
 /**
- * Staff applications proxy. Catch-all GET/POST ->
- *   `${backendBaseUrl}/api/applications/${path}${search}`
+ * Staff dashboard proxy. Catch-all GET ->
+ *   `${backendBaseUrl}/api/dashboard/${path}${search}`
  * injecting STAFF identity from the `navix_staff` cookie. 401 if no session.
- *
- * SEPARATE from the borrower proxy: only the staff cookie is honoured here.
  */
 
 type Ctx = { params: Promise<{ path?: string[] }> };
@@ -18,11 +16,9 @@ async function handle(req: NextRequest, ctx: Ctx) {
 
   const { path } = await ctx.params;
   const suffix = joinPath(path);
-  const backendPath = suffix ? `/api/applications/${suffix}` : "/api/applications";
+  const backendPath = suffix ? `/api/dashboard/${suffix}` : "/api/dashboard";
 
   return proxyToBackend(req, backendPath, session.token);
 }
 
 export const GET = handle;
-export const POST = handle;
-export const DELETE = handle;

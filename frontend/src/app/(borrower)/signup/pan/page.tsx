@@ -12,13 +12,11 @@ import { verificationApi, type StepResult } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
-const AADHAAR_RE = /^\d{12}$/;
 
 export default function SignupPanPage() {
   const router = useRouter();
   const { mounted, draft, appId } = useOnboarding();
   const [pan, setPan] = React.useState("");
-  const [aadhaar, setAadhaar] = React.useState("");
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<StepResult | null>(null);
@@ -27,7 +25,6 @@ export default function SignupPanPage() {
   React.useEffect(() => {
     if (!mounted) return;
     setPan(draft.pan);
-    setAadhaar(draft.aadhaar);
   }, [mounted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
@@ -35,17 +32,16 @@ export default function SignupPanPage() {
   }, [mounted, appId, router]);
 
   const panOk = PAN_RE.test(pan);
-  const aadhaarOk = AADHAAR_RE.test(aadhaar);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!panOk || !aadhaarOk) { setTouched(true); return; }
+    if (!panOk) { setTouched(true); return; }
     if (appId == null) return;
     setBusy(true);
     setError(undefined);
-    draft.patch({ pan, aadhaar });
+    draft.patch({ pan });
     try {
-      await saveProfileSlice(appId, { pan, aadhaar });
+      await saveProfileSlice(appId, { pan });
       const r = await verificationApi.pan(appId, pan);
       setResult(r);
       if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/bureau"));
@@ -60,8 +56,8 @@ export default function SignupPanPage() {
     <form onSubmit={submit} noValidate>
       <div className="form-card">
         <p className="lead mb-4">
-          Your PAN confirms your identity against income-tax records, and your Aadhaar links your KYC. This is a
-          soft check — it won&apos;t affect your credit score.
+          Your PAN confirms your identity against income-tax records. This is a soft check — it won&apos;t affect
+          your credit score. Your Aadhaar is verified separately through DigiLocker.
         </p>
         <Input
           label="PAN"
@@ -72,17 +68,6 @@ export default function SignupPanPage() {
           inputClassName="tracking-[0.3em] uppercase"
           helperText="10 characters, e.g. ABCDE1234F"
           error={touched && !panOk ? "Enter a valid 10-character PAN" : undefined}
-        />
-        <Input
-          label="Aadhaar number"
-          required
-          value={aadhaar}
-          onChange={(e) => setAadhaar(e.target.value.replace(/\D/g, "").slice(0, 12))}
-          placeholder="1234 5678 9012"
-          inputMode="numeric"
-          inputClassName="tracking-[0.2em]"
-          helperText="12 digits — stored securely and masked on every screen"
-          error={touched && !aadhaarOk ? "Enter a valid 12-digit Aadhaar number" : undefined}
         />
         <p className="mt-1 flex items-start gap-2 text-sm text-muted">
           <ShieldCheck size={16} className="mt-0.5 flex-shrink-0 text-success-600" />

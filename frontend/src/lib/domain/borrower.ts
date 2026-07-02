@@ -43,7 +43,6 @@ export interface CoApplicant {
 export interface CustomerProfile {
   fullName: string;
   pan: string;
-  aadhaar: string;
   mobile: string;
   mobileVerified: boolean;
   email: string;

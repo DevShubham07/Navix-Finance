@@ -10,4 +10,7 @@ import org.springframework.stereotype.Repository;
 public interface ApplicationEventRepository extends JpaRepository<ApplicationEvent, Long> {
 
     List<ApplicationEvent> findByApplicationIdOrderByAtAsc(Long applicationId);
+
+    /** All events with a given action label (e.g. CREATE) — backs the dashboard trend aggregation. */
+    List<ApplicationEvent> findByAction(String action);
 }

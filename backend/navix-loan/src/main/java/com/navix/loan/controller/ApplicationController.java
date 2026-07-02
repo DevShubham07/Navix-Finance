@@ -30,6 +30,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -206,6 +207,13 @@ public class ApplicationController {
                 flow.headDecision(id, req.decision(), req.approvedAmountPaise(), req.notes())));
     }
 
+    /** KYC-approver credit fast-path: applied KYC_APPROVED → DISBURSEMENT_PENDING (approve) / REJECTED. */
+    @PostMapping("/{id}/kyc-credit-decision")
+    public ApiResponse<ApplicationView> kycCreditDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
+        return ApiResponse.ok(ApplicationView.of(
+                flow.kycCreditDecision(id, req.decision(), req.approvedAmountPaise(), req.notes())));
+    }
+
     @PostMapping("/{id}/disbursement-decision")
     public ApiResponse<ApplicationView> disbursementDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
         return ApiResponse.ok(ApplicationView.of(
@@ -285,6 +293,13 @@ public class ApplicationController {
         var doc = review.getDocument(id, docId);
         return ApiResponse.ok(new DocumentUrlView(doc.getId(), doc.getFileName(), doc.getContentType(),
                 review.presignedUrl(id, docId)));
+    }
+
+    /** ADMIN deletes a document (the delete half of the CRM replace flow: delete, then re-upload). */
+    @DeleteMapping("/{id}/documents/{docId}")
+    public ApiResponse<Void> deleteDocument(@PathVariable Long id, @PathVariable Long docId) {
+        review.deleteDocument(id, docId);
+        return ApiResponse.ok(null);
     }
 
     // ---- internals -----------------------------------------------------------------

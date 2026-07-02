@@ -41,6 +41,8 @@ class CustomerServiceTest {
     @Mock private PaymentRepository paymentRepository;
     @Mock private RepaymentService repaymentService;
     @Mock private ProfileChangeLogRepository changeLogRepository;
+    @Mock private com.navix.loan.repository.ApplicationEventRepository applicationEventRepository;
+    @Mock private com.navix.loan.repository.CustomerRemarkRepository remarkRepository;
     @Mock private RiskPort risk;
 
     private CustomerService service;
@@ -48,7 +50,8 @@ class CustomerServiceTest {
     @BeforeEach
     void setUp() {
         service = new CustomerService(applicationRepository, loanRepository, profileRepository,
-                paymentRepository, repaymentService, changeLogRepository, risk);
+                paymentRepository, repaymentService, changeLogRepository,
+                applicationEventRepository, remarkRepository, risk);
     }
 
     @AfterEach

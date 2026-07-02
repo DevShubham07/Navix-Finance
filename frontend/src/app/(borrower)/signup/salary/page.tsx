@@ -94,8 +94,8 @@ export default function SignupSalaryPage() {
     <form onSubmit={submit} noValidate>
       <div className="form-card">
         <p className="lead mb-4">
-          Your net monthly salary sets your eligible limit (up to 25%) and your salary-day repayment date. Upload 3
-          months of payslips so we can verify your income.
+          Your net monthly salary sets your salary-day repayment date — you're eligible for an instant loan up to
+          ₹10,00,000. Upload 3 months of payslips so we can verify your income.
         </p>
         <Input
           label="Net monthly salary"
@@ -152,7 +152,7 @@ export default function SignupSalaryPage() {
               <TrendingUp size={22} />
             </span>
             <div>
-              <div className="text-sm text-muted">Your eligible limit (25% of salary)</div>
+              <div className="text-sm text-muted">Your instant eligible limit</div>
               <div className="font-serif text-2xl font-bold text-navy">{formatINR0(limit)}</div>
             </div>
           </div>

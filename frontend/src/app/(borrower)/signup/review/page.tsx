@@ -110,7 +110,6 @@ export default function SignupReviewPage() {
         <SummarySection title="Identity" editHref="/signup/pan?return=review">
           <InfoRow label="Full name" value={draft.fullName} />
           <InfoRow label="PAN" value={draft.pan} />
-          <InfoRow label="Aadhaar" value={draft.aadhaar} />
           <InfoRow label="Mobile" value={draft.mobile} />
         </SummarySection>
 
@@ -124,7 +123,7 @@ export default function SignupReviewPage() {
           <InfoRow label="Monthly salary" value={draft.monthlySalary ? formatINR0(draft.monthlySalary) : "—"} />
           <InfoRow label="Salary day" value={draft.salaryDay ? `${draft.salaryDay} of each month` : "—"} />
           <InfoRow
-            label="Eligible limit (25%)"
+            label="Eligible limit (instant)"
             value={draft.monthlySalary ? <span className="text-navy">{formatINR0(eligibleLimit(draft.monthlySalary))}</span> : "—"}
           />
         </SummarySection>
