@@ -20,12 +20,9 @@ export default function SignupLayout({ children }: { children: React.ReactNode }
   const label = seg === "set-password" ? "Set a password" : step.label;
   const pct = Math.round(((idx + 1) / STEPS.length) * 100);
 
-  // Persist the current step so the dashboard can resume here after Save & exit.
-  React.useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("navix.onboarding.lastStep", seg);
-    }
-  }, [seg]);
+  // The dashboard "Continue" resumes at the first UNFINISHED step, derived from the server
+  // verification summary (firstIncompleteStepSeg) — not a client-only last-step pointer, which was
+  // wiped on login and absent on a new device. So there's nothing to persist here.
 
   return (
     <div className="bg-ivory">

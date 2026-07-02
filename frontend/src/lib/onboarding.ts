@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useOnboardingStore } from "@/stores/application-store";
-import { readStoredAppId } from "@/lib/api/live-journey";
-import { borrowerApi, type ProfileInput } from "@/lib/api/applications";
+import { readStoredAppId, hydrateDraftFromProfile } from "@/lib/api/live-journey";
+import { borrowerApi, type ProfileInput, type StepResult } from "@/lib/api/applications";
 import { useMounted } from "@/hooks/use-mounted";
 
 /**
@@ -35,17 +36,35 @@ export const AGREEMENT_DOCS: Array<{ key: string; version: string; title: string
 export const AGREEMENT_VERSIONS = AGREEMENT_DOCS.map((d) => d.version);
 
 /**
- * Shared per-step context: a hydration guard (so persisted inputs don't trip
- * React's SSR mismatch), the persisted draft + its `patch`, and the resolved
- * in-flight application id (null until the DRAFT is created at mobile-otp).
+ * Shared per-step context: a hydration guard (so persisted inputs don't trip React's SSR mismatch),
+ * the persisted draft + its `patch`, and the resolved in-flight application id (null until the DRAFT
+ * is created at mobile-otp).
+ *
+ * `mounted` intentionally stays false until the draft has been **pre-filled from the server profile**
+ * (`hydrateDraftFromProfile`) — every step seeds its inputs from the draft store exactly once, gated
+ * on `mounted`, so the server data must be in the store *first* or a returning borrower would be shown
+ * blank fields. The prefill runs once per app id (React Query, `staleTime: Infinity`) and is a no-op
+ * when there is no id yet (the mobile-otp step) or the DRAFT has no saved profile.
  */
 export function useOnboarding() {
-  const mounted = useMounted();
+  const baseMounted = useMounted();
   const draft = useOnboardingStore();
   const [appId, setAppId] = React.useState<number | null>(null);
+  const [appIdResolved, setAppIdResolved] = React.useState(false);
   React.useEffect(() => {
     setAppId(readStoredAppId());
+    setAppIdResolved(true);
   }, []);
+  const prefill = useQuery({
+    queryKey: ["onboarding-prefill", appId],
+    queryFn: async () => {
+      if (appId != null) await hydrateDraftFromProfile(appId);
+      return true;
+    },
+    enabled: appIdResolved,
+    staleTime: Infinity,
+  });
+  const mounted = baseMounted && appIdResolved && prefill.isFetched;
   return { mounted, draft, appId, setAppId };
 }
 
@@ -61,6 +80,43 @@ export function nextAfterStep(defaultNext: string): string {
     if (ret === "review") return "/signup/review";
   }
   return defaultNext;
+}
+
+/**
+ * The wizard step (`ONBOARDING_STEPS` seg) each required verification check gates. Mirrors the
+ * per-step `stepRoute` map on the review page; kept here so the dashboard's resume link and the
+ * wizard share one source of truth. (mobile-otp / set-password / review carry no check.)
+ */
+const STEP_CHECK: Record<string, string> = {
+  email: "EMAIL",
+  address: "ADDRESS",
+  digilocker: "AADHAAR",
+  pan: "PAN",
+  bureau: "BUREAU",
+  salary: "SALARY",
+  "penny-drop": "PENNY_DROP",
+  selfie: "SELFIE",
+  agreement: "AGREEMENT",
+};
+
+/**
+ * The first onboarding step the borrower still needs to finish, derived from the server verification
+ * summary — so an abandoned application resumes at the right place (not step 1). A check counts done
+ * when its status is PASS or REVIEW; a missing row means "not started". DigiLocker is done if EITHER
+ * AADHAAR or DIGILOCKER passed (the callback finalises AADHAAR). Everything done → `"review"`; nothing
+ * recorded yet → `"email"` (the first real step after mobile-otp).
+ */
+export function firstIncompleteStepSeg(summary: StepResult[]): string {
+  const done = new Set(
+    summary.filter((s) => s.status === "PASS" || s.status === "REVIEW").map((s) => s.checkType),
+  );
+  const isDone = (check: string) =>
+    check === "AADHAAR" ? done.has("AADHAAR") || done.has("DIGILOCKER") : done.has(check);
+  for (const { seg } of ONBOARDING_STEPS) {
+    const check = STEP_CHECK[seg];
+    if (check && !isDone(check)) return seg;
+  }
+  return "review";
 }
 
 /** Persist a profile slice, dropping empty/undefined fields so we never clobber stored data. */

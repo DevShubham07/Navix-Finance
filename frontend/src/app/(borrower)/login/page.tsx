@@ -9,16 +9,9 @@ import { Input } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { requestBorrowerOtp, clearBorrowerClientState, type OtpRequestResult } from "@/lib/api/live-journey";
-import { borrowerApi, type ApplicationStatus } from "@/lib/api/applications";
+import { borrowerApi } from "@/lib/api/applications";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 import { normalizeMobile } from "@/lib/utils";
-
-/** An application is past KYC (verified by an approver) once it's in any of these states. */
-const KYC_DONE = new Set<ApplicationStatus>([
-  "KYC_APPROVED", "PRE_APPROVED", "REVIEW_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_EXEC_APPROVED",
-  "CREDIT_HEAD_PENDING", "CREDIT_HEAD_APPROVED", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING",
-  "DISBURSEMENT_FAILED", "DISBURSED", "ACTIVE", "OVERDUE", "DEFAULTED", "CLOSED", "WRITTEN_OFF",
-]);
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,8 +25,10 @@ export default function LoginPage() {
   const [error, setError] = React.useState<string>();
   const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
   const [resendCount, setResendCount] = React.useState(0);
-  // "Remember me": a returning, KYC-verified borrower who logged in within the 7-day cookie window
-  // skips the login form entirely. We check this once on mount; show nothing until it resolves.
+  // "Remember me": a returning borrower who logged in within the 7-day cookie window skips the login
+  // form entirely and lands on their dashboard — which resumes an in-progress application (the
+  // "Application in progress → Continue" card) or shows their active loan. We check this once on
+  // mount; show nothing until it resolves.
   const [checking, setChecking] = React.useState(true);
 
   const mobileOk = mobile.length === 10;
@@ -46,8 +41,10 @@ export default function LoginPage() {
         const meRes = await fetch("/api/auth/borrower/me", { cache: "no-store" });
         const me = (await meRes.json()) as { session?: unknown };
         if (me?.session) {
+          // Any application at all (an in-progress DRAFT/KYC_PENDING included) means the dashboard has
+          // something to resume — send them there rather than re-showing the login form.
           const apps = await borrowerApi.myApplications().catch(() => []);
-          if (apps.some((a) => KYC_DONE.has(a.status)) && !cancelled) {
+          if (apps.length > 0 && !cancelled) {
             router.replace("/dashboard");
             return;
           }

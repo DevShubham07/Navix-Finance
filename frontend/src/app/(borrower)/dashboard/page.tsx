@@ -18,11 +18,13 @@ import {
 } from "@/lib/api/live-journey";
 import {
   borrowerApi,
+  verificationApi,
   rupeesToPaise,
   paiseToINR,
   statusLabel,
   type ApplicationStatus,
 } from "@/lib/api/applications";
+import { firstIncompleteStepSeg } from "@/lib/onboarding";
 import { useOnboardingStore } from "@/stores/application-store";
 import { eligibleLimit, daysBetween } from "@/lib/calc/loan-math";
 import { formatINR0, formatDate } from "@/lib/utils";
@@ -87,14 +89,17 @@ export default function DashboardPage() {
   const closed = app?.status === "CLOSED";
   const declined = isTerminalBad(app);
 
-  // Resume from the last wizard step the user was on (persisted by the signup layout).
-  const [lastOnboardingStep, setLastOnboardingStep] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    setLastOnboardingStep(localStorage.getItem("navix.onboarding.lastStep"));
-  }, []);
-
+  // Resume an unfinished DRAFT at the first step the borrower hasn't cleared — computed from the
+  // server verification summary (the authoritative "which steps are done"), NOT a client-only
+  // last-step pointer, which is wiped on login and absent on a new device. So "Continue" deep-links
+  // straight to e.g. /signup/digilocker after an abandon there, and the wizard pre-fills from /profile.
+  const resumeSummaryQuery = useQuery({
+    queryKey: ["resume-summary", appId],
+    queryFn: () => verificationApi.summary(appId as number),
+    enabled: appId != null && app?.status === "DRAFT",
+  });
   const continueHref = app?.status === "DRAFT"
-    ? `/signup/${lastOnboardingStep ?? "mobile-otp"}`
+    ? `/signup/${firstIncompleteStepSeg(resumeSummaryQuery.data ?? [])}`
     : canChooseAmount(app) ? "/loan/apply" : "/loan/status";
 
   if (isLoading && !app) {

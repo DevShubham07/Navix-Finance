@@ -25,7 +25,7 @@ import {
   type ProfileInput,
 } from "@/lib/api/applications";
 import { eligibleLimit as eligibleLimitRupees } from "@/lib/calc/loan-math";
-import { useOnboardingStore } from "@/stores/application-store";
+import { useOnboardingStore, type OnboardingDraft } from "@/stores/application-store";
 import type { CustomerProfile, BorrowerStatus } from "@/lib/domain/borrower";
 
 /** Browser-local pointer to the borrower's in-flight live application id. */
@@ -289,6 +289,21 @@ function pickCurrentAppId(apps: ApplicationView[]): number | null {
   return current.id;
 }
 
+/**
+ * The borrower's newest still-in-flight application (the resume target), or null when there is none /
+ * every one is terminal. `/mine` is server-scoped to the JWT subject and returned newest-first, so
+ * `find` yields the newest non-terminal application. Used by the "Apply now" entry to decide whether a
+ * returning borrower should resume (→ dashboard) or start a brand-new draft. Best-effort — never throws.
+ */
+export async function findResumableApp(): Promise<ApplicationView | null> {
+  try {
+    const mine = await borrowerApi.myApplications();
+    return mine.find((a) => !TERMINAL.includes(a.status)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Poll the borrower's live application (+ loan once ACTIVE). */
 export function useLiveApplication(): LiveApplication {
   const [appId, setAppId] = useStoredAppId();
@@ -481,6 +496,45 @@ export function buildProfileInput(a: CustomerProfile): ProfileInput {
     monthlySalaryPaise: a.monthlySalary ? rupeesToPaise(a.monthlySalary) : undefined,
     salaryBank: a.bankName?.trim() || undefined,
   };
+}
+
+const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const AADHAAR_RE = /^\d{12}$/;
+
+/**
+ * Pre-fill the onboarding draft store from the server-side KYC profile so a returning borrower never
+ * re-types details they already gave us — the local `navix.onboarding.draft` is wiped on every login
+ * (PII safety) and is empty on a fresh device, but `customer_profile` still holds their answers.
+ *
+ * Rules (see the plan): **non-destructive** — only fill a draft field that is currently empty, so we
+ * never clobber what the user is typing or just navigated back to; and PAN/Aadhaar are only accepted
+ * when the stored value is a valid RAW value — DigiLocker may have persisted a *masked* Aadhaar
+ * (`XXXXXXXX1234`), which must never seed the PAN-step input (it wouldn't pass its 12-digit check).
+ * Best-effort: never throws (a fresh DRAFT with no profile yet is a no-op).
+ */
+export async function hydrateDraftFromProfile(appId: number): Promise<void> {
+  let profile: Awaited<ReturnType<typeof borrowerApi.getProfile>>;
+  try {
+    profile = await borrowerApi.getProfile(appId);
+  } catch {
+    return; // no profile yet / transient — nothing to prefill
+  }
+  const cur = useOnboardingStore.getState();
+  const patch: Partial<OnboardingDraft> = {};
+  const fillStr = (key: "fullName" | "employer" | "personalEmail" | "bankName" | "address" | "mobile", value: string | null | undefined) => {
+    const v = value?.trim();
+    if (v && !cur[key]) patch[key] = v;
+  };
+  fillStr("fullName", profile.fullName);
+  fillStr("employer", profile.employer);
+  fillStr("personalEmail", profile.email);
+  fillStr("bankName", profile.salaryBank);
+  fillStr("address", profile.address);
+  fillStr("mobile", profile.mobile);
+  if (profile.pan && PAN_RE.test(profile.pan) && !cur.pan) patch.pan = profile.pan;
+  if (profile.aadhaar && AADHAAR_RE.test(profile.aadhaar) && !cur.aadhaar) patch.aadhaar = profile.aadhaar;
+  if (profile.monthlySalaryPaise && !cur.monthlySalary) patch.monthlySalary = Math.round(profile.monthlySalaryPaise / 100);
+  if (Object.keys(patch).length > 0) cur.patch(patch);
 }
 
 // ---------------------------------------------------------------------------

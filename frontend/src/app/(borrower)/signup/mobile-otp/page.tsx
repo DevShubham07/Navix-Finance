@@ -8,7 +8,7 @@ import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
-import { ensureBorrowerSession, createOrResumeDraft, requestBorrowerOtp, clearBorrowerClientState, fetchBorrowerSession, writeStoredAppId, type OtpRequestResult } from "@/lib/api/live-journey";
+import { ensureBorrowerSession, createOrResumeDraft, findResumableApp, requestBorrowerOtp, clearBorrowerClientState, fetchBorrowerSession, writeStoredAppId, type OtpRequestResult } from "@/lib/api/live-journey";
 import { ApplicationApiError, type ApplicationView } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { normalizeMobile } from "@/lib/utils";
@@ -35,9 +35,18 @@ export default function SignupMobileOtpPage() {
     (async () => {
       const session = await fetchBorrowerSession();
       if (session) {
+        // A returning borrower who already has an in-flight application resumes it from the dashboard
+        // "Application in progress → Continue" card (which deep-links to their first unfinished step
+        // and pre-fills from the saved profile) — never re-onboard them at step 2. Only a brand-new
+        // borrower (no in-flight app) starts a fresh draft straight into the wizard.
+        const resumable = await findResumableApp();
+        if (resumable) {
+          writeStoredAppId(resumable.id);
+          setAppId(resumable.id);
+          router.replace("/dashboard");
+          return;
+        }
         try {
-          // createOrResumeDraft persists the pointer and mints a fresh DRAFT when the stored app is
-          // non-DRAFT, so a returning borrower correctly starts a new application before /signup/email.
           const app = await createOrResumeDraft(session);
           setAppId(app.id);
           writeStoredAppId(app.id);
@@ -105,10 +114,17 @@ export default function SignupMobileOtpPage() {
       // the display name from the stored profile instead.
       const session = await ensureBorrowerSession(clean, code);
       if (!session) throw new ApplicationApiError("Incorrect code or session error — please try again.", "INVALID_OTP", 0);
-      // Create/resume the DRAFT up front so every later step has a real id to persist against. A
-      // returning borrower who already has a live/in-flight application (or loan) can't start a new
-      // one — the backend guard throws and there's nothing to onboard, so land them on their dashboard
-      // instead of surfacing the error (mirrors this page's mount effect).
+      // A returning borrower who already has an in-flight application resumes it from the dashboard
+      // rather than re-onboarding (mirrors this page's mount effect).
+      const resumable = await findResumableApp();
+      if (resumable) {
+        writeStoredAppId(resumable.id);
+        setAppId(resumable.id);
+        router.replace("/dashboard");
+        return;
+      }
+      // Otherwise create the DRAFT up front so every later step has a real id to persist against. If
+      // the backend guard still blocks a new draft (a live loan exists), land on the dashboard.
       let app: ApplicationView;
       try {
         app = await createOrResumeDraft(session);
