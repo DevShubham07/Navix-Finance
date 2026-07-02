@@ -91,13 +91,13 @@
 @keyframes nv-blobDrift{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(38px,28px) scale(1.08)}66%{transform:translate(-26px,18px) scale(.95)}}
 .navix-mkt .hero-h1{line-height:1.05}
 .navix-mkt .hero-h1 .w{display:inline-block;opacity:0;transform:translateY(28px);will-change:transform,opacity}
-.navix-mkt .hero.go .hero-h1 .w{animation:nv-wordRise .72s var(--ease-out) both;animation-delay:calc(var(--i)*.07s + .12s)}
+.navix-mkt .hero-h1 .w{animation:nv-wordRise .72s var(--ease-out) both;animation-delay:calc(var(--i)*.07s + .12s)}
 @keyframes nv-wordRise{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
 .navix-mkt .hero-trust .ht{opacity:0;transform:translateY(12px)}
-.navix-mkt .hero.go .hero-trust .ht{animation:nv-fadeUp .6s var(--ease-out) both}
-.navix-mkt .hero.go .hero-trust .ht:nth-child(1){animation-delay:.86s}
-.navix-mkt .hero.go .hero-trust .ht:nth-child(2){animation-delay:.96s}
-.navix-mkt .hero.go .hero-trust .ht:nth-child(3){animation-delay:1.06s}
+.navix-mkt .hero-trust .ht{animation:nv-fadeUp .6s var(--ease-out) both}
+.navix-mkt .hero-trust .ht:nth-child(1){animation-delay:.86s}
+.navix-mkt .hero-trust .ht:nth-child(2){animation-delay:.96s}
+.navix-mkt .hero-trust .ht:nth-child(3){animation-delay:1.06s}
 .navix-mkt .offer-card{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--r-xl);box-shadow:var(--shadow-lg);padding:26px 26px 24px;overflow:hidden;animation:nv-offerBob 6s var(--ease) infinite;will-change:transform}
 .navix-mkt .offer-card:hover{animation-play-state:paused}
 @keyframes nv-offerBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
@@ -142,3 +142,17 @@
 @media(prefers-reduced-motion:reduce){.navix-mkt .hero-h1 .w,.navix-mkt .hero-trust .ht{opacity:1!important;transform:none!important}.navix-mkt .offer-card,.navix-mkt .hero-blob{animation:none!important}.navix-mkt .offer-approved{opacity:1!important;transform:none!important}.navix-mkt .oac-tick{stroke-dashoffset:0!important}}
 /* FAQ question heading wrapper: neutralize default h3 margins so the accordion layout is unchanged (the .q button carries all visual styling). */
 .navix-mkt .qa .qh{margin:0}
+
+/* --- LCP: hero (above-the-fold) reveals animate on page LOAD via CSS, not after JS
+   hydration. Previously the LCP element (<p class="lead reveal d3">) plus the hero
+   eyebrow/CTA/offer-card stayed opacity:0 until the IntersectionObserver added `.in`
+   post-hydration — adding ~3s of LCP "render delay". These play at first paint; the
+   JS `.in` class stays a harmless no-op (its final state matches the animation). Only
+   `.hero .reveal` is load-driven; every other `.reveal` keeps its scroll-in behaviour. */
+.navix-mkt .hero .reveal{animation:nv-revealIn .6s var(--ease-out) both}
+.navix-mkt .hero .reveal.d1{animation-delay:.05s}
+.navix-mkt .hero .reveal.d2{animation-delay:.1s}
+.navix-mkt .hero .reveal.d3{animation-delay:.15s}
+.navix-mkt .hero .reveal.d4{animation-delay:.2s}
+@keyframes nv-revealIn{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.navix-mkt .hero .reveal{animation:none;opacity:1;transform:none}}
