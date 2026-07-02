@@ -94,7 +94,7 @@ export default function SignupSalaryPage() {
     <form onSubmit={submit} noValidate>
       <div className="form-card">
         <p className="lead mb-4">
-          Your net monthly salary sets your salary-day repayment date — you're eligible for an instant loan up to
+          Your net monthly salary sets your salary-day repayment date — you&apos;re eligible for an instant loan up to
           ₹10,00,000. Upload 3 months of payslips so we can verify your income.
         </p>
         <Input

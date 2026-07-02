@@ -78,11 +78,25 @@ export function MarketingFooter() {
           Please borrow responsibly.
         </div>
         <div className="f-bottom">
-          <span>© 2026 NAVIX Finance Private Limited. All rights reserved.</span>
+          <span>
+            © 2026 NAVIX Finance Private Limited. All rights reserved. · Built by{" "}
+            <a href="https://softsolutionsai.com" target="_blank" rel="noopener noreferrer">softsolutionsai.com</a>
+          </span>
           <span className="fb-links">
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>
             <Link href="/grievance">Grievance</Link>
+            <a
+              href="https://www.linkedin.com/company/softsolutionsai/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="SoftSolutionsAI on LinkedIn"
+              style={{ display: "inline-flex", alignItems: "center" }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M4.98 3.5A2.5 2.5 0 1 1 0 3.5a2.5 2.5 0 0 1 4.98 0zM.5 8h4V24h-4V8zM8 8h3.8v2.2h.05c.53-1 1.83-2.2 3.77-2.2 4.03 0 4.78 2.65 4.78 6.1V24h-4v-6.9c0-1.65-.03-3.77-2.3-3.77-2.3 0-2.65 1.8-2.65 3.65V24H8V8z" />
+              </svg>
+            </a>
           </span>
         </div>
       </div>

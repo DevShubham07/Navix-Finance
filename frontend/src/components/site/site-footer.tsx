@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MapPin, Phone, Mail } from "lucide-react";
+import { MapPin, Phone, Mail, Linkedin } from "lucide-react";
 import { Brand } from "./brand";
 import { BRAND } from "@/lib/brand";
 
@@ -93,11 +93,23 @@ export function SiteFooter() {
       </div>
       <div className="footer-bottom">
         <div className="container">
-          <span>© 2026 {BRAND.legalName}. All rights reserved.</span>
+          <span>
+            © 2026 {BRAND.legalName}. All rights reserved. · Built by{" "}
+            <a href="https://softsolutionsai.com" target="_blank" rel="noopener noreferrer">softsolutionsai.com</a>
+          </span>
           <span className="footer-legal-links">
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>
             <Link href="/grievance">Grievance</Link>
+            <a
+              href="https://www.linkedin.com/company/softsolutionsai/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="SoftSolutionsAI on LinkedIn"
+              style={{ display: "inline-flex", alignItems: "center" }}
+            >
+              <Linkedin size={16} />
+            </a>
           </span>
         </div>
       </div>
