@@ -75,7 +75,6 @@ export interface AdminApplicationView {
   hasProfile: boolean;
   fullName: string | null;
   pan: string | null;
-  aadhaar: string | null;
   mobile: string | null;
   email: string | null;
   dob: string | null;
@@ -180,7 +179,6 @@ export interface ProfileView {
   applicationId: number;
   fullName: string | null;
   pan: string | null;
-  aadhaar: string | null;
   mobile: string | null;
   dob: string | null;
   address: string | null;
@@ -220,7 +218,6 @@ export interface ProfileView {
 export interface ProfileInput {
   fullName?: string;
   pan?: string;
-  aadhaar?: string; // 12 digits; uniqueness enforced server-side
   mobile?: string; // 10 digits; uniqueness enforced server-side
   email?: string; // contact email — gates email notifications
   dob?: string; // ISO yyyy-mm-dd
@@ -362,6 +359,27 @@ export interface ProfileChangeView {
   modifiedBy: string | null;
   /** ISO timestamp. */
   modifiedAt: string | null;
+}
+
+/** One entry in the unified customer activity timeline — mirrors backend ActivityEntry. */
+export type ActivityType = "LIFECYCLE" | "PROFILE" | "REVERIFY" | "REMARK";
+export interface ActivityEntry {
+  type: ActivityType;
+  applicationId: number | null;
+  title: string;
+  detail: string | null;
+  actor: string | null;
+  /** ISO timestamp. */
+  at: string | null;
+}
+
+/** A staff remark on a customer — mirrors backend RemarkView. */
+export interface RemarkView {
+  id: number;
+  body: string;
+  author: string | null;
+  /** ISO timestamp. */
+  at: string | null;
 }
 
 /**
@@ -734,6 +752,12 @@ export const staffApi = {
     payload: { decision: boolean; approvedAmountPaise?: number; notes?: string },
   ) => bff<ApplicationView>(`${STAFF_BASE}/${id}/head-decision`, "POST", payload),
 
+  /** KYC-approver credit fast-path: applied KYC_APPROVED → DISBURSEMENT_PENDING / REJECTED. */
+  kycCreditDecision: (
+    id: number,
+    payload: { decision: boolean; approvedAmountPaise?: number; notes?: string },
+  ) => bff<ApplicationView>(`${STAFF_BASE}/${id}/kyc-credit-decision`, "POST", payload),
+
   disbursementDecision: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/disbursement-decision`, "POST", { decision, txnRef, notes }),
 
@@ -816,6 +840,16 @@ export const staffApi = {
 
   /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
   creditBrief: (id: number) => bff<CreditBriefView>(`${STAFF_BASE}/${id}/credit-brief`, "GET"),
+
+  /** ADMIN uploads a document for an application (base64 body, matching the borrower upload path). */
+  uploadDocument: (
+    id: number,
+    doc: { docType: string; fileName: string; contentType?: string; dataBase64: string },
+  ) => bff<DocumentView>(`${STAFF_BASE}/${id}/documents`, "POST", doc),
+
+  /** ADMIN deletes a document (the delete half of the CRM replace flow). */
+  deleteDocument: (id: number, docId: number) =>
+    bff<null>(`${STAFF_BASE}/${id}/documents/${docId}`, "DELETE"),
 };
 
 // ---------------------------------------------------------------------------
@@ -839,6 +873,47 @@ export const customersApi = {
   /** One customer's audited profile/salary change history (newest first). */
   changes: (customerId: number) =>
     bff<ProfileChangeView[]>(`${CUSTOMERS_BASE}/${customerId}/changes`, "GET"),
+
+  /** Unified activity timeline: lifecycle + re-verify + profile edits + remarks (newest first). */
+  activity: (customerId: number) =>
+    bff<ActivityEntry[]>(`${CUSTOMERS_BASE}/${customerId}/activity`, "GET"),
+
+  /** Staff remarks on a customer. */
+  remarks: (customerId: number) =>
+    bff<RemarkView[]>(`${CUSTOMERS_BASE}/${customerId}/remarks`, "GET"),
+
+  /** Add a staff remark to a customer. */
+  addRemark: (customerId: number, body: string) =>
+    bff<RemarkView>(`${CUSTOMERS_BASE}/${customerId}/remarks`, "POST", { body }),
+};
+
+// ---------------------------------------------------------------------------
+// Dashboard analytics — routes under /api/staff/dashboard/*
+// ---------------------------------------------------------------------------
+
+/** One day's counts in the dashboard trend window. */
+export interface TrendPoint {
+  date: string;
+  applications: number;
+  disbursed: number;
+  repaid: number;
+}
+
+/** Trend window + this-week-vs-last-week deltas — mirrors backend TrendResponse. */
+export interface TrendResponse {
+  points: TrendPoint[];
+  applicationsThisWeek: number;
+  applicationsLastWeek: number;
+  disbursedThisWeek: number;
+  disbursedLastWeek: number;
+  repaidThisWeek: number;
+  repaidLastWeek: number;
+}
+
+export const dashboardApi = {
+  /** Daily applications / disbursals / repayments over the last `days` (default 30). */
+  trends: (days = 30) =>
+    bff<TrendResponse>(`/api/staff/dashboard/trends?days=${days}`, "GET"),
 };
 
 // ---------------------------------------------------------------------------

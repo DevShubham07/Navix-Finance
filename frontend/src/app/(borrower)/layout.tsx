@@ -21,8 +21,8 @@ export default function BorrowerLayout({ children }: { children: React.ReactNode
             <a href="https://softsolutionsai.com" target="_blank" rel="noopener noreferrer" className="hover:text-navy">softsolutionsai.com</a>
           </span>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <Link href="/policies#privacy" className="hover:text-navy">Privacy</Link>
-            <Link href="/policies#terms" className="hover:text-navy">Terms</Link>
+            <Link href="/privacy" className="hover:text-navy">Privacy</Link>
+            <Link href="/terms" className="hover:text-navy">Terms</Link>
             <Link href="/grievance" className="hover:text-navy">Grievance</Link>
             <Link href="/" className="hover:text-navy">Main site</Link>
             <a href="https://www.linkedin.com/company/softsolutionsai/" target="_blank" rel="noopener noreferrer" aria-label="SoftSolutionsAI on LinkedIn" className="inline-flex items-center hover:text-navy">

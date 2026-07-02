@@ -90,21 +90,14 @@ class LoanMathTest {
     }
 
     @Nested
-    @DisplayName("Eligible limit (25% of salary, floored to ₹100)")
+    @DisplayName("Eligible limit (flat ₹10,00,000 instant cap)")
     class EligibleLimit {
 
         @Test
-        void quarterOfSalary() {
-            // ₹40,000 → ₹10,000
-            assertThat(math.eligibleLimitPaise(4_000_000L)).isEqualTo(1_000_000L);
-            // ₹50,000 → ₹12,500
-            assertThat(math.eligibleLimitPaise(5_000_000L)).isEqualTo(1_250_000L);
-        }
-
-        @Test
-        void flooredToNearestHundredRupees() {
-            // ₹40,123 → 25% = ₹10,030.75 → floor to ₹10,000
-            assertThat(math.eligibleLimitPaise(4_012_300L)).isEqualTo(1_000_000L);
+        void flatCapRegardlessOfSalary() {
+            assertThat(math.eligibleLimitPaise(4_000_000L)).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE);
+            assertThat(math.eligibleLimitPaise(5_000_000L)).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE);
+            assertThat(math.eligibleLimitPaise(50_000_000L)).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE);
         }
     }
 

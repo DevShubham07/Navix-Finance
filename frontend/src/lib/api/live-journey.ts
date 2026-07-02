@@ -472,7 +472,6 @@ export function buildProfileInput(a: CustomerProfile): ProfileInput {
   return {
     fullName: a.fullName?.trim() || undefined,
     pan: a.pan?.trim().toUpperCase() || undefined,
-    aadhaar: a.aadhaar?.replace(/\D/g, "") || undefined,
     mobile: a.mobile?.replace(/\D/g, "") || undefined,
     email: a.email?.trim() || undefined,
     address: address || undefined,

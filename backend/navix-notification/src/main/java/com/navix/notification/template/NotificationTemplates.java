@@ -29,13 +29,15 @@ public class NotificationTemplates {
         inApp(NotificationType.KYC_SUBMITTED, "New KYC to review",
                 "A borrower submitted KYC for application #{applicationId}. Review it in your queue.");
 
-        inApp(NotificationType.KYC_APPROVED, "KYC approved",
-                "Your KYC is verified. Log in to choose your loan amount.");
+        inApp(NotificationType.KYC_APPROVED, "KYC approved — instant loan ready",
+                "Your KYC is verified. You're eligible for an instant loan up to ₹10,00,000 — log in to "
+                        + "choose your amount.");
         sms(NotificationType.KYC_APPROVED,
-                "NAVIX: Your KYC is verified. Log in to choose your loan amount.");
-        email(NotificationType.KYC_APPROVED, "Your NAVIX KYC is approved",
-                "Hi {name},\n\nGood news — your KYC is verified. You can now log in and choose your "
-                        + "loan amount.\n\n— NAVIX Finance");
+                "NAVIX: KYC verified. You're eligible for an instant loan up to ₹10,00,000. Log in to "
+                        + "choose your amount.");
+        email(NotificationType.KYC_APPROVED, "Your NAVIX KYC is approved — instant loan up to ₹10,00,000",
+                "Hi {name},\n\nGood news — your KYC is verified. You're now eligible for an instant loan "
+                        + "of up to ₹10,00,000. Log in to choose your amount and get funded.\n\n— NAVIX Finance");
 
         inApp(NotificationType.KYC_REJECTED, "KYC could not be verified",
                 "We couldn't verify your KYC. Please review your details and resubmit.");

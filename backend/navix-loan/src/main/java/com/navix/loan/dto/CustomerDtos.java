@@ -4,8 +4,10 @@ import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.entity.CustomerRemark;
 import com.navix.loan.entity.ProfileChangeLog;
 
+import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -76,6 +78,30 @@ public final class CustomerDtos {
         public static ProfileChangeView of(ProfileChangeLog c) {
             return new ProfileChangeView(c.getId(), c.getField(), c.getOldValue(), c.getNewValue(),
                     c.getCreatedBy(), c.getCreatedAt());
+        }
+    }
+
+    /**
+     * One entry in the unified customer activity timeline — merges lifecycle transitions
+     * ({@code application_event}), profile/salary edits ({@code profile_change_log}), KYC re-verify
+     * events, and staff remarks into a single chronological feed (newest first).
+     */
+    public record ActivityEntry(
+            String type,          // LIFECYCLE | PROFILE | REVERIFY | REMARK
+            Long applicationId,
+            String title,         // human-readable headline
+            String detail,        // secondary line (old→new, notes, from→to)
+            String actor,         // actor role / who made the change
+            Instant at) {
+    }
+
+    /** A staff-authored remark on a customer. */
+    public record AddRemarkRequest(@NotBlank String body) {
+    }
+
+    public record RemarkView(Long id, String body, String author, Instant at) {
+        public static RemarkView of(CustomerRemark r) {
+            return new RemarkView(r.getId(), r.getBody(), r.getCreatedBy(), r.getCreatedAt());
         }
     }
 }

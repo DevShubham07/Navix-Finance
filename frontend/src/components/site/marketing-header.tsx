@@ -17,7 +17,7 @@ const PRODUCT_DROP: DropItem[] = [
   {
     href: "/products",
     title: "Instant Personal Loan",
-    sub: "₹5,000 – ₹1,00,000",
+    sub: "₹5,000 – ₹10,00,000",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="12" cy="12" r="9" />

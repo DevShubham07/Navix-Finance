@@ -60,7 +60,9 @@ export type Permission =
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
-  KYC_APPROVER: ["kyc:approve", "customer:view"],
+  // KYC approver additionally clears the credit gate in the instant-loan model (loan:review/approve),
+  // routing an applied KYC-approved application straight to the Disbursement Head.
+  KYC_APPROVER: ["kyc:approve", "loan:review", "loan:approve", "customer:view"],
   CREDIT_EXECUTIVE: ["loan:review", "customer:view"],
   CREDIT_HEAD: ["loan:approve", "customer:view"],
   DISBURSEMENT_HEAD: ["loan:disburse", "customer:view", "referral:payout"],

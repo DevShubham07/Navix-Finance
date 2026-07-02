@@ -10,11 +10,14 @@ import { useStaffSession } from "@/lib/auth/staff-session";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import {
   staffApi,
+  dashboardApi,
   paiseToINR,
   statusLabel,
   type ApplicationStatus,
   type ApplicationView,
   type TransactionView,
+  type TrendPoint,
+  type TrendResponse,
 } from "@/lib/api/applications";
 import { useMounted } from "@/hooks/use-mounted";
 import { formatDate } from "@/lib/utils";
@@ -136,6 +139,13 @@ export default function StaffDashboardPage() {
     refetchInterval: REFRESH_MS,
   });
 
+  const trends = useQuery({
+    queryKey: ["staff-dashboard-trends"],
+    queryFn: () => dashboardApi.trends(30),
+    enabled: mounted && !!session,
+    refetchInterval: REFRESH_MS,
+  });
+
   // Admin oversight: a company-wide transactions summary on the home page.
   const isAdmin = role === "ADMIN";
   const txns = useQuery({
@@ -187,6 +197,8 @@ export default function StaffDashboardPage() {
         <StatCard label="In collections" value={n("OVERDUE")} accent="error"
           info="Loans past their due date. Collections officers work these by DPD bucket; settlements need Collection Head approval." />
       </div>
+
+      <TrendsSection data={trends.data} loading={trends.isLoading} />
 
       {isAdmin && <AdminTransactions rows={txns.data ?? []} loading={txns.isLoading} />}
 
@@ -258,6 +270,99 @@ export default function StaffDashboardPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+/** 30-day activity trends — applications, disbursals and repayments per day with week-over-week deltas. */
+function TrendsSection({ data, loading }: { data?: TrendResponse; loading: boolean }) {
+  if (loading) {
+    return <div className="mb-8 h-32 animate-pulse rounded border border-line bg-white" />;
+  }
+  if (!data || data.points.length === 0) return null;
+  return (
+    <div className="mb-8 grid gap-4 sm:grid-cols-3">
+      <TrendCard
+        title="Applications"
+        color="#0C2540"
+        points={data.points}
+        pick={(p) => p.applications}
+        thisWeek={data.applicationsThisWeek}
+        lastWeek={data.applicationsLastWeek}
+      />
+      <TrendCard
+        title="Disbursals"
+        color="#E9B53A"
+        points={data.points}
+        pick={(p) => p.disbursed}
+        thisWeek={data.disbursedThisWeek}
+        lastWeek={data.disbursedLastWeek}
+      />
+      <TrendCard
+        title="Repayments"
+        color="#2E9E6B"
+        points={data.points}
+        pick={(p) => p.repaid}
+        thisWeek={data.repaidThisWeek}
+        lastWeek={data.repaidLastWeek}
+      />
+    </div>
+  );
+}
+
+function TrendCard({
+  title,
+  color,
+  points,
+  pick,
+  thisWeek,
+  lastWeek,
+}: {
+  title: string;
+  color: string;
+  points: TrendPoint[];
+  pick: (p: TrendPoint) => number;
+  thisWeek: number;
+  lastWeek: number;
+}) {
+  const values = points.map(pick);
+  const total = values.reduce((s, v) => s + v, 0);
+  const delta = thisWeek - lastWeek;
+  const pct = lastWeek > 0 ? Math.round((delta / lastWeek) * 100) : null;
+  return (
+    <div className="rounded border border-line bg-white p-4 shadow-sm">
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</span>
+        <span className="font-serif text-lg font-bold text-navy">{total}</span>
+      </div>
+      <Sparkline values={values} color={color} />
+      <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
+        <span>Last 30 days</span>
+        <span className={delta > 0 ? "text-success-700" : delta < 0 ? "text-error-700" : ""}>
+          {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)} vs last wk{pct != null ? ` (${delta >= 0 ? "+" : ""}${pct}%)` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Minimal inline SVG sparkline — a filled area under a smoothed polyline. */
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+  const w = 240;
+  const h = 40;
+  const max = Math.max(1, ...values);
+  const n = values.length;
+  const pts = values.map((v, i) => {
+    const x = n <= 1 ? 0 : (i / (n - 1)) * w;
+    const y = h - (v / max) * (h - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const line = pts.join(" ");
+  const area = `0,${h} ${line} ${w},${h}`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="mt-2 h-10 w-full" role="img" aria-label={`${values.length}-day trend`}>
+      <polygon points={area} fill={color} opacity={0.1} />
+      <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
   );
 }
 

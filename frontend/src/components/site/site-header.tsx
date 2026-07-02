@@ -24,10 +24,10 @@ const NAV: NavItem[] = [
   {
     label: "Policies",
     dropdown: [
-      { label: "Privacy Policy", href: "/policies#privacy" },
-      { label: "Terms & Conditions", href: "/policies#terms" },
-      { label: "Grievance Redressal Policy", href: "/policies#grievance-policy" },
-      { label: "Fair Lending Commitment", href: "/policies#fair-lending" },
+      { label: "Privacy Policy", href: "/privacy" },
+      { label: "Terms & Conditions", href: "/terms" },
+      { label: "Grievance Redressal Policy", href: "/grievance" },
+      { label: "Fair Lending Commitment", href: "/fair-practices" },
     ],
   },
   { label: "Grievance", href: "/grievance" },

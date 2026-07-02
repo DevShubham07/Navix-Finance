@@ -139,18 +139,16 @@ function ProfileCard({ detail }: { detail: CustomerDetail }) {
           <Row label="PAN" value={p.pan} mono />
           <Row
             label="Aadhaar"
-            mono
             value={
-              p.aadhaar || p.aadhaarVerified ? (
+              p.aadhaarVerified ? (
                 <span className="inline-flex items-center justify-end gap-1.5">
-                  {p.aadhaar || "—"}
-                  {p.aadhaarVerified && (
-                    <span className="inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[10px] font-semibold text-success-700">
-                      <Check size={10} /> Verified
-                    </span>
-                  )}
+                  <span className="inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[10px] font-semibold text-success-700">
+                    <Check size={10} /> DigiLocker verified
+                  </span>
                 </span>
-              ) : null
+              ) : (
+                <span className="text-muted">Not verified</span>
+              )
             }
           />
           <Row label="Mobile" value={p.mobile} mono />

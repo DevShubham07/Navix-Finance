@@ -32,6 +32,10 @@ export function ExportMenu<Row>({
   const [open, setOpen] = React.useState(false);
   const isDisabled = disabled || rows.length === 0;
 
+  // Exports are ADMIN-only across the whole console (data-governance decision) — every other role
+  // gets no export control at all.
+  if (me?.role !== "ADMIN") return null;
+
   const actor = {
     name: me?.name ?? "Unknown",
     role: me ? ROLE_LABEL[me.role] : "Staff",

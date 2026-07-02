@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Search, ArrowRight } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ExportMenu } from "@/components/staff/export-menu";
 import type { ExportColumn } from "@/lib/export/exporters";
 import { hasPermission } from "@/lib/auth/rbac";
@@ -27,7 +27,6 @@ const EXPORT_COLUMNS: ExportColumn<AdminApplicationView>[] = [
   { header: "Agreement", value: (a) => (a.agreementAccepted ? "yes" : "no") },
   { header: "Name", value: (a) => a.fullName ?? "" },
   { header: "PAN", value: (a) => a.pan ?? "" },
-  { header: "Aadhaar", value: (a) => a.aadhaar ?? "" },
   { header: "Mobile", value: (a) => a.mobile ?? "" },
   { header: "Email", value: (a) => a.email ?? "" },
   { header: "DOB", value: (a) => a.dob ?? "" },
@@ -58,6 +57,7 @@ export default function AdminAllApplicationsPage() {
   const myRole = useStaffMe().data?.role;
   const [search, setSearch] = React.useState("");
   const [filter, setFilter] = React.useState<CompletenessFilter>("ALL");
+  const [openId, setOpenId] = React.useState<number | null>(null);
   const q = useQuery({ queryKey: ["admin-all-applications"], queryFn: staffApi.listAllApplications });
 
   if (myRole && !hasPermission(myRole, "staff:manage")) {
@@ -172,9 +172,9 @@ export default function AdminAllApplicationsPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-muted">{a.riskCategory || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
-                      <Link href={`/staff/customers/${a.customerId}`} className="inline-flex items-center gap-1 text-navy hover:underline">
+                      <button onClick={() => setOpenId(a.customerId)} className="inline-flex items-center gap-1 text-navy hover:underline">
                         Open <ArrowRight size={14} />
-                      </Link>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -186,6 +186,8 @@ export default function AdminAllApplicationsPage() {
           </div>
         </div>
       )}
+
+      <CustomerDetailDialog customerId={openId} onClose={() => setOpenId(null)} />
     </div>
   );
 }

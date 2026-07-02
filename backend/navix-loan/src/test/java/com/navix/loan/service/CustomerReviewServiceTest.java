@@ -47,13 +47,15 @@ class CustomerReviewServiceTest {
     private VerificationInvalidationService verificationInvalidation;
     @Mock
     private EligibilityService eligibilityService;
+    @Mock
+    private com.navix.loan.repository.ProfileChangeLogRepository changeLogRepository;
 
     private CustomerReviewService service;
 
     @BeforeEach
     void setUp() {
         service = new CustomerReviewService(applicationRepository, profileRepository, documentRepository,
-                storage, verificationInvalidation, eligibilityService);
+                storage, verificationInvalidation, eligibilityService, changeLogRepository);
         ActorContext.set(BORROWER);
     }
 
@@ -62,8 +64,8 @@ class CustomerReviewServiceTest {
         ActorContext.clear();
     }
 
-    private ProfileRequest req(String pan, String aadhaar, String mobile) {
-        return new ProfileRequest("Asha Verma", pan, aadhaar, mobile,
+    private ProfileRequest req(String pan, String mobile) {
+        return new ProfileRequest("Asha Verma", pan, mobile,
                 null, null, null, null, null, null, null);
     }
 
@@ -103,58 +105,35 @@ class CustomerReviewServiceTest {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
         when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(true);
 
-        assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", null, null)))
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("PAN");
-    }
-
-    @Test
-    void rejectsDuplicateAadhaar() {
-        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-        when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(false);
-        when(profileRepository.existsAadhaarForOtherCustomer("123456789012", CUSTOMER_ID)).thenReturn(true);
-
-        assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "1234 5678 9012", null)))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Aadhaar");
     }
 
     @Test
     void rejectsDuplicateMobile() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
         when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(false);
-        when(profileRepository.existsAadhaarForOtherCustomer("123456789012", CUSTOMER_ID)).thenReturn(false);
         when(profileRepository.existsMobileForOtherCustomer("9876543210", CUSTOMER_ID)).thenReturn(true);
 
-        assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "123456789012", "98765 43210")))
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "98765 43210")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("mobile");
-    }
-
-    @Test
-    void rejectsMalformedAadhaar() {
-        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-
-        assertThatThrownBy(() -> service.saveProfile(APP_ID, req("ABCDE1234F", "123", null)))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("12-digit");
     }
 
     @Test
     void acceptsUniqueIdentityAndNormalises() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
         when(profileRepository.existsPanForOtherCustomer("ABCDE1234F", CUSTOMER_ID)).thenReturn(false);
-        when(profileRepository.existsAadhaarForOtherCustomer("123456789012", CUSTOMER_ID)).thenReturn(false);
         when(profileRepository.existsMobileForOtherCustomer("9876543210", CUSTOMER_ID)).thenReturn(false);
         when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        // lower-case PAN, spaced Aadhaar, +91-prefixed mobile -> all normalised
-        CustomerProfile saved = service.saveProfile(APP_ID, req("abcde1234f", "1234-5678-9012", "+91 98765 43210"));
+        // lower-case PAN, +91-prefixed mobile -> all normalised
+        CustomerProfile saved = service.saveProfile(APP_ID, req("abcde1234f", "+91 98765 43210"));
 
         assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
         assertThat(saved.getPan()).isEqualTo("ABCDE1234F");
-        assertThat(saved.getAadhaar()).isEqualTo("123456789012");
         assertThat(saved.getMobile()).isEqualTo("9876543210");
     }
 }

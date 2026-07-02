@@ -24,9 +24,11 @@ class VerificationInvalidationServiceTest {
 
     @Mock private ApplicationVerificationRepository verificationRepo;
     @Mock private CustomerProfileRepository profileRepo;
+    @Mock private com.navix.loan.repository.ApplicationEventRepository eventRepo;
+    @Mock private com.navix.loan.repository.LoanApplicationRepository applicationRepo;
 
     private VerificationInvalidationService service() {
-        return new VerificationInvalidationService(verificationRepo, profileRepo);
+        return new VerificationInvalidationService(verificationRepo, profileRepo, eventRepo, applicationRepo);
     }
 
     private ApplicationVerification row(String type, String status) {

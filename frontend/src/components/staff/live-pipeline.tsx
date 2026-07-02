@@ -13,7 +13,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, X, Loader2, RefreshCw, ChevronDown, FileText, Download, ExternalLink, User, Banknote, ArrowRight, Bell } from "lucide-react";
+import { Check, X, Loader2, RefreshCw, FileText, Download, ExternalLink, User, Banknote, ArrowRight, Bell } from "lucide-react";
 import { Input, Select, InfoTooltip } from "@/components/ui";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
@@ -36,6 +36,7 @@ import {
 } from "@/lib/api/applications";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
+import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 
 /** Loan statuses that mean the loan is still live (vs. a past/closed loan). */
 const OPEN_LOAN_STATUSES = new Set(["ACTIVE", "OVERDUE", "IN_COLLECTIONS", "DISBURSED", "DEFAULTED"]);
@@ -213,9 +214,9 @@ function AppRow({
   app: ApplicationView;
   actions: (app: ApplicationView) => React.ReactNode;
 }) {
-  const [showEvents, setShowEvents] = React.useState(false);
+  const [openDetail, setOpenDetail] = React.useState(false);
   return (
-    <li className="px-5 py-4">
+    <li className="px-5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="font-serif text-base font-semibold text-navy">
@@ -237,24 +238,22 @@ function AppRow({
         <div className="flex items-center gap-2">{actions(app)}</div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-2">
+        {/* Full customer detail (basics, past loans/payments, documents, all logs, remarks) in a popup —
+            no page navigation, no inline "extend screen". */}
+        <button onClick={() => setOpenDetail(true)} className="btn btn-sm btn-navy">
+          <User size={14} /> Open details
+        </button>
+        {/* KYC-approver verification manual-override tooling (application-specific). */}
         <CustomerReview applicationId={app.id} />
-        <LoanHistory customerId={app.customerId} />
       </div>
 
-      <button
-        onClick={() => setShowEvents((o) => !o)}
-        className="mt-2 flex items-center gap-1 text-xs font-semibold text-navy hover:underline"
-      >
-        <ChevronDown size={13} className={showEvents ? "rotate-180 transition" : "transition"} />
-        {showEvents ? "Hide" : "Show"} maker-checker trail
-      </button>
-      {showEvents && <EventsTrail id={app.id} />}
+      <CustomerDetailDialog customerId={openDetail ? app.customerId : null} onClose={() => setOpenDetail(false)} />
     </li>
   );
 }
 
-function EventsTrail({ id }: { id: number }) {
+export function EventsTrail({ id }: { id: number }) {
   const q = useQuery({
     queryKey: ["staff-events", id],
     queryFn: () => staffApi.events(id),
@@ -356,13 +355,12 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
           <Row label="PAN" value={p.pan} mono />
           <Row
             label="Aadhaar"
-            mono
             value={
-              p.aadhaar || p.aadhaarVerified ? (
-                <span className="inline-flex items-center justify-end gap-1.5">
-                  {p.aadhaar || "—"} {p.aadhaarVerified && <VerifiedPill />}
-                </span>
-              ) : null
+              p.aadhaarVerified ? (
+                <span className="inline-flex items-center justify-end gap-1.5"><VerifiedPill /></span>
+              ) : (
+                <span className="text-muted">Not verified</span>
+              )
             }
           />
           <Row label="Mobile" value={p.mobile} mono />
@@ -670,7 +668,7 @@ function formatBytes(n: number): string {
  * out N borrower-history fetches. Open to every staff role (the customers roll-up is). Keyed on the
  * customer id so a staffer inspecting an application sees the borrower's amount/due-date context.
  */
-function LoanHistory({ customerId }: { customerId: number }) {
+export function LoanHistory({ customerId }: { customerId: number }) {
   const [load, setLoad] = React.useState(false);
   const q = useQuery({
     queryKey: ["customer-loans", customerId],
@@ -1082,6 +1080,40 @@ export function HeadActions({ app }: { app: ApplicationView }) {
     <ActionGate permission="loan:approve">
       <div className="flex items-center gap-2">
         <ApproveRejectButtons pending={m.isPending} onApprove={() => m.mutate(true)} onReject={() => m.mutate(false)} />
+        <ActionError error={m.error} />
+      </div>
+    </ActionGate>
+  );
+}
+
+/**
+ * KYC-approver credit fast-path: on an applied KYC_APPROVED application the KYC approver clears the
+ * credit gate in one step (→ DISBURSEMENT_PENDING) or rejects it. The action only appears once the
+ * borrower has chosen an amount (amountRequestedPaise set).
+ */
+export function KycCreditActions({ app }: { app: ApplicationView }) {
+  const refresh = useRefreshAfterAction();
+  const m = useMutation({
+    mutationFn: (decision: boolean) =>
+      staffApi.kycCreditDecision(app.id, {
+        decision,
+        approvedAmountPaise: decision ? app.amountRequestedPaise ?? undefined : undefined,
+      }),
+    onSuccess: () => refresh(app.id),
+  });
+  if (app.amountRequestedPaise == null) {
+    return <span className="text-xs italic text-muted">Awaiting the borrower&apos;s amount</span>;
+  }
+  return (
+    <ActionGate permission="loan:approve">
+      <div className="flex items-center gap-2">
+        <ApproveRejectButtons
+          pending={m.isPending}
+          onApprove={() => m.mutate(true)}
+          onReject={() => m.mutate(false)}
+          approveLabel="Approve for disbursement"
+          rejectLabel="Reject"
+        />
         <ActionError error={m.error} />
       </div>
     </ActionGate>
