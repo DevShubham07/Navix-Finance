@@ -35,7 +35,7 @@ export const html = `<section class="page active" id="calculator">
         <div class="donut-wrap">
           <svg width="170" height="170" class="donut" viewBox="0 0 130 130">
             <circle cx="65" cy="65" r="52" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="15"></circle>
-            <circle id="ringPrin" cx="65" cy="65" r="52" fill="none" stroke="#F4C95B" stroke-width="15" stroke-linecap="round" stroke-dasharray="0 327"></circle>
+            <circle id="ringPrin" cx="65" cy="65" r="52" fill="none" stroke="#3FBF89" stroke-width="15" stroke-linecap="round" stroke-dasharray="0 327"></circle>
             <circle id="ringInt" cx="65" cy="65" r="52" fill="none" stroke="#2C6298" stroke-width="15" stroke-linecap="round" stroke-dasharray="0 327"></circle>
           </svg>
           <div class="donut-center"><div class="dc-amt" id="dcAmt">₹13,000</div><div class="dc-lbl">Total payable</div></div>
@@ -48,7 +48,7 @@ export const html = `<section class="page active" id="calculator">
           <div class="cr-line apr"><span>Representative APR</span><b id="oApr">365.0%</b></div>
           <div class="cr-total"><span class="t-lbl">Total payable</span><span class="t-val" id="oTotal">₹13,000</span></div>
         </div>
-        <div class="legend"><span><span class="sw" style="background:#F4C95B"></span> Principal</span><span><span class="sw" style="background:#2C6298"></span> Interest</span></div>
+        <div class="legend"><span><span class="sw" style="background:#3FBF89"></span> Principal</span><span><span class="sw" style="background:#2C6298"></span> Interest</span></div>
       </div>
     </div>
   </div></div>
@@ -142,11 +142,11 @@ export const html = `<section class="page active" id="calculator">
       <span class="eyebrow">Rates &amp; charges</span>
       <h2 style="font-size:clamp(1.7rem,3.4vw,2.3rem);margin:14px 0 22px">Clear, upfront, and fair</h2>
       <div class="checklist">
-        <div class="chk"><span class="ck" style="background:rgba(212,154,36,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Loan amount: ₹5,000 to ₹10,00,000</b><small>Borrow exactly what you need.</small></div></div>
-        <div class="chk"><span class="ck" style="background:rgba(212,154,36,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Tenure: 7 to 40 days</b><small>Short-term, near-term repayment.</small></div></div>
-        <div class="chk"><span class="ck" style="background:rgba(212,154,36,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>No pre-closure or prepayment charges</b><small>Clear early and pay less — always.</small></div></div>
-        <div class="chk"><span class="ck" style="background:rgba(212,154,36,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>No advance fees, ever</b><small>We never ask for upfront payments.</small></div></div>
-        <div class="chk"><span class="ck" style="background:rgba(212,154,36,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Net monthly salary ≥ ₹40,000</b><small>A core eligibility criterion.</small></div></div>
+        <div class="chk"><span class="ck" style="background:rgba(20,160,107,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Loan amount: ₹5,000 to ₹10,00,000</b><small>Borrow exactly what you need.</small></div></div>
+        <div class="chk"><span class="ck" style="background:rgba(20,160,107,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Tenure: 7 to 40 days</b><small>Short-term, near-term repayment.</small></div></div>
+        <div class="chk"><span class="ck" style="background:rgba(20,160,107,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>No pre-closure or prepayment charges</b><small>Clear early and pay less — always.</small></div></div>
+        <div class="chk"><span class="ck" style="background:rgba(20,160,107,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>No advance fees, ever</b><small>We never ask for upfront payments.</small></div></div>
+        <div class="chk"><span class="ck" style="background:rgba(20,160,107,.14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Net monthly salary ≥ ₹40,000</b><small>A core eligibility criterion.</small></div></div>
       </div>
     </div>
     <div class="reveal d1">

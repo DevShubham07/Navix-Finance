@@ -164,7 +164,7 @@ export function MarketingScripts() {
           max = +el.max,
           v = +el.value;
         const pct = ((v - min) / (max - min)) * 100;
-        el.style.background = "linear-gradient(90deg,#E2A02C " + pct + "%,#F4EBD7 " + pct + "%)";
+        el.style.background = "linear-gradient(90deg,#14A06B " + pct + "%,#F4EBD7 " + pct + "%)";
       };
       const highlightRate = (T: number) => {
         document.querySelectorAll<HTMLElement>("table.rt tbody tr").forEach((tr) => {
@@ -262,7 +262,7 @@ export function MarketingScripts() {
           mx = +el.max,
           v = +el.value;
         const pct = ((v - mn) / (mx - mn)) * 100;
-        el.style.background = "linear-gradient(90deg,#E2A02C " + pct + "%,#F4EBD7 " + pct + "%)";
+        el.style.background = "linear-gradient(90deg,#14A06B " + pct + "%,#F4EBD7 " + pct + "%)";
       };
       const compute = () => {
         const A = +calAmt.value,

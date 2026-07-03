@@ -142,7 +142,7 @@ export default function TransactionsPage() {
               <button
                 key={p.key}
                 onClick={() => setPeriod(p.key)}
-                className={`rounded-full px-3 py-1 text-sm font-semibold transition ${period === p.key ? "bg-gold text-navy" : "text-muted hover:text-navy"}`}
+                className={`rounded-full px-3 py-1 text-sm font-semibold transition ${period === p.key ? "bg-gold text-white" : "text-muted hover:text-navy"}`}
               >
                 {p.label}
               </button>

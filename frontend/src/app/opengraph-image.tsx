@@ -27,7 +27,7 @@ export default function Image() {
           fontFamily: "sans-serif",
         }}
       >
-        <div style={{ fontSize: 96, fontWeight: 800, letterSpacing: "-0.03em", color: "#E9B53A" }}>
+        <div style={{ fontSize: 96, fontWeight: 800, letterSpacing: "-0.03em", color: "#14A06B" }}>
           NAVIX
         </div>
         <div style={{ fontSize: 52, fontWeight: 700, marginTop: 24, lineHeight: 1.1 }}>

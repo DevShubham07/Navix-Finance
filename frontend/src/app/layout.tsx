@@ -1,40 +1,28 @@
 import type { Metadata } from "next";
-import {
-  Bricolage_Grotesque,
-  Hanken_Grotesk,
-  IBM_Plex_Mono,
-} from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { RouteProgress } from "@/components/app/route-progress";
 import { GoogleAnalytics } from "@/components/analytics/google-analytics";
 
 /**
- * Unified brand typefaces (2026 "calendar" design system) — Bricolage Grotesque
- * (display/headings), Hanken Grotesk (body/UI), IBM Plex Mono (figures). These
- * power BOTH the functional app (globals.css `--serif`/`--sans`/`--mono` +
- * tailwind `font-serif`/`font-sans`/`font-mono`) and the marketing site
- * (`.navix-mkt` consumes `--font-bricolage`/`--font-hanken`/`--font-plex-mono`).
+ * Unified brand typeface — Inter powers everything (display/headings, body/UI,
+ * and figures). It backs BOTH the functional app (globals.css
+ * `--serif`/`--sans`/`--mono` + tailwind `font-serif`/`font-sans`/`font-mono`)
+ * and the marketing site (`.navix-mkt` consumes `--font-inter`). Inter's
+ * tabular figures (`tnum`) keep ledger amounts column-aligned.
  */
-const bricolage = Bricolage_Grotesque({
+const inter = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-bricolage",
-  display: "swap",
-});
-
-const hanken = Hanken_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-hanken",
-  display: "swap",
-});
-
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-plex-mono",
-  display: "swap",
+  variable: "--font-inter",
+  // `block`, not `swap`: the marketing hero animates its headline word-by-word on
+  // promoted `will-change` layers. With `swap`, the first line can paint in the
+  // metric fallback before Inter loads and the promoted layer never repaints on
+  // swap-in — leaving line 1 in a different (Arial-like) face than the rest.
+  // `block` makes every line wait for Inter; the entrance animation already keeps
+  // the words invisible for ~120ms, so this adds no perceptible delay.
+  display: "block",
 });
 
 export const metadata: Metadata = {
@@ -74,7 +62,7 @@ export default function RootLayout({
   return (
     <html
       lang="en-IN"
-      className={`${bricolage.variable} ${hanken.variable} ${plexMono.variable}`}
+      className={inter.variable}
     >
       {/* suppressHydrationWarning: browser extensions (screenshot/zoom tools, etc.)
           mutate <body> attributes — e.g. style="zoom:1" — before React hydrates,

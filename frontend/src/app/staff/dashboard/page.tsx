@@ -291,7 +291,7 @@ function TrendsSection({ data, loading }: { data?: TrendResponse; loading: boole
       />
       <TrendCard
         title="Disbursals"
-        color="#E9B53A"
+        color="#14A06B"
         points={data.points}
         pick={(p) => p.disbursed}
         thisWeek={data.disbursedThisWeek}

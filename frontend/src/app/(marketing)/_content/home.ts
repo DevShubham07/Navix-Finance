@@ -212,7 +212,7 @@ export const html = `<section class="page active" id="home">
 .cal-legend .lg-sel{background:var(--grad-navy)}
 .cal-hintnote{color:var(--muted)}
 .cal-side{position:relative;overflow:hidden;background:var(--grad-navy);border-radius:var(--r-lg);padding:clamp(22px,2.6vw,28px);display:flex;flex-direction:column;color:#fff}
-.cal-side::before{content:"";position:absolute;top:-40%;right:-30%;width:75%;height:75%;background:radial-gradient(circle,rgba(244,201,91,.20),transparent 70%);pointer-events:none}
+.cal-side::before{content:"";position:absolute;top:-40%;right:-30%;width:75%;height:75%;background:radial-gradient(circle,rgba(63,191,137,.20),transparent 70%);pointer-events:none}
 .cal-side > *{position:relative}
 .cal-side .eyebrow{color:var(--gold-400)}
 .cal-side .eyebrow::before{background:var(--gold-400)}

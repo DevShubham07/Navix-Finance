@@ -34,10 +34,11 @@ export interface ExportMeta {
   timezone?: string;
 }
 
-// NAVIX design tokens (2026 "calendar" system) — navy #0C2540 · gold #D49A24 ·
-// warm-cream row #F7F2E9. Keeps branded PDFs aligned with the re-skinned UI.
+// NAVIX design tokens (2026 "calendar" system) — navy #0C2540 · emerald accent
+// #14A06B (token still named GOLD) · warm-cream row #F7F2E9. Keeps branded PDFs
+// aligned with the re-skinned UI.
 const NAVY: [number, number, number] = [12, 37, 64];
-const GOLD: [number, number, number] = [212, 154, 36];
+const GOLD: [number, number, number] = [20, 160, 107];
 const ROW_ALT: [number, number, number] = [247, 242, 233];
 
 function cell(v: string | number | null | undefined): string {
