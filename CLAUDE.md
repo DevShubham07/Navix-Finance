@@ -1,6 +1,10 @@
 # CLAUDE.md
 
-Guidance for Claude Code (and any human) working in this repo. This file is the **single
+Guidance for Claude Code (and any human) working in this repo. 
+Add under a new ## Workflow section near the top of CLAUDE.md\n\nAfter implementing any feature, verify it end-to-end (browser check where applicable, run type-checks/CI gates), then update relevant docs, then commit and push.
+Add under ## Git / Version Control section\n\nNever let auto-commit hooks sweep local-only files (run-local.ps1, .mcp.json, .claude/) into commits; keep them gitignored and confirm the staged diff before committing.
+Add under ## Environment / Local Setup section\n\nWhen laptop sleep or stale caches (.next) crash the stack, clear the cache and restart backend/frontend rather than assuming code regressions.
+This file is the **single
 onboarding doc** — read it first on a fresh machine and you have the full picture: what NAVIX
 is, the end-to-end workflow, how the borrower flow works, how the staff/admin login flow works,
 how to run it, and what is real vs. deferred.
@@ -20,7 +24,7 @@ The economics in one line (all money is **integer paise**, rounded HALF_UP):
 
 | Rule | Value |
 |---|---|
-| Eligible limit | **25% of monthly salary**, floored to the nearest ₹100 |
+| Eligible limit | **flat ₹10,00,000** instant cap (salary no longer caps the amount — it still drives the due date) |
 | Minimum loan | ₹1,000 |
 | Processing fee | **10%** of principal (upfront, deducted from disbursal) |
 | GST | **18% on the fee** (upfront, deducted from disbursal) |
@@ -30,8 +34,13 @@ The economics in one line (all money is **integer paise**, rounded HALF_UP):
 | Repayment | a **single** installment (pay on salary day, day after, or explicit prepayment) |
 
 So the borrower **receives** `principal − fee − GST` and **repays** `principal + interest`
-(plus late penalty if overdue). Risk categories A/B/C/D affect limit/required checks, not price.
+(plus late penalty if overdue). Risk categories A/B/C/D are **retained for underwriting/reporting
+only** — they no longer scale the limit (and never affected price).
 **Maker-checker separation of duties (SoD)** is a hard requirement throughout.
+
+> **Decision (final):** the eligible limit is a **flat ₹10,00,000 instant cap** for every eligible
+> borrower, superseding dfd.md's 25%-of-salary rule (like the salary-linked-due-date override below).
+> Salary still drives the **due date**, not the ceiling; the risk category is kept for underwriting.
 
 This is a monorepo:
 - **Backend** — Spring Boot 3.4.1 / Java 21, Maven multi-module under `com.navix`.
@@ -39,7 +48,7 @@ This is a monorepo:
 
 ---
 
-## 2. Current state (verified 2026-07-01)
+## 2. Current state (verified 2026-07-05)
 
 NAVIX runs the **full loan lifecycle end-to-end** — a single `loan_application` aggregate (§5) wired to
 a polished frontend through a BFF (§8), on **real JWT + Spring Security** (§7), with real
@@ -54,7 +63,8 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
   trail. At activation it mints the loan with a salary-linked due date.
 - **Loan math** — `LoanMath` is the canonical integer-paise engine (§9); the outstanding is
   penalty/prepayment-aware on **every** read (`RepaymentService.outstandingAsOf`), and a loan closes
-  only when that balance reaches 0.
+  only when that balance reaches 0. The eligible limit is now a **flat ₹10,00,000 instant cap** —
+  salary drives the due date, not the ceiling (§1/§9); risk categories are underwriting-only.
 
 **KYC, credit & disbursement**
 - **9-step verified onboarding** — PAN · email · address · DigiLocker · bureau · salary · penny-drop ·
@@ -85,8 +95,8 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
 - **Editable profiles & settings** — borrowers self-edit non-identity profile fields (an edit can
   **invalidate** the matching verification and trigger re-verify) and toggle server-persisted
   notification preferences; staff have a self-profile.
-- **Salary management** — ADMIN edits a customer's salary data with a `profile_change_log` audit; a
-  monthly-salary change recomputes the eligible limit.
+- **Salary management** — ADMIN edits a customer's salary data with a `profile_change_log` audit;
+  salary now drives the **due date**, not the (flat ₹10,00,000) limit.
 - **Notifications** — an event-driven, non-blocking in-app + SMS + email engine (`navix-notification`),
   surfaced to both audiences by a shared `NotificationBell` (§11/§12). Email delivers via a pluggable
   `EmailClient` (`log` default · `smtp` · **AWS `ses`** · `resend`), each message carrying a plain-text
@@ -127,7 +137,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V31 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V36 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -260,14 +270,22 @@ service finalizes the release directly (`DISBURSEMENT_PENDING → DISBURSED → 
 `loan.disbursal_txn_ref`), skipping the accountant — a deliberate **relaxation** of the
 Disbursement-Head ≠ Accountant SoD (product decision); the no-txn-id path keeps the accountant gate.
 
+**Credit fast-path (instant-loan):** in the instant-loan model a `KYC_APPROVER` may clear the credit
+gate **directly** — `ApplicationFlowService.kycCreditDecision` (endpoint `…/kyc-credit-decision`)
+routes an applied `KYC_APPROVED → DISBURSEMENT_PENDING` (or `REJECTED`), **skipping the credit
+maker-checker** (Credit Exec + Credit Head). `KYC_APPROVED` therefore now has **two** legal onward
+edges (`ApplicationStatus.canTransitionTo`): the normal `CREDIT_EXEC_PENDING` and this fast-path
+`DISBURSEMENT_PENDING`. Disbursement still stays with the Disbursement Head. (Parallels the
+`PRE_APPROVED` reborrow fast-track.)
+
 **Repay → close:** repayments are recorded by the borrower (PENDING_VERIFICATION) and confirmed by
 the Accountant (`…/repayments/{pid}/verify`); when Σ verified payments ≥ total the loan closes and
 `ApplicationFlowService.closeForLoan` transitions the application `ACTIVE/OVERDUE → CLOSED`.
 
 **Reborrow (returning borrower):** `ApplicationFlowService.reborrow` mints a **new** application for an
 existing borrower, reusing their saved profile (no re-collection — **salary day carried over from the
-prior loan and never re-asked**, prior penny-drop carried over; eligible limit recomputed from the
-stored salary). Standing is computed from loan history (`hasPastDelinquency` — any loan ever
+prior loan and never re-asked**, prior penny-drop carried over; the eligible limit is the flat
+₹10,00,000). Standing is computed from loan history (`hasPastDelinquency` — any loan ever
 OVERDUE/IN_COLLECTIONS, or a verified repayment made after its due date) and is the **only** gate
 (credit score does **not** gate reborrow): clean → `DRAFT → PRE_APPROVED`, flagged → `DRAFT → REVIEW_PENDING`. A `KYC_APPROVER` clears a review (`REVIEW_PENDING → PRE_APPROVED`)
 or rejects it. From `PRE_APPROVED`, the borrower's `apply` routes **straight to `DISBURSEMENT_PENDING`**
@@ -303,7 +321,7 @@ How a real applicant moves through the product — this is now the **designed, b
    `KYC_APPROVER` approves (→ `KYC_APPROVED`).
 4. **Choose amount** — on `/loan/apply` the borrower first **picks their salary day on the
    `<SalaryCalendar>`** (a month grid; selectable window 15–40 days, which sets the real
-   `salaryCreditDay`), then picks an amount within the eligible limit (25% of salary) on the
+   `salaryCreditDay`), then picks an amount within the eligible limit (**flat ₹10,00,000**) on the
    `AmountChooser` — the due date and full cost update live. Submitting `apply` (amount + salary-credit
    day) keeps the app `KYC_APPROVED`, now flagged "applied" (`amountRequested != null`), and enters the
    Credit Head's queue.
@@ -363,7 +381,7 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 | Role | Does (state transition) |
 |---|---|
-| `KYC_APPROVER` | approve/reject KYC → `KYC_APPROVED` / `KYC_REJECTED`; **reborrow reviews** for returning borrowers with a past overdue (`REVIEW_PENDING` → `PRE_APPROVED` / `REJECTED`) on the separate `/staff/kyc-review` queue |
+| `KYC_APPROVER` | approve/reject KYC → `KYC_APPROVED` / `KYC_REJECTED`; **reborrow reviews** for returning borrowers with a past overdue (`REVIEW_PENDING` → `PRE_APPROVED` / `REJECTED`) on the separate `/staff/kyc-review` queue; **instant-loan credit fast-path** — clear the credit gate directly (`KYC_APPROVED` → `DISBURSEMENT_PENDING` / `REJECTED`) via `…/kyc-credit-decision` |
 | `CREDIT_HEAD` | assign to an executive (→ `CREDIT_EXEC_PENDING`); **final approve** (→ `CREDIT_HEAD_APPROVED`, SoD-checked) |
 | `CREDIT_EXECUTIVE` | recommend/reject (→ `CREDIT_EXEC_APPROVED` / `REJECTED`) |
 | `DISBURSEMENT_HEAD` | accept for disbursal (→ `ACCOUNTANT_PENDING`); **or finalize directly with a txn id** (→ `DISBURSED`→`ACTIVE`); retry on failure; **settle referral payouts** (`referral:payout`) |
@@ -380,7 +398,9 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 `loan:review`, `loan:approve`, `loan:disburse`, `loan:activate`, `collections:manage`,
 `collections:interact`, `staff:manage`, `customer:view` (granted to **all** roles incl. DEVELOPER —
 every staff member can view the Customers pane incl. PII), `customer:manage` (ADMIN — correct KYC,
-cancel, blocklist), `referral:payout` (DISBURSEMENT_HEAD + ADMIN).
+cancel, blocklist), `referral:payout` (DISBURSEMENT_HEAD + ADMIN). Note **`loan:review` + `loan:approve`
+are also granted to `KYC_APPROVER`** (`KYC_APPROVER: ["kyc:approve","loan:review","loan:approve","customer:view"]`)
+so it can drive the instant-loan credit fast-path above.
 
 All staff pages are now **live and role-aware**. The shared machinery lives in
 `components/staff/live-pipeline.tsx` (status-backed queues + the per-stage maker-checker action
@@ -402,18 +422,28 @@ knows what each section does.
   `src/middleware.ts` gates `/staff/*` on cookie *presence* (real RBAC is enforced server-side in
   the flow service, not the middleware).
 - **Design system (unified 2026 "calendar"):** one visual language across marketing **and** the
-  functional app — navy `#0C2540` · gold `#E9B53A` · cream `#FDFBF6`; **Bricolage Grotesque** (display) /
-  **Hanken Grotesk** (body) / **IBM Plex Mono** (figures). Tokens live in **`tailwind.config.ts`** (colour/
-  font/radius/shadow scales) + **`globals.css`** `:root`, and the functional app styles via those Tailwind
-  tokens (`bg-ivory`/`text-navy`/`font-serif`…) **and** globals.css component classes (`.btn*`/`.card`/
-  `.field`/`.cal-*`). The marketing site re-declares the **same** tokens scoped under **`.navix-mkt`**
-  (`marketing-theme.css`) so it can't bleed into the app. **Re-skin by remapping token *values*, never by
-  renaming** — names are load-bearing across ~54 screens (`font-serif` is the Bricolage *display* face,
-  not a literal serif). The salary-day `<SalaryCalendar>` (borrower `/loan/apply`) and the marketing
-  `/calculator` calendar share the `.cal-*` styles (unscoped in globals.css; `.navix-mkt`-scoped copy in
-  marketing-theme.css). Don't reintroduce the retired "Classic Corporate" theme (navy #1B3A6B / Source
-  Serif). ⚠️ Running `npm run build` while `npm run dev` is up corrupts the dev server's `.next`
-  (`Cannot find module './638.js'`) — kill dev, `rm -rf .next`, restart.
+  functional app — navy `#0C2540` · **emerald accent `#14A06B`** · cream/ivory `#FDFBF6`; **Inter for
+  everything** (display, body, figures) via `next/font/google`. Tokens live in **`tailwind.config.ts`**
+  (colour/font/radius/shadow scales) + **`globals.css`** `:root`, and the functional app styles via those
+  Tailwind tokens (`bg-ivory`/`text-navy`/`font-serif`…) **and** globals.css component classes
+  (`.btn*`/`.card`/`.field`/`.cal-*`). The marketing site re-declares the **same** tokens scoped under
+  **`.navix-mkt`** (`src/app/(marketing)/marketing-theme.css`) so it can't bleed into the app. **Re-skin
+  by remapping token *values*, never by renaming** — names are load-bearing across ~54 screens: the
+  accent token is **still named `gold`/`--gold-*`** (and `.btn-gold`/`.shadow-gold`/`.grad-gold`) even
+  though it now renders **emerald**; likewise the Tailwind `serif`/`mono` keys are **Inter aliases**
+  (`font-serif` is *not* a literal serif), with tabular figures preserved via
+  `font-feature-settings: "tnum"`. The old gold `#E9B53A` and the Bricolage Grotesque / Hanken Grotesk /
+  IBM Plex Mono faces are **gone** (no `@font-face` remains). The salary-day `<SalaryCalendar>` (borrower
+  `/loan/apply`) and the marketing `/calculator` calendar share the `.cal-*` styles (unscoped in
+  globals.css; `.navix-mkt`-scoped copy in marketing-theme.css). Don't reintroduce the retired "Classic
+  Corporate" theme (navy #1B3A6B / Source Serif). ⚠️ Running `npm run build` while `npm run dev` is up
+  corrupts the dev server's `.next` (`Cannot find module './638.js'`) — kill dev, `rm -rf .next`, restart.
+- **Marketing SEO / analytics / CSP:** the public `(marketing)` site carries **Google Analytics 4**
+  (`gtag.js`) site-wide; an **SEO** surface — `llms.txt`, IndexNow (postbuild auto-submit), FAQ/JSON-LD
+  schema, blog posts, a Google Search Console hook; a marketing **Content-Security-Policy** (+ camera
+  `Permissions-Policy`) that also allows **direct browser↔S3 presigned upload/view**; and a modern
+  **browserslist** in `package.json` that drops legacy JS polyfills (fixes hero LCP). Marketing loan-cap
+  copy is **₹5,000–₹10,00,000** (aligned to the flat instant limit).
 - **BFF (Backend-for-Frontend):** all backend calls go through Next.js route handlers under
   `src/app/api/*`, never browser→Spring directly. Handlers are **optional catch-alls
   `[[...path]]`** (required `[...path]` does **not** match the bare base path — that was a bug,
@@ -444,7 +474,7 @@ knows what each section does.
 
 Canonical **integer-paise** engine (`long` paise, `BigDecimal` rates, `HALF_UP`). Constants:
 `PROCESSING_FEE_RATE=0.10`, `GST_RATE=0.18`, `DAILY_INTEREST_RATE=0.01`, `LATE_PENALTY_RATE=0.02`,
-`LATE_PENALTY_CAP_DAYS=30`, `LIMIT_PCT_OF_SALARY=0.25`, `LIMIT_ROUNDING_PAISE=10_000` (₹100),
+`LATE_PENALTY_CAP_DAYS=30`, `MAX_INSTANT_LOAN_PAISE=100_000_000` (₹10,00,000 — the flat eligible limit),
 `MIN_LOAN_PAISE=100_000` (₹1,000), `MAX_TERM_DAYS=40`, `SALARY_GRACE_DAYS=1`.
 
 - `processingFeePaise` = round(principal × 0.10); `gstPaise` = round(fee × 0.18).
@@ -453,7 +483,9 @@ Canonical **integer-paise** engine (`long` paise, `BigDecimal` rates, `HALF_UP`)
 - `totalRepayablePaise(principal, days)` = principal + interest  *(fee/GST are **not** re-added —
   they were taken upfront)*.
 - `latePenaltyPaise(principal, daysLate)` = round(principal × 0.02 × min(daysLate, 30)).
-- `eligibleLimitPaise(salary)` = floor(salary × 0.25 to a multiple of ₹100).
+- `eligibleLimitPaise(...)` = **flat ₹10,00,000** (`MAX_INSTANT_LOAN_PAISE`); the salary argument is
+  ignored (kept for signature stability). `LimitCalculator` returns the same flat cap for every risk
+  category — salary/category no longer reduce the sanctionable amount, only the due date.
 - `dueDateFromSalary(disbursedOn, salaryCreditDay)` = the **latest** salary-credit date strictly
   after disbursal **and ≤ disbursal + 40 days** (salary day clamped to month length).
 - **Outstanding is compute-on-read** (`RepaymentService.outstandingAsOf`): `principal +
@@ -510,6 +542,8 @@ navix-common). Applied on every boot:
 | `V32__email_suppression.sql` | `email_suppression` (bounced/complained addresses, unique on `lower(email)`) — fed by the SES SNS→SQS listener; the email sender skips suppressed addresses (§14) |
 | `V33__rename_applicant_to_customer.sql` | **rename `applicant` → `customer` across the schema**: `applicant_id → customer_id` (9 tables), `applicant_profile → customer_profile`, all embedded-name indexes/constraints. The id **value** is unchanged (still mobile-derived); only names change. The guarantor `co_applicant` is deliberately **untouched**. |
 | `V34__auth_passwords_and_reset.sql` | password auth: `borrower_credential` (first durable per-customer row, keyed by `customer_id`), `staff_user.mobile` (+ demo backfill `9000000000` for the email+mobile reset gate), `password_reset_token` (one-time, SHA-256-hashed, single-use, 30-min) |
+| `V35__drop_customer_profile_aadhaar.sql` | drop `customer_profile.aadhaar` column + its `ix_customer_profile_aadhaar` index — the raw 12-digit Aadhaar is removed **end-to-end** (the DigiLocker `aadhaar_verified` / `aadhaar_linked` signals are kept) |
+| `V36__customer_remark.sql` | append-only `customer_remark` (`id, customer_id, body, created_at/by, updated_at/by`; index `(customer_id, id desc)`) — staff remarks on a customer, surfaced in the customer popup |
 
 **The aggregate** `loan_application`: `id`, `customer_id` (was `applicant_id`, renamed in V33), `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
@@ -520,7 +554,8 @@ navix-common). Applied on every boot:
 > maker-checker chain is **superseded by the single aggregate** and left dormant. (`collection_case` is
 > on the real **bigint** loan id — V11; `loan` carries `disbursal_txn_ref` — V13; `customer_profile`
 > (renamed from `applicant_profile` in V33) identity uniqueness is **customer-scoped** — V12 added it
-> globally, **V23 relaxed it** to per-customer so returning borrowers can re-onboard.)
+> globally, **V23 relaxed it** to per-customer so returning borrowers can re-onboard; the raw
+> `aadhaar` column was later **dropped end-to-end — V35** (DigiLocker verified-signals kept).)
 > **Naming:** the durable per-person key is `customer_id` (renamed from `applicant_id` in V33); code uses
 > `customerId` / `CustomerProfile` throughout. Only `co_applicant`/`CoApplicant` (the guarantor) keeps the
 > old name. External bureau-API JSON keys (`Current_Applicant_Details`, …) are **not** ours and stay as-is.
@@ -563,12 +598,14 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 | `POST /{id}/assign` | CREDIT_HEAD | assign executive → CREDIT_EXEC_PENDING |
 | `POST /{id}/exec-decision` | CREDIT_EXECUTIVE | recommend/reject |
 | `POST /{id}/head-decision` | CREDIT_HEAD | final approve (SoD) / reject |
+| `POST /{id}/kyc-credit-decision` | KYC_APPROVER | instant-loan **credit fast-path**: `KYC_APPROVED` → `DISBURSEMENT_PENDING` / `REJECTED` (skips the credit maker-checker) |
 | `POST /{id}/disbursement-decision` | DISBURSEMENT_HEAD | accept → ACCOUNTANT_PENDING, **or with `txnRef` → DISBURSED→ACTIVE** / reject |
 | `POST /{id}/accountant-validate` | ACCOUNTANT | success → DISBURSED→ACTIVE (records `txnRef`) / fail |
 | `POST /{id}/retry-disbursement` | DISBURSEMENT_HEAD | failed → ACCOUNTANT_PENDING |
 | `POST /{id}/cancel` | borrower/staff | → CANCELLED (pre-disbursement) |
 | `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read; the staff-only credit score/★ rating are **stripped** for a borrower reading their own profile) |
 | `POST /{id}/documents` · `GET /{id}/documents` · `GET /{id}/documents/{docId}` | borrower uploads · any reads | documents (base64; metadata list + content for view/download) — the auto-generated `CREDIT_BRIEF` PDF rides this list |
+| `DELETE /{id}/documents/{docId}` | ADMIN | remove a document (the CRM's "replace document"; admin-gated — `canDelete={isAdmin}`) |
 | `GET /{id}/credit-brief` | staff only | bureau credit brief: 1–5★ rating + categorized facts (A/B/C) + summary + the `CREDIT_BRIEF` PDF doc id (`CreditBriefView`); borrower/anonymous → `FORBIDDEN_ROLE` |
 
 ### Customers (`/api/customers`) — borrower-centric roll-up
@@ -577,8 +614,10 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 |---|---|---|
 | `GET /?q=` | staff (all roles) | list/search distinct applicants (name / applicant id); each row rolls up counts + total outstanding |
 | `GET /{customerId}` | staff (all roles) | one customer's full history: latest profile + all applications + loans + payments |
-| `PUT /{customerId}/profile` | ADMIN | correct KYC + salary data (non-identity fields; PAN/Aadhaar/mobile locked) — a monthly-salary change recomputes the eligible limit |
+| `PUT /{customerId}/profile` | ADMIN | correct KYC + salary data (non-identity fields; **PAN/mobile locked**, Aadhaar removed — V35) — salary drives the due date, not the (now flat) limit |
 | `GET /{customerId}/changes` | staff (all roles) | audited profile-change history (`profile_change_log`, previous→new per field) |
+| `GET /{customerId}/activity` | staff (all roles) | unified activity timeline: lifecycle events + re-verify + profile edits + remarks, newest-first |
+| `GET/POST /{customerId}/remarks` | staff (all roles) | list / add staff remarks on a customer (V36) |
 
 ### Loan ledger, repayments & transactions (`/api/loan`)
 
@@ -642,6 +681,7 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 | `GET\|PUT /api/staff/me` | staff | staff self-profile (role/status stay ADMIN-only) |
 | `GET/POST/DELETE /api/admin/expenses` (+`/{id}`) | ADMIN | company-expense ledger (+ receipt S3 keys) |
 | `GET /api/applications/all` | ADMIN | full register of every application (complete + incomplete) |
+| `GET /api/dashboard/trends` | staff | 30-day dashboard trends — sparklines + week-over-week deltas |
 | `GET /api/feature-flags` | any authed | dev-only flag states `{key: enabled}` for UI gating — **read-only, no write path** (flags change only via SQL, §12) |
 
 ---
@@ -700,7 +740,8 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 - 🔴 DB cleanup: **FK constraints**; drop the legacy `bytea` doc column + the UUID `disbursement_request`
   table; unify applicant identity (`applicant_profile` ↔ onboarding `Borrower`); PII-at-rest encryption.
 - 🔴 Persisted `borrower_standing` table (standing is recomputed from loan history today); design-system
-  polish; full-Aadhaar masking; compliance/regulatory alignment (NBFC/DLG, reporting, product copy).
+  polish; compliance/regulatory alignment (NBFC/DLG, reporting, product copy). *(Raw Aadhaar was
+  removed end-to-end — V35 — so the old "full-Aadhaar masking" item no longer applies.)*
 
 ---
 
@@ -736,6 +777,9 @@ the on-screen brief is always recomputed from the profile.
   on `DIGILOCKER_NOT_READY`, which the backend now throws instead of persisting a bogus PASS), and
   `digilockerStatus` short-circuits to PASS once the `AADHAAR` row exists. The signup tab polls until
   PASS with a ~3-min fallback to staff manual review.
+- ⚠️ **Temporary demo override (revertible):** the DigiLocker step is currently **forced to always
+  PASS** for demos (commit `4984f53`, explicitly marked revertible) — this bypasses the real
+  redirect/callback flow above and must be reverted before any production use.
 
 **AWS SES — email delivery + bounce/complaint suppression (live, 2026-07-01):** the email channel's
 `EmailClient` port (`navix-notification`) has four impls selected by `navix.email.provider`:
