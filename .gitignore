@@ -60,3 +60,7 @@ yarn-error.log*
 docs/product-gaps-shots/
 # Added by code-review-graph
 .code-review-graph/
+
+# ---- Local-only Claude Code state (never commit) ----
+.claude/settings.local.json
+usage-data/

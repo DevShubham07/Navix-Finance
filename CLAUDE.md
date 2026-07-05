@@ -1,10 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code (and any human) working in this repo. 
-Add under a new ## Workflow section near the top of CLAUDE.md\n\nAfter implementing any feature, verify it end-to-end (browser check where applicable, run type-checks/CI gates), then update relevant docs, then commit and push.
-Add under ## Git / Version Control section\n\nNever let auto-commit hooks sweep local-only files (run-local.ps1, .mcp.json, .claude/) into commits; keep them gitignored and confirm the staged diff before committing.
-Add under ## Environment / Local Setup section\n\nWhen laptop sleep or stale caches (.next) crash the stack, clear the cache and restart backend/frontend rather than assuming code regressions.
-This file is the **single
+Guidance for Claude Code (and any human) working in this repo. This file is the **single
 onboarding doc** — read it first on a fresh machine and you have the full picture: what NAVIX
 is, the end-to-end workflow, how the borrower flow works, how the staff/admin login flow works,
 how to run it, and what is real vs. deferred.
@@ -12,6 +8,57 @@ how to run it, and what is real vs. deferred.
 > Companion doc: **`dfd.md`** (the authoritative state-machine + roles spec). When this file and `dfd.md`
 > disagree on the lifecycle, `dfd.md` wins — except the two product decisions explicitly
 > recorded below (salary-linked due date, role names), which are final.
+
+---
+
+## 0. Code navigation — use the knowledge graph FIRST
+
+This repo has a persistent **code-review-graph** knowledge graph (~3,000 symbols, 25k+ edges across
+636 files — Java · TSX/TS · SQL · JS · shell) exposed as an MCP server (`code-review-graph`, wired in
+`.mcp.json` + enabled in `.claude/settings.local.json`; the CLI is a pip package by `tirth8205`). A
+`PostToolUse` hook auto-runs `code-review-graph update` after every Edit/Write/Bash, so the graph stays
+current — you rarely rebuild by hand. For a from-scratch reindex (e.g. after large moves or a version
+bump): `code-review-graph build --repo "C:/Users/KARTIK/Downloads/navix-final/Navix-Finance"`.
+
+**Rule: to read, locate, or extract code, reach for the graph MCP tools BEFORE raw `Grep`/`Glob`/`Read`.**
+The graph knows call edges, imports, flows, and impact radius that a text search can't — use it to
+understand *relationships*, then `Read` only the specific spans it points you to. Fall back to
+`Grep`/`Glob`/`Read` only for non-code text (docs, configs, migrations content) or when the graph
+comes up empty.
+
+**Workflow (keep it to ≤5 calls / ≤800 output tokens):**
+1. **Always start with `get_minimal_context(task="<what you're doing>")`** — it returns the smallest
+   relevant slice for the task.
+2. Orient with `list_graph_stats`, `get_architecture_overview`, `list_communities` / `get_community`.
+3. Find a symbol with `semantic_search_nodes`; expand a file with `query_graph(pattern="children_of")`.
+4. Trace relationships with `query_graph` — patterns `callers_of`, `callees_of`, `imports_of`,
+   `tests_for`.
+5. Follow execution paths with `list_flows` / `get_flow`; spot complexity with `find_large_functions`.
+6. For change/review work: `detect_changes` → `get_affected_flows` → `get_impact_radius`.
+
+Pass **`detail_level="minimal"`** on every call; only escalate to `"standard"` when minimal is
+insufficient. The bundled skills wrap these flows: **`/explore-codebase`**, **`/debug-issue`**,
+**`/refactor-safely`**, **`/review-changes`** (`.claude/skills/`).
+
+---
+
+## 0.1 Ways of working (verify → ship · git hygiene · local env)
+
+- **Verify → document → ship.** After implementing a feature, don't stop at "code written": verify it
+  end-to-end (browser-check the flow where applicable), run the gates (`npx tsc --noEmit` + ESLint on the
+  frontend, `./mvnw test` on the backend), **then** update the relevant docs, **then** commit and push.
+- **Git hygiene — eyeball the staged diff before every commit.** The code-review-graph setup is
+  **intentionally shared and committed**: `.mcp.json`, `.claude/settings.json` (hooks), `.claude/skills/`,
+  and `run-local.ps1`. What must **never** be swept into a commit is local/personal state:
+  `.claude/settings.local.json` (local perms), `.code-review-graph/` (the graph DB — gitignored), and
+  `usage-data/` (personal Claude usage reports — gitignored). Never `git add -A` blindly; stage explicit
+  paths and read `git status` first (also confirm the current branch — the working tree is not always on
+  `main`).
+- **Local environment (Windows).** A crash after laptop sleep or a stale `.next` cache
+  (`Cannot find module './638.js'`) is the environment, not a code regression: kill dev,
+  `Remove-Item -Recurse -Force .next`, and restart the backend + frontend. Launch long-running dev servers
+  **detached** (`run-local.ps1` / `Start-Process`) so they survive turn boundaries, and quote JVM args
+  carefully in PowerShell.
 
 ---
 
