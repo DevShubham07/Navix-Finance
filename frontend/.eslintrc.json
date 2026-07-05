@@ -8,6 +8,23 @@
         "varsIgnorePattern": "^_",
         "caughtErrorsIgnorePattern": "^_"
       }
+    ],
+    "import/no-restricted-paths": [
+      "error",
+      {
+        "zones": [
+          {
+            "target": "./src/lib",
+            "from": ["./src/app", "./src/features", "./src/components"],
+            "message": "lib is cross-cutting and must not import from app/features/components (one-way deps: app -> features -> lib)."
+          },
+          {
+            "target": "./src/features",
+            "from": ["./src/app"],
+            "message": "features must not import from app (one-way deps: app -> features -> lib)."
+          }
+        ]
+      }
     ]
   }
 }

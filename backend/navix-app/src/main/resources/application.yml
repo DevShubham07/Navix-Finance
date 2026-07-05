@@ -72,6 +72,11 @@ navix:
   app:
     frontend-base-url: ${NAVIX_APP_BASE_URL:http://localhost:3000}
 
+  # CORS — comma-separated origins allowed to call /api/**. Defaults to the local Next.js dev server;
+  # set NAVIX_CORS_ALLOWED_ORIGINS (or the SSM param) to the real frontend origin(s) per environment.
+  cors:
+    allowed-origins: ${NAVIX_CORS_ALLOWED_ORIGINS:http://localhost:3000}
+
   # Daily payment-reminder sweep (PaymentReminderScheduler). Spring cron: sec min hour dom mon dow.
   reminders:
     cron: ${NAVIX_REMINDERS_CRON:0 0 9 * * *}
