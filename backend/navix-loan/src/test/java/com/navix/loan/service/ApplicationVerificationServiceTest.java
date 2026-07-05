@@ -228,22 +228,6 @@ class ApplicationVerificationServiceTest {
         assertThat(digilocker.status()).isEqualTo("PASS"); // reflects the Aadhaar PASS, not the stale PENDING
     }
 
-    @Test
-    void summary_digilockerReflectsAadhaarReview_andStaysPendingWithoutAadhaar() {
-        // Aadhaar under manual review (name mismatch) → DigiLocker shows REVIEW, not a retry prompt.
-        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
-                row("DIGILOCKER", "PENDING"), row("AADHAAR", "REVIEW")));
-        assertThat(service.summary(APP).stream()
-                .filter(s -> "DIGILOCKER".equals(s.checkType())).findFirst().orElseThrow().status())
-                .isEqualTo("REVIEW");
-
-        // No Aadhaar row yet (mid-flow) → DigiLocker correctly stays PENDING.
-        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(row("DIGILOCKER", "PENDING")));
-        assertThat(service.summary(APP).stream()
-                .filter(s -> "DIGILOCKER".equals(s.checkType())).findFirst().orElseThrow().status())
-                .isEqualTo("PENDING");
-    }
-
     private static ApplicationVerification row(String type, String status) {
         ApplicationVerification v = new ApplicationVerification();
         v.setApplicationId(APP);

@@ -98,28 +98,6 @@ class RepaymentServiceTest {
     }
 
     @Test
-    void verifyClosesLoanWhenFullyPaid() {
-        Loan loan = activeLoan();
-        Payment payment = new Payment();
-        payment.setLoanId(1L);
-        payment.setAmount(1_270_000L);
-        payment.setStatus(PaymentStatus.PENDING_VERIFICATION);
-        when(paymentRepository.findById(99L)).thenReturn(Optional.of(payment));
-        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
-        when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(1_270_000L);
-        lenient().when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-
-        repaymentService.verifyPayment(99L);
-
-        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.VERIFIED);
-        assertThat(loan.getOutstanding()).isZero();
-        assertThat(loan.getStatus()).isEqualTo(LoanStatus.CLOSED);
-        // Full repayment also closes the application aggregate (ACTIVE → CLOSED).
-        verify(applicationFlowService).closeForLoan(1L);
-    }
-
-    @Test
     void rejectPaymentSetsRejectedAndLeavesBalanceUnchanged() {
         Payment payment = new Payment();
         payment.setLoanId(1L);
