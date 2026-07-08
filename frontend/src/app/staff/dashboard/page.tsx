@@ -26,6 +26,9 @@ import { useStaffSession } from "@/lib/auth/staff-session";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import {
   staffApi,
+  staffReferralApi,
+  featureFlagsApi,
+  collectionsApi,
   dashboardApi,
   paiseToINR,
   statusLabel,
@@ -62,6 +65,14 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
     label: "Transfers to confirm",
     info: "Confirm the bank transfer landed (activates the loan) and verify borrower repayments. See all money movement under Accounting → all transactions.",
   },
+  COLLECTION_HEAD: {
+    label: "Settlements awaiting your approval",
+    info: "Approve or reject the settlements collection executives propose. Separation of duties applies — you can't approve one you proposed. Work overdue loans from the collections desk.",
+  },
+  COLLECTION_EXECUTIVE: {
+    label: "Open collection cases",
+    info: "Work overdue loans in your DPD buckets and log borrower interactions. Open a case for any collectible loan, then follow up.",
+  },
   ADMIN: {
     label: "Live pipeline",
     info: "Oversight across every queue — ADMIN can act in any role.",
@@ -75,21 +86,13 @@ const ROLE_HREF: Partial<Record<StaffRole, string>> = {
   CREDIT_HEAD: "/staff/credit/queue",
   DISBURSEMENT_HEAD: "/staff/disbursement",
   ACCOUNTANT: "/staff/accounting",
+  COLLECTION_HEAD: "/staff/collections/settlements",
+  COLLECTION_EXECUTIVE: "/staff/collections/buckets",
   ADMIN: "/staff/applications",
 };
 
 /** Fallback "your area" card for roles with no pipeline action queue. */
 const FALLBACK_AREA: Partial<Record<StaffRole, { href: string; label: string; cta: string }>> = {
-  COLLECTION_HEAD: {
-    href: "/staff/collections/buckets",
-    label: "Work overdue loans by DPD bucket and approve settlements from the collections desk.",
-    cta: "Open collections",
-  },
-  COLLECTION_EXECUTIVE: {
-    href: "/staff/collections/buckets",
-    label: "Work your assigned overdue cases and log borrower interactions.",
-    cta: "Open collections",
-  },
   DEVELOPER: {
     href: "/staff/applications",
     label: "Read-only oversight of the live application pipeline.",
@@ -97,45 +100,109 @@ const FALLBACK_AREA: Partial<Record<StaffRole, { href: string; label: string; ct
   },
 };
 
-/** The live items for a role's action queue. */
-async function fetchRoleQueue(role: StaffRole): Promise<ApplicationView[]> {
-  const safe = (p: Promise<ApplicationView[]>) => p.catch(() => [] as ApplicationView[]);
+/** A non-application actionable source (repayments, referral payouts, settlements, cases). */
+type QueueExtra = { key: string; label: string; count: number; href: string };
+/** A role's full action queue: applications the role acts on + non-application actionable sources. */
+type RoleQueue = { apps: ApplicationView[]; extras: QueueExtra[] };
+
+const safe = (p: Promise<ApplicationView[]>) => p.catch(() => [] as ApplicationView[]);
+const countOf = <T,>(p: Promise<T[]>): Promise<number> => p.then((r) => r.length).catch(() => 0);
+
+/** Mirrors /staff/collections/settlements: proposed settlements awaiting approval. */
+const pendingSettlementCount = () =>
+  collectionsApi.listSettlements()
+    .then((r) => r.filter((s) => s.status === "PROPOSED").length)
+    .catch(() => 0);
+
+/** Mirrors the /staff/accounting repayment-verify queue. */
+const pendingRepaymentCount = () => countOf(staffApi.pendingRepayments());
+
+const repaymentsExtra = (count: number): QueueExtra =>
+  ({ key: "repayments", label: "Repayments to verify", count, href: "/staff/accounting" });
+const settlementsExtra = (count: number): QueueExtra =>
+  ({ key: "settlements", label: "Settlements to approve", count, href: "/staff/collections/settlements" });
+
+/**
+ * The live items for a role's action queue — the union of everything the role's queue
+ * page(s) actually list. Every source is individually fault-tolerant (`.catch`) so one
+ * failing call can never zero the whole count.
+ */
+async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
   switch (role) {
     case "KYC_APPROVER": {
-      const [kyc, review] = await Promise.all([
+      // Mirrors /staff/kyc-approvals: KYC clearances + reborrow reviews + the instant-loan
+      // credit fast-path (KYC-approved applications the borrower has already applied on).
+      const [kyc, review, approved] = await Promise.all([
         safe(staffApi.listByStatus("KYC_PENDING")),
         safe(staffApi.listByStatus("REVIEW_PENDING")),
+        safe(staffApi.listByStatus("KYC_APPROVED")),
       ]);
-      return [...kyc, ...review];
+      const instant = approved.filter((a) => a.amountRequestedPaise != null);
+      return { apps: [...kyc, ...review, ...instant], extras: [] };
     }
     case "CREDIT_EXECUTIVE":
-      return safe(staffApi.listByStatus("CREDIT_EXEC_PENDING"));
+      return { apps: await safe(staffApi.listByStatus("CREDIT_EXEC_PENDING")), extras: [] };
     case "CREDIT_HEAD": {
       const [queue, headPending] = await Promise.all([
         safe(staffApi.creditQueue()),
         safe(staffApi.listByStatus("CREDIT_HEAD_PENDING")),
       ]);
-      return [...queue, ...headPending];
+      return { apps: [...queue, ...headPending], extras: [] };
     }
     case "DISBURSEMENT_HEAD": {
-      const [pending, failed] = await Promise.all([
+      // Referral payouts — gated on the referral feature flag exactly as /staff/disbursement/referrals
+      // gates it (feature is on unless the flag is explicitly false); skip the read when off. The flag
+      // fetch runs alongside the app lists; only the payout count depends on it.
+      const [pending, failed, flags] = await Promise.all([
         safe(staffApi.listByStatus("DISBURSEMENT_PENDING")),
         safe(staffApi.listByStatus("DISBURSEMENT_FAILED")),
+        featureFlagsApi.get().catch(() => ({} as Record<string, boolean>)),
       ]);
-      return [...pending, ...failed];
+      const extras: QueueExtra[] = [];
+      if (flags.referral !== false) {
+        const payouts = await countOf(staffReferralApi.payouts("PENDING"));
+        if (payouts > 0) {
+          extras.push({ key: "referral-payouts", label: "Referral payouts to settle", count: payouts, href: "/staff/disbursement/referrals" });
+        }
+      }
+      return { apps: [...pending, ...failed], extras };
     }
-    case "ACCOUNTANT":
-      return safe(staffApi.listByStatus("ACCOUNTANT_PENDING"));
+    case "ACCOUNTANT": {
+      const [apps, repayments] = await Promise.all([
+        safe(staffApi.listByStatus("ACCOUNTANT_PENDING")),
+        pendingRepaymentCount(),
+      ]);
+      return { apps, extras: repayments > 0 ? [repaymentsExtra(repayments)] : [] };
+    }
+    case "COLLECTION_HEAD": {
+      const pending = await pendingSettlementCount();
+      return { apps: [], extras: pending > 0 ? [settlementsExtra(pending)] : [] };
+    }
+    case "COLLECTION_EXECUTIVE": {
+      // Mirrors /staff/collections/buckets: open collection cases (the buckets grid lists all of them).
+      const cases = await countOf(collectionsApi.listCases());
+      const extras: QueueExtra[] = [];
+      if (cases > 0) extras.push({ key: "cases", label: "Open collection cases", count: cases, href: "/staff/collections/buckets" });
+      return { apps: [], extras };
+    }
     case "ADMIN": {
-      const lists = await Promise.all(
-        (["KYC_PENDING", "REVIEW_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_HEAD_PENDING", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING"] as ApplicationStatus[]).map(
-          (s) => safe(staffApi.listByStatus(s)),
+      // One wave — the six pipeline lists and the two extra counts are all independent.
+      const [lists, repayments, settlements] = await Promise.all([
+        Promise.all(
+          (["KYC_PENDING", "REVIEW_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_HEAD_PENDING", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING"] as ApplicationStatus[]).map(
+            (s) => safe(staffApi.listByStatus(s)),
+          ),
         ),
-      );
-      return lists.flat();
+        pendingRepaymentCount(),
+        pendingSettlementCount(),
+      ]);
+      const extras: QueueExtra[] = [];
+      if (repayments > 0) extras.push(repaymentsExtra(repayments));
+      if (settlements > 0) extras.push(settlementsExtra(settlements));
+      return { apps: lists.flat(), extras };
     }
     default:
-      return [];
+      return { apps: [], extras: [] };
   }
 }
 
@@ -190,9 +257,18 @@ export default function StaffDashboardPage() {
   }
 
   const queue = QUEUE[role];
-  const myItems = queueQuery.data ?? [];
+  const queueData = queueQuery.data ?? { apps: [], extras: [] };
+  const myApps = queueData.apps;
+  const extras = queueData.extras;
+  const activeExtras = extras.filter((e) => e.count > 0);
+  // Headline count = the union of everything the role's queue page(s) list: application
+  // rows + non-application actionable sources (repayments, payouts, settlements, cases).
+  const headlineCount = myApps.length + activeExtras.reduce((s, e) => s + e.count, 0);
   const actingHref = ROLE_HREF[role];
-  const loading = stats.isLoading || (!!queue && queueQuery.isLoading);
+  // Refresh spinner (RQ v5): isLoading is first-load only — key the spinner off isFetching
+  // across every dashboard query so a manual refresh gives visible feedback.
+  const fetching =
+    stats.isFetching || queueQuery.isFetching || trends.isFetching || (isAdmin && txns.isFetching);
 
   return (
     <div>
@@ -204,10 +280,12 @@ export default function StaffDashboardPage() {
           onClick={() => {
             stats.refetch();
             queueQuery.refetch();
+            trends.refetch();
+            if (isAdmin) txns.refetch();
           }}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
-          {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+          {fetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
@@ -215,7 +293,9 @@ export default function StaffDashboardPage() {
       {queue ? (
         <WorkHero
           queue={queue}
-          items={myItems}
+          count={headlineCount}
+          items={myApps}
+          extras={activeExtras}
           loading={queueQuery.isLoading}
           actingHref={actingHref}
           onJourney={setOpenJourneyId}
@@ -238,21 +318,24 @@ export default function StaffDashboardPage() {
                   <InfoTooltip content={queue.info} />
                 </div>
                 <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">
-                  {myItems.length} pending
+                  {headlineCount} pending
                 </span>
               </div>
 
               {queueQuery.isLoading ? (
                 <div className="h-40 animate-pulse rounded border border-line bg-white" />
-              ) : myItems.length ? (
+              ) : headlineCount ? (
                 <ul className="divide-y divide-grey-200 rounded border border-line bg-white">
-                  {myItems.map((a) => (
+                  {myApps.map((a) => (
                     <PendingActionRow
                       key={a.id}
                       app={a}
                       actingHref={actingHref}
                       onJourney={setOpenJourneyId}
                     />
+                  ))}
+                  {activeExtras.map((e) => (
+                    <ExtraActionRow key={e.key} extra={e} />
                   ))}
                 </ul>
               ) : (
@@ -344,21 +427,25 @@ export default function StaffDashboardPage() {
 /** Layer 1 — the signed-in role's actionable count + the oldest-waiting item. */
 function WorkHero({
   queue,
+  count,
   items,
+  extras,
   loading,
   actingHref,
   onJourney,
 }: {
   queue: { label: string; info: string };
+  count: number;
   items: ApplicationView[];
+  extras: QueueExtra[];
   loading: boolean;
   actingHref?: string;
   onJourney: (id: number) => void;
 }) {
-  const count = items.length;
   // Oldest-waiting proxy: the lowest application id. The loan_application aggregate
   // has no created_at column, so id-ascending stands in for arrival order (§10 risk).
-  const oldest = count ? [...items].sort((a, b) => a.id - b.id)[0] : null;
+  // Operates on applications only — non-application sources (extras) have no id order.
+  const oldest = items.length ? [...items].sort((a, b) => a.id - b.id)[0] : null;
 
   return (
     <section className="mb-8 rounded-lg border border-gold-soft bg-white p-6 shadow-sm">
@@ -416,6 +503,21 @@ function WorkHero({
               </Link>
             )}
           </div>
+        </div>
+      ) : count > 0 ? (
+        // No applications, but non-application work is waiting (repayments / payouts / settlements / cases).
+        <div className="mt-5 flex flex-wrap items-center gap-3 rounded border border-line bg-grey-50 p-4">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-tint px-2.5 py-1 text-xs font-semibold text-navy">
+            <Clock size={12} /> Waiting on you
+          </span>
+          <span className="min-w-0 text-sm text-muted">
+            {extras.map((e) => `${e.count} ${e.label.toLowerCase()}`).join(" · ")}
+          </span>
+          {actingHref && (
+            <Link href={actingHref} className="btn btn-sm btn-ghost ml-auto">
+              Open queue <ArrowRight size={14} />
+            </Link>
+          )}
         </div>
       ) : (
         <p className="mt-4 rounded border border-line bg-grey-50 p-4 text-sm text-muted">
@@ -478,6 +580,32 @@ function PendingActionRow({
           Open queue <ArrowRight size={13} />
         </Link>
       )}
+    </li>
+  );
+}
+
+/** Layer 2 row for a non-application actionable source (repayments / payouts / settlements / cases). */
+function ExtraActionRow({ extra }: { extra: QueueExtra }) {
+  return (
+    <li className="transition hover:bg-grey-100">
+      <Link
+        href={extra.href}
+        aria-label={`${extra.count} ${extra.label} — open queue`}
+        className="flex items-center gap-4 px-4 py-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-inset"
+      >
+        <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-full bg-gold-50 font-serif text-sm font-bold text-gold-dark">
+          {extra.count}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-ink">{extra.label}</span>
+          <span className="block text-xs text-muted">
+            {extra.count} {extra.count === 1 ? "item awaiting" : "items awaiting"} your action
+          </span>
+        </span>
+        <span className="flex flex-shrink-0 items-center gap-1 text-xs font-semibold text-navy">
+          Open queue <ArrowRight size={13} />
+        </span>
+      </Link>
     </li>
   );
 }
