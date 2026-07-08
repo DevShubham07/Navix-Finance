@@ -29,7 +29,17 @@ public class TemplateRenderer {
         if (def == null) {
             return null;
         }
-        return new RenderedMessage(channel, substitute(def.subject(), model), substitute(def.body(), model));
+        String subject = substitute(def.subject(), model);
+        String body = substitute(def.body(), model);
+        if (channel == NotificationChannel.SMS) {
+            // SMS: render amounts as "Rs." not "₹" — the ₹ glyph is outside GSM-7 and would force the
+            // whole SMS to UCS-2 (70 chars/segment, ~double cost). In-app/email keep "₹". The symbol
+            // only ever sits inside a DLT {#var#} value, so this never breaks template matching.
+            body = body == null ? null : body.replace("₹", "Rs. ");
+            // Carry the NotificationType name so the gateway resolves this type's DLT Template ID.
+            return new RenderedMessage(channel, subject, body, type.name());
+        }
+        return new RenderedMessage(channel, subject, body, null);
     }
 
     static String substitute(String template, Map<String, Object> model) {

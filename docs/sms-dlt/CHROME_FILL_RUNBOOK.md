@@ -61,8 +61,10 @@ single source of truth for the data.
 >   delete/clear control might confirm, avoid it.
 > - Record a GIF of the first template creation (`gif_creator`, name it `dlt_first_template.gif`) so I
 >   can review the flow, then proceed without recording the rest.
-> - Do not submit the two deferred promotional templates (`REBORROW_PREAPPROVED`,
->   `REFERRAL_REWARD_CREDITED`) — they are intentionally absent from the JSON.
+> - **Pause on the two borderline templates** (`NAVIX_REBORROW_PREAPPROVED`,
+>   `NAVIX_REFERRAL_REWARD_CREDITED`) before submitting: they are worded to fit **Service Implicit**,
+>   but if the portal flags them as promotional they must instead be registered as **Service Explicit**.
+>   Ask me before force-submitting either under a category the portal disputes.
 
 ---
 

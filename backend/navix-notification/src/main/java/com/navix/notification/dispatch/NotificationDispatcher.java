@@ -174,7 +174,7 @@ public class NotificationDispatcher {
                 }
             }
         }
-        return message != null ? message : new RenderedMessage(preferred, type.name(), "");
+        return message != null ? message : new RenderedMessage(preferred, type.name(), "", null);
     }
 
     /** Base model: the event-supplied values + (when a loan is in scope) its money/date fields. */

@@ -6,8 +6,8 @@
     "peid": "<PRINCIPAL_ENTITY_ID>",
     "categoryForAll": "Service Implicit",
     "categoryNote": "NAVIX is a NON-BANKING entity. The DLT 'Transactional' category is reserved for banks (card / net-banking OTP). Every template below — including the login OTP — MUST be registered as 'Service Implicit'.",
-    "url": "https://navixfinance.com",
-    "urlNote": "The URL https://navixfinance.com MUST be whitelisted under the entity on the SmartPing/DLT portal (URL/APK whitelisting) BEFORE these templates are submitted, or templates containing the link are rejected. OTP is intentionally link-free (links in OTP messages are discouraged and often rejected).",
+    "url": "https://www.navixfinance.com/login",
+    "urlNote": "The URL https://www.navixfinance.com/login MUST be whitelisted under the entity on the SmartPing/DLT portal (URL/APK whitelisting) BEFORE these templates are submitted, or templates containing the link are rejected. OTP is intentionally link-free (links in OTP messages are discouraged and often rejected).",
     "rules": [
       "Variable placeholder is exactly {#var#} (with hashes).",
       "One variable = up to 40 characters. Provide a sample value per variable.",
@@ -17,7 +17,7 @@
       "For SMS render amounts as 'Rs.' not '₹' — '₹' forces UCS-2 (Unicode) SMS: 70 chars/segment and higher cost.",
       "Any URL in a template must be pre-whitelisted on the DLT portal or the template is rejected."
     ],
-    "generated": "derived from BorrowerOtpService + NotificationTemplates.java"
+    "generated": "derived from BorrowerOtpService + NotificationTemplates.java — the SMS body in NotificationTemplates.java must match each 'content' below character-for-character (only {#var#} slots substituted). The 15 templates below cover every SMS-enabled NotificationType: CREDIT_REJECTED and REBORROW_REVIEW_REJECTED share the single NAVIX_APPLICATION_DECLINED template."
   },
   "templates": [
     {
@@ -36,7 +36,7 @@
       "source": "NotificationType.KYC_APPROVED",
       "notificationType": "KYC_APPROVED",
       "category": "Service Implicit",
-      "content": "Your KYC is verified with NAVIX Finance. Log in at https://navixfinance.com to choose your loan amount. - NAVIX Finance",
+      "content": "Your KYC is verified with NAVIX Finance. Log in at https://www.navixfinance.com/login to choose your loan amount. - NAVIX Finance",
       "variables": []
     },
     {
@@ -44,7 +44,7 @@
       "source": "NotificationType.KYC_REJECTED",
       "notificationType": "KYC_REJECTED",
       "category": "Service Implicit",
-      "content": "We could not verify your KYC with NAVIX Finance. Log in at https://navixfinance.com to review and resubmit. - NAVIX Finance",
+      "content": "We could not verify your KYC with NAVIX Finance. Log in at https://www.navixfinance.com/login to review and resubmit. - NAVIX Finance",
       "variables": []
     },
     {
@@ -52,7 +52,7 @@
       "source": "NotificationType.KYC_REMINDER",
       "notificationType": "KYC_REMINDER",
       "category": "Service Implicit",
-      "content": "Your verification with NAVIX Finance is incomplete. Log in at https://navixfinance.com to complete your pending steps. - NAVIX Finance",
+      "content": "Your verification with NAVIX Finance is incomplete. Log in at https://www.navixfinance.com/login to complete your pending steps. - NAVIX Finance",
       "variables": [],
       "note": "Improved: dropped the {pendingSteps} variable (the joined step list can exceed the 40-char/variable limit). The detailed list stays in the in-app + email versions. Requires the SMS body in NotificationTemplates.java to be changed to this variable-free text so the sent SMS matches."
     },
@@ -61,7 +61,7 @@
       "source": "NotificationType.LOAN_DISBURSED",
       "notificationType": "LOAN_DISBURSED",
       "category": "Service Implicit",
-      "content": "NAVIX Finance has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://navixfinance.com. - NAVIX Finance",
+      "content": "NAVIX Finance has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://www.navixfinance.com/login. - NAVIX Finance",
       "variables": [
         { "index": 1, "purpose": "net amount disbursed", "tag": "Amount", "sample": "Rs. 8,820" },
         { "index": 2, "purpose": "total repayable amount", "tag": "Amount", "sample": "Rs. 12,700" },
@@ -73,7 +73,7 @@
       "source": "NotificationType.REPAYMENT_VERIFIED",
       "notificationType": "REPAYMENT_VERIFIED",
       "category": "Service Implicit",
-      "content": "Your payment of {#var#} to NAVIX Finance is confirmed. Outstanding balance is {#var#}. View details at https://navixfinance.com. - NAVIX Finance",
+      "content": "Your payment of {#var#} to NAVIX Finance is confirmed. Outstanding balance is {#var#}. View details at https://www.navixfinance.com/login. - NAVIX Finance",
       "variables": [
         { "index": 1, "purpose": "payment amount", "tag": "Amount", "sample": "Rs. 5,000" },
         { "index": 2, "purpose": "remaining outstanding balance", "tag": "Amount", "sample": "Rs. 7,700" }
@@ -84,7 +84,7 @@
       "source": "NotificationType.REPAYMENT_REJECTED",
       "notificationType": "REPAYMENT_REJECTED",
       "category": "Service Implicit",
-      "content": "Your payment of {#var#} could not be verified by NAVIX Finance. Log in at https://navixfinance.com to check the reference and record it again. - NAVIX Finance",
+      "content": "Your payment of {#var#} could not be verified by NAVIX Finance. Log in at https://www.navixfinance.com/login to check the reference and record it again. - NAVIX Finance",
       "variables": [
         { "index": 1, "purpose": "payment amount", "tag": "Amount", "sample": "Rs. 5,000" }
       ]
@@ -94,7 +94,7 @@
       "source": "NotificationType.PAYMENT_DUE_SOON",
       "notificationType": "PAYMENT_DUE_SOON",
       "category": "Service Implicit",
-      "content": "Your NAVIX Finance payment of {#var#} is due in {#var#} day(s) by {#var#}. Pay at https://navixfinance.com on or after your salary day with no penalty. - NAVIX Finance",
+      "content": "Your NAVIX Finance payment of {#var#} is due in {#var#} day(s) by {#var#}. Pay at https://www.navixfinance.com/login on or after your salary day with no penalty. - NAVIX Finance",
       "variables": [
         { "index": 1, "purpose": "amount due", "tag": "Amount", "sample": "Rs. 12,700" },
         { "index": 2, "purpose": "days until due", "tag": "Number", "sample": "3" },
@@ -106,7 +106,7 @@
       "source": "NotificationType.PAYMENT_OVERDUE",
       "notificationType": "PAYMENT_OVERDUE",
       "category": "Service Implicit",
-      "content": "Your NAVIX Finance payment of {#var#} is overdue by {#var#} day(s). Pay now at https://navixfinance.com to stop the daily penalty and protect your credit score. - NAVIX Finance",
+      "content": "Your NAVIX Finance payment of {#var#} is overdue by {#var#} day(s). Pay now at https://www.navixfinance.com/login to stop the daily penalty and protect your credit score. - NAVIX Finance",
       "variables": [
         { "index": 1, "purpose": "overdue amount", "tag": "Amount", "sample": "Rs. 12,700" },
         { "index": 2, "purpose": "days overdue", "tag": "Number", "sample": "5" }
@@ -117,23 +117,24 @@
       "source": "NotificationType.LOAN_CLOSED",
       "notificationType": "LOAN_CLOSED",
       "category": "Service Implicit",
-      "content": "Your loan with NAVIX Finance is fully repaid and closed. Thank you. Visit https://navixfinance.com to borrow again. - NAVIX Finance",
+      "content": "Your loan with NAVIX Finance is fully repaid and closed. Thank you. Visit https://www.navixfinance.com/login to borrow again. - NAVIX Finance",
       "variables": []
     },
     {
-      "name": "NAVIX_CREDIT_REJECTED",
-      "source": "NotificationType.CREDIT_REJECTED",
-      "notificationType": "CREDIT_REJECTED",
+      "name": "NAVIX_APPLICATION_DECLINED",
+      "source": "NotificationType.CREDIT_REJECTED + NotificationType.REBORROW_REVIEW_REJECTED",
+      "notificationType": ["CREDIT_REJECTED", "REBORROW_REVIEW_REJECTED"],
       "category": "Service Implicit",
-      "content": "NAVIX Finance is unable to approve your loan application at this time. Visit https://navixfinance.com for details. - NAVIX Finance",
-      "variables": []
+      "content": "NAVIX Finance is unable to approve your loan application at this time. Visit https://www.navixfinance.com/login for details. - NAVIX Finance",
+      "variables": [],
+      "note": "One registered template reused for BOTH the first-loan credit rejection (CREDIT_REJECTED) and the returning-borrower reborrow rejection (REBORROW_REVIEW_REJECTED) — the content is identical, so a single DLT Template ID is bound to both NotificationTypes in navix.sms.dlt-template-ids."
     },
     {
       "name": "NAVIX_SETTLEMENT_APPROVED",
       "source": "NotificationType.SETTLEMENT_APPROVED",
       "notificationType": "SETTLEMENT_APPROVED",
       "category": "Service Implicit",
-      "content": "A full and final settlement of {#var#} is approved on your NAVIX Finance loan. Pay at https://navixfinance.com to close the loan. - NAVIX Finance",
+      "content": "A full and final settlement of {#var#} is approved on your NAVIX Finance loan. Pay at https://www.navixfinance.com/login to close the loan. - NAVIX Finance",
       "variables": [
         { "index": 1, "purpose": "settlement amount", "tag": "Amount", "sample": "Rs. 9,000" }
       ]
@@ -143,16 +144,29 @@
       "source": "NotificationType.REBORROW_REVIEW_APPROVED",
       "notificationType": "REBORROW_REVIEW_APPROVED",
       "category": "Service Implicit",
-      "content": "Your repeat loan application with NAVIX Finance is approved. Log in at https://navixfinance.com to choose your amount. - NAVIX Finance",
+      "content": "Your loan application with NAVIX Finance is approved. Log in at https://www.navixfinance.com/login to choose your amount. - NAVIX Finance",
       "variables": []
     },
     {
-      "name": "NAVIX_REBORROW_REJECTED",
-      "source": "NotificationType.REBORROW_REVIEW_REJECTED",
-      "notificationType": "REBORROW_REVIEW_REJECTED",
+      "name": "NAVIX_REBORROW_PREAPPROVED",
+      "source": "NotificationType.REBORROW_PREAPPROVED",
+      "notificationType": "REBORROW_PREAPPROVED",
       "category": "Service Implicit",
-      "content": "NAVIX Finance is unable to approve your repeat loan application at this time. Visit https://navixfinance.com for details. - NAVIX Finance",
-      "variables": []
+      "content": "Welcome back to NAVIX Finance. You can apply for another loan now. Log in at https://www.navixfinance.com/login to choose your amount. - NAVIX Finance",
+      "variables": [],
+      "note": "Returning-borrower re-onboarding nudge. Worded to stay Service Implicit (arises from the customer's existing relationship) — deliberately avoids offer/'pre-approved' language. If STPL flags it promotional, it must move to Service Explicit (recorded consent)."
+    },
+    {
+      "name": "NAVIX_REFERRAL_REWARD_CREDITED",
+      "source": "NotificationType.REFERRAL_REWARD_CREDITED",
+      "notificationType": "REFERRAL_REWARD_CREDITED",
+      "category": "Service Implicit",
+      "content": "Your NAVIX Finance referral reward of {#var#} is credited with reference {#var#}. Log in at https://www.navixfinance.com/login to view it. - NAVIX Finance",
+      "variables": [
+        { "index": 1, "purpose": "referral reward amount", "tag": "Amount", "sample": "Rs. 500" },
+        { "index": 2, "purpose": "payout transaction reference", "tag": "Number", "sample": "TXN123456" }
+      ],
+      "note": "Gated by the 'referral' feature flag. Reward-credited confirmation of the customer's own referral action. If STPL flags it promotional, it must move to Service Explicit (recorded consent)."
     }
   ]
 }

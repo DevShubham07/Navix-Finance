@@ -3,6 +3,7 @@ package com.navix.sms;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.navix.common.sms.SmsGateway;
 import java.time.Duration;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -37,11 +38,13 @@ public class UltronSmsClient implements SmsGateway {
     }
 
     /**
-     * Send {@code text} to {@code number} (full MSISDN incl. country code, e.g. 91XXXXXXXXXX).
-     * Returns the gateway JobId. Throws {@link SmsException} on a non-success code or transport error.
+     * Send {@code text} to {@code number} (full MSISDN incl. country code, e.g. 91XXXXXXXXXX), tagging
+     * the request with the DLT Template ID resolved for {@code dltTemplateKey} (a {@code NotificationType}
+     * name; {@code null}/unmapped → the global {@code dltTemplateId}). Returns the gateway JobId. Throws
+     * {@link SmsException} on a non-success code or transport error.
      */
     @Override
-    public String send(String number, String text) {
+    public String send(String number, String text, String dltTemplateKey) {
         if (props.mock()) {
             // SMS mock mode (demo/testing): no real send, no DLT. Return a mock reference so all
             // callers — OTP and notifications alike — are short-circuited consistently.
@@ -65,7 +68,7 @@ public class UltronSmsClient implements SmsGateway {
                         uri.queryParam("text", text);
                         addIfSet(uri, "route", props.route());
                         addIfSet(uri, "peid", props.peid());
-                        addIfSet(uri, "DLTTemplateId", props.dltTemplateId());
+                        addIfSet(uri, "DLTTemplateId", resolveDltTemplateId(dltTemplateKey));
                         return uri.build();
                     })
                     .retrieve()
@@ -81,6 +84,22 @@ public class UltronSmsClient implements SmsGateway {
         } catch (RestClientException e) {
             throw new SmsException("SMS gateway transport error", e);
         }
+    }
+
+    /**
+     * The DLT Template ID for {@code key} (a {@code NotificationType} name) from
+     * {@code navix.sms.dlt-template-ids}, or the global {@code dltTemplateId} when the key is
+     * null/absent/blank (e.g. OTP, or a type whose id isn't configured yet).
+     */
+    String resolveDltTemplateId(String key) {
+        Map<String, String> ids = props.dltTemplateIds();
+        if (key != null && ids != null) {
+            String id = ids.get(key);
+            if (id != null && !id.isBlank()) {
+                return id;
+            }
+        }
+        return props.dltTemplateId();
     }
 
     private static void addIfSet(org.springframework.web.util.UriBuilder uri, String name, String value) {

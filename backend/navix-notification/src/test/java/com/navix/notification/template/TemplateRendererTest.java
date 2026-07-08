@@ -53,7 +53,21 @@ class TemplateRendererTest {
                 Map.of("netDisbursed", "₹8,820", "totalRepayable", "₹12,700", "dueDate", "30 Jun 2026"));
         assertThat(m).isNotNull();
         assertThat(m.subject()).isNull(); // SMS = body only
-        assertThat(m.body()).contains("₹8,820").contains("₹12,700").contains("30 Jun 2026");
+        // SMS renders "Rs." not "₹" (GSM-7 / cost), and carries the type name as the DLT key.
+        assertThat(m.body()).contains("Rs. 8,820").contains("Rs. 12,700").contains("30 Jun 2026");
+        assertThat(m.body()).doesNotContain("₹");
+        assertThat(m.smsTemplateKey()).isEqualTo("LOAN_DISBURSED");
+    }
+
+    @Test
+    void renderKeepsRupeeGlyphForEmail() {
+        // The ₹→Rs. swap is SMS-only — EMAIL/IN_APP keep the rupee glyph and carry no SMS template key.
+        RenderedMessage m = renderer.render(NotificationType.LOAN_DISBURSED, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "netDisbursed", "₹8,820", "totalRepayable", "₹12,700",
+                        "dueDate", "30 Jun 2026"));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("₹8,820").contains("₹12,700");
+        assertThat(m.smsTemplateKey()).isNull();
     }
 
     @Test
@@ -61,7 +75,7 @@ class TemplateRendererTest {
         RenderedMessage m = renderer.render(NotificationType.KYC_APPROVED, NotificationChannel.EMAIL,
                 Map.of("name", "Asha"));
         assertThat(m).isNotNull();
-        assertThat(m.subject()).isEqualTo("Your NAVIX KYC is approved");
+        assertThat(m.subject()).isEqualTo("Your NAVIX KYC is approved — instant loan up to ₹10,00,000");
         assertThat(m.body()).contains("Hi Asha,");
     }
 
