@@ -40,7 +40,8 @@ public final class LoanDtos {
             LocalDate dueDate,
             Long totalRepayablePaise,
             Long outstandingPaise,
-            LoanStatus status) {
+            LoanStatus status,
+            String disbursalTxnRef) {
 
         public static LoanView of(Loan l) {
             return of(l, l.getOutstanding(), l.getStatus());
@@ -54,7 +55,8 @@ public final class LoanDtos {
         public static LoanView of(Loan l, long outstandingPaise, LoanStatus status) {
             return new LoanView(l.getId(), l.getCustomerId(), l.getPrincipal(), l.getProcessingFee(),
                     l.getGst(), l.getNetDisbursed(), l.getDailyInterestRate(), l.getDisbursedOn(),
-                    l.getDueDate(), l.getTotalRepayable(), outstandingPaise, status);
+                    l.getDueDate(), l.getTotalRepayable(), outstandingPaise, status,
+                    l.getDisbursalTxnRef());
         }
     }
 

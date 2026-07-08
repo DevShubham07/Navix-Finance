@@ -4,12 +4,13 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, X } from "lucide-react";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LoanBreakdown } from "@/components/staff/loan-breakdown";
+import { EventTimeline } from "@/components/staff/event-timeline";
 import {
   staffApi,
   paiseToINR,
   type LoanView,
   type PaymentView,
-  type EventView,
 } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
 
@@ -48,8 +49,10 @@ export function LoanDetailDialog({
   const payments = payQuery.data ?? [];
   const events = evQuery.data ?? [];
 
+  // !max-w-2xl: globals.css's un-layered `.modal { max-width: 460px }` outranks
+  // plain utilities in the cascade, so the width needs the important modifier.
   return (
-    <Dialog open onClose={onClose} className="max-w-2xl">
+    <Dialog open onClose={onClose} className="!max-w-2xl">
       <DialogHeader>
         <div className="flex items-center justify-between">
           <DialogTitle>Loan #{loan.id}</DialogTitle>
@@ -66,26 +69,7 @@ export function LoanDetailDialog({
       <div className="max-h-[70vh] space-y-6 overflow-y-auto pr-1 text-sm">
         <section>
           <h4 className="mb-2 font-semibold text-ink">Cost breakdown</h4>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-1">
-            <Row label="Principal" value={paiseToINR(loan.principalPaise)} />
-            <Row label="Processing fee" value={paiseToINR(loan.processingFeePaise)} />
-            <Row label="GST" value={paiseToINR(loan.gstPaise)} />
-            <Row label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
-            <Row label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
-            {out && <Row label="Interest accrued" value={paiseToINR(out.interestPaise ?? 0)} />}
-            {out && (out.penaltyPaise ?? 0) > 0 && (
-              <Row label="Late penalty" value={paiseToINR(out.penaltyPaise ?? 0)} />
-            )}
-            {out && <Row label="Paid (verified)" value={paiseToINR(out.verifiedPaise ?? 0)} />}
-            <Row
-              label="Outstanding"
-              value={paiseToINR(out ? out.outstandingPaise : loan.outstandingPaise)}
-              strong
-            />
-            {out?.settledAmountPaise != null && (
-              <Row label="Settlement (full & final)" value={paiseToINR(out.settledAmountPaise)} />
-            )}
-          </dl>
+          <LoanBreakdown loan={loan} outstanding={out} />
         </section>
 
         <section>
@@ -113,25 +97,12 @@ export function LoanDetailDialog({
             {events.length === 0 ? (
               <p className="text-muted">No events recorded.</p>
             ) : (
-              <ol className="space-y-2">
-                {events.map((e) => (
-                  <EventLi key={e.id} e={e} />
-                ))}
-              </ol>
+              <EventTimeline events={events} />
             )}
           </section>
         )}
       </div>
     </Dialog>
-  );
-}
-
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className="flex items-center justify-between">
-      <dt className="text-muted">{label}</dt>
-      <dd className={strong ? "font-semibold text-navy" : "text-ink"}>{value}</dd>
-    </div>
   );
 }
 
@@ -156,21 +127,6 @@ function PaymentLi({ p }: { p: PaymentView }) {
       <span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${tone}`}>
         {p.status.replace(/_/g, " ").toLowerCase()}
       </span>
-    </li>
-  );
-}
-
-function EventLi({ e }: { e: EventView }) {
-  return (
-    <li className="border-l-2 border-line pl-3">
-      <div className="text-ink">
-        <strong>{e.action ?? e.toStatus ?? "—"}</strong>
-        {e.toStatus ? <span className="text-muted"> → {e.toStatus}</span> : null}
-      </div>
-      <div className="text-xs text-muted">
-        {e.actorRole ?? "system"} · {formatDate(e.at)}
-        {e.notes ? ` · ${e.notes}` : ""}
-      </div>
     </li>
   );
 }

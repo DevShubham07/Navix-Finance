@@ -1,6 +1,7 @@
-# Local-only override (untracked). Remaps Postgres to host port 5433 to avoid
-# colliding with a native PostgreSQL already listening on 5432.
+# Local-only override (untracked). Historically remapped Postgres to 5433 to dodge
+# a native PostgreSQL on 5432; that native instance now lives on 5433 itself, so
+# 5432 is free again — mapped back to the backend's DB_URL default.
 services:
   db:
     ports:
-      - "5433:5432"
+      - "5432:5432"

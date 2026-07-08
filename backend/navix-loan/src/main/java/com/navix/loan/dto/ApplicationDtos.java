@@ -80,13 +80,24 @@ public final class ApplicationDtos {
             ApplicationStatus toStatus,
             String actorId,
             String actorRole,
+            String actorName,
             String action,
             String notes,
             Instant at) {
 
         public static EventView of(ApplicationEvent e) {
+            return of(e, null);
+        }
+
+        /**
+         * Enriched with the resolved actor's display name ({@code actorName}) so the audit trail can
+         * show <em>who</em> did each step, not just the role. May be {@code null} when the actor can't
+         * be resolved (unknown staff id, no profile, non-numeric id) — follows the collections
+         * {@code SettlementView.proposedByName} precedent.
+         */
+        public static EventView of(ApplicationEvent e, String actorName) {
             return new EventView(e.getId(), e.getFromStatus(), e.getToStatus(), e.getActorId(),
-                    e.getActorRole(), e.getAction(), e.getNotes(), e.getAt());
+                    e.getActorRole(), actorName, e.getAction(), e.getNotes(), e.getAt());
         }
     }
 }

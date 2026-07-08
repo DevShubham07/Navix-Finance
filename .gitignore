@@ -60,3 +60,8 @@ yarn-error.log*
 docs/product-gaps-shots/
 # Added by code-review-graph
 .code-review-graph/
+
+# ---- Local AI tooling (machine-specific, not project state) ----
+.serena/
+.specify/
+repomix-output.xml

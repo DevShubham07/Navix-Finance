@@ -25,7 +25,7 @@ export default function CreditQueuePage() {
     <div>
       <PageHeader title="Credit queue" subtitle="Assign applications, review, and approve — maker-checker with SoD enforced.">
         {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
-        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-counts"], ["staff-dashboard-queue"]]} />
+        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-stats"], ["staff-dashboard-queue"]]} />
       </PageHeader>
 
       <div className="space-y-8">

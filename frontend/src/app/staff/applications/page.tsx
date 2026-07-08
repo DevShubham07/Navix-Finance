@@ -45,7 +45,7 @@ export default function StaffApplicationsPage() {
         subtitle="Real backend state machine. Act on the queue for your role to walk loans to ACTIVE."
       >
         <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>
-        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-counts"], ["staff-dashboard-queue"]]} />
+        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-stats"], ["staff-dashboard-queue"]]} />
       </PageHeader>
 
       <div className="space-y-8">

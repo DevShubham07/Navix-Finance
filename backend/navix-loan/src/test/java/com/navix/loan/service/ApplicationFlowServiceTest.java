@@ -10,9 +10,11 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
+import com.navix.common.staff.StaffSummary;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentStatus;
+import com.navix.loan.dto.ApplicationDtos.EventView;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.Loan;
@@ -24,9 +26,11 @@ import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -371,6 +375,102 @@ class ApplicationFlowServiceTest {
         flow.apply(1L, 1_000_000L, "medical", 1_500_000L, null);
         assertThat(app.getSalaryCreditDay()).isEqualTo(15); // not wiped by the null
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
+    }
+
+    // ---- audit trail actor-name enrichment + status counts ------------------------
+
+    /** A BORROWER-role event resolves to the customer profile's full name. */
+    @Test
+    void eventViewsResolvesBorrowerNameFromProfile() {
+        appAt(ApplicationStatus.KYC_PENDING); // customerId 7
+        CustomerProfile p = new CustomerProfile();
+        p.setApplicationId(1L);
+        p.setFullName("Rakesh Kumar");
+        when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(p));
+        events.add(event("7", "BORROWER"));
+
+        List<EventView> views = flow.eventViews(1L);
+
+        assertThat(views).hasSize(1);
+        assertThat(views.get(0).actorName()).isEqualTo("Rakesh Kumar");
+    }
+
+    /** A staff-role event resolves to the staff directory's name. */
+    @Test
+    void eventViewsResolvesStaffNameFromDirectory() {
+        appAt(ApplicationStatus.KYC_PENDING);
+        when(staffDirectory.findStaff(42L))
+                .thenReturn(Optional.of(new StaffSummary(42L, "Priya Sharma", "KYC_APPROVER", true)));
+        events.add(event("42", "KYC_APPROVER"));
+
+        List<EventView> views = flow.eventViews(1L);
+
+        assertThat(views.get(0).actorName()).isEqualTo("Priya Sharma");
+    }
+
+    /** Unresolvable actors — unknown staff id or a non-numeric id — yield a null name, never a throw. */
+    @Test
+    void eventViewsReturnsNullNameWhenUnresolvable() {
+        appAt(ApplicationStatus.KYC_PENDING);
+        when(staffDirectory.findStaff(any())).thenReturn(Optional.empty());
+        events.add(event("99", "CREDIT_HEAD"));          // unknown staff id → null
+        events.add(event("not-a-number", "CREDIT_HEAD")); // non-numeric id → null, no throw
+
+        List<EventView> views = flow.eventViews(1L);
+
+        assertThat(views).hasSize(2);
+        assertThat(views.get(0).actorName()).isNull();
+        assertThat(views.get(1).actorName()).isNull();
+    }
+
+    /** No profile row for the app/customer → a borrower event's name is null (no throw). */
+    @Test
+    void eventViewsBorrowerNameNullWhenNoProfile() {
+        appAt(ApplicationStatus.KYC_PENDING);
+        events.add(event("7", "BORROWER"));
+
+        List<EventView> views = flow.eventViews(1L);
+
+        assertThat(views.get(0).actorName()).isNull();
+    }
+
+    /** countsByStatus maps the repository projection and omits statuses with no rows. */
+    @Test
+    void countsByStatusMapsProjectionAndOmitsAbsentStatuses() {
+        when(applicationRepository.countGroupByStatus()).thenReturn(List.of(
+                statusCount(ApplicationStatus.KYC_PENDING, 3L),
+                statusCount(ApplicationStatus.ACTIVE, 5L)));
+
+        Map<ApplicationStatus, Long> counts = flow.countsByStatus();
+
+        assertThat(counts).hasSize(2)
+                .containsEntry(ApplicationStatus.KYC_PENDING, 3L)
+                .containsEntry(ApplicationStatus.ACTIVE, 5L)
+                .doesNotContainKey(ApplicationStatus.CLOSED);
+    }
+
+    private ApplicationEvent event(String actorId, String actorRole) {
+        ApplicationEvent e = new ApplicationEvent();
+        e.setApplicationId(1L);
+        e.setActorId(actorId);
+        e.setActorRole(actorRole);
+        e.setToStatus(ApplicationStatus.KYC_PENDING);
+        e.setAt(Instant.now());
+        return e;
+    }
+
+    private LoanApplicationRepository.StatusCount statusCount(ApplicationStatus status, Long count) {
+        return new LoanApplicationRepository.StatusCount() {
+            @Override
+            public ApplicationStatus getStatus() {
+                return status;
+            }
+
+            @Override
+            public Long getCount() {
+                return count;
+            }
+        };
     }
 
     private LoanApplication priorApp() {

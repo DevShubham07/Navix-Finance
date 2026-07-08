@@ -103,6 +103,8 @@ export interface EventView {
   toStatus: ApplicationStatus | null;
   actorId: number | null;
   actorRole: string | null;
+  /** The resolved actor's display name (borrower profile name or staff name); null if unresolvable. */
+  actorName: string | null;
   action: string | null;
   notes: string | null;
   at: string;
@@ -121,6 +123,8 @@ export interface LoanView {
   totalRepayablePaise: number;
   outstandingPaise: number;
   status: string;
+  /** Bank/UPI reference for the outgoing disbursal (captured at release). */
+  disbursalTxnRef: string | null;
 }
 
 export interface OutstandingView {
@@ -715,6 +719,10 @@ export const staffApi = {
 
   /** The credit head's assignment queue (KYC_APPROVED + applied). */
   creditQueue: () => bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue`, "GET"),
+
+  /** Application counts per status for the dashboard pipeline; statuses with no rows default to 0. */
+  stats: () =>
+    bff<Partial<Record<ApplicationStatus, number>>>(`${STAFF_BASE}/stats`, "GET"),
 
   /** ADMIN-only: every application (complete + incomplete) with full KYC detail + completeness. */
   listAllApplications: () => bff<AdminApplicationView[]>(`${STAFF_BASE}/all`, "GET"),

@@ -1,14 +1,3 @@
 {
-  "mcpServers": {
-    "code-review-graph": {
-      "command": "C:\\Users\\KARTIK\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
-      "args": [
-        "-m",
-        "code_review_graph",
-        "serve"
-      ],
-      "cwd": "C:\\Users\\KARTIK\\Downloads\\navix-final\\Navix-Finance",
-      "type": "stdio"
-    }
-  }
+  "mcpServers": {}
 }

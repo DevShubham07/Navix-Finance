@@ -6,7 +6,9 @@ import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
+import com.navix.common.staff.StaffSummary;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.dto.ApplicationDtos.EventView;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.entity.CustomerProfile;
@@ -21,7 +23,10 @@ import com.navix.loan.repository.PaymentRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -419,6 +424,64 @@ public class ApplicationFlowService {
     @Transactional(readOnly = true)
     public List<ApplicationEvent> events(Long appId) {
         return eventRepository.findByApplicationIdOrderByAtAsc(appId);
+    }
+
+    /**
+     * The application's audit trail enriched with each actor's display <b>name</b> (never just the
+     * role): a {@code BORROWER}-role event resolves to the customer's {@link CustomerProfile#getFullName()},
+     * any other role to {@link StaffDirectory#findStaff(Long)}'s name. Unresolvable actors (unknown
+     * staff id, no profile, non-numeric id) yield a {@code null} name — this never throws. Staff-name
+     * lookups are memoized per call so a trail with repeated actors hits the directory once each.
+     */
+    @Transactional(readOnly = true)
+    public List<EventView> eventViews(Long appId) {
+        LoanApplication app = require(appId);
+        // Prefer the profile snapshot bound to THIS application; fall back (lazily — the common
+        // case resolves on the app-bound row) to the customer's latest profile.
+        String appBorrowerName = profileRepository.findByApplicationId(appId)
+                .map(CustomerProfile::getFullName)
+                .filter(n -> n != null && !n.isBlank())
+                .or(() -> latestProfileForCustomer(app.getCustomerId())
+                        .map(CustomerProfile::getFullName)
+                        .filter(n -> n != null && !n.isBlank()))
+                .orElse(null);
+        Map<String, String> staffNameCache = new HashMap<>();
+        return events(appId).stream()
+                .map(e -> EventView.of(e, resolveActorName(e, appBorrowerName, staffNameCache)))
+                .toList();
+    }
+
+    /** Resolve one event's actor to a display name (borrower → profile name, else staff directory);
+     *  never throws — an unresolvable actor returns {@code null}. */
+    private String resolveActorName(ApplicationEvent e, String borrowerName, Map<String, String> staffNameCache) {
+        if ("BORROWER".equalsIgnoreCase(e.getActorRole())) {
+            return borrowerName;
+        }
+        String actorId = e.getActorId();
+        if (actorId == null) {
+            return null;
+        }
+        if (staffNameCache.containsKey(actorId)) {
+            return staffNameCache.get(actorId);
+        }
+        String name;
+        try {
+            name = staffDirectory.findStaff(Long.valueOf(actorId)).map(StaffSummary::name).orElse(null);
+        } catch (NumberFormatException ex) {
+            name = null;
+        }
+        staffNameCache.put(actorId, name);
+        return name;
+    }
+
+    /** Per-status application counts for the staff dashboard pipeline (statuses with no rows are omitted). */
+    @Transactional(readOnly = true)
+    public Map<ApplicationStatus, Long> countsByStatus() {
+        Map<ApplicationStatus, Long> counts = new EnumMap<>(ApplicationStatus.class);
+        for (LoanApplicationRepository.StatusCount row : applicationRepository.countGroupByStatus()) {
+            counts.put(row.getStatus(), row.getCount());
+        }
+        return counts;
     }
 
     // ---- internals -----------------------------------------------------------------

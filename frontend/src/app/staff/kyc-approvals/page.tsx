@@ -11,7 +11,7 @@ export default function KycApprovalsPage() {
         title="KYC approvals"
         subtitle="Review the customer's details and documents, then clear KYC to move them into credit."
       >
-        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-counts"], ["staff-dashboard-queue"]]} />
+        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-stats"], ["staff-dashboard-queue"]]} />
       </PageHeader>
       <div className="space-y-8">
         <PermissionGate permission="kyc:approve" fallback={<NoAccessNotice message="Only KYC approvers can clear KYC." />}>

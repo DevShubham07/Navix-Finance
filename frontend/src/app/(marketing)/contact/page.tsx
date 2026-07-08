@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { html } from "../_content/contact";
-import { MarketingHtml } from "@/components/site/marketing-html";
+import { ContactSection } from "@/components/site/contact-form";
 
 export const metadata: Metadata = {
   title: 'Contact Us — NAVIX',
@@ -8,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <MarketingHtml html={html} />;
+  return <ContactSection />;
 }

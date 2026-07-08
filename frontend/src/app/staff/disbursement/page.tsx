@@ -15,7 +15,7 @@ export default function DisbursementPage() {
     <div>
       <PageHeader title="Disbursement authorisation" subtitle="Authorise release of credit-approved loans for payout.">
         {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
-        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-counts"], ["staff-dashboard-queue"]]} />
+        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-stats"], ["staff-dashboard-queue"]]} />
       </PageHeader>
       <PermissionGate permission="loan:disburse" fallback={<NoAccessNotice />}>
         <div className="space-y-8">

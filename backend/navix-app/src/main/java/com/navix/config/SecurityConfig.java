@@ -22,9 +22,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * staff namespaces (which share {@code /api/applications}) are kept apart by the
  * token's role rather than by URL.
  *
- * <p>Open (no token): {@code /api/auth/**} (login), the generic storage presign
- * routes ({@code /api/storage/**} — kept open per plan decision 6), actuator and the
- * API docs.
+ * <p>Open (no token): {@code /api/auth/**} (login), the public marketing contact form
+ * ({@code /api/contact}), the generic storage presign routes ({@code /api/storage/**} — kept open per
+ * plan decision 6), actuator and the API docs.
  */
 @Configuration
 @EnableWebSecurity
@@ -44,6 +44,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers(
                             "/api/auth/**",
+                            "/api/contact",
                             "/api/storage/**",
                             "/actuator/**",
                             "/swagger-ui/**", "/swagger-ui.html",

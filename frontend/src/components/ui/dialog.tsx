@@ -13,9 +13,19 @@ export interface DialogProps {
   onClose: () => void;
   children?: React.ReactNode;
   className?: string;
+  /** Accessible name for the dialog (use one of the two). */
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
 }
 
-export function Dialog({ open, onClose, children, className }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  children,
+  className,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledby,
+}: DialogProps) {
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -29,6 +39,8 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
       <div
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledby}
         className={cn("modal", className)}
         style={{ textAlign: "left" }}
         onClick={(e) => e.stopPropagation()}

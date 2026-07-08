@@ -18,7 +18,7 @@ export default function AccountingPage() {
     <div>
       <PageHeader title="Accounting · transfers & repayments" subtitle="Confirm bank transfers to activate loans, and verify borrower repayments.">
         {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
-        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-counts"], ["staff-dashboard-queue"], ["staff-pending-repayments"]]} />
+        <RefreshButton queryKeys={[["staff-queue"], ["staff-dashboard-stats"], ["staff-dashboard-queue"], ["staff-pending-repayments"]]} />
         <Link href="/staff/accounting/transactions" className="inline-flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-sm font-semibold text-navy hover:bg-grey-100">
           <Receipt size={15} /> All transactions
         </Link>

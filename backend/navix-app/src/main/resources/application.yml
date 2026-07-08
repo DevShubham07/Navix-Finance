@@ -120,6 +120,9 @@ navix:
     configuration-set: ${NAVIX_SES_CONFIG_SET:}
     # Resend only: API key for the Resend HTTP provider (interim while SES is sandbox-blocked).
     resend-api-key: ${RESEND_API_KEY:}
+  # Marketing "Contact us" form — where website enquiries are emailed (via the shared EmailClient).
+  contact:
+    recipient: ${NAVIX_CONTACT_RECIPIENT:navixfinance@gmail.com}
   # SES bounce/complaint ingestion (SES config-set -> SNS -> SQS -> SesEventSqsListener). Off by
   # default so the app boots without an SQS queue; flip on in AWS environments.
   ses:

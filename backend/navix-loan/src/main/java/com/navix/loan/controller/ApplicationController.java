@@ -84,6 +84,13 @@ public class ApplicationController {
         return ApiResponse.ok(enrich(flow.creditHeadQueue()));
     }
 
+    /** Staff dashboard pipeline: application counts per status (statuses with no rows are omitted). */
+    @GetMapping("/stats")
+    public ApiResponse<Map<ApplicationStatus, Long>> stats() {
+        requireStaff();
+        return ApiResponse.ok(flow.countsByStatus());
+    }
+
     /** The calling borrower's own applications (newest first) — for their account "loans/transactions" views. */
     @GetMapping("/mine")
     public ApiResponse<List<ApplicationView>> mine() {
@@ -106,7 +113,7 @@ public class ApplicationController {
     @GetMapping("/{id}/events")
     public ApiResponse<List<EventView>> events(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
-        return ApiResponse.ok(flow.events(id).stream().map(EventView::of).toList());
+        return ApiResponse.ok(flow.eventViews(id));
     }
 
     /** Staff-readable verification summary for the approver review (per-step status + safe derived). */
