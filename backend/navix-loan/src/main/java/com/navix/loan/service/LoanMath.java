@@ -44,8 +44,11 @@ public class LoanMath {
     /** Late penalty accrues for at most this many days, then collections. */
     public static final int LATE_PENALTY_CAP_DAYS = 30;
 
-    /** Flat instant-loan ceiling: ₹10,00,000 = 100,000,000 paise (salary no longer caps the amount). */
+    /** Instant-loan ceiling: the 25%-of-salary limit never exceeds ₹10,00,000 = 100,000,000 paise. */
     public static final long MAX_INSTANT_LOAN_PAISE = 100_000_000L;
+
+    /** Eligible limit is 25% of monthly salary (before flooring + the instant ceiling). */
+    public static final BigDecimal LIMIT_PCT_OF_SALARY = new BigDecimal("0.25");
 
     /** Eligible limit is rounded down to the nearest ₹100 (= 10,000 paise). */
     public static final long LIMIT_ROUNDING_PAISE = 10_000L;
@@ -102,14 +105,19 @@ public class LoanMath {
     }
 
     /**
-     * Eligible loan limit — a flat ₹10,00,000 for every eligible borrower (instant-loan model).
-     * Salary no longer caps the amount; it still drives the due date.
+     * Eligible loan limit — <b>25% of monthly salary</b>, floored to the nearest ₹100 and capped at
+     * the ₹10,00,000 instant ceiling. Salary drives both the limit and the due date.
      *
-     * @param monthlySalaryPaise gross monthly salary in paise (unused; kept for signature stability)
-     * @return the flat sanctionable limit in paise
+     * @param monthlySalaryPaise gross monthly salary in paise
+     * @return the sanctionable limit in paise (25% of salary, ₹100-floored, ≤ ₹10,00,000)
      */
     public long eligibleLimitPaise(long monthlySalaryPaise) {
-        return MAX_INSTANT_LOAN_PAISE;
+        long quarter = BigDecimal.valueOf(monthlySalaryPaise)
+                .multiply(LIMIT_PCT_OF_SALARY)
+                .setScale(0, RoundingMode.FLOOR)
+                .longValueExact();
+        long flooredToHundred = Math.floorDiv(quarter, LIMIT_ROUNDING_PAISE) * LIMIT_ROUNDING_PAISE;
+        return Math.min(flooredToHundred, MAX_INSTANT_LOAN_PAISE);
     }
 
     /**

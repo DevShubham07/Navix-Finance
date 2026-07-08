@@ -25,8 +25,12 @@ function dueFor(day: number): Date {
 export interface SalaryCalendarProps {
   /** Current salary credit day-of-month (1–31). */
   value: number;
-  /** Fired with the computed due date; the page derives salaryDay = date.getDate(). */
-  onPick: (date: Date) => void;
+  /**
+   * Fired with the computed due date AND the picked day-of-month. Pages must store `day` as the
+   * salary credit day — NOT `date.getDate()`: the due date is clamped to the landing month's
+   * length (e.g. picked 31 → due 28 Feb), so deriving the day from it silently corrupts the pick.
+   */
+  onPick: (date: Date, day: number) => void;
 }
 
 export function SalaryCalendar({ value, onPick }: SalaryCalendarProps) {
@@ -46,13 +50,13 @@ export function SalaryCalendar({ value, onPick }: SalaryCalendarProps) {
   React.useEffect(() => {
     if (!pickedRef.current) {
       pickedRef.current = true;
-      onPick(due);
+      onPick(due, day);
     }
-  }, [due, onPick]);
+  }, [due, day, onPick]);
 
   const choose = (d: number) => {
     setDay(d);
-    onPick(dueFor(d));
+    onPick(dueFor(d), d);
   };
 
   const tenureDays = Math.max(1, daysBetween(new Date(), due));

@@ -73,7 +73,9 @@ export default function ReborrowSalaryPage() {
   const allFilesUploaded = files.every((f) => f !== null);
   const formOk = salaryOk && allFilesUploaded;
 
-  const handlePickDay = React.useCallback((d: Date) => setSalaryDay(d.getDate()), []);
+  // Store the PICKED day, not the due date's day-of-month — the due date is clamped to the
+  // landing month's length (picked 31 → due 28 Feb), so getDate() would corrupt the pick.
+  const handlePickDay = React.useCallback((_due: Date, day: number) => setSalaryDay(day), []);
 
   const setFile = (i: 0 | 1 | 2) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];

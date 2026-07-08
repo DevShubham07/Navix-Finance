@@ -101,7 +101,8 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
   no redeploy; first used as a kill-switch for the referral program (§11/§12).
 - **Referral** — refer-a-friend (codes, rewards, staff payout settlement), gated by the feature flag.
 - **Design system** — one unified 2026 "calendar" visual language across marketing + app (§8); the
-  borrower picks their salary day on a `<SalaryCalendar>` at `/loan/apply`.
+  borrower states their salary date on a compact day-of-month field at `/loan/apply` (the
+  `<SalaryCalendar>` month grid lives on the reborrow `/loan/salary` page + marketing `/calculator`).
 
 **Verification:** Postgres 16 (Docker) for local; Flyway applies all migrations on boot (§10). The
 backend unit suite + a Testcontainers integration test are green; frontend `tsc` + ESLint clean. Demo
@@ -301,10 +302,10 @@ How a real applicant moves through the product — this is now the **designed, b
 3. **Verification & KYC** — the onboarding steps (DigiLocker, selfie, penny-drop, bureau, salary…) are
    **real verifications** (§11), S3-backed; `submit-kyc` is gated on completeness, then a staff
    `KYC_APPROVER` approves (→ `KYC_APPROVED`).
-4. **Choose amount** — on `/loan/apply` the borrower first **picks their salary day on the
-   `<SalaryCalendar>`** (a month grid; selectable window 15–40 days, which sets the real
-   `salaryCreditDay`), then picks an amount within the eligible limit (25% of salary) on the
-   `AmountChooser` — the due date and full cost update live. Submitting `apply` (amount + salary-credit
+4. **Choose amount** — on `/loan/apply` the borrower first **states their salary date on a compact
+   day-of-month select** (1–31, which sets the real `salaryCreditDay`; the helper text previews the
+   salary-linked due date computed with the exact backend rule), then picks an amount within the
+   eligible limit (25% of salary) on the `AmountChooser` — the due date and full cost update live. Submitting `apply` (amount + salary-credit
    day) keeps the app `KYC_APPROVED`, now flagged "applied" (`amountRequested != null`), and enters the
    Credit Head's queue.
 5. **Track live** — `/loan/status` polls `GET …/{id}` and renders the live state-machine status +
@@ -409,7 +410,7 @@ knows what each section does.
   `.field`/`.cal-*`). The marketing site re-declares the **same** tokens scoped under **`.navix-mkt`**
   (`marketing-theme.css`) so it can't bleed into the app. **Re-skin by remapping token *values*, never by
   renaming** — names are load-bearing across ~54 screens (`font-serif` is the Bricolage *display* face,
-  not a literal serif). The salary-day `<SalaryCalendar>` (borrower `/loan/apply`) and the marketing
+  not a literal serif). The salary-day `<SalaryCalendar>` (reborrow `/loan/salary`) and the marketing
   `/calculator` calendar share the `.cal-*` styles (unscoped in globals.css; `.navix-mkt`-scoped copy in
   marketing-theme.css). Don't reintroduce the retired "Classic Corporate" theme (navy #1B3A6B / Source
   Serif). ⚠️ Running `npm run build` while `npm run dev` is up corrupts the dev server's `.next`
@@ -435,8 +436,8 @@ knows what each section does.
   repay, reborrow, collections, admin). The demo Zustand mock layer no longer gates any real flow.
 - **Cross-cutting UI:** a shared `NotificationBell` (`components/notifications/`) polls the inbox for
   both audiences; the staff shell hides a nav item when its feature flag is off (`navVisible` in
-  `components/staff/staff-shell.tsx`); the borrower picks their salary day on `<SalaryCalendar>` at
-  `/loan/apply` and self-edits on the `/profile` + `/settings` pages.
+  `components/staff/staff-shell.tsx`); the borrower states their salary date on a day-of-month field
+  at `/loan/apply` and self-edits on the `/profile` + `/settings` pages.
 
 ---
 
