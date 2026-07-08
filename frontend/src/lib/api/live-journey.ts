@@ -31,6 +31,14 @@ import type { CustomerProfile, BorrowerStatus } from "@/lib/domain/borrower";
 /** Browser-local pointer to the borrower's in-flight live application id. */
 const STORAGE_KEY = "navix.live.applicationId";
 const POLL_MS = 4000;
+/**
+ * How often to re-list the borrower's OWN applications (`["my-apps"]`). Modest on purpose — this is a
+ * cross-page shared cache (header/dashboard), not a hot path — but it MUST poll: a reborrow can advance
+ * to ACTIVE faster than a single `/mine` snapshot, and without a refetch the pointer reconciliation in
+ * {@link useLiveApplication} branch (b) would never see the newer app (the old "why the Pay button was
+ * intermittently dead for reborrowers" bug). 15s is well inside the window before a user reaches /repay.
+ */
+const MINE_POLL_MS = 15_000;
 
 /** Statuses where the borrower can do nothing more — the journey is over (one way or another). */
 const TERMINAL: ApplicationStatus[] = [
@@ -293,6 +301,29 @@ function pickCurrentAppId(apps: ApplicationView[]): number | null {
 export function useLiveApplication(): LiveApplication {
   const [appId, setAppId] = useStoredAppId();
 
+  const appQuery = useQuery({
+    queryKey: ["live-application", appId],
+    queryFn: () => borrowerApi.get(appId as number),
+    enabled: appId != null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (!status) return POLL_MS;
+      if (status === "ACTIVE" || TERMINAL_BAD.includes(status)) return false;
+      return POLL_MS;
+    },
+  });
+
+  // The pointer can only be stale while there is no pointer yet, the pointed-at application hasn't
+  // resolved, or it resolved to a dead end (CLOSED / rejected / cancelled / failed) that a newer
+  // reborrow could have superseded. While it points at a live in-flight/ACTIVE/OVERDUE application,
+  // the one-live-loan rule means nothing newer can exist — don't poll /mine for it.
+  const resolvedStatus = appQuery.data?.status;
+  const pointerMayBeStale =
+    appId == null ||
+    resolvedStatus == null ||
+    resolvedStatus === "CLOSED" ||
+    TERMINAL_BAD.includes(resolvedStatus);
+
   // Resolve the caller's OWN applications from the ownership-scoped /mine endpoint (shared cache with
   // the header + dashboard, keyed ["my-apps"]). /mine is scoped server-side to the JWT subject, so it
   // can never surface another user's application — unlike a localStorage app-id pointer, which could
@@ -300,6 +331,10 @@ export function useLiveApplication(): LiveApplication {
   const mineQuery = useQuery({
     queryKey: ["my-apps"],
     queryFn: () => borrowerApi.myApplications(),
+    // Poll (modest) so branch (b) below still catches a reborrow that has already advanced to ACTIVE —
+    // but only while the pointer can actually be stale; a settled live pointer needs no re-listing.
+    // Keeps the SAME ["my-apps"] key — the shared header/dashboard cache is refreshed, never forked.
+    refetchInterval: pointerMayBeStale ? MINE_POLL_MS : false,
   });
   React.useEffect(() => {
     const mine = mineQuery.data;
@@ -314,25 +349,18 @@ export function useLiveApplication(): LiveApplication {
       if (resolved != null) setAppId(resolved);
       return;
     }
-    // (b) Stale pointer: a reborrow just minted a NEWER in-flight application than the one we point
-    //     at. Move FORWARD to it (ids are monotonic) so the status page + dashboard follow the
-    //     current advance rather than the prior (closed) one. Forward-only — we never switch back to
-    //     an older application while the pointed-at one is still the latest.
-    const newestLive = mine.find((a) => !TERMINAL.includes(a.status));
-    if (newestLive && newestLive.id > appId) setAppId(newestLive.id);
+    // (b) Stale pointer: a NEWER application (e.g. a reborrow) exists than the one we point at. Move
+    //     FORWARD to it (ids are monotonic) so /repay + the status page + dashboard follow the current
+    //     advance rather than the prior (closed) one. We re-pick via pickCurrentAppId — the SAME
+    //     "newest relevant" selection used in (a) — which skips only dead-ends (cancelled/rejected/
+    //     failed) and falls back to the newest. Crucially it does NOT require the target to still be
+    //     non-terminal: a reborrow can flip to ACTIVE (a TERMINAL status) faster than we reconcile, and
+    //     the old "!TERMINAL" gate skipped exactly that case, stranding /repay on the prior CLOSED loan.
+    //     Forward-only (target > appId) — we never switch back to an older application, so a just-created
+    //     reborrow written to localStorage earlier this mount is never clobbered by the shared cache.
+    const target = pickCurrentAppId(mine);
+    if (target != null && target > appId) setAppId(target);
   }, [appId, mineQuery.data, setAppId]);
-
-  const appQuery = useQuery({
-    queryKey: ["live-application", appId],
-    queryFn: () => borrowerApi.get(appId as number),
-    enabled: appId != null,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (!status) return POLL_MS;
-      if (status === "ACTIVE" || TERMINAL_BAD.includes(status)) return false;
-      return POLL_MS;
-    },
-  });
 
   const app = appQuery.data;
   // The loan is minted at ACTIVE and persists through OVERDUE/CLOSED — fetch it for any of them.
