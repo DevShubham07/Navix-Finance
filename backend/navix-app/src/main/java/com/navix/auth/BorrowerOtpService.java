@@ -93,7 +93,8 @@ public class BorrowerOtpService {
     private String buildMessage(String code) {
         String template = props.otpTemplate() != null && !props.otpTemplate().isBlank()
                 ? props.otpTemplate()
-                : "Your NAVIX verification code is {otp}. Valid for {ttl} minutes. Do not share it.";
+                : "Your OTP for NAVIX Finance login is {otp}. It is valid for {ttl} minutes. "
+                        + "Do not share this OTP with anyone. - NAVIX Finance";
         return template
                 .replace("{otp}", code)
                 .replace("{ttl}", String.valueOf(props.otpTtlSeconds() / 60));

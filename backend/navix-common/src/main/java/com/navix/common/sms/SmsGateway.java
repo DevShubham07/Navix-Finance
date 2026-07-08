@@ -9,8 +9,18 @@ package com.navix.common.sms;
 public interface SmsGateway {
 
     /**
-     * Send {@code text} to {@code number} (E.164-ish, e.g. {@code "919876543210"}). In SMS mock mode
-     * the implementation short-circuits and returns a mock reference without hitting the gateway.
+     * Send {@code text} to {@code number} (E.164-ish, e.g. {@code "919876543210"}) with no per-template
+     * DLT key — the implementation uses its global/OTP DLT Template ID. Convenience for the OTP path.
      */
-    String send(String number, String text);
+    default String send(String number, String text) {
+        return send(number, text, null);
+    }
+
+    /**
+     * Send {@code text} to {@code number} (E.164-ish, e.g. {@code "919876543210"}), tagging the request
+     * with the DLT Template ID that the implementation resolves for {@code dltTemplateKey} (a
+     * {@code NotificationType} name); a {@code null}/unmapped key falls back to the global/OTP id. In SMS
+     * mock mode the implementation short-circuits and returns a mock reference without hitting the gateway.
+     */
+    String send(String number, String text, String dltTemplateKey);
 }

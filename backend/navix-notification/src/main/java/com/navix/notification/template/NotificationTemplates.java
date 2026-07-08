@@ -33,8 +33,8 @@ public class NotificationTemplates {
                 "Your KYC is verified. You're eligible for an instant loan up to ₹10,00,000 — log in to "
                         + "choose your amount.");
         sms(NotificationType.KYC_APPROVED,
-                "NAVIX: KYC verified. You're eligible for an instant loan up to ₹10,00,000. Log in to "
-                        + "choose your amount.");
+                "Your KYC is verified with NAVIX Finance. Log in at https://www.navixfinance.com/login "
+                        + "to choose your loan amount. - NAVIX Finance");
         email(NotificationType.KYC_APPROVED, "Your NAVIX KYC is approved — instant loan up to ₹10,00,000",
                 "Hi {name},\n\nGood news — your KYC is verified. You're now eligible for an instant loan "
                         + "of up to ₹10,00,000. Log in to choose your amount and get funded.\n\n— NAVIX Finance");
@@ -42,7 +42,8 @@ public class NotificationTemplates {
         inApp(NotificationType.KYC_REJECTED, "KYC could not be verified",
                 "We couldn't verify your KYC. Please review your details and resubmit.");
         sms(NotificationType.KYC_REJECTED,
-                "NAVIX: We couldn't verify your KYC. Please log in to review and resubmit.");
+                "We could not verify your KYC with NAVIX Finance. Log in at "
+                        + "https://www.navixfinance.com/login to review and resubmit. - NAVIX Finance");
         email(NotificationType.KYC_REJECTED, "About your NAVIX KYC",
                 "Hi {name},\n\nWe weren't able to verify your KYC this time. Please log in to review "
                         + "your details and resubmit.\n\n— NAVIX Finance");
@@ -50,7 +51,8 @@ public class NotificationTemplates {
         inApp(NotificationType.KYC_REMINDER, "Finish your verification",
                 "You still have pending verification steps: {pendingSteps}. Log in to complete them.");
         sms(NotificationType.KYC_REMINDER,
-                "NAVIX: Please complete your pending verification: {pendingSteps}. Log in to finish.");
+                "Your verification with NAVIX Finance is incomplete. Log in at "
+                        + "https://www.navixfinance.com/login to complete your pending steps. - NAVIX Finance");
         email(NotificationType.KYC_REMINDER, "Complete your NAVIX verification",
                 "Hi {name},\n\nA few verification steps are still pending on your application: "
                         + "{pendingSteps}.\n\nPlease log in to complete them so we can proceed.\n\n— NAVIX Finance");
@@ -58,7 +60,8 @@ public class NotificationTemplates {
         inApp(NotificationType.REBORROW_PREAPPROVED, "You're pre-approved",
                 "Welcome back! You're pre-approved — choose your amount to continue.");
         sms(NotificationType.REBORROW_PREAPPROVED,
-                "NAVIX: Welcome back! You're pre-approved. Log in to choose your amount.");
+                "Welcome back to NAVIX Finance. You can apply for another loan now. Log in at "
+                        + "https://www.navixfinance.com/login to choose your amount. - NAVIX Finance");
 
         inApp(NotificationType.REBORROW_REVIEW_PENDING, "Reborrow under review",
                 "Reborrow application #{applicationId} needs review.");
@@ -66,12 +69,14 @@ public class NotificationTemplates {
         inApp(NotificationType.REBORROW_REVIEW_APPROVED, "Reborrow approved",
                 "Your repeat application is approved — choose your amount.");
         sms(NotificationType.REBORROW_REVIEW_APPROVED,
-                "NAVIX: Your repeat application is approved. Log in to choose your amount.");
+                "Your loan application with NAVIX Finance is approved. Log in at "
+                        + "https://www.navixfinance.com/login to choose your amount. - NAVIX Finance");
 
         inApp(NotificationType.REBORROW_REVIEW_REJECTED, "Reborrow declined",
                 "We're unable to approve your repeat application at this time.");
         sms(NotificationType.REBORROW_REVIEW_REJECTED,
-                "NAVIX: We're unable to approve your repeat application at this time.");
+                "NAVIX Finance is unable to approve your loan application at this time. Visit "
+                        + "https://www.navixfinance.com/login for details. - NAVIX Finance");
 
         // ---------------- CREDIT ----------------
         inApp(NotificationType.LOAN_APPLIED, "New application to review",
@@ -92,7 +97,8 @@ public class NotificationTemplates {
         inApp(NotificationType.CREDIT_REJECTED, "Application declined",
                 "Application #{applicationId} was declined at credit review.");
         sms(NotificationType.CREDIT_REJECTED,
-                "NAVIX: We're unable to approve your loan application at this time.");
+                "NAVIX Finance is unable to approve your loan application at this time. Visit "
+                        + "https://www.navixfinance.com/login for details. - NAVIX Finance");
         email(NotificationType.CREDIT_REJECTED, "About your NAVIX loan application",
                 "Hi {name},\n\nAfter review, we're unable to approve your loan application "
                         + "#{applicationId} at this time.\n\n— NAVIX Finance");
@@ -116,7 +122,8 @@ public class NotificationTemplates {
         inApp(NotificationType.LOAN_DISBURSED, "Money on the way",
                 "Your loan is disbursed: {netDisbursed} credited. Repay {totalRepayable} by {dueDate}.");
         sms(NotificationType.LOAN_DISBURSED,
-                "NAVIX: {netDisbursed} has been disbursed to your account. Repay {totalRepayable} by {dueDate}.");
+                "NAVIX Finance has disbursed {netDisbursed} to your bank account. Repay {totalRepayable} "
+                        + "by {dueDate} at https://www.navixfinance.com/login. - NAVIX Finance");
         email(NotificationType.LOAN_DISBURSED, "Your NAVIX loan has been disbursed",
                 "Hi {name},\n\n{netDisbursed} has been disbursed to your bank account. Your total "
                         + "repayable is {totalRepayable}, due on {dueDate}. You can pay early to save on "
@@ -129,20 +136,22 @@ public class NotificationTemplates {
         inApp(NotificationType.REPAYMENT_VERIFIED, "Payment confirmed",
                 "Your payment of {amount} is confirmed. Outstanding: {outstanding}.");
         sms(NotificationType.REPAYMENT_VERIFIED,
-                "NAVIX: Your payment of {amount} is confirmed. Outstanding: {outstanding}.");
+                "Your payment of {amount} to NAVIX Finance is confirmed. Outstanding balance is "
+                        + "{outstanding}. View details at https://www.navixfinance.com/login. - NAVIX Finance");
 
         inApp(NotificationType.REPAYMENT_REJECTED, "Payment not verified",
                 "Your payment of {amount} for loan #{loanId} couldn't be verified. Please check the "
                         + "reference and record it again.");
         sms(NotificationType.REPAYMENT_REJECTED,
-                "NAVIX: Your payment of {amount} couldn't be verified. Please check the reference and try again.");
+                "Your payment of {amount} could not be verified by NAVIX Finance. Log in at "
+                        + "https://www.navixfinance.com/login to check the reference and record it again. - NAVIX Finance");
 
         inApp(NotificationType.PAYMENT_DUE_SOON, "Payment due soon",
                 "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on your salary "
                         + "day or the day after — no penalty. Prepay anytime to save on interest.");
         sms(NotificationType.PAYMENT_DUE_SOON,
-                "NAVIX: {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on/after your salary day — "
-                        + "no penalty. Prepay anytime to save interest.");
+                "Your NAVIX Finance payment of {amount} is due in {daysToDue} day(s) by {dueDate}. Pay at "
+                        + "https://www.navixfinance.com/login on or after your salary day with no penalty. - NAVIX Finance");
         email(NotificationType.PAYMENT_DUE_SOON, "Your NAVIX payment is due soon",
                 "Hi {name},\n\nYour payment of {amount} is due in {daysToDue} day(s), by {dueDate}. You can "
                         + "pay on your salary day or the day after with no penalty — or prepay anytime to save "
@@ -152,8 +161,8 @@ public class NotificationTemplates {
                 "Your payment of {amount} is overdue by {daysOverdue} day(s). Please pay now — a late "
                         + "penalty of 2%/day is accruing and your credit score may be impacted.");
         sms(NotificationType.PAYMENT_OVERDUE,
-                "NAVIX: {amount} is overdue by {daysOverdue} day(s). Pay now to stop the 2%/day penalty and "
-                        + "protect your credit score.");
+                "Your NAVIX Finance payment of {amount} is overdue by {daysOverdue} day(s). Pay now at "
+                        + "https://www.navixfinance.com/login to stop the daily penalty and protect your credit score. - NAVIX Finance");
         email(NotificationType.PAYMENT_OVERDUE, "Your NAVIX payment is overdue",
                 "Hi {name},\n\nYour payment of {amount} is overdue by {daysOverdue} day(s). Please pay as "
                         + "soon as possible — a late penalty of 2% per day is accruing and continued "
@@ -162,7 +171,8 @@ public class NotificationTemplates {
         inApp(NotificationType.LOAN_CLOSED, "Loan closed",
                 "Your loan is fully repaid and closed. Thank you!");
         sms(NotificationType.LOAN_CLOSED,
-                "NAVIX: Your loan is fully repaid and closed. Thank you!");
+                "Your loan with NAVIX Finance is fully repaid and closed. Thank you. Visit "
+                        + "https://www.navixfinance.com/login to borrow again. - NAVIX Finance");
         email(NotificationType.LOAN_CLOSED, "Your NAVIX loan is closed",
                 "Hi {name},\n\nYour loan is fully repaid and now closed. Thank you for choosing NAVIX.\n\n"
                         + "— NAVIX Finance");
@@ -177,7 +187,8 @@ public class NotificationTemplates {
         inApp(NotificationType.SETTLEMENT_APPROVED, "Settlement approved",
                 "A full & final settlement of {settlementAmount} is approved on your loan. Pay it to close.");
         sms(NotificationType.SETTLEMENT_APPROVED,
-                "NAVIX: A full & final settlement of {settlementAmount} is approved on your loan. Pay it to close.");
+                "A full and final settlement of {settlementAmount} is approved on your NAVIX Finance loan. "
+                        + "Pay at https://www.navixfinance.com/login to close the loan. - NAVIX Finance");
 
         inApp(NotificationType.SETTLEMENT_REJECTED, "Settlement rejected",
                 "Your proposed settlement of {settlementAmount} on loan #{loanId} was not approved.");
@@ -193,7 +204,8 @@ public class NotificationTemplates {
         inApp(NotificationType.REFERRAL_REWARD_CREDITED, "Referral reward credited",
                 "Your referral reward of {amount} has been credited (ref {txnRef}). Thanks for spreading the word!");
         sms(NotificationType.REFERRAL_REWARD_CREDITED,
-                "NAVIX: Your referral reward of {amount} has been credited (ref {txnRef}). Thank you!");
+                "Your NAVIX Finance referral reward of {amount} is credited with reference {txnRef}. Log in "
+                        + "at https://www.navixfinance.com/login to view it. - NAVIX Finance");
 
         // ---------------- STAFF / IAM ----------------
         email(NotificationType.STAFF_INVITED, "You're invited to NAVIX",

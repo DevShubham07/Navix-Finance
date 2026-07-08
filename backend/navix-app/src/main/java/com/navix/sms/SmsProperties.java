@@ -1,5 +1,6 @@
 package com.navix.sms;
 
+import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -20,7 +21,13 @@ public record SmsProperties(
         String channel,
         String route,
         String peid,
+        /** Fallback / OTP DLT Template ID, used when {@link #dltTemplateIds} has no entry for a type. */
         String dltTemplateId,
+        /** Per-{@code NotificationType} DLT Template IDs, keyed by the enum name (e.g.
+         *  {@code LOAN_DISBURSED}). Lifecycle SMS resolve their id here first, then fall back to
+         *  {@link #dltTemplateId}. {@code CREDIT_REJECTED} and {@code REBORROW_REVIEW_REJECTED} share
+         *  the single approved {@code NAVIX_APPLICATION_DECLINED} id. May be null/empty (all fall back). */
+        Map<String, String> dltTemplateIds,
         /** DLT-registered OTP message; {@code {otp}} → the code, {@code {ttl}} → minutes. Must
          *  match a template registered for the sender, or the gateway returns "Invalid template text". */
         String otpTemplate,

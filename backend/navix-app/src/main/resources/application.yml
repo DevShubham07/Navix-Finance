@@ -95,10 +95,30 @@ navix:
     channel: ${NAVIX_SMS_CHANNEL:Trans}
     route: ${NAVIX_SMS_ROUTE:}
     peid: ${NAVIX_SMS_PEID:}
+    # Fallback / OTP DLT Template ID (used when no per-type id below is set for a notification).
     dlt-template-id: ${NAVIX_SMS_DLT_TEMPLATE_ID:}
+    # Per-NotificationType DLT Template IDs (keyed by the enum name). Fill each with the id STPL
+    # returns on approval (see docs/sms-dlt/SMSGuide.md §6). Blank → falls back to dlt-template-id.
+    # NOTE: CREDIT_REJECTED and REBORROW_REVIEW_REJECTED share the one NAVIX_APPLICATION_DECLINED id.
+    dlt-template-ids:
+      KYC_APPROVED: ${NAVIX_SMS_DLT_KYC_APPROVED:}
+      KYC_REJECTED: ${NAVIX_SMS_DLT_KYC_REJECTED:}
+      KYC_REMINDER: ${NAVIX_SMS_DLT_KYC_REMINDER:}
+      LOAN_DISBURSED: ${NAVIX_SMS_DLT_LOAN_DISBURSED:}
+      REPAYMENT_VERIFIED: ${NAVIX_SMS_DLT_REPAYMENT_VERIFIED:}
+      REPAYMENT_REJECTED: ${NAVIX_SMS_DLT_REPAYMENT_REJECTED:}
+      PAYMENT_DUE_SOON: ${NAVIX_SMS_DLT_PAYMENT_DUE_SOON:}
+      PAYMENT_OVERDUE: ${NAVIX_SMS_DLT_PAYMENT_OVERDUE:}
+      LOAN_CLOSED: ${NAVIX_SMS_DLT_LOAN_CLOSED:}
+      CREDIT_REJECTED: ${NAVIX_SMS_DLT_APPLICATION_DECLINED:}
+      REBORROW_REVIEW_REJECTED: ${NAVIX_SMS_DLT_APPLICATION_DECLINED:}
+      SETTLEMENT_APPROVED: ${NAVIX_SMS_DLT_SETTLEMENT_APPROVED:}
+      REBORROW_REVIEW_APPROVED: ${NAVIX_SMS_DLT_REBORROW_APPROVED:}
+      REBORROW_PREAPPROVED: ${NAVIX_SMS_DLT_REBORROW_PREAPPROVED:}
+      REFERRAL_REWARD_CREDITED: ${NAVIX_SMS_DLT_REFERRAL_REWARD_CREDITED:}
     # DLT-registered OTP message ({otp} = code, {ttl} = minutes). MUST match a template
     # registered for the sender or the gateway returns "Invalid template text".
-    otp-template: ${NAVIX_SMS_OTP_TEMPLATE:Your NAVIX verification code is {otp}. Valid for {ttl} minutes. Do not share it.}
+    otp-template: ${NAVIX_SMS_OTP_TEMPLATE:Your OTP for NAVIX Finance login is {otp}. It is valid for {ttl} minutes. Do not share this OTP with anyone. - NAVIX Finance}
     enabled: ${NAVIX_SMS_ENABLED:true}
     # DEV ONLY — returns the OTP in the request response when SMS can't reach a handset. MUST be false in prod.
     dev-echo: ${NAVIX_SMS_DEV_ECHO:false}

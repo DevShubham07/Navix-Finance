@@ -37,7 +37,7 @@ public class SmsSender implements ChannelSender {
             return DeliveryOutcome.skipped("NO_MOBILE");
         }
         try {
-            String ref = gateway.send("91" + mobile, message.body());
+            String ref = gateway.send("91" + mobile, message.body(), message.smsTemplateKey());
             return DeliveryOutcome.sent(ref);
         } catch (RuntimeException e) {
             log.warn("SMS notification failed to {}: {}", Masking.maskPhone(mobile), e.getMessage());

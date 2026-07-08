@@ -43,6 +43,7 @@ class BorrowerOtpServiceTest {
                 "route",                           // route
                 "peid",                            // peid
                 "dltTemplateId",                   // dltTemplateId
+                java.util.Map.of(),                // dltTemplateIds
                 "Your NAVIX code is {otp}. Valid {ttl} min.", // otpTemplate
                 true,                              // enabled
                 devEcho,                           // devEcho

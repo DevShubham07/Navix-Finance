@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 class EmailSenderTest {
 
     private static final RenderedMessage MSG =
-            new RenderedMessage(NotificationChannel.EMAIL, "Subject", "Body");
+            new RenderedMessage(NotificationChannel.EMAIL, "Subject", "Body", null);
     private static final EmailHtmlRenderer RENDERER = new EmailHtmlRenderer();
 
     private final EmailSuppressionService allowAll = noSuppression();
