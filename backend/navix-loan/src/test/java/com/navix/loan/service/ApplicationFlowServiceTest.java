@@ -246,7 +246,10 @@ class ApplicationFlowServiceTest {
         LoanApplication result = flow.reborrow();
 
         assertThat(result.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
-        assertThat(result.getEligibleLimit()).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE); // flat instant cap
+        // 25%-of-salary model: priorProfile() salary is 6_000_000 paise (₹60,000).
+        // 6_000_000 * 0.25 = 1_500_000, already a ₹100 (10_000-paise) multiple, well under the
+        // ₹10,00,000 (100_000_000-paise) instant cap -> eligible limit = 1_500_000.
+        assertThat(result.getEligibleLimit()).isEqualTo(1_500_000L);
         assertThat(result.getSalaryCreditDay()).isEqualTo(30);
     }
 

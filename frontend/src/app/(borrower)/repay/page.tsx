@@ -122,6 +122,11 @@ export default function RepayPage() {
     );
   }
 
+  // If the resolved loan is CLOSED we show the "fully repaid" card below. We deliberately do NOT
+  // re-scan /mine for a newer ACTIVE/OVERDUE reborrow here: `useLiveApplication` branch (b) already
+  // reconciles the shared ["my-apps"] pointer forward to the newest relevant application (now that it
+  // no longer skips already-ACTIVE apps), which re-resolves `app` → `loanId` → the live loan. So this
+  // card only renders when the borrower genuinely has nothing newer in flight — no duplicate logic here.
   const settled = loan.status === "CLOSED" || loan.outstandingPaise <= 0;
   if (settled) {
     return (
@@ -165,6 +170,9 @@ export default function RepayPage() {
   const customPaise = rupeesToPaise(Number(custom.replace(/\D/g, "")) || 0);
   const amountPaise = mode === "full" ? dueToday : Math.min(customPaise, dueToday);
   const canPay = amountPaise > 0 && txnRef.trim().length >= 4 && !record.isPending;
+  // Pay is disabled SOLELY because the txn reference is missing/too short (amount is valid, not mid-record)
+  // — surface a hint under the button so the disabled state is never unexplained.
+  const needsTxnRef = amountPaise > 0 && !record.isPending && txnRef.trim().length < 4;
 
   const pay = () => {
     if (!canPay) return;
@@ -393,6 +401,11 @@ export default function RepayPage() {
           <button onClick={pay} disabled={!canPay} className="btn btn-gold btn-block mt-2">
             <Wallet size={16} /> {record.isPending ? "Recording…" : `Pay ${paiseToINR(amountPaise)}`}
           </button>
+          {needsTxnRef && (
+            <p className="mt-2 text-center text-xs text-gold-dark">
+              Paste your UPI/UTR reference (min 4 characters) to enable payment
+            </p>
+          )}
           <p className="mt-3 text-center text-xs text-muted">
             Payments are confirmed manually by our accounts team — your balance updates once verified.
           </p>

@@ -150,7 +150,7 @@ export default function CreditReviewPage() {
           }}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
-          <RefreshCw size={13} /> Refresh
+          {q.isFetching || eventsQ.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
@@ -252,9 +252,11 @@ export default function CreditReviewPage() {
               applicationId={app.id}
               app={app}
               stage={openStage}
+              stages={journey?.stages ?? []}
               allEvents={events}
               open
               onClose={() => setOpenStage(null)}
+              onNavigate={setOpenStage}
             />
           )}
         </div>

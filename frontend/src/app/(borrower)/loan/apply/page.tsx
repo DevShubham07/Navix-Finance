@@ -6,13 +6,13 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ArrowLeft, Loader2, AlertTriangle, CalendarCheck } from "lucide-react";
 import { AmountChooser } from "@/components/borrower/amount-chooser";
-import { SalaryCalendar } from "@/components/borrower/salary-calendar";
 import { ActiveLoanNotice } from "@/components/borrower/active-loan-notice";
 import { useLiveApplication, applyForAmount, canChooseAmount } from "@/lib/api/live-journey";
 import { borrowerApi, rupeesToPaise } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { useOnboardingStore } from "@/stores/application-store";
-import { eligibleLimit } from "@/lib/calc/loan-math";
+import { eligibleLimit, dueDateFromSalary } from "@/lib/calc/loan-math";
+import { formatDate } from "@/lib/utils";
 
 /** 1 → "1st", 2 → "2nd", 3 → "3rd", 21 → "21st" … for the salary day-of-month label. */
 function ordinal(n: number): string {
@@ -46,10 +46,14 @@ export default function LoanApplyPage() {
   const appLimitRupees =
     app?.eligibleLimitPaise != null ? Math.round(app.eligibleLimitPaise / 100) : null;
   const limit = appLimitRupees != null ? appLimitRupees : eligibleLimit(salaryRupees);
-  // Salary credit day — seeded from the onboarding draft, then driven live by the
-  // SalaryCalendar so the borrower confirms exactly which salary day repays the advance.
+  // Salary credit day — seeded from the onboarding draft; the borrower confirms exactly which salary
+  // day repays the advance via the "Your salary date" field below.
   const [salaryDay, setSalaryDay] = React.useState(draft.salaryDay || 1);
-  const handlePickDay = React.useCallback((d: Date) => setSalaryDay(d.getDate()), []);
+  // The salary-linked due date previewed under the field — computed with the exact backend rule.
+  const dueDate = React.useMemo(
+    () => dueDateFromSalary({ disbursedOn: new Date(), salaryDay }),
+    [salaryDay],
+  );
   // A returning borrower (PRE_APPROVED reborrow) keeps the salary day they set on their first loan — we
   // don't ask again. Adopt it from the application once it loads; fresh borrowers pick it on the
   // calendar below.
@@ -144,7 +148,32 @@ export default function LoanApplyPage() {
               </div>
             </div>
           ) : (
-            <SalaryCalendar value={salaryDay} onPick={handlePickDay} />
+            <div className="rounded border border-line bg-white p-6 shadow-sm">
+              <div className="cal-sublabel mb-3">Step 1 · Your salary date</div>
+              <div className="field mb-0 max-w-xs">
+                <label htmlFor="salary-day">Which day of the month is your salary credited?</label>
+                <select
+                  id="salary-day"
+                  value={salaryDay}
+                  onChange={(e) => setSalaryDay(Number(e.target.value))}
+                  aria-label="Salary credit day of the month"
+                >
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                    <option key={d} value={d}>
+                      {ordinal(d)} of the month
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-1 flex items-start gap-2 text-sm text-muted">
+                <CalendarCheck size={16} className="mt-0.5 flex-shrink-0 text-navy" />
+                <span>
+                  Your advance will be due on{" "}
+                  <strong className="text-ink">{formatDate(dueDate)}</strong> — your next salary
+                  within 40 days, repaid in one instalment.
+                </span>
+              </p>
+            </div>
           )}
           <div>
             <h2 className="mb-1 text-xl">{isReborrow ? "Choose your amount" : "Step 2 · Choose your amount"}</h2>

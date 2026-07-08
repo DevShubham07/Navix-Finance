@@ -619,6 +619,9 @@ export interface VerificationOverviewRow {
   provider: string | null;
   message: string | null;
   updatedAt: string | null;
+  /** The owning application's lifecycle status (e.g. "KYC_PENDING") — lets staff surfaces scope
+   *  verification rows to applications that still need a KYC decision. */
+  applicationStatus: ApplicationStatus | null;
 }
 
 /** Pending-API dashboard payload (Phase 3.3) — status tallies + rows. */

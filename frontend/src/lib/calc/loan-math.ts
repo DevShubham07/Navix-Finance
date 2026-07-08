@@ -67,9 +67,12 @@ export function latePenalty(amount: number, daysLate: number): number {
   return inr(amount * LATE_PENALTY_RATE * cappedDays);
 }
 
-/** Eligible loan limit — a flat ₹10,00,000 instant cap (salary drives the due date, not the amount). */
-export function eligibleLimit(_monthlySalary: number): number {
-  return MAX_INSTANT_LOAN_AMOUNT;
+/**
+ * Eligible loan limit — 25% of monthly salary, floored to the nearest ₹100 and capped at the
+ * ₹10,00,000 instant ceiling. Mirrors the backend `LoanMath.eligibleLimitPaise`.
+ */
+export function eligibleLimit(monthlySalary: number): number {
+  return Math.min(Math.floor((monthlySalary * 0.25) / 100) * 100, MAX_INSTANT_LOAN_AMOUNT);
 }
 
 /** Map days-past-due to a {@link DpdBucket}. */
@@ -90,50 +93,71 @@ export function daysBetween(a: Date, b: Date): number {
   return Math.round((db - da) / ms);
 }
 
-/** Salary-due-date window working values (spec: exact rule TBD). */
-export const SALARY_DUE_MIN_CYCLE_DAYS = 15;
-export const SALARY_DUE_MAX_WINDOW_DAYS = 40;
+/** Maximum loan term: the due date must fall within this many days of disbursement. */
+const SALARY_DUE_MAX_WINDOW_DAYS = 40;
 
-/** Clamp a day-of-month to a valid date within the given month. */
+/** Clamp a day-of-month to a valid date within the given month (midnight, local). */
 function salaryDateInMonth(year: number, monthIndex: number, salaryDay: number): Date {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
-  return new Date(year, monthIndex, Math.min(salaryDay, lastDay));
+  return new Date(year, monthIndex, Math.min(Math.max(1, salaryDay), lastDay));
 }
 
 /**
- * Derive the single-repayment due date from the borrower's salary credit.
- * Repayment lands on the salary day — the next salary credit that gives a
- * reasonable cycle (>= ~15 days) while staying within the ~40-day window.
+ * Single-repayment due date — an exact port of the backend `LoanMath.dueDateFromSalary`:
+ * the LATEST salary-credit date that is strictly after disbursement and falls within
+ * {@link SALARY_DUE_MAX_WINDOW_DAYS} (40) days of it (maximising tenure up to 40 days).
  *
- * Examples (salary on 30th): disbursed 3 Jun → due 30 Jun (~27d);
- * disbursed 25 Jun → 30 Jun is only ~5d out, so roll to 30 Jul (~35d).
+ * The salary day is clamped to each month's length (e.g. day 31 → 30 Apr, 28/29 Feb). Within any
+ * 40-day window there is always at least one monthly salary date.
+ *
+ * Examples (salary on 30th): disbursed 3 Jun → due 30 Jun (30 Jul is > 40 days out);
+ * disbursed 25 Jun → 30 Jun and 30 Jul both ≤ 40 days → the later, 30 Jul.
  */
 export function dueDateFromSalary(params: {
   disbursedOn: Date;
-  /** Day-of-month the salary is typically credited. */
+  /** Day-of-month the salary is typically credited (1–31). */
   salaryDay: number;
-  /** Recent salary credit dates observed (bank statement). */
+  /** Reserved for future use (recent salary credit dates observed on the bank statement). */
   recentSalaryDates?: Date[];
 }): Date {
   const { disbursedOn, salaryDay } = params;
-  let candidate = salaryDateInMonth(
+  // Compare on a date-only basis (midnight, local) to mirror the backend's LocalDate semantics.
+  const disb = new Date(
     disbursedOn.getFullYear(),
     disbursedOn.getMonth(),
-    salaryDay,
+    disbursedOn.getDate(),
   );
+  const windowEnd = new Date(disb);
+  windowEnd.setDate(windowEnd.getDate() + SALARY_DUE_MAX_WINDOW_DAYS);
 
-  // Roll forward until the candidate is strictly after disbursement and gives
-  // at least a minimum cycle, without exceeding the max window.
-  for (let i = 0; i < 3; i += 1) {
-    const gap = daysBetween(disbursedOn, candidate);
-    if (gap >= SALARY_DUE_MIN_CYCLE_DAYS) break;
-    const next = new Date(candidate);
-    next.setMonth(next.getMonth() + 1);
-    const rolled = salaryDateInMonth(next.getFullYear(), next.getMonth(), salaryDay);
-    if (daysBetween(disbursedOn, rolled) > SALARY_DUE_MAX_WINDOW_DAYS) break;
-    candidate = rolled;
+  let best: Date | null = null;
+  // Walk salary dates from the disbursement month through the window-end month.
+  let year = disb.getFullYear();
+  let monthIndex = disb.getMonth();
+  while (
+    year < windowEnd.getFullYear() ||
+    (year === windowEnd.getFullYear() && monthIndex <= windowEnd.getMonth())
+  ) {
+    const salaryDate = salaryDateInMonth(year, monthIndex, salaryDay);
+    if (salaryDate > disb && salaryDate <= windowEnd) {
+      if (best === null || salaryDate > best) best = salaryDate;
+    }
+    monthIndex += 1;
+    if (monthIndex > 11) {
+      monthIndex = 0;
+      year += 1;
+    }
   }
-  return candidate;
+  // Fallback (should not happen for a monthly salary, but keep it total): the first salary strictly
+  // after disbursement, even if it exceeds the window.
+  if (best === null) {
+    const salaryThisMonth = salaryDateInMonth(disb.getFullYear(), disb.getMonth(), salaryDay);
+    best =
+      salaryThisMonth > disb
+        ? salaryThisMonth
+        : salaryDateInMonth(disb.getFullYear(), disb.getMonth() + 1, salaryDay);
+  }
+  return best;
 }
 
 /**

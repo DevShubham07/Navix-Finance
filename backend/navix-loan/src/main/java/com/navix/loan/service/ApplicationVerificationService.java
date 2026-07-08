@@ -106,7 +106,8 @@ public class ApplicationVerificationService {
     /** One row in the cross-application pending-API dashboard (Phase 3.3). */
     public record VerificationOverviewRow(Long applicationId, Long customerId, String borrowerName,
                                           String checkType, String status, String provider,
-                                          String message, Instant updatedAt) {
+                                          String message, Instant updatedAt,
+                                          String applicationStatus) {
     }
 
     /** Pending-API dashboard payload: status tallies + the (filtered) rows (Phase 3.3). */
@@ -831,7 +832,8 @@ public class ApplicationVerificationService {
                     return new VerificationOverviewRow(v.getApplicationId(),
                             a != null ? a.getCustomerId() : null,
                             p != null ? p.getFullName() : null,
-                            v.getCheckType(), v.getStatus(), v.getProvider(), v.getMessage(), ts);
+                            v.getCheckType(), v.getStatus(), v.getProvider(), v.getMessage(), ts,
+                            a != null && a.getStatus() != null ? a.getStatus().name() : null);
                 })
                 .filter(r -> needle.isEmpty() || overviewMatches(r, needle))
                 .sorted(java.util.Comparator.comparing(VerificationOverviewRow::updatedAt,

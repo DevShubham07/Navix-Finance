@@ -70,8 +70,11 @@ class RiskScoringServiceTest {
         RiskAssessment ra = service.assess(p, 800); // strong → category A
 
         assertThat(ra.getCategory()).isEqualTo(RiskCategory.A);
-        // Instant-loan model: the granted limit is the flat ₹10,00,000 cap, not salary/category-scaled.
-        assertThat(ra.getLimitGranted()).isEqualTo(LimitCalculator.MAX_INSTANT_LOAN_PAISE);
+        // 25%-of-salary model: limit = floor(salary * 0.25) to a ₹100 multiple, capped at the
+        // ₹10,00,000 instant ceiling; category A applies a 1.0x factor (no reduction).
+        // floor(4_000_000 * 0.25) = 1_000_000 -> floor to ₹100 multiple = 1_000_000 (already aligned)
+        // -> min(1_000_000, MAX_INSTANT_LOAN_PAISE) = 1_000_000; category A factor 1.0 keeps it at 1_000_000.
+        assertThat(ra.getLimitGranted()).isEqualTo(1_000_000L);
         assertThat(ra.getScore()).isGreaterThanOrEqualTo(75);
         assertThat(ra.getCustomerId()).isEqualTo(7L);
     }

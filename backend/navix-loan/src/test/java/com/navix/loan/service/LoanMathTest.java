@@ -90,14 +90,33 @@ class LoanMathTest {
     }
 
     @Nested
-    @DisplayName("Eligible limit (flat ₹10,00,000 instant cap)")
+    @DisplayName("Eligible limit (25% of salary, ₹100-floored, ₹10,00,000 ceiling)")
     class EligibleLimit {
 
         @Test
-        void flatCapRegardlessOfSalary() {
-            assertThat(math.eligibleLimitPaise(4_000_000L)).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE);
-            assertThat(math.eligibleLimitPaise(5_000_000L)).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE);
-            assertThat(math.eligibleLimitPaise(50_000_000L)).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE);
+        @DisplayName("₹50,000 salary → 25% = ₹12,500 limit")
+        void quarterOfSalary() {
+            assertThat(math.eligibleLimitPaise(5_000_000L)).isEqualTo(1_250_000L);
+        }
+
+        @Test
+        @DisplayName("₹41,234 salary → 25% floored to nearest ₹100 = ₹10,300")
+        void flooredToHundredRupees() {
+            // 4_123_400 × 0.25 = 1_030_850 → floored to a ₹100 (10_000-paise) multiple = 1_030_000
+            assertThat(math.eligibleLimitPaise(4_123_400L)).isEqualTo(1_030_000L);
+        }
+
+        @Test
+        @DisplayName("very high salary → capped at the ₹10,00,000 instant ceiling")
+        void cappedAtInstantCeiling() {
+            // ₹42,00,000 salary → 25% = ₹10,50,000 > ceiling → ₹10,00,000
+            assertThat(math.eligibleLimitPaise(420_000_000L)).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE);
+        }
+
+        @Test
+        @DisplayName("zero salary → zero limit")
+        void zeroSalary() {
+            assertThat(math.eligibleLimitPaise(0L)).isZero();
         }
     }
 

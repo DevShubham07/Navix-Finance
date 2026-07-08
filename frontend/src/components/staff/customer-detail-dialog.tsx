@@ -62,8 +62,11 @@ export function CustomerDetailDialog({
     { key: "more", label: "More options" },
   ];
 
+  // !max-w-4xl / !w-[...]: globals.css's un-layered `.modal { max-width: 460px }` outranks
+  // plain utilities in the cascade, so the width needs the important modifier (mirrors
+  // stage-detail-dialog.tsx:178).
   return (
-    <Dialog open={open} onClose={onClose} className="max-w-4xl w-[min(56rem,94vw)]">
+    <Dialog open={open} onClose={onClose} className="!max-w-4xl !w-[min(56rem,94vw)]">
       <div className="flex items-center justify-between gap-3 border-b border-line pb-3">
         <div>
           <h3 className="font-serif text-lg text-navy">
@@ -130,21 +133,40 @@ function BasicTab({ c }: { c: CustomerDetail }) {
         <KV k="Address" v={p?.address} />
         <KV k="Employer" v={p?.employer} />
         <KV k="Employment" v={p?.employmentStatus} />
-        <KV k="Monthly salary" v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null} />
         <KV k="Salary bank" v={p?.salaryBank} />
       </Section>
 
       <Section title="Verification & credit">
+        {/* verification block */}
         <KV k="PAN verified" v={<Bool on={p?.panVerified} />} />
         <KV k="Aadhaar (DigiLocker)" v={<Bool on={p?.aadhaarVerified} />} />
+        <KV k="Aadhaar linked" v={<Bool on={p?.aadhaarLinked} />} />
         <KV k="Email verified" v={<Bool on={p?.emailVerified} />} />
         <KV k="Address verified" v={<Bool on={p?.addressVerified} />} />
         <KV k="Penny drop" v={<Bool on={p?.pennyDropVerified} />} />
+        <KV k="Identity match" v={p?.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null} />
+        {/* credit block */}
         <KV k="CIBIL score" v={p?.creditScore != null ? String(p.creditScore) : null} mono />
         <KV k="Star rating" v={p?.starRating != null ? `${p.starRating.toFixed(1)}★` : null} />
         <KV k="Recommendation" v={p?.recommendation} />
         <KV k="Risk category" v={p?.riskCategory} />
         <KV k="Bureau" v={p?.bureauSource} />
+        <KV k="Credit brief summary" v={p?.creditBriefSummary} />
+        <KV k="Credit brief generated" v={p?.creditBriefGeneratedAt ? formatDateTime(p.creditBriefGeneratedAt) : null} />
+      </Section>
+
+      <Section title="Salary & eligibility">
+        <KV k="Monthly salary" v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null} />
+        <KV k="Annual salary" v={p?.annualSalaryPaise != null ? paiseToINR(p.annualSalaryPaise) : null} />
+        <KV k="Salary %" v={p?.salaryPercentage != null ? `${p.salaryPercentage}%` : null} />
+        <KV k="Increment %" v={p?.incrementPercentage != null ? `${p.incrementPercentage}%` : null} />
+        <KV k="Eligible limit" v={latestApp?.eligibleLimitPaise != null ? paiseToINR(latestApp.eligibleLimitPaise) : null} />
+      </Section>
+
+      <Section title="Emergency contact">
+        <KV k="Name" v={p?.emergencyContactName} />
+        <KV k="Phone" v={p?.emergencyContactPhone} mono />
+        <KV k="Relation" v={p?.emergencyContactRelation} />
       </Section>
 
       <div className="md:col-span-2">
@@ -568,8 +590,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function KV({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1">
-      <dt className="text-muted">{k}</dt>
-      <dd className={mono ? "text-right font-mono text-ink" : "text-right text-ink"}>{v || "—"}</dd>
+      <dt className="flex-shrink-0 text-muted">{k}</dt>
+      <dd className={mono ? "min-w-0 flex-1 break-all text-right font-mono text-ink" : "min-w-0 flex-1 break-all text-right text-ink"}>
+        {v || "—"}
+      </dd>
     </div>
   );
 }
