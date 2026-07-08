@@ -149,9 +149,11 @@ export function ApplicationJourney({ applicationId, open, onClose }: Application
           applicationId={applicationId}
           app={app}
           stage={openStage}
+          stages={journey?.stages ?? []}
           allEvents={events}
           open
           onClose={() => setOpenStage(null)}
+          onNavigate={setOpenStage}
         />
       )}
     </>

@@ -15,6 +15,15 @@
  * never polls. Money is integer paise (via `paiseToINR`); dates via the shared
  * formatters. This surface renders staff-only credit detail and must never be
  * imported from the borrower route tree.
+ *
+ * The footer's prev/next buttons swap `stage` via the caller's `onNavigate`
+ * (both callers wire it to their `setOpenStage` state setter) — the dialog
+ * stays mounted and open across the swap, it doesn't close/reopen. Both footer
+ * slots always render a `<button>` (disabled at a boundary / when `onNavigate`
+ * is absent, never swapped for a `<span>`), and a same-keyed effect refocuses
+ * the trap container if a boundary-triggered `disabled` still drops browser
+ * focus to `document.body` — otherwise {@link useFocusTrap}'s own effect (keyed
+ * only on `open`) never re-engages and Tab could walk focus out of the dialog.
  */
 
 import * as React from "react";
@@ -54,12 +63,11 @@ import {
 } from "@/lib/api/applications";
 import {
   STAGE_ORDER,
-  STAGE_LABELS,
   type JourneyStage,
   type JourneyStageKey,
   type JourneyStageState,
 } from "@/lib/domain/journey";
-import { formatDate } from "@/lib/utils";
+import { formatDate, humanizeCheck } from "@/lib/utils";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -118,14 +126,6 @@ function OutcomePill({ state }: { state: JourneyStageState }) {
   );
 }
 
-function humanizeCheck(checkType: string): string {
-  return checkType
-    .toLowerCase()
-    .split(/[_\s]+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
 // ---------------------------------------------------------------------------
 // The popup
 // ---------------------------------------------------------------------------
@@ -134,24 +134,45 @@ export interface StageDetailDialogProps {
   applicationId: number;
   app: ApplicationView;
   stage: JourneyStage;
+  /** The full ordered stage list (same array the drawer/stepper derived) — powers
+   *  the footer's prev/next navigation. */
+  stages: JourneyStage[];
   /** The application's FULL event trail (stage.events is only this stage's bucket —
    *  cross-stage facts like the REBORROW origin live in other buckets). */
   allEvents: EventView[];
   open: boolean;
   onClose: () => void;
+  /** Swap the dialog to a neighboring stage without closing it (prev/next footer buttons). */
+  onNavigate?: (stage: JourneyStage) => void;
 }
 
 export function StageDetailDialog({
   applicationId,
   app,
   stage,
+  stages,
   allEvents,
   open,
   onClose,
+  onNavigate,
 }: StageDetailDialogProps) {
   // Focus moves into the dialog on open and restores to the trigger (the step
   // node) on close/unmount.
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+
+  // useFocusTrap's own effect is keyed only on `open`, so it never re-engages
+  // when `stage` changes via the footer's prev/next nav. The nav buttons keep a
+  // stable <button> element across that swap (never unmount to a <span>), but a
+  // *disabled* button that held focus still gets dropped to `document.body` by
+  // the browser — refocus the trap container in that case so Tab can't escape
+  // the still-open dialog.
+  React.useEffect(() => {
+    if (!open) return;
+    const node = trapRef.current;
+    if (node && !node.contains(document.activeElement)) {
+      node.focus();
+    }
+  }, [open, stage.key, trapRef]);
 
   // Capture-phase Escape: close only this popup and stop the event before the
   // Drawer's (and Dialog's own) document-level Escape listeners fire — so the
@@ -170,8 +191,12 @@ export function StageDetailDialog({
   }, [open, onClose]);
 
   const idx = STAGE_ORDER.indexOf(stage.key);
-  const prevLabel = idx > 0 ? STAGE_LABELS[STAGE_ORDER[idx - 1]] : null;
-  const nextLabel = idx < STAGE_ORDER.length - 1 ? STAGE_LABELS[STAGE_ORDER[idx + 1]] : null;
+  // Neighbors come from the passed-in `stages` array (not just STAGE_ORDER/STAGE_LABELS)
+  // so navigating carries the real derived state/events for that stage, not just its label.
+  // Bound checks use `stages.length` (not STAGE_ORDER.length) since `stages` is the array
+  // actually being indexed.
+  const prevStage = idx > 0 ? stages[idx - 1] : null;
+  const nextStage = idx < stages.length - 1 ? stages[idx + 1] : null;
   const reached = stage.state !== "upcoming";
   const titleId = `stage-detail-title-${applicationId}-${stage.key}`;
 
@@ -225,8 +250,29 @@ export function StageDetailDialog({
           )}
 
           <div className="flex items-center justify-between border-t border-line pt-3 text-xs text-muted">
-            <span>{prevLabel ? `← ${prevLabel}` : "Start of journey"}</span>
-            <span>{nextLabel ? `${nextLabel} →` : "End of journey"}</span>
+            {/* Always a <button> in both footer slots (never swapped for a <span>)
+                so the DOM node a boundary nav click may have focused never unmounts —
+                only its `disabled` state changes. See the refocus effect above for the
+                one case that still needs help (a disabled button drops browser focus
+                to document.body). */}
+            <button
+              type="button"
+              onClick={() => prevStage && onNavigate?.(prevStage)}
+              disabled={!prevStage || !onNavigate}
+              aria-label={prevStage ? `Go to previous step: ${prevStage.label}` : undefined}
+              className="rounded px-2 py-1 text-xs font-semibold text-navy hover:bg-navy-tint disabled:cursor-not-allowed disabled:text-muted disabled:hover:bg-transparent"
+            >
+              {prevStage ? `← ${prevStage.label}` : "Start of journey"}
+            </button>
+            <button
+              type="button"
+              onClick={() => nextStage && onNavigate?.(nextStage)}
+              disabled={!nextStage || !onNavigate}
+              aria-label={nextStage ? `Go to next step: ${nextStage.label}` : undefined}
+              className="rounded px-2 py-1 text-xs font-semibold text-navy hover:bg-navy-tint disabled:cursor-not-allowed disabled:text-muted disabled:hover:bg-transparent"
+            >
+              {nextStage ? `${nextStage.label} →` : "End of journey"}
+            </button>
           </div>
         </div>
       </div>
