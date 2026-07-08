@@ -50,7 +50,10 @@ public enum ApplicationStatus {
         // history) or REVIEW_PENDING (past delinquency) by ApplicationFlowService.reborrow.
         TRANSITIONS.put(DRAFT, EnumSet.of(KYC_PENDING, PRE_APPROVED, REVIEW_PENDING, CANCELLED));
         TRANSITIONS.put(KYC_PENDING, EnumSet.of(KYC_APPROVED, KYC_REJECTED));
-        TRANSITIONS.put(KYC_APPROVED, EnumSet.of(CREDIT_EXEC_PENDING, CANCELLED));
+        // A KYC-approved applied application normally enters the credit maker-checker (CREDIT_EXEC_PENDING).
+        // The KYC approver may also clear the credit gate directly in the instant-loan model — routing
+        // straight to DISBURSEMENT_PENDING (or REJECTED) — while disbursement stays with the Disb. Head.
+        TRANSITIONS.put(KYC_APPROVED, EnumSet.of(CREDIT_EXEC_PENDING, DISBURSEMENT_PENDING, REJECTED, CANCELLED));
         TRANSITIONS.put(KYC_REJECTED, EnumSet.noneOf(ApplicationStatus.class));
         // Reborrow review gate: a KYC approver clears the borrower (→ PRE_APPROVED) or rejects.
         TRANSITIONS.put(REVIEW_PENDING, EnumSet.of(PRE_APPROVED, REJECTED, CANCELLED));

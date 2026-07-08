@@ -16,7 +16,7 @@ export const html = `<section class="page active" id="about">
       <p>As a digital lending platform, we hold ourselves to high standards of transparency and responsible lending — clear terms, no hidden charges, and fairness built into every step.</p>
     </div>
     <div class="reveal d1"><div style="background:var(--grad-navy);border-radius:var(--r-xl);padding:44px;color:#fff;position:relative;overflow:hidden">
-      <div style="position:absolute;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(244,201,91,.22),transparent 70%);top:-90px;right:-70px"></div>
+      <div style="position:absolute;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(63,191,137,.22),transparent 70%);top:-90px;right:-70px"></div>
       <span class="eyebrow" style="color:var(--gold-400)">Our mission</span>
       <h3 style="color:#fff;font-size:1.7rem;margin:16px 0;position:relative;line-height:1.3">"To make small-ticket credit transparent, fast and humane for every working Indian."</h3>
       <p style="color:#cdd8e6;position:relative">No fine print. No advance fees. No pressure. Just clear terms and friendly support when you need a hand.</p>

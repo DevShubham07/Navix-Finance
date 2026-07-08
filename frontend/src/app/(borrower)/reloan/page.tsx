@@ -108,7 +108,7 @@ export default function ReloanPage() {
           <>
             <div className="text-sm text-muted">Available to borrow now</div>
             <div className="my-1 font-serif text-3xl font-bold text-navy sm:text-4xl">{paiseToINR(limitPaise)}</div>
-            <div className="mb-5 text-sm text-muted">Up to 25% of your monthly salary</div>
+            <div className="mb-5 text-sm text-muted">Instant loan up to ₹10,00,000</div>
           </>
         )}
         <button onClick={borrowAgain} disabled={busy} className="btn btn-gold">

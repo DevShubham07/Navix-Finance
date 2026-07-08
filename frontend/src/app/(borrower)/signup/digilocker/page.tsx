@@ -22,12 +22,12 @@ export default function SignupDigiLockerPage() {
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const polls = React.useRef(0);
   const MAX_RETRIES = 3;
-  // ~32 s at POLL_MS. The status resolves to PASS once the DigiLocker tab redirects to our
+  // ~3 min at POLL_MS. The status resolves to PASS once the DigiLocker tab redirects to our
   // callback and that tab fetches the Aadhaar. If consent isn't finished in that window, fall back
   // to advancing so the borrower is never stuck waiting — the unfinished Aadhaar drops to staff
   // manual review at submit-kyc (the callback tab still finalises independently if the user
   // completes consent later).
-  const POLL_LIMIT = 8;
+  const POLL_LIMIT = 45;
 
   React.useEffect(() => {
     if (mounted && appId == null) router.replace("/signup/mobile-otp");

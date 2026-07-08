@@ -13,7 +13,7 @@ export const html = `<section class="page active" id="grievance">
     </div>
     <h2>Grievance Officer</h2>
     <ul>
-      <li><b>Name:</b> Grievance Redressal Officer, NAVIX Technologies Pvt. Ltd.</li>
+      <li><b>Name:</b> Grievance Redressal Officer, NAVIX Finance Private Limited</li>
       <li><b>Email:</b> info@navixfinance.com</li>
       <li><b>Address:</b> Dev Nagar, Gurugram – 122102</li>
     </ul>
@@ -24,6 +24,5 @@ export const html = `<section class="page active" id="grievance">
       <li>Keep you informed at every step.</li>
     </ul>
     <div style="text-align:center;margin-top:32px"><a href="/contact" class="btn btn-gold btn-lg" data-link="">Raise a concern</a></div>
-    <div class="callout" style="border-left-color:var(--navy-600);margin-top:32px"><b>Note:</b> Prototype content for demonstration. Final escalation matrix and officer details must follow current RBI requirements.</div>
   </div></div></div>
 </section>`;

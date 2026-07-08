@@ -1,16 +1,21 @@
 package com.navix.loan.controller;
 
 import com.navix.common.web.ApiResponse;
+import com.navix.loan.dto.CustomerDtos.ActivityEntry;
+import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
+import com.navix.loan.dto.CustomerDtos.RemarkView;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.service.CustomerService;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -54,5 +59,23 @@ public class CustomerController {
     @GetMapping("/{customerId}/changes")
     public ApiResponse<List<ProfileChangeView>> changes(@PathVariable Long customerId) {
         return ApiResponse.ok(customerService.changeHistory(customerId));
+    }
+
+    /** Unified activity timeline: lifecycle + re-verify + profile edits + remarks (newest first). */
+    @GetMapping("/{customerId}/activity")
+    public ApiResponse<List<ActivityEntry>> activity(@PathVariable Long customerId) {
+        return ApiResponse.ok(customerService.activity(customerId));
+    }
+
+    /** Staff remarks on a customer. */
+    @GetMapping("/{customerId}/remarks")
+    public ApiResponse<List<RemarkView>> remarks(@PathVariable Long customerId) {
+        return ApiResponse.ok(customerService.remarks(customerId));
+    }
+
+    @PostMapping("/{customerId}/remarks")
+    public ApiResponse<RemarkView> addRemark(@PathVariable Long customerId,
+                                             @Valid @RequestBody AddRemarkRequest req) {
+        return ApiResponse.ok(customerService.addRemark(customerId, req.body()));
     }
 }

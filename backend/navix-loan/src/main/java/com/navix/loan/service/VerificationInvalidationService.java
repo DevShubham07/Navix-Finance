@@ -1,11 +1,19 @@
 package com.navix.loan.service;
 
+import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
+import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationVerification;
+import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
+import com.navix.loan.repository.LoanApplicationRepository;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +50,8 @@ public class VerificationInvalidationService {
 
     private final ApplicationVerificationRepository verificationRepo;
     private final CustomerProfileRepository profileRepo;
+    private final ApplicationEventRepository eventRepo;
+    private final LoanApplicationRepository applicationRepo;
 
     /**
      * Reset the verification(s) tied to the given changed profile fields back to {@code PENDING} and
@@ -74,6 +84,29 @@ public class VerificationInvalidationService {
             clearFlags(p, checks);
             profileRepo.save(p);
         });
+        logReverify(appId, checks);
+    }
+
+    /**
+     * Append a queryable {@code REVERIFY} entry to the application audit trail so re-verifications show
+     * up in the customer activity timeline (they only mutate the verification row in place otherwise).
+     */
+    private void logReverify(Long appId, Set<String> checks) {
+        LoanApplication app = applicationRepo.findById(appId).orElse(null);
+        if (app == null) {
+            return;
+        }
+        CurrentActor actor = ActorContext.get();
+        ApplicationEvent event = new ApplicationEvent();
+        event.setApplicationId(appId);
+        event.setFromStatus(app.getStatus());
+        event.setToStatus(app.getStatus());
+        event.setActorId(actor != null ? actor.id() : "system");
+        event.setActorRole(actor != null ? actor.role() : null);
+        event.setAction("REVERIFY");
+        event.setNotes("Re-verification required: " + String.join(", ", new TreeSet<>(checks)));
+        event.setAt(Instant.now());
+        eventRepo.save(event);
     }
 
     private static void clearFlags(CustomerProfile p, Set<String> checks) {

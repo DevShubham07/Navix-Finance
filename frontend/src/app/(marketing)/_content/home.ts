@@ -13,7 +13,7 @@ export const html = `<section class="page active" id="home">
         <span class="hl l2"><span class="w" style="--i:3">Fully</span> <span class="w" style="--i:4">digital.</span></span><br>
         <span class="hl l3"><span class="w" style="--i:5">Fairly</span> <span class="w" style="--i:6">priced.</span></span>
       </h1>
-      <p class="lead reveal d3">A paperless application and transparent terms, from first tap to funds in your account. Borrow ₹5,000 to ₹1,00,000 with no advance fees, ever.</p>
+      <p class="lead reveal d3">A paperless application and transparent terms, from first tap to funds in your account. Borrow ₹5,000 to ₹10,00,000 with no advance fees, ever.</p>
       <div class="hero-cta reveal d4">
         <a href="/signup/mobile-otp" class="btn btn-gold btn-lg" data-link="">Apply for a Loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
         <a href="/how-it-works" class="btn btn-ghost btn-lg" data-link="">How It Works</a>
@@ -29,7 +29,7 @@ export const html = `<section class="page active" id="home">
         <span class="offer-sheen"></span>
         <div class="offer-head">
           <div class="offer-id">
-            <span class="offer-logo"><img src="/navix-mark.png" alt="NAVIX" width="26" height="26" style="object-fit:contain" /></span>
+            <span class="offer-logo"><img src="/navix-mark-64.png" alt="NAVIX" width="26" height="26" decoding="async" style="object-fit:contain" /></span>
             <div><b>NAVIX</b><small>Personal loan offer</small></div>
           </div>
           <span class="offer-status" id="offerStatus"><span class="os-dot"></span><span class="os-review">Reviewing</span><span class="os-ok">Approved</span></span>
@@ -151,7 +151,7 @@ export const html = `<section class="page active" id="home">
           <a href="/calculator" class="btn btn-gold btn-lg reveal d3" data-link="">Open the calculator <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
         </div>
         <div class="reveal d2" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px">
-          <div style="background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Loan range</div><div style="font-family:var(--font-display);font-size:1.7rem;color:var(--navy-800);font-weight:600">₹5K–₹1L</div></div>
+          <div style="background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Loan range</div><div style="font-family:var(--font-display);font-size:1.7rem;color:var(--navy-800);font-weight:600">₹5K–₹10L</div></div>
           <div style="background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Tenure</div><div style="font-family:var(--font-display);font-size:1.7rem;color:var(--navy-800);font-weight:600">7–40 days</div></div>
           <div style="background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">From</div><div style="font-family:var(--font-display);font-size:1.7rem;color:var(--navy-800);font-weight:600">1% / day</div></div>
           <div style="background:var(--grad-navy);border-radius:18px;padding:22px;color:#fff"><div style="font-size:.8rem;color:#9fb3cc;font-weight:700;text-transform:uppercase;letter-spacing:.08em">Charges</div><div style="font-family:var(--font-display);font-size:1.7rem;color:var(--gold-400);font-weight:600">No advance fee</div></div>
@@ -212,7 +212,7 @@ export const html = `<section class="page active" id="home">
 .cal-legend .lg-sel{background:var(--grad-navy)}
 .cal-hintnote{color:var(--muted)}
 .cal-side{position:relative;overflow:hidden;background:var(--grad-navy);border-radius:var(--r-lg);padding:clamp(22px,2.6vw,28px);display:flex;flex-direction:column;color:#fff}
-.cal-side::before{content:"";position:absolute;top:-40%;right:-30%;width:75%;height:75%;background:radial-gradient(circle,rgba(244,201,91,.20),transparent 70%);pointer-events:none}
+.cal-side::before{content:"";position:absolute;top:-40%;right:-30%;width:75%;height:75%;background:radial-gradient(circle,rgba(63,191,137,.20),transparent 70%);pointer-events:none}
 .cal-side > *{position:relative}
 .cal-side .eyebrow{color:var(--gold-400)}
 .cal-side .eyebrow::before{background:var(--gold-400)}

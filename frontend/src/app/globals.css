@@ -7,8 +7,8 @@
    Warm-cream + deep-navy + gold. Shares its tokens with the marketing site
    (which scopes the same system under .navix-mkt). All previous token NAMES are
    kept (only values move) so the 54 functional screens cascade automatically.
-   Palette: navy #0C2540 · gold #E9B53A · cream #FDFBF6 · ink #0C2238 · slate #46566E
-   Type: Bricolage Grotesque (display) · Hanken Grotesk (body) · IBM Plex Mono (figures)
+   Palette: navy #0C2540 · emerald accent #14A06B (token name kept as `gold`/`--gold-*`) · cream #FDFBF6 · ink #0C2238 · slate #46566E
+   Type: Inter (display, body, and figures)
    ========================================================================== */
 
 :root {
@@ -21,14 +21,15 @@
   --navy:       #0C2540;
   --navy-tint:  #EAEFF6;
   /* ---- gold ramp ---- */
-  --gold-700:   #B07C18;
-  --gold-600:   #D49A24;
-  --gold-500:   #E9B53A;
-  --gold-400:   #F4C95B;
-  --gold-300:   #F9DD90;
-  --gold:       #E9B53A;
-  --gold-dark:  #B07C18;
-  --gold-soft:  #F9DD90;
+  /* Brand accent — emerald green. `--gold-*` names kept (load-bearing); values remapped. */
+  --gold-700:   #0B6B46;
+  --gold-600:   #0E8557;
+  --gold-500:   #14A06B;
+  --gold-400:   #3FBF89;
+  --gold-300:   #A7E8CE;
+  --gold:       #14A06B;
+  --gold-dark:  #0B6B46;
+  --gold-soft:  #A7E8CE;
   /* ---- cream / surfaces ---- */
   --cream-50:   #FDFBF6;
   --cream-100:  #FBF5EA;
@@ -55,16 +56,16 @@
   --warn-bg:    #FBF1D8;
   --danger:     #B3261E;
   /* ---- gradients ---- */
-  --grad-gold:  linear-gradient(135deg, #F4C95B 0%, #D49A24 100%);
+  --grad-gold:  linear-gradient(135deg, #3FBF89 0%, #0E8557 100%);
   --grad-navy:  linear-gradient(160deg, #143A60 0%, #081A31 100%);
   --grad-cream: linear-gradient(180deg, #FDFBF6 0%, #F7EFDF 100%);
   --grad-hero:  linear-gradient(180deg, #FDFBF6 0%, #FAF3E6 100%);
 
-  /* ---- type ---- */
-  --serif: var(--font-bricolage), "Bricolage Grotesque", system-ui, sans-serif;
+  /* ---- type (Inter everywhere; --serif/--mono kept as aliases so existing usages cascade) ---- */
+  --serif: var(--font-inter), "Inter", system-ui, sans-serif;
   --font-display: var(--serif);
-  --sans:  var(--font-hanken), "Hanken Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --mono:  var(--font-plex-mono), "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans:  var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono:  var(--font-inter), "Inter", system-ui, sans-serif;
   --font-mono: var(--mono);
 
   /* ---- geometry ---- */
@@ -85,7 +86,7 @@
   --shadow:    0 12px 30px -18px rgba(12, 37, 64, .24);
   --shadow-md: 0 24px 50px -28px rgba(12, 37, 64, .30);
   --shadow-lg: 0 50px 90px -45px rgba(12, 37, 64, .42);
-  --shadow-gold: 0 16px 34px -16px rgba(212, 154, 36, .42);
+  --shadow-gold: 0 16px 34px -16px rgba(20, 160, 107, .42);
 
   --space: clamp(64px, 8vw, 104px);
 }
@@ -104,6 +105,16 @@ body {
   text-rendering: optimizeLegibility;
 }
 img { max-width: 100%; display: block; }
+/* Inter is now the figure font — force tabular (equal-width) digits wherever we
+   render numbers/amounts so ledgers and money columns stay aligned. Covers the
+   `font-mono` utility (amount displays), the `--mono` figure labels, and the
+   calendar day cells. */
+.font-mono, [class*="font-mono"],
+.cal-sublabel, .cal-dows span, .cal-num { font-feature-settings: "tnum" 1; }
+/* Staff CRM density: a slightly smaller base + tighter line-height so screens read data-dense.
+   Only affects text with no explicit Tailwind size class; headings/labels keep their own sizes. */
+.navix-crm { font-size: 0.86rem; line-height: 1.45; }
+.navix-crm p { margin-bottom: 0.6em; }
 a { color: var(--navy); text-decoration: none; }
 a:hover { color: var(--navy-700); }
 ::selection { background: var(--gold-300); color: var(--navy-800); }
@@ -147,8 +158,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 }
 .btn svg { transition: transform .3s var(--ease-out); }
 .btn:active { transform: scale(.985); }
-.btn-gold { background: var(--gold-500); color: var(--navy-900); box-shadow: var(--shadow-gold); border-color: var(--gold-600); }
-.btn-gold:hover { background: var(--gold-400); transform: translateY(-2px); box-shadow: 0 22px 40px -16px rgba(212,154,36,.6); color: var(--navy-900); }
+.btn-gold { background: var(--gold-500); color: #fff; box-shadow: var(--shadow-gold); border-color: var(--gold-600); }
+.btn-gold:hover { background: var(--gold-600); transform: translateY(-2px); box-shadow: 0 22px 40px -16px rgba(20,160,107,.6); color: #fff; }
 .btn-gold:hover svg { transform: translateX(3px); }
 .btn-navy { background: var(--navy-800); color: #fff; box-shadow: var(--shadow-md); border-color: var(--navy-700); }
 .btn-navy:hover { background: var(--navy-900); color: #fff; transform: translateY(-2px); }
@@ -264,7 +275,7 @@ body.nav-open .nav-burger span::after { top: 0; transform: rotate(-45deg); }
    Hero
    ========================================================================== */
 .hero { background: var(--ivory); position: relative; overflow: hidden; }
-.hero::after { content: ""; position: absolute; right: -120px; top: -120px; width: 460px; height: 460px; border-radius: 50%; background: radial-gradient(circle, rgba(201,162,39,.07), transparent 65%); pointer-events: none; }
+.hero::after { content: ""; position: absolute; right: -120px; top: -120px; width: 460px; height: 460px; border-radius: 50%; background: radial-gradient(circle, rgba(20,160,107,.07), transparent 65%); pointer-events: none; }
 .hero .container { display: grid; grid-template-columns: 1.15fr .85fr; gap: 56px; align-items: center; padding-top: var(--space); padding-bottom: var(--space); position: relative; z-index: 1; }
 .hero h1 { margin-bottom: .5em; }
 .hero h1 .accent { color: var(--gold-dark); }
@@ -276,7 +287,7 @@ body.nav-open .nav-burger span::after { top: 0; transform: rotate(-45deg); }
 .trust-card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-md); overflow: hidden; }
 .trust-card-head { background: var(--navy); color: #fff; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .trust-card-head h3 { color: #fff; font-size: 1.08rem; margin: 0; }
-.trust-card-head .pill { background: rgba(201,162,39,.2); color: var(--gold-soft); }
+.trust-card-head .pill { background: rgba(20,160,107,.2); color: var(--gold-soft); }
 .trust-list { list-style: none; margin: 0; padding: 8px 22px 18px; }
 .trust-list li { display: flex; gap: 13px; padding: 14px 0; border-bottom: 1px solid var(--grey-200); }
 .trust-list li:last-child { border-bottom: 0; }
@@ -398,7 +409,7 @@ table.data td strong { color: var(--navy); }
   background: var(--cream-50); transition: border-color .25s, box-shadow .3s, background .25s;
 }
 .field input::placeholder, .field textarea::placeholder { color: var(--muted); }
-.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--gold-500); background: #fff; box-shadow: 0 0 0 4px rgba(244,201,91,.22); }
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--gold-500); background: #fff; box-shadow: 0 0 0 4px rgba(63,191,137,.22); }
 .field:focus-within label { color: var(--gold-700); }
 .field textarea { resize: vertical; min-height: 120px; }
 .field .hint { font-size: .8rem; color: var(--muted); margin-top: 6px; }
@@ -446,7 +457,7 @@ table.data td strong { color: var(--navy); }
 .cal-legend .lg-sel { background: var(--grad-navy); }
 .cal-hintnote { color: var(--muted); }
 .cal-side { position: relative; overflow: hidden; background: var(--grad-navy); border-radius: var(--r-lg); padding: clamp(22px, 2.6vw, 28px); display: flex; flex-direction: column; color: #fff; }
-.cal-side::before { content: ""; position: absolute; top: -40%; right: -30%; width: 75%; height: 75%; background: radial-gradient(circle, rgba(244,201,91,.20), transparent 70%); pointer-events: none; }
+.cal-side::before { content: ""; position: absolute; top: -40%; right: -30%; width: 75%; height: 75%; background: radial-gradient(circle, rgba(63,191,137,.20), transparent 70%); pointer-events: none; }
 .cal-side > * { position: relative; }
 .cal-side .eyebrow { color: var(--gold-400); }
 .cal-side .eyebrow::before { background: var(--gold-400); }
@@ -470,14 +481,14 @@ table.data td strong { color: var(--navy); }
 .slider-field .sf-value { font-family: var(--serif); font-weight: 700; font-size: 1.25rem; color: var(--navy); }
 .slider-field .sf-sub { font-size: .78rem; color: var(--muted); }
 input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 8px; border-radius: 8px; background: var(--cream-200); outline: none; cursor: pointer; }
-input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 26px; height: 26px; border-radius: 50%; background: var(--grad-gold); border: 4px solid #fff; box-shadow: 0 4px 12px rgba(226,160,44,.5); cursor: pointer; transition: transform .2s; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 26px; height: 26px; border-radius: 50%; background: var(--grad-gold); border: 4px solid #fff; box-shadow: 0 4px 12px rgba(20,160,107,.5); cursor: pointer; transition: transform .2s; }
 input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.12); }
-input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #E2A02C; border: 4px solid #fff; box-shadow: 0 4px 12px rgba(226,160,44,.5); cursor: pointer; }
+input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #14A06B; border: 4px solid #fff; box-shadow: 0 4px 12px rgba(20,160,107,.5); cursor: pointer; }
 .calc-result-row { display: flex; justify-content: space-between; align-items: baseline; padding: 13px 0; border-bottom: 1px solid rgba(255,255,255,.12); }
 .calc-result-row:last-of-type { border-bottom: 0; }
 .calc-result-row .crr-label { font-size: .9rem; color: #AFC3DC; }
 .calc-result-row .crr-val { font-family: var(--serif); font-weight: 600; font-size: 1.08rem; color: #fff; }
-.calc-result-row.highlight { margin-top: 8px; padding-top: 18px; border-top: 2px solid rgba(201,162,39,.4); }
+.calc-result-row.highlight { margin-top: 8px; padding-top: 18px; border-top: 2px solid rgba(20,160,107,.4); }
 .calc-result-row.highlight .crr-label { color: var(--gold-soft); font-weight: 600; }
 .calc-result-row.highlight .crr-val { font-size: 1.7rem; color: var(--gold); }
 .calc-note { font-size: .78rem; color: #9FB4CD; margin-top: 18px; line-height: 1.5; }
@@ -487,7 +498,7 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius
    Page hero (interior pages)
    ========================================================================== */
 .page-hero { background: var(--navy); color: #DCE6F4; padding: 56px 0; position: relative; overflow: hidden; }
-.page-hero::after { content: ""; position: absolute; right: -100px; bottom: -150px; width: 360px; height: 360px; border-radius: 50%; background: radial-gradient(circle, rgba(201,162,39,.12), transparent 65%); }
+.page-hero::after { content: ""; position: absolute; right: -100px; bottom: -150px; width: 360px; height: 360px; border-radius: 50%; background: radial-gradient(circle, rgba(20,160,107,.12), transparent 65%); }
 .page-hero h1 { color: #fff; margin-bottom: .4rem; position: relative; }
 .page-hero p { color: #BFD0E6; font-size: 1.1rem; max-width: 62ch; margin: 0; position: relative; }
 .breadcrumb { font-size: .82rem; color: #9FB4CD; margin-bottom: 1rem; position: relative; }

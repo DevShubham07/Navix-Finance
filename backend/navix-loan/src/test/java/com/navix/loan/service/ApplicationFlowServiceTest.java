@@ -246,7 +246,7 @@ class ApplicationFlowServiceTest {
         LoanApplication result = flow.reborrow();
 
         assertThat(result.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
-        assertThat(result.getEligibleLimit()).isEqualTo(1_500_000L); // 25% of ₹60,000
+        assertThat(result.getEligibleLimit()).isEqualTo(LoanMath.MAX_INSTANT_LOAN_PAISE); // flat instant cap
         assertThat(result.getSalaryCreditDay()).isEqualTo(30);
     }
 

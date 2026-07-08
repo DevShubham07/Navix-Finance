@@ -323,6 +323,40 @@ export function HeadActions({ app }: { app: ApplicationView }) {
   );
 }
 
+/**
+ * KYC-approver credit fast-path: on an applied KYC_APPROVED application the KYC approver clears the
+ * credit gate in one step (→ DISBURSEMENT_PENDING) or rejects it. The action only appears once the
+ * borrower has chosen an amount (amountRequestedPaise set).
+ */
+export function KycCreditActions({ app }: { app: ApplicationView }) {
+  const refresh = useRefreshAfterAction();
+  const m = useMutation({
+    mutationFn: (decision: boolean) =>
+      staffApi.kycCreditDecision(app.id, {
+        decision,
+        approvedAmountPaise: decision ? app.amountRequestedPaise ?? undefined : undefined,
+      }),
+    onSuccess: () => refresh(app.id),
+  });
+  if (app.amountRequestedPaise == null) {
+    return <span className="text-xs italic text-muted">Awaiting the borrower&apos;s amount</span>;
+  }
+  return (
+    <ActionGate permission="loan:approve">
+      <div className="flex items-center gap-2">
+        <ApproveRejectButtons
+          pending={m.isPending}
+          onApprove={() => m.mutate(true)}
+          onReject={() => m.mutate(false)}
+          approveLabel="Approve for disbursement"
+          rejectLabel="Reject"
+        />
+        <ActionError error={m.error} />
+      </div>
+    </ActionGate>
+  );
+}
+
 export function DisbursementActions({ app }: { app: ApplicationView }) {
   const refresh = useRefreshAfterAction();
   const m = useMutation({

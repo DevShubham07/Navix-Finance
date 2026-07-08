@@ -6,19 +6,25 @@ import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
+import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
+import com.navix.loan.dto.CustomerDtos.RemarkView;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.entity.CustomerRemark;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
 import com.navix.loan.entity.ProfileChangeLog;
+import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
+import com.navix.loan.repository.CustomerRemarkRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
@@ -27,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -55,6 +62,8 @@ public class CustomerService {
     private final PaymentRepository paymentRepository;
     private final RepaymentService repaymentService;
     private final ProfileChangeLogRepository changeLogRepository;
+    private final ApplicationEventRepository applicationEventRepository;
+    private final CustomerRemarkRepository remarkRepository;
     private final RiskPort risk;
 
     /**
@@ -201,6 +210,88 @@ public class CustomerService {
         return changeLogRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
                 .map(ProfileChangeView::of)
                 .toList();
+    }
+
+    /**
+     * Unified customer activity timeline (newest first): every lifecycle transition + KYC re-verify
+     * (from {@code application_event} across the customer's applications), every profile/salary edit
+     * (from {@code profile_change_log}), and every staff remark — merged and sorted by timestamp. Backs
+     * the "All past logs" tab of the customer detail popup.
+     */
+    @Transactional(readOnly = true)
+    public List<ActivityEntry> activity(Long customerId) {
+        List<ActivityEntry> out = new ArrayList<>();
+
+        // 1. Lifecycle + re-verify events across every application this customer owns.
+        for (LoanApplication a : applicationRepository.findByCustomerId(customerId)) {
+            for (ApplicationEvent e : applicationEventRepository.findByApplicationIdOrderByAtAsc(a.getId())) {
+                boolean reverify = "REVERIFY".equals(e.getAction());
+                String from = e.getFromStatus() != null ? e.getFromStatus().name() : null;
+                String to = e.getToStatus() != null ? e.getToStatus().name() : null;
+                String detail = reverify
+                        ? (e.getNotes() != null ? e.getNotes() : "Verification reset for re-check")
+                        : ((from != null ? from + " → " : "") + (to != null ? to : "")
+                                + (e.getNotes() != null ? " · " + e.getNotes() : ""));
+                out.add(new ActivityEntry(
+                        reverify ? "REVERIFY" : "LIFECYCLE",
+                        a.getId(),
+                        humanize(e.getAction()),
+                        detail.isBlank() ? null : detail,
+                        e.getActorRole(),
+                        e.getAt()));
+            }
+        }
+
+        // 2. Profile / salary edits (carry the new value + who + when).
+        for (ProfileChangeLog c : changeLogRepository.findByCustomerIdOrderByIdDesc(customerId)) {
+            out.add(new ActivityEntry(
+                    "PROFILE",
+                    c.getApplicationId(),
+                    "Updated " + humanize(c.getField()),
+                    (c.getOldValue() != null ? c.getOldValue() : "—") + " → "
+                            + (c.getNewValue() != null ? c.getNewValue() : "—"),
+                    c.getCreatedBy(),
+                    c.getCreatedAt()));
+        }
+
+        // 3. Staff remarks.
+        for (CustomerRemark r : remarkRepository.findByCustomerIdOrderByIdDesc(customerId)) {
+            out.add(new ActivityEntry("REMARK", null, "Remark", r.getBody(), r.getCreatedBy(), r.getCreatedAt()));
+        }
+
+        out.sort(Comparator.comparing(ActivityEntry::at,
+                Comparator.nullsLast(Comparator.reverseOrder())));
+        return out;
+    }
+
+    /** One customer's staff remarks (newest first). */
+    @Transactional(readOnly = true)
+    public List<RemarkView> remarks(Long customerId) {
+        return remarkRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
+                .map(RemarkView::of)
+                .toList();
+    }
+
+    /** Add a staff remark to a customer (author + timestamp captured by JPA auditing). */
+    @Transactional
+    public RemarkView addRemark(Long customerId, String body) {
+        CustomerRemark r = new CustomerRemark();
+        r.setCustomerId(customerId);
+        r.setBody(body.trim());
+        return RemarkView.of(remarkRepository.save(r));
+    }
+
+    /** "monthlySalaryPaise"/"KYC_CREDIT_APPROVE" → "Monthly salary paise"/"Kyc credit approve". */
+    private static String humanize(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "Update";
+        }
+        String spaced = raw
+                .replace('_', ' ')
+                .replaceAll("([a-z0-9])([A-Z])", "$1 $2")
+                .trim()
+                .toLowerCase();
+        return spaced.substring(0, 1).toUpperCase() + spaced.substring(1);
     }
 
     // ---- internals -----------------------------------------------------------------

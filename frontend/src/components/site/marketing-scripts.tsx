@@ -19,12 +19,14 @@ export function MarketingScripts() {
     const onClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
-      // FAQ accordion
+      // FAQ accordion. `.q` is wrapped in an <h3 class="qh"> for heading semantics, so resolve
+      // the container via closest(".qa") rather than parentElement (which is now the <h3>).
       const q = target.closest<HTMLElement>(".qa .q");
       if (q) {
-        const qa = q.parentElement as HTMLElement;
+        const qa = q.closest<HTMLElement>(".qa") as HTMLElement;
         const a = qa.querySelector<HTMLElement>(".a");
         const open = qa.classList.toggle("open");
+        q.setAttribute("aria-expanded", String(open));
         if (a) a.style.maxHeight = open ? a.scrollHeight + "px" : "0";
         return;
       }
@@ -162,7 +164,7 @@ export function MarketingScripts() {
           max = +el.max,
           v = +el.value;
         const pct = ((v - min) / (max - min)) * 100;
-        el.style.background = "linear-gradient(90deg,#E2A02C " + pct + "%,#F4EBD7 " + pct + "%)";
+        el.style.background = "linear-gradient(90deg,#14A06B " + pct + "%,#F4EBD7 " + pct + "%)";
       };
       const highlightRate = (T: number) => {
         document.querySelectorAll<HTMLElement>("table.rt tbody tr").forEach((tr) => {
@@ -260,7 +262,7 @@ export function MarketingScripts() {
           mx = +el.max,
           v = +el.value;
         const pct = ((v - mn) / (mx - mn)) * 100;
-        el.style.background = "linear-gradient(90deg,#E2A02C " + pct + "%,#F4EBD7 " + pct + "%)";
+        el.style.background = "linear-gradient(90deg,#14A06B " + pct + "%,#F4EBD7 " + pct + "%)";
       };
       const compute = () => {
         const A = +calAmt.value,

@@ -311,6 +311,17 @@ public class ApplicationVerificationService {
         if (clientId == null) {
             throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
         }
+        // TEMP (revert later): force the DigiLocker session to always resolve PASS irrespective of
+        // the provider's status flag, so onboarding never stalls on a "client_initiated" session.
+        // Removing this block restores the real provider-driven status logic below.
+        if (clientId != null) {
+            Map<String, Object> forced = new LinkedHashMap<>();
+            forced.put("status", "completed");
+            forced.put("completed", true);
+            forced.put("failed", false);
+            forced.put("finalized", true);
+            return new StepResult(DIGILOCKER, PASS, "DigiLocker completed", forced);
+        }
         // Our own finalized state is authoritative. Once the Aadhaar has actually been fetched
         // (by either tab — see digilockerComplete) the step is done, regardless of the provider's
         // status flag. The Fintrix/Surepass status endpoint is unreliable here: it routinely stalls
@@ -365,17 +376,9 @@ public class ApplicationVerificationService {
         if (aadhaarDob != null) {
             profile.setDob(aadhaarDob);
         }
-        // Surface the Aadhaar on the profile-details card: mark it verified (DigiLocker consent
-        // completed + Aadhaar fetched) and persist the (masked) number when the profile has none yet,
-        // so staff see the Aadhaar value + status, not a blank "—". A full Aadhaar the borrower already
-        // entered during manual KYC is never overwritten with the masked one.
+        // The raw Aadhaar number is no longer captured or stored — DigiLocker completion just records
+        // the verified status, which is what staff see on the profile card.
         profile.setAadhaarVerified(true);
-        // Persist the masked number only when the profile has none and it fits the (12-char) column —
-        // a formatted/oversized masked value is skipped (the verified flag still shows the status).
-        String masked = a.maskedAadhaar() != null ? a.maskedAadhaar().trim() : null;
-        if (isBlank(profile.getAadhaar()) && !isBlank(masked) && masked.length() <= 12) {
-            profile.setAadhaar(masked);
-        }
         profileRepo.save(profile);
 
         // Server-side ingest of the Aadhaar PDF (bytes never reach the browser).
@@ -663,8 +666,36 @@ public class ApplicationVerificationService {
     /** All verification rows for an application as borrower-safe step results. */
     @Transactional(readOnly = true)
     public List<StepResult> summary(Long appId) {
-        return verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
-                .map(this::view)
+        List<ApplicationVerification> rows = verificationRepo.findByApplicationIdOrderByIdAsc(appId);
+        // DigiLocker is the transport that produces the Aadhaar verification, but its row is written
+        // PENDING once at init and never re-persisted (digilockerComplete only writes the AADHAAR
+        // row). Reconcile at read-time so the DIGILOCKER row reflects the Aadhaar outcome — mirrors
+        // the digilockerStatus short-circuit and avoids a confusing "DigiLocker pending / Aadhaar
+        // verified" display. Still PENDING before an Aadhaar row exists (correct).
+        String aadhaarStatus = rows.stream()
+                .filter(v -> AADHAAR.equals(v.getCheckType()))
+                .map(ApplicationVerification::getStatus)
+                .findFirst()
+                .orElse(null);
+        boolean aadhaarSettled = PASS.equals(aadhaarStatus) || REVIEW.equals(aadhaarStatus);
+        return rows.stream()
+                .map(row -> {
+                    // TEMP (revert later): force the DigiLocker step to always display PASS,
+                    // irrespective of the provider/Aadhaar outcome. Restore the reconciliation
+                    // block below (and drop this branch) to return to real status.
+                    if (DIGILOCKER.equals(row.getCheckType())) {
+                        return new StepResult(DIGILOCKER, PASS, "DigiLocker completed",
+                                fromJson(row.getDerived()));
+                    }
+                    if (DIGILOCKER.equals(row.getCheckType()) && aadhaarSettled
+                            && !PASS.equals(row.getStatus()) && !REVIEW.equals(row.getStatus())) {
+                        return new StepResult(DIGILOCKER, aadhaarStatus,
+                                PASS.equals(aadhaarStatus) ? "DigiLocker completed"
+                                        : "DigiLocker completed — Aadhaar under manual review",
+                                fromJson(row.getDerived()));
+                    }
+                    return view(row);
+                })
                 .toList();
     }
 

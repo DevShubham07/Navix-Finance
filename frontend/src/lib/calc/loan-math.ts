@@ -24,8 +24,8 @@ export const DAILY_INTEREST_RATE = 0.01;
 export const LATE_PENALTY_RATE = 0.02;
 /** Maximum days the late penalty accrues before collections. */
 export const LATE_PENALTY_CAP_DAYS = 30;
-/** Eligible loan limit as a fraction of monthly salary. */
-export const LIMIT_PCT_OF_SALARY = 0.25;
+/** Flat instant-loan ceiling: ₹10,00,000 (salary no longer caps the amount). */
+export const MAX_INSTANT_LOAN_AMOUNT = 1_000_000;
 
 /** Floor on a sanctioned advance (working value — finalised in credit policy). */
 export const MIN_LOAN_AMOUNT = 1000;
@@ -67,10 +67,9 @@ export function latePenalty(amount: number, daysLate: number): number {
   return inr(amount * LATE_PENALTY_RATE * cappedDays);
 }
 
-/** Eligible loan limit = 25% of monthly salary, rounded down to ₹100. */
-export function eligibleLimit(monthlySalary: number): number {
-  const raw = monthlySalary * LIMIT_PCT_OF_SALARY;
-  return Math.floor(raw / 100) * 100;
+/** Eligible loan limit — a flat ₹10,00,000 instant cap (salary drives the due date, not the amount). */
+export function eligibleLimit(_monthlySalary: number): number {
+  return MAX_INSTANT_LOAN_AMOUNT;
 }
 
 /** Map days-past-due to a {@link DpdBucket}. */

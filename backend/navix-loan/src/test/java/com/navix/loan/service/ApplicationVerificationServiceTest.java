@@ -217,6 +217,34 @@ class ApplicationVerificationServiceTest {
                 .isGreaterThan(0.5);
     }
 
+    @Test
+    void summary_reconcilesDigilockerRowFromAadhaarOutcome() {
+        // DigiLocker row is stale PENDING (never re-persisted); Aadhaar carries the real outcome.
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("DIGILOCKER", "PENDING"), row("AADHAAR", "PASS"), row("PAN", "PASS")));
+
+        var summary = service.summary(APP);
+
+        var digilocker = summary.stream().filter(s -> "DIGILOCKER".equals(s.checkType())).findFirst().orElseThrow();
+        assertThat(digilocker.status()).isEqualTo("PASS"); // reflects the Aadhaar PASS, not the stale PENDING
+    }
+
+    @Test
+    void summary_digilockerReflectsAadhaarReview_andStaysPendingWithoutAadhaar() {
+        // Aadhaar under manual review (name mismatch) → DigiLocker shows REVIEW, not a retry prompt.
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("DIGILOCKER", "PENDING"), row("AADHAAR", "REVIEW")));
+        assertThat(service.summary(APP).stream()
+                .filter(s -> "DIGILOCKER".equals(s.checkType())).findFirst().orElseThrow().status())
+                .isEqualTo("REVIEW");
+
+        // No Aadhaar row yet (mid-flow) → DigiLocker correctly stays PENDING.
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(row("DIGILOCKER", "PENDING")));
+        assertThat(service.summary(APP).stream()
+                .filter(s -> "DIGILOCKER".equals(s.checkType())).findFirst().orElseThrow().status())
+                .isEqualTo("PENDING");
+    }
+
     private static ApplicationVerification row(String type, String status) {
         ApplicationVerification v = new ApplicationVerification();
         v.setApplicationId(APP);
@@ -232,9 +260,9 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
-    void digilockerComplete_marksAadhaarVerified_andPersistsMaskedAadhaarWhenBlank() {
+    void digilockerComplete_marksAadhaarVerified_andSetsDob() {
         CustomerProfile p = profile();
-        p.setDigilockerClientId("CL1"); // session started; aadhaar is blank (borrower didn't type it)
+        p.setDigilockerClientId("CL1"); // session started
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234"));
         // Skip the S3 ingest cleanly: the doc-list lookup throws and is swallowed by the ingest try/catch.
@@ -243,23 +271,7 @@ class ApplicationVerificationServiceTest {
         var result = service.digilockerComplete(APP);
 
         assertThat(result.status()).isEqualTo("PASS");
-        assertThat(p.getAadhaarVerified()).isTrue();             // the new denormalized flag
-        assertThat(p.getAadhaar()).isEqualTo("XXXXXXXX1234");    // masked number persisted (was blank)
+        assertThat(p.getAadhaarVerified()).isTrue();             // the DigiLocker-verified flag (no raw number stored)
         assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 3, 24));
-    }
-
-    @Test
-    void digilockerComplete_doesNotOverwriteAFullManuallyEnteredAadhaar() {
-        CustomerProfile p = profile();
-        p.setDigilockerClientId("CL1");
-        p.setAadhaar("123456789012"); // borrower already typed the full 12-digit Aadhaar
-        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
-        when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234"));
-        when(verification.digilockerList("CL1")).thenThrow(new RuntimeException("no docs in test"));
-
-        service.digilockerComplete(APP);
-
-        assertThat(p.getAadhaarVerified()).isTrue();
-        assertThat(p.getAadhaar()).isEqualTo("123456789012");   // full Aadhaar NOT clobbered by the masked one
     }
 }

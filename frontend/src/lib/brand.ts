@@ -19,19 +19,19 @@ export const BRAND = {
     city: "Gurugram",
     pin: "122102",
   },
-  maxLoanLakh: "5",
+  maxLoanLakh: "10",
 } as const;
 
 /** RBI-registered NBFC lending partners (placeholder disclosures). */
 export const LENDING_PARTNERS = [
   {
     name: "Arthveda Capital Private Limited",
-    corNo: "N-14.03XXXX",
+    corNo: "", // TODO: real RBI CoR number (placeholder removed — see seoPlan.md Track B / B2)
     blurb: "Lender of record · sanction letter & Key Fact Statement issued by the NBFC.",
   },
   {
     name: "Sentinel Finserv Limited",
-    corNo: "N-13.02XXXX",
+    corNo: "", // TODO: real RBI CoR number (placeholder removed — see seoPlan.md Track B / B2)
     blurb: "Lender of record · sanction letter & Key Fact Statement issued by the NBFC.",
   },
 ] as const;

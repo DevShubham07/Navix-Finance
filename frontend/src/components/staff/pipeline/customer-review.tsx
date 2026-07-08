@@ -79,13 +79,12 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
           <Row label="PAN" value={p.pan} mono />
           <Row
             label="Aadhaar"
-            mono
             value={
-              p.aadhaar || p.aadhaarVerified ? (
-                <span className="inline-flex items-center justify-end gap-1.5">
-                  {p.aadhaar || "—"} {p.aadhaarVerified && <VerifiedPill />}
-                </span>
-              ) : null
+              p.aadhaarVerified ? (
+                <span className="inline-flex items-center justify-end gap-1.5"><VerifiedPill /></span>
+              ) : (
+                <span className="text-muted">Not verified</span>
+              )
             }
           />
           <Row label="Mobile" value={p.mobile} mono />

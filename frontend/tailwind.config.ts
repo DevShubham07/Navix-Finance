@@ -2,8 +2,8 @@ import type { Config } from "tailwindcss";
 
 /**
  * NAVIX Finance — unified design tokens (2026 "calendar" design system).
- * Palette: navy #0C2540 · gold #E9B53A · cream #FDFBF6 · ink #0C2238 · slate #46566E.
- * Type: Bricolage Grotesque (display/headings) · Hanken Grotesk (body) · IBM Plex Mono (figures).
+ * Palette: navy #0C2540 · emerald accent #14A06B (token name kept as `gold`/`--gold-*`) · cream #FDFBF6 · ink #0C2238 · slate #46566E.
+ * Type: Inter (display, body, and figures).
  *
  * Token NAMES are unchanged from the previous "Classic Corporate" theme so the
  * 54 functional screens cascade automatically; only the VALUES move to the new
@@ -41,11 +41,13 @@ const config: Config = {
           tint: "#EAEFF6",
           deep: "#081A31",
         },
+        // Brand accent — emerald green. Token name kept as `gold` (load-bearing
+        // across ~98 files) per the re-skin rule: remap VALUES, never rename.
         gold: {
-          DEFAULT: "#E9B53A",
-          dark: "#B07C18",
-          soft: "#F9DD90",
-          50: "#FBF1D6",
+          DEFAULT: "#14A06B",
+          dark: "#0B6B46",
+          soft: "#A7E8CE",
+          50: "#E7F6EF",
         },
         ivory: "#FDFBF6",
         charcoal: "#2D3A4A",
@@ -113,12 +115,14 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-hanken)", "Hanken Grotesk", "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
-        // `font-serif` now resolves to the Bricolage Grotesque display face — a
-        // grotesque DISPLAY sans, not a literal serif. Kept under the `serif`
-        // key so the 53 existing `font-serif` heading usages cascade.
-        serif: ["var(--font-bricolage)", "Bricolage Grotesque", "Hanken Grotesk", "system-ui", "sans-serif"],
-        mono: ["var(--font-plex-mono)", "IBM Plex Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        // Inter powers everything (2026 system). `sans`/`serif`/`mono` all
+        // resolve to Inter — the `serif` key is kept only so the existing
+        // `font-serif` heading usages cascade (it is NOT a literal serif), and
+        // `mono` is kept so `font-mono` figure usages cascade (Inter's tabular
+        // figures keep them aligned via `font-feature-settings: "tnum"`).
+        sans: ["var(--font-inter)", "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+        serif: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
+        mono: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
       },
       fontSize: {
         xs: ["12px", { lineHeight: "16px" }],
@@ -177,8 +181,8 @@ const config: Config = {
         md: "0 16px 36px -18px rgba(12, 37, 64, .22)",
         lg: "0 24px 48px -20px rgba(12, 37, 64, .28)",
         xl: "0 40px 80px -36px rgba(12, 37, 64, .40)",
-        gold: "0 16px 34px -16px rgba(212, 154, 36, .42)",
-        focus: "0 0 0 4px rgba(244, 201, 91, .22)",
+        gold: "0 16px 34px -16px rgba(20, 160, 107, .42)",
+        focus: "0 0 0 4px rgba(63, 191, 137, .22)",
       },
       animation: {
         spin: "spin 1s linear infinite",

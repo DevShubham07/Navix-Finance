@@ -23,7 +23,6 @@ public final class ReviewDtos {
     public record ProfileRequest(
             String fullName,
             String pan,
-            String aadhaar,
             String mobile,
             LocalDate dob,
             String address,
@@ -62,7 +61,6 @@ public final class ReviewDtos {
             Long applicationId,
             String fullName,
             String pan,
-            String aadhaar,
             String mobile,
             LocalDate dob,
             String address,
@@ -95,7 +93,7 @@ public final class ReviewDtos {
         public static ProfileView of(CustomerProfile p) {
             return new ProfileView(
                     p.getApplicationId(), p.getFullName(), p.getPan(),
-                    p.getAadhaar(), p.getMobile(), p.getDob(),
+                    p.getMobile(), p.getDob(),
                     p.getAddress(), p.getEmployer(), p.getEmploymentStatus(),
                     p.getMonthlySalaryPaise(), p.getSalaryBank(),
                     p.getAnnualSalaryPaise(), p.getSalaryPercentage(), p.getIncrementPercentage(),
@@ -114,7 +112,7 @@ public final class ReviewDtos {
          * responses. Identity + own verification flags stay (the borrower may see their own).
          */
         public ProfileView withoutCredit() {
-            return new ProfileView(applicationId, fullName, pan, aadhaar, mobile, dob,
+            return new ProfileView(applicationId, fullName, pan, mobile, dob,
                     address, employer, employmentStatus, monthlySalaryPaise, salaryBank,
                     annualSalaryPaise, salaryPercentage, incrementPercentage, email,
                     emergencyContactName, emergencyContactPhone, emergencyContactRelation,

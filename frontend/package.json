@@ -2,12 +2,23 @@
   "name": "navix-frontend",
   "version": "0.0.1",
   "private": true,
+  "//browserslist": "Modern targets only — every listed version natively supports the Baseline features Next was otherwise polyfilling (Array.prototype.at/flat/flatMap, Object.fromEntries/hasOwn, String trimStart/End). Trims ~11 KiB of legacy JS. Covers ~98%+ of 2026 traffic (all versions ship since early 2022).",
+  "browserslist": [
+    "chrome >= 94",
+    "edge >= 94",
+    "firefox >= 93",
+    "safari >= 15.4",
+    "ios_saf >= 15.4",
+    "opera >= 80"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "indexnow": "node scripts/indexnow-submit.mjs",
+    "postbuild": "node scripts/indexnow-submit.mjs --postbuild"
   },
   "dependencies": {
     "@tanstack/react-query": "5.62.0",

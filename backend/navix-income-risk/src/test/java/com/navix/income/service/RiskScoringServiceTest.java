@@ -64,13 +64,14 @@ class RiskScoringServiceTest {
 
     @Test
     void assessPersistsCategoryAndGrantedLimit() {
-        IncomeProfile p = profile(4_000_000L, 24); // ₹40k, cap ₹10k
+        IncomeProfile p = profile(4_000_000L, 24); // ₹40k
         when(riskAssessmentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        RiskAssessment ra = service.assess(p, 800); // strong → category A → full cap
+        RiskAssessment ra = service.assess(p, 800); // strong → category A
 
         assertThat(ra.getCategory()).isEqualTo(RiskCategory.A);
-        assertThat(ra.getLimitGranted()).isEqualTo(1_000_000L);
+        // Instant-loan model: the granted limit is the flat ₹10,00,000 cap, not salary/category-scaled.
+        assertThat(ra.getLimitGranted()).isEqualTo(LimitCalculator.MAX_INSTANT_LOAN_PAISE);
         assertThat(ra.getScore()).isGreaterThanOrEqualTo(75);
         assertThat(ra.getCustomerId()).isEqualTo(7L);
     }

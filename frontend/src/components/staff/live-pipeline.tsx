@@ -9,7 +9,8 @@
  *
  *  - hooks           — useStaffMe / fetchStaffMe / errMessage / useRefreshAfterAction /
  *                      ROLE_LABEL / PIPELINE_ROLES / REVIEW_PERMS / OPEN_LOAN_STATUSES / StaffMe
- *  - actions         — PermissionGate / NoAccessNotice + the 7 maker-checker action clusters
+ *  - actions         — PermissionGate / NoAccessNotice + the maker-checker action clusters
+ *                      (incl. `KycCreditActions`, the KYC-approver credit fast-path)
  *  - status-queue    — StatusQueue / CreditQueuePanel
  *  - app-row         — AppRow
  *  - customer-review — CustomerReview

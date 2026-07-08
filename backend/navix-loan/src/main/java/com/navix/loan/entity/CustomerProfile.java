@@ -38,10 +38,6 @@ public class CustomerProfile extends BaseAuditEntity {
     @Column(name = "pan", length = 10)
     private String pan;
 
-    /** Stored in full at the owner's request; surfaced masked. Unique across customers. */
-    @Column(name = "aadhaar", length = 12)
-    private String aadhaar;
-
     /** Borrower's mobile (normalised to 10 digits); surfaced masked. Unique across customers. */
     @Column(name = "mobile", length = 15)
     private String mobile;
