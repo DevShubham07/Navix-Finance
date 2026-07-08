@@ -79,3 +79,12 @@ export function formatDateTime(date: Date | string): string {
     hour12: true,
   }).format(d);
 }
+
+/** Humanize a verification check type: "PENNY_DROP" → "Penny drop". */
+export function humanizeCheck(checkType: string): string {
+  return checkType
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}

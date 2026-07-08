@@ -11,20 +11,19 @@
  */
 
 import * as React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, FileText, Download, ExternalLink, User, Bell } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Check, Loader2, FileText, Download, ExternalLink, User } from "lucide-react";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
+import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { hasPermission } from "@/lib/auth/rbac";
 import {
   staffApi,
   paiseToINR,
   openDocument,
   type DocumentView,
-  type StepResult,
-  type CheckStatus,
 } from "@/lib/api/applications";
 import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
-import { PermissionGate, NoAccessNotice } from "@/components/staff/pipeline/actions";
+import { NoAccessNotice } from "@/components/staff/pipeline/actions";
 
 export function CustomerReview({ applicationId }: { applicationId: number }) {
   const role = useStaffMe().data?.role;
@@ -102,7 +101,7 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
         </dl>
       )}
 
-      <VerificationCards applicationId={applicationId} />
+      <VerificationChecksPanel applicationId={applicationId} />
 
       <div className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-muted">Documents</div>
       {docsQ.isLoading ? (
@@ -139,163 +138,6 @@ function VerifiedPill() {
     <span className="inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[10px] font-semibold text-success-700">
       <Check size={10} /> Verified
     </span>
-  );
-}
-
-/** Status pill styling per verification outcome (green PASS / amber REVIEW / red FAIL / grey PENDING). */
-const CHECK_PILL: Record<CheckStatus, string> = {
-  PASS: "bg-success-100 text-success-700",
-  REVIEW: "bg-warning-100 text-warning-800",
-  FAIL: "bg-error-100 text-error-700",
-  PENDING: "bg-grey-100 text-muted",
-};
-
-/** "PENNY_DROP" -> "Penny drop". */
-function humanizeCheck(checkType: string): string {
-  return checkType
-    .toLowerCase()
-    .split(/[_\s]+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
-/** "monthlySalaryPaise" -> "Monthly salary paise". */
-function humanizeKey(key: string): string {
-  return key
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[_\s]+/g, " ")
-    .replace(/^./, (c) => c.toUpperCase());
-}
-
-function stringifyDerived(value: unknown): string {
-  if (value == null) return "—";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-/**
- * Verification cards for an application's automated checks (PAN, email, address, salary, …).
- * One card per {@link StepResult}: the check name, a status pill, the message, and the key
- * `derived` fields the reviewer needs. Loaded on demand inside {@link CustomerReview}.
- */
-function VerificationCards({ applicationId }: { applicationId: number }) {
-  const qc = useQueryClient();
-  const q = useQuery({
-    queryKey: ["staff-verifications", applicationId],
-    queryFn: () => staffApi.verifications(applicationId),
-    retry: false,
-  });
-  // Required-step completion snapshot (Phase 3.2 progress tracker).
-  const progressQ = useQuery({
-    queryKey: ["staff-verification-progress", applicationId],
-    queryFn: () => staffApi.verificationProgress(applicationId),
-    retry: false,
-  });
-  // KYC-approver / admin manual override of a stuck or inconclusive step (Phase 3.1).
-  const decide = useMutation({
-    mutationFn: (vars: { checkType: string; decision: boolean }) =>
-      staffApi.manualVerificationDecision(applicationId, vars.checkType, vars.decision),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
-      qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
-    },
-  });
-  // KYC-approver / admin nudge the borrower with their pending steps (Phase 3.4).
-  const remind = useMutation({ mutationFn: () => staffApi.sendReminder(applicationId) });
-
-  const steps: StepResult[] = q.data ?? [];
-  const p = progressQ.data;
-
-  return (
-    <div className="mt-5">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Verification checks</span>
-          <PermissionGate permission="kyc:approve">
-            <button
-              onClick={() => remind.mutate()}
-              disabled={remind.isPending || remind.isSuccess}
-              title="Remind the borrower of their pending verification steps"
-              className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-navy hover:bg-navy-tint disabled:opacity-50"
-            >
-              {remind.isPending ? <Loader2 size={11} className="animate-spin" /> : <Bell size={11} />}
-              {remind.isSuccess ? (remind.data?.sent ? "Reminded" : "Nothing pending") : "Send reminder"}
-            </button>
-          </PermissionGate>
-        </div>
-        {p && (
-          <span className="text-xs text-muted">
-            <span className="font-semibold text-navy">{p.completed}/{p.required}</span> done · {p.percent}%
-            {p.failed > 0 ? <span className="text-error-700"> · {p.failed} failed</span> : null}
-            {p.pending > 0 ? <span className="text-warning-800"> · {p.pending} pending</span> : null}
-          </span>
-        )}
-      </div>
-      {p && (
-        <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-grey-200">
-          <div className="h-full rounded-full bg-success-600 transition-all" style={{ width: `${p.percent}%` }} />
-        </div>
-      )}
-      {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
-      ) : steps.length === 0 ? (
-        <p className="text-sm text-muted">No verification checks recorded yet.</p>
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {steps.map((s, i) => {
-            const entries = Object.entries(s.derived ?? {});
-            return (
-              <div key={`${s.checkType}-${i}`} className="rounded border border-line bg-grey-50 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-navy">{humanizeCheck(s.checkType)}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[s.status]}`}>
-                    {s.status}
-                  </span>
-                </div>
-                {s.message ? <p className="mt-1 text-xs text-ink/90">{s.message}</p> : null}
-                {entries.length > 0 && (
-                  <dl className="mt-2 space-y-0.5 text-xs">
-                    {entries.map(([k, v]) => (
-                      <div key={k} className="flex items-start justify-between gap-3">
-                        <dt className="text-muted">{humanizeKey(k)}</dt>
-                        <dd className="break-all text-right text-ink">{stringifyDerived(v)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-                <PermissionGate permission="kyc:approve">
-                  <div className="mt-2 flex items-center gap-1.5 border-t border-line pt-2">
-                    <button
-                      onClick={() => decide.mutate({ checkType: s.checkType, decision: true })}
-                      disabled={decide.isPending}
-                      className="rounded border border-success-600 px-2 py-0.5 text-xs font-semibold text-success-700 hover:bg-success-50 disabled:opacity-50"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => decide.mutate({ checkType: s.checkType, decision: false })}
-                      disabled={decide.isPending}
-                      className="rounded border border-error-600 px-2 py-0.5 text-xs font-semibold text-error-700 hover:bg-error-50 disabled:opacity-50"
-                    >
-                      Reject
-                    </button>
-                    <span className="text-[11px] text-muted">manual override</span>
-                  </div>
-                </PermissionGate>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {decide.error && <p className="mt-2 text-xs text-error-700">{errMessage(decide.error)}</p>}
-    </div>
   );
 }
 
