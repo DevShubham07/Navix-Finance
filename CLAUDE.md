@@ -183,10 +183,13 @@ The BFF route handlers reach the backend via **`BACKEND_BASE_URL`** (server-only
 
 ### 4.4 Demo logins (real JWT)
 - **Borrower:** `/login` → any 10-digit mobile → **Send code** → enter the OTP. Real OTP is delivered
-  by the **UltronSMS** gateway, but is **blocked on DLT-template registration**, so for demo/testing
-  run the backend with **`NAVIX_SMS_MOCK=true`** → the fixed code **`123456`** always works (also shown
-  as "Dev code"). Issues a real **borrower JWT** in the `navix_borrower` httpOnly cookie. Every "Apply
-  now" CTA → `/signup/mobile-otp` starts the 9-step verified onboarding.
+  by the **UltronSMS** gateway; the **login-OTP DLT template is now approved and live** (verified
+  2026-07-10 — `NAVIX_OTP_LOGIN_V2`, id `1707178366195230667`, whose text already matches the
+  `navix.sms.otp-template` in `application.yml`), so real OTP works once the gateway env is set (see
+  §14). For demo/testing without a handset, run the backend with **`NAVIX_SMS_MOCK=true`** → the fixed
+  code **`123456`** always works (also shown as "Dev code"). Issues a real **borrower JWT** in the
+  `navix_borrower` httpOnly cookie. Every "Apply now" CTA → `/signup/mobile-otp` starts the 9-step
+  verified onboarding.
 - **Staff/Admin:** `/staff/login` → **pick a role** → the BFF authenticates for real against
   `POST /api/auth/staff/login` (role → seeded `*.navix.example` email + default password
   **`Admin@12345`**, BCrypt) and stores a **staff JWT**. The role decides which live queues have data.
@@ -693,8 +696,17 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   (presign + `s3_object_key`); bank **penny-drop**; SSM secrets; the 9-step verified onboarding; the
   admin payment block; mock-layer removal; and a **test suite** (`QA_CHECKLIST.md`, ~136 backend tests,
   Playwright `frontend/e2e/*`, `.github/workflows/ci.yml`).
-- 🟡 **Borrower OTP** — real **UltronSMS** client done, but SMS delivery is **blocked on a DLT-registered
-  template**; a **mock mode** (`NAVIX_SMS_MOCK=true` → `123456`) is wired for demo/testing.
+- 🟢 **Borrower OTP — live.** Real **UltronSMS** client done and the **login-OTP DLT template is
+  approved** (verified 2026-07-10 via `docs/sms-dlt/test-all-templates.sh` → `NAVIX_OTP_LOGIN_V2`, id
+  `1707178366195230667`, gateway `ErrorCode 000`); its text matches `navix.sms.otp-template`, so OTP
+  sends for real with the gateway env set (§14). `NAVIX_SMS_MOCK=true` → `123456` stays wired for
+  demo/testing without a handset.
+- 🟡 **The 15 lifecycle SMS (`_V2` batch)** are registered but **14 remain pending DLT approval** — the
+  gateway returns `006 Invalid template text` for them (an approval-status issue, not a content one:
+  the sent text is char-for-char identical to `docs/sms-dlt/SMSULTRON.md`). Keep their
+  `NAVIX_SMS_DLT_*` env vars unset (the notification engine no-ops the SMS channel) until they clear;
+  re-run `docs/sms-dlt/test-all-templates.sh` to see which have flipped to `000`. Full run recorded in
+  `docs/sms-dlt/TEMPLATE_TEST_RESULTS.md`.
 - 🟡 Staff **emailed invites** + ADMIN-gated invite create; middleware **JWT-signature verify** (still a
   presence check). Rotate the seeded `Admin@12345` + set a strong `AUTH_SECRET` for prod.
 - 🔴 Real bank **payout** (NEFT/IMPS) at the accountant step; sanction-letter/agreement generation → S3.
@@ -711,6 +723,18 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   `https://admin.fintrix.tech/__api/api/v1/`, HTTP Basic `base64(CLIENT_ID:CLIENT_SECRET)`. See
   `NAVIX_Fintrix_Integration_Flow.md`.
 - **DigiLocker** (KYC) — headers `X-Client-ID` / `X-Client-Secret`. See `Digilocker_API_Guide.md`.
+- **UltronSMS** (borrower OTP + lifecycle SMS) — `GET https://ultronsms.com/api/mt/SendSMS`, params
+  `user/password/senderid/channel/DCS/flashsms/number/text/route/peid/DLTTemplateId`; success envelope
+  `{ErrorCode:"0"|"000", JobId}`. Sent by `UltronSmsClient` (`navix-app`), bound from `navix.sms.*`.
+  The **PEID is entity-level and constant** across all templates (verified working value
+  `1701178039634361131`, sender `NAVIXF`, route `02`). Live-test **without** the app:
+  `docs/sms-dlt/test-send-sms.sh <number> [text] [dltTemplateId]` (one send) and
+  `docs/sms-dlt/test-all-templates.sh [number]` (sweeps every `_V2` template → a pass/fail tracker at
+  `docs/sms-dlt/TEMPLATE_TEST_RESULTS.md`). The 15 template ids + exact content are in
+  `docs/sms-dlt/SMSULTRON.md`; the sent text must match the registered template **char-for-char** (only
+  variable slots filled), use `Rs.` not `₹` (₹ forces costly UCS-2), and any URL must be portal-
+  whitelisted. **Status (2026-07-10):** `NAVIX_OTP_LOGIN_V2` approved & live; the other 14 pending
+  (return `006 Invalid template text`).
 
 **Bureau report → credit brief:** `ExperianClient.pull` parses the **full**
 `individual_experian` response (`data.credit_report.*` — CAIS summary, outstanding balances, CAPS

@@ -56,80 +56,80 @@ needs nothing else. (Mirror of `dlt-templates.json`; if they ever differ, `dlt-t
 
 Format: `[#] NAME — CATEGORY` / `CONTENT:` / `VARS: index. purpose | tag | sample` (or "none").
 
-**[1] NAVIX_OTP_LOGIN — Service Implicit**
+**[1] NAVIX_OTP_LOGIN_V2 — Service Implicit**
 CONTENT: `Your OTP for NAVIX Finance login is {#var#}. It is valid for {#var#} minutes. Do not share this OTP with anyone. - NAVIX Finance`
 VARS:
 1. numeric OTP code | OTP | `123456`
 2. validity in minutes | Number | `5`
 NOTE: OTP is intentionally link-free (no URL). Register it FIRST.
 
-**[2] NAVIX_KYC_APPROVED — Service Implicit**
+**[2] NAVIX_KYC_APPROVED_V2 — Service Implicit**
 CONTENT: `Your KYC is verified with NAVIX Finance. Log in at https://www.navixfinance.com/login to choose your loan amount. - NAVIX Finance`
 VARS: none
 
-**[3] NAVIX_KYC_REJECTED — Service Implicit**
+**[3] NAVIX_KYC_REJECTED_V2 — Service Implicit**
 CONTENT: `We could not verify your KYC with NAVIX Finance. Log in at https://www.navixfinance.com/login to review and resubmit. - NAVIX Finance`
 VARS: none
 
-**[4] NAVIX_KYC_REMINDER — Service Implicit**
+**[4] NAVIX_KYC_REMINDER_V2 — Service Implicit**
 CONTENT: `Your verification with NAVIX Finance is incomplete. Log in at https://www.navixfinance.com/login to complete your pending steps. - NAVIX Finance`
 VARS: none
 
-**[5] NAVIX_LOAN_DISBURSED — Service Implicit**
+**[5] NAVIX_LOAN_DISBURSED_V2 — Service Implicit**
 CONTENT: `NAVIX Finance has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://www.navixfinance.com/login. - NAVIX Finance`
 VARS:
 1. net amount disbursed | Amount | `Rs. 8,820`
 2. total repayable amount | Amount | `Rs. 12,700`
 3. due date | Date | `30 Jun 2026`
 
-**[6] NAVIX_REPAYMENT_VERIFIED — Service Implicit**
+**[6] NAVIX_REPAYMENT_VERIFIED_V2 — Service Implicit**
 CONTENT: `Your payment of {#var#} to NAVIX Finance is confirmed. Outstanding balance is {#var#}. View details at https://www.navixfinance.com/login. - NAVIX Finance`
 VARS:
 1. payment amount | Amount | `Rs. 5,000`
 2. remaining outstanding balance | Amount | `Rs. 7,700`
 
-**[7] NAVIX_REPAYMENT_REJECTED — Service Implicit**
+**[7] NAVIX_REPAYMENT_REJECTED_V2 — Service Implicit**
 CONTENT: `Your payment of {#var#} could not be verified by NAVIX Finance. Log in at https://www.navixfinance.com/login to check the reference and record it again. - NAVIX Finance`
 VARS:
 1. payment amount | Amount | `Rs. 5,000`
 
-**[8] NAVIX_PAYMENT_DUE_SOON — Service Implicit**
+**[8] NAVIX_PAYMENT_DUE_SOON_V2 — Service Implicit**
 CONTENT: `Your NAVIX Finance payment of {#var#} is due in {#var#} day(s) by {#var#}. Pay at https://www.navixfinance.com/login on or after your salary day with no penalty. - NAVIX Finance`
 VARS:
 1. amount due | Amount | `Rs. 12,700`
 2. days until due | Number | `3`
 3. due date | Date | `30 Jun 2026`
 
-**[9] NAVIX_PAYMENT_OVERDUE — Service Implicit**
+**[9] NAVIX_PAYMENT_OVERDUE_V2 — Service Implicit**
 CONTENT: `Your NAVIX Finance payment of {#var#} is overdue by {#var#} day(s). Pay now at https://www.navixfinance.com/login to stop the daily penalty and protect your credit score. - NAVIX Finance`
 VARS:
 1. overdue amount | Amount | `Rs. 12,700`
 2. days overdue | Number | `5`
 
-**[10] NAVIX_LOAN_CLOSED — Service Implicit**
+**[10] NAVIX_LOAN_CLOSED_V2 — Service Implicit**
 CONTENT: `Your loan with NAVIX Finance is fully repaid and closed. Thank you. Visit https://www.navixfinance.com/login to borrow again. - NAVIX Finance`
 VARS: none
 
-**[11] NAVIX_APPLICATION_DECLINED — Service Implicit**
+**[11] NAVIX_APPLICATION_DECLINED_V2 — Service Implicit**
 CONTENT: `NAVIX Finance is unable to approve your loan application at this time. Visit https://www.navixfinance.com/login for details. - NAVIX Finance`
 VARS: none
 NOTE: ONE template reused for BOTH the credit rejection and the reborrow rejection — register once;
 its single DLT Template ID is bound to both notification types in the backend.
 
-**[12] NAVIX_SETTLEMENT_APPROVED — Service Implicit**
+**[12] NAVIX_SETTLEMENT_APPROVED_V2 — Service Implicit**
 CONTENT: `A full and final settlement of {#var#} is approved on your NAVIX Finance loan. Pay at https://www.navixfinance.com/login to close the loan. - NAVIX Finance`
 VARS:
 1. settlement amount | Amount | `Rs. 9,000`
 
-**[13] NAVIX_REBORROW_APPROVED — Service Implicit**
+**[13] NAVIX_REBORROW_APPROVED_V2 — Service Implicit**
 CONTENT: `Your loan application with NAVIX Finance is approved. Log in at https://www.navixfinance.com/login to choose your amount. - NAVIX Finance`
 VARS: none
 
-**[14] NAVIX_REBORROW_PREAPPROVED — Service Implicit  ⚠ BORDERLINE — PAUSE & ASK BEFORE SUBMIT**
+**[14] NAVIX_REBORROW_PREAPPROVED_V2 — Service Implicit  ⚠ BORDERLINE — PAUSE & ASK BEFORE SUBMIT**
 CONTENT: `Welcome back to NAVIX Finance. You can apply for another loan now. Log in at https://www.navixfinance.com/login to choose your amount. - NAVIX Finance`
 VARS: none
 
-**[15] NAVIX_REFERRAL_REWARD_CREDITED — Service Implicit  ⚠ BORDERLINE — PAUSE & ASK BEFORE SUBMIT**
+**[15] NAVIX_REFERRAL_REWARD_CREDITED_V2 — Service Implicit  ⚠ BORDERLINE — PAUSE & ASK BEFORE SUBMIT**
 CONTENT: `Your NAVIX Finance referral reward of {#var#} is credited with reference {#var#}. Log in at https://www.navixfinance.com/login to view it. - NAVIX Finance`
 VARS:
 1. referral reward amount | Amount | `Rs. 500`

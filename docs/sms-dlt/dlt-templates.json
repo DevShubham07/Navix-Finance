@@ -21,7 +21,7 @@
   },
   "templates": [
     {
-      "name": "NAVIX_OTP_LOGIN",
+      "name": "NAVIX_OTP_LOGIN_V2",
       "source": "BorrowerOtpService.buildMessage",
       "notificationType": "OTP_LOGIN",
       "category": "Service Implicit",
@@ -32,7 +32,7 @@
       ]
     },
     {
-      "name": "NAVIX_KYC_APPROVED",
+      "name": "NAVIX_KYC_APPROVED_V2",
       "source": "NotificationType.KYC_APPROVED",
       "notificationType": "KYC_APPROVED",
       "category": "Service Implicit",
@@ -40,7 +40,7 @@
       "variables": []
     },
     {
-      "name": "NAVIX_KYC_REJECTED",
+      "name": "NAVIX_KYC_REJECTED_V2",
       "source": "NotificationType.KYC_REJECTED",
       "notificationType": "KYC_REJECTED",
       "category": "Service Implicit",
@@ -48,7 +48,7 @@
       "variables": []
     },
     {
-      "name": "NAVIX_KYC_REMINDER",
+      "name": "NAVIX_KYC_REMINDER_V2",
       "source": "NotificationType.KYC_REMINDER",
       "notificationType": "KYC_REMINDER",
       "category": "Service Implicit",
@@ -57,7 +57,7 @@
       "note": "Improved: dropped the {pendingSteps} variable (the joined step list can exceed the 40-char/variable limit). The detailed list stays in the in-app + email versions. Requires the SMS body in NotificationTemplates.java to be changed to this variable-free text so the sent SMS matches."
     },
     {
-      "name": "NAVIX_LOAN_DISBURSED",
+      "name": "NAVIX_LOAN_DISBURSED_V2",
       "source": "NotificationType.LOAN_DISBURSED",
       "notificationType": "LOAN_DISBURSED",
       "category": "Service Implicit",
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "name": "NAVIX_REPAYMENT_VERIFIED",
+      "name": "NAVIX_REPAYMENT_VERIFIED_V2",
       "source": "NotificationType.REPAYMENT_VERIFIED",
       "notificationType": "REPAYMENT_VERIFIED",
       "category": "Service Implicit",
@@ -80,7 +80,7 @@
       ]
     },
     {
-      "name": "NAVIX_REPAYMENT_REJECTED",
+      "name": "NAVIX_REPAYMENT_REJECTED_V2",
       "source": "NotificationType.REPAYMENT_REJECTED",
       "notificationType": "REPAYMENT_REJECTED",
       "category": "Service Implicit",
@@ -90,7 +90,7 @@
       ]
     },
     {
-      "name": "NAVIX_PAYMENT_DUE_SOON",
+      "name": "NAVIX_PAYMENT_DUE_SOON_V2",
       "source": "NotificationType.PAYMENT_DUE_SOON",
       "notificationType": "PAYMENT_DUE_SOON",
       "category": "Service Implicit",
@@ -102,7 +102,7 @@
       ]
     },
     {
-      "name": "NAVIX_PAYMENT_OVERDUE",
+      "name": "NAVIX_PAYMENT_OVERDUE_V2",
       "source": "NotificationType.PAYMENT_OVERDUE",
       "notificationType": "PAYMENT_OVERDUE",
       "category": "Service Implicit",
@@ -113,7 +113,7 @@
       ]
     },
     {
-      "name": "NAVIX_LOAN_CLOSED",
+      "name": "NAVIX_LOAN_CLOSED_V2",
       "source": "NotificationType.LOAN_CLOSED",
       "notificationType": "LOAN_CLOSED",
       "category": "Service Implicit",
@@ -121,7 +121,7 @@
       "variables": []
     },
     {
-      "name": "NAVIX_APPLICATION_DECLINED",
+      "name": "NAVIX_APPLICATION_DECLINED_V2",
       "source": "NotificationType.CREDIT_REJECTED + NotificationType.REBORROW_REVIEW_REJECTED",
       "notificationType": ["CREDIT_REJECTED", "REBORROW_REVIEW_REJECTED"],
       "category": "Service Implicit",
@@ -130,7 +130,7 @@
       "note": "One registered template reused for BOTH the first-loan credit rejection (CREDIT_REJECTED) and the returning-borrower reborrow rejection (REBORROW_REVIEW_REJECTED) — the content is identical, so a single DLT Template ID is bound to both NotificationTypes in navix.sms.dlt-template-ids."
     },
     {
-      "name": "NAVIX_SETTLEMENT_APPROVED",
+      "name": "NAVIX_SETTLEMENT_APPROVED_V2",
       "source": "NotificationType.SETTLEMENT_APPROVED",
       "notificationType": "SETTLEMENT_APPROVED",
       "category": "Service Implicit",
@@ -140,7 +140,7 @@
       ]
     },
     {
-      "name": "NAVIX_REBORROW_APPROVED",
+      "name": "NAVIX_REBORROW_APPROVED_V2",
       "source": "NotificationType.REBORROW_REVIEW_APPROVED",
       "notificationType": "REBORROW_REVIEW_APPROVED",
       "category": "Service Implicit",
@@ -148,7 +148,7 @@
       "variables": []
     },
     {
-      "name": "NAVIX_REBORROW_PREAPPROVED",
+      "name": "NAVIX_REBORROW_PREAPPROVED_V2",
       "source": "NotificationType.REBORROW_PREAPPROVED",
       "notificationType": "REBORROW_PREAPPROVED",
       "category": "Service Implicit",
@@ -157,7 +157,7 @@
       "note": "Returning-borrower re-onboarding nudge. Worded to stay Service Implicit (arises from the customer's existing relationship) — deliberately avoids offer/'pre-approved' language. If STPL flags it promotional, it must move to Service Explicit (recorded consent)."
     },
     {
-      "name": "NAVIX_REFERRAL_REWARD_CREDITED",
+      "name": "NAVIX_REFERRAL_REWARD_CREDITED_V2",
       "source": "NotificationType.REFERRAL_REWARD_CREDITED",
       "notificationType": "REFERRAL_REWARD_CREDITED",
       "category": "Service Implicit",
