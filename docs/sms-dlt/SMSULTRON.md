@@ -3,7 +3,7 @@ NAVIX FINANCE - SMS TEMPLATE DOCUMENTATION (UltronSMS)
 Source: STPL / smartping.live (Active templates)
 Destination: https://ultronsms.com/Web/MT/MyTemplate.aspx
 Sender ID (all templates): NAVIXF
-Total templates added: 15 (status: Pending approval)
+Total templates added: 15 (status: gateway-accepted — live send test 2026-07-11, all 15 returned ErrorCode 0 + JobId)
 Note: Dynamic values (amounts, day counts, dates, OTP codes, reference numbers) are represented as ##Field## placeholders.
 
 -------------------------------------------------------

@@ -17,6 +17,7 @@ export default function SignupPanPage() {
   const router = useRouter();
   const { mounted, draft, appId } = useOnboarding();
   const [pan, setPan] = React.useState("");
+  const [consent, setConsent] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<StepResult | null>(null);
@@ -35,7 +36,7 @@ export default function SignupPanPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!panOk) { setTouched(true); return; }
+    if (!panOk || !consent) { setTouched(true); return; }
     if (appId == null) return;
     setBusy(true);
     setError(undefined);
@@ -73,10 +74,17 @@ export default function SignupPanPage() {
           <ShieldCheck size={16} className="mt-0.5 flex-shrink-0 text-success-600" />
           Used only for identity and credit verification.
         </p>
+        <label className="checkbox mt-5">
+          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
+          <span>I authorize the retrieval of my CRIF High Mark credit report for verification and assessment purposes.</span>
+        </label>
+        {touched && !consent ? (
+          <p className="mt-2 text-sm text-error-600">Please provide your consent to continue.</p>
+        ) : null}
         <StepResultBanner result={result} />
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>
-      <WizardActions backHref="/signup/digilocker" submit continueLabel={result?.status === "FAIL" ? "Try again" : "Verify & continue"} loading={busy} disabled={busy} />
+      <WizardActions backHref="/signup/digilocker" submit continueLabel={result?.status === "FAIL" ? "Try again" : "Verify & continue"} loading={busy} disabled={busy || !consent} />
       <Reassurance />
     </form>
   );

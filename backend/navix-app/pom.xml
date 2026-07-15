@@ -127,6 +127,15 @@
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
 
+        <!-- Auto-loads backend/.env into the Spring Environment so verification-provider keys
+             (SIGNZY_TOKEN, DIGITAP_CLIENT_ID, …) placed in .env "just work" locally. Harmless when
+             no .env is present. In AWS these come from SSM instead. -->
+        <dependency>
+            <groupId>me.paulschwarz</groupId>
+            <artifactId>spring-dotenv</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+
         <!-- Lombok (managed by parent) -->
         <dependency>
             <groupId>org.projectlombok</groupId>

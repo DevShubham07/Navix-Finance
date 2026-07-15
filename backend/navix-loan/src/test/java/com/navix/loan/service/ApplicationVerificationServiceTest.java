@@ -76,7 +76,7 @@ class ApplicationVerificationServiceTest {
         CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
-                .thenReturn(new VerificationPort.PanCheck("TXN1", true, "SHUBHAM", "2003-03-24", "M",
+                .thenReturn(new VerificationPort.PanCheck("TXN1", "SIGNZY", true, "SHUBHAM", "2003-03-24", "M",
                         true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
 
         var result = service.verifyPan(APP, "QVEPS0901K");
@@ -93,7 +93,7 @@ class ApplicationVerificationServiceTest {
         CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(anyString(), anyString()))
-                .thenReturn(new VerificationPort.PanCheck("TXN1", true, "SHUBHAM", "15/08/1992", "M",
+                .thenReturn(new VerificationPort.PanCheck("TXN1", "SIGNZY", true, "SHUBHAM", "15/08/1992", "M",
                         true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
 
         service.verifyPan(APP, "QVEPS0901K");
@@ -107,7 +107,7 @@ class ApplicationVerificationServiceTest {
         p.setDob(LocalDate.of(1990, 1, 1)); // already on file (e.g. earlier DigiLocker / borrower-entered)
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(anyString(), anyString()))
-                .thenReturn(new VerificationPort.PanCheck("TXN1", true, "SHUBHAM", "2003-03-24", "M",
+                .thenReturn(new VerificationPort.PanCheck("TXN1", "SIGNZY", true, "SHUBHAM", "2003-03-24", "M",
                         true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
 
         service.verifyPan(APP, "QVEPS0901K");
@@ -130,7 +130,7 @@ class ApplicationVerificationServiceTest {
     void email_genericEmail_isReview() {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
         when(verification.verifyEmail(anyString(), anyString(), anyString(), anyString()))
-                .thenReturn(new VerificationPort.EmailCheck("TXN2", true, false, true, true, null));
+                .thenReturn(new VerificationPort.EmailCheck("TXN2", "DIGITAP", true, false, true, true, null));
 
         var result = service.verifyEmail(APP, "someone@gmail.com");
 
@@ -142,11 +142,11 @@ class ApplicationVerificationServiceTest {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
 
         when(verification.pennyDrop(anyString(), anyString(), anyString()))
-                .thenReturn(new VerificationPort.PennyDropCheck("TXN3", true, "RAVI KUMAR", "HDFC Bank", "HDFC0002557"));
+                .thenReturn(new VerificationPort.PennyDropCheck("TXN3", "SIGNZY", true, "RAVI KUMAR", "HDFC Bank", "HDFC0002557"));
         assertThat(service.verifyPennyDrop(APP, "123", "HDFC0002557").status()).isEqualTo("REVIEW");
 
         when(verification.pennyDrop(anyString(), anyString(), anyString()))
-                .thenReturn(new VerificationPort.PennyDropCheck("TXN4", true, "SHUBHAM", "HDFC Bank", "HDFC0002557"));
+                .thenReturn(new VerificationPort.PennyDropCheck("TXN4", "SIGNZY", true, "SHUBHAM", "HDFC Bank", "HDFC0002557"));
         assertThat(service.verifyPennyDrop(APP, "123", "HDFC0002557").status()).isEqualTo("PASS");
     }
 

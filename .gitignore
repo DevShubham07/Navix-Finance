@@ -65,3 +65,7 @@ docs/product-gaps-shots/
 .serena/
 .specify/
 repomix-output.xml
+
+# Local Signzy live-test curls with injected credentials — never commit
+docs/signzy/SIGNZY_CURLS_DIRECT.md
+docs/signzy/SIGNZY_LIVE_CURLS.md

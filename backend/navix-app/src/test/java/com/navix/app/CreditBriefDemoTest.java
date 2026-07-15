@@ -5,8 +5,8 @@ import com.navix.common.verification.BureauReportFacts;
 import com.navix.loan.pdf.CreditBriefPdfRenderer;
 import com.navix.loan.service.CreditRatingCalculator;
 import com.navix.loan.service.CreditRatingCalculator.Rating;
-import com.navix.verification.client.ExperianClient;
-import com.navix.verification.dto.FintrixDtos.ExperianResponse;
+import com.navix.verification.client.SignzyExperianClient;
+import com.navix.verification.dto.SignzyDtos.ExperianResponse;
 import java.io.File;
 import java.nio.file.Files;
 import java.time.LocalDate;
@@ -22,14 +22,14 @@ class CreditBriefDemoTest {
 
     @Test
     void runOnSampleReport() throws Exception {
-        ExperianResponse r = new ExperianClient(RestClient.create(), new ObjectMapper(),
-                "classpath:samplepan.json").pull("DEMO", "DEMO", "DEMO", "demo");
+        ExperianResponse r = new SignzyExperianClient(RestClient.create(), new ObjectMapper(),
+                "classpath:samplepan.json").pull("DEMO", "DEMO DEMO", "DEMO", "1990-01-01");
         BureauReportFacts f = r.facts();
         Rating rating = new CreditRatingCalculator().rate(f);
 
         String report = """
                 ================ NAVIX CREDIT BRIEF — samplepan.json ================
-                Bureau response : status=%s  noRecord=%s  report=%s
+                Bureau response : score=%s  noRecord=%s  report=%s
 
                 CATEGORY A — Identity
                   Name            : %s
@@ -57,7 +57,7 @@ class CreditBriefDemoTest {
                   Summary         : %s
                 ====================================================================
                 """.formatted(
-                r.status(), r.noRecord(), f.reportNumber(),
+                r.creditScore(), r.noRecord(), f.reportNumber(),
                 f.name(), f.pan(), f.mobile(), f.dob(), f.city(), f.pin(),
                 f.creditScore(), f.totalAccounts(), f.activeAccounts(), f.closedAccounts(), f.defaults(),
                 f.totalBalanceRupees(), f.securedBalanceRupees(), f.unsecuredBalanceRupees(),

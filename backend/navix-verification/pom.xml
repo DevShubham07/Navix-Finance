@@ -14,7 +14,7 @@
     <artifactId>navix-verification</artifactId>
     <packaging>jar</packaging>
     <name>navix-verification</name>
-    <description>Fintrix (Digitap-backed) + DigiLocker HTTP integration layer</description>
+    <description>Signzy (primary) + Digitap (fallback) verification integration layer</description>
 
     <dependencies>
         <dependency>
