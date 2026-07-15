@@ -44,14 +44,25 @@ navix:
   # to see a rich credit brief + rating locally. Leave blank in real environments.
   bureau:
     fixture: ${NAVIX_BUREAU_FIXTURE:}
-  fintrix:
-    base-url: ${FINTRIX_BASE_URL:https://admin.fintrix.tech/__api/api/v1/}
-    client-id: ${FINTRIX_CLIENT_ID:}
-    client-secret: ${FINTRIX_CLIENT_SECRET:}
-  digilocker:
-    base-url: ${DIGILOCKER_BASE_URL:https://admin.fintrix.tech/__api/api/v1/}
-    client-id: ${DIGILOCKER_CLIENT_ID:}
-    client-secret: ${DIGILOCKER_CLIENT_SECRET:}
+  # Verification providers. Signzy is PRIMARY, Digitap is the FALLBACK (see RoutingVerificationPort +
+  # docs/signzy, docs/digitap). Base URLs default to the PREPRODUCTION/UAT hosts and are env-overridable;
+  # switch to the prod hosts (api.signzy.app / svc.digitap.ai / api.digitap.ai) via the *_BASE_URL vars.
+  # API keys come from the environment / backend/.env (auto-loaded by spring-dotenv) — never committed.
+  signzy:
+    # Signzy sends the RAW opaque token in Authorization (not Basic/Bearer) + the account's
+    # unique id in the x-client-unique-id header.
+    base-url: ${SIGNZY_BASE_URL:https://api-preproduction.signzy.app}
+    token: ${SIGNZY_TOKEN:}
+    client-unique-id: ${SIGNZY_CLIENT_UNIQUE_ID:}
+  digitap:
+    # Two hosts: svc (KYC/Employment/Email), api (Credit/Location/Face-Match/OCR). Auth = Basic base64(id:secret).
+    svc-base-url: ${DIGITAP_SVC_BASE_URL:https://svcdemo.digitap.work}
+    api-base-url: ${DIGITAP_API_BASE_URL:https://apidemo.digitap.work}
+    client-id: ${DIGITAP_CLIENT_ID:}
+    client-secret: ${DIGITAP_CLIENT_SECRET:}
+  verification:
+    # Ordered provider chain the router tries per capability (skips unsupported, falls back on failure).
+    chain: ${NAVIX_VERIFICATION_CHAIN:signzy,digitap}
   storage:
     # S3 bucket for documents/images (KYC, loan docs, payment & collections proofs).
     bucket: ${NAVIX_S3_BUCKET:navix-finance-documents-dev}

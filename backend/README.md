@@ -24,7 +24,7 @@ applies: Credit Executive (review) != Credit Head (final approve) != Disbursemen
 | IAM                   | `navix-iam`          | Authentication, users, roles & separation-of-duties (maker-checker) enforcement. |
 | Onboarding            | `navix-onboarding`   | Applicant onboarding and application intake. |
 | KYC                   | `navix-kyc`          | Identity / KYC checks (incl. DigiLocker integration). |
-| Verification          | `navix-verification` | Employment, salary and document verification (Fintrix integration). |
+| Verification          | `navix-verification` | Identity/bureau/penny-drop/DigiLocker verification (Signzy primary + Digitap fallback). |
 | Income & Risk         | `navix-income-risk`  | Salary/income analysis, risk categorisation (A/B/C/D) and limit computation. |
 | Loan                  | `navix-loan`         | Loan offer, fee/interest calculation, approval workflow, repayment & prepayment. |
 | Disbursement          | `navix-disbursement` | Disbursement release and accountant bank-transfer confirmation / activation. |
@@ -56,11 +56,16 @@ them in an `application-local.yml` (gitignored) or export them in your shell.
 | `DB_URL`                  | JDBC URL, e.g. `jdbc:postgresql://localhost:5432/navix`. |
 | `DB_USERNAME`             | Database username. |
 | `DB_PASSWORD`             | Database password. |
-| `FINTRIX_BASE_URL`        | Fintrix API base, e.g. `https://admin.fintrix.tech/__api/api/v1/`. |
-| `FINTRIX_CLIENT_ID`       | Fintrix client id (HTTP Basic `base64(client_id:client_secret)`). |
-| `FINTRIX_CLIENT_SECRET`   | Fintrix client secret. |
-| `DIGILOCKER_CLIENT_ID`    | DigiLocker client id (sent as `X-Client-ID` header). |
-| `DIGILOCKER_CLIENT_SECRET`| DigiLocker client secret (sent as `X-Client-Secret` header). |
+| `SIGNZY_TOKEN`            | Signzy raw opaque `Authorization` token (PRIMARY verification provider). |
+| `SIGNZY_CLIENT_UNIQUE_ID`| Signzy account unique id, sent as the `x-client-unique-id` header (e.g. `info@navixfinance.com`). |
+| `SIGNZY_BASE_URL`        | Signzy base URL (default preprod `https://api-preproduction.signzy.app`; prod `https://api.signzy.app`). |
+| `DIGITAP_CLIENT_ID`      | Digitap client id (FALLBACK provider; HTTP Basic `base64(client_id:client_secret)`). |
+| `DIGITAP_CLIENT_SECRET`  | Digitap client secret. |
+| `DIGITAP_SVC_BASE_URL`   | Digitap svc host — KYC/Employment/Email (default preprod `https://svcdemo.digitap.work`; prod `https://svc.digitap.ai`). |
+| `DIGITAP_API_BASE_URL`   | Digitap api host — Credit/Location/Face-Match/OCR (default preprod `https://apidemo.digitap.work`; prod `https://api.digitap.ai`). |
+| `NAVIX_VERIFICATION_CHAIN`| Provider routing order (default `signzy,digitap`). |
+
+> Keys placed in `backend/.env` are auto-loaded (spring-dotenv); alternatively export them or use SSM. Signzy is the primary provider, Digitap the per-capability fallback (see `docs/signzy/`, `docs/digitap/` and `CLAUDE.md` §14).
 
 ## Build & Run
 

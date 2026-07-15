@@ -43,7 +43,8 @@ This is a monorepo:
 
 NAVIX runs the **full loan lifecycle end-to-end** — a single `loan_application` aggregate (§5) wired to
 a polished frontend through a BFF (§8), on **real JWT + Spring Security** (§7), with real
-Fintrix/DigiLocker clients, **S3-backed** documents, and a **9-step verified onboarding**. It is
+**Signzy (primary) + Digitap (fallback)** verification clients (§14), **S3-backed** documents, and a
+**9-step verified onboarding**. It is
 deployed (Vercel frontend → AWS ALB → ECS Fargate → RDS/S3/SSM; see `aws.md`). This section is the
 at-a-glance map of what's live (the blow-by-blow history is in git); detail on the lifecycle, roles,
 math, schema and endpoints lives once in §5/§7/§9/§10/§11.
@@ -119,7 +120,7 @@ navix_final/
 │   ├── navix-iam/                # staff users, roles (StaffRole), invites, SoD primitives
 │   ├── navix-onboarding/         # applicant intake
 │   ├── navix-kyc/                # DigiLocker KYC client
-│   ├── navix-verification/       # Fintrix salary verification + Experian bureau client
+│   ├── navix-verification/       # Signzy (primary) + Digitap (fallback) verification clients (§14)
 │   ├── navix-income-risk/        # risk A/B/C/D + eligible-limit computation
 │   ├── navix-loan/               # ★ the aggregate: LoanApplication, ApplicationStatus,
 │   │                             #   ApplicationFlowService, LoanService, LoanMath, controllers
@@ -183,10 +184,13 @@ The BFF route handlers reach the backend via **`BACKEND_BASE_URL`** (server-only
 
 ### 4.4 Demo logins (real JWT)
 - **Borrower:** `/login` → any 10-digit mobile → **Send code** → enter the OTP. Real OTP is delivered
-  by the **UltronSMS** gateway, but is **blocked on DLT-template registration**, so for demo/testing
-  run the backend with **`NAVIX_SMS_MOCK=true`** → the fixed code **`123456`** always works (also shown
-  as "Dev code"). Issues a real **borrower JWT** in the `navix_borrower` httpOnly cookie. Every "Apply
-  now" CTA → `/signup/mobile-otp` starts the 9-step verified onboarding.
+  by the **UltronSMS** gateway; the **login-OTP DLT template is now approved and live** (verified
+  2026-07-10 — `NAVIX_OTP_LOGIN_V2`, id `1707178366195230667`, whose text already matches the
+  `navix.sms.otp-template` in `application.yml`), so real OTP works once the gateway env is set (see
+  §14). For demo/testing without a handset, run the backend with **`NAVIX_SMS_MOCK=true`** → the fixed
+  code **`123456`** always works (also shown as "Dev code"). Issues a real **borrower JWT** in the
+  `navix_borrower` httpOnly cookie. Every "Apply now" CTA → `/signup/mobile-otp` starts the 9-step
+  verified onboarding.
 - **Staff/Admin:** `/staff/login` → **pick a role** → the BFF authenticates for real against
   `POST /api/auth/staff/login` (role → seeded `*.navix.example` email + default password
   **`Admin@12345`**, BCrypt) and stores a **staff JWT**. The role decides which live queues have data.
@@ -674,7 +678,8 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `BORROWER_AUTH_TTL_SECONDS`
   (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
   `AWS_PROFILE`, `NAVIX_ENV`,
-  `FINTRIX_*`, `DIGILOCKER_*`, `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
+  `SIGNZY_*` + `DIGITAP_*` + `NAVIX_VERIFICATION_CHAIN` (verification providers, §14; loaded from `.env`),
+  `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
   `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs).
@@ -685,16 +690,26 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 
 > **The full roadmap is in [`FUTURE.md`](FUTURE.md); the go/no-go production checklist is
 > [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).** Most of the original deferred set **shipped**
-> (real auth, S3, Fintrix/DigiLocker, notifications, reborrow, referral, expenses);
+> (real auth, S3, verification clients, notifications, reborrow, referral, expenses);
 > the bullets below are what genuinely **remains**.
 
 - ✅ **Done in the migration:** real auth (JWT + Spring Security, `JwtAuthFilter` replaced
-  `DemoActorFilter`, staff BCrypt login); real **Fintrix** + **DigiLocker** clients; **S3** documents
+  `DemoActorFilter`, staff BCrypt login); real verification clients (**Signzy primary + Digitap fallback** —
+  §14; superseded the earlier Fintrix/DigiLocker layer, now removed); **S3** documents
   (presign + `s3_object_key`); bank **penny-drop**; SSM secrets; the 9-step verified onboarding; the
   admin payment block; mock-layer removal; and a **test suite** (`QA_CHECKLIST.md`, ~136 backend tests,
   Playwright `frontend/e2e/*`, `.github/workflows/ci.yml`).
-- 🟡 **Borrower OTP** — real **UltronSMS** client done, but SMS delivery is **blocked on a DLT-registered
-  template**; a **mock mode** (`NAVIX_SMS_MOCK=true` → `123456`) is wired for demo/testing.
+- 🟢 **Borrower OTP — live.** Real **UltronSMS** client done and the **login-OTP DLT template is
+  approved** (verified 2026-07-10 via `docs/sms-dlt/test-all-templates.sh` → `NAVIX_OTP_LOGIN_V2`, id
+  `1707178366195230667`, gateway `ErrorCode 000`); its text matches `navix.sms.otp-template`, so OTP
+  sends for real with the gateway env set (§14). `NAVIX_SMS_MOCK=true` → `123456` stays wired for
+  demo/testing without a handset.
+- 🟡 **The 15 lifecycle SMS (`_V2` batch)** are registered but **14 remain pending DLT approval** — the
+  gateway returns `006 Invalid template text` for them (an approval-status issue, not a content one:
+  the sent text is char-for-char identical to `docs/sms-dlt/SMSULTRON.md`). Keep their
+  `NAVIX_SMS_DLT_*` env vars unset (the notification engine no-ops the SMS channel) until they clear;
+  re-run `docs/sms-dlt/test-all-templates.sh` to see which have flipped to `000`. Full run recorded in
+  `docs/sms-dlt/TEMPLATE_TEST_RESULTS.md`.
 - 🟡 Staff **emailed invites** + ADMIN-gated invite create; middleware **JWT-signature verify** (still a
   presence check). Rotate the seeded `Admin@12345` + set a strong `AUTH_SECRET` for prod.
 - 🔴 Real bank **payout** (NEFT/IMPS) at the accountant step; sanction-letter/agreement generation → S3.
@@ -707,18 +722,81 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 
 ## 14. External integrations (when un-mocked)
 
-- **Fintrix** (salary verification + **Experian/CRIF bureau**) — base
-  `https://admin.fintrix.tech/__api/api/v1/`, HTTP Basic `base64(CLIENT_ID:CLIENT_SECRET)`. See
-  `NAVIX_Fintrix_Integration_Flow.md`.
-- **DigiLocker** (KYC) — headers `X-Client-ID` / `X-Client-Secret`. See `Digilocker_API_Guide.md`.
+### Verification providers — Signzy (primary) + Digitap (fallback)
 
-**Bureau report → credit brief:** `ExperianClient.pull` parses the **full**
-`individual_experian` response (`data.credit_report.*` — CAIS summary, outstanding balances, CAPS
-enquiries; shape in `samplepan.json`) into `BureauReportFacts`, not just the score. The **sandbox is
-thin-file** (no CAIS detail → `facts == null` → score-only, no brief); a **prod** response is rich.
-For local end-to-end demos set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`** (bundled in
-`navix-app`/`navix-verification` resources) — every pull then returns that report, yielding a real
-4.0★ brief + PDF without calling Fintrix. The rating math + field map live in `CreditRatingCalculator`
+NAVIX's identity/bureau/penny-drop/DigiLocker verification runs behind the provider-neutral
+`VerificationPort` seam via `RoutingVerificationPort` (`@Primary`, `navix-verification`), which routes **per
+capability: Signzy first, Digitap as fallback; where Signzy lacks a capability, Digitap directly**. The old
+Fintrix + Fintrix-DigiLocker integration was **removed** (`git` history has it). Two per-provider adapters
+(`SignzyVerificationAdapter`, `DigitapVerificationAdapter`) map provider clients → the neutral records;
+a `CapabilityNotSupportedException` tells the router "skip to the next provider" vs a `VerificationException`
+"tried and failed, fall through". Full API catalogs + field/sample specs: **`docs/signzy/`** (11 APIs) and
+**`docs/digitap/`** (43 APIs).
+
+| Capability (`VerificationPort`) | Provider used | Endpoint |
+|---|---|---|
+| `verifyPan` | **Signzy** → Digitap | Signzy `/api/v3/pan/compliance-206-individual-search` → Digitap `/validation/kyc/v1/pan_details_plus` |
+| `pullBureau` | **Signzy** → Digitap | Signzy `/api/v3/bureau/experian-lite` → `/api/v3/bureau/crif` → Digitap `/credit_analytics/request` |
+| `faceLiveness` (selfie) | **Digitap** | Digitap `/fmfl/v2/face-match` — **1:1 face-match** of the uploaded selfie vs the DigiLocker Aadhaar photo (no live camera). Signzy Liveness Secure (interactive iframe) is not wired to this sync port method |
+| `pennyDrop` | **Signzy only** | Signzy `/api/v3/bankaccountverification/bankaccountverifications` (Digitap has no penny-drop) |
+| `digilocker*` | **Signzy only** | Signzy `/api/v3/digilocker/createUrl` + `/geteaadhaarwithxml` (Digitap has no consent flow) |
+| `verifyEmail` | **Digitap only** | Digitap `/cv/email_verification/v1` (Signzy has no email API) |
+| `verifyAddress` | **Digitap only** | Digitap `/ent/v1/address-verification` (Signzy has no address API) |
+
+- **Auth & hosts (env-driven, PREPRODUCTION by default).** Signzy = raw opaque token in `Authorization`
+  **plus** the account id in the `x-client-unique-id` header (`SIGNZY_TOKEN` + `SIGNZY_CLIENT_UNIQUE_ID`,
+  base `SIGNZY_BASE_URL` default `https://api-preproduction.signzy.app`). Digitap = HTTP
+  Basic `base64(client_id:client_secret)` (`DIGITAP_CLIENT_ID`/`DIGITAP_CLIENT_SECRET`) over **two** hosts —
+  `DIGITAP_SVC_BASE_URL` (default `https://svcdemo.digitap.work`, KYC/Email) + `DIGITAP_API_BASE_URL`
+  (default `https://apidemo.digitap.work`, Credit/Address/Face-Match). Routing order via
+  `NAVIX_VERIFICATION_CHAIN` (default `signzy,digitap`). Switch to prod by overriding the `*_BASE_URL` vars
+  (`api.signzy.app`, `svc.digitap.ai`, `api.digitap.ai`). **Keys load from `backend/.env`** (auto-loaded by
+  `spring-dotenv` — see `.env.example`) or SSM; never committed.
+- **Bureau consent gotcha:** Signzy's `experian-lite`/`crif` require `consent.consentTimestamp` as a JSON
+  **number** (epoch millis) — a string returns `400 "must be a number"`. `SignzyDtos.Consent.consentTimestamp`
+  is a `long` for this reason.
+- **DigiLocker (Signzy)** — consent flow unchanged in shape (init consent URL → user authorizes →
+  **redirect-driven** completion, DB `AADHAAR` row is the source of truth); PASS gates on
+  `x509Data.validAadhaarDSC == "yes"`. On completion NAVIX also ingests the Aadhaar **face photo** to S3 as an
+  `AADHAAR_PHOTO` document, which the **selfie step face-matches against** (`ApplicationVerificationService`).
+  The gotchas below still apply.
+- **Selfie = face-match, not liveness (no live camera).** `verifySelfie` presigns the uploaded selfie **and**
+  the stored `AADHAAR_PHOTO`, and calls `faceLiveness(selfieUrl, referenceUrl, ref)` → Digitap Face Match
+  (`is_same_face` + confidence ≥ 0.60). No Aadhaar photo yet → degrades to a single-image quality check.
+- **Bureau fixture** — `NAVIX_BUREAU_FIXTURE=classpath:samplepan.json` still yields a rich local credit brief
+  offline (now via `SignzyExperianClient`, which tolerates both the real `jsonExperianReport` and the fixture
+  `credit_report` shape).
+- **Live-test status (verified 2026-07-14, preproduction/production).** ✅ Signzy PAN, **penny-drop**, CRIF
+  (score 799), DigiLocker init; ✅ Digitap **Address** (200, prod host). ⚠️ **Account-side blockers, not code:**
+  Digitap **Email** → `412` (product not provisioned), Digitap **Face Match** → `402` (needs account balance),
+  Digitap **PAN/Credit fallback** → `403` IP-not-allowed (whitelist the caller IP; not critical since Signzy is
+  primary). Signzy **Experian** may `409` on a thin/no-match identity → CRIF fallback covers it.
+  **Config caveat:** the current Digitap keys are **production** but the app defaults to Digitap **preprod**
+  hosts (which `401` prod keys) — set the `DIGITAP_*_BASE_URL` vars to the prod hosts to use them, or get a
+  Digitap UAT key pair. Live-test scripts: `docs/signzy/test-all-signzy.sh`, `docs/digitap/test-all-digitap.sh`;
+  ready-to-run curls in `docs/signzy/SIGNZY_LIVE_CURLS.md` + `docs/signzy/SIGNZY_CURLS_DIRECT.md`.
+- **UltronSMS** (borrower OTP + lifecycle SMS) — `GET https://ultronsms.com/api/mt/SendSMS`, params
+  `user/password/senderid/channel/DCS/flashsms/number/text/route/peid/DLTTemplateId`; success envelope
+  `{ErrorCode:"0"|"000", JobId}`. Sent by `UltronSmsClient` (`navix-app`), bound from `navix.sms.*`.
+  The **PEID is entity-level and constant** across all templates (verified working value
+  `1701178039634361131`, sender `NAVIXF`, route `02`). Live-test **without** the app:
+  `docs/sms-dlt/test-send-sms.sh <number> [text] [dltTemplateId]` (one send) and
+  `docs/sms-dlt/test-all-templates.sh [number]` (sweeps every `_V2` template → a pass/fail tracker at
+  `docs/sms-dlt/TEMPLATE_TEST_RESULTS.md`). The 15 template ids + exact content are in
+  `docs/sms-dlt/SMSULTRON.md`; the sent text must match the registered template **char-for-char** (only
+  variable slots filled), use `Rs.` not `₹` (₹ forces costly UCS-2), and any URL must be portal-
+  whitelisted. **Status (2026-07-10):** `NAVIX_OTP_LOGIN_V2` approved & live; the other 14 pending
+  (return `006 Invalid template text`).
+
+**Bureau report → credit brief:** the Signzy Experian pull (`SignzyExperianClient`) unwraps the report to
+`data.jsonExperianReport` and hands it to `support/ExperianFactsParser`, which parses the **full** report
+(CAIS summary, outstanding balances, CAPS enquiries) into `BureauReportFacts`, not just the score — the
+**same shape** the Digitap Credit client (`DigitapCreditClient`, `result.result_json.INProfileResponse`) reuses.
+A **thin-file** response (no CAIS detail → `facts == null`) is score-only, no brief; a rich response yields the
+brief. For local end-to-end demos set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`** (bundled in
+`navix-app`/`navix-verification` resources; the client tolerates the fixture's `data.credit_report` shape) —
+every pull then returns that report, yielding a real 4.0★ brief + PDF without a live call. The rating math +
+field map live in `CreditRatingCalculator`
 (see §2); the PDF needs **OpenPDF** (`com.github.librepdf:openpdf`, in the parent BOM + `navix-loan`).
 The bureau facts drive the **rating + credit-health + exposure** numbers, but the brief's **displayed
 identity** (name/PAN/mobile/DOB) is overridden from the borrower's `ApplicantProfile`

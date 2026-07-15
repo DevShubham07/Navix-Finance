@@ -56,6 +56,8 @@ public class ApplicationVerificationService {
     public static final String ADDRESS = "ADDRESS";
     public static final String DIGILOCKER = "DIGILOCKER";
     public static final String AADHAAR = "AADHAAR";
+    /** The Aadhaar face photo (from DigiLocker), stored so the selfie step can 1:1 face-match it. */
+    public static final String AADHAAR_PHOTO = "AADHAAR_PHOTO";
     public static final String BUREAU = "BUREAU";
     public static final String SALARY = "SALARY";
     public static final String PENNY_DROP = "PENNY_DROP";
@@ -146,7 +148,7 @@ public class ApplicationVerificationService {
         derived.put("maskedAadhaar", r.maskedAadhaar());
         derived.put("addressState", r.addressState());
         String status = r.valid() ? PASS : FAIL;
-        ApplicationVerification row = upsert(appId, PAN, status, "FINTRIX", r.txnId(), ref,
+        ApplicationVerification row = upsert(appId, PAN, status, r.provider(), r.txnId(), ref,
                 null, null, null, derived, r.valid() ? "PAN valid" : "PAN not valid");
         recomputeNameMatch(appId);
         return view(row);
@@ -161,14 +163,28 @@ public class ApplicationVerificationService {
         }
         CustomerProfile profile = profile(appId);
         String ref = ref(appId, EMAIL);
-        VerificationPort.EmailCheck r = verification.verifyEmail(
-                email, nz(profile.getFullName()), nz(profile.getEmployer()), ref);
-        profile.setEmailVerified(r.verified());
-        // Persist the verified official email as the contact email only if the borrower hasn't
-        // already supplied one (personal email saved via the profile takes precedence). V22.
+        // Persist the email as the contact email if the borrower hasn't already supplied one
+        // (personal email saved via the profile takes precedence). V22. Applies regardless of the
+        // provider outcome below.
         if (profile.getEmail() == null || profile.getEmail().isBlank()) {
             profile.setEmail(email);
         }
+        VerificationPort.EmailCheck r;
+        try {
+            r = verification.verifyEmail(email, nz(profile.getFullName()), nz(profile.getEmployer()), ref);
+        } catch (RuntimeException providerFailure) {
+            // Email provider couldn't run (e.g. not provisioned / upstream error). Don't hard-block
+            // onboarding with a 500 — record for manual review and let the borrower continue,
+            // mirroring the penny-drop/selfie steps. (Product decision: never stop the borrower here.)
+            profile.setEmailVerified(false);
+            profileRepo.save(profile);
+            Map<String, Object> failDerived = new LinkedHashMap<>();
+            failDerived.put("verified", false);
+            failDerived.put("providerError", true);
+            return view(upsert(appId, EMAIL, REVIEW, "DIGITAP", null, ref, null, null, null, failDerived,
+                    "We couldn't verify your email right now — you can continue; our team will review it."));
+        }
+        profile.setEmailVerified(r.verified());
         profileRepo.save(profile);
 
         boolean ok = r.verified() && r.establishmentMatched() && !r.genericEmail();
@@ -180,7 +196,7 @@ public class ApplicationVerificationService {
         String status = ok ? PASS : REVIEW;
         String msg = ok ? "Email + employer matched"
                 : (r.genericEmail() ? "Not an official email" : "Employer not matched — manual review");
-        return view(upsert(appId, EMAIL, status, "FINTRIX", r.txnId(), ref, null, null, null, derived, msg));
+        return view(upsert(appId, EMAIL, status, r.provider(), r.txnId(), ref, null, null, null, derived, msg));
     }
 
     /** Geo (lat/long) → within-India address. */
@@ -192,8 +208,20 @@ public class ApplicationVerificationService {
         }
         requireApplication(appId);
         String ref = ref(appId, ADDRESS);
-        VerificationPort.AddressCheck r = verification.verifyAddress(lat, lng, ref);
         CustomerProfile profile = profile(appId);
+        VerificationPort.AddressCheck r;
+        try {
+            r = verification.verifyAddress(lat, lng, ref);
+        } catch (RuntimeException providerFailure) {
+            // Address provider couldn't run (e.g. not provisioned / upstream error). Don't 500 the
+            // borrower — record for manual review and continue, mirroring the penny-drop/selfie steps.
+            profile.setAddressVerified(false);
+            profileRepo.save(profile);
+            Map<String, Object> failDerived = new LinkedHashMap<>();
+            failDerived.put("providerError", true);
+            return view(upsert(appId, ADDRESS, REVIEW, "DIGITAP", null, ref, null, null, null, failDerived,
+                    "We couldn't verify your address right now — you can continue; our team will review it."));
+        }
         // The geocoder's within-India flag is unreliable (valid Indian addresses sometimes resolve
         // false), so it no longer gates the step — a successfully resolved address PASSes. The raw
         // flag is still recorded in the audit `derived` for staff. Only an address that fails to
@@ -211,7 +239,7 @@ public class ApplicationVerificationService {
         derived.put("pincode", r.pincode());
         derived.put("address", r.address());
         String status = resolved ? PASS : REVIEW;
-        return view(upsert(appId, ADDRESS, status, "FINTRIX", r.txnId(), ref, null, null, null, derived,
+        return view(upsert(appId, ADDRESS, status, r.provider(), r.txnId(), ref, null, null, null, derived,
                 resolved ? "Address resolved" : "Address could not be resolved — review"));
     }
 
@@ -404,6 +432,25 @@ public class ApplicationVerificationService {
             s3Key = null;
         }
 
+        // Server-side ingest of the Aadhaar face photo (a provider persist URL) → S3, so the SELFIE step
+        // can 1:1 face-match the borrower's selfie against it. Best-effort; never fails the step.
+        String photoRef = a.profileImageBase64();
+        if (photoRef != null && photoRef.startsWith("http")) {
+            try {
+                String photoKey = storage.buildApplicationKey(appId, AADHAAR_PHOTO, "jpg");
+                storage.storeFromUrl(photoKey, photoRef, "image/jpeg");
+                ApplicationDocument photo = new ApplicationDocument();
+                photo.setApplicationId(appId);
+                photo.setDocType(AADHAAR_PHOTO);
+                photo.setFileName("aadhaar-photo.jpg");
+                photo.setContentType("image/jpeg");
+                photo.setS3ObjectKey(photoKey);
+                documentRepo.save(photo);
+            } catch (RuntimeException photoIngestFailure) {
+                // Selfie step will fall back to a single-image check if the photo isn't available.
+            }
+        }
+
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("fullName", a.fullName());
         derived.put("dob", a.dob());
@@ -537,7 +584,7 @@ public class ApplicationVerificationService {
             Map<String, Object> derived = new LinkedHashMap<>();
             derived.put("accountExists", false);
             derived.put("providerError", true);
-            return view(upsert(appId, PENNY_DROP, REVIEW, "FINTRIX", null, ref,
+            return view(upsert(appId, PENNY_DROP, REVIEW, "SIGNZY", null, ref,
                     null, null, null, derived,
                     "We couldn't verify this account right now — you can continue; we'll verify it before your advance is sent."));
         }
@@ -557,13 +604,17 @@ public class ApplicationVerificationService {
         String msg = !r.accountExists()
                 ? "We couldn't confirm this account — you can continue; we'll verify it before your advance is sent."
                 : (ok ? "Account + name matched" : "Name mismatch at bank — manual review");
-        ApplicationVerification row = upsert(appId, PENNY_DROP, status, "FINTRIX", r.txnId(), ref,
+        ApplicationVerification row = upsert(appId, PENNY_DROP, status, r.provider(), r.txnId(), ref,
                 nameMatch, null, null, derived, msg);
         recomputeNameMatch(appId);
         return view(row);
     }
 
-    /** Selfie liveness on the uploaded selfie (presigned GET → Fintrix). */
+    /**
+     * Face-match the uploaded selfie against the DigiLocker Aadhaar photo (presigned GET URLs → Digitap
+     * Face Match). When no Aadhaar photo has been captured yet, degrades to a single-image face/quality
+     * check on the selfie alone.
+     */
     @Transactional
     public StepResult verifySelfie(Long appId, String selfieObjectKey) {
         if (selfieObjectKey == null || selfieObjectKey.isBlank()) {
@@ -571,9 +622,16 @@ public class ApplicationVerificationService {
         }
         requireApplication(appId);
         String imageUrl = storage.presignDownload(selfieObjectKey);
+        // Reference photo = the Aadhaar face captured at DigiLocker completion (if present).
+        String referenceUrl = documentRepo
+                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, AADHAAR_PHOTO)
+                .map(d -> storage.presignDownload(d.getS3ObjectKey()))
+                .orElse(null);
+        boolean matched = referenceUrl != null;
         String ref = ref(appId, SELFIE);
-        VerificationPort.FaceLivenessCheck r = verification.faceLiveness(imageUrl, ref);
 
+        // Persist the selfie regardless of the provider outcome, so a KYC approver always has the
+        // image to review (including when the face-match provider is unavailable below).
         ApplicationDocument selfie = new ApplicationDocument();
         selfie.setApplicationId(appId);
         selfie.setDocType(SELFIE);
@@ -582,15 +640,35 @@ public class ApplicationVerificationService {
         selfie.setS3ObjectKey(selfieObjectKey);
         documentRepo.save(selfie);
 
+        VerificationPort.FaceLivenessCheck r;
+        try {
+            r = verification.faceLiveness(imageUrl, referenceUrl, ref);
+        } catch (RuntimeException providerFailure) {
+            // The face-match provider couldn't run (e.g. insufficient balance / upstream error).
+            // Don't hard-block onboarding with a 500 — record the selfie for manual review and let the
+            // borrower continue, mirroring the penny-drop step. (Product decision: never stop the
+            // borrower at this step; a KYC approver makes the final call.)
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("faceMatch", matched);
+            derived.put("providerError", true);
+            return view(upsert(appId, SELFIE, REVIEW, "DIGITAP", null, ref, null, null, selfieObjectKey,
+                    derived,
+                    "We couldn't run the face check right now — you can continue; our team will review your selfie."));
+        }
+
         boolean live = r.live() && !r.multipleFaces();
         Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("faceMatch", matched);
         derived.put("live", r.live());
         derived.put("confidence", r.confidence());
         // Fail → flagged for manual review (not hard block); approver decides.
         String status = live ? PASS : REVIEW;
         Long score = r.confidence() != null ? Math.round(r.confidence() * 100) : null;
-        return view(upsert(appId, SELFIE, status, "FINTRIX", r.txnId(), ref, null, score, selfieObjectKey,
-                derived, live ? "Liveness passed" : "Liveness low — manual review"));
+        String msg = matched
+                ? (live ? "Face matched to Aadhaar photo" : "Face match low — manual review")
+                : (live ? "Selfie quality check passed" : "Selfie check low — manual review");
+        return view(upsert(appId, SELFIE, status, r.provider(), r.txnId(), ref, null, score, selfieObjectKey,
+                derived, msg));
     }
 
     /** Record agreement consent (the 3 documents the borrower accepted). */
