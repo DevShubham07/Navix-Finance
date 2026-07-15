@@ -111,7 +111,13 @@ export default function SignupDigiLockerPage() {
       const redirectUrl = `${window.location.origin}/kyc/digilocker/callback?app=${appId}&sid=${nonce}`;
       const r = await verificationApi.digilockerInit(appId, redirectUrl);
       const url = typeof r.derived?.url === "string" ? (r.derived.url as string) : null;
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      if (url) {
+        // Open DigiLocker in the SAME tab (not a new window). Consent redirects back to
+        // /kyc/digilocker/callback (our redirectUrl), which finalises from localStorage and routes
+        // the borrower forward to the next step. Navigation unloads this page immediately; the
+        // poll setup below is a harmless no-op fallback for the rare case navigation is blocked.
+        window.location.assign(url);
+      }
       setPhase("polling");
       stop();
       polls.current = 0;
