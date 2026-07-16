@@ -54,6 +54,9 @@ navix:
     base-url: ${SIGNZY_BASE_URL:https://api-preproduction.signzy.app}
     token: ${SIGNZY_TOKEN:}
     client-unique-id: ${SIGNZY_CLIENT_UNIQUE_ID:}
+    # Signzy PRODUCTION account — serves PAN 206AB (unmasked name) + reverse-geocode (address).
+    prod-base-url: ${SIGNZY_PROD_BASE_URL:https://api.signzy.app}
+    prod-token: ${SIGNZY_PROD_TOKEN:}
   digitap:
     # Two hosts: svc (KYC/Employment/Email), api (Credit/Location/Face-Match/OCR). Auth = Basic base64(id:secret).
     svc-base-url: ${DIGITAP_SVC_BASE_URL:https://svcdemo.digitap.work}

@@ -32,6 +32,7 @@ import org.springframework.web.client.RestClient;
 public class VerificationClientConfig {
 
     public static final String SIGNZY_CLIENT = "signzyRestClient";
+    public static final String SIGNZY_PROD_CLIENT = "signzyProdRestClient";
     public static final String DIGITAP_SVC_CLIENT = "digitapSvcRestClient";
     public static final String DIGITAP_API_CLIENT = "digitapApiRestClient";
 
@@ -59,6 +60,19 @@ public class VerificationClientConfig {
                 // Signzy expects the RAW opaque token in Authorization (no "Basic"/"Bearer" prefix)
                 // plus the account's unique id in x-client-unique-id.
                 .defaultHeader(HttpHeaders.AUTHORIZATION, props.token() == null ? "" : props.token())
+                .defaultHeader("x-client-unique-id",
+                        props.clientUniqueId() == null ? "" : props.clientUniqueId())
+                .build();
+    }
+
+    @Bean(SIGNZY_PROD_CLIENT)
+    public RestClient signzyProdRestClient(SignzyProperties props) {
+        // Signzy production account (PAN + reverse-geocode). Same raw-token + x-client-unique-id scheme
+        // as the preprod client, different base URL + token.
+        return RestClient.builder()
+                .baseUrl(props.prodBaseUrl())
+                .requestFactory(timeoutRequestFactory())
+                .defaultHeader(HttpHeaders.AUTHORIZATION, props.prodToken() == null ? "" : props.prodToken())
                 .defaultHeader("x-client-unique-id",
                         props.clientUniqueId() == null ? "" : props.clientUniqueId())
                 .build();

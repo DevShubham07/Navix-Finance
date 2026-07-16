@@ -6,6 +6,7 @@ import com.navix.verification.client.SignzyBankVerificationClient;
 import com.navix.verification.client.SignzyCrifClient;
 import com.navix.verification.client.SignzyDigiLockerClient;
 import com.navix.verification.client.SignzyExperianClient;
+import com.navix.verification.client.SignzyGeocodeClient;
 import com.navix.verification.client.SignzyPanClient;
 import com.navix.verification.dto.SignzyDtos;
 import com.navix.verification.exception.CapabilityNotSupportedException;
@@ -19,12 +20,14 @@ import org.springframework.stereotype.Component;
  * provider (see {@code RoutingVerificationPort}). Capabilities Signzy does not offer throw
  * {@link CapabilityNotSupportedException} so the router skips to Digitap:
  * <ul>
- *   <li>{@link #verifyEmail} / {@link #verifyAddress} — Signzy has no email/address API.</li>
+ *   <li>{@link #verifyEmail} — Signzy has no email API (Digitap only).</li>
  *   <li>{@link #faceLiveness} — Signzy Liveness Secure is an interactive iframe flow, not the
  *       synchronous single-image liveness this port method expects; the router uses Digitap Face Match.
  *       ({@code SignzyLivenessClient} remains available for a future async selfie journey.)</li>
  * </ul>
- * Penny-drop and the full DigiLocker consent flow are Signzy-only (Digitap lacks them).
+ * {@link #verifyAddress} uses Signzy reverse-geocoding (production account); Digitap is the fallback.
+ * PAN 206AB also runs on the production account (unmasked name). Penny-drop and the full DigiLocker
+ * consent flow are Signzy-only (Digitap lacks them).
  */
 @Component
 @RequiredArgsConstructor
@@ -35,14 +38,17 @@ public class SignzyVerificationAdapter implements VerificationPort {
     private final SignzyExperianClient experianClient;
     private final SignzyCrifClient crifClient;
     private final SignzyDigiLockerClient digiLockerClient;
+    private final SignzyGeocodeClient geocodeClient;
 
     @Override
     public PanCheck verifyPan(String pan, String clientRef) {
         SignzyDtos.PanResponse r = panClient.verify(pan);
         boolean operative = "operative".equalsIgnoreCase(r.panStatus());
         boolean aadhaarLinked = "linked".equalsIgnoreCase(r.panAadhaarLinkStatus());
-        // Signzy 206AB returns a MASKED name and no DOB/gender/address — those come from DigiLocker.
-        return new PanCheck(r.txnId(), "SIGNZY", operative, trim(r.entityName()), null, null,
+        // Prefer the unmasked name (maskedName=false); fall back to the masked entityName. Signzy 206AB
+        // returns no DOB/gender/address — those come from DigiLocker.
+        String name = !isBlank(r.unMaskedName()) ? r.unMaskedName() : r.entityName();
+        return new PanCheck(r.txnId(), "SIGNZY", operative, trim(name), null, null,
                 aadhaarLinked, null, r.number(), null, null);
     }
 
@@ -53,7 +59,11 @@ public class SignzyVerificationAdapter implements VerificationPort {
 
     @Override
     public AddressCheck verifyAddress(double latitude, double longitude, String clientRef) {
-        throw new CapabilityNotSupportedException("Signzy has no address verification API");
+        // Signzy reverse-geocode (production account). Router falls back to Digitap on any failure.
+        SignzyDtos.GeocodeResponse g = geocodeClient.reverseGeocode(latitude, longitude);
+        boolean withinIndia = "IN".equalsIgnoreCase(g.countryCode());
+        return new AddressCheck(clientRef, "SIGNZY", withinIndia, g.address(), g.zipcode(),
+                g.state(), g.city());
     }
 
     @Override

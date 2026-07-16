@@ -49,7 +49,7 @@ class SignzyClientsTest {
     @Test
     void bankVerificationMapsActiveAndName() {
         Bound b = bind();
-        stub(b.server(), "/api/v3/bankaccountverification/bankaccountverifications", """
+        stub(b.server(), "/api/v3/bankaccountverification/pennydrop-v1", """
                 {"result":{"active":"yes","reason":"success","nameMatch":"yes",
                 "signzyReferenceId":"SGZ-REF-1","auditTrail":{"nature":"BANK RRN","value":"334912557776"},
                 "bankTransfer":{"response":"Transaction Successful","beneName":"RAVI KUMAR","beneIFSC":"KKBK0008066"}}}
@@ -69,7 +69,8 @@ class SignzyClientsTest {
     void pan206abMapsTopLevelFields() {
         Bound b = bind();
         stub(b.server(), "/api/v3/pan/compliance-206-individual-search", """
-                {"number":"ABCPE1234Z","entityName":"  FXXL NXXE","panAllotmentDate":"20-07-2010",
+                {"number":"ABCPE1234Z","entityName":"  FXXL NXXE","unMaskedName":"  FIRST NAME",
+                "panAllotmentDate":"20-07-2010",
                 "panAadhaarLinkStatus":"linked","compliant":"true","isSpecified":"No","panStatus":"operative"}
                 """);
 
@@ -77,9 +78,28 @@ class SignzyClientsTest {
 
         assertThat(r.number()).isEqualTo("ABCPE1234Z");
         assertThat(r.entityName()).isEqualTo("FXXL NXXE");
+        assertThat(r.unMaskedName()).isEqualTo("FIRST NAME");
         assertThat(r.panAadhaarLinkStatus()).isEqualTo("linked");
         assertThat(r.isSpecified()).isEqualTo("No");
         assertThat(r.panStatus()).isEqualTo("operative");
+        b.server().verify();
+    }
+
+    @Test
+    void reverseGeocodeMapsAddress() {
+        Bound b = bind();
+        stub(b.server(), "/api/v3/geocoding/reverse-geocode", """
+                {"address":"RXJ8+22, VALUKKUPARAI, TAMIL NADU 641032, INDIA","latitude":"10.83","longitude":"76.96",
+                "confidenceScore":0.7,"city":"VALUKKUPARAI","state":"TAMIL NADU","stateCode":"TN",
+                "country":"INDIA","countryCode":"IN","zipcode":"641032"}
+                """);
+
+        var r = new SignzyGeocodeClient(b.restClient()).reverseGeocode(10.83, 76.96);
+
+        assertThat(r.address()).contains("VALUKKUPARAI");
+        assertThat(r.state()).isEqualTo("TAMIL NADU");
+        assertThat(r.zipcode()).isEqualTo("641032");
+        assertThat(r.countryCode()).isEqualTo("IN");
         b.server().verify();
     }
 
