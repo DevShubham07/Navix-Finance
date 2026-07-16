@@ -18,7 +18,7 @@ public final class SignzyDtos {
     private SignzyDtos() {
     }
 
-    // ---- Hybrid Bank Account Verification (penny-drop) : /api/v3/bankaccountverification/bankaccountverifications ----
+    // ---- Penny-drop bank account verification : /api/v3/bankaccountverification/pennydrop-v1 ----
     public record BankVerificationRequest(
             @JsonProperty("beneficiaryAccount") String beneficiaryAccount,
             @JsonProperty("beneficiaryIFSC") String beneficiaryIFSC,
@@ -38,19 +38,43 @@ public final class SignzyDtos {
     }
 
     // ---- PAN 206AB compliance : /api/v3/pan/compliance-206-individual-search ----
+    // maskedName="false" makes Signzy return the full name in the `unMaskedName` field (alongside the
+    // still-masked `entityName`).
     public record PanRequest(
-            @JsonProperty("panNumber") String panNumber) {
+            @JsonProperty("panNumber") String panNumber,
+            @JsonProperty("maskedName") String maskedName) {
     }
 
     public record PanResponse(
             String txnId,
             String number,
             String entityName,
+            String unMaskedName,
             String panAllotmentDate,
             String panAadhaarLinkStatus,
             Boolean compliant,
             String isSpecified,
             String panStatus
+    ) {
+    }
+
+    // ---- Reverse geocoding (address) : /api/v3/geocoding/reverse-geocode ----
+    public record GeocodeRequest(
+            @JsonProperty("latitude") String latitude,
+            @JsonProperty("longitude") String longitude,
+            @JsonProperty("pincodePriority") boolean pincodePriority,
+            @JsonProperty("districtRequired") boolean districtRequired,
+            @JsonProperty("blockRequired") boolean blockRequired) {
+    }
+
+    public record GeocodeResponse(
+            String address,
+            String city,
+            String state,
+            String stateCode,
+            String zipcode,
+            String countryCode,
+            Double confidenceScore
     ) {
     }
 

@@ -16,6 +16,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record SignzyProperties(
         String baseUrl,
         String token,
-        String clientUniqueId
+        String clientUniqueId,
+        // Signzy PRODUCTION account (api.signzy.app) used for the capabilities enabled there — PAN 206AB
+        // (with the unmasked name) and reverse-geocoding for address. The preprod account above keeps
+        // serving penny-drop / bureau / DigiLocker (which are not entitled on the prod account).
+        String prodBaseUrl,
+        String prodToken
 ) {
 }

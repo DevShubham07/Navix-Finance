@@ -26,16 +26,18 @@ public class SignzyPanClient {
 
     private final RestClient signzy;
 
-    public SignzyPanClient(@Qualifier(VerificationClientConfig.SIGNZY_CLIENT) RestClient signzy) {
+    public SignzyPanClient(@Qualifier(VerificationClientConfig.SIGNZY_PROD_CLIENT) RestClient signzy) {
         this.signzy = signzy;
     }
 
     public PanResponse verify(String pan) {
-        JsonNode root = post(signzy, ENDPOINT, new PanRequest(pan));
+        // maskedName=false → Signzy adds the full name in `unMaskedName` (the account must be entitled).
+        JsonNode root = post(signzy, ENDPOINT, new PanRequest(pan, "false"));
         return new PanResponse(
                 text(root.path("number")),
                 text(root.path("number")),
                 trimmed(root.path("entityName")),
+                trimmed(root.path("unMaskedName")),
                 text(root.path("panAllotmentDate")),
                 text(root.path("panAadhaarLinkStatus")),
                 bool(root.path("compliant")),
