@@ -18,7 +18,7 @@ public class OpenApiConfig {
     public OpenAPI navixOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("NAVIX Finance API")
+                        .title("DhanBoost API")
                         .description("Salary-linked single-repayment lending platform API.")
                         .version("0.0.1-SNAPSHOT"));
     }

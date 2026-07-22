@@ -38,7 +38,7 @@ public class SesEmailClient implements EmailClient {
     @Override
     public EmailResult send(EmailMessage message) {
         try {
-            String subject = message.subject() == null ? "NAVIX Finance" : message.subject();
+            String subject = message.subject() == null ? "DhanBoost" : message.subject();
             String body = message.body() == null ? "" : message.body();
             Body.Builder bodyBuilder = Body.builder().text(utf8(body));
             if (message.html() != null && !message.html().isBlank()) {

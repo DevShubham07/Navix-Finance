@@ -5,7 +5,7 @@ import com.navix.common.verification.BureauReportFacts;
 import java.util.List;
 
 /**
- * Request/response records for the Signzy verification APIs used by NAVIX (the PRIMARY provider):
+ * Request/response records for the Signzy verification APIs used by DhanBoost (the PRIMARY provider):
  * Hybrid Bank Account Verification (penny-drop), PAN 206AB compliance, Experian-Lite + CRIF bureau,
  * Liveness Secure (createUrl + getData), and DigiLocker (createUrl + get-eAadhaar-with-XML).
  *

@@ -6,7 +6,7 @@ import { Mail, Phone, ShieldAlert, ChevronDown } from "lucide-react";
  * Static content — product facts mirror CLAUDE.md §1.
  */
 
-const SUPPORT_EMAIL = "info@navixfinance.com";
+const SUPPORT_EMAIL = "info@dhanboost.com";
 const SUPPORT_PHONE = "+91 97167 60246";
 
 const FAQ: Array<{ q: string; a: string }> = [
@@ -90,7 +90,7 @@ export default function SupportPage() {
             within the regulatory timeline.
           </p>
           <a
-            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Grievance — NAVIX Finance")}`}
+            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Grievance — DhanBoost")}`}
             className="btn btn-outline btn-sm mt-3"
           >
             <ShieldAlert size={15} /> File a grievance

@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 
 /**
- * Standard success/response envelope returned by all NAVIX Finance REST endpoints.
+ * Standard success/response envelope returned by all DhanBoost REST endpoints.
  *
  * TODO: wire into controllers; consider a ResponseBodyAdvice to wrap automatically.
  *

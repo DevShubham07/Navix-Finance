@@ -31,7 +31,7 @@ export function ReferralCard() {
     const nav = typeof navigator !== "undefined" ? navigator : undefined;
     if (nav && typeof nav.share === "function") {
       try {
-        await nav.share({ title: "NAVIX referral", text: data.shareMessage });
+        await nav.share({ title: "DhanBoost referral", text: data.shareMessage });
         return;
       } catch {
         /* user dismissed the share sheet — fall through to copy */

@@ -14,7 +14,7 @@ import org.springframework.web.client.RestClient;
 
 /**
  * Signzy penny-drop bank account verification — {@code POST /api/v3/bankaccountverification/pennydrop-v1}
- * on the Signzy PRODUCTION account. The direct Signzy equivalent of NAVIX's penny-drop payout name-match
+ * on the Signzy PRODUCTION account. The direct Signzy equivalent of DhanBoost's penny-drop payout name-match
  * gate. Response is wrapped in {@code result:{...}} (active, nameMatch, signzyReferenceId, bankTransfer).
  */
 @Component

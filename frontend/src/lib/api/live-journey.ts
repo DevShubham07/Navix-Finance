@@ -4,7 +4,7 @@
  * Live borrower-journey adapter.
  *
  * Single seam between the *committed designed UI* (the `(borrower)/*` pages) and
- * the *real* NAVIX backend. The designed wizard keeps using the mock Zustand
+ * the *real* DhanBoost backend. The designed wizard keeps using the mock Zustand
  * store as multi-step form scratch; at the points that matter (submit, choose
  * amount, status, dashboard) the pages call the helpers/hooks here, which talk
  * to the Spring application state-machine through the BFF (`borrowerApi`).

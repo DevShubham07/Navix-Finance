@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { MarketingHtml } from "@/components/site/marketing-html";
 import { POSTS, POST_SLUGS } from "../../_content/blog-posts";
 
-const BASE = "https://www.navixfinance.com";
+const BASE = "https://www.dhanboost.com";
 
 // Pre-render every post at build time.
 export function generateStaticParams() {
@@ -20,7 +20,7 @@ export async function generateMetadata({
   if (!post) return {};
   const url = `/blog/${post.slug}`;
   return {
-    title: `${post.title} — NAVIX`,
+    title: `${post.title} — DhanBoost`,
     description: post.description,
     alternates: { canonical: url },
     openGraph: {

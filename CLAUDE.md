@@ -1,5 +1,19 @@
 # CLAUDE.md
 
+> **⚠️ Rebrand (2026-07-22): the product is now "DhanBoost" (domain `dhanboost.com`).**
+> The user-visible brand across the frontend + backend was renamed NAVIX → **DhanBoost**. The
+> **internal namespace is deliberately kept as `navix`** — Java packages (`com.navix.*`), Maven
+> modules (`navix-*`), env vars (`NAVIX_*`), SSM paths (`/navix/…`), session cookies
+> (`navix_borrower`/`navix_staff`), the DB name, and the seeded staff logins (`*.navix.example`,
+> `navixfinance@gmail.com`). The **legal entity** stays `NAVIX Finance Private Limited` (CIN
+> `U64990HR2026PTC144926`). The **live SES-verified email domain is still `navixfinance.com`** and
+> the DLT/telecom template registrations are still filed under NAVIX — so this doc, `aws.md`, and the
+> integration/regulatory guides under `docs/` intentionally keep those `navix` identifiers. Two
+> follow-ups remain outside code: (1) a real **DhanBoost logo asset** (the wordmark is renamed but
+> `frontend/public/navix-mark.png` still shows the old emblem); (2) registering + SES-verifying
+> `dhanboost.com` before email `From: @dhanboost.com` will actually deliver.
+> Below, "NAVIX" in infra/namespace contexts = the retained internal name; the product is DhanBoost.
+
 Guidance for Claude Code (and any human) working in this repo. This file is the **single
 onboarding doc** — read it first on a fresh machine and you have the full picture: what NAVIX
 is, the end-to-end workflow, how the borrower flow works, how the staff/admin login flow works,

@@ -12,7 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Delivers a marketing "Contact us" submission straight to the NAVIX support inbox
+ * Delivers a marketing "Contact us" submission straight to the DhanBoost support inbox
  * ({@code navix.contact.recipient}, default {@code navixfinance@gmail.com}) via the shared
  * {@link EmailClient} — the same engine that powers every other outbound email.
  *
@@ -48,7 +48,7 @@ public class ContactService {
         String message = safe(req.message());
 
         String subject = "[Contact · " + topic + "] " + name;
-        String body = "New enquiry from the NAVIX website contact form.\n\n"
+        String body = "New enquiry from the DhanBoost website contact form.\n\n"
                 + "Name:    " + name + "\n"
                 + "Email:   " + email + "\n"
                 + "Phone:   " + phone + "\n"

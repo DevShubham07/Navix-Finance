@@ -22,7 +22,7 @@ public record EmailProperties(String provider, Boolean enabled, String from, Str
             enabled = Boolean.TRUE;
         }
         if (from == null || from.isBlank()) {
-            from = "NAVIX Finance <no-reply@navixfinance.example>";
+            from = "DhanBoost <no-reply@dhanboost.example>";
         }
         if (configurationSet != null && configurationSet.isBlank()) {
             configurationSet = null;

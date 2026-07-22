@@ -1,6 +1,6 @@
-# NAVIX Finance × Fintrix — API Integration Flow
+# DhanBoost × Fintrix — API Integration Flow
 
-> How the Fintrix (Digitap-backed) verification APIs map onto the NAVIX borrower journey.
+> How the Fintrix (Digitap-backed) verification APIs map onto the DhanBoost borrower journey.
 > **Base URL:** `https://admin.fintrix.tech/__api/api/v1/`
 > **Auth (these APIs):** `Authorization: Basic <base64(client_id:client_secret)>` · `Content-Type: application/json`
 > **Auth (DigiLocker APIs):** `X-Client-ID` + `X-Client-Secret` (different scheme — see `Digilocker_API_Guide.md`)
@@ -32,12 +32,12 @@
 
 ---
 
-## 2. Mapped flow — NAVIX step → API call
+## 2. Mapped flow — DhanBoost step → API call
 
 ```
 STEP 1 — SIGN-UP
   PAN entry        → pan_comprehensive   → name, DOB, gender, address, aadhaar_linked, masked_aadhaar
-  Mobile + OTP     → NAVIX's own OTP
+  Mobile + OTP     → DhanBoost's own OTP
   Employment/UAN   → [UAN API — to be provided]  → employer + salary basis
   Official email   → cv_email_verification → EPFO employer match (corroborates employment)
   Salary           → from UAN API (when live); declared in app meanwhile
@@ -59,9 +59,9 @@ STEP 4 — ELIGIBILITY & LIMIT
   bureau score + obligations → risk → A/B/C/D
 
 STEP 5 — TAKE LOAN
-  Sign docs (agreement / sanction / KFS) — NAVIX internal
+  Sign docs (agreement / sanction / KFS) — DhanBoost internal
   Bank verify      → verification_pennydrop → account_exists + full_name (NAME MATCH gate)
-  Manual transfer → Accountant confirms — NAVIX internal
+  Manual transfer → Accountant confirms — DhanBoost internal
 ```
 
 ---

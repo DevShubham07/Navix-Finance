@@ -120,7 +120,7 @@ export function MarketingHeader() {
             <Link href="/" className="brand">
               <BrandMark />
               <span className="brand-txt">
-                <b>NAVIX</b>
+                <b>DhanBoost</b>
                 <small>Lending Platform</small>
               </span>
             </Link>
@@ -203,7 +203,7 @@ export function MarketingHeader() {
       <aside className={`drawer${drawerOpen ? " open" : ""}`} id="drawer">
         <div className="drawer-top">
           <span className="brand-txt">
-            <b style={{ fontSize: "1.3rem", color: "var(--navy-800)" }}>NAVIX</b>
+            <b style={{ fontSize: "1.3rem", color: "var(--navy-800)" }}>DhanBoost</b>
           </span>
           <button className="drawer-close" aria-label="Close menu" onClick={close}>
             ✕

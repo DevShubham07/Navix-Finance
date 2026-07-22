@@ -114,7 +114,7 @@ export default function AdminPaymentSettingsPage() {
           <div className="rounded border border-line bg-white p-5 shadow-sm">
             <div className="mb-4 text-sm font-semibold text-navy">Payee details</div>
             <Input label="UPI id" value={form.upiId} onChange={set("upiId")} placeholder="navix.collections@hdfcbank" />
-            <Input label="Account name" value={form.accountName} onChange={set("accountName")} placeholder="NAVIX Finance" />
+            <Input label="Account name" value={form.accountName} onChange={set("accountName")} placeholder="DhanBoost" />
             <Input label="Account number" value={form.accountNumber} onChange={set("accountNumber")} placeholder="5010 0099 8877" />
             <Input label="IFSC" value={form.ifsc} onChange={set("ifsc")} placeholder="HDFC0000123" />
             <Input label="Bank name" value={form.bankName} onChange={set("bankName")} placeholder="HDFC Bank" />

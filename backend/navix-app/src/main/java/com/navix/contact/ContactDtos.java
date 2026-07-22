@@ -13,7 +13,7 @@ public final class ContactDtos {
     /**
      * A visitor's message from the marketing contact page. {@code name}, {@code email} and
      * {@code message} are required; {@code phone} and {@code topic} are optional. The whole payload is
-     * emailed to the NAVIX support inbox — nothing is persisted.
+     * emailed to the DhanBoost support inbox — nothing is persisted.
      */
     public record ContactRequest(
             @NotBlank @Size(max = 120) String name,

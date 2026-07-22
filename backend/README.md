@@ -1,6 +1,6 @@
-# NAVIX Finance — Backend
+# DhanBoost — Backend
 
-Spring Boot (3.4.1) Maven multi-module backend for **NAVIX Finance**, a salary-linked
+Spring Boot (3.4.1) Maven multi-module backend for **DhanBoost**, a salary-linked
 single-repayment lending platform.
 
 - **Java:** 21
@@ -57,7 +57,7 @@ them in an `application-local.yml` (gitignored) or export them in your shell.
 | `DB_USERNAME`             | Database username. |
 | `DB_PASSWORD`             | Database password. |
 | `SIGNZY_TOKEN`            | Signzy raw opaque `Authorization` token (PRIMARY verification provider). |
-| `SIGNZY_CLIENT_UNIQUE_ID`| Signzy account unique id, sent as the `x-client-unique-id` header (e.g. `info@navixfinance.com`). |
+| `SIGNZY_CLIENT_UNIQUE_ID`| Signzy account unique id, sent as the `x-client-unique-id` header (e.g. `info@dhanboost.com`). |
 | `SIGNZY_BASE_URL`        | Signzy base URL (default preprod `https://api-preproduction.signzy.app`; prod `https://api.signzy.app`). |
 | `DIGITAP_CLIENT_ID`      | Digitap client id (FALLBACK provider; HTTP Basic `base64(client_id:client_secret)`). |
 | `DIGITAP_CLIENT_SECRET`  | Digitap client secret. |

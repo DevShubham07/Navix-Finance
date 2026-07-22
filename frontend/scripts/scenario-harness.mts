@@ -1,5 +1,5 @@
 /**
- * NAVIX borrower-journey scenario harness.
+ * DhanBoost borrower-journey scenario harness.
  *
  * Drives the REAL product logic (src/lib/calc/loan-math + src/lib/calc/risk)
  * and the REAL persona seeds (src/lib/mock/scenarios) through every test case,
@@ -24,7 +24,7 @@ function ok(cond: boolean, msg: string) {
 const inr = (n: number) => "₹" + n.toLocaleString("en-IN");
 const pad = (s: string, n: number) => s.padEnd(n);
 
-console.log("\n=== NAVIX borrower journey — scenario harness ===\n");
+console.log("\n=== DhanBoost borrower journey — scenario harness ===\n");
 
 // ---------------------------------------------------------------------------
 // 0. Product-rule spec checks (the documented worked example + caps)

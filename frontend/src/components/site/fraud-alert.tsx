@@ -13,7 +13,7 @@ export function FraudAlert() {
       <div className="container">
         <AlertTriangle className="fa-icon" />
         <p>
-          <strong>Security notice:</strong> NAVIX never asks for advance fees or upfront
+          <strong>Security notice:</strong> DhanBoost never asks for advance fees or upfront
           payments. Beware of fraudulent apps or agents using our name. Report suspicious
           activity to <a href={`mailto:${BRAND.fraudEmail}`}>{BRAND.fraudEmail}</a>.
         </p>

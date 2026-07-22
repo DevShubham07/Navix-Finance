@@ -1,10 +1,10 @@
-// AUTO-GENERATED from the NAVIX design export — do not hand-edit.
+// AUTO-GENERATED from the DhanBoost design export — do not hand-edit.
 // Source section id: #fair. Regenerate via transform_html.py.
 /* eslint-disable */
 export const html = `<section class="page active" id="fair">
   <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Fair Practices Code</div><h1>Fair Practices Code</h1><p>Our commitment to fair, transparent and respectful lending. Last updated: June 2026.</p></div></div>
   <div class="sec"><div class="wrap"><div class="prose">
-    <p>NAVIX and its partner NBFCs are committed to fair, transparent and ethical conduct, aligned with RBI's Fair Practices guidelines and Digital Lending Guidelines (2022).</p>
+    <p>DhanBoost and its partner NBFCs are committed to fair, transparent and ethical conduct, aligned with RBI's Fair Practices guidelines and Digital Lending Guidelines (2022).</p>
     <h2>1. Transparency</h2>
     <ul>
       <li>All terms, interest, APR and charges are disclosed upfront in the Key Fact Statement.</li>

@@ -1,13 +1,13 @@
 import { ImageResponse } from "next/og";
 
 /**
- * Default Open Graph share image (Next.js App Router convention), 1200×630, in the NAVIX
+ * Default Open Graph share image (Next.js App Router convention), 1200×630, in the DhanBoost
  * brand palette. Applies site-wide as `og:image`. Pure layout — no external font/asset fetch —
  * so it renders on the edge runtime without file loading. `twitter-image.tsx` re-exports this
  * for an explicit `twitter:image`.
  */
 export const runtime = "edge";
-export const alt = "NAVIX — Instant personal loans. Fully digital. Fairly priced.";
+export const alt = "DhanBoost — Instant personal loans. Fully digital. Fairly priced.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -28,7 +28,7 @@ export default function Image() {
         }}
       >
         <div style={{ fontSize: 96, fontWeight: 800, letterSpacing: "-0.03em", color: "#14A06B" }}>
-          NAVIX
+          DhanBoost
         </div>
         <div style={{ fontSize: 52, fontWeight: 700, marginTop: 24, lineHeight: 1.1 }}>
           Instant personal loans.

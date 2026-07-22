@@ -1,4 +1,4 @@
-# NAVIX — End-to-end QA findings: bug list + product-gaps
+# DhanBoost — End-to-end QA findings: bug list + product-gaps
 
 _Produced 2026-06-25 by driving the running demo (frontend :3000, backend :8080) through the real
 loan lifecycle with Chrome DevTools, plus a code audit of RBAC, the flow/SoD engine, `LoanMath`, the

@@ -125,7 +125,7 @@ public class ReferralService {
         }
         if (!loanRepository.findByCustomerId(customerId).isEmpty()) {
             throw new BusinessException("NOT_NEW_BORROWER",
-                    "Referral codes apply to your first NAVIX loan only.");
+                    "Referral codes apply to your first DhanBoost loan only.");
         }
         Referral referral = new Referral();
         referral.setReferrerCustomerId(referrerId);
@@ -318,7 +318,7 @@ public class ReferralService {
     }
 
     private String shareMessage(String code) {
-        return "Use my NAVIX referral code " + code + " when you sign up — you and I each get ₹"
+        return "Use my DhanBoost referral code " + code + " when you sign up — you and I each get ₹"
                 + properties.rewardRupees() + " once your first loan is disbursed.";
     }
 

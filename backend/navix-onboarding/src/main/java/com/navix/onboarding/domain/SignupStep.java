@@ -1,7 +1,7 @@
 package com.navix.onboarding.domain;
 
 /**
- * The 12 ordered steps of the NAVIX borrower sign-up flow.
+ * The 12 ordered steps of the DhanBoost borrower sign-up flow.
  * TODO: confirm exact step ordering/labels against the product user-flow doc.
  */
 public enum SignupStep {

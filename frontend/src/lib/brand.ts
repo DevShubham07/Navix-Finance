@@ -4,13 +4,13 @@
  */
 export const BRAND = {
   legalName: "NAVIX Finance Private Limited",
-  shortName: "NAVIX",
+  shortName: "DhanBoost",
   tagline: "Lending Platform",
   phone: "+91 97167 60246",
   phoneHref: "tel:+9197167 60246",
-  email: "info@navixfinance.com",
-  grievanceEmail: "info@navixfinance.com",
-  fraudEmail: "info@navixfinance.com",
+  email: "info@dhanboost.com",
+  grievanceEmail: "info@dhanboost.com",
+  fraudEmail: "info@dhanboost.com",
   hours: "Mon–Sat, 9:30 AM – 6:30 PM",
   cin: "U64990HR2026PTC144926",
   address: {

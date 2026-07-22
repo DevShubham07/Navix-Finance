@@ -8,8 +8,8 @@
  */
 const FAQ: { q: string; a: string }[] = [
   {
-    q: "Is NAVIX a lender?",
-    a: "No. NAVIX is a digital lending platform. All loans are sanctioned and disbursed by our RBI-registered NBFC partners, who are the lender of record and remain regulated by the RBI.",
+    q: "Is DhanBoost a lender?",
+    a: "No. DhanBoost is a digital lending platform. All loans are sanctioned and disbursed by our RBI-registered NBFC partners, who are the lender of record and remain regulated by the RBI.",
   },
   {
     q: "How quickly can I get a loan?",
@@ -17,7 +17,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Will applying affect my credit score?",
-    a: "Checking eligibility on NAVIX does not impact your credit score. A formal credit enquiry only happens if you proceed and accept a loan offer from the partner NBFC.",
+    a: "Checking eligibility on DhanBoost does not impact your credit score. A formal credit enquiry only happens if you proceed and accept a loan offer from the partner NBFC.",
   },
   {
     q: "What documents do I need?",
@@ -33,7 +33,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Are there any hidden charges or advance fees?",
-    a: "Never. NAVIX does not charge any advance or upfront fee. All applicable interest and charges are disclosed in the Key Fact Statement before you accept the offer.",
+    a: "Never. DhanBoost does not charge any advance or upfront fee. All applicable interest and charges are disclosed in the Key Fact Statement before you accept the offer.",
   },
   {
     q: "Can I repay my loan early?",
@@ -44,12 +44,12 @@ const FAQ: { q: string; a: string }[] = [
     a: "Late payments attract a late-payment fee of 2% per day on the overdue principal (capped at 30 days), as set out in your Key Fact Statement, and can affect your credit score. If you're struggling, contact us early — we'll help you find a way forward respectfully.",
   },
   {
-    q: "Is my data safe with NAVIX?",
+    q: "Is my data safe with DhanBoost?",
     a: "Yes. We use 256-bit encryption and follow ISO-27001-aligned controls. We never sell your data and only share what's necessary with the partner NBFC to process your loan.",
   },
   {
-    q: "How do I spot a fake NAVIX app or agent?",
-    a: "NAVIX never asks for advance fees or upfront payments. We only use official channels (navixfinance.com and info@navixfinance.com). Report anything suspicious to info@navixfinance.com.",
+    q: "How do I spot a fake DhanBoost app or agent?",
+    a: "DhanBoost never asks for advance fees or upfront payments. We only use official channels (dhanboost.com and info@dhanboost.com). Report anything suspicious to info@dhanboost.com.",
   },
 ];
 

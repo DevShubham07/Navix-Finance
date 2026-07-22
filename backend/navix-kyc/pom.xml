@@ -14,7 +14,7 @@
     <artifactId>navix-kyc</artifactId>
     <packaging>jar</packaging>
     <name>navix-kyc</name>
-    <description>Identity verification (KYC) for NAVIX Finance</description>
+    <description>Identity verification (KYC) for DhanBoost</description>
 
     <dependencies>
         <dependency>

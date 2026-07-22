@@ -179,7 +179,7 @@ export default function SignupEmailPage() {
                 setReferralNote(null);
               }}
               onBlur={checkReferral}
-              placeholder="e.g. NAVIX123"
+              placeholder="e.g. DHANBOOST123"
               leftIcon={<Gift size={16} />}
               autoCapitalize="characters"
               helperText={`You and your friend each get ₹${rewardRupees} once your first loan is disbursed.`}

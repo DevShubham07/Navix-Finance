@@ -38,7 +38,7 @@ export default function CustomersPage() {
       <PageHeader title="Customers" subtitle="Every borrower — search by name or ID, then open to see loans, payments and KYC.">
         <ExportMenu
           title="Customers"
-          fileBase="navix-customers"
+          fileBase="dhanboost-customers"
           columns={[
             { header: "Customer ID", value: (c: CustomerSummary) => c.customerId },
             { header: "Name", value: (c) => c.name ?? "" },

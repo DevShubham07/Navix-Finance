@@ -1,4 +1,4 @@
-// AUTO-GENERATED from the NAVIX design export — do not hand-edit.
+// AUTO-GENERATED from the DhanBoost design export — do not hand-edit.
 // Source section id: #grievance. Regenerate via transform_html.py.
 /* eslint-disable */
 export const html = `<section class="page active" id="grievance">
@@ -7,14 +7,14 @@ export const html = `<section class="page active" id="grievance">
     <h2>How to raise a complaint</h2>
     <p>We aim to resolve every concern quickly and fairly. Please reach out through any of the channels below.</p>
     <div class="callout">
-      <p style="margin-bottom:8px"><b>Level 1 — Customer Support</b><br>Email <b>info@navixfinance.com</b> or call +91 97167 60246 (Mon–Sat, 9:30 AM–6:30 PM). Typical response within 1 business day.</p>
-      <p style="margin-bottom:8px"><b>Level 2 — Grievance Officer</b><br>If unresolved within 7 days, write to our Grievance Officer at <b>info@navixfinance.com</b>.</p>
+      <p style="margin-bottom:8px"><b>Level 1 — Customer Support</b><br>Email <b>info@dhanboost.com</b> or call +91 97167 60246 (Mon–Sat, 9:30 AM–6:30 PM). Typical response within 1 business day.</p>
+      <p style="margin-bottom:8px"><b>Level 2 — Grievance Officer</b><br>If unresolved within 7 days, write to our Grievance Officer at <b>info@dhanboost.com</b>.</p>
       <p style="margin:0"><b>Level 3 — Partner NBFC &amp; RBI</b><br>You may escalate to the partner NBFC's Nodal Officer (details in your KFS) and, if needed, to the RBI under the Reserve Bank – Integrated Ombudsman Scheme.</p>
     </div>
     <h2>Grievance Officer</h2>
     <ul>
       <li><b>Name:</b> Grievance Redressal Officer, NAVIX Finance Private Limited</li>
-      <li><b>Email:</b> info@navixfinance.com</li>
+      <li><b>Email:</b> info@dhanboost.com</li>
       <li><b>Address:</b> Dev Nagar, Gurugram – 122102</li>
     </ul>
     <h2>Our service commitment</h2>

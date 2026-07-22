@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * IndexNow bulk submitter for NAVIX.
+ * IndexNow bulk submitter for DhanBoost.
  *
  * Pings IndexNow (Bing / Yandex, which also feed ChatGPT / Copilot) with the list of public
  * marketing URLs so new/changed pages get discovered fast. Run manually after a production
@@ -10,7 +10,7 @@
  * noindexed /partners and /reviews pages. Update both when routes change.
  */
 
-const HOST = "www.navixfinance.com";
+const HOST = "www.dhanboost.com";
 const BASE = `https://${HOST}`;
 const KEY = "58ec64fe7399039dafbd0668231718e2";
 const KEY_LOCATION = `${BASE}/${KEY}.txt`;
@@ -38,7 +38,7 @@ const PATHS = [
   "/blog/what-affects-your-credit-score",
   "/blog/apr-vs-flat-rate",
   "/blog/when-a-short-term-loan-makes-sense",
-  "/blog/repaying-on-navix",
+  "/blog/repaying-on-dhanboost",
 ];
 
 const urlList = PATHS.map((p) => `${BASE}${p}`);

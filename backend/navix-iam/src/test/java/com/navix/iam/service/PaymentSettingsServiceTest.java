@@ -48,7 +48,7 @@ class PaymentSettingsServiceTest {
     private static PaymentSettings seeded() {
         PaymentSettings s = new PaymentSettings();
         s.setUpiId("navix.collections@hdfcbank");
-        s.setAccountName("NAVIX Finance");
+        s.setAccountName("DhanBoost");
         s.setAccountNumber("5010 0099 8877");
         s.setIfsc("HDFC0000123");
         s.setBankName("HDFC Bank");

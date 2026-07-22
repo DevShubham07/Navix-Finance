@@ -24,7 +24,7 @@ import org.springframework.web.client.RestClient;
 /**
  * Signzy Experian-Lite bureau pull — {@code POST /api/v3/bureau/experian-lite}. PRIMARY bureau.
  * Signzy returns the standard Experian report at {@code data.jsonExperianReport}, which is the same
- * shape NAVIX already parses ({@code SCORE.FCIREXScore}, CAIS summary, CAPS), so the neutral
+ * shape DhanBoost already parses ({@code SCORE.FCIREXScore}, CAIS summary, CAPS), so the neutral
  * {@link BureauReportFacts} come straight out of {@link ExperianFactsParser}.
  *
  * <p>For local end-to-end demos set {@code navix.bureau.fixture} (env {@code NAVIX_BUREAU_FIXTURE}) to a
@@ -84,7 +84,7 @@ public class SignzyExperianClient {
 
     private static String[] splitName(String name) {
         if (name == null || name.isBlank()) {
-            return new String[] {"NAVIX", "."};
+            return new String[] {"DhanBoost", "."};
         }
         String trimmed = name.trim();
         int sp = trimmed.indexOf(' ');

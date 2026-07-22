@@ -1,4 +1,4 @@
- # NAVIX Finance
+ # DhanBoost
 
 Salary-linked, single-repayment lending platform. A borrower can draw a short-term
 advance capped at **25% of monthly salary**, repaid in a **single installment on the
@@ -12,7 +12,7 @@ This is a monorepo containing:
   - [`NAVIX_Finance_Product_Flow.md`](./NAVIX_Finance_Product_Flow.md) — end-to-end product flow.
   - [`NAVIX_Fintrix_Integration_Flow.md`](./NAVIX_Fintrix_Integration_Flow.md) — Fintrix integration.
   - [`Digilocker_API_Guide.md`](./Digilocker_API_Guide.md) — DigiLocker API reference.
-  - [`NAVIX.postman_collection.json`](./NAVIX.postman_collection.json) — API collection.
+  - [`DhanBoost.postman_collection.json`](./DhanBoost.postman_collection.json) — API collection.
 
 ---
 

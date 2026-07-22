@@ -46,7 +46,7 @@ export default function AdminBlocklistPage() {
       <PageHeader title="Fraud blocklist" subtitle="Blocked PAN, Aadhaar ref, phone, device and bank account identifiers.">
         <ExportMenu
           title="Fraud blocklist"
-          fileBase="navix-blocklist"
+          fileBase="dhanboost-blocklist"
           columns={[
             { header: "Type", value: (b: BlocklistResponse) => b.type },
             { header: "Value", value: (b) => b.value },

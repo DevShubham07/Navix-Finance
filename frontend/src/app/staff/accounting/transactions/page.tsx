@@ -105,7 +105,7 @@ export default function TransactionsPage() {
         <ExportMenu
           title="Transactions ledger"
           subtitle={tab === "ALL" ? "All movements" : tab === "INCOMING" ? "Incoming" : "Outgoing"}
-          fileBase="navix-transactions"
+          fileBase="dhanboost-transactions"
           columns={[
             { header: "Date", value: (t: TransactionView) => (t.date ? formatDate(t.date) : "") },
             { header: "Borrower", value: (t) => t.borrowerName ?? "" },

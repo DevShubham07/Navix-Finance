@@ -1,4 +1,4 @@
-// AUTO-GENERATED from the NAVIX design export — do not hand-edit.
+// AUTO-GENERATED from the DhanBoost design export — do not hand-edit.
 // Source section id: #how. Regenerate via transform_html.py.
 /* eslint-disable */
 export const html = `<section class="page active" id="how">

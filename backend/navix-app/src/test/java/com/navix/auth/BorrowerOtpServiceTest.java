@@ -38,13 +38,13 @@ class BorrowerOtpServiceTest {
                 "user",                            // user
                 "password",                        // password
                 null,                              // apiKey
-                "NAVIX",                           // senderId
+                "DhanBoost",                           // senderId
                 "Trans",                           // channel
                 "route",                           // route
                 "peid",                            // peid
                 "dltTemplateId",                   // dltTemplateId
                 java.util.Map.of(),                // dltTemplateIds
-                "Your NAVIX code is {otp}. Valid {ttl} min.", // otpTemplate
+                "Your DhanBoost code is {otp}. Valid {ttl} min.", // otpTemplate
                 true,                              // enabled
                 devEcho,                           // devEcho
                 300,                               // otpTtlSeconds

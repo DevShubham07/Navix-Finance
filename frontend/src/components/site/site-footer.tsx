@@ -85,10 +85,10 @@ export function SiteFooter() {
       </div>
       <div className="footer-disclaimer">
         <div className="container">
-          <strong>Disclaimer:</strong> NAVIX ({BRAND.legalName}) is a digital lending platform,
+          <strong>Disclaimer:</strong> DhanBoost ({BRAND.legalName}) is a digital lending platform,
           not a lender. All loans are sanctioned and disbursed by our RBI-registered NBFC lending
           partners. Loan approval is subject to the partner&apos;s credit policy and eligibility
-          assessment. NAVIX does not charge any advance fee for loan processing.
+          assessment. DhanBoost does not charge any advance fee for loan processing.
         </div>
       </div>
       <div className="footer-bottom">

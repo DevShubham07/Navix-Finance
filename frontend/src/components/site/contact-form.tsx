@@ -10,7 +10,7 @@ type Status = "idle" | "sending" | "sent" | "error";
 /**
  * The live "Contact us" section for the marketing site. Reproduces the design-export markup (so it
  * shares the `.navix-mkt` styling + scroll-reveal) but wires the form to the BFF `/api/contact`
- * endpoint, which emails the enquiry to the NAVIX support inbox. On success it swaps the form for a
+ * endpoint, which emails the enquiry to the DhanBoost support inbox. On success it swaps the form for a
  * confirmation that the query has been sent and will be answered as soon as possible.
  *
  * Rendered as one client component (rather than the usual static `MarketingHtml` blob) so the form is
@@ -72,7 +72,7 @@ export function ContactSection() {
                 </span>
                 <div>
                   <b>Email</b>
-                  <small>info@navixfinance.com</small>
+                  <small>info@dhanboost.com</small>
                 </div>
               </div>
               <div className="ci-card">
@@ -83,7 +83,7 @@ export function ContactSection() {
                 </span>
                 <div>
                   <b>Report fraud</b>
-                  <small>info@navixfinance.com — we never ask for advance fees.</small>
+                  <small>info@dhanboost.com — we never ask for advance fees.</small>
                 </div>
               </div>
             </div>

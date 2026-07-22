@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 
 /**
- * NAVIX's own OTP service (send + verify, with resend cooldown).
+ * DhanBoost's own OTP service (send + verify, with resend cooldown).
  *
  * <p>DEMO implementation: there is no OTP database table (and none may be added), so codes are
  * held in an in-memory {@link ConcurrentHashMap} keyed by mobile/destination. Each entry holds a

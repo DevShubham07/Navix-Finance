@@ -75,7 +75,7 @@ class TemplateRendererTest {
         RenderedMessage m = renderer.render(NotificationType.KYC_APPROVED, NotificationChannel.EMAIL,
                 Map.of("name", "Asha"));
         assertThat(m).isNotNull();
-        assertThat(m.subject()).isEqualTo("Your NAVIX KYC is approved — instant loan up to ₹10,00,000");
+        assertThat(m.subject()).isEqualTo("Your DhanBoost KYC is approved — instant loan up to ₹10,00,000");
         assertThat(m.body()).contains("Hi Asha,");
     }
 

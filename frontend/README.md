@@ -1,6 +1,6 @@
-# NAVIX Finance — Frontend
+# DhanBoost — Frontend
 
-Next.js (App Router) frontend for NAVIX Finance, a salary-linked single-repayment
+Next.js (App Router) frontend for DhanBoost, a salary-linked single-repayment
 lending product.
 
 ## Getting started

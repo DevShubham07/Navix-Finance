@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 /**
- * NAVIX Finance bootable application.
+ * DhanBoost bootable application.
  *
  * Aggregates all 9 business modules (common, iam, onboarding, kyc, verification,
  * income-risk, loan, disbursement, collections) under the com.navix base package.

@@ -14,11 +14,11 @@ class EmailHtmlRendererTest {
         String html = renderer.render("Your loan is approved", "Hi Asha,\n\nGood news.");
 
         assertThat(html).startsWith("<!DOCTYPE html>");
-        assertThat(html).contains("NAVIX");                         // wordmark
+        assertThat(html).contains("DhanBoost");                         // wordmark
         assertThat(html).contains("#0C2540");                       // brand navy
         assertThat(html).contains("Your loan is approved");         // subject in <title>/<h1>
         assertThat(html).contains("Good news.");                    // body
-        assertThat(html).contains("NAVIX Finance");                 // footer
+        assertThat(html).contains("DhanBoost");                 // footer
     }
 
     @Test

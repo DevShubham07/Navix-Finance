@@ -1,18 +1,18 @@
-// AUTO-GENERATED from the NAVIX design export — do not hand-edit.
+// AUTO-GENERATED from the DhanBoost design export — do not hand-edit.
 // Source section id: #about. Regenerate via transform_html.py.
 /* eslint-disable */
 export const html = `<section class="page active" id="about">
   <div class="page-hero"><div class="wrap">
     <div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; About Us</div>
     <h1>Making credit calm,<br>clear and fair</h1>
-    <p>NAVIX was built on a simple belief: borrowing money shouldn't feel stressful or sneaky. We pair thoughtful technology with a fair, salary-linked product to make short-term credit genuinely transparent.</p>
+    <p>DhanBoost was built on a simple belief: borrowing money shouldn't feel stressful or sneaky. We pair thoughtful technology with a fair, salary-linked product to make short-term credit genuinely transparent.</p>
   </div></div>
 
   <div class="sec"><div class="wrap"><div class="elig">
     <div class="reveal">
       <span class="eyebrow">Our story</span>
       <h2 style="font-size:clamp(1.8rem,3.6vw,2.5rem);margin:16px 0">A better way to borrow, for everyday India</h2>
-      <p class="lead" style="margin-bottom:16px">Too many people meet a small, urgent expense with confusing apps, hidden fees and pushy agents. We started NAVIX to change that — a premium, honest experience where you always know exactly what you'll repay.</p>
+      <p class="lead" style="margin-bottom:16px">Too many people meet a small, urgent expense with confusing apps, hidden fees and pushy agents. We started DhanBoost to change that — a premium, honest experience where you always know exactly what you'll repay.</p>
       <p>As a digital lending platform, we hold ourselves to high standards of transparency and responsible lending — clear terms, no hidden charges, and fairness built into every step.</p>
     </div>
     <div class="reveal d1"><div style="background:var(--grad-navy);border-radius:var(--r-xl);padding:44px;color:#fff;position:relative;overflow:hidden">

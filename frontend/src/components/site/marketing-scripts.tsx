@@ -348,7 +348,7 @@ export function MarketingScripts() {
         const fmtAmt = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
         const fmtRate = (v: number) => (Math.round(v * 10) / 10).toFixed(1);
         const fmtTen = (v: number) => "" + Math.round(v);
-        // NAVIX-correct illustrative offer: max ₹10,00,000 · 1% / day · 30 days.
+        // DhanBoost-correct illustrative offer: max ₹10,00,000 · 1% / day · 30 days.
         const AMT = 1000000, RATE = 1.0, TEN = 30;
         let gen = 0;
         const timers: ReturnType<typeof setTimeout>[] = [];

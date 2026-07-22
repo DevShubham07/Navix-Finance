@@ -1,4 +1,4 @@
-// Barrel export for NAVIX shared UI primitives.
+// Barrel export for DhanBoost shared UI primitives.
 export * from "./button";
 export * from "./input";
 export * from "./select";

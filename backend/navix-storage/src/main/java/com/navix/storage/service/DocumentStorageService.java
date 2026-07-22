@@ -26,7 +26,7 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 /**
- * Object storage for NAVIX documents/images on S3.
+ * Object storage for DhanBoost documents/images on S3.
  *
  * <p>Large files (selfies, KYC docs, signed loan PDFs, payment/collections
  * proofs) never transit the app: clients receive a short-lived <b>presigned

@@ -14,7 +14,7 @@
     <artifactId>navix-common</artifactId>
     <packaging>jar</packaging>
     <name>navix-common</name>
-    <description>Cross-cutting building blocks shared by all NAVIX Finance modules</description>
+    <description>Cross-cutting building blocks shared by all DhanBoost modules</description>
 
     <dependencies>
         <dependency>

@@ -1,5 +1,5 @@
 /**
- * Role-based access control for NAVIX staff users.
+ * Role-based access control for DhanBoost staff users.
  *
  * StaffRole mirrors the backend (com.navix.iam) role enum exactly.
  *

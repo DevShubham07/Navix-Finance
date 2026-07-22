@@ -82,7 +82,7 @@ export default function AdminAllApplicationsPage() {
         <ExportMenu
           title="All applications"
           subtitle="Full application register"
-          fileBase="navix-all-applications"
+          fileBase="dhanboost-all-applications"
           columns={EXPORT_COLUMNS}
           rows={rows}
         />

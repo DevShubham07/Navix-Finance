@@ -1,4 +1,4 @@
-/** Barrel re-export of all NAVIX domain types. */
+/** Barrel re-export of all DhanBoost domain types. */
 export * from "@/lib/domain/loan";
 export * from "@/lib/domain/application";
 export * from "@/lib/domain/kyc";
