@@ -78,6 +78,27 @@ public final class SignzyDtos {
     ) {
     }
 
+    // ---- Email verification V2 (PROD account) : /api/v3/email/verificationV2 ----
+    // Only takes the email id; returns deliverability (valid/status/mx/smtp) + optional person/company
+    // enrichment. Booleans arrive as JSON strings ("true"/"false") — decode with ProviderJson.bool.
+    public record EmailV2Request(@JsonProperty("emailId") String emailId) {
+    }
+
+    public record EmailV2Response(
+            String emailId,
+            Boolean validEmail,
+            String status,
+            Boolean freeEmail,
+            String didYouMean,
+            String domain,
+            Boolean mxFound,
+            String mxRecord,
+            String smtpProvider,
+            String personName,
+            String companyName
+    ) {
+    }
+
     // ---- Consent block shared by the bureau calls ----
     // consentTimestamp MUST serialise as a JSON number (epoch millis) — Signzy 400s on a string.
     public record Consent(
@@ -144,11 +165,18 @@ public final class SignzyDtos {
 
     public record LivenessResult(
             String txnId,
+            boolean completed,
             Boolean live,
             Double livenessScore,
             Boolean faceVerified,
+            String matchPercentage,
+            String capturedImage,
             Boolean overallStatus
     ) {
+        /** The borrower has not finished the video journey yet (Signzy getData → 404 "not completed"). */
+        public static LivenessResult pending(String token) {
+            return new LivenessResult(token, false, null, null, null, null, null, null);
+        }
     }
 
     // ---- DigiLocker createUrl : /api/v3/digilocker/createUrl ----

@@ -696,9 +696,21 @@ export const verificationApi = {
   pennyDrop: (id: number, accountNumber: string, ifsc: string) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/penny-drop`, "POST", { accountNumber, ifsc }),
 
-  /** Selfie liveness/face match against the uploaded selfie object key. */
+  /** Selfie liveness/face match against the uploaded selfie object key (Digitap fallback path). */
   selfie: (id: number, selfieObjectKey: string) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/selfie`, "POST", { selfieObjectKey }),
+
+  /**
+   * Start the Signzy liveness video journey (primary selfie path). The result's
+   * `derived.videoUrl` is where to redirect the borrower; `derived.fallback === true` means Signzy
+   * liveness is unavailable and the caller should use the camera-capture + `selfie` fallback.
+   */
+  selfieLivenessInit: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/selfie/liveness/init`, "POST"),
+
+  /** Poll the liveness journey result (PENDING until the borrower finishes; then PASS/REVIEW). */
+  selfieLivenessStatus: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/selfie/liveness/status`, "GET"),
 
   /** Record consent to the agreement document set. */
   agreement: (id: number, versions: AgreementVersion[]) =>

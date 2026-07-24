@@ -751,10 +751,11 @@ a `CapabilityNotSupportedException` tells the router "skip to the next provider"
 |---|---|---|
 | `verifyPan` | **Signzy** → Digitap | Signzy `/api/v3/pan/compliance-206-individual-search` → Digitap `/validation/kyc/v1/pan_details_plus` |
 | `pullBureau` | **Signzy** → Digitap | Signzy `/api/v3/bureau/experian-lite` → `/api/v3/bureau/crif` → Digitap `/credit_analytics/request` |
-| `faceLiveness` (selfie) | **Digitap** | Digitap `/fmfl/v2/face-match` — **1:1 face-match** of the uploaded selfie vs the DigiLocker Aadhaar photo (no live camera). Signzy Liveness Secure (interactive iframe) is not wired to this sync port method |
+| `livenessInit` / `livenessResult` (selfie) | **Signzy** | Signzy `/api/v3/liveness-secure/createUrl` + `/getData` (prod acct) — **interactive video journey**: passive liveness + 1:1 face-match vs the DigiLocker Aadhaar photo, embedded in an iframe (`allow="camera"`), polled to completion (our DB authoritative). Two-step async, mirrors DigiLocker |
+| `faceLiveness` (selfie fallback) | **Digitap** | Digitap `/fmfl/v2/face-match` — synchronous 1:1 face-match of an uploaded selfie vs the Aadhaar photo (no live camera). **Fallback** used only when Signzy liveness init is unavailable (`selfieLivenessInit` → `derived.fallback=true`) |
 | `pennyDrop` | **Signzy only** | Signzy `/api/v3/bankaccountverification/bankaccountverifications` (Digitap has no penny-drop) |
 | `digilocker*` | **Signzy only** | Signzy `/api/v3/digilocker/createUrl` + `/geteaadhaarwithxml` (Digitap has no consent flow) |
-| `verifyEmail` | **Digitap only** | Digitap `/cv/email_verification/v1` (Signzy has no email API) |
+| `verifyEmail` | **Signzy** → Digitap | Signzy `/api/v3/email/verificationV2` (prod acct; deliverability + person/company enrichment) → Digitap `/cv/email_verification/v1` |
 | `verifyAddress` | **Digitap only** | Digitap `/ent/v1/address-verification` (Signzy has no address API) |
 
 - **Auth & hosts (env-driven, PREPRODUCTION by default).** Signzy = raw opaque token in `Authorization`
@@ -774,9 +775,17 @@ a `CapabilityNotSupportedException` tells the router "skip to the next provider"
   `x509Data.validAadhaarDSC == "yes"`. On completion NAVIX also ingests the Aadhaar **face photo** to S3 as an
   `AADHAAR_PHOTO` document, which the **selfie step face-matches against** (`ApplicationVerificationService`).
   The gotchas below still apply.
-- **Selfie = face-match, not liveness (no live camera).** `verifySelfie` presigns the uploaded selfie **and**
-  the stored `AADHAAR_PHOTO`, and calls `faceLiveness(selfieUrl, referenceUrl, ref)` → Digitap Face Match
-  (`is_same_face` + confidence ≥ 0.60). No Aadhaar photo yet → degrades to a single-image quality check.
+- **Selfie = Signzy liveness (primary), Digitap face-match (fallback).** Primary path is an **interactive
+  video journey**: `selfieLivenessInit` (presigns the stored `AADHAAR_PHOTO` as Signzy's `matchImage` for a
+  1:1 face-match, mints the token + `videoUrl`) → the borrower completes the passive-liveness video in an
+  **iframe** (`allow="camera"`, `signup/selfie/page.tsx`) → `selfieLivenessResult` polls Signzy `getData`
+  (404 "not completed" = keep polling; on completion it ingests the captured frame to S3 as `SELFIE` and
+  maps **PASS** when live + face-matched, else **REVIEW**). Signzy Liveness runs on the **prod** account
+  (`SignzyLivenessClient` → `SIGNZY_PROD_CLIENT`). If Signzy liveness init is unavailable
+  (`derived.fallback=true`), the page degrades to the legacy **camera-capture** selfie → `verifySelfie`
+  presigns the selfie **and** the `AADHAAR_PHOTO` and calls `faceLiveness(selfieUrl, referenceUrl, ref)` →
+  Digitap Face Match (`is_same_face` + confidence ≥ 0.60; no Aadhaar photo → single-image quality check).
+  Neither path ever hard-blocks — a KYC approver makes the final call.
 - **Bureau fixture** — `NAVIX_BUREAU_FIXTURE=classpath:samplepan.json` still yields a rich local credit brief
   offline (now via `SignzyExperianClient`, which tolerates both the real `jsonExperianReport` and the fixture
   `credit_report` shape).

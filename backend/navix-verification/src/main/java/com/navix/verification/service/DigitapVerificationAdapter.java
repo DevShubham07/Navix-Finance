@@ -93,6 +93,16 @@ public class DigitapVerificationAdapter implements VerificationPort {
     }
 
     @Override
+    public LivenessSession livenessInit(String matchImageUrl, String clientRef) {
+        throw new CapabilityNotSupportedException("Digitap has no interactive liveness video journey");
+    }
+
+    @Override
+    public LivenessResultCheck livenessResult(String token) {
+        throw new CapabilityNotSupportedException("Digitap has no interactive liveness video journey");
+    }
+
+    @Override
     public DigiLockerSession digilockerInit(String redirectUrl, int expiryMinutes, boolean signupFlow) {
         throw new CapabilityNotSupportedException("Digitap has no DigiLocker consent flow");
     }

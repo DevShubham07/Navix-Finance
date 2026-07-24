@@ -1,12 +1,16 @@
 package com.navix.verification.service;
 
+import static com.navix.verification.support.ProviderJson.ref;
+
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.common.verification.VerificationPort;
 import com.navix.verification.client.SignzyBankVerificationClient;
 import com.navix.verification.client.SignzyCrifClient;
 import com.navix.verification.client.SignzyDigiLockerClient;
+import com.navix.verification.client.SignzyEmailClient;
 import com.navix.verification.client.SignzyExperianClient;
 import com.navix.verification.client.SignzyGeocodeClient;
+import com.navix.verification.client.SignzyLivenessClient;
 import com.navix.verification.client.SignzyPanClient;
 import com.navix.verification.dto.SignzyDtos;
 import com.navix.verification.exception.CapabilityNotSupportedException;
@@ -20,13 +24,12 @@ import org.springframework.stereotype.Component;
  * provider (see {@code RoutingVerificationPort}). Capabilities Signzy does not offer throw
  * {@link CapabilityNotSupportedException} so the router skips to Digitap:
  * <ul>
- *   <li>{@link #verifyEmail} — Signzy has no email API (Digitap only).</li>
  *   <li>{@link #faceLiveness} — Signzy Liveness Secure is an interactive iframe flow, not the
  *       synchronous single-image liveness this port method expects; the router uses Digitap Face Match.
  *       ({@code SignzyLivenessClient} remains available for a future async selfie journey.)</li>
  * </ul>
- * {@link #verifyAddress} uses Signzy reverse-geocoding (production account); Digitap is the fallback.
- * PAN 206AB also runs on the production account (unmasked name). Penny-drop and the full DigiLocker
+ * {@link #verifyEmail} (Email Verification V2), {@link #verifyAddress} (reverse-geocoding) and PAN 206AB
+ * all run on the production account; Digitap is the fallback for each. Penny-drop and the full DigiLocker
  * consent flow are Signzy-only (Digitap lacks them).
  */
 @Component
@@ -39,6 +42,8 @@ public class SignzyVerificationAdapter implements VerificationPort {
     private final SignzyCrifClient crifClient;
     private final SignzyDigiLockerClient digiLockerClient;
     private final SignzyGeocodeClient geocodeClient;
+    private final SignzyEmailClient emailClient;
+    private final SignzyLivenessClient livenessClient;
 
     @Override
     public PanCheck verifyPan(String pan, String clientRef) {
@@ -54,7 +59,15 @@ public class SignzyVerificationAdapter implements VerificationPort {
 
     @Override
     public EmailCheck verifyEmail(String email, String individualName, String establishmentName, String clientRef) {
-        throw new CapabilityNotSupportedException("Signzy has no email verification API");
+        // Signzy Email V2 (production account). The router falls back to Digitap only if this throws.
+        SignzyDtos.EmailV2Response r = emailClient.verify(email);
+        boolean verified = Boolean.TRUE.equals(r.validEmail());
+        // Signzy V2 takes only the email; derive name-matches from its person/company enrichment.
+        boolean individualMatched = nameMatches(individualName, r.personName());
+        boolean establishmentMatched = nameMatches(establishmentName, r.companyName());
+        return new EmailCheck(ref(clientRef), "SIGNZY", verified,
+                establishmentMatched, individualMatched,
+                Boolean.TRUE.equals(r.freeEmail()), r.companyName());
     }
 
     @Override
@@ -97,7 +110,23 @@ public class SignzyVerificationAdapter implements VerificationPort {
     @Override
     public FaceLivenessCheck faceLiveness(String imageUrl, String referenceImageUrl, String clientRef) {
         throw new CapabilityNotSupportedException(
-                "Signzy Liveness Secure is an interactive iframe flow, not synchronous image face-match");
+                "Signzy Liveness Secure is an interactive video flow — use livenessInit/livenessResult, "
+                        + "not synchronous image face-match");
+    }
+
+    @Override
+    public LivenessSession livenessInit(String matchImageUrl, String clientRef) {
+        // Interactive video journey (production account). matchImageUrl = the Aadhaar face for 1:1 match.
+        SignzyDtos.LivenessSession s = livenessClient.createUrl(matchImageUrl);
+        return new LivenessSession(s.token(), "SIGNZY", s.consumerId(), s.videoUrl());
+    }
+
+    @Override
+    public LivenessResultCheck livenessResult(String token) {
+        SignzyDtos.LivenessResult r = livenessClient.getData(token);
+        return new LivenessResultCheck(token, "SIGNZY", r.completed(),
+                Boolean.TRUE.equals(r.live()), r.livenessScore(), r.faceVerified(), r.matchPercentage(),
+                r.capturedImage(), Boolean.TRUE.equals(r.overallStatus()));
     }
 
     @Override
@@ -155,5 +184,19 @@ public class SignzyVerificationAdapter implements VerificationPort {
 
     private static String trim(String s) {
         return s == null ? null : s.trim();
+    }
+
+    /**
+     * Loose name match for the email enrichment: true only when both sides are present and one
+     * normalised (upper-cased, whitespace-collapsed) name contains the other. Signzy V2 does not take a
+     * name input, so this is a best-effort signal derived from its person/company enrichment.
+     */
+    private static boolean nameMatches(String provided, String resolved) {
+        if (isBlank(provided) || isBlank(resolved)) {
+            return false;
+        }
+        String a = provided.trim().toUpperCase().replaceAll("\\s+", " ");
+        String b = resolved.trim().toUpperCase().replaceAll("\\s+", " ");
+        return a.contains(b) || b.contains(a);
     }
 }

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.verification.VerificationPort.EmailCheck;
+import com.navix.common.verification.VerificationPort.LivenessSession;
 import com.navix.common.verification.VerificationPort.PanCheck;
 import com.navix.common.verification.VerificationPort.PennyDropCheck;
 import com.navix.verification.config.VerificationChainProperties;
@@ -62,6 +63,18 @@ class RoutingVerificationPortTest {
 
         assertThat(r.txnId()).isEqualTo("DIGITAP");
         verify(digitap).verifyPan(anyString(), anyString());
+    }
+
+    @Test
+    void livenessInitIsSignzyOnly_digitapNotCalled() {
+        when(signzy.livenessInit(anyString(), anyString()))
+                .thenReturn(new LivenessSession("TOK", "SIGNZY", "CID", "https://liveliness/x"));
+
+        LivenessSession s = router.livenessInit("https://ref.jpg", "ref");
+
+        assertThat(s.txnId()).isEqualTo("TOK");
+        assertThat(s.videoUrl()).isEqualTo("https://liveliness/x");
+        verify(digitap, never()).livenessInit(anyString(), anyString());
     }
 
     @Test

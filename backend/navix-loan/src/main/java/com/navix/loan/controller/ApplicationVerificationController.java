@@ -104,6 +104,20 @@ public class ApplicationVerificationController {
         return ApiResponse.ok(verification.verifySelfie(id, req.selfieObjectKey()));
     }
 
+    /** Primary selfie path: start the Signzy liveness video journey (returns derived.videoUrl / .fallback). */
+    @PostMapping("/selfie/liveness/init")
+    public ApiResponse<StepResult> selfieLivenessInit(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.selfieLivenessInit(id));
+    }
+
+    /** Poll the liveness journey result (PENDING until the borrower finishes; then PASS/REVIEW). */
+    @GetMapping("/selfie/liveness/status")
+    public ApiResponse<StepResult> selfieLivenessStatus(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.selfieLivenessResult(id));
+    }
+
     @PostMapping("/agreement")
     public ApiResponse<StepResult> agreement(@PathVariable Long id, @RequestBody AgreementRequest req) {
         authorize(id);

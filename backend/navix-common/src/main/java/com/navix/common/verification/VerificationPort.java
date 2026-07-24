@@ -37,6 +37,17 @@ public interface VerificationPort {
      */
     FaceLivenessCheck faceLiveness(String imageUrl, String referenceImageUrl, String clientRef);
 
+    /**
+     * Liveness (interactive): start a Signzy Liveness-Secure video journey. {@code matchImageUrl} (a
+     * presigned reference photo, typically the DigiLocker Aadhaar face) enables the 1:1 face-match; null
+     * runs liveness only. Returns the token + hosted {@code videoUrl} to redirect the borrower to. This is
+     * a two-step async flow (mirrors DigiLocker); the result is fetched later via {@link #livenessResult}.
+     */
+    LivenessSession livenessInit(String matchImageUrl, String clientRef);
+
+    /** Liveness: fetch the result by token. {@code completed=false} while the video journey is still in progress. */
+    LivenessResultCheck livenessResult(String token);
+
     /** DigiLocker: start a consent session; returns the redirect URL + session client id. */
     DigiLockerSession digilockerInit(String redirectUrl, int expiryMinutes, boolean signupFlow);
 
@@ -81,6 +92,20 @@ public interface VerificationPort {
 
     record FaceLivenessCheck(String txnId, String provider, boolean live, Double confidence,
                              boolean multipleFaces) {
+    }
+
+    /** Liveness journey session — the token to poll and the hosted video URL to redirect the borrower to. */
+    record LivenessSession(String txnId, String provider, String consumerId, String videoUrl) {
+    }
+
+    /**
+     * Liveness journey result. {@code completed=false} means the borrower has not finished the video yet
+     * (keep polling). {@code faceMatched}/{@code matchPercentage} are populated only when a match image was
+     * supplied at init; {@code overallPass} is the provider's own combined verdict.
+     */
+    record LivenessResultCheck(String txnId, String provider, boolean completed, boolean live,
+                               Double livenessScore, Boolean faceMatched, String matchPercentage,
+                               String capturedImageUrl, boolean overallPass) {
     }
 
     record DigiLockerSession(String txnId, String clientId, String url, Integer expirySeconds) {

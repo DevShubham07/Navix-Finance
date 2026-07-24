@@ -671,6 +671,105 @@ public class ApplicationVerificationService {
                 derived, msg));
     }
 
+    /**
+     * Start the Signzy liveness video journey for the SELFIE step (primary path). Uses the DigiLocker
+     * Aadhaar face (if present) as the {@code matchImage} so the journey does liveness AND a 1:1
+     * face-match in one. Persists the session token on the SELFIE row; the frontend redirects the borrower
+     * to {@code derived.videoUrl} and then polls {@link #selfieLivenessResult}. If Signzy liveness is
+     * unavailable (not provisioned / upstream error), returns {@code derived.fallback=true} — the frontend
+     * then uses the camera-capture + Digitap face-match path ({@link #verifySelfie}). Never hard-blocks.
+     */
+    @Transactional
+    public StepResult selfieLivenessInit(Long appId) {
+        requireApplication(appId);
+        // Reference photo = the Aadhaar face captured at DigiLocker completion (enables 1:1 face-match).
+        String matchImageUrl = documentRepo
+                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, AADHAAR_PHOTO)
+                .map(d -> storage.presignDownload(d.getS3ObjectKey()))
+                .orElse(null);
+        String ref = ref(appId, SELFIE);
+        try {
+            VerificationPort.LivenessSession s = verification.livenessInit(matchImageUrl, ref);
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("provider", s.provider());
+            derived.put("videoUrl", s.videoUrl());
+            derived.put("token", s.txnId());
+            derived.put("faceMatch", matchImageUrl != null);
+            derived.put("fallback", false);
+            return view(upsert(appId, SELFIE, PENDING, s.provider(), s.txnId(), ref, null, null, null,
+                    derived, "Liveness session started"));
+        } catch (RuntimeException signzyUnavailable) {
+            // Signzy liveness can't run — tell the frontend to fall back to camera capture (Digitap).
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("fallback", true);
+            return new StepResult(SELFIE, PENDING,
+                    "Liveness unavailable — capture a selfie instead", derived);
+        }
+    }
+
+    /**
+     * Poll the liveness journey result. Returns PENDING (keep polling) until the borrower finishes the
+     * video. On completion it ingests the captured selfie frame to S3 (for approver review) and maps the
+     * verdict: PASS when live (and, if a match image was supplied, the face matched), else REVIEW — a
+     * manual approver decides, never a hard block (mirrors {@link #verifySelfie}).
+     */
+    @Transactional
+    public StepResult selfieLivenessResult(Long appId) {
+        Optional<ApplicationVerification> done = passed(appId, SELFIE);
+        if (done.isPresent()) {
+            return view(done.get());
+        }
+        ApplicationVerification row = verificationRepo.findByApplicationIdAndCheckType(appId, SELFIE)
+                .orElseThrow(() -> new BusinessException(
+                        "LIVENESS_NOT_STARTED", "No liveness session for this application"));
+        String token = row.getProviderTxnId();
+        if (token == null || token.isBlank()) {
+            throw new BusinessException("LIVENESS_NOT_STARTED", "No liveness session for this application");
+        }
+
+        VerificationPort.LivenessResultCheck r = verification.livenessResult(token);
+        if (!r.completed()) {
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("completed", false);
+            return new StepResult(SELFIE, PENDING, "Liveness in progress", derived);
+        }
+
+        // Ingest the captured selfie frame to S3 so a KYC approver always has the image to review.
+        String selfieKey = null;
+        if (r.capturedImageUrl() != null && r.capturedImageUrl().startsWith("http")) {
+            try {
+                selfieKey = storage.buildApplicationKey(appId, SELFIE, "jpg");
+                storage.storeFromUrl(selfieKey, r.capturedImageUrl(), "image/jpeg");
+                ApplicationDocument selfie = new ApplicationDocument();
+                selfie.setApplicationId(appId);
+                selfie.setDocType(SELFIE);
+                selfie.setFileName("selfie.jpg");
+                selfie.setContentType("image/jpeg");
+                selfie.setS3ObjectKey(selfieKey);
+                documentRepo.save(selfie);
+            } catch (RuntimeException ingestFailure) {
+                selfieKey = null; // best-effort; the verdict below still stands
+            }
+        }
+
+        boolean faceMatchAttempted = r.faceMatched() != null;
+        boolean pass = r.live() && (!faceMatchAttempted || Boolean.TRUE.equals(r.faceMatched()));
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("completed", true);
+        derived.put("live", r.live());
+        derived.put("livenessScore", r.livenessScore());
+        derived.put("faceMatch", faceMatchAttempted);
+        derived.put("faceMatched", r.faceMatched());
+        derived.put("matchPercentage", r.matchPercentage());
+        String status = pass ? PASS : REVIEW;
+        Long score = r.livenessScore() != null ? Math.round(r.livenessScore() * 100) : null;
+        String msg = faceMatchAttempted
+                ? (pass ? "Live selfie matched to Aadhaar photo" : "Liveness/face-match low — manual review")
+                : (pass ? "Liveness check passed" : "Liveness check low — manual review");
+        return view(upsert(appId, SELFIE, status, r.provider(), token, ref(appId, SELFIE), null, score,
+                selfieKey, derived, msg));
+    }
+
     /** Record agreement consent (the 3 documents the borrower accepted). */
     @Transactional
     public StepResult recordAgreement(Long appId, List<String> versions) {
