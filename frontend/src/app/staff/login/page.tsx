@@ -41,7 +41,7 @@ function LoginInner() {
         <div className="mb-6 text-center">
           <div className="mb-4 flex justify-center"><Brand href="/" tag="Staff Console" /></div>
           <h1 className="mb-1">Sign in to the console</h1>
-          <p className="text-muted">Internal NAVIX Finance back office. Authorised staff only.</p>
+          <p className="text-muted">Internal DhanBoost back office. Authorised staff only.</p>
         </div>
 
         <form onSubmit={submit} className="form-card">

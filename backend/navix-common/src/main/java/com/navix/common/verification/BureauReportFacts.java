@@ -1,13 +1,13 @@
 package com.navix.common.verification;
 
 /**
- * Provider-neutral, categorized snapshot of a credit-bureau report — the fields NAVIX harvests from
+ * Provider-neutral, categorized snapshot of a credit-bureau report — the fields DhanBoost harvests from
  * the (Experian) credit report to build the one-page credit brief and the 1–5★ recommendation rating.
  *
  * <p>Parsed inside {@code navix-verification} (the only place provider-shaped JSON is touched) and
  * carried across the {@link VerificationPort} seam as this neutral record — nothing Fintrix/Experian
  * shaped reaches the loan classpath. Monetary amounts are in <b>rupees</b> (the bureau's native unit,
- * <i>not</i> NAVIX's internal paise) and are display-only. Any field may be {@code null} when the
+ * <i>not</i> DhanBoost's internal paise) and are display-only. Any field may be {@code null} when the
  * bureau response is thin / a value was blank.
  *
  * @param name               Category A — customer name ({@code data.name})

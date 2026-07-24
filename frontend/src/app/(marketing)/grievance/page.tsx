@@ -3,7 +3,7 @@ import { html } from "../_content/grievance";
 import { MarketingHtml } from "@/components/site/marketing-html";
 
 export const metadata: Metadata = {
-  title: 'Grievance Redressal — NAVIX',
+  title: 'Grievance Redressal — DhanBoost',
   description: 'How to raise a complaint and reach our Grievance Officer.',
   alternates: { canonical: '/grievance' },
 };

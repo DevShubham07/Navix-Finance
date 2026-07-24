@@ -14,7 +14,7 @@
     <artifactId>navix-notification</artifactId>
     <packaging>jar</packaging>
     <name>navix-notification</name>
-    <description>Notification engine (in-app + SMS + email) for NAVIX Finance</description>
+    <description>Notification engine (in-app + SMS + email) for DhanBoost</description>
 
     <dependencies>
         <dependency>

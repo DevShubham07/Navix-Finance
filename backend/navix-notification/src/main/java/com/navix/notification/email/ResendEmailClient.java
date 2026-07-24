@@ -47,7 +47,7 @@ public class ResendEmailClient implements EmailClient {
             Map<String, Object> body = new HashMap<>();
             body.put("from", props.from());
             body.put("to", List.of(message.to()));
-            body.put("subject", message.subject() == null ? "NAVIX Finance" : message.subject());
+            body.put("subject", message.subject() == null ? "DhanBoost" : message.subject());
             body.put("text", message.body() == null ? "" : message.body());
             if (message.html() != null && !message.html().isBlank()) {
                 body.put("html", message.html());

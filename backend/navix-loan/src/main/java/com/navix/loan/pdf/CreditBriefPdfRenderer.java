@@ -24,7 +24,7 @@ import java.util.Locale;
 import org.springframework.stereotype.Component;
 
 /**
- * Renders the one-page, NAVIX-branded credit brief to PDF bytes (OpenPDF). Pure / stateless.
+ * Renders the one-page, DhanBoost-branded credit brief to PDF bytes (OpenPDF). Pure / stateless.
  *
  * <p>Layout: wordmark + title header, customer line, the 1–5★ recommendation (drawn as vector
  * star polygons — no font-glyph dependency), credit score, the spec's three categories (A Identity /
@@ -84,7 +84,7 @@ public class CreditBriefPdfRenderer {
             doc.add(footerSpacer());
             doc.add(rule());
             Paragraph footer = new Paragraph(
-                    "Confidential — NAVIX Finance internal underwriting brief.  Generated " + generatedOn
+                    "Confidential — DhanBoost internal underwriting brief.  Generated " + generatedOn
                             + ".  Bureau data is provided as-is for credit decisioning.", FOOTER);
             footer.setAlignment(Element.ALIGN_CENTER);
             doc.add(footer);
@@ -100,7 +100,7 @@ public class CreditBriefPdfRenderer {
         PdfPTable t = new PdfPTable(2);
         t.setWidthPercentage(100);
         t.setWidths(new float[] {2f, 1f});
-        t.addCell(borderless(new Phrase("NAVIX FINANCE", WORDMARK), Element.ALIGN_LEFT));
+        t.addCell(borderless(new Phrase("DhanBoost FINANCE", WORDMARK), Element.ALIGN_LEFT));
         t.addCell(borderless(new Phrase("CREDIT BRIEF", TITLE), Element.ALIGN_RIGHT));
         return t;
     }

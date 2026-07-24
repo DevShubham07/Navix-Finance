@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start-aws.sh — Run the NAVIX backend locally connected to AWS RDS + S3 + SSM.
+# start-aws.sh — Run the DhanBoost backend locally connected to AWS RDS + S3 + SSM.
 # Prerequisites:
 #   1. aws configure --profile navix-dev  (one-time; add the navix-dev IAM key/secret)
 #   2. Your IP must be in the RDS SG — the script adds it automatically if you have
@@ -52,7 +52,7 @@ fi
 
 # ── 5. Start the backend (Spring Cloud AWS pulls SSM params on boot) ─────────
 echo ""
-echo "→ Starting NAVIX backend (SSM → RDS → S3)…"
+echo "→ Starting DhanBoost backend (SSM → RDS → S3)…"
 echo "   Swagger UI: http://localhost:8080/swagger-ui.html"
 echo "   Health:     http://localhost:8080/actuator/health"
 echo ""

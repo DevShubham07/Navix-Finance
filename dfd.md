@@ -1,13 +1,13 @@
-# LMS / NAVIX Finance — Master Document
+# LMS / DhanBoost — Master Document
 
 > **Comprehensive architecture, design & execution reference (pre-code).**
-> This is the authoritative umbrella document. Implementation-level detail is split into the **Backend Document**, **Frontend Document**, and the client-facing **NAVIX Finance — How It Works**. Where those go deeper, this document links to them; where they conflict, **this document and the decision log (§4) win**.
+> This is the authoritative umbrella document. Implementation-level detail is split into the **Backend Document**, **Frontend Document**, and the client-facing **DhanBoost — How It Works**. Where those go deeper, this document links to them; where they conflict, **this document and the decision log (§4) win**.
 
 | | |
 |---|---|
 | **Version** | 2.1 (expanded) |
 | **Status** | Ready for engineering kickoff |
-| **Product** | NAVIX Finance — short-term consumer lending platform (30-day single-repayment loans) |
+| **Product** | DhanBoost — short-term consumer lending platform (30-day single-repayment loans) |
 | **Project codename** | LMS (Loan Management System) |
 | **Backend** | Java 21 · Spring Boot 3 · Spring Security · PostgreSQL (Amazon RDS) · Flyway · Maven |
 | **Frontend** | Flutter · Riverpod · GoRouter · Dio · Freezed · JsonSerializable |
@@ -110,7 +110,7 @@
 
 ## 1. Executive summary
 
-NAVIX Finance is a mobile-first lending platform that originates and services **short-term personal loans with a fixed 30-day term and a single repayment**. A customer onboards and completes KYC in the app; their application passes through a structured approval chain (KYC → Credit Executive → Credit Head → Disbursement Head → Accountant validation); the net loan amount is transferred to their bank; and the customer repays the principal plus accrued interest within 30 days. Late loans accrue a capped penalty and are worked by a collections team.
+DhanBoost is a mobile-first lending platform that originates and services **short-term personal loans with a fixed 30-day term and a single repayment**. A customer onboards and completes KYC in the app; their application passes through a structured approval chain (KYC → Credit Executive → Credit Head → Disbursement Head → Accountant validation); the net loan amount is transferred to their bank; and the customer repays the principal plus accrued interest within 30 days. Late loans accrue a capped penalty and are worked by a collections team.
 
 The platform is built as a **modular monolith** in Java 21 / Spring Boot 3, deployed on a single small AWS EC2 instance behind a load-balancer target group, backed by Amazon RDS (PostgreSQL) and Amazon S3. It deliberately **avoids Redis and NACH** in this phase to reduce operational surface and cost; their responsibilities are met with DB-direct and in-memory mechanisms (§9.5) and manual repayment respectively.
 
@@ -126,7 +126,7 @@ This document is detailed enough that a team can plan sprints and begin implemen
 
 ## 2. How to read this document
 
-- **Product & business people:** §1, §3, §5, §6, §8 (economics), and the separate **NAVIX Finance — How It Works** client document.
+- **Product & business people:** §1, §3, §5, §6, §8 (economics), and the separate **DhanBoost — How It Works** client document.
 - **Architects / tech leads:** all sections, especially §9–§14 and §17–§19.
 - **Backend engineers:** §9, §11 (schema), §12, §13, §14, plus the **Backend Document**.
 - **Flutter engineers:** §6 (workflows), §12 (flows), §15 (API overview), plus the **Frontend Document**.
@@ -872,9 +872,9 @@ OTP → `otp_challenge` + cleanup job · token revocation → `token_version` + 
 Modular monolith on EC2 t4g.small (arm64) behind an ALB target group · RDS + S3 · **no Redis** (DB-direct/in-memory) · **no NACH** (manual repayment with txn id/proof) · 30-day single-repayment loan: **10%** fee + 18% GST upfront, 1%/day interest, 2%/day capped penalty · money in paise · buckets computed (never stored) · append-only ledgers · partial payments never delete the installment (waterfall penalty→interest→principal) · flexible collection proof · two auth surfaces (non-public staff/admin login) · dynamic roles + email invite + activation; **heads assign only to ACTIVE staff** · **30-day JWT with DB revocation** · developer dashboard locked down (read-only DB role, saved queries, IP-restricted, audited) · **logs batched to S3 under year/month/day/hour** · security audited end-to-end.
 
 ### D. Change log
-**v2.1** — expanded master: threat model, full schema, role-permission matrix, AWS topology, NFRs, risk register, roadmap exit criteria; processing fee **10%**; client doc rebranded **NAVIX Finance**.
+**v2.1** — expanded master: threat model, full schema, role-permission matrix, AWS topology, NFRs, risk register, roadmap exit criteria; processing fee **10%**; client doc rebranded **DhanBoost**.
 **v2.0** — removed Redis & NACH; AWS (EC2 t4g.small/RDS/S3/target group); 30-day JWT; admin console + dynamic roles + invite/activation; developer dashboard; S3 log batching; flexible collection proof.
 **v1.0** — initial blueprint (14 sections).
 
 ### E. Companion documents
-**Backend Document** (packages, full APIs, schema DDL detail, jobs, runtime) · **Frontend Document** (Flutter architecture, two login surfaces, screens, guards) · **NAVIX Finance — How It Works** (client-facing, plain-language).
+**Backend Document** (packages, full APIs, schema DDL detail, jobs, runtime) · **Frontend Document** (Flutter architecture, two login surfaces, screens, guards) · **DhanBoost — How It Works** (client-facing, plain-language).

@@ -35,7 +35,7 @@ export default function AdminStaffPage() {
       <PageHeader title="Staff accounts" subtitle="Manage staff roles and access status.">
         <ExportMenu
           title="Staff accounts"
-          fileBase="navix-staff"
+          fileBase="dhanboost-staff"
           columns={[
             { header: "ID", value: (s: StaffResponse) => s.id },
             { header: "Name", value: (s) => s.name },

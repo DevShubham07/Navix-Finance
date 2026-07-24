@@ -255,7 +255,7 @@ public class ApplicationVerificationService {
         profileRepo.save(profile);
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("manualAddress", manualAddress);
-        return view(upsert(appId, ADDRESS, REVIEW, "NAVIX", null, ref(appId, ADDRESS),
+        return view(upsert(appId, ADDRESS, REVIEW, "DhanBoost", null, ref(appId, ADDRESS),
                 null, null, null, derived, "Manual address — pending review"));
     }
 
@@ -558,7 +558,7 @@ public class ApplicationVerificationService {
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("monthlySalaryPaise", monthlySalaryPaise);
         derived.put("eligibleLimitPaise", eligible);
-        return view(upsert(appId, SALARY, PASS, "NAVIX", null, ref(appId, SALARY),
+        return view(upsert(appId, SALARY, PASS, "DhanBoost", null, ref(appId, SALARY),
                 null, null, primaryKey, derived, "Declared salary recorded"));
     }
 
@@ -679,7 +679,7 @@ public class ApplicationVerificationService {
         profileRepo.save(profile);
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("versions", versions != null ? versions : List.of());
-        return view(upsert(appId, AGREEMENT, PASS, "NAVIX", null, ref(appId, AGREEMENT),
+        return view(upsert(appId, AGREEMENT, PASS, "DhanBoost", null, ref(appId, AGREEMENT),
                 null, null, null, derived, "Agreement accepted"));
     }
 

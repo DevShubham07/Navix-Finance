@@ -3,7 +3,7 @@ import { html } from "../_content/about";
 import { MarketingHtml } from "@/components/site/marketing-html";
 
 export const metadata: Metadata = {
-  title: 'About NAVIX — Making Credit Calm, Clear & Fair',
+  title: 'About DhanBoost — Making Credit Calm, Clear & Fair',
   description: 'A better way to borrow for everyday India — transparent, fast and humane.',
   alternates: { canonical: '/about' },
 };

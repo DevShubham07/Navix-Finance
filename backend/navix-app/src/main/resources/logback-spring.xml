@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  NAVIX backend logging — tuned for AWS CloudWatch (ECS Fargate awslogs driver).
+  DhanBoost backend logging — tuned for AWS CloudWatch (ECS Fargate awslogs driver).
 
   Goals: enough signal to debug a request end-to-end, without drowning the stream.
    - ONE plain (no-ANSI) line per event; CloudWatch renders colour escapes as garbage.

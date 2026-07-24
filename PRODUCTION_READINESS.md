@@ -1,7 +1,7 @@
-# NAVIX — Production Readiness Checklist
+# DhanBoost — Production Readiness Checklist
 
 Outcome of the 9-phase production-readiness program (2026-06-30). All phases below are **implemented,
-verified, and deployed** to AWS ECS + Vercel prod (`www.navixfinance.com`) unless noted. Each phase
+verified, and deployed** to AWS ECS + Vercel prod (`www.dhanboost.com`) unless noted. Each phase
 shipped as its own commit on `main`.
 
 ---
@@ -97,4 +97,4 @@ These require external credentials, legal content, or an ops decision — out of
 - **RBAC regression**: `curl` each guarded endpoint with a borrower JWT and a non-admin staff JWT →
   expect `403 / FORBIDDEN_ROLE`; admin → 200.
 - **Frontend**: `npx tsc --noEmit` + `next lint`.
-- **Live smoke**: ALB `/actuator/health` → `{"status":"UP"}`; Vercel prod alias `www.navixfinance.com`.
+- **Live smoke**: ALB `/actuator/health` → `{"status":"UP"}`; Vercel prod alias `www.dhanboost.com`.

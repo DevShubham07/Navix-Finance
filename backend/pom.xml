@@ -17,7 +17,7 @@
     <packaging>pom</packaging>
 
     <name>navix-finance</name>
-    <description>NAVIX Finance - salary-linked single-repayment lending platform (Maven multi-module backend)</description>
+    <description>DhanBoost - salary-linked single-repayment lending platform (Maven multi-module backend)</description>
 
     <properties>
         <java.version>21</java.version>

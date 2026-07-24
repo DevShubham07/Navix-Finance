@@ -1,7 +1,7 @@
-# NAVIX SEO Implementation Plan — Execution Handoff
+# DhanBoost SEO Implementation Plan — Execution Handoff
 
 > **Purpose.** Self-contained handoff for a fresh Claude Code session. Carries everything
-> needed to execute the NAVIX SEO pass without prior conversation context: project facts, the
+> needed to execute the DhanBoost SEO pass without prior conversation context: project facts, the
 > audit results, and the concrete changes (with code skeletons). Produced from a full
 > **claude-seo** four-agent specialist audit of the live site + code (2026-07-01), then
 > hardened by a review pass (see §8 for what the review changed and why).
@@ -17,10 +17,10 @@
 
 - **Repo:** monorepo at `/Users/kartik.jindal/navix_final`. Frontend is **Next.js 15 (App
   Router, `src/`), React 19, TypeScript, Tailwind**, under `frontend/`.
-- **What NAVIX is:** a salary-linked personal-loan **platform** (India). It is *not* the
-  lender of record — RBI-registered **NBFC partners** are. **Never describe NAVIX as an NBFC or
+- **What DhanBoost is:** a salary-linked personal-loan **platform** (India). It is *not* the
+  lender of record — RBI-registered **NBFC partners** are. **Never describe DhanBoost as an NBFC or
   lender**, in prose or in machine-readable schema.
-- **Live site:** `https://www.navixfinance.com` (apex `navixfinance.com` 308-redirects to
+- **Live site:** `https://www.dhanboost.com` (apex `dhanboost.com` 308-redirects to
   `www` — the **canonical host**). Vercel; the frontend code IS the deployment.
 - **`trailingSlash`:** **not set** in `frontend/next.config.mjs` → Next default `false` → served
   URLs have **no trailing slash** (`/about/` 308-redirects to `/about`, confirmed live). All
@@ -38,8 +38,8 @@
 - **Brand facts** live in **`frontend/src/lib/brand.ts`** (`BRAND` + `LENDING_PARTNERS`) — the
   single source of truth; **reuse, never re-type**:
   ```
-  legalName: "NAVIX Finance Private Limited"   shortName: "NAVIX"
-  phone: "+91 97167 60246"   email: "info@navixfinance.com"
+  legalName: "NAVIX Finance Private Limited"   shortName: "DhanBoost"
+  phone: "+91 97167 60246"   email: "info@dhanboost.com"
   cin: "U64990HR2026PTC144926"
   address: { line1: "Dev Nagar", city: "Gurugram", pin: "122102" }  // country IN
   logo asset: /navix-mark.png  (in frontend/public/)
@@ -89,30 +89,30 @@ structured data; (3) critical YMYL trust defects. (1)+(2) = code (Track A); (3) 
   (they carry the fake CoR numbers and the unverifiable review stats respectively).
 
 Nine changes below (A1–A10). All low-risk, additive, no business logic. Canonical host is
-always `https://www.navixfinance.com`.
+always `https://www.dhanboost.com`.
 
 ### A1. Root layout metadata — edit `frontend/src/app/layout.tsx`
 Extend the existing `metadata` object (only `title`+`description` today, ~lines 39-43):
 ```ts
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.navixfinance.com"),
-  title: "NAVIX — Instant Personal Loans, Fully Digital",
+  metadataBase: new URL("https://www.dhanboost.com"),
+  title: "DhanBoost — Instant Personal Loans, Fully Digital",
   description:
-    "NAVIX is a digital lending platform offering instant, fully-digital, salary-linked personal loans. Paperless process, direct bank disbursal, single repayment, zero advance fees.",
+    "DhanBoost is a digital lending platform offering instant, fully-digital, salary-linked personal loans. Paperless process, direct bank disbursal, single repayment, zero advance fees.",
   alternates: { canonical: "/" },
   openGraph: {
-    type: "website", siteName: "NAVIX", locale: "en_IN", url: "/",
-    title: "NAVIX — Instant Personal Loans, Fully Digital",
+    type: "website", siteName: "DhanBoost", locale: "en_IN", url: "/",
+    title: "DhanBoost — Instant Personal Loans, Fully Digital",
     description: "Instant, fully-digital, salary-linked personal loans — single repayment, no advance fees.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "NAVIX — Instant Personal Loans, Fully Digital",
+    title: "DhanBoost — Instant Personal Loans, Fully Digital",
     description: "Instant, fully-digital, salary-linked personal loans — single repayment, no advance fees.",
   },
 };
 ```
-- **Do NOT** add a `title.template: "%s — NAVIX"` — the 16 marketing titles already end "— NAVIX".
+- **Do NOT** add a `title.template: "%s — DhanBoost"` — the 16 marketing titles already end "— DhanBoost".
 - **Canonical footgun (important):** `alternates.canonical: "/"` here is the site-wide *default*.
   Next merges `alternates` per-route, so any marketing page that forgets its own A9 canonical
   **silently inherits `"/"`** and gets canonicalized-away (deindex risk). A9 covers all 16 today
@@ -134,8 +134,8 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/api/", "/staff/"],
       },
     ],
-    sitemap: "https://www.navixfinance.com/sitemap.xml",
-    host: "www.navixfinance.com", // Host: directive is scheme-less (bare hostname), NOT a URL
+    sitemap: "https://www.dhanboost.com/sitemap.xml",
+    host: "www.dhanboost.com", // Host: directive is scheme-less (bare hostname), NOT a URL
   };
 }
 ```
@@ -148,7 +148,7 @@ export default function robots(): MetadataRoute.Robots {
 ```ts
 import type { MetadataRoute } from "next";
 
-const BASE = "https://www.navixfinance.com";
+const BASE = "https://www.dhanboost.com";
 
 // Single source of truth for public marketing URLs.
 // NOTE: /partners and /reviews are intentionally OMITTED until B2 (fake RBI CoR#) and
@@ -183,7 +183,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "NAVIX — Instant personal loans. Fully digital. Fairly priced.";
+export const alt = "DhanBoost — Instant personal loans. Fully digital. Fairly priced.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -193,7 +193,7 @@ export default function Image() {
       <div style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column",
         justifyContent: "center", padding: "80px", background: "#0C2540",
         color: "#FDFBF6", fontFamily: "sans-serif" }}>
-        <div style={{ fontSize: 96, fontWeight: 800, letterSpacing: "-0.03em", color: "#E9B53A" }}>NAVIX</div>
+        <div style={{ fontSize: 96, fontWeight: 800, letterSpacing: "-0.03em", color: "#E9B53A" }}>DhanBoost</div>
         <div style={{ fontSize: 52, fontWeight: 700, marginTop: 24, lineHeight: 1.1 }}>Instant personal loans.</div>
         <div style={{ fontSize: 52, fontWeight: 700, lineHeight: 1.1 }}>Fully digital. Fairly priced.</div>
         <div style={{ fontSize: 30, marginTop: 32, opacity: 0.85 }}>Salary-linked · single repayment · no advance fees</div>
@@ -217,16 +217,16 @@ header/footer). **NOT** root layout (root also wraps borrower/staff — wrong co
 ```tsx
 import { BRAND } from "@/lib/brand";
 
-const BASE = "https://www.navixfinance.com";
+const BASE = "https://www.dhanboost.com";
 
 export function StructuredData() {
   const graph = {
     "@context": "https://schema.org",
     "@graph": [
       {
-        "@type": "Organization", // NOT "FinancialService" — NAVIX is a platform, not the lender.
-                                  // FinancialService would machine-assert NAVIX provides the loan,
-                                  // violating the "never call NAVIX a lender" rule (§0). Lending is
+        "@type": "Organization", // NOT "FinancialService" — DhanBoost is a platform, not the lender.
+                                  // FinancialService would machine-assert DhanBoost provides the loan,
+                                  // violating the "never call DhanBoost a lender" rule (§0). Lending is
                                   // attributed to the partner NBFC later via LoanOrCredit (Track C).
         "@id": `${BASE}/#organization`,
         name: BRAND.shortName,
@@ -328,7 +328,7 @@ needs real data or a legal decision. Files: `frontend/src/app/(marketing)/_conte
 - **B2 (Critical).** Four **placeholder RBI CoR numbers** (`N-14.03XXXX`, `N-13.02XXXX`,
   `N-09.01XXXX`, `N-05.07XXXX`) on `/partners`. Real verifiable registrations or remove the
   cards. (`LENDING_PARTNERS` in `brand.ts` / `_content/partners.ts`.)
-- **B3 (Critical).** **Entity-name conflict**: `/grievance` says "NAVIX Technologies Pvt. Ltd."
+- **B3 (Critical).** **Entity-name conflict**: `/grievance` says "DhanBoost Technologies Pvt. Ltd."
   vs footer/CIN "NAVIX Finance Private Limited." Reconcile.
 - **B4 (High).** `/reviews` — "12,400+ / 4.8★ / 96%" + named testimonials have no verifiable
   source. Substantiate (linkable source) or remove specifics. Gates A5 review schema + A9 re-add.
@@ -386,7 +386,7 @@ the 16 `(marketing)/**/page.tsx` (A8 canonicals).
    `/about` (no slash).
 3. `npm run dev`, then:
    - `curl -s localhost:3000/robots.txt` → rules + AI-crawler allows + `Sitemap:` line;
-     `Host: www.navixfinance.com` (bare, no scheme).
+     `Host: www.dhanboost.com` (bare, no scheme).
    - `curl -s localhost:3000/sitemap.xml` → **14** `<url>` entries; `grep -E 'partners|reviews'`
      on it → **empty** (omitted until B2/B4).
    - `curl -s localhost:3000/ | grep -Eo '(og:[a-z]+|application/ld\+json|rel="canonical")'` →
@@ -408,25 +408,25 @@ the 16 `(marketing)/**/page.tsx` (A8 canonicals).
      → headers set; HSTS has `includeSubDomains` but **no** `preload`.
 4. **Split by ship-vs-index (§2.0):**
    - **4a — Ship code (safe now):** deploy Track A. Re-run the live equivalents of step 3 against
-     `https://www.navixfinance.com`. Confirm `/partners` + `/reviews` carry `noindex` and are
+     `https://www.dhanboost.com`. Confirm `/partners` + `/reviews` carry `noindex` and are
      absent from the live sitemap.
    - **4b — Trigger indexation (BLOCKED until B1 + B2 + B3 clear):** verify the domain in **Google
      Search Console** + **Bing Webmaster Tools**, submit
-     `https://www.navixfinance.com/sitemap.xml`, URL-Inspect → Request indexing on `/` + top
+     `https://www.dhanboost.com/sitemap.xml`, URL-Inspect → Request indexing on `/` + top
      pages. Only after **B2 + B4** also clear: remove the A9 noindex from `/partners`+`/reviews`
-     and add them back to the A3 sitemap. Re-check `site:navixfinance.com` after a few days.
+     and add them back to the A3 sitemap. Re-check `site:dhanboost.com` after a few days.
 5. Paste the homepage JSON-LD into Google **Rich Results Test** + **schema.org validator** → no errors.
 
 ---
 
 ## 7. Guardrails / gotchas (read before editing)
 
-- **Canonical host is `https://www.navixfinance.com`** (with `www`). Never emit apex URLs.
+- **Canonical host is `https://www.dhanboost.com`** (with `www`). Never emit apex URLs.
   Canonicals use the **no-slash** form (matches served URLs).
 - **Ship code ≠ trigger indexation.** Don't submit the sitemap / Request-indexing until B1–B3
   clear (§2.0, §6-4b).
-- **NAVIX is a platform, not an NBFC/lender** — in prose AND schema. `@type` is `Organization`,
-  never `FinancialService`/`LoanOrCredit` for the NAVIX entity.
+- **DhanBoost is a platform, not an NBFC/lender** — in prose AND schema. `@type` is `Organization`,
+  never `FinancialService`/`LoanOrCredit` for the DhanBoost entity.
 - **Money/product facts:** state no loan cap anywhere new until **B5** resolves.
 - **No review or FAQ rich-result schema for ranking** — review schema waits on B4; FAQPage earns
   no SERP feature (AI-citation only).
@@ -445,9 +445,9 @@ the 16 `(marketing)/**/page.tsx` (A8 canonicals).
    B1–B3, and pulls `/partners`+`/reviews` from the sitemap + noindexes them (A9) until B2/B4,
    so shipping code can't push fake-CoR / fabricated-review pages to Google or the allowed AI
    crawlers. (§2.0, A3, A9, §6-4.)
-2. **A5 `@type`: `FinancialService` → `Organization`** — `FinancialService` machine-asserts NAVIX
+2. **A5 `@type`: `FinancialService` → `Organization`** — `FinancialService` machine-asserts DhanBoost
    provides the loan, the exact forbidden claim; `Organization` is accurate to platform position.
-3. **A2 `host`** → bare `www.navixfinance.com` (the `Host:` directive is scheme-less).
+3. **A2 `host`** → bare `www.dhanboost.com` (the `Host:` directive is scheme-less).
 4. **trailingSlash confirmed** unset (no-slash served form) — stated in §0, asserted in §6-2, so
    A8 canonicals provably match the served form.
 5. **HSTS `preload` dropped** from the shipped header (near-irreversible commitment); deferred to

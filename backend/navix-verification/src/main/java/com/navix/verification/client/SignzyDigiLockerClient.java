@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 /**
- * Signzy DigiLocker consent flow. Two calls NAVIX uses:
+ * Signzy DigiLocker consent flow. Two calls DhanBoost uses:
  * <ol>
  *   <li>{@code POST /api/v3/digilocker/createUrl} → a DigiLocker OAuth consent {@code url} + a
  *       {@code requestId}. The caller passes a UNIQUE redirect/callback URL per attempt (carrying the

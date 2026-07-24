@@ -47,7 +47,7 @@ export default function ReloanPage() {
       <div className="container max-w-content py-10">
         <div className="rounded border border-line bg-white p-8 text-center shadow-sm">
           <h1 className="text-2xl">Welcome back</h1>
-          <p className="mb-4 text-muted">Start a fresh application to borrow with NAVIX.</p>
+          <p className="mb-4 text-muted">Start a fresh application to borrow with DhanBoost.</p>
           <Link href="/signup/mobile-otp" className="btn btn-gold">Apply now <ArrowRight size={16} /></Link>
         </div>
       </div>

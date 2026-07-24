@@ -3,7 +3,7 @@ import { html } from "../_content/support";
 import { MarketingHtml } from "@/components/site/marketing-html";
 
 export const metadata: Metadata = {
-  title: 'Help & Support — NAVIX',
+  title: 'Help & Support — DhanBoost',
   description: 'We\'re here to help — live chat, email and phone support.',
   alternates: { canonical: '/help' },
 };

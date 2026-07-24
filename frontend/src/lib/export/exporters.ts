@@ -1,7 +1,7 @@
 /**
- * Client-side exporters for staff dashboards: a plain CSV writer and a NAVIX-branded PDF built with
+ * Client-side exporters for staff dashboards: a plain CSV writer and a DhanBoost-branded PDF built with
  * jsPDF + jspdf-autotable. Both take the same column model (a header + an accessor) so a page can
- * declare its columns once and offer both formats. The PDF carries the NAVIX wordmark, the document
+ * declare its columns once and offer both formats. The PDF carries the DhanBoost wordmark, the document
  * title, a "Downloaded by …" provenance line, and a per-page confidential footer.
  */
 
@@ -34,7 +34,7 @@ export interface ExportMeta {
   timezone?: string;
 }
 
-// NAVIX design tokens (2026 "calendar" system) — navy #0C2540 · emerald accent
+// DhanBoost design tokens (2026 "calendar" system) — navy #0C2540 · emerald accent
 // #14A06B (token still named GOLD) · warm-cream row #F7F2E9. Keeps branded PDFs
 // aligned with the re-skinned UI.
 const NAVY: [number, number, number] = [12, 37, 64];
@@ -69,7 +69,7 @@ export function exportCsv<Row>(fileBase: string, columns: ExportColumn<Row>[], r
   triggerDownload("﻿" + header + "\n" + body, `${fileBase}.csv`, "text/csv;charset=utf-8;");
 }
 
-/** Write rows to a NAVIX-branded PDF download (landscape A4), stamped with who downloaded it. */
+/** Write rows to a DhanBoost-branded PDF download (landscape A4), stamped with who downloaded it. */
 export function exportPdf<Row>(opts: {
   fileBase: string;
   title: string;
@@ -103,7 +103,7 @@ export function exportPdf<Row>(opts: {
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
-  doc.text("NAVIX", 82, 30);
+  doc.text("DhanBoost", 82, 30);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(GOLD[0], GOLD[1], GOLD[2]);
@@ -161,7 +161,7 @@ export function exportPdf<Row>(opts: {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(130, 130, 130);
-    doc.text("NAVIX Finance · Confidential", 40, pageHeight - 18);
+    doc.text("DhanBoost · Confidential", 40, pageHeight - 18);
     doc.text(`Page ${i} of ${pageCount}`, pageWidth - 40, pageHeight - 18, { align: "right" });
   }
 

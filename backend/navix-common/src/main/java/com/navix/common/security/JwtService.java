@@ -14,7 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Issues and verifies the HS256 JWTs that carry NAVIX identity. Two audiences —
+ * Issues and verifies the HS256 JWTs that carry DhanBoost identity. Two audiences —
  * {@code staff} (subject = staffId) and {@code borrower} (subject = customerId) —
  * stay in separate namespaces (a borrower token can never satisfy a staff route).
  *

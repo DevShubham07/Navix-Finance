@@ -1,6 +1,6 @@
 # FUTURE.md — Go-live roadmap (deferred work)
 
-The forward plan for taking NAVIX to production. This file owns only the **not-yet-built** items.
+The forward plan for taking DhanBoost to production. This file owns only the **not-yet-built** items.
 Completed work is recorded in `CLAUDE.md` §2 (and the git history).
 
 > Companion docs: `CLAUDE.md` (onboarding / current state; §10 has the full migration record),
@@ -54,7 +54,7 @@ Completed work is recorded in `CLAUDE.md` §2 (and the git history).
 > ## ⚑ Update 2026-06-28 — bureau credit brief + 1–5★ rating + one-page PDF SHIPPED 🟢
 >
 > The bureau pull now harvests the **full** Experian report → a 1–5★ "should we recommend" rating, a
-> NAVIX-branded one-page **PDF** (S3 + `CREDIT_BRIEF` document), and a score/★ headline on every staff
+> DhanBoost-branded one-page **PDF** (S3 + `CREDIT_BRIEF` document), and a score/★ headline on every staff
 > detail surface (see `CLAUDE.md` §2). Staff-only (stripped from borrower paths). Lives behind the
 > existing seams — no new go-live workstream. Genuinely-deferred **follow-ups** from this build:
 > - **F1 — PDF ₹ glyph (cosmetic):** the brief prints `Rs` because the OpenPDF base-14 fonts have no

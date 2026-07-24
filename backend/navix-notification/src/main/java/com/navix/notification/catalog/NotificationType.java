@@ -25,7 +25,7 @@ import com.navix.common.notification.NotificationChannel;
 import java.util.Set;
 
 /**
- * The self-describing catalog of every notification NAVIX can emit. Each constant carries its
+ * The self-describing catalog of every notification DhanBoost can emit. Each constant carries its
  * {@link NotificationCategory}, the {@link NotificationChannel}s to attempt, and the
  * {@link RecipientPolicy} audience. The enum {@code name()} is the template key
  * ({@code NotificationTemplates}). Channels are address-gated per recipient at dispatch (IN_APP

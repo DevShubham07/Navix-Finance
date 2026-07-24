@@ -1,4 +1,4 @@
-# NAVIX Finance — Product & User-Flow (Project Reference)
+# DhanBoost — Product & User-Flow (Project Reference)
 
 > **Source:** `NAVIX_Finance_Product_User_Flow.pdf` (26 pages, v1.0, June 2026) — Confidential.
 > **Status:** ⚠️ **IN DEVELOPMENT — nothing is live.** All figures, rules and thresholds are *working values* to be finalised during build, credit policy and compliance review.
@@ -7,7 +7,7 @@ This file is a structured summary of the product spec so I (and the team) can re
 
 ---
 
-## 1. What NAVIX Finance is
+## 1. What DhanBoost is
 
 A digital lending product offering **short-term, salary-linked personal loans to salaried individuals**, repaid in a **single payment** aligned to the customer's salary date.
 
@@ -40,7 +40,7 @@ The product in one line: *A verified, eligible salaried customer borrows up to *
 
 ## 2. Roles (who's involved)
 
-Two sides: the **borrower** (public app) and the **NAVIX team** (staff tools — kept entirely separate; customers never see staff screens).
+Two sides: the **borrower** (public app) and the **DhanBoost team** (staff tools — kept entirely separate; customers never see staff screens).
 
 | Role | Responsibility |
 |---|---|
@@ -117,7 +117,7 @@ Establishes three things before any money is considered: (1) person is real & re
 ## 4. Eligibility, risk scoring & loan limit `[IN BUILD]`
 
 - **Limit:** risk-assessed but **capped at 25% of monthly salary** (e.g. ₹40,000 salary → max ₹10,000).
-- **Risk score** from: bureau score/history & active loans; income stability (salary, employment, UAN tenure); banking behaviour (credits, balances, bounces); prior NAVIX repayment history.
+- **Risk score** from: bureau score/history & active loans; income stability (salary, employment, UAN tenure); banking behaviour (credits, balances, bounces); prior DhanBoost repayment history.
 - **Categories (A/B/C/D)** — *score bands TBD with credit policy*. Affect limit-within-cap, level of manual review, and secondary-applicant need — **not price**.
 
 | Cat | Profile | Treatment |

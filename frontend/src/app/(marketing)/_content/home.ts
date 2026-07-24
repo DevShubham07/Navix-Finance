@@ -1,4 +1,4 @@
-// Regenerated from the NAVIX "calendar" design export — front page (#home).
+// Regenerated from the DhanBoost "calendar" design export — front page (#home).
 // No fabricated stats or third-party lender claims; includes the auto-advancing how-it-works
 // journey + the repayment calendar. Links rewritten to the real app routes.
 /* eslint-disable */
@@ -29,8 +29,8 @@ export const html = `<section class="page active" id="home">
         <span class="offer-sheen"></span>
         <div class="offer-head">
           <div class="offer-id">
-            <span class="offer-logo"><img src="/navix-mark-64.png" alt="NAVIX" width="26" height="26" decoding="async" style="object-fit:contain" /></span>
-            <div><b>NAVIX</b><small>Personal loan offer</small></div>
+            <span class="offer-logo"><img src="/navix-mark-64.png" alt="DhanBoost" width="26" height="26" decoding="async" style="object-fit:contain" /></span>
+            <div><b>DhanBoost</b><small>Personal loan offer</small></div>
           </div>
           <span class="offer-status" id="offerStatus"><span class="os-dot"></span><span class="os-review">Reviewing</span><span class="os-ok">Approved</span></span>
         </div>
@@ -53,7 +53,7 @@ export const html = `<section class="page active" id="home">
 
   <!-- WHY CHOOSE -->
   <div class="sec" id="s-why" style="padding-top:20px"><div class="wrap">
-    <div class="sec-head"><span class="eyebrow center reveal">Why NAVIX</span><h2 class="reveal d1">Lending, reimagined to feel effortless</h2><p class="reveal d2">A transparent, fast and hassle-free experience built around you — with no hidden costs and no paperwork.</p></div>
+    <div class="sec-head"><span class="eyebrow center reveal">Why DhanBoost</span><h2 class="reveal d1">Lending, reimagined to feel effortless</h2><p class="reveal d2">A transparent, fast and hassle-free experience built around you — with no hidden costs and no paperwork.</p></div>
     <div class="grid-3">
       <div class="fcard reveal"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg></div><h3>Lightning-fast application</h3><p>Get an eligibility decision in minutes and funds sent straight to your account after you accept.</p></div>
       <div class="fcard reveal d1"><div class="fico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg></div><h3>100% transparent pricing</h3><p>Every rupee of interest and charges is shown upfront before you accept. No surprises, no advance fees.</p></div>
@@ -175,10 +175,10 @@ export const html = `<section class="page active" id="home">
   <div class="sec" style="background:var(--grad-cream)"><div class="wrap">
     <div class="sec-head"><span class="eyebrow center reveal">Good to know</span><h2 class="reveal d1">Frequently asked questions</h2></div>
     <div class="faq reveal d1">
-      <div class="qa"><button class="q">How quickly can I get a loan from NAVIX?<span class="qi">+</span></button><div class="a"><p>The whole journey is fully online. Once your agreement is e-signed and your KYC is complete, your funds are released to your bank account.</p></div></div>
+      <div class="qa"><button class="q">How quickly can I get a loan from DhanBoost?<span class="qi">+</span></button><div class="a"><p>The whole journey is fully online. Once your agreement is e-signed and your KYC is complete, your funds are released to your bank account.</p></div></div>
       <div class="qa"><button class="q">What documents do I need to apply?<span class="qi">+</span></button><div class="a"><p>Typically just your PAN, Aadhaar (for KYC) and bank account details. Everything is verified digitally — no physical paperwork or branch visits.</p></div></div>
-      <div class="qa"><button class="q">Are there any hidden charges or advance fees?<span class="qi">+</span></button><div class="a"><p>Never. NAVIX does not charge any advance or upfront fee. All applicable interest and charges are shown in your loan summary before you accept the offer.</p></div></div>
-      <div class="qa"><button class="q">Will checking my eligibility affect my credit score?<span class="qi">+</span></button><div class="a"><p>No. Checking your eligibility on NAVIX does not impact your credit score — a formal credit enquiry only happens if you choose to accept an offer.</p></div></div>
+      <div class="qa"><button class="q">Are there any hidden charges or advance fees?<span class="qi">+</span></button><div class="a"><p>Never. DhanBoost does not charge any advance or upfront fee. All applicable interest and charges are shown in your loan summary before you accept the offer.</p></div></div>
+      <div class="qa"><button class="q">Will checking my eligibility affect my credit score?<span class="qi">+</span></button><div class="a"><p>No. Checking your eligibility on DhanBoost does not impact your credit score — a formal credit enquiry only happens if you choose to accept an offer.</p></div></div>
     </div>
     <div style="text-align:center;margin-top:40px" class="reveal d1"><a href="/faq" class="btn btn-navy" data-link="">View all FAQs</a></div>
   </div></div>

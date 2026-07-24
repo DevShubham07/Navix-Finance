@@ -1,5 +1,5 @@
 /**
- * Typed client for the NAVIX backend application state-machine API.
+ * Typed client for the DhanBoost backend application state-machine API.
  *
  * IMPORTANT: these functions call the Next.js BFF proxies, NOT the Spring
  * backend directly. Staff actions/queues go through `/api/staff/applications/*`

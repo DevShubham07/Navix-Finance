@@ -35,7 +35,7 @@ export interface EnvelopeError {
 }
 
 /**
- * Read a NAVIX `ApiResponse` error envelope + the `X-Request-Id` header from a raw
+ * Read a DhanBoost `ApiResponse` error envelope + the `X-Request-Id` header from a raw
  * `fetch` Response (the auth pages bypass the typed client). Returns a normalized
  * `{message, code, requestId}` even if the body isn't the expected shape.
  */

@@ -14,7 +14,7 @@
     <artifactId>navix-income-risk</artifactId>
     <packaging>jar</packaging>
     <name>navix-income-risk</name>
-    <description>Income verification, risk scoring and limit calculation for NAVIX Finance</description>
+    <description>Income verification, risk scoring and limit calculation for DhanBoost</description>
 
     <dependencies>
         <dependency>

@@ -28,7 +28,7 @@ class CreditBriefDemoTest {
         Rating rating = new CreditRatingCalculator().rate(f);
 
         String report = """
-                ================ NAVIX CREDIT BRIEF — samplepan.json ================
+                ================ DhanBoost CREDIT BRIEF — samplepan.json ================
                 Bureau response : score=%s  noRecord=%s  report=%s
 
                 CATEGORY A — Identity

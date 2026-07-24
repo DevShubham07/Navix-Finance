@@ -32,7 +32,7 @@ public class SmtpEmailClient implements EmailClient {
             MimeMessageHelper helper = new MimeMessageHelper(mime, hasHtml, "UTF-8");
             helper.setFrom(props.from());
             helper.setTo(message.to());
-            helper.setSubject(message.subject() == null ? "NAVIX Finance" : message.subject());
+            helper.setSubject(message.subject() == null ? "DhanBoost" : message.subject());
             String text = message.body() == null ? "" : message.body();
             if (hasHtml) {
                 helper.setText(text, message.html());

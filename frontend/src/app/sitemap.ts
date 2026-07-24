@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const BASE = "https://www.navixfinance.com";
+const BASE = "https://www.dhanboost.com";
 
 /**
  * XML sitemap (Next.js App Router convention) — the single source of truth for the public
@@ -32,7 +32,7 @@ const ROUTES: { path: string; priority: number }[] = [
   { path: "/blog/what-affects-your-credit-score", priority: 0.5 },
   { path: "/blog/apr-vs-flat-rate", priority: 0.5 },
   { path: "/blog/when-a-short-term-loan-makes-sense", priority: 0.5 },
-  { path: "/blog/repaying-on-navix", priority: 0.5 },
+  { path: "/blog/repaying-on-dhanboost", priority: 0.5 },
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

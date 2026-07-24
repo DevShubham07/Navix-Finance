@@ -4,7 +4,7 @@ import { MarketingHtml } from "@/components/site/marketing-html";
 import { FaqSchema } from "@/components/site/faq-schema";
 
 export const metadata: Metadata = {
-  title: 'Frequently Asked Questions — NAVIX',
+  title: 'Frequently Asked Questions — DhanBoost',
   description: 'Answers on applications, rates, repayments and grievance redressal.',
   alternates: { canonical: '/faq' },
 };

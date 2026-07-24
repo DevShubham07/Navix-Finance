@@ -1,14 +1,14 @@
 import { BRAND } from "@/lib/brand";
 
-const BASE = "https://www.navixfinance.com";
+const BASE = "https://www.dhanboost.com";
 
 /**
  * Site-wide JSON-LD for the public marketing pages. Rendered once in the (marketing) layout so
  * it ships server-side on every marketing page.
  *
- * `@type` is `Organization`, deliberately NOT `FinancialService`: NAVIX is a lending PLATFORM,
+ * `@type` is `Organization`, deliberately NOT `FinancialService`: DhanBoost is a lending PLATFORM,
  * not the lender of record (the RBI-registered NBFC partners are). `FinancialService` would
- * machine-assert that NAVIX provides the loan. Lending is represented separately (via
+ * machine-assert that DhanBoost provides the loan. Lending is represented separately (via
  * `LoanOrCredit` with `provider` = the partner NBFC) as a later, content-gated step.
  *
  * Facts trace to BRAND (frontend/src/lib/brand.ts) — the single source of truth. No

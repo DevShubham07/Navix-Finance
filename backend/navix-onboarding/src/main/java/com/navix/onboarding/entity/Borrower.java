@@ -8,7 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * A borrower (customer) on the NAVIX platform.
+ * A borrower (customer) on the DhanBoost platform.
  * Salary is declared in-app (Account Aggregator is OUT of scope) and later
  * corroborated by official email verification.
  * TODO: add validation constraints, indexes and any derived risk fields.

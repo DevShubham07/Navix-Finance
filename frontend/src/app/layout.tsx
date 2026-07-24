@@ -26,10 +26,10 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.navixfinance.com"),
-  title: "NAVIX — Instant Personal Loans, Fully Digital",
+  metadataBase: new URL("https://www.dhanboost.com"),
+  title: "DhanBoost — Instant Personal Loans, Fully Digital",
   description:
-    "NAVIX is a digital lending platform offering instant, fully-digital, salary-linked personal loans. Paperless process, direct bank disbursal, single repayment, zero advance fees.",
+    "DhanBoost is a digital lending platform offering instant, fully-digital, salary-linked personal loans. Paperless process, direct bank disbursal, single repayment, zero advance fees.",
   // Site-wide default canonical. Each (marketing) page sets its own self-canonical; a page
   // that omits one would inherit "/" here (deindex risk) — a per-page assertion guards that.
   alternates: { canonical: "/" },
@@ -39,16 +39,16 @@ export const metadata: Metadata = {
   verification: { google: process.env.GOOGLE_SITE_VERIFICATION },
   openGraph: {
     type: "website",
-    siteName: "NAVIX",
+    siteName: "DhanBoost",
     locale: "en_IN",
     url: "/",
-    title: "NAVIX — Instant Personal Loans, Fully Digital",
+    title: "DhanBoost — Instant Personal Loans, Fully Digital",
     description:
       "Instant, fully-digital, salary-linked personal loans — single repayment, no advance fees.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "NAVIX — Instant Personal Loans, Fully Digital",
+    title: "DhanBoost — Instant Personal Loans, Fully Digital",
     description:
       "Instant, fully-digital, salary-linked personal loans — single repayment, no advance fees.",
   },

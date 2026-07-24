@@ -3,7 +3,7 @@ import { config } from "@/lib/config";
 
 /**
  * Public marketing "Contact us" form. POST { name, email, phone, topic, message } -> backend, which
- * emails the enquiry to the NAVIX support inbox. No auth (a website visitor has no session); the body
+ * emails the enquiry to the DhanBoost support inbox. No auth (a website visitor has no session); the body
  * is passed straight through and the backend's envelope is returned verbatim.
  */
 export async function POST(req: NextRequest) {

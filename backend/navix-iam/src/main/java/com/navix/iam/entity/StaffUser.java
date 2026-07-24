@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * A staff member who logs into the NAVIX back office. Authentication is a BCrypt
+ * A staff member who logs into the DhanBoost back office. Authentication is a BCrypt
  * {@code passwordHash} (set at invite-accept; null for not-yet-credentialed rows).
  */
 @Entity

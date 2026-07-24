@@ -17,7 +17,7 @@ import org.springframework.web.client.RestClient;
 
 /**
  * Digitap Email Verification — {@code POST /cv/email_verification/v1} (svc host). Signzy has no email
- * API, so NAVIX's EMAIL step routes straight here. Validates format/domain/SMTP and matches the email
+ * API, so DhanBoost's EMAIL step routes straight here. Validates format/domain/SMTP and matches the email
  * to the individual/establishment name.
  */
 @Component

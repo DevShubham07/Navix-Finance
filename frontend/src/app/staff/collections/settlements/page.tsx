@@ -45,7 +45,7 @@ export default function CollectionsSettlementsPage() {
       <PageHeader title="Collections · settlements" subtitle="Approve proposed settlements (separation of duties enforced).">
         <ExportMenu
           title="Collections settlements"
-          fileBase="navix-settlements"
+          fileBase="dhanboost-settlements"
           columns={[
             { header: "Settlement", value: (s: SettlementView) => s.id },
             { header: "Case", value: (s) => s.collectionCaseId },

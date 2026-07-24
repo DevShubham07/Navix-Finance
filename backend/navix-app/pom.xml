@@ -14,10 +14,10 @@
     <artifactId>navix-app</artifactId>
     <packaging>jar</packaging>
     <name>navix-app</name>
-    <description>Bootable Spring Boot application aggregating all NAVIX Finance modules</description>
+    <description>Bootable Spring Boot application aggregating all DhanBoost modules</description>
 
     <dependencies>
-        <!-- NAVIX business modules (all 9) -->
+        <!-- DhanBoost business modules (all 9) -->
         <dependency>
             <groupId>com.navix</groupId>
             <artifactId>navix-common</artifactId>

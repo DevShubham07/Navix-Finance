@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 /**
- * Digitap Face Match — {@code POST /fmfl/v2/face-match} (api host). The FALLBACK for NAVIX's SELFIE step
+ * Digitap Face Match — {@code POST /fmfl/v2/face-match} (api host). The FALLBACK for DhanBoost's SELFIE step
  * when Signzy Liveness Secure is unavailable. Digitap's server API is a face <i>match</i> (selfie vs
  * document photo), not standalone passive liveness (that is Digitap's client-side FL Web SDK), so with
  * only the selfie image available this yields a degraded quality/identification signal

@@ -1,5 +1,5 @@
 /* ============================================================================
- * NAVIX marketing theme — ported from the design export, fully scoped under
+ * DhanBoost marketing theme — ported from the design export, fully scoped under
  * `.navix-mkt` so it CANNOT affect the borrower/staff functional app (which
  * uses globals.css). @font-face dropped in favour of next/font; @keyframes
  * renamed `nv-*` to avoid colliding with globals.css `fadeUp`.

@@ -6,7 +6,7 @@ import { useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { exportCsv, exportPdf, type ExportColumn, type ExportMeta } from "@/lib/export/exporters";
 
 /**
- * "Export ▾" dropdown for staff dashboards — offers CSV and a NAVIX-branded PDF of the rows
+ * "Export ▾" dropdown for staff dashboards — offers CSV and a DhanBoost-branded PDF of the rows
  * currently on screen. The PDF is stamped with the signed-in staffer (provenance). Generic over the
  * row type so each page declares its columns once.
  */

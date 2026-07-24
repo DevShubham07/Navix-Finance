@@ -1,5 +1,12 @@
 # aws.md — NAVIX AWS deployment reference
 
+> **Rebrand note (2026-07-22):** the product is now branded **DhanBoost** (`dhanboost.com`), but
+> **all AWS/infra identifiers in this doc are intentionally still `navix`** — resource names, the
+> `com.navix` packages, `NAVIX_*` env vars, `/navix/…` SSM paths, and the **SES-verified sending
+> domain `navixfinance.com`**. These are the real deployed resources; do not "fix" them to
+> dhanboost here. Email `From: @dhanboost.com` will only deliver once `dhanboost.com` is registered
+> and SES-verified (a separate infra task). See the CLAUDE.md rebrand banner for the full split.
+
 The single source of truth for **how NAVIX runs in the cloud**. Read this first when you need
 to touch infra, redeploy the backend, debug an outage, or look up an endpoint/credential.
 
@@ -46,12 +53,12 @@ export AWS_PROFILE=navix-dev AWS_REGION=ap-south-1
 | Item | Value |
 |---|---|
 | Cluster | `navix-cluster` |
-| Service | `navix-backend` (Fargate, desired **1**, `assignPublicIp=ENABLED`) |
+| Service | `navix-backend` (Fargate, desired **1**, **`assignPublicIp=DISABLED`** — private subnets, see §5.1) |
 | Task family | `navix-finance` — **current revision 3** |
 | Task size | cpu **1024** / mem **2048** |
 | Container port | **8080** (name `navix-backend-8080-tcp`, http) |
 | Exec + task role | `navix-finance-task-role` (same role for both) |
-| Subnets | `subnet-0341c9ce4312c066d`, `subnet-0dc2e83e75c4ac01e`, `subnet-0415f0d0f4c913dae` |
+| Subnets | **private**: `subnet-04debb2364f89a58f` (1a), `subnet-0e88775cc900d5a94` (1b), `subnet-0ec4c5696d5c2069f` (1c) — see §5.1 |
 | Security group | `sg-040c4365f3a355186` (**shared with the ALB** — see §5) |
 | Task env vars | `NAVIX_ENV=dev`, `AWS_REGION=ap-south-1`, `NAVIX_SMS_MOCK=true` |
 | Logs | CloudWatch log group **`/ecs/navix-finance`**, stream `ecs/navix-backend/<taskId>` |
@@ -107,6 +114,35 @@ There are **exactly two** SGs that matter, and the first is shared:
 **`sg-082443872704e48e4` — RDS.** Allows inbound **5432** from:
 - three `/32` developer IPs (office/home, for direct `psql`), and
 - `sg-040c4365f3a355186` (so the ECS tasks reach the DB).
+
+---
+
+## 5.1 Outbound / egress — the STATIC IP for third-party whitelisting ★
+
+The ECS tasks run in **private subnets with no public IP**; all outbound traffic egresses through a
+**zonal NAT gateway** on a fixed Elastic IP. **This is the single IP to give any third-party API
+that requires IP allow-listing.**
+
+| Item | Value |
+|---|---|
+| **Static egress IP (whitelist this)** | **`3.109.169.131`** |
+| NAT gateway | `nat-0e18f9476b4be7414` (**zonal**, in public `subnet-0341c9ce4312c066d` / 1c) |
+| EIP allocation | `eipalloc-0f89a2169230dc9f2` |
+| Private subnets (ECS) | `subnet-04debb2364f89a58f` (1a, 172.31.48.0/24), `subnet-0e88775cc900d5a94` (1b, .49.0/24), `subnet-0ec4c5696d5c2069f` (1c, .50.0/24) |
+| Private route table | `rtb-00dc97e0012fa04f3` — `0.0.0.0/0 → nat-0e18f9476b4be7414`; all 3 private subnets associated |
+
+- **Why it's static:** a zonal NAT gateway has exactly one public IP that never changes or auto-scales;
+  every packet from all three private subnets (any AZ) SNATs to `3.109.169.131`. It survives ECS
+  deployments, task restarts, and scale-out.
+- **Inbound is separate:** users/Vercel still reach the **ALB** (§4), whose public IPs are *not* the
+  egress IP — don't hand ALB IPs to an API provider.
+- Verify the egress IP live: run a one-off task in the private subnets that does
+  `curl -s https://checkip.amazonaws.com` (returns `3.109.169.131`).
+- **History:** migrated 2026-07-17 from public-subnet + `assignPublicIp=ENABLED` (ephemeral per-task
+  egress IP) to this NAT design. A prior **regional** NAT (`nat-16d992c5c28b7f5c4`, automatic mode,
+  auto-scaling IPs) was **not** used — automatic mode can allocate new IPs on AZ expansion, so it can't
+  guarantee a fixed allow-list — and was deleted. **Rollback:** point the service back at the 3 public
+  subnets with `assignPublicIp=ENABLED` (see git history / the migration report).
 
 To let a **new dev IP** hit RDS directly:
 ```bash
@@ -302,6 +338,8 @@ RDS                navix-finance-dev.cf22os0umu8l.ap-south-1.rds.amazonaws.com:5
 S3                 navix-finance-bucket    KMS  alias/navix-finance
 SSM prefix         /navix/dev/             Task role  navix-finance-task-role
 CloudWatch logs    /ecs/navix-finance
-Subnets            subnet-0341c9ce4312c066d  subnet-0dc2e83e75c4ac01e  subnet-0415f0d0f4c913dae
+STATIC EGRESS IP   3.109.169.131           (whitelist this)  NAT  nat-0e18f9476b4be7414 (zonal)  RT  rtb-00dc97e0012fa04f3
+ECS subnets (priv) subnet-04debb2364f89a58f(1a)  subnet-0e88775cc900d5a94(1b)  subnet-0ec4c5696d5c2069f(1c)
+Public subnets     subnet-0341c9ce4312c066d  subnet-0dc2e83e75c4ac01e  subnet-0415f0d0f4c913dae  (ALB + NAT live here)
 Frontend (Vercel)  https://frontend-ruby-two-78.vercel.app
 ```

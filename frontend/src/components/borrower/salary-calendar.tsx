@@ -7,7 +7,7 @@ import { dueDateFromSalary, daysBetween } from "@/lib/calc/loan-math";
  * Salary-linked repayment picker — a 1–31 day-of-month chip grid. The borrower
  * taps the day their salary is credited; that day-of-month becomes the real
  * `salaryCreditDay` the backend uses to compute the single-repayment due date.
- * The side panel previews the resolved due date using NAVIX's rule: the LATEST
+ * The side panel previews the resolved due date using DhanBoost's rule: the LATEST
  * salary occurrence strictly after disbursal and within ≤ 40 days (the earlier
  * 15-day floor is no longer a user-visible gate — every chip is selectable).
  * `dueDateFromSalary` clamps 29/30/31 to the month length, so those days are

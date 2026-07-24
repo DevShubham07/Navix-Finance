@@ -3,7 +3,7 @@ import { html } from "../_content/blog";
 import { MarketingHtml } from "@/components/site/marketing-html";
 
 export const metadata: Metadata = {
-  title: 'Resources — Money, Made Clearer — NAVIX',
+  title: 'Resources — Money, Made Clearer — DhanBoost',
   description: 'Guides on KFS, credit scores, APR vs flat rate and borrowing wisely.',
   alternates: { canonical: '/blog' },
 };

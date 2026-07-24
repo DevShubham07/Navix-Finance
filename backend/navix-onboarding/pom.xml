@@ -14,7 +14,7 @@
     <artifactId>navix-onboarding</artifactId>
     <packaging>jar</packaging>
     <name>navix-onboarding</name>
-    <description>Borrower sign-up, profile and OTP for NAVIX Finance</description>
+    <description>Borrower sign-up, profile and OTP for DhanBoost</description>
 
     <dependencies>
         <dependency>

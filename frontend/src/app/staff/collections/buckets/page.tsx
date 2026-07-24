@@ -42,7 +42,7 @@ export default function CollectionsBucketsPage() {
       <PageHeader title="Collections · DPD buckets" subtitle="Open collection cases grouped by days-past-due.">
         <ExportMenu
           title="Collections · DPD buckets"
-          fileBase="navix-dpd-buckets"
+          fileBase="dhanboost-dpd-buckets"
           columns={[
             { header: "Bucket", value: (c: CaseView) => c.bucket },
             { header: "DPD", value: (c) => c.dpd },

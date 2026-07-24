@@ -14,7 +14,7 @@
     <artifactId>navix-loan</artifactId>
     <packaging>jar</packaging>
     <name>navix-loan</name>
-    <description>Loan lifecycle, documents and loan math for NAVIX Finance</description>
+    <description>Loan lifecycle, documents and loan math for DhanBoost</description>
 
     <dependencies>
         <dependency>

@@ -104,7 +104,7 @@ export default function ReferralPayoutsPage() {
         <ExportMenu
           title="Referral payouts"
           subtitle={tab === "PAID" ? "Referral expense ledger (paid)" : "Pending referral payouts"}
-          fileBase={`navix-referral-payouts-${tab.toLowerCase()}`}
+          fileBase={`dhanboost-referral-payouts-${tab.toLowerCase()}`}
           columns={[
             { header: "Beneficiary", value: (p: ReferralPayout) => p.beneficiaryName ?? `#${p.beneficiaryCustomerId}` },
             { header: "Role", value: (p) => roleLabel(p.beneficiaryRole) },

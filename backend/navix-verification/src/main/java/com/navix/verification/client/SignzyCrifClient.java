@@ -43,7 +43,7 @@ public class SignzyCrifClient {
 
     private static String[] splitName(String name) {
         if (name == null || name.isBlank()) {
-            return new String[] {"NAVIX", "."};
+            return new String[] {"DhanBoost", "."};
         }
         String trimmed = name.trim();
         int sp = trimmed.indexOf(' ');

@@ -31,8 +31,8 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/api/", "/staff/"],
       },
     ],
-    sitemap: "https://www.navixfinance.com/sitemap.xml",
+    sitemap: "https://www.dhanboost.com/sitemap.xml",
     // The `Host:` directive is a bare hostname (no scheme), not a URL.
-    host: "www.navixfinance.com",
+    host: "www.dhanboost.com",
   };
 }

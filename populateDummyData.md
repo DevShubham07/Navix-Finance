@@ -1,6 +1,6 @@
 # populateDummyData.md — seed demo data at every loan stage
 
-A one-shot populator that fills a local NAVIX environment with **one loan application parked at
+A one-shot populator that fills a local DhanBoost environment with **one loan application parked at
 every stage of the lifecycle**, plus a **primary borrower with a rich account history** (a closed
 loan, an active loan with a part-payment, and an in-review application). After it runs, every staff
 queue has realistic rows and the borrower account menu (`/loans`, `/transactions`) has content.

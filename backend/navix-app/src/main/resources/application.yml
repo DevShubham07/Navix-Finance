@@ -37,7 +37,7 @@ logging:
   level:
     com.navix: ${NAVIX_LOG_LEVEL:INFO}
 
-# NAVIX integration settings
+# DhanBoost integration settings
 navix:
   # Opt-in demo fixture: when set, every Experian bureau pull returns this bundled report instead of
   # calling Fintrix (the live sandbox is thin-file). Use classpath:samplepan.json or an absolute path
@@ -132,7 +132,7 @@ navix:
       REFERRAL_REWARD_CREDITED: ${NAVIX_SMS_DLT_REFERRAL_REWARD_CREDITED:}
     # DLT-registered OTP message ({otp} = code, {ttl} = minutes). MUST match a template
     # registered for the sender or the gateway returns "Invalid template text".
-    otp-template: ${NAVIX_SMS_OTP_TEMPLATE:Your OTP for NAVIX Finance login is {otp}. It is valid for {ttl} minutes. Do not share this OTP with anyone. - NAVIX Finance}
+    otp-template: ${NAVIX_SMS_OTP_TEMPLATE:Your OTP for DhanBoost login is {otp}. It is valid for {ttl} minutes. Do not share this OTP with anyone. - DhanBoost}
     enabled: ${NAVIX_SMS_ENABLED:true}
     # DEV ONLY — returns the OTP in the request response when SMS can't reach a handset. MUST be false in prod.
     dev-echo: ${NAVIX_SMS_DEV_ECHO:false}
@@ -149,7 +149,7 @@ navix:
   email:
     provider: ${NAVIX_EMAIL_PROVIDER:log}      # log | smtp | ses | resend
     enabled: ${NAVIX_EMAIL_ENABLED:true}
-    from: ${NAVIX_EMAIL_FROM:NAVIX Finance <no-reply@navixfinance.example>}
+    from: ${NAVIX_EMAIL_FROM:DhanBoost <no-reply@dhanboost.example>}
     # SES only: tag sends with a SES configuration set so bounce/complaint events fire to SNS->SQS.
     configuration-set: ${NAVIX_SES_CONFIG_SET:}
     # Resend only: API key for the Resend HTTP provider (interim while SES is sandbox-blocked).

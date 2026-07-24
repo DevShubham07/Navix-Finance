@@ -1,4 +1,4 @@
-# NAVIX Finance — Manual QA Checklist
+# DhanBoost — Manual QA Checklist
 
 > **Purpose.** A hands-on, click-by-click / curl-by-curl walkthrough of **every** backend endpoint and
 > **every** UI page. A QA engineer with the stack running can execute each row top-to-bottom and tick
@@ -505,7 +505,7 @@ preserves entered data**, and confirm **bureau score / risk category are NEVER s
 | ID | Precondition | Steps | Expected result | P/F |
 |---|---|---|---|---|
 | UI-EXP-01 | on DPD buckets / settlements / admin staff/invites/blocklist / transactions / customers | Click **Export ▾ → CSV** | CSV downloads with the table rows | |
-| UI-EXP-02 | same | **Export ▾ → PDF** | NAVIX-branded PDF: wordmark, table, "Downloaded by {name} · {role} · {timestamp}", confidential footer | |
+| UI-EXP-02 | same | **Export ▾ → PDF** | DhanBoost-branded PDF: wordmark, table, "Downloaded by {name} · {role} · {timestamp}", confidential footer | |
 
 ---
 

@@ -93,7 +93,7 @@ export default function AdminExpensesPage() {
         <ExportMenu
           title="Company expenses"
           subtitle="Operational expense ledger"
-          fileBase="navix-expenses"
+          fileBase="dhanboost-expenses"
           columns={[
             { header: "Date", value: (e: ExpenseResponse) => e.expenseDate },
             { header: "Description", value: (e) => e.description },

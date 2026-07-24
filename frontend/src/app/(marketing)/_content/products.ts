@@ -1,4 +1,4 @@
-// AUTO-GENERATED from the NAVIX design export — do not hand-edit.
+// AUTO-GENERATED from the DhanBoost design export — do not hand-edit.
 // Source section id: #products. Regenerate via transform_html.py.
 /* eslint-disable */
 export const html = `<section class="page active" id="products">
@@ -29,7 +29,7 @@ export const html = `<section class="page active" id="products">
   </div></div>
 
   <div class="sec" style="background:var(--grad-cream);padding-top:72px"><div class="wrap">
-    <div class="sec-head"><span class="eyebrow center reveal">Every product includes</span><h2 class="reveal d1">The NAVIX promise</h2></div>
+    <div class="sec-head"><span class="eyebrow center reveal">Every product includes</span><h2 class="reveal d1">The DhanBoost promise</h2></div>
     <div class="grid-4">
       <div class="fcard reveal"><div class="fico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"></path></svg></div><h3 style="font-size:1.1rem">No advance fees</h3><p style="font-size:.9rem">You never pay anything upfront.</p></div>
       <div class="fcard reveal d1"><div class="fico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-6"></path></svg></div><h3 style="font-size:1.1rem">No pre-closure charge</h3><p style="font-size:.9rem">Repay early and save.</p></div>

@@ -11,7 +11,7 @@ export function MarketingFooter() {
             <Link href="/" className="brand">
               <BrandMark />
               <span className="brand-txt">
-                <b>NAVIX</b>
+                <b>DhanBoost</b>
                 <small>Lending Platform</small>
               </span>
             </Link>
@@ -66,14 +66,14 @@ export function MarketingFooter() {
                 <rect x="2" y="4" width="20" height="16" rx="2" />
                 <path d="m22 7-10 5L2 7" />
               </svg>
-              <span>info@navixfinance.com</span>
+              <span>info@dhanboost.com</span>
             </div>
           </div>
         </div>
         <div className="f-disc">
-          <b>Disclaimer:</b> NAVIX (NAVIX Finance Private Limited) operates a digital lending
-          platform offering salary-linked personal loans. Loan approval is subject to NAVIX&apos;s
-          credit policy and eligibility assessment. NAVIX does not charge any advance fee for loan
+          <b>Disclaimer:</b> DhanBoost (NAVIX Finance Private Limited) operates a digital lending
+          platform offering salary-linked personal loans. Loan approval is subject to DhanBoost&apos;s
+          credit policy and eligibility assessment. DhanBoost does not charge any advance fee for loan
           processing. Representative APR and all charges are disclosed before you accept any offer.
           Please borrow responsibly.
         </div>

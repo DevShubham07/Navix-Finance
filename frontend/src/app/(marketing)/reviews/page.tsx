@@ -3,7 +3,7 @@ import { html } from "../_content/reviews";
 import { MarketingHtml } from "@/components/site/marketing-html";
 
 export const metadata: Metadata = {
-  title: 'Reviews — Borrowers In Their Own Words — NAVIX',
+  title: 'Reviews — Borrowers In Their Own Words — DhanBoost',
   description: 'Where people talk about us — real borrower reviews.',
   alternates: { canonical: '/reviews' },
   // TEMPORARY noindex: the aggregate review stats here are unverified. Remove this line (and add

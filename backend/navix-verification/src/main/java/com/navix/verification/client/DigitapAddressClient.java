@@ -15,7 +15,7 @@ import org.springframework.web.client.RestClient;
 
 /**
  * Digitap Location Services — reverse-geocode a lat/long to an address via
- * {@code POST /ent/v1/address-verification} (api host). Signzy has no address API, so NAVIX's ADDRESS
+ * {@code POST /ent/v1/address-verification} (api host). Signzy has no address API, so DhanBoost's ADDRESS
  * step routes straight here. Response is {@code {code, model:{...}}}.
  */
 @Component

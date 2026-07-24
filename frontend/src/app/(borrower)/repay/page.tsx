@@ -186,7 +186,7 @@ export default function RepayPage() {
   const settings = settingsQuery.data;
   const upiId = settings?.upiId || "navix.collections@hdfcbank";
   const qrSrc = settings?.qrUrl || "/payment/upi-qr.jpg";
-  const accountName = settings?.accountName || "NAVIX Finance";
+  const accountName = settings?.accountName || "DhanBoost";
   const accountNumber = settings?.accountNumber || "5010 0099 8877";
   const ifsc = settings?.ifsc || "HDFC0000123";
   const bankName = settings?.bankName || "HDFC Bank";

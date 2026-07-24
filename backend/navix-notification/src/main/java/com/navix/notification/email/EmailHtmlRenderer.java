@@ -4,7 +4,7 @@ import java.time.LocalDate;
 import org.springframework.stereotype.Component;
 
 /**
- * Wraps a notification's plain-text body in a branded, responsive HTML email — NAVIX wordmark, the
+ * Wraps a notification's plain-text body in a branded, responsive HTML email — DhanBoost wordmark, the
  * 2026 brand palette (navy {@code #0C2540} · gold {@code #E9B53A} · cream {@code #FDFBF6}), and a
  * transactional footer with company details. Table-based layout + inline styles for broad email-client
  * support. The same rendered HTML is handed to every real provider (SES / Resend / SMTP); the
@@ -32,7 +32,7 @@ public class EmailHtmlRenderer {
                     <td style="background-color:#0C2540;padding:26px 36px;">
                       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                         <tr>
-                          <td style="font-family:'Bricolage Grotesque',Georgia,'Times New Roman',serif;font-size:26px;font-weight:700;letter-spacing:0.5px;color:#ffffff;">NAVIX<span style="color:#E9B53A;">.</span></td>
+                          <td style="font-family:'Bricolage Grotesque',Georgia,'Times New Roman',serif;font-size:26px;font-weight:700;letter-spacing:0.5px;color:#ffffff;">DhanBoost<span style="color:#E9B53A;">.</span></td>
                           <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#9fb0c4;">Finance</td>
                         </tr>
                       </table>
@@ -48,13 +48,13 @@ public class EmailHtmlRenderer {
                   <tr><td style="padding:0 36px;"><div style="border-top:1px solid #eef1f5;font-size:0;line-height:0;">&nbsp;</div></td></tr>
                   <tr>
                     <td style="padding:22px 36px 30px;font-family:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-                      <p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#5b6b7c;"><strong style="color:#0C2540;">NAVIX Finance</strong> &mdash; salary-linked advances, repaid once on your salary day.</p>
-                      <p style="margin:0 0 10px;font-size:12px;line-height:1.6;color:#8493a3;">This is a transactional message about your NAVIX account; please do not reply. Need help? Visit <a href="https://navixfinance.com" style="color:#0C2540;text-decoration:underline;">navixfinance.com</a>.</p>
-                      <p style="margin:0;font-size:11px;line-height:1.5;color:#a8b4c1;">&copy; {{YEAR}} NAVIX Finance. All rights reserved. &middot; Confidential</p>
+                      <p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#5b6b7c;"><strong style="color:#0C2540;">DhanBoost</strong> &mdash; salary-linked advances, repaid once on your salary day.</p>
+                      <p style="margin:0 0 10px;font-size:12px;line-height:1.6;color:#8493a3;">This is a transactional message about your DhanBoost account; please do not reply. Need help? Visit <a href="https://dhanboost.com" style="color:#0C2540;text-decoration:underline;">dhanboost.com</a>.</p>
+                      <p style="margin:0;font-size:11px;line-height:1.5;color:#a8b4c1;">&copy; {{YEAR}} DhanBoost. All rights reserved. &middot; Confidential</p>
                     </td>
                   </tr>
                 </table>
-                <p style="width:600px;max-width:600px;margin:16px auto 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#a8b4c1;text-align:center;">You received this email because you have an account with NAVIX Finance.</p>
+                <p style="width:600px;max-width:600px;margin:16px auto 0;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#a8b4c1;text-align:center;">You received this email because you have an account with DhanBoost.</p>
               </td>
             </tr>
           </table>
@@ -64,7 +64,7 @@ public class EmailHtmlRenderer {
 
     /** Render the branded HTML for a notification. {@code subject}/{@code body} are HTML-escaped. */
     public String render(String subject, String body) {
-        String safeSubject = escape(subject == null || subject.isBlank() ? "NAVIX Finance" : subject);
+        String safeSubject = escape(subject == null || subject.isBlank() ? "DhanBoost" : subject);
         return TEMPLATE
                 .replace("{{SUBJECT}}", safeSubject)
                 .replace("{{BODY}}", toHtmlParagraphs(body))
