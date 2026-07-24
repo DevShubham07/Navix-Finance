@@ -916,7 +916,19 @@ export const customersApi = {
   /** Add a staff remark to a customer. */
   addRemark: (customerId: number, body: string) =>
     bff<RemarkView>(`${CUSTOMERS_BASE}/${customerId}/remarks`, "POST", { body }),
+
+  /** ADMIN — permanently delete a customer and ALL their data (irreversible cascade). */
+  remove: (customerId: number) =>
+    bff<CustomerDeletionResult>(`${CUSTOMERS_BASE}/${customerId}`, "DELETE"),
 };
+
+/** Summary returned by a cascade customer delete. */
+export interface CustomerDeletionResult {
+  customerId: number;
+  applications: number;
+  loans: number;
+  totalRows: number;
+}
 
 // ---------------------------------------------------------------------------
 // Dashboard analytics — routes under /api/staff/dashboard/*

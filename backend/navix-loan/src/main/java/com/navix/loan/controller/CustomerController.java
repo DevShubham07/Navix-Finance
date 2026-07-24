@@ -13,6 +13,7 @@ import com.navix.loan.service.CustomerService;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -77,5 +78,11 @@ public class CustomerController {
     public ApiResponse<RemarkView> addRemark(@PathVariable Long customerId,
                                              @Valid @RequestBody AddRemarkRequest req) {
         return ApiResponse.ok(customerService.addRemark(customerId, req.body()));
+    }
+
+    /** ADMIN — permanently delete a customer and all of their data (irreversible cascade). */
+    @DeleteMapping("/{customerId}")
+    public ApiResponse<CustomerService.DeletionResult> delete(@PathVariable Long customerId) {
+        return ApiResponse.ok(customerService.deleteCustomer(customerId));
     }
 }

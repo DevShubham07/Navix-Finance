@@ -7,9 +7,10 @@ import { proxyToBackend, joinPath, unauthorized } from "@/lib/api/bff-proxy";
  *   `${backendBaseUrl}/api/customers/${path}${search}`
  * injecting STAFF identity from the `navix_staff` cookie. 401 if no session.
  *
- *  - GET  : list/search customers, one customer's full history, activity, remarks.
- *  - PUT  : ADMIN corrects a customer's KYC data (`{customerId}/profile`).
- *  - POST : add a staff remark (`{customerId}/remarks`).
+ *  - GET    : list/search customers, one customer's full history, activity, remarks.
+ *  - PUT    : ADMIN corrects a customer's KYC data (`{customerId}/profile`).
+ *  - POST   : add a staff remark (`{customerId}/remarks`).
+ *  - DELETE : ADMIN permanently deletes a customer + all their data (`{customerId}`).
  *
  * SEPARATE from the borrower proxy: only the staff cookie is honoured here.
  */
@@ -30,3 +31,4 @@ async function handle(req: NextRequest, ctx: Ctx) {
 export const GET = handle;
 export const PUT = handle;
 export const POST = handle;
+export const DELETE = handle;

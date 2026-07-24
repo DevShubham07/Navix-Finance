@@ -3,6 +3,7 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
@@ -44,6 +45,7 @@ class CustomerServiceTest {
     @Mock private com.navix.loan.repository.ApplicationEventRepository applicationEventRepository;
     @Mock private com.navix.loan.repository.CustomerRemarkRepository remarkRepository;
     @Mock private RiskPort risk;
+    @Mock private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private CustomerService service;
 
@@ -51,7 +53,7 @@ class CustomerServiceTest {
     void setUp() {
         service = new CustomerService(applicationRepository, loanRepository, profileRepository,
                 paymentRepository, repaymentService, changeLogRepository,
-                applicationEventRepository, remarkRepository, risk);
+                applicationEventRepository, remarkRepository, risk, jdbc);
     }
 
     @AfterEach
@@ -154,5 +156,26 @@ class CustomerServiceTest {
 
         verify(changeLogRepository, atLeastOnce()).save(any());   // the salary change is recorded
         assertThat(a.getEligibleLimit()).isEqualTo(1_500_000L);   // eligibility recomputed from new salary
+    }
+
+    @Test
+    void deleteCustomerRejectedForNonAdmin() {
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+        assertThatThrownBy(() -> service.deleteCustomer(9000001L))
+                .hasMessageContaining("ADMIN");
+        // requireAdmin() fires before any DB work.
+        verify(jdbc, org.mockito.Mockito.never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void deleteCustomerCascadesForAdmin() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        // single-arg deletes return 1 (the two-arg referral deletes fall through to 0 — fine here).
+        lenient().when(jdbc.update(anyString(), any(Object.class))).thenReturn(1);
+
+        CustomerService.DeletionResult res = service.deleteCustomer(9000001L);
+
+        assertThat(res.customerId()).isEqualTo(9000001L);
+        assertThat(res.totalRows()).isGreaterThan(0);
     }
 }

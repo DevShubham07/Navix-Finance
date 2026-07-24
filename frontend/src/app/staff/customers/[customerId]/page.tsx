@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, User, Banknote, Receipt, Workflow, Pencil, Ban, XCircle, History, Check } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, User, Banknote, Receipt, Workflow, Pencil, Ban, XCircle, History, Check, Trash2, AlertTriangle } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
@@ -86,6 +86,11 @@ export default function CustomerDetailPage() {
               <PermissionGate permission="customer:manage">
                 <AdminEditCard detail={c} onSaved={invalidate} />
                 <BlocklistCard customerId={id} />
+                <DeleteCustomerCard
+                  customerId={id}
+                  name={c.profile?.fullName ?? `Customer #${id}`}
+                  hasLiveLoan={!!currentLoan}
+                />
               </PermissionGate>
             </div>
           </div>
@@ -108,6 +113,71 @@ function Card({ title, icon, children }: { title: string; icon: React.ReactNode;
     <div className="rounded border border-line bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2 font-serif text-base font-semibold text-navy">{icon} {title}</div>
       {children}
+    </div>
+  );
+}
+
+/**
+ * ADMIN-only danger zone: permanently delete this customer and all of their data. Guarded by a
+ * confirm step that requires typing the customer's name, so it can't be triggered by a stray click.
+ */
+function DeleteCustomerCard({ customerId, name, hasLiveLoan }: { customerId: number; name: string; hasLiveLoan: boolean }) {
+  const router = useRouter();
+  const [arming, setArming] = React.useState(false);
+  const [typed, setTyped] = React.useState("");
+  const m = useMutation({
+    mutationFn: () => customersApi.remove(customerId),
+    onSuccess: () => router.push("/staff/customers"),
+  });
+  const confirmed = typed.trim() === name.trim();
+
+  return (
+    <div className="rounded border border-error-200 bg-error-50 p-5 shadow-sm">
+      <div className="mb-2 flex items-center gap-2 font-serif text-base font-semibold text-error-700">
+        <AlertTriangle size={16} /> Danger zone
+      </div>
+      <p className="mb-3 text-xs text-error-700">
+        Permanently delete this customer and <strong>all</strong> of their data — applications, loans,
+        payments, verifications, documents and collections. This cannot be undone.
+      </p>
+      {hasLiveLoan ? (
+        <p className="mb-3 rounded border border-error-200 bg-white/60 px-2 py-1 text-xs font-semibold text-error-700">
+          ⚠ This customer has a live loan — deleting also erases that active loan record.
+        </p>
+      ) : null}
+
+      {!arming ? (
+        <button
+          onClick={() => { setArming(true); setTyped(""); m.reset(); }}
+          className="flex items-center gap-1.5 rounded border border-error-300 bg-white px-3 py-1.5 text-xs font-semibold text-error-700 hover:bg-error-100"
+        >
+          <Trash2 size={13} /> Delete this user
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <label className="block text-xs text-error-700">
+            Type <span className="font-mono font-semibold">{name}</span> to confirm:
+          </label>
+          <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={name} autoFocus />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => m.mutate()}
+              disabled={!confirmed || m.isPending}
+              className="flex items-center gap-1.5 rounded bg-error-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-error-700 disabled:opacity-50"
+            >
+              {m.isPending ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Permanently delete
+            </button>
+            <button
+              onClick={() => { setArming(false); setTyped(""); }}
+              className="rounded border border-line bg-white px-3 py-1.5 text-xs text-muted hover:bg-grey-100"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {m.error ? <p className="mt-2 text-xs text-error-700">{errMessage(m.error)}</p> : null}
     </div>
   );
 }

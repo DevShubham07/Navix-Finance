@@ -30,6 +30,7 @@ import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
 import com.navix.loan.repository.ProfileChangeLogRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,6 +66,7 @@ public class CustomerService {
     private final ApplicationEventRepository applicationEventRepository;
     private final CustomerRemarkRepository remarkRepository;
     private final RiskPort risk;
+    private final JdbcTemplate jdbc;
 
     /**
      * All customers (distinct customers), optionally filtered by {@code q} matching the name
@@ -202,6 +204,60 @@ public class CustomerService {
             recomputeEligibility(customerId, saved.getMonthlySalaryPaise());
         }
         return ProfileView.of(saved);
+    }
+
+    /** Summary of a cascade delete: how many rows went across the key tables. */
+    public record DeletionResult(Long customerId, int applications, int loans, int totalRows) {
+    }
+
+    /**
+     * ADMIN — permanently delete a customer and ALL of their data. Because the schema has no FK
+     * constraints, this cascades by hand across every table keyed to the customer (their applications,
+     * loans, verifications, documents, events, payments, collections, credentials, preferences,
+     * referrals, notifications, reset tokens…), children before parents, in one transaction — so it
+     * either fully succeeds or rolls back, never leaving orphans. Irreversible.
+     */
+    @Transactional
+    public DeletionResult deleteCustomer(Long customerId) {
+        requireAdmin();
+        if (customerId == null) {
+            throw new BusinessException("INVALID_CUSTOMER", "customerId is required");
+        }
+        int total = 0;
+        // --- collections (uuid-keyed) → payments, all hung off this customer's loans ---
+        total += jdbc.update("DELETE FROM settlement WHERE collection_case_id IN "
+                + "(SELECT id FROM collection_case WHERE loan_id IN (SELECT id FROM loan WHERE customer_id = ?))", customerId);
+        total += jdbc.update("DELETE FROM collection_case WHERE loan_id IN (SELECT id FROM loan WHERE customer_id = ?)", customerId);
+        total += jdbc.update("DELETE FROM payment WHERE loan_id IN (SELECT id FROM loan WHERE customer_id = ?)", customerId);
+        // --- application children (by the customer's application ids) ---
+        total += jdbc.update("DELETE FROM application_document WHERE application_id IN (SELECT id FROM loan_application WHERE customer_id = ?)", customerId);
+        total += jdbc.update("DELETE FROM application_verification WHERE application_id IN (SELECT id FROM loan_application WHERE customer_id = ?)", customerId);
+        total += jdbc.update("DELETE FROM application_event WHERE application_id IN (SELECT id FROM loan_application WHERE customer_id = ?)", customerId);
+        total += jdbc.update("DELETE FROM customer_profile WHERE application_id IN (SELECT id FROM loan_application WHERE customer_id = ?)", customerId);
+        // --- the loan + application aggregates ---
+        int loans = jdbc.update("DELETE FROM loan WHERE customer_id = ?", customerId);
+        int apps = jdbc.update("DELETE FROM loan_application WHERE customer_id = ?", customerId);
+        total += loans + apps;
+        // --- customer-keyed satellites ---
+        total += jdbc.update("DELETE FROM profile_change_log WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM customer_remark WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM borrower_preferences WHERE applicant_id = ?", customerId);
+        total += jdbc.update("DELETE FROM borrower_credential WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM referral_payout WHERE beneficiary_customer_id = ? OR counterparty_customer_id = ?", customerId, customerId);
+        total += jdbc.update("DELETE FROM referral WHERE referred_customer_id = ? OR referrer_customer_id = ?", customerId, customerId);
+        total += jdbc.update("DELETE FROM referral_code WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM income_profile WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM risk_assessment WHERE customer_id = ?", customerId);
+        // --- in-app inbox (delivery children first) + reset tokens ---
+        total += jdbc.update("DELETE FROM notification_delivery WHERE notification_id IN "
+                + "(SELECT id FROM notification WHERE recipient_type = 'BORROWER' AND recipient_id = ?)", customerId);
+        total += jdbc.update("DELETE FROM notification WHERE recipient_type = 'BORROWER' AND recipient_id = ?", customerId);
+        total += jdbc.update("DELETE FROM password_reset_token WHERE subject_type = 'BORROWER' AND subject_id = ?", customerId);
+
+        if (total == 0) {
+            throw new ResourceNotFoundException("Customer", "customer:" + customerId);
+        }
+        return new DeletionResult(customerId, apps, loans, total);
     }
 
     /** One customer's audited profile/salary change history (newest first). Staff-readable. */
