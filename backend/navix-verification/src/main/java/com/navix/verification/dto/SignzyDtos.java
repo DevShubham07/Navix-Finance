@@ -1,5 +1,6 @@
 package com.navix.verification.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.navix.common.verification.BureauReportFacts;
 import java.util.List;
@@ -147,8 +148,11 @@ public final class SignzyDtos {
     }
 
     // ---- Liveness Secure : /api/v3/liveness-secure/createUrl + /getData ----
+    // matchImage MUST be omitted (not null) when there's no reference photo — Signzy 400s on
+    // `"matchImage":null` ("must be an array"), so @JsonInclude(NON_NULL) drops it for liveness-only.
     public record LivenessCreateUrlRequest(
-            @JsonProperty("matchImage") List<String> matchImage,
+            @JsonProperty("matchImage")
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<String> matchImage,
             @JsonProperty("faceMatchThreshold") Double faceMatchThreshold) {
     }
 

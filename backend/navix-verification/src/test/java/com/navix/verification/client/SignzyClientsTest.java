@@ -189,6 +189,19 @@ class SignzyClientsTest {
     }
 
     @Test
+    void livenessCreateUrlRequestOmitsNullMatchImage() throws Exception {
+        // Signzy 400s on "matchImage":null ("must be an array") — it must be absent for liveness-only.
+        String withNull = new ObjectMapper().writeValueAsString(
+                new com.navix.verification.dto.SignzyDtos.LivenessCreateUrlRequest(null, 0.6));
+        assertThat(withNull).doesNotContain("matchImage");
+
+        String withImage = new ObjectMapper().writeValueAsString(
+                new com.navix.verification.dto.SignzyDtos.LivenessCreateUrlRequest(
+                        java.util.List.of("https://ref.jpg"), 0.6));
+        assertThat(withImage).contains("matchImage");
+    }
+
+    @Test
     void livenessGetDataMapsResult() {
         Bound b = bind();
         stub(b.server(), "/api/v3/liveness-secure/getData", """
