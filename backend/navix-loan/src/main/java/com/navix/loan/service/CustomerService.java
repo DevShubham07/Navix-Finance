@@ -241,7 +241,7 @@ public class CustomerService {
         // --- customer-keyed satellites ---
         total += jdbc.update("DELETE FROM profile_change_log WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM customer_remark WHERE customer_id = ?", customerId);
-        total += jdbc.update("DELETE FROM borrower_preferences WHERE applicant_id = ?", customerId);
+        total += jdbc.update("DELETE FROM borrower_preferences WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_credential WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM referral_payout WHERE beneficiary_customer_id = ? OR counterparty_customer_id = ?", customerId, customerId);
         total += jdbc.update("DELETE FROM referral WHERE referred_customer_id = ? OR referrer_customer_id = ?", customerId, customerId);
