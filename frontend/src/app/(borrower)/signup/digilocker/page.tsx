@@ -90,10 +90,19 @@ export default function SignupDigiLockerPage() {
     }
   }, [appId, stop, finalise, router]);
 
+  // DigiLocker is best-effort — never a hard blocker. Advance to the next step; the unverified
+  // Aadhaar drops to staff manual review at submit-kyc (the backend keeps that gate open).
+  const skip = React.useCallback(() => {
+    stop();
+    setPhase("done");
+    router.push(nextAfterStep("/signup/pan"));
+  }, [stop, router]);
+
   const connect = async () => {
     if (appId == null) return;
     if (retryCount >= MAX_RETRIES) {
-      setError("Maximum DigiLocker attempts reached. Please contact support.");
+      // Out of retries — don't dead-end. Continue with Aadhaar under manual review.
+      skip();
       return;
     }
     setRetryCount((n) => n + 1);
@@ -117,12 +126,19 @@ export default function SignupDigiLockerPage() {
         // the borrower forward to the next step. Navigation unloads this page immediately; the
         // poll setup below is a harmless no-op fallback for the rare case navigation is blocked.
         window.location.assign(url);
+        setPhase("polling");
+        stop();
+        polls.current = 0;
+        timer.current = setInterval(() => { void poll(); }, POLL_MS);
+        void poll();
+        return;
       }
-      setPhase("polling");
-      stop();
-      polls.current = 0;
-      timer.current = setInterval(() => { void poll(); }, POLL_MS);
-      void poll();
+      // No consent URL — the provider couldn't start a session (out of credits / provider error).
+      // The backend already recorded DigiLocker as REVIEW; don't block the borrower. Show the
+      // result and continue to the next step.
+      setResult(r);
+      setPhase("done");
+      setTimeout(() => skip(), 900);
     } catch (err) {
       setError(formatApiError(err, "Could not start DigiLocker."));
       setPhase("failed");
@@ -156,13 +172,17 @@ export default function SignupDigiLockerPage() {
           </div>
         ) : phase === "done" ? (
           <div className="flex items-center justify-center gap-2 text-sm font-semibold text-success-700">
-            Aadhaar verified — continuing… <ArrowRight size={16} />
+            Continuing… <ArrowRight size={16} />
           </div>
         ) : retryCount >= MAX_RETRIES && phase === "failed" ? (
-          <div className="rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
-            You&apos;ve reached the maximum of {MAX_RETRIES} DigiLocker attempts. Please{" "}
-            <a href="mailto:info@dhanboost.com" className="font-semibold underline">contact our support team</a>{" "}
-            to continue your application.
+          <div className="space-y-4">
+            <div className="rounded border border-line bg-grey-100 p-4 text-sm text-ink">
+              DigiLocker didn&apos;t connect after a few tries. No problem — you can continue now and
+              our team will verify your Aadhaar during review.
+            </div>
+            <button onClick={skip} className="btn btn-gold">
+              Continue <ArrowRight size={16} />
+            </button>
           </div>
         ) : (
           <>
@@ -176,6 +196,12 @@ export default function SignupDigiLockerPage() {
                 {MAX_RETRIES - retryCount} attempt{MAX_RETRIES - retryCount !== 1 ? "s" : ""} remaining
               </p>
             )}
+            {/* DigiLocker is best-effort: always let the borrower skip rather than get stuck. */}
+            <div className="mt-4">
+              <button type="button" onClick={skip} className="text-sm font-semibold text-navy hover:underline">
+                Skip for now — verify during review
+              </button>
+            </div>
           </>
         )}
 

@@ -320,8 +320,26 @@ public class ApplicationVerificationService {
     @Transactional
     public StepResult digilockerInit(Long appId, String redirectUrl) {
         requireApplication(appId);
-        VerificationPort.DigiLockerSession s = verification.digilockerInit(redirectUrl, 20, true);
         CustomerProfile profile = profile(appId);
+
+        VerificationPort.DigiLockerSession s;
+        try {
+            s = verification.digilockerInit(redirectUrl, 20, true);
+        } catch (RuntimeException providerFailure) {
+            // DigiLocker is best-effort. If the provider can't start a consent session (out of
+            // credits / provider error / timeout), don't 500 and don't hard-block onboarding:
+            // record the step for manual staff review and tell the frontend it can continue.
+            // The Aadhaar number is already captured on the PAN step, and submit-kyc's
+            // allowAadhaarManualReview keeps the AADHAAR gate open for staff to finish. Mirrors
+            // the graceful degrade already used for the bureau pull.
+            Map<String, Object> soft = new LinkedHashMap<>();
+            soft.put("providerError", true);
+            soft.put("skippable", true);
+            return view(upsert(appId, DIGILOCKER, REVIEW, "MANUAL", null, ref(appId, DIGILOCKER),
+                    null, null, null, soft,
+                    "DigiLocker is temporarily unavailable — you can continue; our team will verify your Aadhaar during review."));
+        }
+
         profile.setDigilockerClientId(s.clientId());
         profileRepo.save(profile);
 
@@ -824,12 +842,22 @@ public class ApplicationVerificationService {
      */
     @Transactional
     public void allowAadhaarManualReview(Long appId) {
-        String status = verificationRepo.findByApplicationIdAndCheckType(appId, AADHAAR)
+        String aadhaar = verificationRepo.findByApplicationIdAndCheckType(appId, AADHAAR)
                 .map(ApplicationVerification::getStatus)
                 .orElse(null);
-        if (!PASS.equals(status) && !REVIEW.equals(status)) {
+        if (!PASS.equals(aadhaar) && !REVIEW.equals(aadhaar)) {
             upsert(appId, AADHAAR, REVIEW, "MANUAL", null, null, null, null, null,
                     Map.of(), "DigiLocker not completed — Aadhaar pending manual review by staff");
+        }
+        // DigiLocker itself is best-effort too: if the borrower skipped it (provider unavailable) or
+        // never finished, keep the DIGILOCKER gate open at REVIEW rather than blocking submission —
+        // staff verify Aadhaar/DigiLocker manually. Idempotent; never downgrades a PASS.
+        String digilocker = verificationRepo.findByApplicationIdAndCheckType(appId, DIGILOCKER)
+                .map(ApplicationVerification::getStatus)
+                .orElse(null);
+        if (!PASS.equals(digilocker) && !REVIEW.equals(digilocker)) {
+            upsert(appId, DIGILOCKER, REVIEW, "MANUAL", null, null, null, null, null,
+                    Map.of(), "DigiLocker not completed — pending manual review by staff");
         }
     }
 

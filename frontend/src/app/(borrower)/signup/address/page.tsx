@@ -135,7 +135,7 @@ export default function SignupAddressPage() {
           label="Full address"
           required
           value={manual}
-          onChange={(e) => setManual(e.target.value)}
+          onChange={(e) => { setManual(e.target.value); if (error) setError(undefined); }}
           placeholder="Flat / house, street, area, city, PIN"
           leftIcon={<MapPin size={16} />}
           autoComplete="street-address"
