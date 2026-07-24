@@ -477,9 +477,23 @@ public class ApplicationVerificationService {
         }
         CustomerProfile profile = profile(appId);
         String ref = ref(appId, BUREAU);
-        VerificationPort.BureauCheck r = verification.pullBureau(
-                profile.getPan(), nz(profile.getFullName()), nz(profile.getMobile()),
-                profile.getDob() != null ? profile.getDob().toString() : "", ref);
+        VerificationPort.BureauCheck r;
+        try {
+            r = verification.pullBureau(
+                    profile.getPan(), nz(profile.getFullName()), nz(profile.getMobile()),
+                    profile.getDob() != null ? profile.getDob().toString() : "", ref);
+        } catch (RuntimeException providerFailure) {
+            // Both bureau providers couldn't run (e.g. no API credits / OTP-gated / upstream error).
+            // Don't hard-block onboarding with a 500 — record for manual review and let the borrower
+            // continue, mirroring penny-drop/selfie. A staff member pulls the bureau later; risk data
+            // stays absent until then. (Product decision: never stop the borrower at this step.)
+            Map<String, Object> soft = new LinkedHashMap<>();
+            soft.put("providerError", true);
+            ApplicationVerification row = upsert(appId, BUREAU, REVIEW, null, null, ref,
+                    null, null, null, soft,
+                    "We couldn't run the credit check right now — you can continue; our team will review it.");
+            return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
+        }
 
         Integer bureauScore = r.score();
         profile.setBureauScore(bureauScore != null ? bureauScore.longValue() : null);

@@ -168,6 +168,19 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void bureau_providerFailure_isReview_notError() {
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        // Both bureau providers unavailable (no credits / OTP-gated) → the router rethrows, which used
+        // to surface as HTTP 500. It must instead degrade to REVIEW so onboarding is never hard-blocked.
+        when(verification.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("HTTP 403 from bureau_crif"));
+
+        var result = service.pullBureau(APP);
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+    }
+
+    @Test
     void salary_setsEligibleLimitOnApplication() {
         CustomerProfile p = profile();
         LoanApplication app = new LoanApplication();
