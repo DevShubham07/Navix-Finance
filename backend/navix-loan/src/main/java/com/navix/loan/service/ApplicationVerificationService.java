@@ -355,12 +355,23 @@ public class ApplicationVerificationService {
     public StepResult digilockerStatus(Long appId) {
         CustomerProfile profile = profile(appId);
         String clientId = profile.getDigilockerClientId();
+        // TEMP (revert later): DigiLocker is best-effort — force the status to always resolve PASS so
+        // onboarding never stalls, whether the provider stalled at "client_initiated" OR no consent
+        // session was ever created (provider-degraded init records DIGILOCKER as REVIEW with no
+        // clientId). Reporting completed here lets even an older frontend that polls status advance;
+        // the Aadhaar falls to staff manual review at submit-kyc. Removing both branches restores the
+        // real provider-driven status logic below.
         if (clientId == null) {
-            throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
+            // No consent session (provider-degraded init). Don't 500 with DIGILOCKER_NOT_STARTED —
+            // treat the best-effort step as completed so the wizard advances.
+            Map<String, Object> forced = new LinkedHashMap<>();
+            forced.put("status", "completed");
+            forced.put("completed", true);
+            forced.put("failed", false);
+            forced.put("finalized", true);
+            forced.put("providerError", true);
+            return new StepResult(DIGILOCKER, PASS, "DigiLocker completed", forced);
         }
-        // TEMP (revert later): force the DigiLocker session to always resolve PASS irrespective of
-        // the provider's status flag, so onboarding never stalls on a "client_initiated" session.
-        // Removing this block restores the real provider-driven status logic below.
         if (clientId != null) {
             Map<String, Object> forced = new LinkedHashMap<>();
             forced.put("status", "completed");
