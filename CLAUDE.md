@@ -138,7 +138,6 @@ navix_final/
 │   ├── navix-income-risk/        # risk A/B/C/D + eligible-limit computation
 │   ├── navix-loan/               # ★ the aggregate: LoanApplication, ApplicationStatus,
 │   │                             #   ApplicationFlowService, LoanService, LoanMath, controllers
-│   ├── navix-disbursement/       # (legacy UUID maker-checker chain — superseded, dormant)
 │   ├── navix-collections/        # DPD buckets, collection cases, settlements
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
@@ -158,8 +157,7 @@ navix_final/
 │       │   ├── api/              # typed client (applications.ts), live-journey.ts (borrower seam),
 │       │   │                     #   BFF session/proxy helpers
 │       │   ├── auth/rbac.ts      # StaffRole + permissions (mirrors backend)
-│       │   ├── calc/             # frontend loan-math (mock layer)
-│       │   └── mock/             # Zustand demo data + personas
+│       │   └── calc/             # frontend loan-math (mirrors LoanMath; live borrower pages)
 │       └── middleware.ts         # gates /staff/* on cookie presence
 ├── docker-compose.yml            # Postgres 16 + Adminer
 └── dfd.md                        # authoritative lifecycle + roles spec
@@ -535,8 +533,10 @@ navix-common). Applied on every boot:
 **Audit** `application_event`: `id`, `application_id`, `from_status`, `to_status`, `actor_id`,
 `actor_role`, `action`, `notes`, `at` — append-only, and the source of truth for SoD checks.
 
-> Known DB debt (deferred): no FK constraints (indexes only). The legacy `disbursement_request` UUID
-> maker-checker chain is **superseded by the single aggregate** and left dormant. (`collection_case` is
+> Known DB debt (deferred): no FK constraints (indexes only). (The legacy `disbursement_request` UUID
+> maker-checker chain — `navix-disbursement` module + its `disbursement_request`/`approval_step` tables —
+> was **removed** once superseded by the single aggregate: module deleted, tables dropped in V39.)
+> (`collection_case` is
 > on the real **bigint** loan id — V11; `loan` carries `disbursal_txn_ref` — V13; `customer_profile`
 > (renamed from `applicant_profile` in V33) identity uniqueness is **customer-scoped** — V12 added it
 > globally, **V23 relaxed it** to per-customer so returning borrowers can re-onboard.)
@@ -669,7 +669,7 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 
 - **Money = integer paise (`long`), HALF_UP.** Never floats/whole-rupee for money.
 - **One aggregate.** The lifecycle is one `loan_application.status`; don't reintroduce fragmented
-  per-stage entities. The old `DisbursementRequest` UUID chain is dormant/superseded.
+  per-stage entities. The old `DisbursementRequest` UUID chain has been removed (module + tables, V39).
 - **SoD is mandatory** and enforced server-side (flow service via the event trail), not in
   middleware. Never collapse two maker-checker steps onto one actor.
 - **JWT identity (migration P6).** `JwtAuthFilter` validates the bearer → `CurrentActor`; services
@@ -727,8 +727,9 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 - 🟡 Staff **emailed invites** + ADMIN-gated invite create; middleware **JWT-signature verify** (still a
   presence check). Rotate the seeded `Admin@12345` + set a strong `AUTH_SECRET` for prod.
 - 🔴 Real bank **payout** (NEFT/IMPS) at the accountant step; sanction-letter/agreement generation → S3.
-- 🔴 DB cleanup: **FK constraints**; drop the legacy `bytea` doc column + the UUID `disbursement_request`
-  table; unify applicant identity (`applicant_profile` ↔ onboarding `Borrower`); PII-at-rest encryption.
+- 🔴 DB cleanup: **FK constraints**; drop the legacy `bytea` doc column (still on the live borrower
+  document upload/read path — migrate that write path to S3 first); unify applicant identity
+  (`applicant_profile` ↔ onboarding `Borrower`); PII-at-rest encryption.
 - 🔴 Persisted `borrower_standing` table (standing is recomputed from loan history today); design-system
   polish; full-Aadhaar masking; compliance/regulatory alignment (NBFC/DLG, reporting, product copy).
 

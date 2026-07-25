@@ -497,6 +497,14 @@ async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> 
   return parsed.data;
 }
 
+/** PUT raw bytes (File or Blob) straight to a presigned S3 URL — never through the BFF. */
+async function putToPresignedUrl(url: string, body: Blob, contentType: string): Promise<void> {
+  const res = await fetch(url, { method: "PUT", body, headers: { "Content-Type": contentType } });
+  if (!res.ok) {
+    throw new ApplicationApiError(`Upload failed (status ${res.status}).`, `UPLOAD_FAILED_${res.status}`, res.status);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Borrower client — routes under /api/borrower/*
 // ---------------------------------------------------------------------------
@@ -726,16 +734,7 @@ export const verificationApi = {
   ) => bff<VerifyPresign>(`${BORROWER_BASE}/${id}/verify/presign-upload`, "POST", body),
 
   /** PUT raw bytes (File or Blob) straight to the presigned S3 URL — never through the BFF. */
-  putToPresignedUrl: async (url: string, body: Blob, contentType: string): Promise<void> => {
-    const res = await fetch(url, {
-      method: "PUT",
-      body,
-      headers: { "Content-Type": contentType },
-    });
-    if (!res.ok) {
-      throw new ApplicationApiError(`Upload failed (status ${res.status}).`, `UPLOAD_FAILED_${res.status}`, res.status);
-    }
-  },
+  putToPresignedUrl,
 };
 
 // ---------------------------------------------------------------------------
@@ -1239,20 +1238,8 @@ export const storageApi = {
   },
 
   /** PUT the file bytes straight to the presigned S3 URL (never through the BFF). */
-  putToPresignedUrl: async (url: string, file: File): Promise<void> => {
-    const res = await fetch(url, {
-      method: "PUT",
-      body: file,
-      headers: { "Content-Type": file.type || "application/octet-stream" },
-    });
-    if (!res.ok) {
-      throw new ApplicationApiError(
-        `Upload failed (status ${res.status}).`,
-        `UPLOAD_FAILED_${res.status}`,
-        res.status,
-      );
-    }
-  },
+  putToPresignedUrl: (url: string, file: File): Promise<void> =>
+    putToPresignedUrl(url, file, file.type || "application/octet-stream"),
 };
 
 // ---------------------------------------------------------------------------

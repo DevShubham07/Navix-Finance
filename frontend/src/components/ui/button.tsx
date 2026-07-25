@@ -2,9 +2,9 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Button — emits the design system's `.btn` classes for pixel-fidelity with
- * the "Classic Corporate" theme (gold/navy/outline), plus semantic variants
- * (destructive/success/warning) composed on the same base.
+ * Button — emits the design system's `.btn` classes for the core variants
+ * (gold/navy/outline), plus semantic variants (destructive/success/warning)
+ * composed on the same base.
  */
 type ButtonVariant =
   | "primary" // navy

@@ -39,7 +39,6 @@
         <module>navix-verification</module>
         <module>navix-income-risk</module>
         <module>navix-loan</module>
-        <module>navix-disbursement</module>
         <module>navix-collections</module>
         <module>navix-storage</module>
         <module>navix-notification</module>

@@ -5,9 +5,9 @@ import type { Config } from "tailwindcss";
  * Palette: navy #0C2540 · emerald accent #14A06B (token name kept as `gold`/`--gold-*`) · cream #FDFBF6 · ink #0C2238 · slate #46566E.
  * Type: Inter (display, body, and figures).
  *
- * Token NAMES are unchanged from the previous "Classic Corporate" theme so the
- * 54 functional screens cascade automatically; only the VALUES move to the new
- * system (which the marketing site already uses, scoped under .navix-mkt). The
+ * Token NAMES are stable across re-skins so the 54 functional screens cascade
+ * automatically; a re-skin moves only the VALUES (the marketing site already
+ * uses this system, scoped under .navix-mkt). The
  * `navix`/`navy` ramps are a deep-navy ramp; brand tokens (navy/gold/ivory/ink/
  * muted/line) mirror the CSS variables in globals.css.
  */
