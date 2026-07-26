@@ -98,21 +98,31 @@ class SecurityMatrixIT {
      * minted and never read, so a borrower bearer authenticated onto every {@code /api/staff/**}
      * route and was stopped only where a service checked — {@code InviteService.acceptInvite}
      * deliberately does not.
+     *
+     * <p>401 rather than 403: the chain's {@code HttpStatusEntryPoint(UNAUTHORIZED)} answers the
+     * denial. Verified against the live ALB on 2026-07-26 — the borrower token is valid (it still
+     * gets 200 on {@code /api/payment-settings}), so this is the namespace gate rejecting it, not
+     * the token being unreadable.
      */
     @Test
-    void borrowerBearer_onStaffNamespace_isForbidden() throws Exception {
+    void borrowerBearer_onStaffNamespace_isRejected() throws Exception {
         mvc.perform(get("/api/staff/me").header("Authorization", bearer("21", "BORROWER")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
-    /**
-     * Positive control: the new matcher must not have closed the namespace to staff too. Asserts
-     * only "not 403" — whether this staffer resolves to a seeded row is beside the point here.
-     */
+    /** The same borrower token still reaches the any-authed routes — the gate is scoped, not blanket. */
     @Test
-    void staffBearer_onStaffNamespace_isNotForbidden() throws Exception {
+    void borrowerBearer_onSharedRoute_isAllowed() throws Exception {
+        mvc.perform(get("/api/payment-settings").header("Authorization", bearer("21", "BORROWER")))
+                .andExpect(status().isOk());
+    }
+
+    /** Positive control: the matcher must not have closed the namespace to staff too. */
+    @Test
+    void staffBearer_onStaffNamespace_isNotRejected() throws Exception {
         mvc.perform(get("/api/staff/me").header("Authorization", bearer("1", "ADMIN")))
-                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(403));
+                .andExpect(result -> assertThat(result.getResponse().getStatus())
+                        .isNotIn(401, 403));
     }
 
     // ---- helpers -------------------------------------------------------------------
