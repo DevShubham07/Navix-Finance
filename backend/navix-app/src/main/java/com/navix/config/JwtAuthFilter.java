@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -48,9 +49,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 // never the token or name). RequestLoggingFilter (outermost) clears the MDC.
                 MDC.put("actorId", principal.id());
                 MDC.put("actorRole", principal.role());
+                // Two authorities: the actor role, and the token's AUDIENCE promoted to a role. The
+                // audience is what makes JwtService's "a borrower token can never satisfy a staff
+                // route" actually true — SecurityConfig gates /api/staff + /api/admin on ROLE_STAFF.
+                // Until this was granted, the audience claim was minted, carried, and never read, so
+                // a borrower token authenticated fine on every staff URL and was stopped only where
+                // a service happened to call requireRole. A null audience yields the inert ROLE_NULL.
                 var authentication = new UsernamePasswordAuthenticationToken(
                         principal.id(), null,
-                        List.of(new SimpleGrantedAuthority("ROLE_" + principal.role())));
+                        List.of(new SimpleGrantedAuthority("ROLE_" + principal.role()),
+                                new SimpleGrantedAuthority(
+                                        "ROLE_" + String.valueOf(principal.audience()).toUpperCase(Locale.ROOT))));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
             filterChain.doFilter(request, response);

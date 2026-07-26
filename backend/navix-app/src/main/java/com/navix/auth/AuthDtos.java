@@ -11,8 +11,14 @@ public final class AuthDtos {
     public record StaffLoginRequest(@NotBlank String email, @NotBlank String password) {
     }
 
-    /** Borrower login: mobile + the OTP delivered by SMS (UltronSMS gateway). */
-    public record BorrowerLoginRequest(@NotBlank String mobile, @NotBlank String otp, String name, Long customerId) {
+    /**
+     * Borrower login: mobile + the OTP delivered by SMS (UltronSMS gateway).
+     *
+     * <p>There is deliberately NO {@code customerId} here — the identity is derived server-side from
+     * the OTP-verified mobile. A client-supplied id was trusted verbatim, so anyone who could verify
+     * an OTP on their own handset could mint a token for any other customer.
+     */
+    public record BorrowerLoginRequest(@NotBlank String mobile, @NotBlank String otp, String name) {
     }
 
     /** Request an OTP be generated + SMS-delivered to {@code mobile}. */

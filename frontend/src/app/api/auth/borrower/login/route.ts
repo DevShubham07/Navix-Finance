@@ -6,11 +6,16 @@ import { config } from "@/lib/config";
  * Borrower login (mobile + OTP). SEPARATE from staff auth — never shares a
  * session/cookie.
  *
- * POST `{ mobile, otp, name?, customerId? }` -> authenticates against the
- * backend `POST /api/auth/borrower/login` (the backend enforces the OTP and
- * derives the customer id). On success the JWT is stored in the httpOnly
- * `navix_borrower` cookie (`{ token, id, customerId, name, mobile }`); the
- * response body omits the token.
+ * POST `{ mobile, otp, name? }` -> authenticates against the backend
+ * `POST /api/auth/borrower/login` (the backend enforces the OTP and derives the
+ * customer id). On success the JWT is stored in the httpOnly `navix_borrower`
+ * cookie (`{ token, id, customerId, name, mobile }`); the response body omits
+ * the token.
+ *
+ * A `customerId` is deliberately NOT accepted or forwarded: the backend used to
+ * trust one supplied here, so a caller who verified an OTP on their own handset
+ * could mint a session for any other customer. The id in the cookie comes from
+ * the backend's response, never from the request.
  */
 
 interface BorrowerLoginData {
@@ -29,10 +34,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { mobile, otp, customerId, name } = (body ?? {}) as {
+  const { mobile, otp, name } = (body ?? {}) as {
     mobile?: unknown;
     otp?: unknown;
-    customerId?: unknown;
     name?: unknown;
   };
 
@@ -49,7 +53,6 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         mobile: cleanMobile,
         otp: typeof otp === "string" ? otp : "",
-        customerId: typeof customerId === "number" ? customerId : undefined,
         name: typeof name === "string" && name.trim() ? name.trim() : undefined,
       }),
       cache: "no-store",

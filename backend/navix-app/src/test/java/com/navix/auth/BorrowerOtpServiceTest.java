@@ -56,7 +56,7 @@ class BorrowerOtpServiceTest {
 
     @Test
     void mockMode_usesFixedCode_andNeverCallsSms() {
-        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(false, true));
+        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(false, true), new AttemptLimiter());
         var result = service.request("9812345678");
 
         assertThat(result.sent()).isTrue();        // mock "delivery"
@@ -70,7 +70,7 @@ class BorrowerOtpServiceTest {
     @Test
     void request_sendsSms_andEchoesSixDigitCode_whenDevEchoOn() {
         when(smsClient.send(anyString(), anyString())).thenReturn("JOB-1");
-        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(true));
+        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(true), new AttemptLimiter());
 
         BorrowerOtpService.OtpRequest req = service.request(MOBILE);
 
@@ -85,7 +85,7 @@ class BorrowerOtpServiceTest {
     @Test
     void request_doesNotEchoCode_whenDevEchoOff() {
         when(smsClient.send(anyString(), anyString())).thenReturn("JOB-1");
-        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(false));
+        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(false), new AttemptLimiter());
 
         BorrowerOtpService.OtpRequest req = service.request(MOBILE);
 
@@ -96,7 +96,7 @@ class BorrowerOtpServiceTest {
     @Test
     void verify_isSingleUse_andRejectsWrongCode() {
         when(smsClient.send(anyString(), anyString())).thenReturn("JOB-1");
-        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(true));
+        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(true), new AttemptLimiter());
 
         String code = service.request(MOBILE).devCode();
 
@@ -109,7 +109,7 @@ class BorrowerOtpServiceTest {
     void request_gracefullyHandlesSmsFailure_butStillEchoesUsableCode() {
         when(smsClient.send(anyString(), anyString()))
                 .thenThrow(new SmsException("SMS gateway: error:Invalid template text"));
-        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(true));
+        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(true), new AttemptLimiter());
 
         BorrowerOtpService.OtpRequest req = service.request(MOBILE);
 
@@ -121,7 +121,7 @@ class BorrowerOtpServiceTest {
     @Test
     void verify_locksOutAfterFiveWrongAttempts() {
         when(smsClient.send(anyString(), anyString())).thenReturn("JOB-1");
-        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(true));
+        BorrowerOtpService service = new BorrowerOtpService(smsClient, props(true), new AttemptLimiter());
 
         String code = service.request(MOBILE).devCode();
 

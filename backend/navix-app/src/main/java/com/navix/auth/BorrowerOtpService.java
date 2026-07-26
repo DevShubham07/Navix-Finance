@@ -5,6 +5,7 @@ import com.navix.sms.SmsException;
 import com.navix.sms.SmsProperties;
 import com.navix.sms.UltronSmsClient;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,10 +28,14 @@ public class BorrowerOtpService {
 
     private static final Logger log = LoggerFactory.getLogger(BorrowerOtpService.class);
     private static final int MAX_ATTEMPTS = 5;
+    /** Sends per mobile per {@link #SEND_WINDOW}. The login screen allows 1 initial + 3 resends. */
+    private static final int MAX_SENDS = 5;
+    private static final Duration SEND_WINDOW = Duration.ofMinutes(15);
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final UltronSmsClient smsClient;
     private final SmsProperties props;
+    private final AttemptLimiter limiter;
     private final Map<String, Otp> store = new ConcurrentHashMap<>();
 
     private record Otp(String code, Instant expiresAt, int attempts) {
@@ -43,6 +48,12 @@ public class BorrowerOtpService {
     /** Generate + store an OTP for {@code mobile} and send it via SMS. */
     public OtpRequest request(String mobile) {
         String number = normalize(mobile);
+        // Capped before the SMS goes out. This bounds two things at once: the gateway spend (and the
+        // handset-bombing that comes free with it), and the store.put below, which resets the
+        // MAX_ATTEMPTS guess counter — so without a send cap, guesses against a 6-digit code are
+        // unbounded no matter what MAX_ATTEMPTS says.
+        limiter.hit("otp:" + number, MAX_SENDS, SEND_WINDOW,
+                "Too many OTP requests for this number. Try again in a few minutes.");
         // Mock mode (demo/testing): a fixed code, no SMS, no DLT — testers just enter mockCode().
         String code = props.mock() ? mockCode() : generate();
         store.put(number, new Otp(code, Instant.now().plusSeconds(props.otpTtlSeconds()), 0));

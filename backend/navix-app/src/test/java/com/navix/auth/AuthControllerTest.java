@@ -34,6 +34,7 @@ class AuthControllerTest {
     @Mock private BorrowerCredentialRepository credentialRepository;
     @Mock private PasswordResetService passwordResetService;
     @Mock private com.navix.iam.service.InviteService inviteService;
+    @Mock private BorrowerMobileRepository mobileRepository;
 
     private AuthController controller;
     private JwtService jwt;
@@ -43,7 +44,16 @@ class AuthControllerTest {
         jwt = new JwtService("test-secret-test-secret-test-secret", 3600, 3600);
         PasswordEncoder encoder = new BCryptPasswordEncoder();
         controller = new AuthController(staffRepository, jwt, encoder, otpService, profileRepository,
-                credentialRepository, passwordResetService, inviteService);
+                credentialRepository, passwordResetService, inviteService, mobileRepository,
+                new AttemptLimiter());
+    }
+
+    /** A mobile that has already claimed {@code customerId}. */
+    private BorrowerMobile claim(long customerId, String mobile) {
+        BorrowerMobile m = new BorrowerMobile();
+        m.setCustomerId(customerId);
+        m.setMobile(mobile);
+        return m;
     }
 
     private StaffUser admin() {
@@ -82,19 +92,36 @@ class AuthControllerTest {
     void borrowerLogin_rejectsWrongOtp() {
         when(otpService.verify("9819000001", "000000")).thenReturn(false);
         assertThatThrownBy(() ->
-                controller.borrowerLogin(new BorrowerLoginRequest("9819000001", "000000", null, null)))
+                controller.borrowerLogin(new BorrowerLoginRequest("9819000001", "000000", null)))
                 .isInstanceOf(BusinessException.class);
     }
 
     @Test
     void borrowerLogin_issuesBorrowerToken_derivingCustomerId() {
         when(otpService.verify("98190 00001", "123456")).thenReturn(true);
-        var resp = controller.borrowerLogin(new BorrowerLoginRequest("98190 00001", "123456", "Asha", null));
+        when(mobileRepository.findById(9000001L)).thenReturn(Optional.empty());
+        var resp = controller.borrowerLogin(new BorrowerLoginRequest("98190 00001", "123456", "Asha"));
 
         assertThat(resp.getData().customerId()).isEqualTo(9000001L); // last 7 digits
         JwtService.Principal p = jwt.verify(resp.getData().token());
         assertThat(p.role()).isEqualTo("BORROWER");
         assertThat(p.audience()).isEqualTo(JwtService.AUDIENCE_BORROWER);
         assertThat(p.id()).isEqualTo("9000001");
+    }
+
+    /**
+     * The collision guard: 9819000001 and 9919000001 both derive customerId 9000001. Whichever
+     * mobile claimed it first keeps it; the other must fail loudly rather than land in that account.
+     */
+    @Test
+    void borrowerLogin_rejectsMobileCollidingWithAClaimedCustomerId() {
+        when(otpService.verify("9919000001", "123456")).thenReturn(true);
+        when(mobileRepository.findById(9000001L))
+                .thenReturn(Optional.of(claim(9000001L, "9819000001")));
+
+        assertThatThrownBy(() ->
+                controller.borrowerLogin(new BorrowerLoginRequest("9919000001", "123456", null)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("contact support");
     }
 }

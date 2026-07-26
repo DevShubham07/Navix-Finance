@@ -1,5 +1,6 @@
 package com.navix;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -89,6 +90,29 @@ class SecurityMatrixIT {
                         .content("{\"decision\":true}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code").value("FORBIDDEN_ROLE"));
+    }
+
+    /**
+     * The staff namespace is closed to borrower tokens at the URL, not merely at whatever
+     * {@code requireRole} the target service happens to carry. Regression: the audience claim was
+     * minted and never read, so a borrower bearer authenticated onto every {@code /api/staff/**}
+     * route and was stopped only where a service checked — {@code InviteService.acceptInvite}
+     * deliberately does not.
+     */
+    @Test
+    void borrowerBearer_onStaffNamespace_isForbidden() throws Exception {
+        mvc.perform(get("/api/staff/me").header("Authorization", bearer("21", "BORROWER")))
+                .andExpect(status().isForbidden());
+    }
+
+    /**
+     * Positive control: the new matcher must not have closed the namespace to staff too. Asserts
+     * only "not 403" — whether this staffer resolves to a seeded row is beside the point here.
+     */
+    @Test
+    void staffBearer_onStaffNamespace_isNotForbidden() throws Exception {
+        mvc.perform(get("/api/staff/me").header("Authorization", bearer("1", "ADMIN")))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(403));
     }
 
     // ---- helpers -------------------------------------------------------------------

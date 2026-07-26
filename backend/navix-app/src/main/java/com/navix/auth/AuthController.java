@@ -24,6 +24,8 @@ import com.navix.iam.service.InviteService;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.repository.CustomerProfileRepository;
 import jakarta.validation.Valid;
+import java.time.Duration;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,10 +59,20 @@ public class AuthController {
     private final BorrowerCredentialRepository credentialRepository;
     private final PasswordResetService passwordResetService;
     private final InviteService inviteService;
+    private final BorrowerMobileRepository mobileRepository;
+    private final AttemptLimiter limiter;
+
+    /** Sign-in attempts allowed per identifier per {@link #LOGIN_WINDOW} (either audience). */
+    private static final int MAX_LOGIN_ATTEMPTS = 10;
+    private static final Duration LOGIN_WINDOW = Duration.ofMinutes(15);
+    private static final String TOO_MANY_LOGINS = "Too many sign-in attempts. Try again in a few minutes.";
 
     @PostMapping("/staff/login")
     public ApiResponse<AuthResponse> staffLogin(@Valid @RequestBody StaffLoginRequest req) {
         String maskedEmail = Masking.maskEmail(req.email() == null ? null : req.email().trim());
+        // Before the lookup AND before BCrypt — otherwise the endpoint is an unbounded password oracle.
+        limiter.hit("staff:" + req.email().trim().toLowerCase(Locale.ROOT),
+                MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, TOO_MANY_LOGINS);
         StaffUser staff = staffRepository.findByEmail(req.email().trim()).orElse(null);
         if (staff == null) {
             log.warn("staff login failed reason=INVALID_CREDENTIALS email={}", maskedEmail);
@@ -110,7 +122,7 @@ public class AuthController {
             log.warn("borrower login failed reason=INVALID_OTP mobile={}", Masking.maskPhone(req.mobile()));
             throw new BusinessException("INVALID_OTP", "Invalid or expired OTP");
         }
-        long customerId = req.customerId() != null ? req.customerId() : deriveCustomerId(req.mobile());
+        long customerId = claimCustomerId(req.mobile());
         String name = resolveBorrowerName(req.name(), req.mobile());
         String id = String.valueOf(customerId);
         String token = jwtService.issue(id, name, "BORROWER", JwtService.AUDIENCE_BORROWER);
@@ -121,7 +133,9 @@ public class AuthController {
     /** Borrower sign-in by password (the OTP-less alternative; requires a previously set password). */
     @PostMapping("/borrower/password-login")
     public ApiResponse<AuthResponse> borrowerPasswordLogin(@Valid @RequestBody BorrowerPasswordLoginRequest req) {
-        long customerId = deriveCustomerId(req.mobile());
+        limiter.hit("pw:" + req.mobile().replaceAll("\\D", ""),
+                MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, TOO_MANY_LOGINS);
+        long customerId = claimCustomerId(req.mobile());
         BorrowerCredential cred = credentialRepository.findById(customerId).orElse(null);
         if (cred == null) {
             log.warn("borrower password login failed reason=NO_PASSWORD_SET customerId={}", customerId);
@@ -205,6 +219,39 @@ public class AuthController {
             }
         }
         return "Borrower";
+    }
+
+    /**
+     * The caller's customer id, claiming it for this mobile the first time it is seen.
+     *
+     * <p>{@link #deriveCustomerId} keeps only the last 7 digits, so two different mobiles can derive
+     * the SAME id. Without this check the second borrower silently lands in the first one's account —
+     * their loans, their KYC, their repayments. The registry turns that into a loud failure.
+     *
+     * <p>ponytail: a read-then-insert race on a genuine collision surfaces as a PK violation (500)
+     * rather than this 422. Still loud, which is the entire point — a lock would buy a nicer error
+     * for a case that should not exist. The real fix is a surrogate customer id, not tighter locking.
+     */
+    private long claimCustomerId(String mobile) {
+        long id = deriveCustomerId(mobile);
+        String digits = mobile.replaceAll("\\D", "");
+        String number = digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
+        BorrowerMobile claim = mobileRepository.findById(id).orElse(null);
+        if (claim == null) {
+            BorrowerMobile row = new BorrowerMobile();
+            row.setCustomerId(id);
+            row.setMobile(number);
+            mobileRepository.save(row);
+        } else if (!claim.getMobile().equals(number)) {
+            // Only the id is logged: colliding numbers share their last 7 digits, so both masked
+            // forms are identical and printing them just looks like a bug. The id is the key ops
+            // needs — `select * from borrower_mobile where customer_id = <id>` has the claimant.
+            log.error("customerId collision customerId={} — two mobiles derive this id; "
+                    + "the claimant is in borrower_mobile", id);
+            throw new BusinessException("CUSTOMER_ID_COLLISION",
+                    "This number can't be used for sign-in right now. Please contact support.");
+        }
+        return id;
     }
 
     /** Stable demo customer id from a mobile: last 7 digits (mirrors the BFF's derivation). */

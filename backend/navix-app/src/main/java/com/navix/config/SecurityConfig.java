@@ -22,6 +22,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * staff namespaces (which share {@code /api/applications}) are kept apart by the
  * token's role rather than by URL.
  *
+ * <p>The two exceptions are {@code /api/staff/**} and {@code /api/admin/**}, which ARE
+ * gated by URL — on {@code ROLE_STAFF}, the token's audience claim promoted to an
+ * authority by {@link JwtAuthFilter}. Service-level {@code requireRole} guards assumed
+ * that boundary existed; before this matcher, nothing enforced it, and a borrower token
+ * reached any staff route whose service lacked its own check.
+ *
  * <p>Open (no token): {@code /api/auth/**} (login), the public marketing contact form
  * ({@code /api/contact}), the generic storage presign routes ({@code /api/storage/**} — kept open per
  * plan decision 6), actuator and the API docs.
@@ -49,6 +55,12 @@ public class SecurityConfig {
                             "/actuator/**",
                             "/swagger-ui/**", "/swagger-ui.html",
                             "/v3/api-docs/**", "/v3/api-docs").permitAll()
+                    // Staff-only namespaces, gated on the token's AUDIENCE (granted as ROLE_STAFF by
+                    // JwtAuthFilter) rather than on the 9 individual staff roles — so a tenth role
+                    // needs no edit here. Both path forms are listed on purpose: the bare path is a
+                    // runtime-only footgun otherwise. Services keep their own requireRole/SoD checks;
+                    // this is the namespace boundary those checks assumed but nothing enforced.
+                    .requestMatchers("/api/staff", "/api/staff/**", "/api/admin/**").hasRole("STAFF")
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
