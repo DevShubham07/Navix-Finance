@@ -29,7 +29,9 @@ const csp = [
   "font-src 'self'",
   `connect-src 'self' ${gaConnect} ${s3}`,
   "worker-src 'self' blob:",
-  "frame-src 'self'",
+  // signzy.app: the KYC selfie step embeds Signzy's hosted liveness journey in an iframe
+  // (liveliness[-preproduction].signzy.app).
+  "frame-src 'self' https://*.signzy.app",
   "frame-ancestors 'self'",
   "form-action 'self'",
   "base-uri 'self'",
@@ -50,8 +52,16 @@ const nextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // camera=(self): the KYC selfie step uses getUserMedia; keep it same-origin-only.
-          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+          // camera: the KYC selfie step uses getUserMedia same-origin AND delegates the camera to
+          // Signzy's liveness iframe — a cross-origin frame only gets the camera if the top-level
+          // policy names its origin here (allow="camera" on the <iframe> alone is not enough).
+          // geolocation=(self): the address step reverse-geocodes the borrower's live position;
+          // an empty allowlist made getCurrentPosition fail with PERMISSION_DENIED every time.
+          {
+            key: "Permissions-Policy",
+            value:
+              'camera=(self "https://liveliness.signzy.app" "https://liveliness-preproduction.signzy.app"), microphone=(), geolocation=(self)',
+          },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
       },

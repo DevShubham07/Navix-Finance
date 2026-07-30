@@ -63,10 +63,16 @@ export default function SignupAddressPage() {
     setBusy(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => { void verifyCoords(pos.coords.latitude, pos.coords.longitude); },
-      () => {
+      (err) => {
         setBusy(false);
         setMode("manual");
-        setError("We couldn't access your location — please enter your address instead.");
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission is blocked — allow it in your browser's site settings, or enter your address below."
+            : err.code === err.TIMEOUT
+              ? "Getting your location took too long — please enter your address instead."
+              : "We couldn't access your location — please enter your address instead.",
+        );
       },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
     );
