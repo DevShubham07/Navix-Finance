@@ -244,7 +244,7 @@ class SignzyClientsTest {
     @Test
     void digilockerCreateUrlAndEAadhaar() {
         Bound b = bind();
-        stub(b.server(), "/api/v3/digilocker/createUrl", """
+        stub(b.server(), "/api/v3/digilocker-v2/createUrl", """
                 {"result":{"url":"https://api.digitallocker.gov.in/.../authorize?state=REQ-1","requestId":"REQ-1"}}
                 """);
         DigiLockerSession s = new SignzyDigiLockerClient(b.restClient())
@@ -254,11 +254,11 @@ class SignzyClientsTest {
         b.server().verify();
 
         Bound b2 = bind();
-        stub(b2.server(), "/api/v3/digilocker/geteaadhaarwithxml", """
+        stub(b2.server(), "/api/v3/digilocker-v2/geteAadhaar", """
                 {"result":{"name":"  NAME","uid":"xxxxxxxx0353","dob":"01/01/1990","gender":"FEMALE",
                 "x509Data":{"validAadhaarDSC":"yes"},"address":"addr",
                 "splitAddress":{"state":[["TAMIL NADU","TN"]],"pincode":"612001"},
-                "photo":"https://persist.signzy.tech/p.jpeg","xmlFileLink":"https://persist.signzy.tech/a.xml"}}
+                "photo":"https://persist.signzy.tech/p.jpeg","eAadhaarXmlLink":"https://persist.signzy.tech/a.xml"}}
                 """);
         AadhaarResponse a = new SignzyDigiLockerClient(b2.restClient()).getEAadhaar("REQ-1");
         assertThat(a.fullName()).isEqualTo("NAME");

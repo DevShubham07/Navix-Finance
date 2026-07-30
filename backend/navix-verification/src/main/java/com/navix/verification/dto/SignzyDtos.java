@@ -183,15 +183,20 @@ public final class SignzyDtos {
         }
     }
 
-    // ---- DigiLocker createUrl : /api/v3/digilocker/createUrl ----
+    // ---- DigiLocker createUrl : /api/v3/digilocker-v2/createUrl ----
+    // v2 takes a real redirectUrl (v1 had to smuggle it through internalId) and adds
+    // pinlessAuthentication (skips the DigiLocker security PIN) + shortenUrl.
     public record DigiLockerCreateUrlRequest(
             @JsonProperty("signup") boolean signup,
+            @JsonProperty("pinlessAuthentication") boolean pinlessAuthentication,
+            @JsonProperty("redirectUrl") String redirectUrl,
             @JsonProperty("callbackUrl") String callbackUrl,
             @JsonProperty("successRedirectUrl") String successRedirectUrl,
-            @JsonProperty("docType") List<String> docType,
+            @JsonProperty("failureRedirectUrl") String failureRedirectUrl,
             @JsonProperty("purpose") String purpose,
             @JsonProperty("getScope") boolean getScope,
             @JsonProperty("internalId") String internalId,
+            @JsonProperty("shortenUrl") boolean shortenUrl,
             @JsonProperty("getEAadhaarPdf") boolean getEAadhaarPdf,
             @JsonProperty("getEAadhaarJpeg") boolean getEAadhaarJpeg) {
     }
@@ -203,9 +208,11 @@ public final class SignzyDtos {
     ) {
     }
 
-    // ---- DigiLocker get e-Aadhaar with XML : /api/v3/digilocker/geteaadhaarwithxml ----
+    // ---- DigiLocker get e-Aadhaar : /api/v3/digilocker-v2/geteAadhaar ----
+    // extraDigitalCertificateParams asks for the x509Data block carrying validAadhaarDSC (the PASS gate).
     public record GetEAadhaarRequest(
             @JsonProperty("requestId") String requestId,
+            @JsonProperty("extraDigitalCertificateParams") boolean extraDigitalCertificateParams,
             @JsonProperty("getEAadhaarPdf") boolean getEAadhaarPdf,
             @JsonProperty("getEAadhaarJpeg") boolean getEAadhaarJpeg) {
     }
