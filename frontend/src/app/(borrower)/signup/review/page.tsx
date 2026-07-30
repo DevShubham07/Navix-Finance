@@ -45,6 +45,7 @@ function stepRoute(checkType: string): string | null {
     DIGILOCKER: "/signup/digilocker",
     AADHAAR: "/signup/digilocker", // Aadhaar is fetched via DigiLocker
     BUREAU: "/signup/bureau",
+    BUREAU_CONSENT: "/signup/pan-consent",
     SALARY: "/signup/salary",
     PENNY_DROP: "/signup/penny-drop",
     SELFIE: "/signup/selfie",

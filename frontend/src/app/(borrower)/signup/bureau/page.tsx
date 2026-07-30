@@ -73,7 +73,7 @@ export default function SignupBureauPage() {
       </div>
 
       <div className="mt-8">
-        <a href="/signup/pan" className="btn btn-outline btn-sm">Back</a>
+        <a href="/signup/pan-consent" className="btn btn-outline btn-sm">Back</a>
       </div>
       <Reassurance />
     </div>

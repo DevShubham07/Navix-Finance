@@ -6,9 +6,7 @@ import { ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { StepResultBanner } from "@/components/borrower/step-result-banner";
-import { useOnboarding, saveProfileSlice, nextAfterStep } from "@/lib/onboarding";
-import { verificationApi, type StepResult } from "@/lib/api/applications";
+import { useOnboarding, saveProfileSlice } from "@/lib/onboarding";
 import { formatApiError } from "@/lib/api/errors";
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
@@ -17,10 +15,8 @@ export default function SignupPanPage() {
   const router = useRouter();
   const { mounted, draft, appId } = useOnboarding();
   const [pan, setPan] = React.useState("");
-  const [consent, setConsent] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const [result, setResult] = React.useState<StepResult | null>(null);
   const [error, setError] = React.useState<string>();
 
   React.useEffect(() => {
@@ -36,18 +32,20 @@ export default function SignupPanPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!panOk || !consent) { setTouched(true); return; }
+    if (!panOk) { setTouched(true); return; }
     if (appId == null) return;
     setBusy(true);
     setError(undefined);
     draft.patch({ pan });
     try {
       await saveProfileSlice(appId, { pan });
-      const r = await verificationApi.pan(appId, pan);
-      setResult(r);
-      if (r.status === "PASS" || r.status === "REVIEW") router.push(nextAfterStep("/signup/bureau"));
+      // The PAN is only SAVED here — it is fetched on the next step, after the borrower has
+      // OTP-verified their consent to the bureau enquiry. Forward the query string rather than
+      // using nextAfterStep: `?return=review` has to survive to the consent step, which owns the
+      // navigation decision once the fetch actually happens.
+      router.push(`/signup/pan-consent${window.location.search}`);
     } catch (err) {
-      setError(formatApiError(err, "Could not verify your PAN — please try again."));
+      setError(formatApiError(err, "Could not save your PAN — please try again."));
     } finally {
       setBusy(false);
     }
@@ -74,17 +72,9 @@ export default function SignupPanPage() {
           <ShieldCheck size={16} className="mt-0.5 flex-shrink-0 text-success-600" />
           Used only for identity and credit verification.
         </p>
-        <label className="checkbox mt-5">
-          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
-          <span>I authorize the retrieval of my CRIF High Mark credit report for verification and assessment purposes.</span>
-        </label>
-        {touched && !consent ? (
-          <p className="mt-2 text-sm text-error-600">Please provide your consent to continue.</p>
-        ) : null}
-        <StepResultBanner result={result} />
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>
-      <WizardActions backHref="/signup/digilocker" submit continueLabel={result?.status === "FAIL" ? "Try again" : "Verify & continue"} loading={busy} disabled={busy || !consent} />
+      <WizardActions backHref="/signup/digilocker" submit continueLabel="Continue" loading={busy} disabled={busy} />
       <Reassurance />
     </form>
   );

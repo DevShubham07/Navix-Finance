@@ -1,6 +1,7 @@
 package com.navix.auth;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.verification.OtpVerifierPort;
 import com.navix.sms.SmsException;
 import com.navix.sms.SmsProperties;
 import com.navix.sms.UltronSmsClient;
@@ -24,7 +25,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
-public class BorrowerOtpService {
+public class BorrowerOtpService implements OtpVerifierPort {
 
     private static final Logger log = LoggerFactory.getLogger(BorrowerOtpService.class);
     private static final int MAX_ATTEMPTS = 5;
@@ -77,6 +78,7 @@ public class BorrowerOtpService {
     }
 
     /** Verify (and consume) the OTP for {@code mobile}. */
+    @Override
     public boolean verify(String mobile, String code) {
         String number = normalize(mobile);
         // Mock mode: the fixed code always verifies (even if the store entry lapsed).

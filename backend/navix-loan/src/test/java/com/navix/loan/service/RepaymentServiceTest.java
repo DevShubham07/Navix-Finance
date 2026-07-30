@@ -47,12 +47,23 @@ class RepaymentServiceTest {
                 applicationFlowService, settlementDirectory, event -> {});
     }
 
+    /**
+     * A loan due TODAY, disbursed 27 days ago — 1,000,000 principal + 1%/day × 27 = 1,270,000.
+     *
+     * <p>Dates are relative on purpose. With absolute ones this fixture silently rots: once the due
+     * date slides into the past, {@code outstandingAsOf} adds a 2%/day late penalty, the balance
+     * exceeds totalRepayable, and the "fully paid closes the loan" test fails for a reason that has
+     * nothing to do with the code under test. Anchor to now() and the tenure stays 27 days forever.
+     */
+    private static final LocalDate DUE = LocalDate.now();
+    private static final LocalDate DISBURSED = DUE.minusDays(27);
+
     private Loan activeLoan() {
         Loan loan = new Loan();
         loan.setCustomerId(7L);
         loan.setPrincipal(1_000_000L);
-        loan.setDisbursedOn(LocalDate.of(2026, 6, 3));
-        loan.setDueDate(LocalDate.of(2026, 6, 30)); // 27-day tenure
+        loan.setDisbursedOn(DISBURSED);
+        loan.setDueDate(DUE); // 27-day tenure
         loan.setTotalRepayable(1_270_000L);
         loan.setOutstanding(1_270_000L);
         loan.setStatus(LoanStatus.ACTIVE);
@@ -65,8 +76,7 @@ class RepaymentServiceTest {
         when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(0L);
         when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        Payment p = repaymentService.recordPayment(1L, 500_000L, PaymentMethod.UPI, "TXN1", null,
-                LocalDate.of(2026, 6, 30));
+        Payment p = repaymentService.recordPayment(1L, 500_000L, PaymentMethod.UPI, "TXN1", null, DUE);
 
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.PENDING_VERIFICATION);
         assertThat(p.getAmount()).isEqualTo(500_000L);
@@ -155,11 +165,11 @@ class RepaymentServiceTest {
         when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
         when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
 
-        // Prepay on day 10 (13 Jun): interest only to day 10 → ₹11,000
-        assertThat(repaymentService.outstandingAsOf(1L, LocalDate.of(2026, 6, 13))).isEqualTo(1_100_000L);
+        // Prepay on day 10: interest only to day 10 → ₹11,000
+        assertThat(repaymentService.outstandingAsOf(1L, DISBURSED.plusDays(10))).isEqualTo(1_100_000L);
 
-        // Overdue on 5 Jul: full 27d interest + penalty for (5 − 1 grace) = 4 days
-        assertThat(repaymentService.outstandingAsOf(1L, LocalDate.of(2026, 7, 5))).isEqualTo(1_350_000L);
+        // 5 days past due: full 27d interest + penalty for (5 − 1 grace) = 4 days
+        assertThat(repaymentService.outstandingAsOf(1L, DUE.plusDays(5))).isEqualTo(1_350_000L);
     }
 
     @Test
@@ -167,16 +177,16 @@ class RepaymentServiceTest {
         when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
         when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
 
-        // On time (13 Jun, day 10): interest ₹1,000, no penalty.
-        var onTime = repaymentService.outstandingBreakdownAsOf(1L, LocalDate.of(2026, 6, 13));
+        // On time (day 10): interest ₹1,000, no penalty.
+        var onTime = repaymentService.outstandingBreakdownAsOf(1L, DISBURSED.plusDays(10));
         assertThat(onTime.interestPaise()).isEqualTo(100_000L);
         assertThat(onTime.penaltyPaise()).isZero();
         assertThat(onTime.verifiedPaise()).isZero();
         assertThat(onTime.outstandingPaise()).isEqualTo(1_100_000L);
         assertThat(onTime.settledAmountPaise()).isNull();
 
-        // Overdue (5 Jul): full 27d interest ₹2,700 + penalty for (5 − 1 grace) = 4 days → ₹800.
-        var overdue = repaymentService.outstandingBreakdownAsOf(1L, LocalDate.of(2026, 7, 5));
+        // Overdue (5 days past due): full 27d interest ₹2,700 + penalty for (5 − 1 grace) = 4 days → ₹800.
+        var overdue = repaymentService.outstandingBreakdownAsOf(1L, DUE.plusDays(5));
         assertThat(overdue.interestPaise()).isEqualTo(270_000L);
         assertThat(overdue.penaltyPaise()).isEqualTo(80_000L);
         assertThat(overdue.outstandingPaise()).isEqualTo(1_350_000L);
@@ -189,7 +199,7 @@ class RepaymentServiceTest {
         // Head approved a ₹7,000 full-and-final on a ₹12,700 due loan → borrower owes the settled amount.
         when(settlementDirectory.approvedSettlementAmount(1L)).thenReturn(Optional.of(700_000L));
 
-        assertThat(repaymentService.outstandingAsOf(1L, LocalDate.of(2026, 6, 30))).isEqualTo(700_000L);
+        assertThat(repaymentService.outstandingAsOf(1L, DUE)).isEqualTo(700_000L);
     }
 
     @Test
@@ -199,7 +209,7 @@ class RepaymentServiceTest {
         // A settlement above the real balance is a no-op: the borrower still owes only the lower formula amount.
         when(settlementDirectory.approvedSettlementAmount(1L)).thenReturn(Optional.of(2_000_000L));
 
-        assertThat(repaymentService.outstandingAsOf(1L, LocalDate.of(2026, 6, 30))).isEqualTo(1_270_000L);
+        assertThat(repaymentService.outstandingAsOf(1L, DUE)).isEqualTo(1_270_000L);
     }
 
     @Test

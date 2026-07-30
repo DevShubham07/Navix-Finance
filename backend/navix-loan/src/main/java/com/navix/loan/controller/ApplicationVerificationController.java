@@ -5,6 +5,7 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.VerificationDtos.AddressVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.AgreementRequest;
+import com.navix.loan.dto.VerificationDtos.BureauConsentRequest;
 import com.navix.loan.dto.VerificationDtos.DigilockerInitRequest;
 import com.navix.loan.dto.VerificationDtos.EmailVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.PanVerifyRequest;
@@ -122,6 +123,14 @@ public class ApplicationVerificationController {
     public ApiResponse<StepResult> agreement(@PathVariable Long id, @RequestBody AgreementRequest req) {
         authorize(id);
         return ApiResponse.ok(verification.recordAgreement(id, req.versions()));
+    }
+
+    /** OTP-verified credit-bureau consent — runs before the PAN fetch in the borrower wizard. */
+    @PostMapping("/bureau-consent")
+    public ApiResponse<StepResult> bureauConsent(@PathVariable Long id,
+                                                 @Valid @RequestBody BureauConsentRequest req) {
+        authorize(id);
+        return ApiResponse.ok(verification.recordBureauConsent(id, req.otp(), req.consentText()));
     }
 
     @GetMapping("/summary")

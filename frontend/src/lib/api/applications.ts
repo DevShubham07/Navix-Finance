@@ -724,6 +724,13 @@ export const verificationApi = {
   agreement: (id: number, versions: AgreementVersion[]) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/agreement`, "POST", { versions }),
 
+  /**
+   * Record OTP-verified consent to the credit-bureau enquiry. Runs BEFORE the PAN fetch; the OTP is
+   * verified server-side against the mobile on file (never one supplied by the client).
+   */
+  bureauConsent: (id: number, otp: string, consentText: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau-consent`, "POST", { otp, consentText }),
+
   /** The full verification status board for this application. */
   summary: (id: number) => bff<StepResult[]>(`${BORROWER_BASE}/${id}/verify/summary`, "GET"),
 

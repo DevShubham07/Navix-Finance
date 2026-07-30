@@ -8,6 +8,7 @@ import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
@@ -63,6 +64,12 @@ public class ApplicationVerificationService {
     public static final String PENNY_DROP = "PENNY_DROP";
     public static final String SELFIE = "SELFIE";
     public static final String AGREEMENT = "AGREEMENT";
+    /**
+     * The borrower's OTP-verified consent to the credit-bureau enquiry. Deliberately NOT in
+     * {@link #REQUIRED} (that would wedge every application whose PAN passed before this shipped)
+     * nor in {@link #KNOWN_CHECKS} (staff must not be able to manually assert a borrower's consent).
+     */
+    public static final String BUREAU_CONSENT = "BUREAU_CONSENT";
 
     // ---- statuses ----
     public static final String PASS = "PASS";
@@ -86,6 +93,7 @@ public class ApplicationVerificationService {
     private final LoanApplicationRepository applicationRepo;
     private final ApplicationDocumentRepository documentRepo;
     private final VerificationPort verification;
+    private final OtpVerifierPort otpVerifier;
     private final DocumentStoragePort storage;
     private final RiskPort risk;
     private final ObjectMapper objectMapper;
@@ -823,6 +831,36 @@ public class ApplicationVerificationService {
         derived.put("versions", versions != null ? versions : List.of());
         return view(upsert(appId, AGREEMENT, PASS, "DhanBoost", null, ref(appId, AGREEMENT),
                 null, null, null, derived, "Agreement accepted"));
+    }
+
+    /**
+     * Record the borrower's consent to the credit-bureau enquiry, step-up verified by their mobile OTP.
+     *
+     * <p>This is a check type of its own rather than extra {@code derived} data on the PAN row, because
+     * {@link #verifyPan} short-circuits on an already-PASSed PAN — hanging the consent there would
+     * silently drop it on every re-entry (a review-initiated retry, or the borrower backing up), which
+     * is precisely when an audit trail must not lose a write. A separate row also carries its own
+     * timestamps, which is what makes it evidence.
+     *
+     * <p>The mobile is resolved from the stored profile, never from the request: taking it from the
+     * client would let a caller verify a code sent to a number they control.
+     */
+    @Transactional
+    public StepResult recordBureauConsent(Long appId, String otp, String consentText) {
+        CustomerProfile profile = profile(appId);
+        String mobile = profile.getMobile();
+        if (mobile == null || mobile.isBlank()) {
+            throw new BusinessException("MOBILE_MISSING",
+                    "No mobile on file for this application — complete the mobile step first");
+        }
+        if (!otpVerifier.verify(mobile, otp)) {
+            throw new BusinessException("INVALID_OTP", "Invalid or expired OTP");
+        }
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("consentText", consentText);
+        derived.put("channel", "OTP");
+        return view(upsert(appId, BUREAU_CONSENT, PASS, "DhanBoost", null, ref(appId, BUREAU_CONSENT),
+                null, null, null, derived, "Bureau consent given (OTP verified)"));
     }
 
     // ---------------------------------------------------------------- gating + summary

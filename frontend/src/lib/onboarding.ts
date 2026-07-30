@@ -16,7 +16,8 @@ export const ONBOARDING_STEPS: Array<{ seg: string; label: string }> = [
   { seg: "email", label: "Email & employer" },
   { seg: "address", label: "Current address" },
   { seg: "digilocker", label: "DigiLocker KYC" },
-  { seg: "pan", label: "PAN verification" },
+  { seg: "pan", label: "PAN details" },
+  { seg: "pan-consent", label: "Consent & OTP" },
   { seg: "bureau", label: "Credit check" },
   { seg: "salary", label: "Salary & slip" },
   { seg: "penny-drop", label: "Bank verification" },
@@ -24,6 +25,15 @@ export const ONBOARDING_STEPS: Array<{ seg: string; label: string }> = [
   { seg: "agreement", label: "Agreements" },
   { seg: "review", label: "Review & submit" },
 ];
+
+/**
+ * The credit-bureau consent wording. Single source of truth: the consent step renders this string
+ * AND sends it to the backend, which stores it verbatim on the audit row — so what was displayed and
+ * what was recorded cannot drift apart. Changing this text changes what future consents record; past
+ * rows keep the wording that was actually shown at the time.
+ */
+export const BUREAU_CONSENT_TEXT =
+  "I authorize the retrieval of my CRIF High Mark credit report for verification and assessment purposes.";
 
 /** The three legal documents shown on the agreement step. */
 export const AGREEMENT_DOCS: Array<{ key: string; version: string; title: string; href: string }> = [
