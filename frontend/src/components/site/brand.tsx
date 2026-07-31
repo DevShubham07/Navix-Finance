@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * DhanBoost wordmark + emblem mark. The mark renders the brand icon
- * (`/navix-mark.png`) inside the navy tile; used in the header, footer and
- * staff sidebar.
+ * (`/navix-mark.png` — the green tile art, which supplies its own background);
+ * used in the header, footer and staff sidebar.
  */
 export function Brand({
   href = "/",

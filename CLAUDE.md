@@ -8,10 +8,15 @@
 > `navixfinance@gmail.com`). The **legal entity** stays `NAVIX Finance Private Limited` (CIN
 > `U64990HR2026PTC144926`). The **live SES-verified email domain is still `navixfinance.com`** and
 > the DLT/telecom template registrations are still filed under NAVIX — so this doc, `aws.md`, and the
-> integration/regulatory guides under `docs/` intentionally keep those `navix` identifiers. Two
-> follow-ups remain outside code: (1) a real **DhanBoost logo asset** (the wordmark is renamed but
-> `frontend/public/navix-mark.png` still shows the old emblem); (2) registering + SES-verifying
-> `dhanboost.com` before email `From: @dhanboost.com` will actually deliver.
+> integration/regulatory guides under `docs/` intentionally keep those `navix` identifiers. The
+> **real DhanBoost logo shipped 2026-07-31** — the green rupee/growth-arrow art, cut from
+> `docs/brand/dhanboost-logo-sheet.jpeg`: the app-icon tile lives at `frontend/public/navix-mark.png`
+> (+ `-64`, `src/app/icon.png`, `apple-icon.png`) and the transparent standalone mark at
+> `frontend/public/dhanboost-mark.png` (schema.org logo + the PDF-header base64 in
+> `lib/export/brand-mark.ts`). The tile supplies its own background, so `.brand-mark--img` /
+> `.logo--img` / `.offer-logo` deliberately carry **no** navy plate. One follow-up remains outside
+> code: registering + SES-verifying `dhanboost.com` before email `From: @dhanboost.com` will
+> actually deliver.
 > Below, "NAVIX" in infra/namespace contexts = the retained internal name; the product is DhanBoost.
 
 Guidance for Claude Code (and any human) working in this repo. This file is the **single

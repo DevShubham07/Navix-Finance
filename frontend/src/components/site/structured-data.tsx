@@ -25,8 +25,10 @@ export function StructuredData() {
         name: BRAND.shortName,
         legalName: BRAND.legalName,
         url: BASE,
-        logo: `${BASE}/navix-mark.png`,
-        image: `${BASE}/navix-mark.png`,
+        // The transparent standalone mark, not the app-icon tile — search results
+        // render the logo on their own (light) background.
+        logo: `${BASE}/dhanboost-mark.png`,
+        image: `${BASE}/dhanboost-mark.png`,
         telephone: BRAND.phone,
         email: BRAND.email,
         address: {

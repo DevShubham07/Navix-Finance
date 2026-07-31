@@ -214,8 +214,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 .brand-mark svg { width: 24px; height: 24px; }
 .brand-mark .bm-n { font-family: var(--serif); font-weight: 700; font-size: 1.5rem; color: #fff; line-height: 1; }
 .brand-mark::after { content: ""; position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%); width: 16px; height: 3px; background: var(--gold); border-radius: 2px; }
-/* Image emblem variant: the icon fills the navy tile; drop the gold underbar. */
-.brand-mark--img { background: var(--navy); padding: 4px; }
+/* Image emblem variant: the DhanBoost icon carries its own green tile, so no
+   navy plate behind it and no gold underbar. */
+.brand-mark--img { background: none; padding: 0; }
 .brand-mark--img img { width: 100%; height: 100%; object-fit: contain; }
 .brand-mark--img::after { content: none; }
 .nav-apply-mobile { display: none; }

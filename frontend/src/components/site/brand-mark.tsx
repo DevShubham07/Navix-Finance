@@ -1,9 +1,9 @@
 import Image from "next/image";
 
 /**
- * DhanBoost emblem — the official brand mark (the gold/silver compass-shield, same
- * image as the favicon `app/icon.png` and the borrower/staff app `Brand`). Kept
- * consistent across marketing + app; do not swap back to a plain star.
+ * DhanBoost emblem — the official brand mark (the green rupee/growth-arrow tile, same
+ * image as the favicon `app/icon.png` and the borrower/staff app `Brand`). The art
+ * carries its own tile, so `.logo--img` drops the navy plate behind it.
  */
 export function BrandMark() {
   return (
