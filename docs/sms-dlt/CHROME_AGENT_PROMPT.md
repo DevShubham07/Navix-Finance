@@ -18,7 +18,7 @@ needs nothing else. (Mirror of `dlt-templates.json`; if they ever differ, `dlt-t
   inside the body; if DhanBoost isn't registered, every submit is rejected with *"Entity brand name is
   not mentioned in the SMS content"*. **If unsure, STOP and ask before submitting anything.**
 - The 6-char header **`DHANBT`** is registered and active under the entity (replaces the retired `NAVIXF`).
-- **`dhanboost.com` is a live registered domain** and the URL **`https://www.dhanboost.com/login`** is
+- **`dhanboost.com` is a live registered domain** and the URL **`https://dhanboost.com/login`** is
   **URL-whitelisted** under the entity. Every template except the OTP (#1) contains this link; an
   un-whitelisted URL → rejection.
 
@@ -39,7 +39,7 @@ needs nothing else. (Mirror of `dlt-templates.json`; if they ever differ, `dlt-t
    STOP and ask.
 2. **Paste the CONTENT string EXACTLY** — character-for-character. It must: contain the brand name
    `DhanBoost`; end with ` - DhanBoost`; have NO double spaces and NO trailing space; keep the
-   URL exactly `https://www.dhanboost.com/login`.
+   URL exactly `https://dhanboost.com/login`.
 3. **Variables**: the token is exactly `{#var#}` (with hashes). Prefer pasting the whole content so the
    `{#var#}` tokens auto-register as variables. If the portal needs the "Add Variable" button instead,
    type the static text and insert a variable at each `{#var#}` position, left-to-right, in order.
@@ -76,73 +76,73 @@ NOTE: OTP is intentionally link-free (no URL). Register it FIRST — it is the o
 send before `dhanboost.com` exists, and it unblocks borrower login.
 
 **[2] DHANBOOST_KYC_APPROVED_V1 — Service Implicit**
-CONTENT: `Your KYC is verified with DhanBoost. Log in at https://www.dhanboost.com/login to choose your loan amount. - DhanBoost`
+CONTENT: `Your KYC is verified with DhanBoost. Log in at https://dhanboost.com/login to choose your loan amount. - DhanBoost`
 VARS: none
 
 **[3] DHANBOOST_KYC_REJECTED_V1 — Service Implicit**
-CONTENT: `We could not verify your KYC with DhanBoost. Log in at https://www.dhanboost.com/login to review and resubmit. - DhanBoost`
+CONTENT: `We could not verify your KYC with DhanBoost. Log in at https://dhanboost.com/login to review and resubmit. - DhanBoost`
 VARS: none
 
 **[4] DHANBOOST_KYC_REMINDER_V1 — Service Implicit**
-CONTENT: `Your verification with DhanBoost is incomplete. Log in at https://www.dhanboost.com/login to complete your pending steps. - DhanBoost`
+CONTENT: `Your verification with DhanBoost is incomplete. Log in at https://dhanboost.com/login to complete your pending steps. - DhanBoost`
 VARS: none
 
 **[5] DHANBOOST_LOAN_DISBURSED_V1 — Service Implicit**
-CONTENT: `DhanBoost has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://www.dhanboost.com/login. - DhanBoost`
+CONTENT: `DhanBoost has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://dhanboost.com/login. - DhanBoost`
 VARS:
 1. net amount disbursed | Amount | `Rs. 8,820`
 2. total repayable amount | Amount | `Rs. 12,700`
 3. due date | Date | `30 Jun 2026`
 
 **[6] DHANBOOST_REPAYMENT_VERIFIED_V1 — Service Implicit**
-CONTENT: `Your payment of {#var#} to DhanBoost is confirmed. Outstanding balance is {#var#}. View details at https://www.dhanboost.com/login. - DhanBoost`
+CONTENT: `Your payment of {#var#} to DhanBoost is confirmed. Outstanding balance is {#var#}. View details at https://dhanboost.com/login. - DhanBoost`
 VARS:
 1. payment amount | Amount | `Rs. 5,000`
 2. remaining outstanding balance | Amount | `Rs. 7,700`
 
 **[7] DHANBOOST_REPAYMENT_REJECTED_V1 — Service Implicit**
-CONTENT: `Your payment of {#var#} could not be verified by DhanBoost. Log in at https://www.dhanboost.com/login to check and record it again. - DhanBoost`
+CONTENT: `Your payment of {#var#} could not be verified by DhanBoost. Log in at https://dhanboost.com/login to check and record it again. - DhanBoost`
 VARS:
 1. payment amount | Amount | `Rs. 5,000`
 
 **[8] DHANBOOST_PAYMENT_DUE_SOON_V1 — Service Implicit**
-CONTENT: `Your DhanBoost payment of {#var#} is due in {#var#} day(s) on {#var#}. Pay at https://www.dhanboost.com/login from your salary day, no penalty. - DhanBoost`
+CONTENT: `Your DhanBoost payment of {#var#} is due in {#var#} day(s) on {#var#}. Pay at https://dhanboost.com/login from your salary day, no penalty. - DhanBoost`
 VARS:
 1. amount due | Amount | `Rs. 12,700`
 2. days until due | Number | `3`
 3. due date | Date | `30 Jun 2026`
 
 **[9] DHANBOOST_PAYMENT_OVERDUE_V1 — Service Implicit**
-CONTENT: `Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay at https://www.dhanboost.com/login to stop the penalty and protect your score. - DhanBoost`
+CONTENT: `Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay at https://dhanboost.com/login to stop the penalty and protect your score. - DhanBoost`
 VARS:
 1. overdue amount | Amount | `Rs. 12,700`
 2. days overdue | Number | `5`
 
 **[10] DHANBOOST_LOAN_CLOSED_V1 — Service Implicit**
-CONTENT: `Your loan with DhanBoost is fully repaid and closed. Thank you. Visit https://www.dhanboost.com/login to borrow again. - DhanBoost`
+CONTENT: `Your loan with DhanBoost is fully repaid and closed. Thank you. Visit https://dhanboost.com/login to borrow again. - DhanBoost`
 VARS: none
 
 **[11] DHANBOOST_APPLICATION_DECLINED_V1 — Service Implicit**
-CONTENT: `DhanBoost is unable to approve your loan application at this time. Visit https://www.dhanboost.com/login for details. - DhanBoost`
+CONTENT: `DhanBoost is unable to approve your loan application at this time. Visit https://dhanboost.com/login for details. - DhanBoost`
 VARS: none
 NOTE: ONE template reused for BOTH the credit rejection and the reborrow rejection — register once;
 its single DLT Template ID is bound to both notification types in the backend.
 
 **[12] DHANBOOST_SETTLEMENT_APPROVED_V1 — Service Implicit**
-CONTENT: `A full and final settlement of {#var#} is approved on your DhanBoost loan. Pay at https://www.dhanboost.com/login to close the loan. - DhanBoost`
+CONTENT: `A full and final settlement of {#var#} is approved on your DhanBoost loan. Pay at https://dhanboost.com/login to close the loan. - DhanBoost`
 VARS:
 1. settlement amount | Amount | `Rs. 9,000`
 
 **[13] DHANBOOST_REBORROW_APPROVED_V1 — Service Implicit**
-CONTENT: `Your loan application with DhanBoost is approved. Log in at https://www.dhanboost.com/login to choose your amount. - DhanBoost`
+CONTENT: `Your loan application with DhanBoost is approved. Log in at https://dhanboost.com/login to choose your amount. - DhanBoost`
 VARS: none
 
 **[14] DHANBOOST_REBORROW_PREAPPROVED_V1 — Service Implicit  ⚠ BORDERLINE — PAUSE & ASK BEFORE SUBMIT**
-CONTENT: `Welcome back to DhanBoost. You can apply for another loan now. Log in at https://www.dhanboost.com/login to choose your amount. - DhanBoost`
+CONTENT: `Welcome back to DhanBoost. You can apply for another loan now. Log in at https://dhanboost.com/login to choose your amount. - DhanBoost`
 VARS: none
 
 **[15] DHANBOOST_REFERRAL_REWARD_CREDITED_V1 — Service Implicit  ⚠ BORDERLINE — PAUSE & ASK BEFORE SUBMIT**
-CONTENT: `Your DhanBoost referral reward of {#var#} is credited with reference {#var#}. Log in at https://www.dhanboost.com/login to view it. - DhanBoost`
+CONTENT: `Your DhanBoost referral reward of {#var#} is credited with reference {#var#}. Log in at https://dhanboost.com/login to view it. - DhanBoost`
 VARS:
 1. referral reward amount | Amount | `Rs. 500`
 2. payout transaction reference | Number | `TXN123456`

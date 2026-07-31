@@ -24,7 +24,7 @@ content templates on the **SmartPing** entity portal. Everything the agent needs
 - **`DhanBoost` is registered as a brand under the entity** — without it, DLT rejects every submit for
   a missing entity brand name. If unsure, STOP and ask.
 - Header **`DHANBT`** is registered and active (replaces the retired `NAVIXF`).
-- **`dhanboost.com` is live** and the URL **`https://www.dhanboost.com/login`** is **URL-whitelisted**
+- **`dhanboost.com` is live** and the URL **`https://dhanboost.com/login`** is **URL-whitelisted**
   under the entity (every template here contains this link; an un-whitelisted URL → rejection).
 
 ## Entity / sender settings
@@ -47,7 +47,7 @@ content templates on the **SmartPing** entity portal. Everything the agent needs
 2. Set the **template name** exactly as given below.
 3. **Paste the CONTENT string EXACTLY** — character-for-character. It must: contain the brand name
    `DhanBoost`; end with ` - DhanBoost`; have NO double spaces and NO trailing space; keep the
-   URL exactly `https://www.dhanboost.com/login`.
+   URL exactly `https://dhanboost.com/login`.
 4. **Variables:** all 4 templates are **variable-free** (no `{#var#}` tokens). Do not add any variable.
    If the form requires at least one variable, STOP and ask — do not invent one.
 5. **Before submitting each one**, use `read_page` to confirm the message-box text equals the CONTENT
@@ -70,19 +70,19 @@ content templates on the **SmartPing** entity portal. Everything the agent needs
 Format: `[#] NAME — CATEGORY` / `CONTENT:` (submit this) / `VARS:`
 
 **[1] DHANBOOST_KYC_APPROVED_V1_ALT — Service Implicit**
-CONTENT: `Your KYC verification with DhanBoost is complete. Log in at https://www.dhanboost.com/login to continue your loan application. - DhanBoost`
+CONTENT: `Your KYC verification with DhanBoost is complete. Log in at https://dhanboost.com/login to continue your loan application. - DhanBoost`
 VARS: none
 
 **[2] DHANBOOST_REBORROW_APPROVED_V1_ALT — Service Implicit**
-CONTENT: `Your loan application with DhanBoost is approved. Log in at https://www.dhanboost.com/login to view the details and next steps. - DhanBoost`
+CONTENT: `Your loan application with DhanBoost is approved. Log in at https://dhanboost.com/login to view the details and next steps. - DhanBoost`
 VARS: none
 
 **[3] DHANBOOST_LOAN_CLOSED_V1_ALT — Service Implicit**
-CONTENT: `Your loan with DhanBoost is fully repaid and closed. Log in at https://www.dhanboost.com/login to view your loan closure statement. - DhanBoost`
+CONTENT: `Your loan with DhanBoost is fully repaid and closed. Log in at https://dhanboost.com/login to view your loan closure statement. - DhanBoost`
 VARS: none
 
 **[4] DHANBOOST_REBORROW_PREAPPROVED_V1_ALT — Service Implicit**
-CONTENT: `Your DhanBoost account review is complete and your eligibility is updated. Log in at https://www.dhanboost.com/login to view your account status. - DhanBoost`
+CONTENT: `Your DhanBoost account review is complete and your eligibility is updated. Log in at https://dhanboost.com/login to view your account status. - DhanBoost`
 VARS: none
 
 ---

@@ -3,7 +3,9 @@
 To be submitted to the STPL DLT portal as **NAVIX FINANCE PRIVATE LIMITED** (legal entity unchanged),
 brand **DhanBoost**, sender **DHANBT**, PE-ID `1701178039634361131`.
 
-**Status: not yet submitted — 0 of 15 registered.**
+**Status: all 15 SUBMITTED 2026-07-31 21:00–21:17 IST via the SmartPing PE portal.**
+1 Active · 14 "Work In Progress" (awaiting operator approval). **No DLT Template IDs assigned yet** —
+the listing shows them only once a template is approved; re-check and fill the table below.
 
 > Reminder: **#11 is one template bound to TWO NotificationTypes** — map its single ID to both
 > `CREDIT_REJECTED` and `REBORROW_REVIEW_REJECTED`.
@@ -12,10 +14,15 @@ brand **DhanBoost**, sender **DHANBT**, PE-ID `1701178039634361131`.
 
 | # | Blocker | Status |
 |---|---|---|
-| 1 | Register the domain **dhanboost.com** (every non-OTP template links to it) | ✅ live — both `dhanboost.com` and `www.dhanboost.com` serve 200 (verified 2026-07-31) |
-| 2 | Register **DhanBoost** as a brand under the entity on the DLT portal | ❌ pending |
-| 3 | Register/activate the 6-char header **DHANBT** (replaces retired `NAVIXF`) | ❌ pending |
-| 4 | URL-whitelist **`https://www.dhanboost.com/login`** char-for-char | ❌ pending |
+| 1 | Register the domain **dhanboost.com** (every non-OTP template links to it) | ✅ live — apex + `www` both serve 200 (verified 2026-07-31) |
+| 2 | Register **DhanBoost** as a brand under the entity on the DLT portal | ✅ effectively — every submit was accepted with `DhanBoost` in the body |
+| 3 | Register/activate the 6-char header **DHANBT** | ✅ Active, Permanent, registered 31/07/2026 17:34 (`NAVIXF` also still Active) |
+| 4 | URL-whitelist the login URL char-for-char | ✅ CTA `dhanboost login` = `https://dhanboost.com/login`, Static URL, Active 31/07/2026 20:28 |
+
+> ⚠ **The whitelisted CTA has no `www.`** The templates originally said `https://www.dhanboost.com/login`,
+> which would have failed the char-for-char URL check on all 14 non-OTP templates. Every source
+> (`NotificationTemplates.java`, `dlt-templates.json`, both agent prompts) was changed to the apex
+> `https://dhanboost.com/login` to match the CTA exactly. **Do not reintroduce `www.`**
 
 `DHANBOOST_OTP_LOGIN_V1` is link-free and only needs blockers 2 + 3 — register it first to unblock
 borrower login.
@@ -37,8 +44,30 @@ borrower login.
 | 11 | DHANBOOST_APPLICATION_DECLINED_V1 | Service Implicit | `CREDIT_REJECTED` **and** `REBORROW_REVIEW_REJECTED` | `__________` | — (one ID → both keys) |
 | 12 | DHANBOOST_SETTLEMENT_APPROVED_V1 | Service Implicit | `SETTLEMENT_APPROVED` | `__________` | — |
 | 13 | DHANBOOST_REBORROW_APPROVED_V1 | Service Implicit | `REBORROW_REVIEW_APPROVED` | `__________` | — |
-| 14 | DHANBOOST_REBORROW_PREAPPROVED_V1 | ⚠ expect **Service Explicit** | `REBORROW_PREAPPROVED` | `__________` | — |
-| 15 | DHANBOOST_REFERRAL_REWARD_CREDITED_V1 | ⚠ expect **Service Explicit** | `REFERRAL_REWARD_CREDITED` | `__________` | — |
+| 14 | DHANBOOST_REBORROW_PREAPPROVED_V1 | **Promotional** (filed) — ✅ **Active** 31/07 21:16 | `REBORROW_PREAPPROVED` | `__________` | — |
+| 15 | DHANBOOST_REFERRAL_REWARD_CREDITED_V1 | **Promotional** (filed) | `REFERRAL_REWARD_CREDITED` | `__________` | — |
+
+## What was chosen at submission (2026-07-31)
+
+- **Template type:** 13 as **Service Implicit**; **#14 and #15 as Promotional**. The portal now shows
+  *"Service Explicit (SE) template type is no longer available. Such templates to be created under
+  template type Promotional (P)"* — SE is gone from the dropdown entirely, so the `_V2` precedent of
+  registering those two as SE is no longer possible. Chosen by the operator.
+  ⚠ **Consequence:** Promotional messages are **not delivered to DND-registered numbers** and need a
+  promotional route, not route `02`. Pre-approved-reborrow and referral-reward SMS may silently not
+  arrive for DND subscribers; in-app + email are unaffected.
+- **Header Type** (a field that only appears for Promotional): **Alphabetic/Alphanumeric (Others)**,
+  which is what makes `DHANBT` selectable. "Numeric (Promotional)" would require a numeric sender ID
+  that does not exist.
+- **Category:** `Banking/Insurance/Financial products/ credit cards` for all 15.
+- **Variable tags** — the dropdown offers only Alphanumeric / Email / Phone / URL×2 / NUMBER:
+  - **NUMBER** only for pure-digit values (OTP `123456`, TTL `5`, day counts `3`/`5`).
+  - **Alphanumeric (Name, Date, Address)** for every **amount** and **date**. Amounts are NOT numeric
+    at send time — `TemplateRenderer` rewrites `₹` to `Rs. ` for SMS (₹ is outside GSM-7), so the
+    substituted value is literally `Rs. 12,700`. Tagging that NUMBER would risk failing DLT scrubbing.
+  - `TXN123456` (referral reference) is Alphanumeric for the same reason.
+- Each template's char count was verified against the portal's own counter before submitting
+  (120/114/118/129/122/139/139/151/154/126/125/140/122/135/139 — all single-segment).
 
 ## Carried forward from the `_V2` submission
 
