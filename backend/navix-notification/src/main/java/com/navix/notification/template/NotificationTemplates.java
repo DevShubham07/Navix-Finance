@@ -144,14 +144,14 @@ public class NotificationTemplates {
                         + "reference and record it again.");
         sms(NotificationType.REPAYMENT_REJECTED,
                 "Your payment of {amount} could not be verified by DhanBoost. Log in at "
-                        + "https://www.dhanboost.com/login to check the reference and record it again. - DhanBoost");
+                        + "https://www.dhanboost.com/login to check and record it again. - DhanBoost");
 
         inApp(NotificationType.PAYMENT_DUE_SOON, "Payment due soon",
                 "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on your salary "
                         + "day or the day after — no penalty. Prepay anytime to save on interest.");
         sms(NotificationType.PAYMENT_DUE_SOON,
-                "Your DhanBoost payment of {amount} is due in {daysToDue} day(s) by {dueDate}. Pay at "
-                        + "https://www.dhanboost.com/login on or after your salary day with no penalty. - DhanBoost");
+                "Your DhanBoost payment of {amount} is due in {daysToDue} day(s) on {dueDate}. Pay at "
+                        + "https://www.dhanboost.com/login from your salary day, no penalty. - DhanBoost");
         email(NotificationType.PAYMENT_DUE_SOON, "Your DhanBoost payment is due soon",
                 "Hi {name},\n\nYour payment of {amount} is due in {daysToDue} day(s), by {dueDate}. You can "
                         + "pay on your salary day or the day after with no penalty — or prepay anytime to save "
@@ -161,8 +161,8 @@ public class NotificationTemplates {
                 "Your payment of {amount} is overdue by {daysOverdue} day(s). Please pay now — a late "
                         + "penalty of 2%/day is accruing and your credit score may be impacted.");
         sms(NotificationType.PAYMENT_OVERDUE,
-                "Your DhanBoost payment of {amount} is overdue by {daysOverdue} day(s). Pay now at "
-                        + "https://www.dhanboost.com/login to stop the daily penalty and protect your credit score. - DhanBoost");
+                "Your DhanBoost payment of {amount} is overdue by {daysOverdue} day(s). Pay at "
+                        + "https://www.dhanboost.com/login to stop the penalty and protect your score. - DhanBoost");
         email(NotificationType.PAYMENT_OVERDUE, "Your DhanBoost payment is overdue",
                 "Hi {name},\n\nYour payment of {amount} is overdue by {daysOverdue} day(s). Please pay as "
                         + "soon as possible — a late penalty of 2% per day is accruing and continued "

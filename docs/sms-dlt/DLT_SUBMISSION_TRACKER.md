@@ -12,7 +12,7 @@ brand **DhanBoost**, sender **DHANBT**, PE-ID `1701178039634361131`.
 
 | # | Blocker | Status |
 |---|---|---|
-| 1 | Register the domain **dhanboost.com** (every non-OTP template links to it) | ❌ not registered as of 2026-07-31 |
+| 1 | Register the domain **dhanboost.com** (every non-OTP template links to it) | ✅ live — both `dhanboost.com` and `www.dhanboost.com` serve 200 (verified 2026-07-31) |
 | 2 | Register **DhanBoost** as a brand under the entity on the DLT portal | ❌ pending |
 | 3 | Register/activate the 6-char header **DHANBT** (replaces retired `NAVIXF`) | ❌ pending |
 | 4 | URL-whitelist **`https://www.dhanboost.com/login`** char-for-char | ❌ pending |

@@ -97,7 +97,7 @@
       "source": "NotificationType.REPAYMENT_REJECTED",
       "notificationType": "REPAYMENT_REJECTED",
       "category": "Service Implicit",
-      "content": "Your payment of {#var#} could not be verified by DhanBoost. Log in at https://www.dhanboost.com/login to check the reference and record it again. - DhanBoost",
+      "content": "Your payment of {#var#} could not be verified by DhanBoost. Log in at https://www.dhanboost.com/login to check and record it again. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "payment amount", "tag": "Amount", "sample": "Rs. 5,000" }
       ]
@@ -108,7 +108,7 @@
       "source": "NotificationType.PAYMENT_DUE_SOON",
       "notificationType": "PAYMENT_DUE_SOON",
       "category": "Service Implicit",
-      "content": "Your DhanBoost payment of {#var#} is due in {#var#} day(s) by {#var#}. Pay at https://www.dhanboost.com/login on or after your salary day with no penalty. - DhanBoost",
+      "content": "Your DhanBoost payment of {#var#} is due in {#var#} day(s) on {#var#}. Pay at https://www.dhanboost.com/login from your salary day, no penalty. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "amount due", "tag": "Amount", "sample": "Rs. 12,700" },
         { "index": 2, "purpose": "days until due", "tag": "Number", "sample": "3" },
@@ -121,7 +121,7 @@
       "source": "NotificationType.PAYMENT_OVERDUE",
       "notificationType": "PAYMENT_OVERDUE",
       "category": "Service Implicit",
-      "content": "Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay now at https://www.dhanboost.com/login to stop the daily penalty and protect your credit score. - DhanBoost",
+      "content": "Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay at https://www.dhanboost.com/login to stop the penalty and protect your score. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "overdue amount", "tag": "Amount", "sample": "Rs. 12,700" },
         { "index": 2, "purpose": "days overdue", "tag": "Number", "sample": "5" }

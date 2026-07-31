@@ -101,19 +101,19 @@ VARS:
 2. remaining outstanding balance | Amount | `Rs. 7,700`
 
 **[7] DHANBOOST_REPAYMENT_REJECTED_V1 — Service Implicit**
-CONTENT: `Your payment of {#var#} could not be verified by DhanBoost. Log in at https://www.dhanboost.com/login to check the reference and record it again. - DhanBoost`
+CONTENT: `Your payment of {#var#} could not be verified by DhanBoost. Log in at https://www.dhanboost.com/login to check and record it again. - DhanBoost`
 VARS:
 1. payment amount | Amount | `Rs. 5,000`
 
 **[8] DHANBOOST_PAYMENT_DUE_SOON_V1 — Service Implicit**
-CONTENT: `Your DhanBoost payment of {#var#} is due in {#var#} day(s) by {#var#}. Pay at https://www.dhanboost.com/login on or after your salary day with no penalty. - DhanBoost`
+CONTENT: `Your DhanBoost payment of {#var#} is due in {#var#} day(s) on {#var#}. Pay at https://www.dhanboost.com/login from your salary day, no penalty. - DhanBoost`
 VARS:
 1. amount due | Amount | `Rs. 12,700`
 2. days until due | Number | `3`
 3. due date | Date | `30 Jun 2026`
 
 **[9] DHANBOOST_PAYMENT_OVERDUE_V1 — Service Implicit**
-CONTENT: `Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay now at https://www.dhanboost.com/login to stop the daily penalty and protect your credit score. - DhanBoost`
+CONTENT: `Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay at https://www.dhanboost.com/login to stop the penalty and protect your score. - DhanBoost`
 VARS:
 1. overdue amount | Amount | `Rs. 12,700`
 2. days overdue | Number | `5`
