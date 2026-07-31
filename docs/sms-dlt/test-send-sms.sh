@@ -12,8 +12,9 @@
 #   ./test-send-sms.sh <number> [text] [dltTemplateId]
 #     <number>          full MSISDN incl. country code, e.g. 917417682036   (REQUIRED)
 #     [text]            message body; must match the registered template char-for-char
-#                       (only the {#var#} slots substituted).  Default = the working OTP text.
-#     [dltTemplateId]   DLT Template ID the text is registered under.       Default = working OTP id.
+#                       (only the {#var#} slots substituted).  Default = the DhanBoost OTP text.
+#     [dltTemplateId]   DLT Template ID the text is registered under.       (REQUIRED — no default,
+#                       see the note below; may also come from DLT_TEMPLATE_ID)
 #
 # REQUIRED env (credentials — never hardcoded / never committed):
 #   NAVIX_SMS_USER   NAVIX_SMS_PASSWORD
@@ -27,11 +28,15 @@
 #     (same check as UltronSmsClient); anything else is surfaced and this script exits non-zero.
 #   * Template rules: sent text must equal the registered template EXACTLY (only variable slots
 #     filled); use "Rs." not "₹" (₹ forces costly UCS-2); any URL must be portal-whitelisted.
-#   * The _V2 template IDs for every NotificationType live in docs/sms-dlt/SMSULTRON.md — pass one
-#     via DLT_TEMPLATE_ID + its exact content via TEXT to test that template.
-#   * DISCREPANCY: the working defaults below (peid 1701178039634361131, OTP template
-#     1707178288705285901) are an earlier approved pair; they differ from the _V2 batch in
-#     SMSULTRON.md (OTP _V2 = 1707178366195230667). Defaults use the proven-working pair.
+#   * The DHANBOOST_*_V1 template texts for every NotificationType live in docs/sms-dlt/SMSULTRON.md —
+#     pass an approved id via DLT_TEMPLATE_ID + its exact content via TEXT to test that template.
+#   * ⚠ NO DEFAULT DLT ID. The NAVIX→DhanBoost rebrand changed the brand string and the URL in every
+#     body, invalidating every previously-registered id — including the one OTP template that was
+#     live (NAVIX_OTP_LOGIN_V2, 1707178366195230667) and the older 1707178288705285901 pair. The
+#     DHANBOOST_*_V1 batch is not registered yet, so DLT_TEMPLATE_ID must be supplied explicitly.
+#   * The DEFAULT_TEXT below is the DhanBoost OTP body and matches navix.sms.otp-template in
+#     application.yml char-for-char (that config is ALREADY rebranded). Pair it with the DhanBoost
+#     OTP id once DHANBOOST_OTP_LOGIN_V1 is approved.
 #
 set -euo pipefail
 
@@ -42,22 +47,31 @@ PASSWORD="${NAVIX_SMS_PASSWORD:?set NAVIX_SMS_PASSWORD (UltronSMS gateway passwo
 
 # ── Non-secret defaults (the sample curl) ───────────────────────────────────────
 BASE_URL="${NAVIX_SMS_BASE_URL:-https://ultronsms.com/api/mt/}"
-SENDER_ID="${NAVIX_SMS_SENDER_ID:-NAVIXF}"
+SENDER_ID="${NAVIX_SMS_SENDER_ID:-DHANBT}"
 CHANNEL="${NAVIX_SMS_CHANNEL:-Trans}"
 ROUTE="${NAVIX_SMS_ROUTE:-02}"
 PEID="${NAVIX_SMS_PEID:-1701178039634361131}"
 
-DEFAULT_TEXT="Your OTP for NAVIX login is 123432. Do not share this code with anyone. Valid for 5 minutes. Regards, Navix Finance"
-DEFAULT_DLT_ID="1707178288705285901"
+# DhanBoost OTP body — matches navix.sms.otp-template in application.yml char-for-char.
+DEFAULT_TEXT="Your OTP for DhanBoost login is 123456. It is valid for 5 minutes. Do not share this OTP with anyone. - DhanBoost"
 
 # ── Resolve args → env → defaults ───────────────────────────────────────────────
 NUMBER="${1:-}"
 TEXT="${2:-${TEXT:-$DEFAULT_TEXT}}"
-DLT_ID="${3:-${DLT_TEMPLATE_ID:-$DEFAULT_DLT_ID}}"
+DLT_ID="${3:-${DLT_TEMPLATE_ID:-}}"
 
 if [[ -z "$NUMBER" ]]; then
   echo "usage: $0 <number> [text] [dltTemplateId]" >&2
   echo "  <number> is required — full MSISDN incl. country code, e.g. 917417682036" >&2
+  exit 2
+fi
+
+if [[ -z "$DLT_ID" ]]; then
+  echo "error: no DLT Template ID." >&2
+  echo "  Pass it as arg 3 or export DLT_TEMPLATE_ID=<id>." >&2
+  echo "  There is deliberately no default: the NAVIX->DhanBoost rebrand invalidated every" >&2
+  echo "  previously-registered id, and the DHANBOOST_*_V1 batch is not registered yet." >&2
+  echo "  See docs/sms-dlt/DLT_SUBMISSION_TRACKER.md for the registration blockers." >&2
   exit 2
 fi
 

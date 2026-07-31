@@ -1,67 +1,78 @@
 {
   "_meta": {
-    "entity": "NAVIX Finance",
+    "brand": "DhanBoost",
+    "entity": "NAVIX FINANCE PRIVATE LIMITED",
+    "entityNote": "The legal entity on the DLT portal is unchanged (CIN U64990HR2026PTC144926). Only the consumer-facing brand inside the message body changed NAVIX Finance -> DhanBoost. 'DhanBoost' MUST be registered as a brand/trademark under this entity on the DLT portal before submission, or every template is rejected with 'Entity brand name is not mentioned in the SMS content'.",
     "aggregator": "STPL",
-    "header": "NAVIXF",
-    "peid": "<PRINCIPAL_ENTITY_ID>",
+    "header": "DHANBT",
+    "headerNote": "DhanBoost 6-char sender ID. Replaces the retired NAVIXF header used by the superseded _V2 batch. The header must be registered and active under the entity before any of these templates can send.",
+    "peid": "1701178039634361131",
+    "peidNote": "Principal Entity ID is entity-level and constant across all templates and headers — unchanged by the rebrand.",
     "categoryForAll": "Service Implicit",
-    "categoryNote": "NAVIX is a NON-BANKING entity. The DLT 'Transactional' category is reserved for banks (card / net-banking OTP). Every template below — including the login OTP — MUST be registered as 'Service Implicit'.",
-    "url": "https://www.navixfinance.com/login",
-    "urlNote": "The URL https://www.navixfinance.com/login MUST be whitelisted under the entity on the SmartPing/DLT portal (URL/APK whitelisting) BEFORE these templates are submitted, or templates containing the link are rejected. OTP is intentionally link-free (links in OTP messages are discouraged and often rejected).",
+    "categoryNote": "DhanBoost is a NON-BANKING entity. The DLT 'Transactional' category is reserved for banks (card / net-banking OTP). Every template below — including the login OTP — MUST be registered as 'Service Implicit'.",
+    "url": "https://www.dhanboost.com/login",
+    "urlNote": "The URL https://www.dhanboost.com/login MUST be (a) a live registered domain and (b) whitelisted under the entity on the SmartPing/DLT portal (URL/APK whitelisting) BEFORE these templates are submitted, or templates containing the link are rejected. As of 2026-07-31 dhanboost.com is NOT yet registered — that is the first blocker. OTP is intentionally link-free (links in OTP messages are discouraged and often rejected).",
+    "batch": "DHANBOOST_*_V1",
+    "batchNote": "Fresh registration batch. DLT Template IDs are bound to exact content, so the rebrand INVALIDATES every _V2 id (including the previously-live OTP id 1707178366195230667). All ids below are PENDING until this batch is submitted and approved.",
     "rules": [
       "Variable placeholder is exactly {#var#} (with hashes).",
       "One variable = up to 40 characters. Provide a sample value per variable.",
-      "Brand name 'NAVIX Finance' is mandatory inside the content body.",
+      "Brand name 'DhanBoost' is mandatory inside the content body.",
       "No extra / double / trailing spaces anywhere.",
       "The sent SMS must match the registered template character-for-character (only {#var#} slots substituted).",
       "For SMS render amounts as 'Rs.' not '₹' — '₹' forces UCS-2 (Unicode) SMS: 70 chars/segment and higher cost.",
       "Any URL in a template must be pre-whitelisted on the DLT portal or the template is rejected."
     ],
-    "generated": "derived from BorrowerOtpService + NotificationTemplates.java — the SMS body in NotificationTemplates.java must match each 'content' below character-for-character (only {#var#} slots substituted). The 15 templates below cover every SMS-enabled NotificationType: CREDIT_REJECTED and REBORROW_REVIEW_REJECTED share the single NAVIX_APPLICATION_DECLINED template."
+    "generated": "Mirrors the SMS bodies already shipped in NotificationTemplates.java + the otp-template in application.yml — both are ALREADY rebranded to DhanBoost. Each 'content' below equals its Java/YAML body character-for-character (only {#var#} slots substituted). The 15 templates cover every SMS-enabled NotificationType: CREDIT_REJECTED and REBORROW_REVIEW_REJECTED share the single DHANBOOST_APPLICATION_DECLINED_V1 template."
   },
   "templates": [
     {
-      "name": "NAVIX_OTP_LOGIN_V2",
-      "source": "BorrowerOtpService.buildMessage",
+      "name": "DHANBOOST_OTP_LOGIN_V1",
+      "dltTemplateId": null,
+      "source": "application.yml navix.sms.otp-template (BorrowerOtpService.buildMessage)",
       "notificationType": "OTP_LOGIN",
       "category": "Service Implicit",
-      "content": "Your OTP for NAVIX Finance login is {#var#}. It is valid for {#var#} minutes. Do not share this OTP with anyone. - NAVIX Finance",
+      "content": "Your OTP for DhanBoost login is {#var#}. It is valid for {#var#} minutes. Do not share this OTP with anyone. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "numeric OTP code", "tag": "OTP", "sample": "123456" },
         { "index": 2, "purpose": "validity in minutes", "tag": "Number", "sample": "5" }
       ]
     },
     {
-      "name": "NAVIX_KYC_APPROVED_V2",
+      "name": "DHANBOOST_KYC_APPROVED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.KYC_APPROVED",
       "notificationType": "KYC_APPROVED",
       "category": "Service Implicit",
-      "content": "Your KYC is verified with NAVIX Finance. Log in at https://www.navixfinance.com/login to choose your loan amount. - NAVIX Finance",
+      "content": "Your KYC is verified with DhanBoost. Log in at https://www.dhanboost.com/login to choose your loan amount. - DhanBoost",
       "variables": []
     },
     {
-      "name": "NAVIX_KYC_REJECTED_V2",
+      "name": "DHANBOOST_KYC_REJECTED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.KYC_REJECTED",
       "notificationType": "KYC_REJECTED",
       "category": "Service Implicit",
-      "content": "We could not verify your KYC with NAVIX Finance. Log in at https://www.navixfinance.com/login to review and resubmit. - NAVIX Finance",
+      "content": "We could not verify your KYC with DhanBoost. Log in at https://www.dhanboost.com/login to review and resubmit. - DhanBoost",
       "variables": []
     },
     {
-      "name": "NAVIX_KYC_REMINDER_V2",
+      "name": "DHANBOOST_KYC_REMINDER_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.KYC_REMINDER",
       "notificationType": "KYC_REMINDER",
       "category": "Service Implicit",
-      "content": "Your verification with NAVIX Finance is incomplete. Log in at https://www.navixfinance.com/login to complete your pending steps. - NAVIX Finance",
+      "content": "Your verification with DhanBoost is incomplete. Log in at https://www.dhanboost.com/login to complete your pending steps. - DhanBoost",
       "variables": [],
-      "note": "Improved: dropped the {pendingSteps} variable (the joined step list can exceed the 40-char/variable limit). The detailed list stays in the in-app + email versions. Requires the SMS body in NotificationTemplates.java to be changed to this variable-free text so the sent SMS matches."
+      "note": "Deliberately variable-free: the joined pending-step list can exceed the 40-char/variable limit. The detailed list stays in the in-app + email versions."
     },
     {
-      "name": "NAVIX_LOAN_DISBURSED_V2",
+      "name": "DHANBOOST_LOAN_DISBURSED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.LOAN_DISBURSED",
       "notificationType": "LOAN_DISBURSED",
       "category": "Service Implicit",
-      "content": "NAVIX Finance has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://www.navixfinance.com/login. - NAVIX Finance",
+      "content": "DhanBoost has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://www.dhanboost.com/login. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "net amount disbursed", "tag": "Amount", "sample": "Rs. 8,820" },
         { "index": 2, "purpose": "total repayable amount", "tag": "Amount", "sample": "Rs. 12,700" },
@@ -69,32 +80,35 @@
       ]
     },
     {
-      "name": "NAVIX_REPAYMENT_VERIFIED_V2",
+      "name": "DHANBOOST_REPAYMENT_VERIFIED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.REPAYMENT_VERIFIED",
       "notificationType": "REPAYMENT_VERIFIED",
       "category": "Service Implicit",
-      "content": "Your payment of {#var#} to NAVIX Finance is confirmed. Outstanding balance is {#var#}. View details at https://www.navixfinance.com/login. - NAVIX Finance",
+      "content": "Your payment of {#var#} to DhanBoost is confirmed. Outstanding balance is {#var#}. View details at https://www.dhanboost.com/login. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "payment amount", "tag": "Amount", "sample": "Rs. 5,000" },
         { "index": 2, "purpose": "remaining outstanding balance", "tag": "Amount", "sample": "Rs. 7,700" }
       ]
     },
     {
-      "name": "NAVIX_REPAYMENT_REJECTED_V2",
+      "name": "DHANBOOST_REPAYMENT_REJECTED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.REPAYMENT_REJECTED",
       "notificationType": "REPAYMENT_REJECTED",
       "category": "Service Implicit",
-      "content": "Your payment of {#var#} could not be verified by NAVIX Finance. Log in at https://www.navixfinance.com/login to check the reference and record it again. - NAVIX Finance",
+      "content": "Your payment of {#var#} could not be verified by DhanBoost. Log in at https://www.dhanboost.com/login to check the reference and record it again. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "payment amount", "tag": "Amount", "sample": "Rs. 5,000" }
       ]
     },
     {
-      "name": "NAVIX_PAYMENT_DUE_SOON_V2",
+      "name": "DHANBOOST_PAYMENT_DUE_SOON_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.PAYMENT_DUE_SOON",
       "notificationType": "PAYMENT_DUE_SOON",
       "category": "Service Implicit",
-      "content": "Your NAVIX Finance payment of {#var#} is due in {#var#} day(s) by {#var#}. Pay at https://www.navixfinance.com/login on or after your salary day with no penalty. - NAVIX Finance",
+      "content": "Your DhanBoost payment of {#var#} is due in {#var#} day(s) by {#var#}. Pay at https://www.dhanboost.com/login on or after your salary day with no penalty. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "amount due", "tag": "Amount", "sample": "Rs. 12,700" },
         { "index": 2, "purpose": "days until due", "tag": "Number", "sample": "3" },
@@ -102,71 +116,85 @@
       ]
     },
     {
-      "name": "NAVIX_PAYMENT_OVERDUE_V2",
+      "name": "DHANBOOST_PAYMENT_OVERDUE_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.PAYMENT_OVERDUE",
       "notificationType": "PAYMENT_OVERDUE",
       "category": "Service Implicit",
-      "content": "Your NAVIX Finance payment of {#var#} is overdue by {#var#} day(s). Pay now at https://www.navixfinance.com/login to stop the daily penalty and protect your credit score. - NAVIX Finance",
+      "content": "Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay now at https://www.dhanboost.com/login to stop the daily penalty and protect your credit score. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "overdue amount", "tag": "Amount", "sample": "Rs. 12,700" },
         { "index": 2, "purpose": "days overdue", "tag": "Number", "sample": "5" }
       ]
     },
     {
-      "name": "NAVIX_LOAN_CLOSED_V2",
+      "name": "DHANBOOST_LOAN_CLOSED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.LOAN_CLOSED",
       "notificationType": "LOAN_CLOSED",
       "category": "Service Implicit",
-      "content": "Your loan with NAVIX Finance is fully repaid and closed. Thank you. Visit https://www.navixfinance.com/login to borrow again. - NAVIX Finance",
+      "content": "Your loan with DhanBoost is fully repaid and closed. Thank you. Visit https://www.dhanboost.com/login to borrow again. - DhanBoost",
       "variables": []
     },
     {
-      "name": "NAVIX_APPLICATION_DECLINED_V2",
+      "name": "DHANBOOST_APPLICATION_DECLINED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.CREDIT_REJECTED + NotificationType.REBORROW_REVIEW_REJECTED",
       "notificationType": ["CREDIT_REJECTED", "REBORROW_REVIEW_REJECTED"],
       "category": "Service Implicit",
-      "content": "NAVIX Finance is unable to approve your loan application at this time. Visit https://www.navixfinance.com/login for details. - NAVIX Finance",
+      "content": "DhanBoost is unable to approve your loan application at this time. Visit https://www.dhanboost.com/login for details. - DhanBoost",
       "variables": [],
       "note": "One registered template reused for BOTH the first-loan credit rejection (CREDIT_REJECTED) and the returning-borrower reborrow rejection (REBORROW_REVIEW_REJECTED) — the content is identical, so a single DLT Template ID is bound to both NotificationTypes in navix.sms.dlt-template-ids."
     },
     {
-      "name": "NAVIX_SETTLEMENT_APPROVED_V2",
+      "name": "DHANBOOST_SETTLEMENT_APPROVED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.SETTLEMENT_APPROVED",
       "notificationType": "SETTLEMENT_APPROVED",
       "category": "Service Implicit",
-      "content": "A full and final settlement of {#var#} is approved on your NAVIX Finance loan. Pay at https://www.navixfinance.com/login to close the loan. - NAVIX Finance",
+      "content": "A full and final settlement of {#var#} is approved on your DhanBoost loan. Pay at https://www.dhanboost.com/login to close the loan. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "settlement amount", "tag": "Amount", "sample": "Rs. 9,000" }
       ]
     },
     {
-      "name": "NAVIX_REBORROW_APPROVED_V2",
+      "name": "DHANBOOST_REBORROW_APPROVED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.REBORROW_REVIEW_APPROVED",
       "notificationType": "REBORROW_REVIEW_APPROVED",
       "category": "Service Implicit",
-      "content": "Your loan application with NAVIX Finance is approved. Log in at https://www.navixfinance.com/login to choose your amount. - NAVIX Finance",
+      "content": "Your loan application with DhanBoost is approved. Log in at https://www.dhanboost.com/login to choose your amount. - DhanBoost",
       "variables": []
     },
     {
-      "name": "NAVIX_REBORROW_PREAPPROVED_V2",
+      "name": "DHANBOOST_REBORROW_PREAPPROVED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.REBORROW_PREAPPROVED",
       "notificationType": "REBORROW_PREAPPROVED",
       "category": "Service Implicit",
-      "content": "Welcome back to NAVIX Finance. You can apply for another loan now. Log in at https://www.navixfinance.com/login to choose your amount. - NAVIX Finance",
+      "content": "Welcome back to DhanBoost. You can apply for another loan now. Log in at https://www.dhanboost.com/login to choose your amount. - DhanBoost",
       "variables": [],
-      "note": "Returning-borrower re-onboarding nudge. Worded to stay Service Implicit (arises from the customer's existing relationship) — deliberately avoids offer/'pre-approved' language. If STPL flags it promotional, it must move to Service Explicit (recorded consent)."
+      "note": "BORDERLINE. Returning-borrower re-onboarding nudge, worded to stay Service Implicit (arises from the customer's existing relationship) — deliberately avoids offer/'pre-approved' language. The superseded _V2 equivalent was ultimately accepted as Service EXPLICIT, so expect the same and confirm with the operator before force-submitting as Implicit."
     },
     {
-      "name": "NAVIX_REFERRAL_REWARD_CREDITED_V2",
+      "name": "DHANBOOST_REFERRAL_REWARD_CREDITED_V1",
+      "dltTemplateId": null,
       "source": "NotificationType.REFERRAL_REWARD_CREDITED",
       "notificationType": "REFERRAL_REWARD_CREDITED",
       "category": "Service Implicit",
-      "content": "Your NAVIX Finance referral reward of {#var#} is credited with reference {#var#}. Log in at https://www.navixfinance.com/login to view it. - NAVIX Finance",
+      "content": "Your DhanBoost referral reward of {#var#} is credited with reference {#var#}. Log in at https://www.dhanboost.com/login to view it. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "referral reward amount", "tag": "Amount", "sample": "Rs. 500" },
         { "index": 2, "purpose": "payout transaction reference", "tag": "Number", "sample": "TXN123456" }
       ],
-      "note": "Gated by the 'referral' feature flag. Reward-credited confirmation of the customer's own referral action. If STPL flags it promotional, it must move to Service Explicit (recorded consent)."
+      "note": "BORDERLINE. Gated by the 'referral' feature flag. Reward-credited confirmation of the customer's own referral action. The superseded _V2 equivalent was ultimately accepted as Service EXPLICIT, so expect the same and confirm with the operator before force-submitting as Implicit."
     }
-  ]
+  ],
+  "_superseded": {
+    "note": "The NAVIX_*_V2 batch (sender NAVIXF, brand 'NAVIX Finance', url navixfinance.com) is RETIRED by the DhanBoost rebrand. Its ids are recorded in DLT_SUBMISSION_TRACKER.md for audit only — do NOT send against them, the body text no longer matches the code.",
+    "retiredHeader": "NAVIXF",
+    "retiredBrand": "NAVIX Finance",
+    "retiredUrl": "https://www.navixfinance.com/login",
+    "onlyPreviouslyLiveId": "1707178366195230667 (NAVIX_OTP_LOGIN_V2 — the sole DLT-approved template; now invalidated because application.yml's otp-template already says DhanBoost)"
+  }
 }

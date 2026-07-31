@@ -1,27 +1,40 @@
-# NAVIX DLT template-creation (SmartPing) — Service Implicit batch
+# DhanBoost DLT template-creation (SmartPing) — alternate-wording batch
 
-Complete, self-contained instruction set for the Claude-in-Chrome agent creating NAVIX's DLT SMS
+Complete, self-contained instruction set for the Claude-in-Chrome agent creating DhanBoost's DLT SMS
 content templates on the **SmartPing** entity portal. Everything the agent needs is inline.
+
+> **What this batch is.** Four templates whose *primary* wording (in `CHROME_AGENT_PROMPT.md` /
+> `dlt-templates.json`) has drawn reviewer pushback. These are **reworded alternates** for the same four
+> notification types — softer, more account-status-flavoured, to survive a Service Implicit review.
+> Named `DHANBOOST_*_V1_ALT` so they never collide with the primary `DHANBOOST_*_V1` batch.
+>
+> ⚠ **Only register these if the primary wording is rejected.** If both end up registered, the backend
+> must point at exactly one id per type — and `NotificationTemplates.java` must be edited to match the
+> ALT text char-for-char, since it currently ships the primary wording.
 
 ---
 
 ## Preconditions (the operator ensures these before the agent runs)
 
 - Chrome is open and **logged in to the SmartPing entity portal** as **NAVIX FINANCE PRIVATE LIMITED**
-  (login `info@navixfinance.com`) at **`https://smartping.live/entity/content-form`** — the Content
-  Template create form (message box + category dropdown + Submit). Login automation is out of scope;
-  the agent starts from an authenticated session and uses the tab already open (does NOT open a new tab).
-- The URL **`https://www.navixfinance.com/login`** is already **URL-whitelisted** under the entity
-  (every template contains this link; an un-whitelisted URL → rejection).
+  (login `info@navixfinance.com` — the entity registration and its login email are unchanged by the
+  rebrand) at **`https://smartping.live/entity/content-form`** — the Content Template create form
+  (message box + category dropdown + Submit). Login automation is out of scope; the agent starts from an
+  authenticated session and uses the tab already open (does NOT open a new tab).
+- **`DhanBoost` is registered as a brand under the entity** — without it, DLT rejects every submit for
+  a missing entity brand name. If unsure, STOP and ask.
+- Header **`DHANBT`** is registered and active (replaces the retired `NAVIXF`).
+- **`dhanboost.com` is live** and the URL **`https://www.dhanboost.com/login`** is **URL-whitelisted**
+  under the entity (every template here contains this link; an un-whitelisted URL → rejection).
 
 ## Entity / sender settings
 
-- Header / Sender ID: **NAVIXF**.
-- Principal Entity ID (PE-ID): the account is logged in as NAVIX FINANCE, so the form may auto-bind the
-  entity. If a PE-ID field is REQUIRED and blank, STOP and ask the operator (the known PE-ID is
-  `1701178039634361131`, but do not assume the form wants it typed).
+- Header / Sender ID: **DHANBT**.
+- Principal Entity ID (PE-ID): entity-level and unchanged — `1701178039634361131`. The account is logged
+  in as the entity, so the form may auto-bind it. If a PE-ID field is REQUIRED and blank, STOP and ask
+  the operator (do not assume the form wants it typed).
 - Category for **every** template: **`Service Implicit`**.
-  ⚠ NEVER "Transactional" (banks-only; NAVIX is non-banking → rejected).
+  ⚠ NEVER "Transactional" (banks-only; DhanBoost is non-banking → rejected).
   ⚠ NEVER "Service Explicit" — if the form or reviewer tries to force Explicit, or shows a
   promotional-category warning on submit, **STOP and ask** (see rule 8).
 
@@ -33,8 +46,8 @@ content templates on the **SmartPing** entity portal. Everything the agent needs
    STOP and ask.
 2. Set the **template name** exactly as given below.
 3. **Paste the CONTENT string EXACTLY** — character-for-character. It must: contain the brand name
-   `NAVIX Finance`; end with ` - NAVIX Finance`; have NO double spaces and NO trailing space; keep the
-   URL exactly `https://www.navixfinance.com/login`.
+   `DhanBoost`; end with ` - DhanBoost`; have NO double spaces and NO trailing space; keep the
+   URL exactly `https://www.dhanboost.com/login`.
 4. **Variables:** all 4 templates are **variable-free** (no `{#var#}` tokens). Do not add any variable.
    If the form requires at least one variable, STOP and ask — do not invent one.
 5. **Before submitting each one**, use `read_page` to confirm the message-box text equals the CONTENT
@@ -56,20 +69,20 @@ content templates on the **SmartPing** entity portal. Everything the agent needs
 
 Format: `[#] NAME — CATEGORY` / `CONTENT:` (submit this) / `VARS:`
 
-**[1] NAVIX_KYC_APPROVED_V3 — Service Implicit**
-CONTENT: `Your KYC verification with NAVIX Finance is complete. Log in at https://www.navixfinance.com/login to continue your loan application. - NAVIX Finance`
+**[1] DHANBOOST_KYC_APPROVED_V1_ALT — Service Implicit**
+CONTENT: `Your KYC verification with DhanBoost is complete. Log in at https://www.dhanboost.com/login to continue your loan application. - DhanBoost`
 VARS: none
 
-**[2] NAVIX_REBORROW_APPROVED_V3 — Service Implicit**
-CONTENT: `Your loan application with NAVIX Finance is approved. Log in at https://www.navixfinance.com/login to view the details and next steps. - NAVIX Finance`
+**[2] DHANBOOST_REBORROW_APPROVED_V1_ALT — Service Implicit**
+CONTENT: `Your loan application with DhanBoost is approved. Log in at https://www.dhanboost.com/login to view the details and next steps. - DhanBoost`
 VARS: none
 
-**[3] NAVIX_LOAN_CLOSED_V3 — Service Implicit**
-CONTENT: `Your loan with NAVIX Finance is fully repaid and closed. Log in at https://www.navixfinance.com/login to view your loan closure statement. - NAVIX Finance`
+**[3] DHANBOOST_LOAN_CLOSED_V1_ALT — Service Implicit**
+CONTENT: `Your loan with DhanBoost is fully repaid and closed. Log in at https://www.dhanboost.com/login to view your loan closure statement. - DhanBoost`
 VARS: none
 
-**[4] NAVIX_REBORROW_PREAPPROVED_V3 — Service Implicit**
-CONTENT: `Your NAVIX Finance account review is complete and your eligibility is updated. Log in at https://www.navixfinance.com/login to view your account status. - NAVIX Finance`
+**[4] DHANBOOST_REBORROW_PREAPPROVED_V1_ALT — Service Implicit**
+CONTENT: `Your DhanBoost account review is complete and your eligibility is updated. Log in at https://www.dhanboost.com/login to view your account status. - DhanBoost`
 VARS: none
 
 ---
@@ -77,3 +90,5 @@ VARS: none
 ## At the end
 
 Print a table of `{ template name -> DLT Template ID, registered category, status }` for all 4.
+If any of these are adopted over the primary wording, flag that `NotificationTemplates.java` must be
+updated to the ALT text char-for-char before the id is wired into `navix.sms.dlt-template-ids`.
