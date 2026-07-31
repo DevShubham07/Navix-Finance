@@ -23,7 +23,10 @@ DECLARE
     -- flyway_schema_history / payment_settings / blocklist_entry are
     -- deliberately ABSENT — they are preserved.
     wipe text[] := ARRAY[
-        'loan_application', 'application_event', 'applicant_profile',
+        -- V33 renamed applicant_profile -> customer_profile. The old name is kept in this
+        -- list only so the script still works against a pre-V33 database; on a current
+        -- schema it is simply absent and skipped.
+        'loan_application', 'application_event', 'applicant_profile', 'customer_profile',
         'application_document', 'application_verification',
         'loan', 'loan_document', 'payment', 'repayment_plan',
         'notification', 'notification_delivery',
@@ -31,7 +34,16 @@ DECLARE
         'borrower', 'co_applicant', 'signup_application',
         'kyc_case', 'kyc_check', 'digilocker_session',
         'income_profile', 'risk_assessment',
-        'disbursement_request', 'approval_step'
+        'disbursement_request', 'approval_step',
+        -- Auth/identity: borrower_mobile (V40) MUST be wiped or a re-seed fails with
+        -- CUSTOMER_ID_COLLISION, because it permanently claims mobile -> customerId.
+        'borrower_mobile', 'borrower_credential', 'password_reset_token',
+        -- Profile/preferences audit (V26, V27)
+        'profile_change_log', 'borrower_preferences',
+        -- Referral program (V28) and customer remarks (V36)
+        'referral', 'referral_code', 'referral_payout', 'customer_remark',
+        -- Back-office ledgers seeded by scripts/seed-demo-data.ps1
+        'company_expense', 'email_suppression'
     ];
     present text[] := '{}';
     t text;

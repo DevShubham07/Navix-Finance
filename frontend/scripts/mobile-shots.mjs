@@ -71,12 +71,13 @@ try {
   });
   page = await sctx.newPage();
   await page.goto(`${BASE}/staff/dashboard`, { waitUntil: "domcontentloaded" }); await shot(page, "staff-dashboard");
-  await page.goto(`${BASE}/staff/kyc-approvals`, { waitUntil: "domcontentloaded" }); await shot(page, "staff-kyc-approvals");
-  // Open the first credit-review detail page (real application data).
-  const creditLink = await page.locator('a[href^="/staff/credit/"]').first();
-  if (await creditLink.count()) {
-    const href = await creditLink.getAttribute("href");
-    await page.goto(`${BASE}${href}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/staff/applications`, { waitUntil: "domcontentloaded" }); await shot(page, "staff-applications");
+  // Open the first application row's detail popup (real application data). "Open" now raises
+  // the unified ApplicationDetailDialog instead of navigating to a page.
+  const openBtn = await page.getByRole("button", { name: "Open the full application detail" }).first();
+  if (await openBtn.count()) {
+    await openBtn.click();
+    await page.waitForTimeout(300);
     await shot(page, "staff-credit-detail");
   }
   await page.close();

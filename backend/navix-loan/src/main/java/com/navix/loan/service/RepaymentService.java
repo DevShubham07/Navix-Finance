@@ -152,9 +152,16 @@ public class RepaymentService {
      * {@code penaltyPaise} are the <i>scheduled/accrued</i> amounts as of {@code asOf}; when
      * {@code settledAmountPaise} is non-null the net {@code outstandingPaise} is the settlement-capped
      * full-and-final figure, so the components may then sum to more than the net.
+     *
+     * <p>{@code interestDays} / {@code penaltyDays} are the <i>day counts</i> those two amounts were
+     * charged over — interest days are capped at the tenure (interest stops accruing at the due date)
+     * and penalty days exclude the {@link LoanMath#SALARY_GRACE_DAYS} grace and are capped at
+     * {@link LoanMath#LATE_PENALTY_CAP_DAYS}. Exposed so collections can show "1%/day × N days"
+     * rather than an unexplained rupee figure, without re-deriving (and forking) the math.
      */
     public record OutstandingBreakdown(long outstandingPaise, long interestPaise, long penaltyPaise,
-                                       long verifiedPaise, Long settledAmountPaise) {
+                                       long verifiedPaise, Long settledAmountPaise,
+                                       int interestDays, int penaltyDays) {
     }
 
     @Transactional(readOnly = true)
@@ -172,7 +179,11 @@ public class RepaymentService {
         long formulaOwed = loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
         Long settled = settlementDirectory.approvedSettlementAmount(loanId).orElse(null);
         long owed = settled != null ? Math.min(formulaOwed, Math.max(0L, settled - verified)) : formulaOwed;
-        return new OutstandingBreakdown(owed, interest, penalty, verified, settled);
+        // Report the days actually CHARGED (penalty is capped inside latePenaltyPaise), so the
+        // displayed "2%/day × N days" reconciles with penaltyPaise instead of overstating it.
+        int chargedPenaltyDays = Math.min(penaltyDays, LoanMath.LATE_PENALTY_CAP_DAYS);
+        return new OutstandingBreakdown(owed, interest, penalty, verified, settled,
+                Math.max(0, interestDays), chargedPenaltyDays);
     }
 
     /**

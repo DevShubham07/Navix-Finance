@@ -148,7 +148,7 @@ echo "$BORROWER"
 ```bash
 # Seeds one application at EVERY lifecycle stage + a primary borrower (mobile 9819000001, history+current).
 # Run with the stack up. (PowerShell driver — pwsh on macOS, or run on Windows.)
-pwsh ./scripts/populate-demo-data.ps1        # repo-root scripts/
+pwsh ./scripts/seed-demo-data.ps1           # repo-root scripts/
 ```
 
 | ID | Precondition | Steps | Expected result | P/F |
@@ -156,7 +156,7 @@ pwsh ./scripts/populate-demo-data.ps1        # repo-root scripts/
 | SET-06 | Backend up | Run `staff_token meera.krishnan@navix.example` | A JWT string returned | |
 | SET-07 | Backend up, dev-echo on | Run A.3 steps | `devCode` present (6 digits); login returns a token + `applicantId:9000001` | |
 | SET-08 | dev-echo **off** | Repeat A.3 step 1 | `devCode` is `null`; OTP only deliverable by real SMS (see §G — BLOCKED) | |
-| SET-09 | Stack up | `pwsh ./scripts/populate-demo-data.ps1` | Script completes; staff queues + borrower history now have rows | |
+| SET-09 | Stack up | `pwsh ./scripts/seed-demo-data.ps1` | Script completes; `-Verify` reports every admin surface PASS | |
 
 ---
 
@@ -483,7 +483,7 @@ preserves entered data**, and confirm **bureau score / risk category are NEVER s
 | UI-STF-DISB | DISBURSEMENT_HEAD | `/staff/disbursement` | Queue; accept (→ accountant) or finalize w/ txn id (fast-path); fast-track section for pre-approved | |
 | UI-STF-ACC | ACCOUNTANT | `/staff/accounting` | Disbursement validate + **repayment-verify queue** | |
 | UI-STF-TXN | ACCOUNTANT | `/staff/accounting/transactions` | Searchable company-wide ledger | |
-| UI-STF-CB | COLLECTION_* | `/staff/collections/buckets` | DPD buckets, live DPD, collectible loans | |
+| UI-STF-CB | COLLECTION_* | `/staff/applications` | Awaiting-repayment split (Overdue \| Active, by due date), DPD buckets, live DPD, row-level assign-to-executive (HEAD only) | |
 | UI-STF-CS | COLLECTION_HEAD | `/staff/collections/settlements` | Settlement worklist; approve disabled for the proposer (SoD) | |
 | UI-STF-CL | COLLECTION_* | `/staff/collections/{loanId}` | Case detail, interactions, settlement propose | |
 | UI-STF-CUST | any role | `/staff/customers` (+ `/staff/customers/{applicantId}`) | Borrower roll-up incl. PII; ADMIN can correct KYC / take actions | |
@@ -576,7 +576,7 @@ also has `customer:view`; only ADMIN has `staff:manage` + `customer:manage`.
 
 - Strategy/automation: [`TESTING_PLAN.md`](TESTING_PLAN.md)
 - Onboarding & architecture: [`CLAUDE.md`](CLAUDE.md)
-- Stage-data seeding: [`populateDummyData.md`](populateDummyData.md) (`scripts/populate-demo-data.ps1`)
+- Stage-data seeding: [`populateDummyData.md`](populateDummyData.md) (`scripts/seed-demo-data.ps1`)
 - State machine & roles: [`dfd.md`](dfd.md)
 </content>
 </invoke>

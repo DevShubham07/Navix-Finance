@@ -86,10 +86,14 @@ public final class LoanDtos {
      * balance is made up — the accrued interest and late penalty as of {@code asOf}, and the sum of
      * verified payments so far — so a loan-details popup can show the full cost breakdown. When a
      * settlement caps the figure, these components may sum to more than {@code outstandingPaise}.
+     *
+     * <p>{@code interestDays} / {@code penaltyDays} are the day counts those amounts were charged
+     * over (interest capped at the tenure; penalty net of the 1-day grace and capped at 30), so the
+     * UI can show the working — "1%/day × 27 days" — instead of a bare rupee figure.
      */
     public record OutstandingView(Long loanId, LocalDate asOf, long outstandingPaise,
                                   Long settledAmountPaise, long interestPaise, long penaltyPaise,
-                                  long verifiedPaise) {
+                                  long verifiedPaise, int interestDays, int penaltyDays) {
     }
 
     /**

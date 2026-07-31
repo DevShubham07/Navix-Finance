@@ -32,9 +32,20 @@ export function LoanBreakdown({
       <Row label="GST" value={paiseToINR(loan.gstPaise)} />
       <Row label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
       <Row label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
-      {out && <Row label="Interest accrued" value={paiseToINR(out.interestPaise ?? 0)} />}
+      {/* Day counts come from the backend breakdown (they're what the amount was actually charged
+          over — interest capped at the tenure, penalty net of grace and capped at 30). Older
+          backends omit them, so the label degrades to the bare figure. */}
+      {out && (
+        <Row
+          label={out.interestDays != null ? `Interest accrued (${out.interestDays}d)` : "Interest accrued"}
+          value={paiseToINR(out.interestPaise ?? 0)}
+        />
+      )}
       {out && (out.penaltyPaise ?? 0) > 0 && (
-        <Row label="Late penalty" value={paiseToINR(out.penaltyPaise ?? 0)} />
+        <Row
+          label={out.penaltyDays != null ? `Late penalty (${out.penaltyDays}d)` : "Late penalty"}
+          value={paiseToINR(out.penaltyPaise ?? 0)}
+        />
       )}
       {out && <Row label="Paid (verified)" value={paiseToINR(out.verifiedPaise ?? 0)} />}
       <Row

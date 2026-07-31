@@ -49,7 +49,7 @@ Completed work is recorded in `CLAUDE.md` §2 (and the git history).
 > menu** (`/loans`, `/transactions`, `/support`, `/settings`) backed by `GET /api/applications/mine`;
 > **ADMIN per-step control** (admin exempt from the credit SoD + active-executive `assign`, plus an
 > "Assign to me" button in the console — see A6); and a **per-stage demo-data populator**
-> (`scripts/populate-demo-data.ps1` / `populateDummyData.md`).
+> (`scripts/seed-demo-data.ps1` / `populateDummyData.md`).
 
 > ## ⚑ Update 2026-06-28 — bureau credit brief + 1–5★ rating + one-page PDF SHIPPED 🟢
 >

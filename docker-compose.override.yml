@@ -1,7 +1,11 @@
-# Local-only override (untracked). Historically remapped Postgres to 5433 to dodge
-# a native PostgreSQL on 5432; that native instance now lives on 5433 itself, so
-# 5432 is free again — mapped back to the backend's DB_URL default.
+# Local-only override. A native PostgreSQL 17 service owns host port 5432 on this
+# machine, so the demo database is published on 5433 instead. Matches the
+# -DbPort 5433 default in run-local.ps1 / scripts/run-demo.ps1.
+#
+# `!override` is required: Compose MERGES (appends) sequence fields like `ports`
+# across files, so without it you get BOTH 5432 and 5433 published and the 5432
+# bind races the native PostgreSQL. Needs Compose v2.24+ (here: v2.38).
 services:
   db:
-    ports:
-      - "5432:5432"
+    ports: !override
+      - "5433:5432"

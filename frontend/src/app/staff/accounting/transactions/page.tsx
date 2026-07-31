@@ -130,8 +130,8 @@ export default function TransactionsPage() {
 
       <PermissionGate permission="loan:activate" fallback={<NoAccessNotice />}>
         <div className="mb-4">
-          <Link href="/staff/accounting" className="inline-flex items-center gap-1 text-sm text-navy hover:underline">
-            <ArrowLeft size={14} /> Back to accounting
+          <Link href="/staff/applications" className="inline-flex items-center gap-1 text-sm text-navy hover:underline">
+            <ArrowLeft size={14} /> Back to live applications
           </Link>
         </div>
 

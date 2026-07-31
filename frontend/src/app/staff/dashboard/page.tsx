@@ -5,11 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
-  ShieldCheck,
-  ClipboardList,
-  Banknote,
   Receipt,
-  PhoneCall,
   RefreshCw,
   Loader2,
   ArrowDownLeft,
@@ -21,6 +17,7 @@ import {
 import { PageHeader } from "@/components/staff/staff-ui";
 import { InfoTooltip } from "@/components/ui";
 import { ApplicationJourney } from "@/components/staff/application-journey";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { PipelineBar } from "@/components/staff/pipeline-bar";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
@@ -79,15 +76,22 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
   },
 };
 
-/** Deep-link from a role to the page where it acts on its queue. */
+/**
+ * Deep-link from a role to the page where it acts on its queue.
+ *
+ * Every role now points at /staff/applications — the single workbench that renders each role's own
+ * queues (the dedicated KYC-approvals / reborrow / credit / disbursement / accounting / DPD-buckets
+ * pages were all folded into it). A Collection Executive lands on the awaiting-repayment columns +
+ * the DPD grid; the Head's settlements worklist is still its own page, reached from the nav.
+ */
 const ROLE_HREF: Partial<Record<StaffRole, string>> = {
-  KYC_APPROVER: "/staff/kyc-approvals",
-  CREDIT_EXECUTIVE: "/staff/credit/queue",
-  CREDIT_HEAD: "/staff/credit/queue",
-  DISBURSEMENT_HEAD: "/staff/disbursement",
-  ACCOUNTANT: "/staff/accounting",
-  COLLECTION_HEAD: "/staff/collections/settlements",
-  COLLECTION_EXECUTIVE: "/staff/collections/buckets",
+  KYC_APPROVER: "/staff/applications",
+  CREDIT_EXECUTIVE: "/staff/applications",
+  CREDIT_HEAD: "/staff/applications",
+  DISBURSEMENT_HEAD: "/staff/applications",
+  ACCOUNTANT: "/staff/applications",
+  COLLECTION_HEAD: "/staff/applications",
+  COLLECTION_EXECUTIVE: "/staff/applications",
   ADMIN: "/staff/applications",
 };
 
@@ -114,11 +118,11 @@ const pendingSettlementCount = () =>
     .then((r) => r.filter((s) => s.status === "PROPOSED").length)
     .catch(() => 0);
 
-/** Mirrors the /staff/accounting repayment-verify queue. */
+/** Mirrors the accountant's repayment-verify queue on /staff/applications. */
 const pendingRepaymentCount = () => countOf(staffApi.pendingRepayments());
 
 const repaymentsExtra = (count: number): QueueExtra =>
-  ({ key: "repayments", label: "Repayments to verify", count, href: "/staff/accounting" });
+  ({ key: "repayments", label: "Repayments to verify", count, href: "/staff/applications" });
 const settlementsExtra = (count: number): QueueExtra =>
   ({ key: "settlements", label: "Settlements to approve", count, href: "/staff/collections/settlements" });
 
@@ -130,8 +134,8 @@ const settlementsExtra = (count: number): QueueExtra =>
 async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
   switch (role) {
     case "KYC_APPROVER": {
-      // Mirrors /staff/kyc-approvals: KYC clearances + reborrow reviews + the instant-loan
-      // credit fast-path (KYC-approved applications the borrower has already applied on).
+      // Mirrors the KYC approver's panels on /staff/applications: KYC clearances + reborrow
+      // reviews + the instant-loan credit fast-path (KYC-approved applications already applied on).
       const [kyc, review, approved] = await Promise.all([
         safe(staffApi.listByStatus("KYC_PENDING")),
         safe(staffApi.listByStatus("REVIEW_PENDING")),
@@ -150,7 +154,7 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
       return { apps: [...queue, ...headPending], extras: [] };
     }
     case "DISBURSEMENT_HEAD": {
-      // Referral payouts — gated on the referral feature flag exactly as /staff/disbursement/referrals
+      // Referral payouts — gated on the referral feature flag exactly as the referrals page
       // gates it (feature is on unless the flag is explicitly false); skip the read when off. The flag
       // fetch runs alongside the app lists; only the payout count depends on it.
       const [pending, failed, flags] = await Promise.all([
@@ -179,10 +183,10 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
       return { apps: [], extras: pending > 0 ? [settlementsExtra(pending)] : [] };
     }
     case "COLLECTION_EXECUTIVE": {
-      // Mirrors /staff/collections/buckets: open collection cases (the buckets grid lists all of them).
+      // Mirrors the DPD-buckets grid on /staff/applications: every open collection case.
       const cases = await countOf(collectionsApi.listCases());
       const extras: QueueExtra[] = [];
-      if (cases > 0) extras.push({ key: "cases", label: "Open collection cases", count: cases, href: "/staff/collections/buckets" });
+      if (cases > 0) extras.push({ key: "cases", label: "Open collection cases", count: cases, href: "/staff/applications" });
       return { apps: [], extras };
     }
     case "ADMIN": {
@@ -251,6 +255,7 @@ export default function StaffDashboardPage() {
 
   // One shared Journey drawer for the whole page, driven by the open application id.
   const [openJourneyId, setOpenJourneyId] = React.useState<number | null>(null);
+  const [openDetailId, setOpenDetailId] = React.useState<number | null>(null);
 
   if (!mounted || !session || !role) {
     return <div className="h-64 rounded border border-line bg-white" />;
@@ -307,9 +312,10 @@ export default function StaffDashboardPage() {
       {/* 30-day activity trends — applications, disbursals and repayments. */}
       <TrendsSection data={trends.data} loading={trends.isLoading} />
 
-      {/* Layer 2 — Pending actions (main) + Layer 4 quick links (aside) */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+      {/* Layer 2 — Pending actions (full width; the nav already carries every destination, so the
+          former "More & quick links" aside was pure duplication). */}
+      <div>
+        <div>
           {queue ? (
             <section>
               <div className="mb-3 flex items-center justify-between">
@@ -355,28 +361,11 @@ export default function StaffDashboardPage() {
           )}
         </div>
 
-        {/* Layer 4 — collapsed extras */}
-        <aside className="space-y-4">
-          <details className="group rounded border border-line bg-white shadow-sm">
-            <summary className="flex cursor-pointer items-center gap-2 px-5 py-3 font-serif text-base text-navy [&::-webkit-details-marker]:hidden">
-              <ChevronRight size={15} className="transition-transform group-open:rotate-90" />
-              More &amp; quick links
-            </summary>
-            <ul className="border-t border-line px-3 pb-3 pt-1 text-sm">
-              <li><Link href="/staff/applications" className="-mx-0 flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><ClipboardList size={15} /> Live application queues</Link></li>
-              <li><Link href="/staff/kyc-approvals" className="flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><ShieldCheck size={15} /> KYC approvals</Link></li>
-              <li><Link href="/staff/disbursement" className="flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><Banknote size={15} /> Disbursement</Link></li>
-              <li><Link href="/staff/accounting" className="flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><Receipt size={15} /> Accounting</Link></li>
-              <li><Link href="/staff/collections/buckets" className="flex items-center gap-2 rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy"><PhoneCall size={15} /> Collections</Link></li>
-            </ul>
-          </details>
-
-          {stats.isError && (
-            <div className="rounded border border-warning-100 bg-warning-50 p-4 text-xs text-warning-800">
-              Couldn&apos;t load live counts — check that you&apos;re signed in to the staff console.
-            </div>
-          )}
-        </aside>
+        {stats.isError && (
+          <div className="mt-4 rounded border border-warning-100 bg-warning-50 p-4 text-xs text-warning-800">
+            Couldn&apos;t load live counts — check that you&apos;re signed in to the staff console.
+          </div>
+        )}
       </div>
 
       {/* Layer 3 — Pipeline at a glance (full width) */}
@@ -418,7 +407,16 @@ export default function StaffDashboardPage() {
           applicationId={openJourneyId}
           open
           onClose={() => setOpenJourneyId(null)}
+          onOpenDetail={() => {
+            const id = openJourneyId;
+            setOpenJourneyId(null);
+            setOpenDetailId(id);
+          }}
         />
+      )}
+
+      {openDetailId != null && (
+        <ApplicationDetailDialog applicationId={openDetailId} onClose={() => setOpenDetailId(null)} />
       )}
     </div>
   );
@@ -483,7 +481,11 @@ function WorkHero({
           </span>
           <span className="min-w-0 text-sm">
             <span className="font-semibold text-ink">App #{oldest.id}</span>
-            <span className="text-muted"> · Customer #{oldest.customerId} · {amountText(oldest)}</span>
+            <span className="text-muted">
+              {" "}
+              · {oldest.customerName ?? `Customer #${oldest.customerId}`}
+              {oldest.customerMobile ? ` · ${oldest.customerMobile}` : ""} · {amountText(oldest)}
+            </span>
           </span>
           <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-ink shadow-sm">
             {statusLabel(oldest.status)}
@@ -493,7 +495,7 @@ function WorkHero({
               type="button"
               onClick={() => onJourney(oldest.id)}
               className="btn btn-sm btn-outline"
-              aria-label={`Application #${oldest.id}, ${amountText(oldest)}, ${statusLabel(oldest.status)} — view journey`}
+              aria-label={`Application #${oldest.id}, ${oldest.customerName ?? `customer #${oldest.customerId}`}, ${amountText(oldest)}, ${statusLabel(oldest.status)} — view journey`}
             >
               <Route size={14} /> Journey
             </button>
@@ -557,15 +559,19 @@ function PendingActionRow({
       <button
         type="button"
         onClick={() => onJourney(app.id)}
-        aria-label={`Application #${app.id}, ${amountText(app)}, ${statusLabel(app.status)} — view journey`}
+        aria-label={`Application #${app.id}, ${app.customerName ?? `customer #${app.customerId}`}, ${amountText(app)}, ${statusLabel(app.status)} — view journey`}
         className="flex min-w-0 flex-1 items-center gap-4 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-inset"
       >
         <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-full bg-navy-tint font-serif text-sm font-bold text-navy">
           #{app.id}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-ink">Customer #{app.customerId}</span>
-          <span className="block text-xs text-muted">App #{app.id} · {amountText(app)}</span>
+          <span className="block truncate text-sm font-semibold text-ink">
+            {app.customerName ?? `Customer #${app.customerId}`}
+          </span>
+          <span className="block text-xs text-muted">
+            App #{app.id}{app.customerMobile ? ` · ${app.customerMobile}` : ""} · {amountText(app)}
+          </span>
         </span>
         <span className="flex-shrink-0 rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">
           {statusLabel(app.status)}

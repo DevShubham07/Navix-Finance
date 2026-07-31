@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Customer review: KYC details + verification checks + documents (any reviewing role).
+ * Customer review: KYC details + verification checks + documents (every staff role).
  *
  * Loaded on demand so a queue of N rows doesn't fan out N profile/document fetches.
- * Gated to the reviewer roles that have a need-to-know for borrower PII
- * ({@link REVIEW_PERMS}); collection roles / DEVELOPER get a NoAccessNotice. Used by
- * the unified credit detail page and the review lookup (and Phase F). Moved verbatim
- * from the former `live-pipeline.tsx` god-file — logic unchanged.
+ * Gated on {@link REVIEW_PERMS}, which every staff role satisfies via `customer:view`
+ * (a signed-out/unrecognised role still gets a NoAccessNotice). Used by the review
+ * lookup and the unified application detail popup. Moved verbatim from the former
+ * `live-pipeline.tsx` god-file — logic unchanged.
  */
 
 import * as React from "react";

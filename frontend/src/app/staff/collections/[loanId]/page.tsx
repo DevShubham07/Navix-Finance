@@ -37,8 +37,8 @@ export default function CollectionsCasePage() {
 
   return (
     <div>
-      <Link href="/staff/collections/buckets" className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-navy">
-        <ArrowLeft size={15} /> DPD buckets
+      <Link href="/staff/applications" className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-navy">
+        <ArrowLeft size={15} /> Back to live applications
       </Link>
       <PageHeader title="Collection case" subtitle="Log interactions, assign an officer, and propose a settlement.">
         <button onClick={() => { caseQ.refetch(); interQ.refetch(); }}

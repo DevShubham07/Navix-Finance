@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Open any application by ID to load its customer review — gated to reviewer roles
- * (not collections/dev). Moved verbatim from the former `live-pipeline.tsx` god-file.
+ * Open any application by ID to load its customer review — available to every staff role
+ * (gated on {@link REVIEW_PERMS}, which every role satisfies via `customer:view`). Moved
+ * verbatim from the former `live-pipeline.tsx` god-file.
  */
 
 import * as React from "react";

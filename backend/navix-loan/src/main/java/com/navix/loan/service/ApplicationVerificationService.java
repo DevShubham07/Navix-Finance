@@ -115,6 +115,7 @@ public class ApplicationVerificationService {
 
     /** One row in the cross-application pending-API dashboard (Phase 3.3). */
     public record VerificationOverviewRow(Long applicationId, Long customerId, String borrowerName,
+                                          String borrowerMobile,
                                           String checkType, String status, String provider,
                                           String message, Instant updatedAt,
                                           String applicationStatus) {
@@ -1100,6 +1101,7 @@ public class ApplicationVerificationService {
                     return new VerificationOverviewRow(v.getApplicationId(),
                             a != null ? a.getCustomerId() : null,
                             p != null ? p.getFullName() : null,
+                            p != null ? p.getMobile() : null,
                             v.getCheckType(), v.getStatus(), v.getProvider(), v.getMessage(), ts,
                             a != null && a.getStatus() != null ? a.getStatus().name() : null);
                 })
@@ -1112,6 +1114,9 @@ public class ApplicationVerificationService {
 
     private static boolean overviewMatches(VerificationOverviewRow r, String needle) {
         if (r.borrowerName() != null && r.borrowerName().toLowerCase().contains(needle)) {
+            return true;
+        }
+        if (r.borrowerMobile() != null && r.borrowerMobile().contains(needle)) {
             return true;
         }
         if (r.applicationId() != null && String.valueOf(r.applicationId()).contains(needle)) {

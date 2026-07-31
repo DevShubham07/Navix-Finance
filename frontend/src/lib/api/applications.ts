@@ -12,6 +12,8 @@
  * surfacing `error.code` so the UI can show a meaningful message.
  */
 
+import { daysBetween } from "@/lib/calc/loan-math";
+
 // ---------------------------------------------------------------------------
 // Domain types (mirror the backend exactly)
 // ---------------------------------------------------------------------------
@@ -56,6 +58,29 @@ export interface ApplicationView {
   creditScore?: number | null;
   starRating?: number | null;
   recommendation?: string | null;
+  /** Staff-only customer identity (populated on staff queue rows; never on borrower paths). */
+  customerName?: string | null;
+  customerMobile?: string | null;
+  /**
+   * The minted loan's EFFECTIVE status and due date (staff queue rows only; null before disbursal).
+   *
+   * Read `loanDueDate` — not `status` — to decide whether a live loan is overdue: `LoanStatus.OVERDUE`
+   * is compute-on-read and the application aggregate stays `ACTIVE` for the whole repayment window,
+   * so `status === "OVERDUE"` is effectively never true. `loanStatus` also stays `IN_COLLECTIONS`
+   * once a case is opened, past due or not.
+   */
+  loanStatus?: string | null;
+  loanDueDate?: string | null;
+}
+
+/**
+ * True when a disbursed loan is past its due date — the DPD definition used across this product
+ * (`daysBetween` compares calendar dates, so this is timezone-safe). Falls back to the application
+ * status only when no loan due date is known.
+ */
+export function isLoanOverdue(app: ApplicationView, asOf: Date = new Date()): boolean {
+  if (!app.loanDueDate) return app.status === "OVERDUE";
+  return daysBetween(new Date(`${app.loanDueDate}T00:00:00`), asOf) > 0;
 }
 
 /**
@@ -139,6 +164,10 @@ export interface OutstandingView {
   interestPaise?: number;
   penaltyPaise?: number;
   verifiedPaise?: number;
+  /** The day counts those amounts were charged over — interest capped at the tenure, penalty net
+   *  of the 1-day grace and capped at 30 — so the UI can show "1%/day × 27 days". */
+  interestDays?: number;
+  penaltyDays?: number;
 }
 
 export type PaymentMethodName = "UPI" | "BANK_TRANSFER" | "NACH";
@@ -622,6 +651,7 @@ export interface VerificationOverviewRow {
   applicationId: number;
   customerId: number | null;
   borrowerName: string | null;
+  borrowerMobile: string | null;
   checkType: string;
   status: CheckStatus;
   provider: string | null;
@@ -758,6 +788,13 @@ export const staffApi = {
 
   /** The credit head's assignment queue (KYC_APPROVED + applied). */
   creditQueue: () => bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue`, "GET"),
+
+  /**
+   * ACTIVE credit executives for the assignee picker. Any staff role may read it — deliberately
+   * NOT `adminApi.listStaff()`, which is ADMIN-only and therefore 403s for the Credit Head who
+   * actually needs the list. Mirrors `collectionsApi.officers()`.
+   */
+  creditExecutives: () => bff<StaffSummary[]>(`${STAFF_BASE}/credit-executives`, "GET"),
 
   /** Application counts per status for the dashboard pipeline; statuses with no rows default to 0. */
   stats: () =>
@@ -1354,12 +1391,10 @@ export const collectionsApi = {
   assignOfficer: (caseId: string, officerId: number) =>
     bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases/${caseId}/assign`, "POST", { officerId }),
 
-  /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before dueBy). */
-  listCollectibleLoans: (dueBy?: string) =>
-    bff<LoanSummary[]>(
-      `${COLLECTIONS_BASE}/loans${dueBy ? `?dueBy=${encodeURIComponent(dueBy)}` : ""}`,
-      "GET",
-    ),
+  // NOTE: the backend still exposes GET /api/collections/loans ("collectible loans"), but nothing
+  // calls it any more: opening a case is implicit in assigning an officer from the awaiting-repayment
+  // rows on /staff/applications, so the separate "pick a loan, then open a case" list was dropped.
+
   /** ACTIVE collections officers, for the assignee picker. */
   listOfficers: () => bff<StaffSummary[]>(`${COLLECTIONS_BASE}/officers`, "GET"),
 

@@ -10,10 +10,10 @@ test.describe("staff console", () => {
     await expect(page.getByText(/UPI/i).first()).toBeVisible();
   });
 
-  test("kyc-approvals page renders the queue shell", async ({ page }) => {
+  test("live applications renders the KYC approver's queue shell", async ({ page }) => {
     await loginStaff(page, "KYC_APPROVER");
-    await page.goto("/staff/kyc-approvals");
-    await expect(page.getByRole("heading", { name: "KYC approvals" })).toBeVisible();
+    await page.goto("/staff/applications");
+    await expect(page.getByRole("heading", { name: "Live applications" })).toBeVisible();
     await expect(page.getByText("Applications awaiting KYC clearance")).toBeVisible();
   });
 

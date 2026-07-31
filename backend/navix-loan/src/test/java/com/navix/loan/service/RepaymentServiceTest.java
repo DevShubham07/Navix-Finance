@@ -184,12 +184,29 @@ class RepaymentServiceTest {
         assertThat(onTime.verifiedPaise()).isZero();
         assertThat(onTime.outstandingPaise()).isEqualTo(1_100_000L);
         assertThat(onTime.settledAmountPaise()).isNull();
+        // The day counts the UI shows the working with must match the amounts charged.
+        assertThat(onTime.interestDays()).isEqualTo(10);
+        assertThat(onTime.penaltyDays()).isZero();
 
         // Overdue (5 days past due): full 27d interest ₹2,700 + penalty for (5 − 1 grace) = 4 days → ₹800.
         var overdue = repaymentService.outstandingBreakdownAsOf(1L, DUE.plusDays(5));
         assertThat(overdue.interestPaise()).isEqualTo(270_000L);
         assertThat(overdue.penaltyPaise()).isEqualTo(80_000L);
         assertThat(overdue.outstandingPaise()).isEqualTo(1_350_000L);
+        assertThat(overdue.interestDays()).isEqualTo(27);
+        assertThat(overdue.penaltyDays()).isEqualTo(4);
+    }
+
+    /** Past the 30-day penalty cap the reported penaltyDays must be the CHARGED 30, not raw DPD. */
+    @Test
+    void breakdownReportsCappedPenaltyDays() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
+
+        // 60 days past due → raw penalty days 59, but the penalty is capped at 30 days.
+        var b = repaymentService.outstandingBreakdownAsOf(1L, DUE.plusDays(60));
+        assertThat(b.penaltyDays()).isEqualTo(30);
+        assertThat(b.penaltyPaise()).isEqualTo(600_000L); // 2% × ₹10,000 × 30
     }
 
     @Test

@@ -89,6 +89,6 @@ public class LoanController {
         var b = repaymentService.outstandingBreakdownAsOf(loanId, asOf);
         return ApiResponse.ok(new OutstandingView(loanId, asOf != null ? asOf : LocalDate.now(),
                 b.outstandingPaise(), b.settledAmountPaise(), b.interestPaise(), b.penaltyPaise(),
-                b.verifiedPaise()));
+                b.verifiedPaise(), b.interestDays(), b.penaltyDays()));
     }
 }

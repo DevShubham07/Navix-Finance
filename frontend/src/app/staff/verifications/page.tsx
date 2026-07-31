@@ -41,6 +41,7 @@ interface AppCard {
   applicationId: number;
   customerId: number | null;
   borrowerName: string | null;
+  borrowerMobile: string | null;
   total: number;
   passed: number;
   failed: number;
@@ -114,6 +115,7 @@ export default function VerificationsDashboardPage() {
         applicationId,
         customerId: checks.find((c) => c.customerId != null)?.customerId ?? null,
         borrowerName: checks.find((c) => c.borrowerName != null)?.borrowerName ?? null,
+        borrowerMobile: checks.find((c) => c.borrowerMobile != null)?.borrowerMobile ?? null,
         total: checks.length + missingRequired,
         passed,
         failed,
@@ -127,11 +129,18 @@ export default function VerificationsDashboardPage() {
     const term = debounced.toLowerCase();
     for (const app of pendingQ.data ?? []) {
       if (byApp.has(app.id)) continue;
-      if (term && !`${app.id} ${app.customerId ?? ""}`.toLowerCase().includes(term)) continue;
+      if (
+        term &&
+        !`${app.id} ${app.customerId ?? ""} ${app.customerName ?? ""} ${app.customerMobile ?? ""}`
+          .toLowerCase()
+          .includes(term)
+      )
+        continue;
       out.push({
         applicationId: app.id,
         customerId: app.customerId,
-        borrowerName: null,
+        borrowerName: app.customerName ?? null,
+        borrowerMobile: app.customerMobile ?? null,
         total: 0,
         passed: 0,
         failed: 0,
@@ -240,7 +249,12 @@ export default function VerificationsDashboardPage() {
                 {selected.borrowerName ?? (selected.customerId != null ? `Customer #${selected.customerId}` : "Application")}{" "}
                 <span className="text-sm font-normal text-muted">app #{selected.applicationId}</span>
               </h3>
-              {selected.customerId != null && <p className="text-xs text-muted">Customer #{selected.customerId}</p>}
+              {selected.customerId != null && (
+                <p className="text-xs text-muted">
+                  Customer #{selected.customerId}
+                  {selected.borrowerMobile ? ` · ${selected.borrowerMobile}` : ""}
+                </p>
+              )}
             </div>
             <button
               onClick={() => setSelected(null)}
@@ -283,6 +297,7 @@ function AppCardTile({ card, onOpen }: { card: AppCard; onOpen: () => void }) {
           <div className="text-xs text-muted">
             app #{card.applicationId}
             {card.customerId != null ? ` · cust #${card.customerId}` : ""}
+            {card.borrowerMobile ? ` · ${card.borrowerMobile}` : ""}
           </div>
         </div>
         <ChevronRight size={16} className="mt-0.5 flex-shrink-0 text-muted transition group-hover:text-navy" />

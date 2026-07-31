@@ -2,6 +2,8 @@ package com.navix.loan.controller;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
+import com.navix.common.staff.StaffDirectory;
+import com.navix.common.staff.StaffSummary;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationView;
@@ -20,7 +22,9 @@ import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.service.AdminApplicationService;
 import com.navix.loan.service.CustomerReviewService;
 import com.navix.loan.service.ApplicationFlowService;
@@ -29,6 +33,9 @@ import com.navix.loan.service.CreditBriefService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -55,6 +62,8 @@ public class ApplicationController {
     private final ApplicationVerificationService verification;
     private final CreditBriefService creditBrief;
     private final AdminApplicationService adminApplications;
+    private final StaffDirectory staffDirectory;
+    private final LoanRepository loanRepository;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
@@ -83,6 +92,21 @@ public class ApplicationController {
     public ApiResponse<List<ApplicationView>> creditQueue() {
         requireStaff();
         return ApiResponse.ok(enrich(flow.creditHeadQueue()));
+    }
+
+    /**
+     * ACTIVE credit executives, for the Credit Head's assignee picker (activation gating,
+     * dfd.md §13.4) — the credit-side twin of {@code GET /api/collections/officers}.
+     *
+     * <p>This exists because the picker must NOT source its list from {@code GET /api/staff}: that
+     * route is ADMIN-only, so a real Credit Head got {@code FORBIDDEN_ROLE} and the picker rendered
+     * an empty "No active credit executives", making assignment impossible for the one role whose
+     * job it is. Returns only id/name/role/active — no emails or other staff PII.
+     */
+    @GetMapping("/credit-executives")
+    public ApiResponse<List<StaffSummary>> assignableExecutives() {
+        requireStaff();
+        return ApiResponse.ok(staffDirectory.listActive("CREDIT_EXECUTIVE"));
     }
 
     /** Staff dashboard pipeline: application counts per status (statuses with no rows are omitted). */
@@ -311,15 +335,25 @@ public class ApplicationController {
 
     // ---- internals -----------------------------------------------------------------
 
-    /** Attach the customer's credit headline (score + 1–5★ + verdict) to each queue row. Falls back to
-     *  the customer's latest profile for an application without its own snapshot (e.g. a reborrow), so
-     *  the headline is consistent across every staff surface. */
+    /** Attach the customer's credit headline (score + 1–5★ + verdict) and, for a disbursed row, the
+     *  loan's effective status + due date. Falls back to the customer's latest profile for an
+     *  application without its own snapshot (e.g. a reborrow), so the headline is consistent across
+     *  every staff surface. Both lookups are batched — one profile query and one loan query for the
+     *  whole page, never per row. */
     private List<ApplicationView> enrich(List<LoanApplication> apps) {
         if (apps.isEmpty()) {
             return List.of();
         }
         Map<Long, CustomerProfile> byApp = review.effectiveProfilesByApplications(apps);
-        return apps.stream().map(a -> ApplicationView.of(a, byApp.get(a.getId()))).toList();
+        List<Long> loanIds = apps.stream().map(LoanApplication::getLoanId).filter(Objects::nonNull).toList();
+        Map<Long, Loan> byLoan = loanIds.isEmpty()
+                ? Map.of()
+                : StreamSupport.stream(loanRepository.findAllById(loanIds).spliterator(), false)
+                        .collect(Collectors.toMap(Loan::getId, l -> l));
+        return apps.stream()
+                .map(a -> ApplicationView.of(a, byApp.get(a.getId()),
+                        a.getLoanId() != null ? byLoan.get(a.getLoanId()) : null))
+                .toList();
     }
 
     /** Credit score / rating are staff-only — reject borrower / anonymous callers on these reads. */

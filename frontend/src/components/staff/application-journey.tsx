@@ -21,7 +21,6 @@
  */
 
 import * as React from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Zap, X, ArrowRight } from "lucide-react";
 import {
@@ -42,9 +41,12 @@ export interface ApplicationJourneyProps {
   applicationId: number;
   open: boolean;
   onClose: () => void;
+  /** When provided, the footer offers "Open full detail", closing the drawer and raising the
+   *  unified {@link ApplicationDetailDialog} instead of navigating to the (removed) detail page. */
+  onOpenDetail?: () => void;
 }
 
-export function ApplicationJourney({ applicationId, open, onClose }: ApplicationJourneyProps) {
+export function ApplicationJourney({ applicationId, open, onClose, onOpenDetail }: ApplicationJourneyProps) {
   const role = useStaffMe().data?.role;
   const canReview = role != null && REVIEW_PERMS.some((p) => hasPermission(role, p));
 
@@ -78,7 +80,8 @@ export function ApplicationJourney({ applicationId, open, onClose }: Application
 
   const titleId = `journey-title-${applicationId}`;
   const customerName =
-    profileQ.data?.fullName ?? (app ? `Customer #${app.customerId}` : "Customer");
+    profileQ.data?.fullName ?? app?.customerName ?? (app ? `Customer #${app.customerId}` : "Customer");
+  const customerMobile = profileQ.data?.mobile ?? app?.customerMobile ?? null;
 
   // The current stage = the last stage that isn't still "upcoming".
   const activeIndex = journey
@@ -105,6 +108,7 @@ export function ApplicationJourney({ applicationId, open, onClose }: Application
                 {statusLabel(app.status)}
               </span>
               <span className="truncate">{customerName}</span>
+              {customerMobile && <span>· {customerMobile}</span>}
               <span>· {paiseToINR(app.amountRequestedPaise)}</span>
               {journey?.fastTrack && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-gold-50 px-2 py-0.5 font-semibold text-gold-dark">
@@ -133,15 +137,13 @@ export function ApplicationJourney({ applicationId, open, onClose }: Application
           )}
         </DrawerBody>
 
-        <DrawerFooter>
-          <Link
-            href={`/staff/credit/${applicationId}`}
-            onClick={onClose}
-            className="btn btn-sm btn-outline"
-          >
-            Open full detail <ArrowRight size={14} />
-          </Link>
-        </DrawerFooter>
+        {onOpenDetail && (
+          <DrawerFooter>
+            <button onClick={onOpenDetail} className="btn btn-sm btn-outline">
+              Open full detail <ArrowRight size={14} />
+            </button>
+          </DrawerFooter>
+        )}
       </Drawer>
 
       {openStage && app && (

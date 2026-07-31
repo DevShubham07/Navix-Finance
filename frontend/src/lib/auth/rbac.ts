@@ -62,6 +62,9 @@ export type Permission =
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   // KYC approver additionally clears the credit gate in the instant-loan model (loan:review/approve),
   // routing an applied KYC-approved application straight to the Disbursement Head.
+  // KYC approver holds loan:review/loan:approve for the instant-loan credit fast-path only
+  // (KycCreditActions). It never works the exec→head queues — "Live applications" gates those
+  // panels on the role itself, so the fast-path grant can't leak the credit workbench to it.
   KYC_APPROVER: ["kyc:approve", "loan:review", "loan:approve", "customer:view"],
   CREDIT_EXECUTIVE: ["loan:review", "customer:view"],
   CREDIT_HEAD: ["loan:approve", "customer:view"],

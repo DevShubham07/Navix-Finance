@@ -151,9 +151,12 @@ export function NotificationBell({ scope }: { scope: NotificationScope }) {
 /** Deep-link target for a notification, by scope. Conservative — falls back to a hub page. */
 function linkFor(scope: NotificationScope, n: NotificationView): string | null {
   if (scope === "staff") {
-    if (n.caseId) return "/staff/collections/buckets";
+    // Collections notifications land on the DPD-buckets grid, which now lives on the workbench too.
+    if (n.caseId) return "/staff/applications";
     if (n.applicationId) return `/staff/applications?focus=${n.applicationId}`;
-    if (n.loanId) return "/staff/accounting";
+    // Loan-scoped staff notifications (repayments to verify) land on the accountant's queues,
+    // which now live on the unified /staff/applications workbench.
+    if (n.loanId) return "/staff/applications";
     return null;
   }
   // borrower

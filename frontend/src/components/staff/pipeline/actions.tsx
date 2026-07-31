@@ -15,7 +15,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Check, X, Loader2 } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { hasPermission, type Permission } from "@/lib/auth/rbac";
-import { staffApi, adminApi, type ApplicationView } from "@/lib/api/applications";
+import { staffApi, type ApplicationView } from "@/lib/api/applications";
 import { useStaffMe, useRefreshAfterAction, errMessage } from "@/components/staff/pipeline/hooks";
 
 function ApproveRejectButtons({
@@ -219,14 +219,15 @@ export function AssignActions({ app }: { app: ApplicationView }) {
   const isAdmin = me.data?.role === "ADMIN";
   const [execId, setExecId] = React.useState("");
   // Assignee picker: only ACTIVE Credit Executives (dfd §13.4 activation gating).
+  // Sourced from the dedicated staff-readable endpoint, NOT adminApi.listStaff() — that route is
+  // ADMIN-only, so it 403'd for the Credit Head and left this picker permanently empty
+  // ("No active credit executives"), making assignment impossible for the role that owns the step.
   const execQ = useQuery({
     queryKey: ["staff-executives"],
-    queryFn: () => adminApi.listStaff(),
+    queryFn: () => staffApi.creditExecutives(),
     staleTime: 60_000,
   });
-  const execs = (execQ.data ?? []).filter(
-    (s) => s.role === "CREDIT_EXECUTIVE" && s.status === "ACTIVE",
-  );
+  const execs = execQ.data ?? [];
   const m = useMutation({
     mutationFn: () => staffApi.assign(app.id, Number.parseInt(execId, 10)),
     onSuccess: () => refresh(app.id),
@@ -242,6 +243,12 @@ export function AssignActions({ app }: { app: ApplicationView }) {
       <div className="flex items-center gap-2">
         {execQ.isLoading ? (
           <span className="text-xs text-muted">Loading executives…</span>
+        ) : execQ.error ? (
+          // Distinguish "couldn't load the list" from "the list is genuinely empty" — conflating
+          // the two is what hid the ADMIN-only-endpoint bug behind a plausible-looking message.
+          <span className="text-xs text-error-700">
+            Couldn&apos;t load executives — {errMessage(execQ.error)}
+          </span>
         ) : execs.length === 0 ? (
           <span className="text-xs text-muted">No active credit executives</span>
         ) : (

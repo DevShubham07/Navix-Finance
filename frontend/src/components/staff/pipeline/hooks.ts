@@ -65,13 +65,24 @@ export const PIPELINE_ROLES: StaffRole[] = [
 ];
 
 /**
- * Permissions that legitimately need to read customer PII (name, masked PAN/Aadhaar, salary,
- * employer, address, documents). Collection roles (only `collections:*`) and DEVELOPER (no perms)
- * are intentionally excluded — they have no need-to-know for a borrower's salary/employer.
+ * Permissions that grant read access to a customer's PII (name, masked PAN/Aadhaar, salary,
+ * employer, address, documents). Includes `customer:view` — the product decision that EVERY
+ * staff role may view customer PII (mirrors the Customers pane / `CustomerDetailDialog`, which
+ * every role can open); only `customer:manage` (ADMIN) may edit it. The credit/KYC maker-checker
+ * permissions are also listed so a reviewer's access doesn't depend on `customer:view` alone.
  *
- * Shared by {@link CustomerReview} and {@link ReviewLookup}.
+ * `.some(p => hasPermission(role, p))` against this list is therefore true for every staff role —
+ * the check exists so a future role without `customer:view` is still handled correctly, not to
+ * exclude anyone today. Collections/DEVELOPER were previously excluded here by mistake (this list
+ * held only the credit/KYC permissions), which silently hid `ReviewLookup` for those roles and
+ * made every "Open" popup dead-end on "Customer details aren't available to your role" — fixed by
+ * adding `customer:view`.
+ *
+ * Shared by {@link CustomerReview}, {@link ReviewLookup}, {@link ApplicationJourney} and
+ * {@link ApplicationDetailDialog}.
  */
 export const REVIEW_PERMS: Permission[] = [
+  "customer:view",
   "kyc:approve",
   "loan:review",
   "loan:approve",

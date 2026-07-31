@@ -236,11 +236,16 @@ cd ../frontend && npm run build                    # typecheck + build
 > ESLint are clean; use those to verify the frontend.
 
 ### 4.6 Seed demo data (every lifecycle stage)
-With the stack up, **`./scripts/populate-demo-data.ps1`** seeds one application at every stage of the
-lifecycle (KYC → credit → disbursement → ACTIVE/OVERDUE/CLOSED, plus reborrow PRE_APPROVED /
-REVIEW_PENDING) and a primary borrower (login mobile **9819000001**, OTP **123456**) with a closed +
-active + in-review history — all through the live API, with one SQL backdate for the overdue personas.
-See [`populateDummyData.md`](populateDummyData.md).
+For a fully offline demo/recording stack, `scripts/run-demo.ps1` runs the backend on **:8090** and
+Postgres on **:5433** (not the :8080/:5432 defaults in §4.2/§4.3 above — a native PostgreSQL on some
+machines already holds :5432, and :8080 can be reserved by Windows http.sys). With that stack up,
+**`.\scripts\seed-demo-data.ps1`** seeds one application at every stage of the lifecycle (KYC →
+credit → disbursement → ACTIVE/OVERDUE/CLOSED, plus reborrow PRE_APPROVED / REVIEW_PENDING) and
+every back-office surface (collections, settlements, expenses, blocklist, invites, referral payouts)
+— all through the live API, with a small SQL companion for the handful of states the API can't
+produce (overdue backdating, DEFAULTED/WRITTEN_OFF, trend spreading, ADMIN notifications). See
+[`populateDummyData.md`](populateDummyData.md) for the full seeding guide and
+[`DEMO_WALKTHROUGH.md`](DEMO_WALKTHROUGH.md) for the chaptered recording script it supports.
 
 ---
 
@@ -885,7 +890,8 @@ When `navix.email.configuration-set` is set, sends are tagged with a SES **confi
 - **`FUTURE.md`** — go-live roadmap for the remaining deferred set.
 - **`dfd.md`** — authoritative state machine, roles, and workflows W2–W7.
 - **`QA_CHECKLIST.md`** — test inventory; **`populateDummyData.md`** — seed demo data at every lifecycle
-  stage (`scripts/populate-demo-data.ps1`).
+  stage (`scripts/seed-demo-data.ps1`); **`DEMO_WALKTHROUGH.md`** — chaptered recording script for the
+  admin/staff console walkthrough.
 - Memory (`~/.claude/.../memory/`) — `navix-application-state-machine.md` (lifecycle),
   `navix-execution-plan.md` (plan), `navix-unified-design-system.md` (the 2026 "calendar" re-skin), and
   `navix-feature-flags.md` (dev-only DB flags) capture the same decisions for cross-session continuity.

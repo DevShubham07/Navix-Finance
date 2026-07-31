@@ -6,13 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
-  ShieldCheck,
-  UserCheck,
-  ClipboardList,
-  Banknote,
   Receipt,
   Workflow,
-  PhoneCall,
   HandCoins,
   Users,
   Contact,
@@ -63,19 +58,19 @@ const NAV: NavGroup[] = [
       { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard },
       { label: "Live applications", href: "/staff/applications", Icon: Workflow },
       { label: "Customers", href: "/staff/customers", Icon: Contact, perm: "customer:view" },
-      { label: "KYC Approvals", href: "/staff/kyc-approvals", Icon: ShieldCheck, perm: "kyc:approve" },
-      { label: "Reborrow Reviews", href: "/staff/kyc-review", Icon: UserCheck, perm: "kyc:approve" },
+      // KYC approvals, Reborrow reviews, Credit Queue, Disbursement and Accounting were all folded
+      // into "Live applications" — it renders every queue a role can act on, with the same titles,
+      // tooltips and maker-checker actions, so the dedicated pages were byte-for-byte duplication.
+      // Their sub-pages (Referral payouts, Transactions) are genuinely different and survive below.
       { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
-      { label: "Credit Queue", href: "/staff/credit/queue", Icon: ClipboardList, perm: "loan:review" },
-      { label: "Disbursement", href: "/staff/disbursement", Icon: Banknote, perm: "loan:disburse" },
       { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },
-      { label: "Accounting", href: "/staff/accounting", Icon: Receipt, perm: "loan:activate" },
     ],
   },
   {
     heading: "Collections",
     items: [
-      { label: "DPD Buckets", href: "/staff/collections/buckets", Icon: PhoneCall, perm: "collections:interact" },
+      // DPD Buckets folded into "Live applications" alongside the awaiting-repayment columns the
+      // cases are opened from — a collections officer works one page, not two.
       { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: "collections:manage" },
     ],
   },

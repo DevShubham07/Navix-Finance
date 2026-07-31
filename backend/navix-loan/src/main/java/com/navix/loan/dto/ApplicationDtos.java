@@ -3,10 +3,12 @@ package com.navix.loan.dto;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationEvent;
+import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.time.Instant;
+import java.time.LocalDate;
 
 /** Request/response DTOs for the application lifecycle (dfd.md §8). Money is integer paise. */
 public final class ApplicationDtos {
@@ -50,17 +52,38 @@ public final class ApplicationDtos {
             boolean fastTrack,
             Integer creditScore,
             Double starRating,
-            String recommendation) {
+            String recommendation,
+            String customerName,
+            String customerMobile,
+            String loanStatus,
+            LocalDate loanDueDate) {
 
         public static ApplicationView of(LoanApplication a) {
-            return of(a, null);
+            return of(a, null, null);
+        }
+
+        public static ApplicationView of(LoanApplication a, CustomerProfile p) {
+            return of(a, p, null);
         }
 
         /**
-         * Enriched with the customer's staff-only credit headline (score + 1–5★ + verdict) so every
-         * staff queue row shows it inline. {@code p} may be null (no profile / borrower-facing path).
+         * Enriched with the customer's staff-only credit headline (score + 1–5★ + verdict), name and
+         * mobile, so every staff queue row identifies the human on it — plus, once a loan exists, its
+         * <b>effective</b> status and due date.
+         *
+         * <p>The loan fields matter because {@code LoanStatus.OVERDUE} is <b>compute-on-read</b>: no
+         * code path ever writes it, and the aggregate's own {@code loan_application.status} stays
+         * ACTIVE for the whole repayment window. A queue that split on the application status alone
+         * would therefore show every past-due loan as "active" and an always-empty overdue column.
+         * {@code loanDueDate} is the authoritative signal (DPD is derived from it everywhere in this
+         * product), and it stays correct for a loan already flipped to IN_COLLECTIONS, which
+         * {@code effectiveStatus} does not promote.
+         *
+         * <p>{@code p} / {@code loan} may be null (no profile, no loan yet, or the borrower-facing
+         * path) — the corresponding fields then stay {@code null}, never leaking customer PII to the
+         * borrower-facing {@link #of(LoanApplication)} overload.
          */
-        public static ApplicationView of(LoanApplication a, CustomerProfile p) {
+        public static ApplicationView of(LoanApplication a, CustomerProfile p, Loan loan) {
             // A pre-approved reborrow reaches disbursement without a credit executive being assigned;
             // the Disbursement Head surfaces these in a separate fast-track section.
             boolean fastTrack = a.getStatus() == ApplicationStatus.DISBURSEMENT_PENDING
@@ -70,7 +93,11 @@ public final class ApplicationDtos {
                     a.getAssignedExecutiveId(), a.getLoanId(), a.getSalaryCreditDay(), fastTrack,
                     p != null && p.getBureauScore() != null ? p.getBureauScore().intValue() : null,
                     p != null && p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
-                    p != null ? p.getCreditRecommendation() : null);
+                    p != null ? p.getCreditRecommendation() : null,
+                    p != null ? p.getFullName() : null,
+                    p != null ? p.getMobile() : null,
+                    loan != null ? loan.effectiveStatus(LocalDate.now()).name() : null,
+                    loan != null ? loan.getDueDate() : null);
         }
     }
 
