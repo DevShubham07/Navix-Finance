@@ -1,5 +1,15 @@
 # DhanBoost DLT template-creation (SmartPing) — alternate-wording batch
 
+> ## ⏸ NOT SUBMITTED — CONTINGENCY ONLY
+> The **primary** batch (`CHROME_AGENT_PROMPT.md`) was filed on 2026-07-31 and is awaiting approval.
+> Register these `_ALT` variants **only if** the matching primary template is rejected — check the
+> portal's **Rejected** tab first. If you do adopt one, `NotificationTemplates.java` must be updated
+> to the ALT text char-for-char before its id is wired in. See `DLT_SUBMISSION_TRACKER.md` → "▶ NEXT SESSION" → step 5.
+>
+> Note: these still say `Service Implicit`, but the portal now requires a **Promotional** filing for
+> anything that would previously have been Service Explicit, with Header Type
+> "Alphabetic/Alphanumeric (Others)" to keep the `DHANBT` header.
+
 Complete, self-contained instruction set for the Claude-in-Chrome agent creating DhanBoost's DLT SMS
 content templates on the **SmartPing** entity portal. Everything the agent needs is inline.
 

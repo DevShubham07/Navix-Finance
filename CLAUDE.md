@@ -723,17 +723,22 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   (presign + `s3_object_key`); bank **penny-drop**; SSM secrets; the 9-step verified onboarding; the
   admin payment block; mock-layer removal; and a **test suite** (`QA_CHECKLIST.md`, ~136 backend tests,
   Playwright `frontend/e2e/*`, `.github/workflows/ci.yml`).
-- 🟢 **Borrower OTP — live.** Real **UltronSMS** client done and the **login-OTP DLT template is
-  approved** (verified 2026-07-10 via `docs/sms-dlt/test-all-templates.sh` → `NAVIX_OTP_LOGIN_V2`, id
-  `1707178366195230667`, gateway `ErrorCode 000`); its text matches `navix.sms.otp-template`, so OTP
-  sends for real with the gateway env set (§14). `NAVIX_SMS_MOCK=true` → `123456` stays wired for
-  demo/testing without a handset.
-- 🟡 **The 15 lifecycle SMS (`_V2` batch)** are registered but **14 remain pending DLT approval** — the
-  gateway returns `006 Invalid template text` for them (an approval-status issue, not a content one:
-  the sent text is char-for-char identical to `docs/sms-dlt/SMSULTRON.md`). Keep their
-  `NAVIX_SMS_DLT_*` env vars unset (the notification engine no-ops the SMS channel) until they clear;
-  re-run `docs/sms-dlt/test-all-templates.sh` to see which have flipped to `000`. Full run recorded in
-  `docs/sms-dlt/TEMPLATE_TEST_RESULTS.md`.
+- 🟡 **SMS/DLT — the whole batch was re-filed under the DhanBoost brand on 2026-07-31.** The rebrand
+  changed the brand string, the sender (`NAVIXF` → **`DHANBT`**, Active) and the URL in every body,
+  which invalidated all 15 previously-registered `NAVIX_*_V2` ids (now **blacklisted** on the portal —
+  do not send against them). All 15 `DHANBOOST_*_V1` templates are **submitted and awaiting operator
+  approval** (1 Active, 14 Work In Progress); **no new DLT Template IDs have been issued yet**, so the
+  `NAVIX_SMS_DLT_*` env vars stay unset and the notification engine keeps no-op'ing the SMS channel.
+  > **The full state + the next-steps runbook is `docs/sms-dlt/DLT_SUBMISSION_TRACKER.md` → "▶ NEXT
+  > SESSION"** — how to collect the ids, wire them in, and handle rejections. Do **not** re-run
+  > `docs/sms-dlt/CHROME_AGENT_PROMPT.md`; it would duplicate the registrations.
+- 🔴 **Borrower OTP is currently NOT sending.** The only DLT-approved template is the old
+  NAVIX-worded `NAVIX_OTP_LOGIN_V2` (`1707178366195230667`), so ECS task-def **revision 4 pins
+  `NAVIX_SMS_OTP_TEMPLATE` to the NAVIX Finance wording** while `application.yml`'s default is the
+  DhanBoost wording. **Any backend redeploy must be built from rev 4** — building from defaults swaps
+  the live OTP text to unapproved wording and every send fails `006 Invalid template text`. The
+  gateway also still rejects the SSM demo credentials for sender `NAVIXF`. `NAVIX_SMS_MOCK=true` →
+  `123456` remains the local/demo path (it is **off** in prod as of 2026-07-30).
 - 🟡 Staff **emailed invites** + ADMIN-gated invite create; middleware **JWT-signature verify** (still a
   presence check). Rotate the seeded `Admin@12345` + set a strong `AUTH_SECRET` for prod.
 - 🔴 Real bank **payout** (NEFT/IMPS) at the accountant step; sanction-letter/agreement generation → S3.

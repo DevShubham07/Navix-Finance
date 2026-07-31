@@ -1,5 +1,17 @@
 # DhanBoost DLT template-creation — self-contained agent instructions
 
+> ## ⛔ ALREADY SUBMITTED — DO NOT RE-RUN THIS PROMPT
+> All 15 templates below were filed on the SmartPing PE portal on **2026-07-31, 21:00–21:17 IST**
+> (13 as Service Implicit, #14 + #15 as Promotional — SE no longer exists on the portal).
+> Re-running this creates duplicate registrations.
+>
+> **This file is now the record of exactly what was submitted**, kept so the wording can be diffed
+> against `NotificationTemplates.java`. For what to do next — collecting the DLT Template IDs once
+> they are approved, wiring them in, and handling rejections — see
+> **`DLT_SUBMISSION_TRACKER.md` → "▶ NEXT SESSION"**.
+>
+> Only re-run this prompt for a template that was **rejected** and needs re-filing under a new name.
+
 This file is the COMPLETE, self-contained instruction set for the Claude-in-Chrome agent creating
 DhanBoost's DLT SMS content templates on the STPL portal. It embeds every template inline — the agent
 needs nothing else. (Mirror of `dlt-templates.json`; if they ever differ, `dlt-templates.json` wins.)

@@ -112,6 +112,105 @@ wiring the IDs, or they will drift out of match again.
 
 ---
 
+## ▶ NEXT SESSION: what to do once these are approved
+
+**Start here.** Everything below is the only remaining work on the `DHANBOOST_*_V1` batch.
+
+> ⛔ **Do NOT re-run `CHROME_AGENT_PROMPT.md`.** All 15 templates are already submitted (2026-07-31).
+> Re-running it creates duplicates. That prompt is now a *record of what was filed*, not a to-do.
+> `CHROME_AGENT_PROMPT_V3.md` (the `_ALT` batch) is still unused — only touch it if a primary
+> wording is **rejected**.
+
+### Step 1 — Check status on the portal
+
+`https://smartping.live/entity/content-form` → Search `DHANBOOST` → Show Records 25.
+Read the **Global Status** column:
+
+| Status | Meaning | Action |
+|---|---|---|
+| `Work In Progress` | still with the operator | wait, re-check later |
+| `Active` | approved and sendable | collect its **DLT Template ID** (step 2) |
+| listed under the **Rejected** tab | reviewer refused it | step 5 |
+
+### Step 2 — Collect the DLT Template IDs
+
+The listing does **not** show a Template ID column while a template is `Work In Progress` — the ID
+appears only after approval. Open each approved row's **view / eye icon** to read its id, then fill:
+
+1. `DLT_SUBMISSION_TRACKER.md` → the batch table above (replace each `__________`).
+2. `dlt-templates.json` → that template's `"dltTemplateId": null`.
+
+### Step 3 — Wire the IDs into the running app
+
+Set the env vars listed under *"Wiring the IDs into the backend"* above. **#11's single ID goes to
+BOTH** `NAVIX_SMS_DLT_APPLICATION_DECLINED` keys (`CREDIT_REJECTED` + `REBORROW_REVIEW_REJECTED`).
+
+Three prod switches must flip together, or OTP breaks:
+
+| What | Now (NAVIX-era) | Change to |
+|---|---|---|
+| SSM `/navix/dev/navix/sms/sender-id` | `NAVIXF` | `DHANBT` |
+| SSM `/navix/dev/navix/sms/dlt-template-id` | `1707178366195230667` (NAVIX OTP) | the new `DHANBOOST_OTP_LOGIN_V1` id |
+| ECS task-def `NAVIX_SMS_OTP_TEMPLATE` (rev 4) | pinned to the **NAVIX Finance** wording | **remove the override** so `application.yml`'s DhanBoost default applies |
+
+> ⚠ That ECS override exists *because* the only approved template today is the NAVIX-worded one.
+> Until `DHANBOOST_OTP_LOGIN_V1` is Active, **any backend redeploy must be built from task-def
+> revision 4** — deploying without it swaps the live OTP text to DhanBoost wording that DLT has not
+> approved, and every OTP send fails with `006 Invalid template text`.
+
+### Step 4 — Send-test each approved template
+
+```bash
+docs/sms-dlt/test-all-templates.sh <10-digit-number>       # sweeps the batch, writes TEMPLATE_TEST_RESULTS.md
+docs/sms-dlt/test-send-sms.sh <number> "<text>" <dltId>     # one-off
+```
+
+`ErrorCode 000` = accepted by the gateway. Note that a JobId means *queued*, not delivered — the
+`_V2` run looked green at the gateway while 14 of 15 were still unapproved. Confirm on a handset.
+
+**The two Promotional ones (#14, #15) will not reach DND-registered numbers** — test them on a
+non-DND handset before concluding they are broken, and they need a promotional route, not route `02`.
+
+### Step 5 — If any template is rejected
+
+Check the **Rejected** tab for the reason, then:
+
+- **Wording/category pushback on KYC_APPROVED, REBORROW_APPROVED, LOAN_CLOSED or REBORROW_PREAPPROVED**
+  → the softer alternates already exist in `CHROME_AGENT_PROMPT_V3.md`; register the `_ALT` variant and
+  **update `NotificationTemplates.java` to the ALT text char-for-char** before wiring its id.
+- **Any other template** → fix the wording in **all three sources at once**
+  (`NotificationTemplates.java`, `dlt-templates.json`, `CHROME_AGENT_PROMPT.md`) and re-submit under a
+  `_V2`-suffixed name. They must stay byte-identical or the gateway returns `006 Invalid template text`.
+
+### Step 6 — Consistency check before shipping any wording change
+
+```bash
+# every template must agree three ways and stay inside one 160-char SMS segment
+python3 - <<'EOF'
+import re, json, pathlib
+root = pathlib.Path('.')
+java = (root/'backend/navix-notification/src/main/java/com/navix/notification/template/NotificationTemplates.java').read_text()
+be = {m.group(1): re.sub(r'\{[A-Za-z]\w*\}', '{#var#}', ''.join(re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(2))))
+      for m in re.finditer(r'sms\(NotificationType\.(\w+),\s*(.*?)\);', java, re.S)}
+js = {t['name']: t for t in json.loads((root/'docs/sms-dlt/dlt-templates.json').read_text())['templates']}
+md = dict(re.findall(r'\*\*\[\d+\] (DHANBOOST_\w+) —.*?\nCONTENT: `(.*?)`',
+                     (root/'docs/sms-dlt/CHROME_AGENT_PROMPT.md').read_text(), re.S))
+for name, t in js.items():
+    c = t['content']
+    assert md.get(name) == c, f'{name}: prompt != json'
+    assert 'www.' not in c, f'{name}: www. must not come back'
+    est = len(c) - c.count('{#var#}')*7 + sum(13 if 'Rs.' in str(v['sample']) else len(str(v['sample']))
+                                              for v in (t.get('variables') or []))
+    assert est <= 160, f'{name}: {est} chars > 1 segment'
+print('OK — prompt/json agree, no www, all single-segment')
+EOF
+```
+
+(The Java side is keyed by `NotificationType` rather than template name; map it with the
+"NotificationType → config key" column in the batch table above.)
+
+---
+
 ## SUPERSEDED — the `NAVIX_*_V2` batch (audit record only)
 
 Retired by the DhanBoost rebrand. Sender `NAVIXF`, brand "NAVIX Finance", URL
