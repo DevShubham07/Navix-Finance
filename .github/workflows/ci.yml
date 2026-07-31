@@ -58,6 +58,69 @@ jobs:
       # at /staff/admin/staff (known environmental bug). tsc + eslint are the gates.
 
   # ---------------------------------------------------------------------------
+  # Production frontend deploy. Lives in THIS workflow rather than its own so it can
+  # `needs:` the test jobs — a separate workflow can only react to CI via workflow_run,
+  # which fires even when CI failed and then has to re-check the conclusion by hand.
+  #
+  # Why an Action at all, when Vercel has a native Git integration: (1) the native one
+  # deploys regardless of whether tests passed; (2) a DIFFERENT Vercel project ("frontend"
+  # under devshubham07s-projects) is already Git-connected to this repo and owns no domain,
+  # so it builds every push and updates nothing — connecting a second project natively would
+  # just add a second decoy. This job targets the one project that actually serves
+  # dhanboost.com, by id.
+  #
+  # The build runs on Vercel (not here) via --archive=tgz: `npm run build` on a runner hits
+  # the Next static-prerender bug noted above, and Vercel's build already works.
+  deploy-frontend:
+    name: Deploy frontend → Vercel (production)
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Never let two deploys race for the same alias; cancel-in-progress is deliberately
+    # false so an in-flight deploy finishes rather than leaving the alias half-moved.
+    concurrency:
+      group: vercel-production
+      cancel-in-progress: false
+    env:
+      # Not secrets — plain identifiers, visible in every Vercel dashboard URL. Keeping them
+      # here means the only thing to configure is VERCEL_TOKEN. The CLI reads these instead of
+      # .vercel/project.json, which is gitignored and therefore absent on the runner.
+      VERCEL_ORG_ID: team_fD7U271h9m7wnsgnUs5SuKOG
+      VERCEL_PROJECT_ID: prj_ukQ9y9Qv4shSLIs0DQ4ahL5SP7WF
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check VERCEL_TOKEN is configured
+        # Without this the CLI fails with an opaque auth error several minutes in.
+        # The secret goes through env rather than ${{ }} interpolation: inlining it would
+        # bake the value into the generated shell script on disk.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN secret is not set — add it under Settings → Secrets → Actions."
+            exit 1
+          fi
+      - name: Deploy to production
+        working-directory: frontend
+        run: npx vercel@latest deploy --prod --yes --archive=tgz --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Verify the live site picked up this build
+        # The alias moving is the only thing that matters; a green deploy that leaves
+        # dhanboost.com on the old build is exactly the failure this repo already hit.
+        run: |
+          sleep 10
+          hdr=$(curl -sI https://dhanboost.com/login | tr -d '\r' | grep -i '^permissions-policy' || true)
+          echo "$hdr"
+          case "$hdr" in
+            *"geolocation=(self)"*) echo "✓ live site is serving the current build" ;;
+            *) echo "::warning::dhanboost.com did not show the expected header — check the alias." ;;
+          esac
+
+  # ---------------------------------------------------------------------------
   # Live E2E lane (manual): bring up Postgres + the backend (NAVIX_SMS_DEV_ECHO=true) +
   # `npm run dev`, then `npx playwright test`. Needs AWS creds (S3) + the Fintrix sandbox,
   # so it is dispatch-only rather than on every push.
