@@ -33,8 +33,8 @@ public class NotificationTemplates {
                 "Your KYC is verified. You're eligible for an instant loan up to ₹10,00,000 — log in to "
                         + "choose your amount.");
         sms(NotificationType.KYC_APPROVED,
-                "Your KYC is verified with DhanBoost. Log in at https://dhanboost.com/login "
-                        + "to choose your loan amount. - DhanBoost");
+                "Dear {name}, your KYC for DhanBoost application {applicationId} is verified. "
+                        + "Check status at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.KYC_APPROVED, "Your DhanBoost KYC is approved — instant loan up to ₹10,00,000",
                 "Hi {name},\n\nGood news — your KYC is verified. You're now eligible for an instant loan "
                         + "of up to ₹10,00,000. Log in to choose your amount and get funded.\n\n— DhanBoost");
@@ -42,8 +42,8 @@ public class NotificationTemplates {
         inApp(NotificationType.KYC_REJECTED, "KYC could not be verified",
                 "We couldn't verify your KYC. Please review your details and resubmit.");
         sms(NotificationType.KYC_REJECTED,
-                "We could not verify your KYC with DhanBoost. Log in at "
-                        + "https://dhanboost.com/login to review and resubmit. - DhanBoost");
+                "Dear {name}, your KYC for DhanBoost application {applicationId} could not be verified. "
+                        + "Re-submit documents at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.KYC_REJECTED, "About your DhanBoost KYC",
                 "Hi {name},\n\nWe weren't able to verify your KYC this time. Please log in to review "
                         + "your details and resubmit.\n\n— DhanBoost");
@@ -51,8 +51,8 @@ public class NotificationTemplates {
         inApp(NotificationType.KYC_REMINDER, "Finish your verification",
                 "You still have pending verification steps: {pendingSteps}. Log in to complete them.");
         sms(NotificationType.KYC_REMINDER,
-                "Your verification with DhanBoost is incomplete. Log in at "
-                        + "https://dhanboost.com/login to complete your pending steps. - DhanBoost");
+                "Dear {name}, verification steps on your DhanBoost application {applicationId} are "
+                        + "pending. Complete them at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.KYC_REMINDER, "Complete your DhanBoost verification",
                 "Hi {name},\n\nA few verification steps are still pending on your application: "
                         + "{pendingSteps}.\n\nPlease log in to complete them so we can proceed.\n\n— DhanBoost");
@@ -69,14 +69,14 @@ public class NotificationTemplates {
         inApp(NotificationType.REBORROW_REVIEW_APPROVED, "Reborrow approved",
                 "Your repeat application is approved — choose your amount.");
         sms(NotificationType.REBORROW_REVIEW_APPROVED,
-                "Your loan application with DhanBoost is approved. Log in at "
-                        + "https://dhanboost.com/login to choose your amount. - DhanBoost");
+                "Dear {name}, your DhanBoost application {applicationId} is approved. Complete the "
+                        + "remaining steps at https://dhanboost.com/login. - DhanBoost");
 
         inApp(NotificationType.REBORROW_REVIEW_REJECTED, "Reborrow declined",
                 "We're unable to approve your repeat application at this time.");
         sms(NotificationType.REBORROW_REVIEW_REJECTED,
-                "DhanBoost is unable to approve your loan application at this time. Visit "
-                        + "https://dhanboost.com/login for details. - DhanBoost");
+                "Dear {name}, your DhanBoost loan application {applicationId} could not be approved at "
+                        + "this time. Details at https://dhanboost.com/login. - DhanBoost");
 
         // ---------------- CREDIT ----------------
         inApp(NotificationType.LOAN_APPLIED, "New application to review",
@@ -97,8 +97,8 @@ public class NotificationTemplates {
         inApp(NotificationType.CREDIT_REJECTED, "Application declined",
                 "Application #{applicationId} was declined at credit review.");
         sms(NotificationType.CREDIT_REJECTED,
-                "DhanBoost is unable to approve your loan application at this time. Visit "
-                        + "https://dhanboost.com/login for details. - DhanBoost");
+                "Dear {name}, your DhanBoost loan application {applicationId} could not be approved at "
+                        + "this time. Details at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.CREDIT_REJECTED, "About your DhanBoost loan application",
                 "Hi {name},\n\nAfter review, we're unable to approve your loan application "
                         + "#{applicationId} at this time.\n\n— DhanBoost");
@@ -122,8 +122,8 @@ public class NotificationTemplates {
         inApp(NotificationType.LOAN_DISBURSED, "Money on the way",
                 "Your loan is disbursed: {netDisbursed} credited. Repay {totalRepayable} by {dueDate}.");
         sms(NotificationType.LOAN_DISBURSED,
-                "DhanBoost has disbursed {netDisbursed} to your bank account. Repay {totalRepayable} "
-                        + "by {dueDate} at https://dhanboost.com/login. - DhanBoost");
+                "Dear {name}, DhanBoost has credited {netDisbursed} to your bank a/c. Repay "
+                        + "{totalRepayable} by {dueDate} at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.LOAN_DISBURSED, "Your DhanBoost loan has been disbursed",
                 "Hi {name},\n\n{netDisbursed} has been disbursed to your bank account. Your total "
                         + "repayable is {totalRepayable}, due on {dueDate}. You can pay early to save on "
@@ -150,8 +150,8 @@ public class NotificationTemplates {
                 "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on your salary "
                         + "day or the day after — no penalty. Prepay anytime to save on interest.");
         sms(NotificationType.PAYMENT_DUE_SOON,
-                "Your DhanBoost payment of {amount} is due in {daysToDue} day(s) on {dueDate}. Pay at "
-                        + "https://dhanboost.com/login from your salary day, no penalty. - DhanBoost");
+                "Dear {name}, repayment of {amount} on your DhanBoost loan {loanId} is due on {dueDate}. "
+                        + "Pay at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.PAYMENT_DUE_SOON, "Your DhanBoost payment is due soon",
                 "Hi {name},\n\nYour payment of {amount} is due in {daysToDue} day(s), by {dueDate}. You can "
                         + "pay on your salary day or the day after with no penalty — or prepay anytime to save "
@@ -161,8 +161,8 @@ public class NotificationTemplates {
                 "Your payment of {amount} is overdue by {daysOverdue} day(s). Please pay now — a late "
                         + "penalty of 2%/day is accruing and your credit score may be impacted.");
         sms(NotificationType.PAYMENT_OVERDUE,
-                "Your DhanBoost payment of {amount} is overdue by {daysOverdue} day(s). Pay at "
-                        + "https://dhanboost.com/login to stop the penalty and protect your score. - DhanBoost");
+                "Dear {name}, repayment of {amount} on your DhanBoost loan {loanId} is overdue by "
+                        + "{daysOverdue} day(s). Pay at https://dhanboost.com/login. - DhanBoost");
         email(NotificationType.PAYMENT_OVERDUE, "Your DhanBoost payment is overdue",
                 "Hi {name},\n\nYour payment of {amount} is overdue by {daysOverdue} day(s). Please pay as "
                         + "soon as possible — a late penalty of 2% per day is accruing and continued "
@@ -187,8 +187,8 @@ public class NotificationTemplates {
         inApp(NotificationType.SETTLEMENT_APPROVED, "Settlement approved",
                 "A full & final settlement of {settlementAmount} is approved on your loan. Pay it to close.");
         sms(NotificationType.SETTLEMENT_APPROVED,
-                "A full and final settlement of {settlementAmount} is approved on your DhanBoost loan. "
-                        + "Pay at https://dhanboost.com/login to close the loan. - DhanBoost");
+                "Dear {name}, a full and final settlement of {settlementAmount} is approved on DhanBoost "
+                        + "loan {loanId}. Pay at https://dhanboost.com/login. - DhanBoost");
 
         inApp(NotificationType.SETTLEMENT_REJECTED, "Settlement rejected",
                 "Your proposed settlement of {settlementAmount} on loan #{loanId} was not approved.");

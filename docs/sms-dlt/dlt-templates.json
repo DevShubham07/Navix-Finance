@@ -44,8 +44,11 @@
       "source": "NotificationType.KYC_APPROVED",
       "notificationType": "KYC_APPROVED",
       "category": "Service Implicit",
-      "content": "Your KYC is verified with DhanBoost. Log in at https://dhanboost.com/login to choose your loan amount. - DhanBoost",
-      "variables": []
+      "content": "Dear {#var#}, your KYC for DhanBoost application {#var#} is verified. Check status at https://dhanboost.com/login. - DhanBoost",
+      "variables": [
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "application id", "tag": "Number", "sample": "3071" }
+      ]
     },
     {
       "name": "DHANBOOST_KYC_REJECTED_V1",
@@ -53,8 +56,11 @@
       "source": "NotificationType.KYC_REJECTED",
       "notificationType": "KYC_REJECTED",
       "category": "Service Implicit",
-      "content": "We could not verify your KYC with DhanBoost. Log in at https://dhanboost.com/login to review and resubmit. - DhanBoost",
-      "variables": []
+      "content": "Dear {#var#}, your KYC for DhanBoost application {#var#} could not be verified. Re-submit documents at https://dhanboost.com/login. - DhanBoost",
+      "variables": [
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "application id", "tag": "Number", "sample": "3071" }
+      ]
     },
     {
       "name": "DHANBOOST_KYC_REMINDER_V1",
@@ -62,9 +68,12 @@
       "source": "NotificationType.KYC_REMINDER",
       "notificationType": "KYC_REMINDER",
       "category": "Service Implicit",
-      "content": "Your verification with DhanBoost is incomplete. Log in at https://dhanboost.com/login to complete your pending steps. - DhanBoost",
-      "variables": [],
-      "note": "Deliberately variable-free: the joined pending-step list can exceed the 40-char/variable limit. The detailed list stays in the in-app + email versions."
+      "content": "Dear {#var#}, verification steps on your DhanBoost application {#var#} are pending. Complete them at https://dhanboost.com/login. - DhanBoost",
+      "variables": [
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "application id", "tag": "Number", "sample": "3071" }
+      ],
+      "note": "The pending-step LIST is deliberately still absent — the joined list can exceed the 40-char/variable limit, so it stays in the in-app + email versions. The two variables here are the borrower's name and their application id."
     },
     {
       "name": "DHANBOOST_LOAN_DISBURSED_V1",
@@ -72,11 +81,12 @@
       "source": "NotificationType.LOAN_DISBURSED",
       "notificationType": "LOAN_DISBURSED",
       "category": "Service Implicit",
-      "content": "DhanBoost has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://dhanboost.com/login. - DhanBoost",
+      "content": "Dear {#var#}, DhanBoost has credited {#var#} to your bank a/c. Repay {#var#} by {#var#} at https://dhanboost.com/login. - DhanBoost",
       "variables": [
-        { "index": 1, "purpose": "net amount disbursed", "tag": "Amount", "sample": "Rs. 8,820" },
-        { "index": 2, "purpose": "total repayable amount", "tag": "Amount", "sample": "Rs. 12,700" },
-        { "index": 3, "purpose": "due date", "tag": "Date", "sample": "30 Jun 2026" }
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "net amount disbursed", "tag": "Alphanumeric", "sample": "Rs. 8,820" },
+        { "index": 3, "purpose": "total repayable amount", "tag": "Alphanumeric", "sample": "Rs. 12,700" },
+        { "index": 4, "purpose": "due date", "tag": "Alphanumeric", "sample": "30 Jun 2026" }
       ]
     },
     {
@@ -108,12 +118,14 @@
       "source": "NotificationType.PAYMENT_DUE_SOON",
       "notificationType": "PAYMENT_DUE_SOON",
       "category": "Service Implicit",
-      "content": "Your DhanBoost payment of {#var#} is due in {#var#} day(s) on {#var#}. Pay at https://dhanboost.com/login from your salary day, no penalty. - DhanBoost",
+      "content": "Dear {#var#}, repayment of {#var#} on your DhanBoost loan {#var#} is due on {#var#}. Pay at https://dhanboost.com/login. - DhanBoost",
       "variables": [
-        { "index": 1, "purpose": "amount due", "tag": "Amount", "sample": "Rs. 12,700" },
-        { "index": 2, "purpose": "days until due", "tag": "Number", "sample": "3" },
-        { "index": 3, "purpose": "due date", "tag": "Date", "sample": "30 Jun 2026" }
-      ]
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "amount due", "tag": "Alphanumeric", "sample": "Rs. 12,700" },
+        { "index": 3, "purpose": "loan id", "tag": "Number", "sample": "1042" },
+        { "index": 4, "purpose": "due date", "tag": "Alphanumeric", "sample": "30 Jun 2026" }
+      ],
+      "note": "The 'due in N day(s)' countdown and the 'from your salary day, no penalty' clause were dropped in the 2026-08-01 resubmission — the latter reads as an inducement. Both survive in the in-app + email versions."
     },
     {
       "name": "DHANBOOST_PAYMENT_OVERDUE_V1",
@@ -121,11 +133,14 @@
       "source": "NotificationType.PAYMENT_OVERDUE",
       "notificationType": "PAYMENT_OVERDUE",
       "category": "Service Implicit",
-      "content": "Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay at https://dhanboost.com/login to stop the penalty and protect your score. - DhanBoost",
+      "content": "Dear {#var#}, repayment of {#var#} on your DhanBoost loan {#var#} is overdue by {#var#} day(s). Pay at https://dhanboost.com/login. - DhanBoost",
       "variables": [
-        { "index": 1, "purpose": "overdue amount", "tag": "Amount", "sample": "Rs. 12,700" },
-        { "index": 2, "purpose": "days overdue", "tag": "Number", "sample": "5" }
-      ]
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "overdue amount", "tag": "Alphanumeric", "sample": "Rs. 12,700" },
+        { "index": 3, "purpose": "loan id", "tag": "Number", "sample": "1042" },
+        { "index": 4, "purpose": "days overdue", "tag": "Number", "sample": "5" }
+      ],
+      "note": "The 'stop the penalty and protect your score' clause was dropped in the 2026-08-01 resubmission (pressure/marketing tone); it survives in the in-app + email versions."
     },
     {
       "name": "DHANBOOST_LOAN_CLOSED_V1",
@@ -142,8 +157,11 @@
       "source": "NotificationType.CREDIT_REJECTED + NotificationType.REBORROW_REVIEW_REJECTED",
       "notificationType": ["CREDIT_REJECTED", "REBORROW_REVIEW_REJECTED"],
       "category": "Service Implicit",
-      "content": "DhanBoost is unable to approve your loan application at this time. Visit https://dhanboost.com/login for details. - DhanBoost",
-      "variables": [],
+      "content": "Dear {#var#}, your DhanBoost loan application {#var#} could not be approved at this time. Details at https://dhanboost.com/login. - DhanBoost",
+      "variables": [
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "application id", "tag": "Number", "sample": "3071" }
+      ],
       "note": "One registered template reused for BOTH the first-loan credit rejection (CREDIT_REJECTED) and the returning-borrower reborrow rejection (REBORROW_REVIEW_REJECTED) — the content is identical, so a single DLT Template ID is bound to both NotificationTypes in navix.sms.dlt-template-ids."
     },
     {
@@ -152,9 +170,11 @@
       "source": "NotificationType.SETTLEMENT_APPROVED",
       "notificationType": "SETTLEMENT_APPROVED",
       "category": "Service Implicit",
-      "content": "A full and final settlement of {#var#} is approved on your DhanBoost loan. Pay at https://dhanboost.com/login to close the loan. - DhanBoost",
+      "content": "Dear {#var#}, a full and final settlement of {#var#} is approved on DhanBoost loan {#var#}. Pay at https://dhanboost.com/login. - DhanBoost",
       "variables": [
-        { "index": 1, "purpose": "settlement amount", "tag": "Amount", "sample": "Rs. 9,000" }
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "settlement amount", "tag": "Alphanumeric", "sample": "Rs. 9,000" },
+        { "index": 3, "purpose": "loan id", "tag": "Number", "sample": "1042" }
       ]
     },
     {
@@ -163,8 +183,11 @@
       "source": "NotificationType.REBORROW_REVIEW_APPROVED",
       "notificationType": "REBORROW_REVIEW_APPROVED",
       "category": "Service Implicit",
-      "content": "Your loan application with DhanBoost is approved. Log in at https://dhanboost.com/login to choose your amount. - DhanBoost",
-      "variables": []
+      "content": "Dear {#var#}, your DhanBoost application {#var#} is approved. Complete the remaining steps at https://dhanboost.com/login. - DhanBoost",
+      "variables": [
+        { "index": 1, "purpose": "borrower name", "tag": "Alphanumeric", "sample": "Rahul Sharma" },
+        { "index": 2, "purpose": "application id", "tag": "Number", "sample": "3071" }
+      ]
     },
     {
       "name": "DHANBOOST_REBORROW_PREAPPROVED_V1",

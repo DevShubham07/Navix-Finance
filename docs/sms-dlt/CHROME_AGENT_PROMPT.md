@@ -87,24 +87,31 @@ VARS:
 NOTE: OTP is intentionally link-free (no URL). Register it FIRST — it is the only template that can
 send before `dhanboost.com` exists, and it unblocks borrower login.
 
-**[2] DHANBOOST_KYC_APPROVED_V1 — Service Implicit**
-CONTENT: `Your KYC is verified with DhanBoost. Log in at https://dhanboost.com/login to choose your loan amount. - DhanBoost`
-VARS: none
-
-**[3] DHANBOOST_KYC_REJECTED_V1 — Service Implicit**
-CONTENT: `We could not verify your KYC with DhanBoost. Log in at https://dhanboost.com/login to review and resubmit. - DhanBoost`
-VARS: none
-
-**[4] DHANBOOST_KYC_REMINDER_V1 — Service Implicit**
-CONTENT: `Your verification with DhanBoost is incomplete. Log in at https://dhanboost.com/login to complete your pending steps. - DhanBoost`
-VARS: none
-
-**[5] DHANBOOST_LOAN_DISBURSED_V1 — Service Implicit**
-CONTENT: `DhanBoost has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://dhanboost.com/login. - DhanBoost`
+**[2] DHANBOOST_KYC_APPROVED_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, your KYC for DhanBoost application {#var#} is verified. Check status at https://dhanboost.com/login. - DhanBoost`
 VARS:
-1. net amount disbursed | Amount | `Rs. 8,820`
-2. total repayable amount | Amount | `Rs. 12,700`
-3. due date | Date | `30 Jun 2026`
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. application id | Number | `3071`
+
+**[3] DHANBOOST_KYC_REJECTED_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, your KYC for DhanBoost application {#var#} could not be verified. Re-submit documents at https://dhanboost.com/login. - DhanBoost`
+VARS:
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. application id | Number | `3071`
+
+**[4] DHANBOOST_KYC_REMINDER_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, verification steps on your DhanBoost application {#var#} are pending. Complete them at https://dhanboost.com/login. - DhanBoost`
+VARS:
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. application id | Number | `3071`
+
+**[5] DHANBOOST_LOAN_DISBURSED_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, DhanBoost has credited {#var#} to your bank a/c. Repay {#var#} by {#var#} at https://dhanboost.com/login. - DhanBoost`
+VARS:
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. net amount disbursed | Alphanumeric | `Rs. 8,820`
+3. total repayable amount | Alphanumeric | `Rs. 12,700`
+4. due date | Alphanumeric | `30 Jun 2026`
 
 **[6] DHANBOOST_REPAYMENT_VERIFIED_V1 — Service Implicit**
 CONTENT: `Your payment of {#var#} to DhanBoost is confirmed. Outstanding balance is {#var#}. View details at https://dhanboost.com/login. - DhanBoost`
@@ -117,37 +124,46 @@ CONTENT: `Your payment of {#var#} could not be verified by DhanBoost. Log in at 
 VARS:
 1. payment amount | Amount | `Rs. 5,000`
 
-**[8] DHANBOOST_PAYMENT_DUE_SOON_V1 — Service Implicit**
-CONTENT: `Your DhanBoost payment of {#var#} is due in {#var#} day(s) on {#var#}. Pay at https://dhanboost.com/login from your salary day, no penalty. - DhanBoost`
+**[8] DHANBOOST_PAYMENT_DUE_SOON_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, repayment of {#var#} on your DhanBoost loan {#var#} is due on {#var#}. Pay at https://dhanboost.com/login. - DhanBoost`
 VARS:
-1. amount due | Amount | `Rs. 12,700`
-2. days until due | Number | `3`
-3. due date | Date | `30 Jun 2026`
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. amount due | Alphanumeric | `Rs. 12,700`
+3. loan id | Number | `1042`
+4. due date | Alphanumeric | `30 Jun 2026`
 
-**[9] DHANBOOST_PAYMENT_OVERDUE_V1 — Service Implicit**
-CONTENT: `Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay at https://dhanboost.com/login to stop the penalty and protect your score. - DhanBoost`
+**[9] DHANBOOST_PAYMENT_OVERDUE_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, repayment of {#var#} on your DhanBoost loan {#var#} is overdue by {#var#} day(s). Pay at https://dhanboost.com/login. - DhanBoost`
 VARS:
-1. overdue amount | Amount | `Rs. 12,700`
-2. days overdue | Number | `5`
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. overdue amount | Alphanumeric | `Rs. 12,700`
+3. loan id | Number | `1042`
+4. days overdue | Number | `5`
 
 **[10] DHANBOOST_LOAN_CLOSED_V1 — Service Implicit**
 CONTENT: `Your loan with DhanBoost is fully repaid and closed. Thank you. Visit https://dhanboost.com/login to borrow again. - DhanBoost`
 VARS: none
 
-**[11] DHANBOOST_APPLICATION_DECLINED_V1 — Service Implicit**
-CONTENT: `DhanBoost is unable to approve your loan application at this time. Visit https://dhanboost.com/login for details. - DhanBoost`
-VARS: none
+**[11] DHANBOOST_APPLICATION_DECLINED_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, your DhanBoost loan application {#var#} could not be approved at this time. Details at https://dhanboost.com/login. - DhanBoost`
+VARS:
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. application id | Number | `3071`
 NOTE: ONE template reused for BOTH the credit rejection and the reborrow rejection — register once;
 its single DLT Template ID is bound to both notification types in the backend.
 
-**[12] DHANBOOST_SETTLEMENT_APPROVED_V1 — Service Implicit**
-CONTENT: `A full and final settlement of {#var#} is approved on your DhanBoost loan. Pay at https://dhanboost.com/login to close the loan. - DhanBoost`
+**[12] DHANBOOST_SETTLEMENT_APPROVED_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, a full and final settlement of {#var#} is approved on DhanBoost loan {#var#}. Pay at https://dhanboost.com/login. - DhanBoost`
 VARS:
-1. settlement amount | Amount | `Rs. 9,000`
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. settlement amount | Alphanumeric | `Rs. 9,000`
+3. loan id | Number | `1042`
 
-**[13] DHANBOOST_REBORROW_APPROVED_V1 — Service Implicit**
-CONTENT: `Your loan application with DhanBoost is approved. Log in at https://dhanboost.com/login to choose your amount. - DhanBoost`
-VARS: none
+**[13] DHANBOOST_REBORROW_APPROVED_V1 — Service Implicit**  *(rewritten + re-submitted 2026-08-01)*
+CONTENT: `Dear {#var#}, your DhanBoost application {#var#} is approved. Complete the remaining steps at https://dhanboost.com/login. - DhanBoost`
+VARS:
+1. borrower name | Alphanumeric | `Rahul Sharma`
+2. application id | Number | `3071`
 
 **[14] DHANBOOST_REBORROW_PREAPPROVED_V1 — Service Implicit  ⚠ BORDERLINE — PAUSE & ASK BEFORE SUBMIT**
 CONTENT: `Welcome back to DhanBoost. You can apply for another loan now. Log in at https://dhanboost.com/login to choose your amount. - DhanBoost`

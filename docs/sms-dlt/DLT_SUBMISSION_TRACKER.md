@@ -3,9 +3,15 @@
 To be submitted to the STPL DLT portal as **NAVIX FINANCE PRIVATE LIMITED** (legal entity unchanged),
 brand **DhanBoost**, sender **DHANBT**, PE-ID `1701178039634361131`.
 
-**Status: all 15 SUBMITTED 2026-07-31 21:00–21:17 IST via the SmartPing PE portal.**
-1 Active · 14 "Work In Progress" (awaiting operator approval). **No DLT Template IDs assigned yet** —
-the listing shows them only once a template is approved; re-check and fill the table below.
+**Status (verified on the portal 2026-08-01 ~12:45 IST): 6 Active · 9 Work In Progress.**
+
+- All 15 were first submitted 2026-07-31 21:00–21:23. STPL **approved 6** and **rejected 9** at
+  21:50–21:53.
+- The 9 rejected were **rewritten and re-submitted 2026-08-01** through the portal's own
+  **Re-Submit** button (same reference number, same `_V1` name, still **Service Implicit**) and are
+  now back at Work In Progress. See *"The 2026-08-01 rewrite"* below.
+- **No DLT Template IDs assigned yet** — the listing shows them only once a template is approved;
+  re-check and fill the table below.
 
 > Reminder: **#11 is one template bound to TWO NotificationTypes** — map its single ID to both
 > `CREDIT_REJECTED` and `REBORROW_REVIEW_REJECTED`.
@@ -29,23 +35,63 @@ borrower login.
 
 ## The batch
 
-| # | Template name | Target category | NotificationType → config key | DLT Template ID | Send test |
+`Status` is the portal's **Global Status** as of 2026-08-01 12:45. **WIP¹** = rejected 31/07 and
+re-submitted 01/08 with rewritten copy.
+
+| # | Template name | Registered type | Status | NotificationType → config key | DLT Template ID |
 |---|---|---|---|---|---|
-| 1 | DHANBOOST_OTP_LOGIN_V1 | Service Implicit | `OTP_LOGIN` (BorrowerOtpService) | `__________` | — |
-| 2 | DHANBOOST_KYC_APPROVED_V1 | Service Implicit | `KYC_APPROVED` | `__________` | — |
-| 3 | DHANBOOST_KYC_REJECTED_V1 | Service Implicit | `KYC_REJECTED` | `__________` | — |
-| 4 | DHANBOOST_KYC_REMINDER_V1 | Service Implicit | `KYC_REMINDER` | `__________` | — |
-| 5 | DHANBOOST_LOAN_DISBURSED_V1 | Service Implicit | `LOAN_DISBURSED` | `__________` | — |
-| 6 | DHANBOOST_REPAYMENT_VERIFIED_V1 | Service Implicit | `REPAYMENT_VERIFIED` | `__________` | — |
-| 7 | DHANBOOST_REPAYMENT_REJECTED_V1 | Service Implicit | `REPAYMENT_REJECTED` | `__________` | — |
-| 8 | DHANBOOST_PAYMENT_DUE_SOON_V1 | Service Implicit | `PAYMENT_DUE_SOON` | `__________` | — |
-| 9 | DHANBOOST_PAYMENT_OVERDUE_V1 | Service Implicit | `PAYMENT_OVERDUE` | `__________` | — |
-| 10 | DHANBOOST_LOAN_CLOSED_V1 | Service Implicit | `LOAN_CLOSED` | `__________` | — |
-| 11 | DHANBOOST_APPLICATION_DECLINED_V1 | Service Implicit | `CREDIT_REJECTED` **and** `REBORROW_REVIEW_REJECTED` | `__________` | — (one ID → both keys) |
-| 12 | DHANBOOST_SETTLEMENT_APPROVED_V1 | Service Implicit | `SETTLEMENT_APPROVED` | `__________` | — |
-| 13 | DHANBOOST_REBORROW_APPROVED_V1 | Service Implicit | `REBORROW_REVIEW_APPROVED` | `__________` | — |
-| 14 | DHANBOOST_REBORROW_PREAPPROVED_V1 | **Promotional** (filed) — ✅ **Active** 31/07 21:16 | `REBORROW_PREAPPROVED` | `__________` | — |
-| 15 | DHANBOOST_REFERRAL_REWARD_CREDITED_V1 | **Promotional** (filed) | `REFERRAL_REWARD_CREDITED` | `__________` | — |
+| 1 | DHANBOOST_OTP_LOGIN_V1 | Service Implicit | ✅ **Active** | `OTP_LOGIN` (BorrowerOtpService) | `__________` |
+| 2 | DHANBOOST_KYC_APPROVED_V1 | Service Implicit | WIP¹ | `KYC_APPROVED` | `__________` |
+| 3 | DHANBOOST_KYC_REJECTED_V1 | Service Implicit | WIP¹ | `KYC_REJECTED` | `__________` |
+| 4 | DHANBOOST_KYC_REMINDER_V1 | Service Implicit | WIP¹ | `KYC_REMINDER` | `__________` |
+| 5 | DHANBOOST_LOAN_DISBURSED_V1 | Service Implicit | WIP¹ | `LOAN_DISBURSED` | `__________` |
+| 6 | DHANBOOST_REPAYMENT_VERIFIED_V1 | Service Implicit | ✅ **Active** | `REPAYMENT_VERIFIED` | `__________` |
+| 7 | DHANBOOST_REPAYMENT_REJECTED_V1 | Service Implicit | ✅ **Active** | `REPAYMENT_REJECTED` | `__________` |
+| 8 | DHANBOOST_PAYMENT_DUE_SOON_V1 | Service Implicit | WIP¹ | `PAYMENT_DUE_SOON` | `__________` |
+| 9 | DHANBOOST_PAYMENT_OVERDUE_V1 | Service Implicit | WIP¹ | `PAYMENT_OVERDUE` | `__________` |
+| 10 | DHANBOOST_LOAN_CLOSED_V1 | Service Implicit | ✅ **Active** | `LOAN_CLOSED` | `__________` |
+| 11 | DHANBOOST_APPLICATION_DECLINED_V1 | Service Implicit | WIP¹ | `CREDIT_REJECTED` **and** `REBORROW_REVIEW_REJECTED` | `__________` (one ID → both keys) |
+| 12 | DHANBOOST_SETTLEMENT_APPROVED_V1 | Service Implicit | WIP¹ | `SETTLEMENT_APPROVED` | `__________` |
+| 13 | DHANBOOST_REBORROW_APPROVED_V1 | Service Implicit | WIP¹ | `REBORROW_REVIEW_APPROVED` | `__________` |
+| 14 | DHANBOOST_REBORROW_PREAPPROVED_V1 | **Promotional** | ✅ **Active** 31/07 21:16 | `REBORROW_PREAPPROVED` | `__________` |
+| 15 | DHANBOOST_REFERRAL_REWARD_CREDITED_V1 | **Promotional** | ✅ **Active** | `REFERRAL_REWARD_CREDITED` | `__________` |
+
+## The 2026-08-01 rewrite (the 9 rejected templates)
+
+STPL gave exactly two rejection remarks, both about sounding like marketing:
+
+| Remark | Templates |
+|---|---|
+| *"Link is promotional in nature."* | PAYMENT_DUE_SOON, LOAN_DISBURSED, SETTLEMENT_APPROVED, PAYMENT_OVERDUE |
+| *"Content is promotional in nature. Please resubmit in promotional content type."* | KYC_APPROVED, KYC_REJECTED, KYC_REMINDER, APPLICATION_DECLINED, REBORROW_APPROVED |
+
+> ⚠ **The URL was deliberately KEPT** (operator decision, 2026-08-01) even though 4 of the 9 were
+> rejected *specifically for the link*. If those four come back rejected a second time with the same
+> remark, dropping `https://dhanboost.com/login` from the body is the remaining lever — the borrower
+> still gets the link in the in-app + email versions of the same notification.
+
+**What changed in the copy** (the rewrite kept Service Implicit rather than moving to Promotional,
+because Promotional is not delivered to DND-registered numbers):
+
+- Every body now opens **`Dear {#var#},`** with the borrower's name and cites **their own
+  application / loan id** — so it reads as a record about their account, not a broadcast.
+- Removed every invitation to transact: *"to choose your loan amount"*, *"to choose your amount"*,
+  *"to borrow again"*, *"Log in at …"* as an opener.
+- Removed the inducement/pressure clauses: *"from your salary day, no penalty"* (due-soon) and
+  *"to stop the penalty and protect your score"* (overdue).
+- The link is now a plain destination (*"Pay at …"*, *"Details at …"*, *"Check status at …"*) rather
+  than a call to action.
+
+Mechanics of the resubmission, for the next person: the Rejected tab's **Re-Submit** button opens
+`/entity/template-resubmit/<referenceNumber>/<PEID>` with the old values pre-filled. Editing the
+message box **wipes every variable tag and sample**, and the variable blocks only rebuild after a
+`keyup`/`blur` on that box — so always set the message first, then the header, and fill the
+**variable tags last**. The header resets to *"No header selected"* and must be re-picked as
+`DHANBT` every time.
+
+**All three sources are back in sync** — `NotificationTemplates.java`, `dlt-templates.json` and the
+portal agree char-for-char (verified with the §6 script). The 6 Active templates were **not**
+touched.
 
 ## What was chosen at submission (2026-07-31)
 

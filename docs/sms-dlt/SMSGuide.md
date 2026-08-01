@@ -52,7 +52,7 @@ So the code and the live registrations **no longer agree**: any send today retur
 | 1 | Register the domain **dhanboost.com** | It does not exist as of 2026-07-31; 14 of 15 templates link to it |
 | 2 | Register **DhanBoost** as a brand under the entity on DLT | Otherwise every submit fails "Entity brand name is not mentioned" (§1) |
 | 3 | Register/activate the 6-char header **DHANBT** | Replaces the retired `NAVIXF` |
-| 4 | URL-whitelist **`https://www.dhanboost.com/login`** char-for-char | Un-whitelisted URL → rejection (§2) |
+| 4 | URL-whitelist **`https://dhanboost.com/login`** char-for-char (apex — **no `www.`**) | Un-whitelisted URL → rejection (§2) |
 
 `DHANBOOST_OTP_LOGIN_V1` is link-free — it only needs #2 and #3, so register it first to unblock
 borrower login while the domain work proceeds.
@@ -91,7 +91,7 @@ borrower login while the domain work proceeds.
 - Don't reuse one content template across multiple headers.
 - Once a `{#var#}` is inserted, don't hand-edit it in the box or it stops being a variable.
 - ⚠️ **URLs must be whitelisted.** Every non-OTP template below carries
-  `https://www.dhanboost.com/login`. That **exact** URL **must be whitelisted under the entity on
+  `https://dhanboost.com/login` (apex — **no `www.`**). That **exact** URL **must be whitelisted under the entity on
   the SmartPing/DLT portal (URL/APK whitelisting) before submission** — and it must match the URL in
   the registered content char-for-char — or any template containing the link is rejected. The domain
   must also actually resolve (§0 blocker #1). (OTP is intentionally link-free — links in OTP messages
@@ -151,22 +151,27 @@ Your OTP for DhanBoost login is {#var#}. It is valid for {#var#} minutes. Do not
 Source: `NotificationTemplates.java`. Register each as its own content template (one DLT Template ID
 each). Full data incl. sample values is in [`dlt-templates.json`](./dlt-templates.json).
 
-| # | Template name | DLT content to register | Vars (in order) |
-|---|---|---|---|
-| 1 | `DHANBOOST_KYC_APPROVED_V1` | `Your KYC is verified with DhanBoost. Log in at https://www.dhanboost.com/login to choose your loan amount. - DhanBoost` | — |
-| 2 | `DHANBOOST_KYC_REJECTED_V1` | `We could not verify your KYC with DhanBoost. Log in at https://www.dhanboost.com/login to review and resubmit. - DhanBoost` | — |
-| 3 | `DHANBOOST_KYC_REMINDER_V1` | `Your verification with DhanBoost is incomplete. Log in at https://www.dhanboost.com/login to complete your pending steps. - DhanBoost` | — |
-| 4 | `DHANBOOST_LOAN_DISBURSED_V1` | `DhanBoost has disbursed {#var#} to your bank account. Repay {#var#} by {#var#} at https://www.dhanboost.com/login. - DhanBoost` | net disbursed, total repayable, due date |
-| 5 | `DHANBOOST_REPAYMENT_VERIFIED_V1` | `Your payment of {#var#} to DhanBoost is confirmed. Outstanding balance is {#var#}. View details at https://www.dhanboost.com/login. - DhanBoost` | amount, outstanding |
-| 6 | `DHANBOOST_REPAYMENT_REJECTED_V1` | `Your payment of {#var#} could not be verified by DhanBoost. Log in at https://www.dhanboost.com/login to check the reference and record it again. - DhanBoost` | amount |
-| 7 | `DHANBOOST_PAYMENT_DUE_SOON_V1` | `Your DhanBoost payment of {#var#} is due in {#var#} day(s) by {#var#}. Pay at https://www.dhanboost.com/login on or after your salary day with no penalty. - DhanBoost` | amount, days to due, due date |
-| 8 | `DHANBOOST_PAYMENT_OVERDUE_V1` | `Your DhanBoost payment of {#var#} is overdue by {#var#} day(s). Pay now at https://www.dhanboost.com/login to stop the daily penalty and protect your credit score. - DhanBoost` | amount, days overdue |
-| 9 | `DHANBOOST_LOAN_CLOSED_V1` | `Your loan with DhanBoost is fully repaid and closed. Thank you. Visit https://www.dhanboost.com/login to borrow again. - DhanBoost` | — |
-| 10 | `DHANBOOST_APPLICATION_DECLINED_V1` | `DhanBoost is unable to approve your loan application at this time. Visit https://www.dhanboost.com/login for details. - DhanBoost` | — |
-| 11 | `DHANBOOST_SETTLEMENT_APPROVED_V1` | `A full and final settlement of {#var#} is approved on your DhanBoost loan. Pay at https://www.dhanboost.com/login to close the loan. - DhanBoost` | settlement amount |
-| 12 | `DHANBOOST_REBORROW_APPROVED_V1` | `Your loan application with DhanBoost is approved. Log in at https://www.dhanboost.com/login to choose your amount. - DhanBoost` | — |
-| 13 | `DHANBOOST_REBORROW_PREAPPROVED_V1` | `Welcome back to DhanBoost. You can apply for another loan now. Log in at https://www.dhanboost.com/login to choose your amount. - DhanBoost` | — |
-| 14 | `DHANBOOST_REFERRAL_REWARD_CREDITED_V1` | `Your DhanBoost referral reward of {#var#} is credited with reference {#var#}. Log in at https://www.dhanboost.com/login to view it. - DhanBoost` | reward amount, txn reference |
+> ⚠ **The URL is the apex `https://dhanboost.com/login` — no `www.`** (that is what is whitelisted as
+> a CTA, and it is checked char-for-char). Rows marked **WIP** were rejected 2026-07-31 as
+> "promotional" and rewritten + re-submitted 2026-08-01; rows marked **Active** are approved and
+> **frozen — do not edit their wording**. See [`DLT_SUBMISSION_TRACKER.md`](./DLT_SUBMISSION_TRACKER.md).
+
+| # | Template name | Status | DLT content to register | Vars (in order) |
+|---|---|---|---|---|
+| 1 | `DHANBOOST_KYC_APPROVED_V1` | WIP | `Dear {#var#}, your KYC for DhanBoost application {#var#} is verified. Check status at https://dhanboost.com/login. - DhanBoost` | name, application id |
+| 2 | `DHANBOOST_KYC_REJECTED_V1` | WIP | `Dear {#var#}, your KYC for DhanBoost application {#var#} could not be verified. Re-submit documents at https://dhanboost.com/login. - DhanBoost` | name, application id |
+| 3 | `DHANBOOST_KYC_REMINDER_V1` | WIP | `Dear {#var#}, verification steps on your DhanBoost application {#var#} are pending. Complete them at https://dhanboost.com/login. - DhanBoost` | name, application id |
+| 4 | `DHANBOOST_LOAN_DISBURSED_V1` | WIP | `Dear {#var#}, DhanBoost has credited {#var#} to your bank a/c. Repay {#var#} by {#var#} at https://dhanboost.com/login. - DhanBoost` | name, net disbursed, total repayable, due date |
+| 5 | `DHANBOOST_REPAYMENT_VERIFIED_V1` | ✅ Active | `Your payment of {#var#} to DhanBoost is confirmed. Outstanding balance is {#var#}. View details at https://dhanboost.com/login. - DhanBoost` | amount, outstanding |
+| 6 | `DHANBOOST_REPAYMENT_REJECTED_V1` | ✅ Active | `Your payment of {#var#} could not be verified by DhanBoost. Log in at https://dhanboost.com/login to check and record it again. - DhanBoost` | amount |
+| 7 | `DHANBOOST_PAYMENT_DUE_SOON_V1` | WIP | `Dear {#var#}, repayment of {#var#} on your DhanBoost loan {#var#} is due on {#var#}. Pay at https://dhanboost.com/login. - DhanBoost` | name, amount, loan id, due date |
+| 8 | `DHANBOOST_PAYMENT_OVERDUE_V1` | WIP | `Dear {#var#}, repayment of {#var#} on your DhanBoost loan {#var#} is overdue by {#var#} day(s). Pay at https://dhanboost.com/login. - DhanBoost` | name, amount, loan id, days overdue |
+| 9 | `DHANBOOST_LOAN_CLOSED_V1` | ✅ Active | `Your loan with DhanBoost is fully repaid and closed. Thank you. Visit https://dhanboost.com/login to borrow again. - DhanBoost` | — |
+| 10 | `DHANBOOST_APPLICATION_DECLINED_V1` | WIP | `Dear {#var#}, your DhanBoost loan application {#var#} could not be approved at this time. Details at https://dhanboost.com/login. - DhanBoost` | name, application id |
+| 11 | `DHANBOOST_SETTLEMENT_APPROVED_V1` | WIP | `Dear {#var#}, a full and final settlement of {#var#} is approved on DhanBoost loan {#var#}. Pay at https://dhanboost.com/login. - DhanBoost` | name, settlement amount, loan id |
+| 12 | `DHANBOOST_REBORROW_APPROVED_V1` | WIP | `Dear {#var#}, your DhanBoost application {#var#} is approved. Complete the remaining steps at https://dhanboost.com/login. - DhanBoost` | name, application id |
+| 13 | `DHANBOOST_REBORROW_PREAPPROVED_V1` | ✅ Active (Promotional) | `Welcome back to DhanBoost. You can apply for another loan now. Log in at https://dhanboost.com/login to choose your amount. - DhanBoost` | — |
+| 14 | `DHANBOOST_REFERRAL_REWARD_CREDITED_V1` | ✅ Active (Promotional) | `Your DhanBoost referral reward of {#var#} is credited with reference {#var#}. Log in at https://dhanboost.com/login to view it. - DhanBoost` | reward amount, txn reference |
 
 Row 10 (`DHANBOOST_APPLICATION_DECLINED_V1`) is a **single** template reused for both `CREDIT_REJECTED`
 and `REBORROW_REVIEW_REJECTED` (identical content → one DLT Template ID bound to both types). Rows 13–14

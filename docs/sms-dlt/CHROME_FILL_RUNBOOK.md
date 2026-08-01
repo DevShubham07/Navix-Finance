@@ -21,7 +21,8 @@ The agent will burn a submission attempt on each template if these aren't done f
 2. **`DhanBoost` must be registered as a brand** under NAVIX FINANCE PRIVATE LIMITED on the DLT portal.
    DLT rejected us before for *"Entity brand name is not mentioned in the SMS content"*.
 3. **Header `DHANBT`** must be registered and active (replaces the retired `NAVIXF`).
-4. **`https://www.dhanboost.com/login` must be URL-whitelisted** under the entity, char-for-char.
+4. **`https://dhanboost.com/login` must be URL-whitelisted** under the entity, char-for-char.
+   ⚠ The registered CTA is the **apex** — there is **no `www.`**. Do not reintroduce it.
 
 Only #1 is optional for a partial run: `DHANBOOST_OTP_LOGIN_V1` is link-free and can be registered
 (and can send) before the domain exists.
@@ -65,7 +66,7 @@ Only #1 is optional for a partial run: `DHANBOOST_OTP_LOGIN_V1` is link-free and
 >       matching input, in order.
 >    e. **Before submitting**, verify with `read_page` that the message box text equals `content`
 >       **character-for-character** (no double spaces, no trailing space, brand name `DhanBoost`
->       present, ends with ` - DhanBoost`, URL exactly `https://www.dhanboost.com/login`). If it
+>       present, ends with ` - DhanBoost`, URL exactly `https://dhanboost.com/login` — no `www.`). If it
 >       differs, fix it before continuing.
 >    f. Click **Submit**. Capture the confirmation / any returned **DLT Template ID** and the
 >       template `name`.
