@@ -3,15 +3,17 @@
 To be submitted to the STPL DLT portal as **NAVIX FINANCE PRIVATE LIMITED** (legal entity unchanged),
 brand **DhanBoost**, sender **DHANBT**, PE-ID `1701178039634361131`.
 
-**Status (verified on the portal 2026-08-01 ~12:45 IST): 6 Active · 9 Work In Progress.**
+**Status (verified on the portal 2026-08-01, evening): all 15 Active. All DLT Template IDs collected.**
 
 - All 15 were first submitted 2026-07-31 21:00–21:23. STPL **approved 6** and **rejected 9** at
   21:50–21:53.
 - The 9 rejected were **rewritten and re-submitted 2026-08-01** through the portal's own
-  **Re-Submit** button (same reference number, same `_V1` name, still **Service Implicit**) and are
-  now back at Work In Progress. See *"The 2026-08-01 rewrite"* below.
-- **No DLT Template IDs assigned yet** — the listing shows them only once a template is approved;
-  re-check and fill the table below.
+  **Re-Submit** button (same reference number, same `_V1` name, still **Service Implicit**) and were
+  then **all approved**. See *"The 2026-08-01 rewrite"* below.
+- **All 15 DLT Template IDs are in the table below** and backfilled into `dlt-templates.json` +
+  `SMSULTRON.md`. Raw portal capture: [`current_update.md`](./current_update.md).
+- **Remaining work is deployment, not registration** — the three prod switches in "▶ NEXT SESSION"
+  (SSM sender-id, SSM dlt-template-id, drop the ECS rev-4 `NAVIX_SMS_OTP_TEMPLATE` override).
 
 > Reminder: **#11 is one template bound to TWO NotificationTypes** — map its single ID to both
 > `CREDIT_REJECTED` and `REBORROW_REVIEW_REJECTED`.
@@ -35,26 +37,26 @@ borrower login.
 
 ## The batch
 
-`Status` is the portal's **Global Status** as of 2026-08-01 12:45. **WIP¹** = rejected 31/07 and
-re-submitted 01/08 with rewritten copy.
+`Status` is the portal's **Global Status** as of 2026-08-01 (evening) — all 15 Active. The 9 marked
+WIP earlier that day were the rejected-then-rewritten set; all cleared.
 
 | # | Template name | Registered type | Status | NotificationType → config key | DLT Template ID |
 |---|---|---|---|---|---|
-| 1 | DHANBOOST_OTP_LOGIN_V1 | Service Implicit | ✅ **Active** | `OTP_LOGIN` (BorrowerOtpService) | `__________` |
-| 2 | DHANBOOST_KYC_APPROVED_V1 | Service Implicit | WIP¹ | `KYC_APPROVED` | `__________` |
-| 3 | DHANBOOST_KYC_REJECTED_V1 | Service Implicit | WIP¹ | `KYC_REJECTED` | `__________` |
-| 4 | DHANBOOST_KYC_REMINDER_V1 | Service Implicit | WIP¹ | `KYC_REMINDER` | `__________` |
-| 5 | DHANBOOST_LOAN_DISBURSED_V1 | Service Implicit | WIP¹ | `LOAN_DISBURSED` | `__________` |
-| 6 | DHANBOOST_REPAYMENT_VERIFIED_V1 | Service Implicit | ✅ **Active** | `REPAYMENT_VERIFIED` | `__________` |
-| 7 | DHANBOOST_REPAYMENT_REJECTED_V1 | Service Implicit | ✅ **Active** | `REPAYMENT_REJECTED` | `__________` |
-| 8 | DHANBOOST_PAYMENT_DUE_SOON_V1 | Service Implicit | WIP¹ | `PAYMENT_DUE_SOON` | `__________` |
-| 9 | DHANBOOST_PAYMENT_OVERDUE_V1 | Service Implicit | WIP¹ | `PAYMENT_OVERDUE` | `__________` |
-| 10 | DHANBOOST_LOAN_CLOSED_V1 | Service Implicit | ✅ **Active** | `LOAN_CLOSED` | `__________` |
-| 11 | DHANBOOST_APPLICATION_DECLINED_V1 | Service Implicit | WIP¹ | `CREDIT_REJECTED` **and** `REBORROW_REVIEW_REJECTED` | `__________` (one ID → both keys) |
-| 12 | DHANBOOST_SETTLEMENT_APPROVED_V1 | Service Implicit | WIP¹ | `SETTLEMENT_APPROVED` | `__________` |
-| 13 | DHANBOOST_REBORROW_APPROVED_V1 | Service Implicit | WIP¹ | `REBORROW_REVIEW_APPROVED` | `__________` |
-| 14 | DHANBOOST_REBORROW_PREAPPROVED_V1 | **Promotional** | ✅ **Active** 31/07 21:16 | `REBORROW_PREAPPROVED` | `__________` |
-| 15 | DHANBOOST_REFERRAL_REWARD_CREDITED_V1 | **Promotional** | ✅ **Active** | `REFERRAL_REWARD_CREDITED` | `__________` |
+| 1 | DHANBOOST_OTP_LOGIN_V1 | Service Implicit | ✅ **Active** | `OTP_LOGIN` (BorrowerOtpService) | `1777178551180955540` |
+| 2 | DHANBOOST_KYC_APPROVED_V1 | Service Implicit | ✅ **Active** | `KYC_APPROVED` | `1777178556860826081` |
+| 3 | DHANBOOST_KYC_REJECTED_V1 | Service Implicit | ✅ **Active** | `KYC_REJECTED` | `1777178556856596751` |
+| 4 | DHANBOOST_KYC_REMINDER_V1 | Service Implicit | ✅ **Active** | `KYC_REMINDER` | `1777178556869196458` |
+| 5 | DHANBOOST_LOAN_DISBURSED_V1 | Service Implicit | ✅ **Active** | `LOAN_DISBURSED` | `1777178556842056405` |
+| 6 | DHANBOOST_REPAYMENT_VERIFIED_V1 | Service Implicit | ✅ **Active** | `REPAYMENT_VERIFIED` | `1777178551212221383` |
+| 7 | DHANBOOST_REPAYMENT_REJECTED_V1 | Service Implicit | ✅ **Active** | `REPAYMENT_REJECTED` | `1777178551218012610` |
+| 8 | DHANBOOST_PAYMENT_DUE_SOON_V1 | Service Implicit | ✅ **Active** | `PAYMENT_DUE_SOON` | `1777178556822213797` |
+| 9 | DHANBOOST_PAYMENT_OVERDUE_V1 | Service Implicit | ✅ **Active** | `PAYMENT_OVERDUE` | `1777178556852586580` |
+| 10 | DHANBOOST_LOAN_CLOSED_V1 | Service Implicit | ✅ **Active** | `LOAN_CLOSED` | `1777178551234723180` |
+| 11 | DHANBOOST_APPLICATION_DECLINED_V1 | Service Implicit | ✅ **Active** | `CREDIT_REJECTED` **and** `REBORROW_REVIEW_REJECTED` | `1777178556864993650` (one ID → both keys) |
+| 12 | DHANBOOST_SETTLEMENT_APPROVED_V1 | Service Implicit | ✅ **Active** | `SETTLEMENT_APPROVED` | `1777178556848308137` |
+| 13 | DHANBOOST_REBORROW_APPROVED_V1 | Service Implicit | ✅ **Active** | `REBORROW_REVIEW_APPROVED` | `1777178556873259005` |
+| 14 | DHANBOOST_REBORROW_PREAPPROVED_V1 | **Promotional** | ✅ **Active** 31/07 21:16 | `REBORROW_PREAPPROVED` | `1777178551273887503` |
+| 15 | DHANBOOST_REFERRAL_REWARD_CREDITED_V1 | **Promotional** | ✅ **Active** | `REFERRAL_REWARD_CREDITED` | `1777178551284965972` |
 
 ## The 2026-08-01 rewrite (the 9 rejected templates)
 
@@ -167,27 +169,16 @@ wiring the IDs, or they will drift out of match again.
 > `CHROME_AGENT_PROMPT_V3.md` (the `_ALT` batch) is still unused — only touch it if a primary
 > wording is **rejected**.
 
-### Step 1 — Check status on the portal
+### ~~Step 1 — Check status on the portal~~ ✅ DONE 2026-08-01 — all 15 `Active`.
 
-`https://smartping.live/entity/content-form` → Search `DHANBOOST` → Show Records 25.
-Read the **Global Status** column:
+### ~~Step 2 — Collect the DLT Template IDs~~ ✅ DONE 2026-08-01
 
-| Status | Meaning | Action |
-|---|---|---|
-| `Work In Progress` | still with the operator | wait, re-check later |
-| `Active` | approved and sendable | collect its **DLT Template ID** (step 2) |
-| listed under the **Rejected** tab | reviewer refused it | step 5 |
+All 15 ids are in the batch table above and backfilled into `dlt-templates.json` + `SMSULTRON.md`.
+Raw portal capture: [`current_update.md`](./current_update.md).
 
-### Step 2 — Collect the DLT Template IDs
-
-The listing does **not** show a Template ID column while a template is `Work In Progress` — the ID
-appears only after approval. **The ID is behind the green `Active` badge in the Global Status column**
-(→ *Template details* modal), **not** the eye icon and not the listing row — the eye icon only shows
-variable tags. Full click-path in
-[`CHROME_FILL_RUNBOOK.md` → "Reading data back out"](./CHROME_FILL_RUNBOOK.md). Then fill:
-
-1. `DLT_SUBMISSION_TRACKER.md` → the batch table above (replace each `__________`).
-2. `dlt-templates.json` → that template's `"dltTemplateId": null`.
+If you ever need to read them off the portal again: the ID is behind the green `Active` badge in the
+**Global Status** column (→ *Template details* modal) — **not** the eye icon and not the listing row.
+Full click-path in [`CHROME_FILL_RUNBOOK.md` → "Reading data back out"](./CHROME_FILL_RUNBOOK.md).
 
 ### Step 3 — Wire the IDs into the running app
 
@@ -202,10 +193,17 @@ Three prod switches must flip together, or OTP breaks:
 | SSM `/navix/dev/navix/sms/dlt-template-id` | `1707178366195230667` (NAVIX OTP) | the new `DHANBOOST_OTP_LOGIN_V1` id |
 | ECS task-def `NAVIX_SMS_OTP_TEMPLATE` (rev 4) | pinned to the **NAVIX Finance** wording | **remove the override** so `application.yml`'s DhanBoost default applies |
 
-> ⚠ That ECS override exists *because* the only approved template today is the NAVIX-worded one.
-> Until `DHANBOOST_OTP_LOGIN_V1` is Active, **any backend redeploy must be built from task-def
-> revision 4** — deploying without it swaps the live OTP text to DhanBoost wording that DLT has not
-> approved, and every OTP send fails with `006 Invalid template text`.
+> ⚠ That ECS override exists *because* the only approved template used to be the NAVIX-worded one.
+> **`DHANBOOST_OTP_LOGIN_V1` is now Active (`1777178551180955540`)**, so the override is obsolete and
+> actively harmful — it pins the live OTP text to NAVIX wording that no longer has a matching *live*
+> template pairing under sender `DHANBT`. Drop it in the next task-def revision, in the same change
+> that flips the two SSM parameters. All three must move together.
+
+### Step 3b — Mirror the templates into the UltronSMS panel
+
+DLT approval is SmartPing's side; the sending gateway needs the same 15 templates registered on its
+own panel (`https://ultronsms.com/Web/MT/MyTemplate.aspx`). Paste-ready table + agent prompt:
+[`ULTRON_FILL_RUNBOOK.md`](./ULTRON_FILL_RUNBOOK.md).
 
 ### Step 4 — Send-test each approved template
 

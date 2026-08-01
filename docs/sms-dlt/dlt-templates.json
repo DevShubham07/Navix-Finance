@@ -8,12 +8,12 @@
     "headerNote": "DhanBoost 6-char sender ID. Replaces the retired NAVIXF header used by the superseded _V2 batch. The header must be registered and active under the entity before any of these templates can send.",
     "peid": "1701178039634361131",
     "peidNote": "Principal Entity ID is entity-level and constant across all templates and headers — unchanged by the rebrand.",
-    "categoryForAll": "Service Implicit",
+    "categoryForAll": "Service Implicit — EXCEPT DHANBOOST_REBORROW_PREAPPROVED_V1 and DHANBOOST_REFERRAL_REWARD_CREDITED_V1, which the portal registered as Promotional (Service Explicit no longer exists there). Promotional is NOT delivered to DND-registered numbers and needs a promotional route, not route 02.",
     "categoryNote": "DhanBoost is a NON-BANKING entity. The DLT 'Transactional' category is reserved for banks (card / net-banking OTP). Every template below — including the login OTP — MUST be registered as 'Service Implicit'.",
     "url": "https://dhanboost.com/login",
-    "urlNote": "The URL https://dhanboost.com/login MUST be (a) a live registered domain and (b) whitelisted under the entity on the SmartPing/DLT portal (URL/APK whitelisting) BEFORE these templates are submitted, or templates containing the link are rejected. As of 2026-07-31 dhanboost.com is NOT yet registered — that is the first blocker. OTP is intentionally link-free (links in OTP messages are discouraged and often rejected).",
+    "urlNote": "The URL https://dhanboost.com/login MUST be (a) a live registered domain and (b) whitelisted under the entity on the SmartPing/DLT portal (URL/APK whitelisting) BEFORE these templates are submitted, or templates containing the link are rejected. dhanboost.com is live and the URL is whitelisted (verified 2026-07-31). OTP is intentionally link-free (links in OTP messages are discouraged and often rejected).",
     "batch": "DHANBOOST_*_V1",
-    "batchNote": "Fresh registration batch. DLT Template IDs are bound to exact content, so the rebrand INVALIDATES every _V2 id (including the previously-live OTP id 1707178366195230667). All ids below are PENDING until this batch is submitted and approved.",
+    "batchNote": "Fresh registration batch, SUBMITTED AND FULLY APPROVED — all 15 are Active on the portal and the dltTemplateId fields below are the real ids (collected 2026-08-01, raw capture in current_update.md). Templates 14 + 15 were registered as Promotional, the other 13 as Service Implicit. DLT Template IDs are bound to exact content, so the rebrand INVALIDATED every _V2 id (including the previously-live OTP id 1707178366195230667) — do not send against those.",
     "rules": [
       "Variable placeholder is exactly {#var#} (with hashes).",
       "One variable = up to 40 characters. Provide a sample value per variable.",
@@ -28,7 +28,7 @@
   "templates": [
     {
       "name": "DHANBOOST_OTP_LOGIN_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178551180955540",
       "source": "application.yml navix.sms.otp-template (BorrowerOtpService.buildMessage)",
       "notificationType": "OTP_LOGIN",
       "category": "Service Implicit",
@@ -40,7 +40,7 @@
     },
     {
       "name": "DHANBOOST_KYC_APPROVED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556860826081",
       "source": "NotificationType.KYC_APPROVED",
       "notificationType": "KYC_APPROVED",
       "category": "Service Implicit",
@@ -52,7 +52,7 @@
     },
     {
       "name": "DHANBOOST_KYC_REJECTED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556856596751",
       "source": "NotificationType.KYC_REJECTED",
       "notificationType": "KYC_REJECTED",
       "category": "Service Implicit",
@@ -64,7 +64,7 @@
     },
     {
       "name": "DHANBOOST_KYC_REMINDER_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556869196458",
       "source": "NotificationType.KYC_REMINDER",
       "notificationType": "KYC_REMINDER",
       "category": "Service Implicit",
@@ -77,7 +77,7 @@
     },
     {
       "name": "DHANBOOST_LOAN_DISBURSED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556842056405",
       "source": "NotificationType.LOAN_DISBURSED",
       "notificationType": "LOAN_DISBURSED",
       "category": "Service Implicit",
@@ -91,7 +91,7 @@
     },
     {
       "name": "DHANBOOST_REPAYMENT_VERIFIED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178551212221383",
       "source": "NotificationType.REPAYMENT_VERIFIED",
       "notificationType": "REPAYMENT_VERIFIED",
       "category": "Service Implicit",
@@ -103,7 +103,7 @@
     },
     {
       "name": "DHANBOOST_REPAYMENT_REJECTED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178551218012610",
       "source": "NotificationType.REPAYMENT_REJECTED",
       "notificationType": "REPAYMENT_REJECTED",
       "category": "Service Implicit",
@@ -114,7 +114,7 @@
     },
     {
       "name": "DHANBOOST_PAYMENT_DUE_SOON_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556822213797",
       "source": "NotificationType.PAYMENT_DUE_SOON",
       "notificationType": "PAYMENT_DUE_SOON",
       "category": "Service Implicit",
@@ -129,7 +129,7 @@
     },
     {
       "name": "DHANBOOST_PAYMENT_OVERDUE_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556852586580",
       "source": "NotificationType.PAYMENT_OVERDUE",
       "notificationType": "PAYMENT_OVERDUE",
       "category": "Service Implicit",
@@ -144,7 +144,7 @@
     },
     {
       "name": "DHANBOOST_LOAN_CLOSED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178551234723180",
       "source": "NotificationType.LOAN_CLOSED",
       "notificationType": "LOAN_CLOSED",
       "category": "Service Implicit",
@@ -153,7 +153,7 @@
     },
     {
       "name": "DHANBOOST_APPLICATION_DECLINED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556864993650",
       "source": "NotificationType.CREDIT_REJECTED + NotificationType.REBORROW_REVIEW_REJECTED",
       "notificationType": ["CREDIT_REJECTED", "REBORROW_REVIEW_REJECTED"],
       "category": "Service Implicit",
@@ -166,7 +166,7 @@
     },
     {
       "name": "DHANBOOST_SETTLEMENT_APPROVED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556848308137",
       "source": "NotificationType.SETTLEMENT_APPROVED",
       "notificationType": "SETTLEMENT_APPROVED",
       "category": "Service Implicit",
@@ -179,7 +179,7 @@
     },
     {
       "name": "DHANBOOST_REBORROW_APPROVED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178556873259005",
       "source": "NotificationType.REBORROW_REVIEW_APPROVED",
       "notificationType": "REBORROW_REVIEW_APPROVED",
       "category": "Service Implicit",
@@ -191,20 +191,20 @@
     },
     {
       "name": "DHANBOOST_REBORROW_PREAPPROVED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178551273887503",
       "source": "NotificationType.REBORROW_PREAPPROVED",
       "notificationType": "REBORROW_PREAPPROVED",
-      "category": "Service Implicit",
+      "category": "Promotional",
       "content": "Welcome back to DhanBoost. You can apply for another loan now. Log in at https://dhanboost.com/login to choose your amount. - DhanBoost",
       "variables": [],
       "note": "BORDERLINE. Returning-borrower re-onboarding nudge, worded to stay Service Implicit (arises from the customer's existing relationship) — deliberately avoids offer/'pre-approved' language. The superseded _V2 equivalent was ultimately accepted as Service EXPLICIT, so expect the same and confirm with the operator before force-submitting as Implicit."
     },
     {
       "name": "DHANBOOST_REFERRAL_REWARD_CREDITED_V1",
-      "dltTemplateId": null,
+      "dltTemplateId": "1777178551284965972",
       "source": "NotificationType.REFERRAL_REWARD_CREDITED",
       "notificationType": "REFERRAL_REWARD_CREDITED",
-      "category": "Service Implicit",
+      "category": "Promotional",
       "content": "Your DhanBoost referral reward of {#var#} is credited with reference {#var#}. Log in at https://dhanboost.com/login to view it. - DhanBoost",
       "variables": [
         { "index": 1, "purpose": "referral reward amount", "tag": "Amount", "sample": "Rs. 500" },
