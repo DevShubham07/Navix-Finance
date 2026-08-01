@@ -79,6 +79,18 @@ Content is the DLT-registered body verbatim. Full per-variable samples are in
 >   the extension.
 > - At the end print `{name → what the panel returned, status}` for all 15.
 
+## Status
+
+**Done 2026-08-02** — all 15 registered in the panel under sender `DHANBT`, each verified
+char-for-char against the table above (name, body, DLT id). All show **Pending** — UltronSMS reviews
+them panel-side before a send will resolve; re-check for `Approved` before running the send test.
+
+The form has only SenderId / Name / Template / DLT Template ID — **no type or route field**, so the
+Promotional handling for #14/#15 is purely a send-time concern (promotional route, not `02`).
+
+The 19 legacy `NAVIX_*_V2` rows are still listed and are dead (blacklisted on DLT). Deleting them is
+optional cleanup and needs a confirm dialog — do it by hand.
+
 ## After filling
 
 Send-test with the ids now baked into the script:
