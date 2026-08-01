@@ -181,7 +181,10 @@ Read the **Global Status** column:
 ### Step 2 — Collect the DLT Template IDs
 
 The listing does **not** show a Template ID column while a template is `Work In Progress` — the ID
-appears only after approval. Open each approved row's **view / eye icon** to read its id, then fill:
+appears only after approval. **The ID is behind the green `Active` badge in the Global Status column**
+(→ *Template details* modal), **not** the eye icon and not the listing row — the eye icon only shows
+variable tags. Full click-path in
+[`CHROME_FILL_RUNBOOK.md` → "Reading data back out"](./CHROME_FILL_RUNBOOK.md). Then fill:
 
 1. `DLT_SUBMISSION_TRACKER.md` → the batch table above (replace each `__________`).
 2. `dlt-templates.json` → that template's `"dltTemplateId": null`.

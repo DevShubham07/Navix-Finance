@@ -16,7 +16,7 @@ single source of truth for the data.
 
 The agent will burn a submission attempt on each template if these aren't done first:
 
-1. **`dhanboost.com` must be a live registered domain** — as of 2026-07-31 it is not. Every non-OTP
+1. **`dhanboost.com` must be a live registered domain** — ✅ live since 2026-07-31. Every non-OTP
    template links to it.
 2. **`DhanBoost` must be registered as a brand** under NAVIX FINANCE PRIVATE LIMITED on the DLT portal.
    DLT rejected us before for *"Entity brand name is not mentioned in the SMS content"*.
@@ -91,6 +91,42 @@ Only #1 is optional for a partial run: `DHANBOOST_OTP_LOGIN_V1` is link-free and
 >   `DHANBOOST_REFERRAL_REWARD_CREDITED_V1`) before submitting: they are worded to fit **Service
 >   Implicit**, but on the previous batch both were ultimately accepted only as **Service Explicit**.
 >   Ask me before force-submitting either under a category the portal disputes.
+
+---
+
+## Reading data back out — where each field actually lives (verified 2026-08-01)
+
+The other half of this runbook: once templates are filed, collecting their **DLT Template IDs**.
+**No single view shows everything.** Mapped on the live portal — do not assume the list view or the
+eye icon carries the ID, it does not.
+
+**Navigate + filter:** left nav **Template → Template (SMS)** (`/entity/content-form`) → set
+**Show Records** to `25` → type `DHANBOOST` in the Search box (placeholder *"Template Name/ Template
+Id/ Header Name/ Creator"*) → click the search icon.
+
+Then **three clicks per row**, each opening its own modal that must be closed (× top-right) before the
+next click registers:
+
+| Click | Modal | What it gives you |
+|---|---|---|
+| **"read more"** in the *SMS Template* column | **SMS Template** | the body with `{#alp#}` / `{#num#}` tokens, **plus** a *Sample Content* block with the real values substituted |
+| teal **eye icon** in the *Tagging* column | **Variables Tag** | per-variable position, type (Alphanumeric / NUMBER), sample value — **usually skippable**, it's derivable by lining the tokens up against the Sample Content above |
+| green **Active badge** in the *Global Status* column | **Template details** | ⭐ **the only place the DLT Template ID and Reference Number appear** — plus header, dates, approving operator |
+
+> ⚠ The **Global Status badge is the ID source**, not the eye icon and not the listing. This is the
+> non-obvious step; budget a click on every row you need an ID for.
+> ⚠ **Never touch the *Blacklist* / *Suspend* buttons** at the bottom of the Template Details modal.
+
+**Rejected templates:** switch to the **Rejected** tab (the search filter carries over) and click the
+yellow **Rejected** badge — same Template details modal, with a populated **Remarks** field holding the
+rejection reason verbatim.
+
+**Token notation:** the portal writes `{#alp#}` for *Alphanumeric (Name, Date, Address)* and `{#num#}`
+for *NUMBER (OTP, Amount, Serial Number, Reference IDs)*. Our JSON/Java use a neutral `{#var#}` —
+normalize both to `{#var#}` before diffing (see the consistency check in `DLT_SUBMISSION_TRACKER.md`).
+
+A ready-to-paste extraction prompt built on this flow, and the resulting capture, are in
+[`current_update.md`](./current_update.md).
 
 ---
 
