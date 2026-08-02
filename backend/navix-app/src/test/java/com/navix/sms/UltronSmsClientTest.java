@@ -61,6 +61,21 @@ class UltronSmsClientTest {
         assertThat(mapped).isEqualTo(15);
     }
 
+    /**
+     * Spaces in the body must go out as {@code %20}. UltronSMS reads a {@code +} literally, so a
+     * {@code +}-encoded body fails its char-for-char template match with {@code 006 Invalid template
+     * text} even when the text is correct. Pins the encoding the client's UriBuilder actually uses.
+     */
+    @Test
+    void encodesSpacesAsPercent20NotPlus() {
+        String uri = new org.springframework.web.util.DefaultUriBuilderFactory("https://ultronsms.test/api/mt/")
+                .uriString("SendSMS")
+                .queryParam("text", "Your loan with DhanBoost is fully repaid and closed. - DhanBoost")
+                .build()
+                .toString();
+        assertThat(uri).contains("Your%20loan%20with%20DhanBoost").doesNotContain("+");
+    }
+
     @Test
     void sharedDeclinedIdMapsBothTypes() {
         UltronSmsClient c = client("GLOBAL",

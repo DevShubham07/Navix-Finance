@@ -91,19 +91,16 @@ echo "  number       : ${NUMBER}"
 echo "  text         : ${TEXT}"
 echo "────────────────────────────────────────────────────────────────────"
 
-# ── Fire (curl -G + --data-urlencode encodes text safely) ───────────────────────
-RESPONSE="$(curl -sS -G "${BASE_URL}SendSMS" \
-  --data-urlencode "user=${USER}" \
-  --data-urlencode "password=${PASSWORD}" \
-  --data-urlencode "senderid=${SENDER_ID}" \
-  --data-urlencode "channel=${CHANNEL}" \
-  --data-urlencode "DCS=0" \
-  --data-urlencode "flashsms=0" \
-  --data-urlencode "number=${NUMBER}" \
-  --data-urlencode "text=${TEXT}" \
-  --data-urlencode "route=${ROUTE}" \
-  --data-urlencode "peid=${PEID}" \
-  --data-urlencode "DLTTemplateId=${DLT_ID}")"
+# ── Fire ───────────────────────────────────────────────────────────────────────
+# ⚠ Spaces MUST be %20, not '+'. UltronSMS takes a '+' literally, so a '+'-encoded body fails its
+# char-for-char template match with `006 Invalid template text` even when the text is correct.
+# curl's --data-urlencode emits '+', so encode the query ourselves.
+enc() { printf '%s' "$1" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))"; }
+
+RESPONSE="$(curl -sS "${BASE_URL}SendSMS?user=$(enc "$USER")&password=$(enc "$PASSWORD")\
+&senderid=$(enc "$SENDER_ID")&channel=$(enc "$CHANNEL")&DCS=0&flashsms=0\
+&number=$(enc "$NUMBER")&text=$(enc "$TEXT")\
+&route=$(enc "$ROUTE")&peid=$(enc "$PEID")&DLTTemplateId=$(enc "$DLT_ID")")"
 
 echo "raw response : ${RESPONSE}"
 

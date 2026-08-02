@@ -90,17 +90,25 @@ char-for-char against the table above (name, body, DLT id). All 15 now show **Ap
 per-`NotificationType` ids — no env plumbing needed to send. `UltronSmsClientTest` asserts every
 mapped type still ships a 19-digit id default (a blanked default drops the DLT tag → `006`).
 
-**⚠ Sending still returns `006 Invalid template text` on all 15** (`TEMPLATE_TEST_RESULTS.md`,
-2026-08-02). This is **gateway-side, not a content problem** — proven three ways:
-- `DHANBOOST_LOAN_CLOSED_V1` has **no variables at all** (pure static string) and still 006, so it
-  cannot be a `##Field##` substitution mismatch.
-- The panel's stored body was scraped and diffed char-for-char against what we send — identical.
-- Credentials and the header are fine: the retired `NAVIXF` returns `15 senderid not valid`, while
-  `DHANBT` gets far enough to be rejected on *text*. Dropping `peid` / `DLTTemplateId` changes nothing.
+**Send test: 15/15 `000 Done`** (`TEMPLATE_TEST_RESULTS.md`, 2026-08-02) — every template is live,
+including the two Promotional ones on the transactional route.
 
-Most likely a propagation lag between panel approval and the sending engine's template cache. Re-run
-the send test after a day; if it still 006s on the variable-free template, it is an UltronSMS support
-ticket, not a repo change.
+### ⚠ The `+`-vs-`%20` trap (cost an hour — read this before debugging any `006`)
+
+The first sweep failed **all 15** with `006 Invalid template text`. The text was correct; the
+**encoding** was not. **Spaces must be sent as `%20`. UltronSMS reads a `+` literally**, so a
+`+`-encoded body no longer matches the registered template char-for-char and is rejected as bad text.
+
+`curl --data-urlencode` emits `+` for spaces, so both test scripts were silently wrong. They now
+build the query with `enc()` (Python `quote(safe='')`) instead. The same request that returned `006`
+returns `000` with only the spaces re-encoded — that one-variable-changed pair is the proof.
+
+The backend is **not** affected: Spring's `UriBuilder` already percent-encodes spaces as `%20`, and
+`UltronSmsClientTest.encodesSpacesAsPercent20NotPlus` pins that.
+
+`006` therefore means one of two things, in this order: **(1) your encoding turned spaces into `+`**,
+or (2) the body genuinely drifted from the registered text. Check (1) first — it looks identical in
+every log and diff, because the text *is* identical.
 
 The form has only SenderId / Name / Template / DLT Template ID — **no type or route field**, so the
 Promotional handling for #14/#15 is purely a send-time concern (promotional route, not `02`).
