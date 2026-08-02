@@ -42,6 +42,25 @@ class UltronSmsClientTest {
         assertThat(c.resolveDltTemplateId("LOAN_DISBURSED")).isEqualTo("GLOBAL");
     }
 
+    /**
+     * The DHANBOOST_*_V1 batch is Active on DLT, so application.yml ships every id as a default —
+     * a blanked default silently drops the DLT tag and the gateway rejects the send with 006.
+     */
+    @Test
+    void everyMappedTypeShipsARealDltIdDefault() throws Exception {
+        String yml = java.nio.file.Files.readString(
+                java.nio.file.Path.of("src/main/resources/application.yml"));
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("^      (\\w+): \\$\\{NAVIX_SMS_DLT_\\w+:([^}]*)\\}$", java.util.regex.Pattern.MULTILINE)
+                .matcher(yml);
+        int mapped = 0;
+        while (m.find()) {
+            assertThat(m.group(2)).as("DLT id default for %s", m.group(1)).matches("\\d{19}");
+            mapped++;
+        }
+        assertThat(mapped).isEqualTo(15);
+    }
+
     @Test
     void sharedDeclinedIdMapsBothTypes() {
         UltronSmsClient c = client("GLOBAL",

@@ -82,8 +82,25 @@ Content is the DLT-registered body verbatim. Full per-variable samples are in
 ## Status
 
 **Done 2026-08-02** — all 15 registered in the panel under sender `DHANBT`, each verified
-char-for-char against the table above (name, body, DLT id). All show **Pending** — UltronSMS reviews
-them panel-side before a send will resolve; re-check for `Approved` before running the send test.
+char-for-char against the table above (name, body, DLT id). All 15 now show **Approved** (panel
+`Status` column, last-modified 02/08/2026, no Remarks).
+
+**Wired into the backend the same day:** `application.yml` `navix.sms` now defaults `sender-id`
+`DHANBT`, `route` `02`, `peid` `1701178039634361131`, the global/OTP `dlt-template-id`, and all 15
+per-`NotificationType` ids — no env plumbing needed to send. `UltronSmsClientTest` asserts every
+mapped type still ships a 19-digit id default (a blanked default drops the DLT tag → `006`).
+
+**⚠ Sending still returns `006 Invalid template text` on all 15** (`TEMPLATE_TEST_RESULTS.md`,
+2026-08-02). This is **gateway-side, not a content problem** — proven three ways:
+- `DHANBOOST_LOAN_CLOSED_V1` has **no variables at all** (pure static string) and still 006, so it
+  cannot be a `##Field##` substitution mismatch.
+- The panel's stored body was scraped and diffed char-for-char against what we send — identical.
+- Credentials and the header are fine: the retired `NAVIXF` returns `15 senderid not valid`, while
+  `DHANBT` gets far enough to be rejected on *text*. Dropping `peid` / `DLTTemplateId` changes nothing.
+
+Most likely a propagation lag between panel approval and the sending engine's template cache. Re-run
+the send test after a day; if it still 006s on the variable-free template, it is an UltronSMS support
+ticket, not a repo change.
 
 The form has only SenderId / Name / Template / DLT Template ID — **no type or route field**, so the
 Promotional handling for #14/#15 is purely a send-time concern (promotional route, not `02`).
