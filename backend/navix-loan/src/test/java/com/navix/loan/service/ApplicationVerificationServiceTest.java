@@ -239,6 +239,26 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void bureauConsent_backfillsMobileFromCustomersEarlierProfile() {
+        // A signed-in borrower starting a fresh application skips the mobile step, so this
+        // application's profile has no mobile of its own.
+        CustomerProfile p = profile();
+        p.setMobile(null);
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setCustomerId(77L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(profileRepo.findMobilesForCustomer(77L)).thenReturn(List.of("7206485966"));
+        when(otpVerifier.verify(eq("7206485966"), eq("123456"))).thenReturn(true);
+
+        var result = service.recordBureauConsent(APP, "123456", "consent");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(p.getMobile()).isEqualTo("7206485966");
+    }
+
+    @Test
     void bureauConsent_rejectsBadOtp_andWritesNothing() {
         CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));

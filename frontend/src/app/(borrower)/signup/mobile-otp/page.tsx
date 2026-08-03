@@ -41,6 +41,10 @@ export default function SignupMobileOtpPage() {
           const app = await createOrResumeDraft(session);
           setAppId(app.id);
           writeStoredAppId(app.id);
+          // This path skips the OTP form, so nothing else writes the mobile onto the new
+          // application's profile — later steps that step up against it (bureau consent) would
+          // find none. The session mobile is server-issued, so it's safe to persist here.
+          if (session.mobile) await saveProfileSlice(app.id, { mobile: session.mobile });
           router.replace("/signup/email");
         } catch (e) {
           // The backend blocks a new draft when a loan/application is already live or in flight

@@ -548,7 +548,7 @@ public class ApplicationVerificationService {
         VerificationPort.BureauCheck r;
         try {
             r = verification.pullBureau(
-                    profile.getPan(), nz(profile.getFullName()), nz(profile.getMobile()),
+                    profile.getPan(), nz(profile.getFullName()), nz(resolveMobile(appId, profile)),
                     profile.getDob() != null ? profile.getDob().toString() : "", ref);
         } catch (RuntimeException providerFailure) {
             // Both bureau providers couldn't run (e.g. no API credits / OTP-gated / upstream error).
@@ -897,7 +897,7 @@ public class ApplicationVerificationService {
     @Transactional
     public StepResult recordBureauConsent(Long appId, String otp, String consentText) {
         CustomerProfile profile = profile(appId);
-        String mobile = profile.getMobile();
+        String mobile = resolveMobile(appId, profile);
         if (mobile == null || mobile.isBlank()) {
             throw new BusinessException("MOBILE_MISSING",
                     "No mobile on file for this application — complete the mobile step first");
@@ -1278,6 +1278,33 @@ public class ApplicationVerificationService {
         return profileRepo.findByApplicationId(appId)
                 .orElseThrow(() -> new BusinessException("PROFILE_REQUIRED",
                         "Save KYC profile before running verification"));
+    }
+
+    /**
+     * The mobile to step-up against: this application's profile, else the newest one this customer
+     * has on file. A signed-in borrower starting a fresh application skips the mobile step, so the
+     * new profile carries no mobile of its own; back-filling it here keeps the number server-resolved
+     * (never client-supplied) while unblocking the consent step, and persists it so later steps and
+     * staff surfaces see it too.
+     */
+    private String resolveMobile(Long appId, CustomerProfile profile) {
+        String mobile = profile.getMobile();
+        if (mobile != null && !mobile.isBlank()) {
+            return mobile;
+        }
+        Long customerId = requireApplication(appId).getCustomerId();
+        if (customerId == null) {
+            return null;
+        }
+        String prior = profileRepo.findMobilesForCustomer(customerId).stream()
+                .filter(m -> m != null && !m.isBlank())
+                .findFirst()
+                .orElse(null);
+        if (prior != null) {
+            profile.setMobile(prior);
+            profileRepo.save(profile);
+        }
+        return prior;
     }
 
     private LoanApplication requireApplication(Long appId) {

@@ -37,4 +37,15 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
     @Query("select (count(p) > 0) from CustomerProfile p, LoanApplication a "
             + "where p.applicationId = a.id and p.mobile = :mobile and a.customerId <> :customerId")
     boolean existsMobileForOtherCustomer(@Param("mobile") String mobile, @Param("customerId") Long customerId);
+
+    /**
+     * Every mobile this customer has on file across their applications, newest application first.
+     * A returning borrower who starts a fresh application while already signed in never passes back
+     * through the mobile step, so that application's profile has no mobile of its own — this recovers
+     * it from the customer's earlier profile instead of dead-ending the bureau-consent step.
+     */
+    @Query("select p.mobile from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and a.customerId = :customerId "
+            + "and p.mobile is not null and p.mobile <> '' order by p.applicationId desc")
+    List<String> findMobilesForCustomer(@Param("customerId") Long customerId);
 }
