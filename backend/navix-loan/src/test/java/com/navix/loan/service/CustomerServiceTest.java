@@ -44,6 +44,9 @@ class CustomerServiceTest {
     @Mock private ProfileChangeLogRepository changeLogRepository;
     @Mock private com.navix.loan.repository.ApplicationEventRepository applicationEventRepository;
     @Mock private com.navix.loan.repository.CustomerRemarkRepository remarkRepository;
+    @Mock private com.navix.loan.repository.CustomerOwnerRepository ownerRepository;
+    @Mock private com.navix.loan.repository.CustomerCallLogRepository callLogRepository;
+    @Mock private com.navix.common.staff.StaffDirectory staffDirectory;
     @Mock private RiskPort risk;
     @Mock private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
@@ -53,7 +56,9 @@ class CustomerServiceTest {
     void setUp() {
         service = new CustomerService(applicationRepository, loanRepository, profileRepository,
                 paymentRepository, repaymentService, changeLogRepository,
-                applicationEventRepository, remarkRepository, risk, jdbc);
+                applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
+                staffDirectory, risk, jdbc);
+        lenient().when(ownerRepository.findAll()).thenReturn(List.of());
     }
 
     @AfterEach

@@ -4,35 +4,19 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, User, Banknote, Receipt, Workflow, Pencil, Ban, XCircle, History, Check, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle } from "lucide-react";
 import { Input, Select } from "@/components/ui";
+import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
-import { CreditBadge } from "@/components/staff/credit-badge";
-import { CreditProfileCard } from "@/components/staff/credit-profile-card";
-import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
+import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import {
   customersApi,
-  staffApi,
   adminApi,
-  paiseToINR,
   rupeesToPaise,
-  statusLabel,
   type CustomerDetail,
-  type LoanView,
-  type PaymentView,
-  type ApplicationView,
-  type ApplicationStatus,
   type BlocklistType,
 } from "@/lib/api/applications";
-import { formatDate, formatDateTime } from "@/lib/utils";
-
-/** Application statuses that can still be cancelled (pre-disbursement). */
-const CANCELLABLE: Set<ApplicationStatus> = new Set([
-  "DRAFT", "KYC_PENDING", "KYC_APPROVED", "PRE_APPROVED", "REVIEW_PENDING",
-  "CREDIT_EXEC_PENDING", "CREDIT_EXEC_APPROVED", "CREDIT_HEAD_PENDING", "CREDIT_HEAD_APPROVED",
-  "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING", "DISBURSEMENT_FAILED",
-]);
 
 /** Loan statuses that mean the loan is still live (vs. a past/closed loan). */
 const OPEN_LOAN = new Set(["ACTIVE", "OVERDUE", "IN_COLLECTIONS", "DISBURSED", "DEFAULTED"]);
@@ -41,16 +25,16 @@ export default function CustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const id = Number(customerId);
   const qc = useQueryClient();
+  const [tab, setTab] = React.useState("personal");
   const q = useQuery({ queryKey: ["customer", id], queryFn: () => customersApi.get(id), enabled: Number.isFinite(id) });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["customer", id] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["customer", id] });
+    qc.invalidateQueries({ queryKey: ["customer-detail", id] });
+    qc.invalidateQueries({ queryKey: ["customers"] });
+  };
 
   const c = q.data;
   const currentLoan = c?.loans.find((l) => OPEN_LOAN.has(l.status)) ?? null;
-  const pastLoans = c ? c.loans.filter((l) => l !== currentLoan) : [];
-  // A clicked loan opens the shared detail popup; resolve its application id (for the status
-  // timeline) from the already-loaded applications.
-  const [selectedLoan, setSelectedLoan] = React.useState<LoanView | null>(null);
-  const appIdFor = (loanId: number) => c?.applications.find((a) => a.loanId === loanId)?.id ?? null;
 
   return (
     <div>
@@ -59,7 +43,7 @@ export default function CustomerDetailPage() {
       </Link>
       <PageHeader
         title={c?.profile?.fullName ?? `Customer #${id}`}
-        subtitle={`Customer #${id} · borrower history`}
+        subtitle={`Customer #${id} · borrower history${c?.ownerName ? ` · owner ${c.ownerName}` : " · Unallocated"}`}
       >
         <button onClick={() => q.refetch()} className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink">
           {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
@@ -73,16 +57,13 @@ export default function CustomerDetailPage() {
           <p className="text-sm text-error-700">{q.error ? errMessage(q.error) : "Customer not found."}</p>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
-            <div className="space-y-6">
-              {c.applications[0] && <CreditProfileCard applicationId={c.applications[0].id} />}
-              <CurrentLoanCard loan={currentLoan} onOpen={setSelectedLoan} />
-              <PastLoansCard loans={pastLoans} onOpen={setSelectedLoan} />
-              <PaymentsCard payments={c.payments} />
-              <ApplicationsCard applications={c.applications} onChanged={invalidate} />
-              <ChangeHistoryCard customerId={id} />
+            <div className="min-w-0 rounded border border-line bg-white p-4 shadow-sm">
+              <Tabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
+              <div className="mt-3 text-[13px]">
+                <CustomerTabBody tab={tab} detail={c} customerId={id} onChanged={invalidate} />
+              </div>
             </div>
             <div className="space-y-6">
-              <ProfileCard detail={c} />
               <PermissionGate permission="customer:manage">
                 <AdminEditCard detail={c} onSaved={invalidate} />
                 <BlocklistCard customerId={id} />
@@ -96,14 +77,6 @@ export default function CustomerDetailPage() {
           </div>
         )}
       </PermissionGate>
-
-      {selectedLoan && (
-        <LoanDetailDialog
-          loan={selectedLoan}
-          applicationId={appIdFor(selectedLoan.id)}
-          onClose={() => setSelectedLoan(null)}
-        />
-      )}
     </div>
   );
 }
@@ -117,10 +90,6 @@ function Card({ title, icon, children }: { title: string; icon: React.ReactNode;
   );
 }
 
-/**
- * ADMIN-only danger zone: permanently delete this customer and all of their data. Guarded by a
- * confirm step that requires typing the customer's name, so it can't be triggered by a stray click.
- */
 function DeleteCustomerCard({ customerId, name, hasLiveLoan }: { customerId: number; name: string; hasLiveLoan: boolean }) {
   const router = useRouter();
   const [arming, setArming] = React.useState(false);
@@ -179,255 +148,6 @@ function DeleteCustomerCard({ customerId, name, hasLiveLoan }: { customerId: num
       )}
       {m.error ? <p className="mt-2 text-xs text-error-700">{errMessage(m.error)}</p> : null}
     </div>
-  );
-}
-
-function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-1.5 text-sm">
-      <dt className="text-muted">{label}</dt>
-      <dd className={mono ? "text-right font-mono text-ink" : "text-right text-ink"}>{value ?? "—"}</dd>
-    </div>
-  );
-}
-
-function ProfileCard({ detail }: { detail: CustomerDetail }) {
-  const p = detail.profile;
-  return (
-    <Card title="Profile" icon={<User size={16} />}>
-      {p && (p.starRating != null || p.creditScore != null) && (
-        <div className="mb-3 flex items-center gap-2 border-b border-line pb-3">
-          <span className="text-xs text-muted">#{detail.customerId}</span>
-          <CreditBadge starRating={p.starRating} creditScore={p.creditScore} recommendation={p.recommendation} />
-        </div>
-      )}
-      {!p ? (
-        <p className="text-sm text-muted">No KYC profile on file.</p>
-      ) : (
-        <dl className="divide-y divide-line">
-          <Row label="Full name" value={p.fullName} />
-          <Row label="PAN" value={p.pan} mono />
-          <Row
-            label="Aadhaar"
-            value={
-              p.aadhaarVerified ? (
-                <span className="inline-flex items-center justify-end gap-1.5">
-                  <span className="inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[10px] font-semibold text-success-700">
-                    <Check size={10} /> DigiLocker verified
-                  </span>
-                </span>
-              ) : (
-                <span className="text-muted">Not verified</span>
-              )
-            }
-          />
-          <Row label="Mobile" value={p.mobile} mono />
-          <Row label="Email" value={p.email} />
-          <Row label="Date of birth" value={p.dob} />
-          <Row label="Address" value={p.address} />
-          <Row label="Employer" value={p.employer} />
-          <Row label="Employment" value={p.employmentStatus} />
-          <Row label="Monthly salary" value={p.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null} />
-          <Row label="Annual salary" value={p.annualSalaryPaise != null ? paiseToINR(p.annualSalaryPaise) : null} />
-          <Row label="Salary %" value={p.salaryPercentage != null ? `${p.salaryPercentage}%` : null} />
-          <Row label="Increment %" value={p.incrementPercentage != null ? `${p.incrementPercentage}%` : null} />
-          <Row label="Salary bank" value={p.salaryBank} />
-          <Row label="CIBIL score" value={p.creditScore != null ? String(p.creditScore) : null} mono />
-          <Row label="Risk category" value={p.riskCategory} />
-          <Row label="Bureau" value={p.bureauSource} />
-          <Row label="Identity match" value={p.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null} />
-        </dl>
-      )}
-    </Card>
-  );
-}
-
-function CurrentLoanCard({ loan, onOpen }: { loan: LoanView | null; onOpen: (loan: LoanView) => void }) {
-  return (
-    <Card title="Current loan" icon={<Banknote size={16} />}>
-      {!loan ? (
-        <p className="text-sm text-muted">No live loan.</p>
-      ) : (
-        <>
-          <dl className="grid grid-cols-2 gap-x-6">
-            <Row label="Loan" value={`#${loan.id}`} />
-            <Row label="Status" value={<span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">{loan.status}</span>} />
-            <Row label="Principal" value={paiseToINR(loan.principalPaise)} />
-            <Row label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
-            <Row label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
-            <Row label="Outstanding" value={<span className="font-semibold">{paiseToINR(loan.outstandingPaise)}</span>} />
-            <Row label="Disbursed on" value={loan.disbursedOn ? formatDate(loan.disbursedOn) : null} />
-            <Row label="Due date" value={loan.dueDate ? formatDate(loan.dueDate) : null} />
-          </dl>
-          <button onClick={() => onOpen(loan)} className="mt-3 text-sm font-semibold text-navy hover:underline">
-            View full details — payments &amp; timeline →
-          </button>
-        </>
-      )}
-    </Card>
-  );
-}
-
-function PastLoansCard({ loans, onOpen }: { loans: LoanView[]; onOpen: (loan: LoanView) => void }) {
-  return (
-    <Card title={`Past loans (${loans.length})`} icon={<Banknote size={16} />}>
-      {loans.length === 0 ? (
-        <p className="text-sm text-muted">No past loans.</p>
-      ) : (
-        <ul className="divide-y divide-line text-sm">
-          {loans.map((l) => (
-            <li key={l.id}>
-              <button
-                type="button"
-                onClick={() => onOpen(l)}
-                className="flex w-full items-center justify-between gap-3 py-2 text-left transition hover:bg-grey-50"
-              >
-                <span className="min-w-0">
-                  <span className="text-ink underline-offset-2 hover:underline">Loan #{l.id} · {paiseToINR(l.principalPaise)}</span>
-                  <span className="block text-xs text-muted">net {paiseToINR(l.netDisbursedPaise)} · disbursed {l.disbursedOn ? formatDate(l.disbursedOn) : "—"} · due {l.dueDate ? formatDate(l.dueDate) : "—"} · outstanding {paiseToINR(l.outstandingPaise)}</span>
-                </span>
-                <span className="flex-shrink-0 rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">{l.status}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function PaymentsCard({ payments }: { payments: PaymentView[] }) {
-  return (
-    <Card title={`Payments (${payments.length})`} icon={<Receipt size={16} />}>
-      {payments.length === 0 ? (
-        <p className="text-sm text-muted">No payments recorded.</p>
-      ) : (
-        <ul className="divide-y divide-line text-sm">
-          {payments.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-              <span className="min-w-0">
-                <span className="font-semibold text-ink">{paiseToINR(p.amountPaise)}</span>
-                <span className="block text-xs text-muted">
-                  loan #{p.loanId} · {p.method === "UPI" ? "UPI" : "Bank"}{p.txnRef ? ` · ${p.txnRef}` : ""}{p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
-                </span>
-              </span>
-              <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${p.status === "VERIFIED" ? "bg-success-50 text-success-700" : p.status === "REJECTED" ? "bg-error-50 text-error-700" : "bg-gold-50 text-gold-dark"}`}>
-                {p.status === "PENDING_VERIFICATION" ? "Pending" : p.status === "VERIFIED" ? "Verified" : "Rejected"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function ApplicationsCard({ applications, onChanged }: { applications: ApplicationView[]; onChanged: () => void }) {
-  return (
-    <Card title={`Applications (${applications.length})`} icon={<Workflow size={16} />}>
-      {applications.length === 0 ? (
-        <p className="text-sm text-muted">No applications.</p>
-      ) : (
-        <ul className="divide-y divide-line text-sm">
-          {applications.map((a) => (
-            <li key={a.id} className="flex items-center justify-between gap-3 py-2">
-              <span className="min-w-0">
-                <span className="text-ink">App #{a.id}</span>
-                <span className="block text-xs text-muted">
-                  {a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "no amount"}{a.loanId != null ? ` · loan #${a.loanId}` : ""}
-                </span>
-              </span>
-              <div className="flex flex-shrink-0 items-center gap-2">
-                <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">{statusLabel(a.status)}</span>
-                {CANCELLABLE.has(a.status) && (
-                  <PermissionGate permission="customer:manage">
-                    <CancelButton appId={a.id} onDone={onChanged} />
-                  </PermissionGate>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function CancelButton({ appId, onDone }: { appId: number; onDone: () => void }) {
-  const m = useMutation({
-    mutationFn: () => staffApi.cancel(appId, "Cancelled by admin from customer page"),
-    onSuccess: onDone,
-  });
-  return (
-    <button
-      onClick={() => m.mutate()}
-      disabled={m.isPending}
-      className="flex items-center gap-1 rounded border border-error-100 px-2 py-1 text-xs font-semibold text-error-700 hover:bg-error-50 disabled:opacity-50"
-      title="Cancel this application (admin)"
-    >
-      {m.isPending ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />} Cancel
-    </button>
-  );
-}
-
-/** Human label for an audited profile field (camelCase → words; salary/percentage friendly). */
-function humanizeField(field: string): string {
-  const map: Record<string, string> = {
-    monthlySalaryPaise: "Monthly salary",
-    annualSalaryPaise: "Annual salary",
-    salaryPercentage: "Salary %",
-    incrementPercentage: "Increment %",
-    salaryBank: "Salary bank",
-    fullName: "Full name",
-    employmentStatus: "Employment status",
-  };
-  return map[field] ?? field.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
-}
-
-/** Render an audited old/new value: paise → ₹, percentages → %, else as-is. */
-function formatChangeValue(field: string, value: string | null): string {
-  if (value == null || value === "") return "—";
-  if (field.endsWith("Paise")) {
-    const n = Number(value);
-    return Number.isFinite(n) ? paiseToINR(n) : value;
-  }
-  if (field.endsWith("Percentage")) return `${value}%`;
-  return value;
-}
-
-/** Audited profile/salary change history (Phase 2.1): previous→new, who, when. */
-function ChangeHistoryCard({ customerId }: { customerId: number }) {
-  const q = useQuery({
-    queryKey: ["customer-changes", customerId],
-    queryFn: () => customersApi.changes(customerId),
-    enabled: Number.isFinite(customerId),
-  });
-  const rows = q.data ?? [];
-  return (
-    <Card title={`Change history (${rows.length})`} icon={<History size={16} />}>
-      {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-muted">No profile edits recorded.</p>
-      ) : (
-        <ul className="divide-y divide-line text-sm">
-          {rows.map((c) => (
-            <li key={c.id} className="py-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-ink">{humanizeField(c.field)}</span>
-                <span className="text-xs text-muted">{c.modifiedAt ? formatDateTime(c.modifiedAt) : ""}</span>
-              </div>
-              <div className="mt-0.5 text-xs text-muted">
-                <span className="line-through">{formatChangeValue(c.field, c.oldValue)}</span>
-                {" → "}
-                <span className="font-medium text-ink">{formatChangeValue(c.field, c.newValue)}</span>
-                {c.modifiedBy ? ` · by ${c.modifiedBy}` : ""}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
   );
 }
 

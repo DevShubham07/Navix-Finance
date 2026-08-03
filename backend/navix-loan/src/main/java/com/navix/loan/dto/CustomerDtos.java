@@ -4,12 +4,14 @@ import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.entity.CustomerCallLog;
 import com.navix.loan.entity.CustomerRemark;
 import com.navix.loan.entity.ProfileChangeLog;
 
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -25,7 +27,7 @@ public final class CustomerDtos {
 
     /**
      * One row in the customers list: an customer plus rolled-up counts and total outstanding (paise),
-     * and their latest credit headline (score + 1–5★ rating) for the staff Customers dashboard.
+     * their latest credit headline, effective loan status (for client-side segmenting), and owner.
      */
     public record CustomerSummary(
             Long customerId,
@@ -37,7 +39,11 @@ public final class CustomerDtos {
             String latestStatus,
             long totalOutstandingPaise,
             Integer creditScore,
-            Double starRating) {
+            Double starRating,
+            /** Newest loan's {@code effectiveStatus(today)} — outranks {@code latestStatus} for segments. */
+            String loanStatus,
+            Long ownerStaffId,
+            String ownerName) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */
@@ -46,7 +52,9 @@ public final class CustomerDtos {
             ProfileView profile,
             List<ApplicationView> applications,
             List<LoanView> loans,
-            List<PaymentView> payments) {
+            List<PaymentView> payments,
+            Long ownerStaffId,
+            String ownerName) {
     }
 
     /**
@@ -84,10 +92,10 @@ public final class CustomerDtos {
     /**
      * One entry in the unified customer activity timeline — merges lifecycle transitions
      * ({@code application_event}), profile/salary edits ({@code profile_change_log}), KYC re-verify
-     * events, and staff remarks into a single chronological feed (newest first).
+     * events, staff remarks, and call logs into a single chronological feed (newest first).
      */
     public record ActivityEntry(
-            String type,          // LIFECYCLE | PROFILE | REVERIFY | REMARK
+            String type,          // LIFECYCLE | PROFILE | REVERIFY | REMARK | CALL
             Long applicationId,
             String title,         // human-readable headline
             String detail,        // secondary line (old→new, notes, from→to)
@@ -102,6 +110,32 @@ public final class CustomerDtos {
     public record RemarkView(Long id, String body, String author, Instant at) {
         public static RemarkView of(CustomerRemark r) {
             return new RemarkView(r.getId(), r.getBody(), r.getCreatedBy(), r.getCreatedAt());
+        }
+    }
+
+    /** Assign (or clear) customer ownership. {@code staffId} null → unallocate. */
+    public record AssignOwnerRequest(Long staffId) {
+    }
+
+    /** A staff call log on a customer. */
+    public record AddCallLogRequest(
+            @NotBlank String callType,
+            @NotBlank String outcome,
+            LocalDate callbackOn,
+            String notes) {
+    }
+
+    public record CallLogView(
+            Long id,
+            String callType,
+            String outcome,
+            LocalDate callbackOn,
+            String notes,
+            String author,
+            Instant at) {
+        public static CallLogView of(CustomerCallLog c) {
+            return new CallLogView(c.getId(), c.getCallType(), c.getOutcome(), c.getCallbackOn(),
+                    c.getNotes(), c.getCreatedBy(), c.getCreatedAt());
         }
     }
 }

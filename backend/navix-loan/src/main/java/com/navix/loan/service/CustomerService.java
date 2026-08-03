@@ -5,8 +5,12 @@ import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.staff.StaffDirectory;
+import com.navix.common.staff.StaffSummary;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
+import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
+import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
@@ -16,6 +20,8 @@ import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.entity.ApplicationEvent;
+import com.navix.loan.entity.CustomerCallLog;
+import com.navix.loan.entity.CustomerOwner;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.CustomerRemark;
 import com.navix.loan.entity.Loan;
@@ -23,6 +29,8 @@ import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
 import com.navix.loan.entity.ProfileChangeLog;
 import com.navix.loan.repository.ApplicationEventRepository;
+import com.navix.loan.repository.CustomerCallLogRepository;
+import com.navix.loan.repository.CustomerOwnerRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.CustomerRemarkRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
@@ -37,7 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -46,7 +56,8 @@ import java.util.stream.Collectors;
 /**
  * Borrower-centric ("customer") roll-up across the loan aggregate, keyed on the bigint
  * {@code customer_id}. Lists/searches distinct customers, returns a single customer's full
- * history (profile + applications + loans + payments), and lets an ADMIN correct KYC data.
+ * history (profile + applications + loans + payments), ownership, call logs, and lets an ADMIN
+ * correct KYC data.
  *
  * <p>The {@code customer_profile} row is 1:1 with an application, so a customer's name/PAN/mobile
  * come from their <b>latest</b> profile. The authoritative penalty/prepayment-aware balance from
@@ -65,6 +76,9 @@ public class CustomerService {
     private final ProfileChangeLogRepository changeLogRepository;
     private final ApplicationEventRepository applicationEventRepository;
     private final CustomerRemarkRepository remarkRepository;
+    private final CustomerOwnerRepository ownerRepository;
+    private final CustomerCallLogRepository callLogRepository;
+    private final StaffDirectory staffDirectory;
     private final RiskPort risk;
     private final JdbcTemplate jdbc;
 
@@ -74,10 +88,17 @@ public class CustomerService {
      */
     @Transactional(readOnly = true)
     public List<CustomerSummary> list(String q) {
+        // ponytail: whole-table rollup + client-side segmenting. Move to a paged indexed query when the
+        // list stops fitting one response — same change as adding server-side segment filters.
         String needle = q != null ? q.trim().toLowerCase() : "";
         Map<Long, List<LoanApplication>> byCustomer = applicationRepository.findAll().stream()
                 .collect(Collectors.groupingBy(LoanApplication::getCustomerId));
 
+        Map<Long, CustomerOwner> owners = ownerRepository.findAll().stream()
+                .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
+        Map<Long, String> staffNames = new HashMap<>();
+
+        LocalDate today = LocalDate.now();
         List<CustomerSummary> out = new ArrayList<>();
         for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
             Long customerId = e.getKey();
@@ -91,6 +112,13 @@ public class CustomerService {
                     .max(Comparator.comparing(LoanApplication::getId))
                     .map(a -> a.getStatus().name())
                     .orElse(null);
+            String loanStatus = loans.stream()
+                    .max(Comparator.comparing(Loan::getId))
+                    .map(l -> l.effectiveStatus(today).name())
+                    .orElse(null);
+            CustomerOwner owner = owners.get(customerId);
+            Long ownerStaffId = owner != null ? owner.getOwnerStaffId() : null;
+            String ownerName = ownerStaffId != null ? staffName(ownerStaffId, staffNames) : null;
             CustomerSummary cs = new CustomerSummary(
                     customerId,
                     profile != null ? profile.getFullName() : null,
@@ -103,7 +131,10 @@ public class CustomerService {
                     profile != null && profile.getBureauScore() != null
                             ? profile.getBureauScore().intValue() : null,
                     profile != null && profile.getCreditStarRating() != null
-                            ? profile.getCreditStarRating().doubleValue() : null);
+                            ? profile.getCreditStarRating().doubleValue() : null,
+                    loanStatus,
+                    ownerStaffId,
+                    ownerName);
             if (matches(cs, needle)) {
                 out.add(cs);
             }
@@ -147,7 +178,48 @@ public class CustomerService {
                 .toList();
 
         ProfileView profileView = profile != null ? ProfileView.of(profile) : null;
-        return new CustomerDetail(customerId, profileView, appViews, loanViews, payments);
+        CustomerOwner owner = ownerRepository.findById(customerId).orElse(null);
+        Long ownerStaffId = owner != null ? owner.getOwnerStaffId() : null;
+        String ownerName = ownerStaffId != null
+                ? staffDirectory.findStaff(ownerStaffId).map(StaffSummary::name).orElse(null)
+                : null;
+        return new CustomerDetail(customerId, profileView, appViews, loanViews, payments,
+                ownerStaffId, ownerName);
+    }
+
+    /**
+     * Assign (or clear) the staff owner of a customer. CREDIT_HEAD / COLLECTION_HEAD / ADMIN.
+     * {@code staffId} null → unallocate (delete the sparse row). Audited via {@code profile_change_log}.
+     */
+    @Transactional
+    public CustomerDetail assignOwner(Long customerId, Long staffId) {
+        requireRole("CREDIT_HEAD", "COLLECTION_HEAD");
+        // Ensure the customer exists (404 otherwise).
+        detail(customerId);
+
+        CustomerOwner existing = ownerRepository.findById(customerId).orElse(null);
+        String oldVal = existing != null ? String.valueOf(existing.getOwnerStaffId()) : null;
+
+        if (staffId == null) {
+            if (existing != null) {
+                ownerRepository.deleteById(customerId);
+            }
+            logIfChanged(customerId, null, "owner", oldVal, null);
+            return detail(customerId);
+        }
+
+        StaffSummary assignee = staffDirectory.findStaff(staffId)
+                .filter(StaffSummary::active)
+                .orElseThrow(() -> new BusinessException("INVALID_ASSIGNEE",
+                        "The assignee must be an active staff member"));
+
+        CustomerOwner row = existing != null ? existing : new CustomerOwner();
+        row.setCustomerId(customerId);
+        row.setOwnerStaffId(assignee.id());
+        row.setAssignedAt(Instant.now());
+        ownerRepository.save(row);
+        logIfChanged(customerId, null, "owner", oldVal, String.valueOf(assignee.id()));
+        return detail(customerId);
     }
 
     /**
@@ -241,6 +313,9 @@ public class CustomerService {
         // --- customer-keyed satellites ---
         total += jdbc.update("DELETE FROM profile_change_log WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM customer_remark WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM customer_call_log WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM customer_owner WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM borrower_mobile WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_preferences WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_credential WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM referral_payout WHERE beneficiary_customer_id = ? OR counterparty_customer_id = ?", customerId, customerId);
@@ -271,8 +346,8 @@ public class CustomerService {
     /**
      * Unified customer activity timeline (newest first): every lifecycle transition + KYC re-verify
      * (from {@code application_event} across the customer's applications), every profile/salary edit
-     * (from {@code profile_change_log}), and every staff remark — merged and sorted by timestamp. Backs
-     * the "All past logs" tab of the customer detail popup.
+     * (from {@code profile_change_log}), every staff remark, and every call log — merged and sorted
+     * by timestamp. Backs the "Audit Logs" tab of the customer detail.
      */
     @Transactional(readOnly = true)
     public List<ActivityEntry> activity(Long customerId) {
@@ -315,6 +390,14 @@ public class CustomerService {
             out.add(new ActivityEntry("REMARK", null, "Remark", r.getBody(), r.getCreatedBy(), r.getCreatedAt()));
         }
 
+        // 4. Call logs.
+        for (CustomerCallLog c : callLogRepository.findByCustomerIdOrderByIdDesc(customerId)) {
+            String detail = c.getCallType() + " · " + c.getOutcome()
+                    + (c.getCallbackOn() != null ? " · callback " + c.getCallbackOn() : "")
+                    + (c.getNotes() != null && !c.getNotes().isBlank() ? " · " + c.getNotes() : "");
+            out.add(new ActivityEntry("CALL", null, "Call", detail, c.getCreatedBy(), c.getCreatedAt()));
+        }
+
         out.sort(Comparator.comparing(ActivityEntry::at,
                 Comparator.nullsLast(Comparator.reverseOrder())));
         return out;
@@ -337,6 +420,26 @@ public class CustomerService {
         return RemarkView.of(remarkRepository.save(r));
     }
 
+    /** One customer's call logs (newest first). */
+    @Transactional(readOnly = true)
+    public List<CallLogView> callLogs(Long customerId) {
+        return callLogRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
+                .map(CallLogView::of)
+                .toList();
+    }
+
+    /** Add a staff call log to a customer (author + timestamp captured by JPA auditing). */
+    @Transactional
+    public CallLogView addCallLog(Long customerId, AddCallLogRequest req) {
+        CustomerCallLog c = new CustomerCallLog();
+        c.setCustomerId(customerId);
+        c.setCallType(req.callType().trim());
+        c.setOutcome(req.outcome().trim());
+        c.setCallbackOn(req.callbackOn());
+        c.setNotes(req.notes() != null ? req.notes().trim() : null);
+        return CallLogView.of(callLogRepository.save(c));
+    }
+
     /** "monthlySalaryPaise"/"KYC_CREDIT_APPROVE" → "Monthly salary paise"/"Kyc credit approve". */
     private static String humanize(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -351,6 +454,11 @@ public class CustomerService {
     }
 
     // ---- internals -----------------------------------------------------------------
+
+    private String staffName(Long staffId, Map<Long, String> cache) {
+        return cache.computeIfAbsent(staffId,
+                id -> staffDirectory.findStaff(id).map(StaffSummary::name).orElse(null));
+    }
 
     /** Append a change-log row when {@code old != new} (no-op when unchanged). */
     private void logIfChanged(Long customerId, Long applicationId, String field, String oldVal, String newVal) {
@@ -412,6 +520,18 @@ public class CustomerService {
         CurrentActor actor = ActorContext.get();
         if (actor == null || !"ADMIN".equals(actor.role())) {
             throw new BusinessException("FORBIDDEN_ROLE", "This action requires role ADMIN");
+        }
+    }
+
+    /** ADMIN bypasses; otherwise the actor must hold one of {@code roles}. */
+    private static void requireRole(String... roles) {
+        CurrentActor actor = ActorContext.get();
+        if (actor != null && "ADMIN".equals(actor.role())) {
+            return;
+        }
+        if (actor == null || Arrays.stream(roles).noneMatch(r -> r.equals(actor.role()))) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires role " + String.join(" or ", roles));
         }
     }
 

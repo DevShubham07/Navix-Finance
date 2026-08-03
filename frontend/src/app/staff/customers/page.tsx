@@ -1,22 +1,47 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Search, ArrowRight, Contact } from "lucide-react";
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
+import {
+  SEGMENTS,
+  SEGMENT_LABEL,
+  inSegment,
+  segmentCounts,
+  type CustomerSegment,
+} from "@/lib/customers/segments";
 
 /**
- * Customers — a borrower-centric roll-up across the loan aggregate. Every staff role can view it
- * (product decision); ADMIN can edit a customer and take lifecycle actions on the detail page.
- * Search matches name or customer id (server-side).
+ * Customers — a borrower-centric roll-up across the loan aggregate. Segment chips filter
+ * client-side (?seg=); search matches name or customer id (server-side).
  */
 export default function CustomersPage() {
+  return (
+    <React.Suspense fallback={<div className="h-40 animate-pulse rounded bg-grey-100" />}>
+      <CustomersPageInner />
+    </React.Suspense>
+  );
+}
+
+function CustomersPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const segParam = (searchParams.get("seg") ?? "all") as CustomerSegment;
+  const seg: CustomerSegment =
+    segParam === "all" || SEGMENTS.includes(segParam) ? segParam : "all";
+  const mine = searchParams.get("mine") === "1";
+  const me = useStaffMe().data;
+
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
   const [openId, setOpenId] = React.useState<number | null>(null);
@@ -32,6 +57,28 @@ export default function CustomersPage() {
   });
 
   const rows = q.data ?? [];
+  const scoped = React.useMemo(() => {
+    let list = rows;
+    if (mine && me?.id != null) {
+      const sid = Number(me.id);
+      list = list.filter((c) => c.ownerStaffId === sid);
+    }
+    return list;
+  }, [rows, mine, me?.id]);
+
+  const counts = React.useMemo(() => segmentCounts(scoped), [scoped]);
+  const filtered = React.useMemo(
+    () => scoped.filter((c) => inSegment(c, seg)),
+    [scoped, seg],
+  );
+
+  function setSeg(next: CustomerSegment) {
+    const p = new URLSearchParams(searchParams.toString());
+    if (next === "all") p.delete("seg");
+    else p.set("seg", next);
+    const qs = p.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  }
 
   return (
     <div>
@@ -44,14 +91,16 @@ export default function CustomersPage() {
             { header: "Name", value: (c) => c.name ?? "" },
             { header: "PAN", value: (c) => c.pan ?? "" },
             { header: "Mobile", value: (c) => c.mobile ?? "" },
+            { header: "Owner", value: (c) => c.ownerName ?? "Unallocated" },
             { header: "Applications", value: (c) => c.applicationCount },
             { header: "Loans", value: (c) => c.loanCount },
             { header: "Latest status", value: (c) => (c.latestStatus ? statusLabel(c.latestStatus as ApplicationStatus) : "") },
+            { header: "Loan status", value: (c) => c.loanStatus ?? "" },
             { header: "Outstanding (₹)", value: (c) => (c.totalOutstandingPaise / 100).toFixed(2) },
             { header: "Credit score", value: (c) => c.creditScore ?? "" },
             { header: "Credit rating", value: (c) => (c.starRating != null ? c.starRating.toFixed(1) : "") },
           ]}
-          rows={rows}
+          rows={filtered}
         />
         <button
           onClick={() => q.refetch()}
@@ -62,6 +111,26 @@ export default function CustomersPage() {
       </PageHeader>
 
       <PermissionGate permission="customer:view" fallback={<NoAccessNotice />}>
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            className={`cal-preset${seg === "all" ? " on" : ""}`}
+            onClick={() => setSeg("all")}
+          >
+            {SEGMENT_LABEL.all} ({counts.all})
+          </button>
+          {SEGMENTS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`cal-preset${seg === s ? " on" : ""}`}
+              onClick={() => setSeg(s)}
+            >
+              {SEGMENT_LABEL[s]} ({counts[s]})
+            </button>
+          ))}
+        </div>
+
         <div className="mb-4 flex items-center gap-2">
           <Input
             aria-label="Search customers"
@@ -72,6 +141,11 @@ export default function CustomersPage() {
             className="!mb-0"
             inputClassName="w-72"
           />
+          {mine && (
+            <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
+              My customers
+            </span>
+          )}
         </div>
 
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
@@ -79,9 +153,9 @@ export default function CustomersPage() {
             <div className="h-40 animate-pulse rounded bg-grey-100" />
           ) : q.error ? (
             <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
-          ) : rows.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted">
-              No customers{debounced ? ` for “${debounced}”` : ""}.
+              No customers{debounced ? ` for “${debounced}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}.
             </p>
           ) : (
             <table className="w-full text-sm">
@@ -89,6 +163,7 @@ export default function CustomersPage() {
                 <tr>
                   <th className="px-4 py-2.5">Customer</th>
                   <th className="px-4 py-2.5">Mobile</th>
+                  <th className="px-4 py-2.5">Owner</th>
                   <th className="px-4 py-2.5">Loans</th>
                   <th className="px-4 py-2.5">Outstanding</th>
                   <th className="px-4 py-2.5">CIBIL</th>
@@ -97,7 +172,7 @@ export default function CustomersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {rows.map((c) => (
+                {filtered.map((c) => (
                   <tr key={c.customerId} className="hover:bg-grey-50">
                     <td className="px-4 py-3">
                       <button onClick={() => setOpenId(c.customerId)} className="flex items-center gap-2 text-left">
@@ -106,11 +181,21 @@ export default function CustomersPage() {
                         </span>
                         <span className="min-w-0">
                           <span className="block font-semibold text-ink hover:underline">{c.name ?? "—"}</span>
-                          <span className="block text-xs text-muted">#{c.customerId} · {c.pan ?? "no PAN"}</span>
+                          <span className="block text-xs text-muted">
+                            <Link
+                              href={`/staff/customers/${c.customerId}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="hover:underline"
+                            >
+                              #{c.customerId}
+                            </Link>
+                            {" · "}{c.pan ?? "no PAN"}
+                          </span>
                         </span>
                       </button>
                     </td>
                     <td className="px-4 py-3 font-mono text-muted">{c.mobile ?? "—"}</td>
+                    <td className="px-4 py-3 text-sm text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>
                     <td className="px-4 py-3 text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
                     <td className="px-4 py-3 font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
                     <td className="px-4 py-3">

@@ -104,9 +104,10 @@ public class ApplicationController {
      * job it is. Returns only id/name/role/active — no emails or other staff PII.
      */
     @GetMapping("/credit-executives")
-    public ApiResponse<List<StaffSummary>> assignableExecutives() {
+    public ApiResponse<List<StaffSummary>> assignableExecutives(
+            @RequestParam(defaultValue = "CREDIT_EXECUTIVE") String role) {
         requireStaff();
-        return ApiResponse.ok(staffDirectory.listActive("CREDIT_EXECUTIVE"));
+        return ApiResponse.ok(staffDirectory.listActive(role));
     }
 
     /** Staff dashboard pipeline: application counts per status (statuses with no rows are omitted). */

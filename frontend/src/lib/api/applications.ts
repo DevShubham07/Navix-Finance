@@ -326,6 +326,10 @@ export interface CustomerSummary {
   /** Latest credit headline for the customer (staff-only). */
   creditScore?: number | null;
   starRating?: number | null;
+  /** Newest loan's effectiveStatus(today) — outranks latestStatus for client-side segments. */
+  loanStatus?: string | null;
+  ownerStaffId?: number | null;
+  ownerName?: string | null;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -335,6 +339,8 @@ export interface CustomerDetail {
   applications: ApplicationView[];
   loans: LoanView[];
   payments: PaymentView[];
+  ownerStaffId?: number | null;
+  ownerName?: string | null;
 }
 
 /** Parsed bureau facts behind the credit brief (Categories A/B/C). Amounts are rupees (bureau unit). */
@@ -395,7 +401,7 @@ export interface ProfileChangeView {
 }
 
 /** One entry in the unified customer activity timeline — mirrors backend ActivityEntry. */
-export type ActivityType = "LIFECYCLE" | "PROFILE" | "REVERIFY" | "REMARK";
+export type ActivityType = "LIFECYCLE" | "PROFILE" | "REVERIFY" | "REMARK" | "CALL";
 export interface ActivityEntry {
   type: ActivityType;
   applicationId: number | null;
@@ -413,6 +419,25 @@ export interface RemarkView {
   author: string | null;
   /** ISO timestamp. */
   at: string | null;
+}
+
+/** A staff call log on a customer — mirrors backend CallLogView. */
+export interface CallLogView {
+  id: number;
+  callType: string;
+  outcome: string;
+  callbackOn: string | null;
+  notes: string | null;
+  author: string | null;
+  /** ISO timestamp. */
+  at: string | null;
+}
+
+export interface AddCallLogInput {
+  callType: string;
+  outcome: string;
+  callbackOn?: string | null;
+  notes?: string | null;
 }
 
 /**
@@ -790,11 +815,14 @@ export const staffApi = {
   creditQueue: () => bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue`, "GET"),
 
   /**
-   * ACTIVE credit executives for the assignee picker. Any staff role may read it — deliberately
-   * NOT `adminApi.listStaff()`, which is ADMIN-only and therefore 403s for the Credit Head who
-   * actually needs the list. Mirrors `collectionsApi.officers()`.
+   * ACTIVE staff holding {@code role} for assignee pickers (default CREDIT_EXECUTIVE). Any staff
+   * role may read it — deliberately NOT `adminApi.listStaff()`, which is ADMIN-only.
    */
-  creditExecutives: () => bff<StaffSummary[]>(`${STAFF_BASE}/credit-executives`, "GET"),
+  creditExecutives: (role = "CREDIT_EXECUTIVE") =>
+    bff<StaffSummary[]>(
+      `${STAFF_BASE}/credit-executives?role=${encodeURIComponent(role)}`,
+      "GET",
+    ),
 
   /** Application counts per status for the dashboard pipeline; statuses with no rows default to 0. */
   stats: () =>
@@ -959,6 +987,18 @@ export const customersApi = {
   /** Add a staff remark to a customer. */
   addRemark: (customerId: number, body: string) =>
     bff<RemarkView>(`${CUSTOMERS_BASE}/${customerId}/remarks`, "POST", { body }),
+
+  /** Assign (or clear) the staff owner. staffId null → unallocate. */
+  assignOwner: (customerId: number, staffId: number | null) =>
+    bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}/owner`, "POST", { staffId }),
+
+  /** Staff call logs on a customer. */
+  callLogs: (customerId: number) =>
+    bff<CallLogView[]>(`${CUSTOMERS_BASE}/${customerId}/call-logs`, "GET"),
+
+  /** Add a staff call log to a customer. */
+  addCallLog: (customerId: number, body: AddCallLogInput) =>
+    bff<CallLogView>(`${CUSTOMERS_BASE}/${customerId}/call-logs`, "POST", body),
 
   /** ADMIN — permanently delete a customer and ALL their data (irreversible cascade). */
   remove: (customerId: number) =>

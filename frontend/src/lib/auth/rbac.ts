@@ -52,8 +52,10 @@ export type Permission =
   | "staff:manage"
   // Customers pane: every staff role may view the borrower-centric roll-up (product decision —
   // all staff see customer details incl. PII); only ADMIN may edit it / take lifecycle actions.
+  // customer:assign is Heads (+ ADMIN) — allocate book of business without granting KYC-edit/delete.
   | "customer:view"
   | "customer:manage"
+  | "customer:assign"
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
   // referral-expense dashboard; ADMIN has oversight.
   | "referral:payout";
@@ -67,10 +69,10 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   // panels on the role itself, so the fast-path grant can't leak the credit workbench to it.
   KYC_APPROVER: ["kyc:approve", "loan:review", "loan:approve", "customer:view"],
   CREDIT_EXECUTIVE: ["loan:review", "customer:view"],
-  CREDIT_HEAD: ["loan:approve", "customer:view"],
+  CREDIT_HEAD: ["loan:approve", "customer:view", "customer:assign"],
   DISBURSEMENT_HEAD: ["loan:disburse", "customer:view", "referral:payout"],
   ACCOUNTANT: ["loan:activate", "customer:view"],
-  COLLECTION_HEAD: ["collections:manage", "collections:interact", "customer:view"],
+  COLLECTION_HEAD: ["collections:manage", "collections:interact", "customer:view", "customer:assign"],
   COLLECTION_EXECUTIVE: ["collections:interact", "customer:view"],
   DEVELOPER: ["customer:view"],
   ADMIN: [
@@ -84,6 +86,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "staff:manage",
     "customer:view",
     "customer:manage",
+    "customer:assign",
     "referral:payout",
   ],
 };

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
@@ -11,6 +11,7 @@ import {
   HandCoins,
   Users,
   Contact,
+  UserX,
   Mail,
   Ban,
   CreditCard,
@@ -19,6 +20,7 @@ import {
   ListChecks,
   Gift,
   LogOut,
+  ChevronRight,
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { NotificationBell } from "@/components/notifications/notification-bell";
@@ -27,6 +29,7 @@ import { hasPermission, STAFF_ROLE_LABELS, type Permission } from "@/lib/auth/rb
 import { featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { cn } from "@/lib/utils";
+import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
 
@@ -37,6 +40,8 @@ type NavItem = {
   perm?: Permission;
   /** Hide this item when the named dev-controlled feature flag is off (in addition to RBAC). */
   flag?: string;
+  /** Optional segment children (Customers). href for a child = `${parent.href}?seg=${seg}`. */
+  sub?: { label: string; seg: CustomerSegment }[];
 };
 type NavGroup = { heading: string; items: NavItem[] };
 
@@ -57,11 +62,19 @@ const NAV: NavGroup[] = [
     items: [
       { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard },
       { label: "Live applications", href: "/staff/applications", Icon: Workflow },
-      { label: "Customers", href: "/staff/customers", Icon: Contact, perm: "customer:view" },
-      // KYC approvals, Reborrow reviews, Credit Queue, Disbursement and Accounting were all folded
-      // into "Live applications" — it renders every queue a role can act on, with the same titles,
-      // tooltips and maker-checker actions, so the dedicated pages were byte-for-byte duplication.
-      // Their sub-pages (Referral payouts, Transactions) are genuinely different and survive below.
+      {
+        label: "Customers",
+        href: "/staff/customers",
+        Icon: Contact,
+        perm: "customer:view",
+        sub: SEGMENTS.map((seg) => ({ label: SEGMENT_LABEL[seg], seg })),
+      },
+      {
+        label: "Unallocated customers",
+        href: "/staff/customers?seg=unallocated",
+        Icon: UserX,
+        perm: "customer:assign",
+      },
       { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
       { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },
     ],
@@ -69,9 +82,8 @@ const NAV: NavGroup[] = [
   {
     heading: "Collections",
     items: [
-      // DPD Buckets folded into "Live applications" alongside the awaiting-repayment columns the
-      // cases are opened from — a collections officer works one page, not two.
-      { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: "collections:manage" },
+      // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
+      { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: "collections:interact" },
     ],
   },
   {
@@ -88,14 +100,14 @@ const NAV: NavGroup[] = [
   },
 ];
 
-/** Flattened horizontal nav for the mobile strip — icon + label pills that
- *  scroll sideways, no group headings (those only make sense in the sidebar). */
+/** Flattened horizontal nav for the mobile strip — ignores `sub` (segment chips live on the page). */
 function MobileNavLinks({ role, pathname, flags }: { role: Parameters<typeof hasPermission>[0]; pathname: string; flags?: FeatureFlags }) {
   const items = NAV.flatMap((g) => g.items).filter((it) => navVisible(it, role, flags));
   return (
     <>
       {items.map(({ label, href, Icon }) => {
-        const active = pathname === href || pathname.startsWith(href + "/");
+        const pathOnly = href.split("?")[0];
+        const active = pathname === pathOnly || pathname.startsWith(pathOnly + "/");
         return (
           <Link
             key={href}
@@ -117,6 +129,9 @@ function MobileNavLinks({ role, pathname, flags }: { role: Parameters<typeof has
 }
 
 function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<typeof hasPermission>[0]; pathname: string; onNavigate?: () => void; flags?: FeatureFlags }) {
+  const searchParams = useSearchParams();
+  const currentSeg = searchParams.get("seg");
+
   return (
     <>
       {NAV.map((group) => {
@@ -126,8 +141,66 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
           <div key={group.heading} className="mb-5">
             <p className="px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-wider text-navix-300">{group.heading}</p>
             <ul className="space-y-0.5">
-              {items.map(({ label, href, Icon }) => {
-                const active = pathname === href || pathname.startsWith(href + "/");
+              {items.map((it) => {
+                const { label, href, Icon, sub } = it;
+                const pathOnly = href.split("?")[0];
+                const hrefSeg = href.includes("?")
+                  ? new URL(href, "http://local").searchParams.get("seg")
+                  : null;
+                const parentActive = pathname === pathOnly || pathname.startsWith(pathOnly + "/");
+
+                if (sub?.length) {
+                  return (
+                    <li key={href}>
+                      <details open={parentActive} className="group">
+                        <summary
+                          className={cn(
+                            "flex cursor-pointer list-none items-center gap-3 rounded px-3 py-2 text-sm transition-colors [&::-webkit-details-marker]:hidden",
+                            parentActive
+                              ? "bg-white/10 font-semibold text-white shadow-[inset_3px_0_0_0_var(--gold)]"
+                              : "text-navix-200 hover:bg-white/5 hover:text-white",
+                          )}
+                        >
+                          <Icon size={17} className="flex-shrink-0" />
+                          <Link
+                            href={href}
+                            onClick={onNavigate}
+                            className="flex-1 truncate !text-inherit hover:!text-inherit"
+                          >
+                            {label}
+                          </Link>
+                          <ChevronRight size={14} className="flex-shrink-0 opacity-60 transition-transform group-open:rotate-90" />
+                        </summary>
+                        <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
+                          {sub.map(({ label: sl, seg }) => {
+                            const childActive = parentActive && currentSeg === seg;
+                            return (
+                              <li key={seg}>
+                                <Link
+                                  href={`${href}?seg=${seg}`}
+                                  onClick={onNavigate}
+                                  className={cn(
+                                    "block rounded px-2 py-1.5 text-xs transition-colors",
+                                    childActive
+                                      ? "bg-white/10 font-semibold text-white"
+                                      : "text-navix-300 hover:bg-white/5 hover:text-white",
+                                  )}
+                                >
+                                  {sl}
+                                </Link>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </details>
+                    </li>
+                  );
+                }
+
+                const active = hrefSeg
+                  ? pathname === pathOnly && currentSeg === hrefSeg
+                  : parentActive && !(pathOnly === "/staff/customers" && currentSeg);
+
                 return (
                   <li key={href}>
                     <Link
@@ -161,7 +234,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const { session, loading } = useStaffSession();
   const isPublic = PUBLIC_STAFF.some((p) => pathname.startsWith(p));
 
-  // Dev-controlled feature flags — used to hide nav for a disabled feature (e.g. referral payouts).
   const { data: flags } = useQuery({
     queryKey: ["feature-flags"],
     queryFn: () => featureFlagsApi.get(),
@@ -169,7 +241,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     staleTime: 60_000,
   });
 
-  // Login / activation pages: bare, centered, ivory.
   if (isPublic) {
     return <div className="min-h-screen bg-ivory">{children}</div>;
   }
@@ -192,25 +263,23 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await signOutStaff();
-    // Drop all cached staff queries (queues, customers, ledgers) so the next staffer
-    // who signs in on this browser never sees the previous user's cached data.
     queryClient.clear();
     router.push("/staff/login");
   };
 
   return (
     <div className="flex min-h-screen bg-ivory">
-      {/* Sidebar */}
       <aside className="sticky top-0 hidden h-screen w-60 flex-shrink-0 flex-col bg-navy-900 lg:flex">
         <div className="border-b border-white/10 px-5 py-4">
           <Brand href="/staff/dashboard" tag="Staff Console" light />
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-5">
-          <NavLinks role={session.role} pathname={pathname} flags={flags} />
+          <React.Suspense fallback={null}>
+            <NavLinks role={session.role} pathname={pathname} flags={flags} />
+          </React.Suspense>
         </nav>
       </aside>
 
-      {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-line bg-white px-4 py-3 lg:px-6">
           <div className="lg:hidden">
@@ -236,7 +305,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Mobile nav strip — flat, horizontally scrollable */}
         <div className="border-b border-line bg-navy-900 lg:hidden">
           <div className="flex gap-1 overflow-x-auto px-2 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none]">
             <MobileNavLinks role={session.role} pathname={pathname} flags={flags} />

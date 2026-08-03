@@ -1,8 +1,13 @@
 package com.navix.loan.controller;
 
+import com.navix.common.exception.BusinessException;
+import com.navix.common.security.ActorContext;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
+import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
+import com.navix.loan.dto.CustomerDtos.AssignOwnerRequest;
+import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
@@ -25,10 +30,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Staff-facing customer (borrower-centric) endpoints: list/search distinct customers, read one
- * customer's full history, and ADMIN-correct their KYC data. Reads are open to any signed-in staff
- * actor (the BFF injects the staff identity); the profile update is ADMIN-only in the service.
- * Borrower-facing lifecycle actions (cancel, blocklist) reuse {@code /api/applications} and
- * {@code /api/admin/blocklist}.
+ * customer's full history, and ADMIN-correct their KYC data. All handlers require a staff role
+ * (borrower / anonymous → {@code FORBIDDEN_ROLE}). Profile update and delete stay ADMIN-only in
+ * the service; owner assignment is CREDIT_HEAD / COLLECTION_HEAD / ADMIN.
  */
 @RestController
 @RequestMapping("/api/customers")
@@ -40,12 +44,14 @@ public class CustomerController {
     /** All customers, optionally filtered by {@code q} (name contains / customer id). */
     @GetMapping
     public ApiResponse<List<CustomerSummary>> list(@RequestParam(required = false) String q) {
+        requireStaff();
         return ApiResponse.ok(customerService.list(q));
     }
 
     /** One customer's full history: profile + applications + loans + payments. */
     @GetMapping("/{customerId}")
     public ApiResponse<CustomerDetail> get(@PathVariable Long customerId) {
+        requireStaff();
         return ApiResponse.ok(customerService.detail(customerId));
     }
 
@@ -53,36 +59,72 @@ public class CustomerController {
     @PutMapping("/{customerId}/profile")
     public ApiResponse<ProfileView> updateProfile(@PathVariable Long customerId,
                                                   @RequestBody UpdateCustomerRequest req) {
+        requireStaff();
         return ApiResponse.ok(customerService.updateProfile(customerId, req));
     }
 
     /** One customer's audited profile/salary change history (previous→new, who, when). */
     @GetMapping("/{customerId}/changes")
     public ApiResponse<List<ProfileChangeView>> changes(@PathVariable Long customerId) {
+        requireStaff();
         return ApiResponse.ok(customerService.changeHistory(customerId));
     }
 
-    /** Unified activity timeline: lifecycle + re-verify + profile edits + remarks (newest first). */
+    /** Unified activity timeline: lifecycle + re-verify + profile edits + remarks + calls. */
     @GetMapping("/{customerId}/activity")
     public ApiResponse<List<ActivityEntry>> activity(@PathVariable Long customerId) {
+        requireStaff();
         return ApiResponse.ok(customerService.activity(customerId));
     }
 
     /** Staff remarks on a customer. */
     @GetMapping("/{customerId}/remarks")
     public ApiResponse<List<RemarkView>> remarks(@PathVariable Long customerId) {
+        requireStaff();
         return ApiResponse.ok(customerService.remarks(customerId));
     }
 
     @PostMapping("/{customerId}/remarks")
     public ApiResponse<RemarkView> addRemark(@PathVariable Long customerId,
                                              @Valid @RequestBody AddRemarkRequest req) {
+        requireStaff();
         return ApiResponse.ok(customerService.addRemark(customerId, req.body()));
+    }
+
+    /** Assign (or clear) the staff owner of a customer. {@code staffId} null → unallocate. */
+    @PostMapping("/{customerId}/owner")
+    public ApiResponse<CustomerDetail> assignOwner(@PathVariable Long customerId,
+                                                   @RequestBody AssignOwnerRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.assignOwner(customerId, req.staffId()));
+    }
+
+    /** Staff call logs on a customer. */
+    @GetMapping("/{customerId}/call-logs")
+    public ApiResponse<List<CallLogView>> callLogs(@PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(customerService.callLogs(customerId));
+    }
+
+    @PostMapping("/{customerId}/call-logs")
+    public ApiResponse<CallLogView> addCallLog(@PathVariable Long customerId,
+                                               @Valid @RequestBody AddCallLogRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.addCallLog(customerId, req));
     }
 
     /** ADMIN — permanently delete a customer and all of their data (irreversible cascade). */
     @DeleteMapping("/{customerId}")
     public ApiResponse<CustomerService.DeletionResult> delete(@PathVariable Long customerId) {
+        requireStaff();
         return ApiResponse.ok(customerService.deleteCustomer(customerId));
+    }
+
+    /** Reject borrower / anonymous callers — this controller is staff-only. */
+    private void requireStaff() {
+        String role = ActorContext.get().role();
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
     }
 }

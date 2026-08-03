@@ -14,7 +14,7 @@ import {
   Route,
   ChevronRight,
 } from "lucide-react";
-import { PageHeader } from "@/components/staff/staff-ui";
+import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { InfoTooltip } from "@/components/ui";
 import { ApplicationJourney } from "@/components/staff/application-journey";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -26,6 +26,7 @@ import {
   staffReferralApi,
   featureFlagsApi,
   collectionsApi,
+  customersApi,
   dashboardApi,
   paiseToINR,
   statusLabel,
@@ -35,6 +36,7 @@ import {
   type TrendPoint,
   type TrendResponse,
 } from "@/lib/api/applications";
+import { segmentCounts, SEGMENT_LABEL, SEGMENTS, type CustomerSegment } from "@/lib/customers/segments";
 import { useMounted } from "@/hooks/use-mounted";
 import { formatDate } from "@/lib/utils";
 
@@ -74,6 +76,10 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
     label: "Live pipeline",
     info: "Oversight across every queue — ADMIN can act in any role.",
   },
+  DEVELOPER: {
+    label: "Read-only oversight",
+    info: "Browse the live application pipeline and your allocated customers. Developer is read-only — no maker-checker actions.",
+  },
 };
 
 /**
@@ -93,15 +99,7 @@ const ROLE_HREF: Partial<Record<StaffRole, string>> = {
   COLLECTION_HEAD: "/staff/applications",
   COLLECTION_EXECUTIVE: "/staff/applications",
   ADMIN: "/staff/applications",
-};
-
-/** Fallback "your area" card for roles with no pipeline action queue. */
-const FALLBACK_AREA: Partial<Record<StaffRole, { href: string; label: string; cta: string }>> = {
-  DEVELOPER: {
-    href: "/staff/applications",
-    label: "Read-only oversight of the live application pipeline.",
-    cta: "Open application queues",
-  },
+  DEVELOPER: "/staff/applications",
 };
 
 /** A non-application actionable source (repayments, referral payouts, settlements, cases). */
@@ -130,33 +128,36 @@ const settlementsExtra = (count: number): QueueExtra =>
  * The live items for a role's action queue — the union of everything the role's queue
  * page(s) actually list. Every source is individually fault-tolerant (`.catch`) so one
  * failing call can never zero the whole count.
+ *
+ * After the role switch, every role also gets "My customers" extras filtered by ownership.
+ * // ponytail: whole-table rollup + client-side segmenting. Move to a paged indexed query when the
+ * // list stops fitting one response — same change as adding server-side segment filters.
  */
-async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
+async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promise<RoleQueue> {
+  let base: RoleQueue;
   switch (role) {
     case "KYC_APPROVER": {
-      // Mirrors the KYC approver's panels on /staff/applications: KYC clearances + reborrow
-      // reviews + the instant-loan credit fast-path (KYC-approved applications already applied on).
       const [kyc, review, approved] = await Promise.all([
         safe(staffApi.listByStatus("KYC_PENDING")),
         safe(staffApi.listByStatus("REVIEW_PENDING")),
         safe(staffApi.listByStatus("KYC_APPROVED")),
       ]);
       const instant = approved.filter((a) => a.amountRequestedPaise != null);
-      return { apps: [...kyc, ...review, ...instant], extras: [] };
+      base = { apps: [...kyc, ...review, ...instant], extras: [] };
+      break;
     }
     case "CREDIT_EXECUTIVE":
-      return { apps: await safe(staffApi.listByStatus("CREDIT_EXEC_PENDING")), extras: [] };
+      base = { apps: await safe(staffApi.listByStatus("CREDIT_EXEC_PENDING")), extras: [] };
+      break;
     case "CREDIT_HEAD": {
       const [queue, headPending] = await Promise.all([
         safe(staffApi.creditQueue()),
         safe(staffApi.listByStatus("CREDIT_HEAD_PENDING")),
       ]);
-      return { apps: [...queue, ...headPending], extras: [] };
+      base = { apps: [...queue, ...headPending], extras: [] };
+      break;
     }
     case "DISBURSEMENT_HEAD": {
-      // Referral payouts — gated on the referral feature flag exactly as the referrals page
-      // gates it (feature is on unless the flag is explicitly false); skip the read when off. The flag
-      // fetch runs alongside the app lists; only the payout count depends on it.
       const [pending, failed, flags] = await Promise.all([
         safe(staffApi.listByStatus("DISBURSEMENT_PENDING")),
         safe(staffApi.listByStatus("DISBURSEMENT_FAILED")),
@@ -169,28 +170,30 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
           extras.push({ key: "referral-payouts", label: "Referral payouts to settle", count: payouts, href: "/staff/disbursement/referrals" });
         }
       }
-      return { apps: [...pending, ...failed], extras };
+      base = { apps: [...pending, ...failed], extras };
+      break;
     }
     case "ACCOUNTANT": {
       const [apps, repayments] = await Promise.all([
         safe(staffApi.listByStatus("ACCOUNTANT_PENDING")),
         pendingRepaymentCount(),
       ]);
-      return { apps, extras: repayments > 0 ? [repaymentsExtra(repayments)] : [] };
+      base = { apps, extras: repayments > 0 ? [repaymentsExtra(repayments)] : [] };
+      break;
     }
     case "COLLECTION_HEAD": {
       const pending = await pendingSettlementCount();
-      return { apps: [], extras: pending > 0 ? [settlementsExtra(pending)] : [] };
+      base = { apps: [], extras: pending > 0 ? [settlementsExtra(pending)] : [] };
+      break;
     }
     case "COLLECTION_EXECUTIVE": {
-      // Mirrors the DPD-buckets grid on /staff/applications: every open collection case.
       const cases = await countOf(collectionsApi.listCases());
       const extras: QueueExtra[] = [];
       if (cases > 0) extras.push({ key: "cases", label: "Open collection cases", count: cases, href: "/staff/applications" });
-      return { apps: [], extras };
+      base = { apps: [], extras };
+      break;
     }
     case "ADMIN": {
-      // One wave — the six pipeline lists and the two extra counts are all independent.
       const [lists, repayments, settlements] = await Promise.all([
         Promise.all(
           (["KYC_PENDING", "REVIEW_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_HEAD_PENDING", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING"] as ApplicationStatus[]).map(
@@ -203,11 +206,43 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
       const extras: QueueExtra[] = [];
       if (repayments > 0) extras.push(repaymentsExtra(repayments));
       if (settlements > 0) extras.push(settlementsExtra(settlements));
-      return { apps: lists.flat(), extras };
+      base = { apps: lists.flat(), extras };
+      break;
     }
+    case "DEVELOPER":
     default:
-      return { apps: [], extras: [] };
+      base = { apps: [], extras: [] };
+      break;
   }
+
+  if (staffId != null && staffId !== "") {
+    const sid = Number(staffId);
+    if (Number.isFinite(sid)) {
+      try {
+        const mine = (await customersApi.list()).filter((c) => c.ownerStaffId === sid);
+        const overdue = mine.filter(
+          (c) => c.loanStatus === "OVERDUE" || c.loanStatus === "IN_COLLECTIONS",
+        );
+        base.extras.push({
+          key: "my-customers",
+          label: "Customers allocated to you",
+          count: mine.length,
+          href: "/staff/customers?mine=1",
+        });
+        if (overdue.length > 0) {
+          base.extras.push({
+            key: "my-overdue",
+            label: "Your customers now overdue",
+            count: overdue.length,
+            href: "/staff/customers?seg=overdue&mine=1",
+          });
+        }
+      } catch {
+        // customers list is best-effort; don't zero the pipeline queue
+      }
+    }
+  }
+  return base;
 }
 
 /** Requested amount, or the "amount pending" placeholder for pre-amount applications. */
@@ -228,10 +263,10 @@ export default function StaffDashboardPage() {
     refetchInterval: REFRESH_MS,
   });
 
-  // Layers 1 + 2 — the signed-in role's action queue.
+  // Layers 1 + 2 — the signed-in role's action queue (+ book-of-business extras).
   const queueQuery = useQuery({
-    queryKey: ["staff-dashboard-queue", role],
-    queryFn: () => fetchRoleQueue(role as StaffRole),
+    queryKey: ["staff-dashboard-queue", role, session?.id],
+    queryFn: () => fetchRoleQueue(role as StaffRole, session?.id),
     enabled: mounted && !!role && !!QUEUE[role as StaffRole],
     refetchInterval: REFRESH_MS,
   });
@@ -244,8 +279,14 @@ export default function StaffDashboardPage() {
     refetchInterval: REFRESH_MS,
   });
 
-  // Admin oversight: a company-wide transactions summary (Layer 4, collapsed).
+  // Admin oversight: segment roll-up + company-wide transactions.
   const isAdmin = role === "ADMIN";
+  const customersQ = useQuery({
+    queryKey: ["staff-dashboard-customers"],
+    queryFn: () => customersApi.list(),
+    enabled: mounted && isAdmin,
+    refetchInterval: REFRESH_MS,
+  });
   const txns = useQuery({
     queryKey: ["admin-dashboard-txns"],
     queryFn: () => staffApi.transactions(),
@@ -273,7 +314,10 @@ export default function StaffDashboardPage() {
   // Refresh spinner (RQ v5): isLoading is first-load only — key the spinner off isFetching
   // across every dashboard query so a manual refresh gives visible feedback.
   const fetching =
-    stats.isFetching || queueQuery.isFetching || trends.isFetching || (isAdmin && txns.isFetching);
+    stats.isFetching ||
+    queueQuery.isFetching ||
+    trends.isFetching ||
+    (isAdmin && (txns.isFetching || customersQ.isFetching));
 
   return (
     <div>
@@ -286,7 +330,10 @@ export default function StaffDashboardPage() {
             stats.refetch();
             queueQuery.refetch();
             trends.refetch();
-            if (isAdmin) txns.refetch();
+            if (isAdmin) {
+              txns.refetch();
+              customersQ.refetch();
+            }
           }}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
@@ -294,8 +341,8 @@ export default function StaffDashboardPage() {
         </button>
       </PageHeader>
 
-      {/* Layer 1 — "Your work" hero */}
-      {queue ? (
+      {/* Layer 1 — "Your work" hero (every role has a QUEUE entry now, incl. DEVELOPER). */}
+      {queue && (
         <WorkHero
           queue={queue}
           count={headlineCount}
@@ -305,8 +352,6 @@ export default function StaffDashboardPage() {
           actingHref={actingHref}
           onJourney={setOpenJourneyId}
         />
-      ) : (
-        <FallbackHero role={role} />
       )}
 
       {/* 30-day activity trends — applications, disbursals and repayments. */}
@@ -316,7 +361,7 @@ export default function StaffDashboardPage() {
           former "More & quick links" aside was pure duplication). */}
       <div>
         <div>
-          {queue ? (
+          {queue && (
             <section>
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -350,14 +395,6 @@ export default function StaffDashboardPage() {
                 </div>
               )}
             </section>
-          ) : (
-            <section className="rounded border border-line bg-white p-6 text-sm text-muted">
-              Use the navigation to open the queues your role can act on, or go to the{" "}
-              <Link href="/staff/applications" className="font-semibold text-navy hover:underline">
-                live application queues
-              </Link>
-              .
-            </section>
           )}
         </div>
 
@@ -381,6 +418,14 @@ export default function StaffDashboardPage() {
           <PipelineBar stats={stats.data ?? {}} role={role} />
         )}
       </section>
+
+      {/* Admin — customer book by segment */}
+      {isAdmin && (
+        <SegmentBar
+          counts={segmentCounts(customersQ.data ?? [])}
+          loading={customersQ.isLoading}
+        />
+      )}
 
       {/* Layer 4 — Admin transactions summary (collapsed) */}
       {isAdmin && (
@@ -530,16 +575,41 @@ function WorkHero({
   );
 }
 
-/** Layer 1 fallback for roles with no pipeline action queue (collections, developer). */
-function FallbackHero({ role }: { role: StaffRole }) {
-  const area = FALLBACK_AREA[role];
+/** Admin customer-book segment strip — totals match the customers page "All" count. */
+function SegmentBar({
+  counts,
+  loading,
+}: {
+  counts: ReturnType<typeof segmentCounts>;
+  loading: boolean;
+}) {
+  const chips: CustomerSegment[] = ["all", ...SEGMENTS];
   return (
-    <section className="mb-8 rounded-lg border border-gold-soft bg-white p-6 shadow-sm">
-      <h2 className="mb-1 text-lg">Your work</h2>
-      <p className="text-sm text-muted">{area?.label ?? "Use the navigation to open your area of the console."}</p>
-      <Link href={area?.href ?? "/staff/applications"} className="btn btn-sm btn-navy mt-4">
-        {area?.cta ?? "Open the console"} <ArrowRight size={15} />
-      </Link>
+    <section className="mt-8">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="mb-0 text-xl">Customers by segment</h2>
+        <InfoTooltip content="Client-side roll-up of every customer into lifecycle segments. Unallocated is tinted when the backlog is non-zero." />
+      </div>
+      {loading ? (
+        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {chips.map((seg) => {
+            const href =
+              seg === "all" ? "/staff/customers" : `/staff/customers?seg=${seg}`;
+            const amber = seg === "unallocated" && counts.unallocated > 0;
+            return (
+              <Link key={seg} href={href} className="block transition hover:opacity-90">
+                <StatCard
+                  label={SEGMENT_LABEL[seg]}
+                  value={counts[seg]}
+                  accent={amber ? "gold" : seg === "overdue" && counts.overdue > 0 ? "error" : "navy"}
+                />
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
