@@ -153,9 +153,17 @@ public class ApplicationVerificationService {
 
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("fullName", r.fullName());
+        derived.put("dob", r.dob());
+        derived.put("gender", r.gender());
         derived.put("aadhaarLinked", r.aadhaarLinked());
         derived.put("maskedAadhaar", r.maskedAadhaar());
         derived.put("addressState", r.addressState());
+        derived.put("addressZip", r.addressZip());
+        derived.put("panStatus", r.panStatus());
+        derived.put("panAllotmentDate", r.panAllotmentDate());
+        derived.put("compliant", r.compliant());
+        derived.put("isSpecified", r.isSpecified());
+        derived.put("panNumber", r.panNumber());
         String status = r.valid() ? PASS : FAIL;
         ApplicationVerification row = upsert(appId, PAN, status, r.provider(), r.txnId(), ref,
                 null, null, null, derived, r.valid() ? "PAN valid" : "PAN not valid");
@@ -200,8 +208,18 @@ public class ApplicationVerificationService {
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("verified", r.verified());
         derived.put("establishmentMatched", r.establishmentMatched());
+        derived.put("individualMatched", r.individualMatched());
         derived.put("genericEmail", r.genericEmail());
         derived.put("matchedEstablishment", r.matchedEstablishment());
+        derived.put("status", r.status());
+        derived.put("domain", r.domain());
+        derived.put("mxFound", r.mxFound());
+        derived.put("mxRecord", r.mxRecord());
+        derived.put("smtpProvider", r.smtpProvider());
+        derived.put("didYouMean", r.didYouMean());
+        derived.put("personName", r.personName());
+        derived.put("companyName", r.companyName());
+        derived.put("individualScore", r.individualScore());
         String status = ok ? PASS : REVIEW;
         String msg = ok ? "Email + employer matched"
                 : (r.genericEmail() ? "Not an official email" : "Employer not matched — manual review");
@@ -247,6 +265,9 @@ public class ApplicationVerificationService {
         derived.put("state", r.state());
         derived.put("pincode", r.pincode());
         derived.put("address", r.address());
+        derived.put("district", r.district());
+        derived.put("country", r.country());
+        derived.put("confidenceScore", r.confidenceScore());
         String status = resolved ? PASS : REVIEW;
         return view(upsert(appId, ADDRESS, status, r.provider(), r.txnId(), ref, null, null, null, derived,
                 resolved ? "Address resolved" : "Address could not be resolved — review"));
@@ -443,6 +464,11 @@ public class ApplicationVerificationService {
         if (aadhaarDob != null) {
             profile.setDob(aadhaarDob);
         }
+        // Fill blank address from DigiLocker so CRM Personal shows KYC address without a separate step.
+        if ((profile.getAddress() == null || profile.getAddress().isBlank())
+                && a.fullAddress() != null && !a.fullAddress().isBlank()) {
+            profile.setAddress(a.fullAddress());
+        }
         // The raw Aadhaar number is no longer captured or stored — DigiLocker completion just records
         // the verified status, which is what staff see on the profile card.
         profile.setAadhaarVerified(true);
@@ -550,9 +576,13 @@ public class ApplicationVerificationService {
         creditBriefService.generate(appId, profile, r.facts());
         profileRepo.save(profile);
 
-        // Borrower-safe derived: NO score, NO category.
+        // Staff CRM derived: aggregates + noRecord (score stays on row.score / profile — not here for borrower summary).
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("noRecord", r.noRecord());
+        derived.put("activeAccounts", r.activeAccounts());
+        derived.put("overdueAccounts", r.overdueAccounts());
+        derived.put("totalBalance", r.totalBalance());
+        derived.put("source", r.source());
         ApplicationVerification row = upsert(appId, BUREAU, PASS, r.source(), r.txnId(), ref,
                 null, bureauScore != null ? bureauScore.longValue() : null, null, derived,
                 r.noRecord() ? "Thin-file (no bureau record)" : "Bureau pulled");
@@ -647,14 +677,26 @@ public class ApplicationVerificationService {
         double nameMatch = nameSimilarity(profile.getFullName(), r.fullName());
         boolean ok = r.accountExists() && nameMatch >= NAME_MATCH_THRESHOLD;
         profile.setPennyDropVerified(ok);
-        if (profile.getSalaryBank() == null && r.bank() != null) {
-            profile.setSalaryBank(r.bank());
+        if (profile.getSalaryBank() == null) {
+            if (r.bank() != null && !r.bank().isBlank()) {
+                profile.setSalaryBank(r.bank());
+            } else if (ifsc != null && ifsc.length() >= 4) {
+                // Fallback label from IFSC bank code when provider omits bankName.
+                profile.setSalaryBank(ifsc.substring(0, 4));
+            }
         }
         profileRepo.save(profile);
 
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("accountExists", r.accountExists());
+        derived.put("accountNumber", accountNumber);
+        derived.put("ifsc", r.ifsc() != null ? r.ifsc() : ifsc);
         derived.put("bank", r.bank());
+        derived.put("beneficiaryName", r.fullName());
+        derived.put("fullName", r.fullName()); // name-match recompute reads derived.fullName
+        derived.put("bankRrn", r.bankRrn());
+        derived.put("reason", r.reason());
+        derived.put("providerNameMatch", r.providerNameMatch());
         derived.put("nameMatch", round2(nameMatch));
         String status = ok ? PASS : REVIEW;
         String msg = !r.accountExists()
@@ -717,6 +759,8 @@ public class ApplicationVerificationService {
         derived.put("faceMatch", matched);
         derived.put("live", r.live());
         derived.put("confidence", r.confidence());
+        derived.put("personImageBlurry", r.personImageBlurry());
+        derived.put("multipleFaces", r.multipleFaces());
         // Fail → flagged for manual review (not hard block); approver decides.
         String status = live ? PASS : REVIEW;
         Long score = r.confidence() != null ? Math.round(r.confidence() * 100) : null;
@@ -1162,8 +1206,16 @@ public class ApplicationVerificationService {
             row.setS3ObjectKey(s3Key);
         }
         row.setDerived(toJson(derived));
-        // Audit provenance only — no PII names/aadhaar/account numbers persisted raw.
-        row.setRawResponse(toJson(Map.of("provider", nz(provider), "txnId", nz(txnId), "status", status)));
+        // Full CRM snapshot: provider provenance + every derived field we persisted for this step.
+        Map<String, Object> raw = new LinkedHashMap<>();
+        raw.put("provider", nz(provider));
+        raw.put("txnId", nz(txnId));
+        raw.put("status", status);
+        raw.put("clientRef", nz(ref));
+        if (derived != null) {
+            raw.put("fields", derived);
+        }
+        row.setRawResponse(toJson(raw));
         row.setMessage(message);
         return verificationRepo.save(row);
     }

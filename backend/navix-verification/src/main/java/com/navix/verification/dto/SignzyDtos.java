@@ -34,7 +34,8 @@ public final class SignzyDtos {
             String nameMatch,
             String beneName,
             String beneIfsc,
-            String bankRrn
+            String bankRrn,
+            String bankName
     ) {
     }
 

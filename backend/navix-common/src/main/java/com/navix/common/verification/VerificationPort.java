@@ -69,15 +69,18 @@ public interface VerificationPort {
 
     record PanCheck(String txnId, String provider, boolean valid, String fullName, String dob, String gender,
                     boolean aadhaarLinked, String maskedAadhaar, String panNumber,
-                    String addressState, String addressZip) {
+                    String addressState, String addressZip,
+                    String panStatus, String panAllotmentDate, Boolean compliant, String isSpecified) {
     }
 
     record EmailCheck(String txnId, String provider, boolean verified, boolean establishmentMatched,
-                      boolean individualMatched, boolean genericEmail, String matchedEstablishment) {
+                      boolean individualMatched, boolean genericEmail, String matchedEstablishment,
+                      String status, String domain, Boolean mxFound, String mxRecord, String smtpProvider,
+                      String didYouMean, String personName, String companyName, Double individualScore) {
     }
 
     record AddressCheck(String txnId, String provider, boolean withinIndia, String address, String pincode,
-                        String state, String district) {
+                        String state, String district, String country, Double confidenceScore) {
     }
 
     /** {@code source} is the bureau that answered (e.g. SIGNZY_EXPERIAN / DIGITAP_EXPERIAN); facts null on thin-file/CRIF. */
@@ -87,11 +90,11 @@ public interface VerificationPort {
     }
 
     record PennyDropCheck(String txnId, String provider, boolean accountExists, String fullName,
-                          String bank, String ifsc) {
+                          String bank, String ifsc, String bankRrn, String reason, String providerNameMatch) {
     }
 
     record FaceLivenessCheck(String txnId, String provider, boolean live, Double confidence,
-                             boolean multipleFaces) {
+                             boolean multipleFaces, Boolean personImageBlurry) {
     }
 
     /** Liveness journey session — the token to poll and the hosted video URL to redirect the borrower to. */

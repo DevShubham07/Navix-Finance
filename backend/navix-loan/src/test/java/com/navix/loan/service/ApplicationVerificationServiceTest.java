@@ -81,7 +81,8 @@ class ApplicationVerificationServiceTest {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
                 .thenReturn(new VerificationPort.PanCheck("TXN1", "SIGNZY", true, "SHUBHAM", "2003-03-24", "M",
-                        true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
+                        true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001",
+                        "operative", "28-03-2019", true, "No"));
 
         var result = service.verifyPan(APP, "QVEPS0901K");
 
@@ -98,7 +99,8 @@ class ApplicationVerificationServiceTest {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(anyString(), anyString()))
                 .thenReturn(new VerificationPort.PanCheck("TXN1", "SIGNZY", true, "SHUBHAM", "15/08/1992", "M",
-                        true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
+                        true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001",
+                        "operative", null, true, null));
 
         service.verifyPan(APP, "QVEPS0901K");
 
@@ -112,7 +114,8 @@ class ApplicationVerificationServiceTest {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.verifyPan(anyString(), anyString()))
                 .thenReturn(new VerificationPort.PanCheck("TXN1", "SIGNZY", true, "SHUBHAM", "2003-03-24", "M",
-                        true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001"));
+                        true, "65XXXXXXXX90", "QVEPS0901K", "Haryana", "131001",
+                        "operative", "28-03-2019", true, "No"));
 
         service.verifyPan(APP, "QVEPS0901K");
 
@@ -134,7 +137,8 @@ class ApplicationVerificationServiceTest {
     void email_genericEmail_isReview() {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
         when(verification.verifyEmail(anyString(), anyString(), anyString(), anyString()))
-                .thenReturn(new VerificationPort.EmailCheck("TXN2", "DIGITAP", true, false, true, true, null));
+                .thenReturn(new VerificationPort.EmailCheck("TXN2", "DIGITAP", true, false, true, true, null,
+                        null, null, null, null, null, null, null, null, null));
 
         var result = service.verifyEmail(APP, "someone@gmail.com");
 
@@ -146,12 +150,20 @@ class ApplicationVerificationServiceTest {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
 
         when(verification.pennyDrop(anyString(), anyString(), anyString()))
-                .thenReturn(new VerificationPort.PennyDropCheck("TXN3", "SIGNZY", true, "RAVI KUMAR", "HDFC Bank", "HDFC0002557"));
+                .thenReturn(new VerificationPort.PennyDropCheck("TXN3", "SIGNZY", true, "RAVI KUMAR", "HDFC Bank", "HDFC0002557",
+                        "RRN1", "success", "no"));
         assertThat(service.verifyPennyDrop(APP, "123", "HDFC0002557").status()).isEqualTo("REVIEW");
 
         when(verification.pennyDrop(anyString(), anyString(), anyString()))
-                .thenReturn(new VerificationPort.PennyDropCheck("TXN4", "SIGNZY", true, "SHUBHAM", "HDFC Bank", "HDFC0002557"));
-        assertThat(service.verifyPennyDrop(APP, "123", "HDFC0002557").status()).isEqualTo("PASS");
+                .thenReturn(new VerificationPort.PennyDropCheck("TXN4", "SIGNZY", true, "SHUBHAM", "HDFC Bank", "HDFC0002557",
+                        "RRN2", "success", "yes"));
+        var pass = service.verifyPennyDrop(APP, "4180000101597860", "HDFC0002557");
+        assertThat(pass.status()).isEqualTo("PASS");
+        assertThat(pass.derived()).containsEntry("accountNumber", "4180000101597860");
+        assertThat(pass.derived()).containsEntry("ifsc", "HDFC0002557");
+        assertThat(pass.derived()).containsEntry("beneficiaryName", "SHUBHAM");
+        assertThat(pass.derived()).containsEntry("bankRrn", "RRN2");
+        assertThat(pass.derived()).containsEntry("bank", "HDFC Bank");
     }
 
     @Test

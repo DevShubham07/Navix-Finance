@@ -40,7 +40,8 @@ public class DigitapVerificationAdapter implements VerificationPort {
         DigitapDtos.PanResponse r = panClient.verify(pan, clientRef);
         return new PanCheck(r.txnId(), "DIGITAP", Boolean.TRUE.equals(r.valid()), trim(r.fullName()),
                 r.dob(), r.gender(), Boolean.TRUE.equals(r.aadhaarLinked()), null, pan,
-                r.addressState(), r.addressZip());
+                r.addressState(), r.addressZip(),
+                r.panStatus(), null, null, null);
     }
 
     @Override
@@ -48,14 +49,15 @@ public class DigitapVerificationAdapter implements VerificationPort {
         DigitapDtos.EmailResponse r = emailClient.verify(email, individualName, establishmentName, clientRef);
         return new EmailCheck(r.txnId(), "DIGITAP", Boolean.TRUE.equals(r.isVerified()),
                 Boolean.TRUE.equals(r.isEstablishmentMatched()), Boolean.TRUE.equals(r.isIndividualMatched()),
-                Boolean.TRUE.equals(r.isGenericEmail()), r.matchedEstablishment());
+                Boolean.TRUE.equals(r.isGenericEmail()), r.matchedEstablishment(),
+                null, null, null, null, null, null, null, null, r.individualScore());
     }
 
     @Override
     public AddressCheck verifyAddress(double latitude, double longitude, String clientRef) {
         DigitapDtos.AddressResponse r = addressClient.verify(latitude, longitude, clientRef);
         return new AddressCheck(r.code(), "DIGITAP", Boolean.TRUE.equals(r.withinIndia()), r.address(),
-                r.pincode(), r.state(), r.district());
+                r.pincode(), r.state(), r.district(), r.country(), null);
     }
 
     @Override
@@ -89,7 +91,7 @@ public class DigitapVerificationAdapter implements VerificationPort {
             // No reference photo → degrade to a single-image quality/face-detection check.
             live = !Boolean.TRUE.equals(r.personImageBlurry());
         }
-        return new FaceLivenessCheck(r.txnId(), "DIGITAP", live, r.confidence(), false);
+        return new FaceLivenessCheck(r.txnId(), "DIGITAP", live, r.confidence(), false, r.personImageBlurry());
     }
 
     @Override

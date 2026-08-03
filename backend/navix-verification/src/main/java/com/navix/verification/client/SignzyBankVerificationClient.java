@@ -40,6 +40,7 @@ public class SignzyBankVerificationClient {
                 text(result.path("nameMatch")),
                 text(transfer.path("beneName")),
                 text(transfer.path("beneIFSC")),
-                text(result.path("auditTrail").path("value")));
+                text(result.path("auditTrail").path("value")),
+                text(result.path("ifscCodeData").path("bankName")));
     }
 }

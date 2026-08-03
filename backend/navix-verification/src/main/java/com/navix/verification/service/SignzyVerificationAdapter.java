@@ -54,7 +54,8 @@ public class SignzyVerificationAdapter implements VerificationPort {
         // returns no DOB/gender/address — those come from DigiLocker.
         String name = !isBlank(r.unMaskedName()) ? r.unMaskedName() : r.entityName();
         return new PanCheck(r.txnId(), "SIGNZY", operative, trim(name), null, null,
-                aadhaarLinked, null, r.number(), null, null);
+                aadhaarLinked, null, r.number(), null, null,
+                r.panStatus(), r.panAllotmentDate(), r.compliant(), r.isSpecified());
     }
 
     @Override
@@ -67,7 +68,9 @@ public class SignzyVerificationAdapter implements VerificationPort {
         boolean establishmentMatched = nameMatches(establishmentName, r.companyName());
         return new EmailCheck(ref(clientRef), "SIGNZY", verified,
                 establishmentMatched, individualMatched,
-                Boolean.TRUE.equals(r.freeEmail()), r.companyName());
+                Boolean.TRUE.equals(r.freeEmail()), r.companyName(),
+                r.status(), r.domain(), r.mxFound(), r.mxRecord(), r.smtpProvider(),
+                r.didYouMean(), r.personName(), r.companyName(), null);
     }
 
     @Override
@@ -76,7 +79,7 @@ public class SignzyVerificationAdapter implements VerificationPort {
         SignzyDtos.GeocodeResponse g = geocodeClient.reverseGeocode(latitude, longitude);
         boolean withinIndia = "IN".equalsIgnoreCase(g.countryCode());
         return new AddressCheck(clientRef, "SIGNZY", withinIndia, g.address(), g.zipcode(),
-                g.state(), g.city());
+                g.state(), g.city(), g.countryCode(), g.confidenceScore());
     }
 
     @Override
@@ -104,7 +107,8 @@ public class SignzyVerificationAdapter implements VerificationPort {
     public PennyDropCheck pennyDrop(String accountNumber, String ifsc, String clientRef) {
         SignzyDtos.BankVerificationResponse r = bankClient.verify(accountNumber, ifsc, null);
         return new PennyDropCheck(r.txnId(), "SIGNZY", Boolean.TRUE.equals(r.active()), r.beneName(),
-                null, r.beneIfsc());
+                r.bankName(), r.beneIfsc() != null ? r.beneIfsc() : ifsc,
+                r.bankRrn(), r.reason(), r.nameMatch());
     }
 
     @Override

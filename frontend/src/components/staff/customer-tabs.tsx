@@ -129,6 +129,20 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
     null;
   const latestApp = c.applications[0] ?? null;
 
+  const verQ = useQuery({
+    queryKey: ["customer-verifications-personal", latestApp?.id],
+    queryFn: () => staffApi.verifications(latestApp!.id),
+    enabled: latestApp != null,
+  });
+  const panDerived = ((verQ.data ?? []).find((s) => s.checkType === "PAN")?.derived ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const emailDerived = ((verQ.data ?? []).find((s) => s.checkType === "EMAIL")?.derived ?? {}) as Record<
+    string,
+    unknown
+  >;
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Section title="Identity & profile">
@@ -153,6 +167,35 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
         />
       </Section>
 
+      {latestApp != null && (
+        <Section title="PAN (provider)">
+          <KV k="Name on PAN" v={str(panDerived.fullName)} />
+          <KV k="Gender" v={str(panDerived.gender)} />
+          <KV k="DOB on PAN" v={str(panDerived.dob)} />
+          <KV k="PAN status" v={str(panDerived.panStatus)} />
+          <KV k="Allotment date" v={str(panDerived.panAllotmentDate)} />
+          <KV k="Compliant" v={str(panDerived.compliant)} />
+          <KV k="State" v={str(panDerived.addressState)} />
+          <KV k="PIN" v={str(panDerived.addressZip)} mono />
+        </Section>
+      )}
+
+      {latestApp != null && (
+        <Section title="Email (provider)">
+          <KV k="Status" v={str(emailDerived.status)} />
+          <KV k="Domain" v={str(emailDerived.domain)} />
+          <KV k="MX" v={str(emailDerived.mxRecord)} mono />
+          <KV k="SMTP" v={str(emailDerived.smtpProvider)} />
+          <KV k="Person name" v={str(emailDerived.personName)} />
+          <KV k="Company" v={str(emailDerived.companyName ?? emailDerived.matchedEstablishment)} />
+          <KV k="Did you mean" v={str(emailDerived.didYouMean)} />
+          <KV
+            k="Individual score"
+            v={emailDerived.individualScore != null ? String(emailDerived.individualScore) : null}
+          />
+        </Section>
+      )}
+
       {latestApp != null && <AadhaarCard applicationId={latestApp.id} />}
 
       <Section title="Emergency contact">
@@ -176,6 +219,11 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
       </div>
     </div>
   );
+}
+
+function str(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  return String(v);
 }
 
 function OwnerCard({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void }) {
@@ -328,8 +376,13 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
           <>
             <KV k="Account" v={derived.accountNumber != null ? String(derived.accountNumber) : (derived.account != null ? String(derived.account) : null)} mono />
             <KV k="IFSC" v={derived.ifsc != null ? String(derived.ifsc) : null} mono />
+            <KV k="Bank" v={derived.bank != null ? String(derived.bank) : null} />
             <KV k="Name match" v={derived.nameMatch != null ? String(derived.nameMatch) : (derived.nameMatched != null ? String(derived.nameMatched) : null)} />
+            <KV k="Provider name match" v={derived.providerNameMatch != null ? String(derived.providerNameMatch) : null} />
             <KV k="Beneficiary name" v={derived.beneficiaryName != null ? String(derived.beneficiaryName) : (derived.name != null ? String(derived.name) : null)} />
+            <KV k="Bank RRN" v={derived.bankRrn != null ? String(derived.bankRrn) : null} mono />
+            <KV k="Reason" v={derived.reason != null ? String(derived.reason) : null} />
+            <KV k="Account exists" v={derived.accountExists != null ? String(derived.accountExists) : null} />
           </>
         )}
       </Section>
@@ -357,6 +410,14 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
 
 function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | null }) {
   const p = c.profile;
+  const bureauQ = useQuery({
+    queryKey: ["customer-verifications-bureau", latestAppId],
+    queryFn: () => staffApi.verifications(latestAppId as number),
+    enabled: latestAppId != null,
+  });
+  const bureau = (bureauQ.data ?? []).find((s) => s.checkType === "BUREAU");
+  const bd = (bureau?.derived ?? {}) as Record<string, unknown>;
+
   return (
     <div className="space-y-4">
       {latestAppId != null && <CreditProfileCard applicationId={latestAppId} />}
@@ -372,6 +433,15 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
           v={p?.creditBriefGeneratedAt ? formatDateTime(p.creditBriefGeneratedAt) : null}
         />
       </Section>
+      {latestAppId != null && (
+        <Section title="Bureau pull (derived)">
+          <KV k="Source" v={bd.source != null ? String(bd.source) : null} />
+          <KV k="No record" v={bd.noRecord != null ? String(bd.noRecord) : null} />
+          <KV k="Active accounts" v={bd.activeAccounts != null ? String(bd.activeAccounts) : null} />
+          <KV k="Overdue / defaults" v={bd.overdueAccounts != null ? String(bd.overdueAccounts) : null} />
+          <KV k="Total balance" v={bd.totalBalance != null ? String(bd.totalBalance) : null} />
+        </Section>
+      )}
     </div>
   );
 }

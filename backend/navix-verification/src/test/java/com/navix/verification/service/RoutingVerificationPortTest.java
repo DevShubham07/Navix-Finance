@@ -40,7 +40,8 @@ class RoutingVerificationPortTest {
     }
 
     private static PanCheck pan(String txn) {
-        return new PanCheck(txn, txn, true, "NAME", null, null, true, null, "ABCPE1234Z", null, null);
+        return new PanCheck(txn, txn, true, "NAME", null, null, true, null, "ABCPE1234Z", null, null,
+                "operative", null, true, null);
     }
 
     @Test
@@ -82,7 +83,8 @@ class RoutingVerificationPortTest {
         when(signzy.verifyEmail(anyString(), anyString(), anyString(), anyString()))
                 .thenThrow(new CapabilityNotSupportedException("Signzy has no email API"));
         when(digitap.verifyEmail(anyString(), anyString(), anyString(), anyString()))
-                .thenReturn(new EmailCheck("D", "DIGITAP", true, true, true, false, "ACME"));
+                .thenReturn(new EmailCheck("D", "DIGITAP", true, true, true, false, "ACME",
+                        null, null, null, null, null, null, null, null, 0.9));
 
         EmailCheck r = router.verifyEmail("a@b.com", "John", "ACME", "ref");
 
@@ -107,7 +109,8 @@ class RoutingVerificationPortTest {
     @Test
     void pennyDropPrimaryServes() {
         when(signzy.pennyDrop(anyString(), anyString(), anyString()))
-                .thenReturn(new PennyDropCheck("PD", "SIGNZY", true, "RAVI KUMAR", null, "IFSC0001"));
+                .thenReturn(new PennyDropCheck("PD", "SIGNZY", true, "RAVI KUMAR", "PNB", "IFSC0001",
+                        "RRN1", "success", "yes"));
 
         PennyDropCheck r = router.pennyDrop("acct", "IFSC0001", "ref");
 
