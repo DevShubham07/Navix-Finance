@@ -54,24 +54,6 @@ export async function loginStaff(email: string, password: string): Promise<Staff
   return session;
 }
 
-/**
- * DEMO ONLY — one-click "act as role": maps the role to its seeded persona
- * server-side (the BFF role shortcut) to exercise the maker-checker chain. The
- * real login is {@link loginStaff} (email + password). Returns null on failure.
- */
-export async function loginStaffAs(role: StaffRole): Promise<StaffSession | null> {
-  const res = await fetch("/api/auth/staff/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "same-origin",
-    body: JSON.stringify({ role }),
-  });
-  if (!res.ok) return null;
-  const session = (await res.json()) as StaffSession;
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(STAFF_SESSION_EVENT));
-  return session;
-}
-
 /** Clear the staff session cookie and notify any mounted `useStaffSession` hooks. */
 export async function signOutStaff(): Promise<void> {
   try {
