@@ -1,20 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { setStaffSession } from "@/lib/api/bff-session";
-import {
-  STAFF_PERSONA_EMAILS,
-  STAFF_DEFAULT_PASSWORD,
-  isStaffRole,
-} from "@/lib/api/staff-personas";
 import type { StaffRole } from "@/lib/auth/rbac";
 import { config } from "@/lib/config";
 
 /**
  * Staff login. SEPARATE from borrower auth.
  *
- * Keeps the "pick a role" UX: POST `{ role }` maps the chosen role to its seeded
- * staff account (email + the shared demo password) and authenticates against the
- * backend `POST /api/auth/staff/login`. An explicit `{ email, password }` is also
- * accepted. On success the backend JWT is stored in the httpOnly `navix_staff`
+ * POST `{ email, password }` authenticates against the backend
+ * `POST /api/auth/staff/login`. There is deliberately NO role shortcut — a staff
+ * member's role comes from their own account, and switching roles means signing
+ * out and signing in as that account. On success the backend JWT is stored in the httpOnly `navix_staff`
  * cookie (`{ token, id, name, role }`); the response body omits the token.
  */
 
@@ -34,24 +29,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { role, email, password } = (body ?? {}) as {
-    role?: unknown;
+  const { email, password } = (body ?? {}) as {
     email?: unknown;
     password?: unknown;
   };
 
-  // Resolve credentials: an explicit email+password, else the role -> seeded account map.
-  let loginEmail: string;
-  let loginPassword: string;
-  if (typeof email === "string" && email && typeof password === "string" && password) {
-    loginEmail = email;
-    loginPassword = password;
-  } else if (isStaffRole(role)) {
-    loginEmail = STAFF_PERSONA_EMAILS[role];
-    loginPassword = STAFF_DEFAULT_PASSWORD;
-  } else {
-    return NextResponse.json({ error: "Provide a staff role or email + password." }, { status: 400 });
+  if (typeof email !== "string" || !email || typeof password !== "string" || !password) {
+    return NextResponse.json({ error: "Provide email + password." }, { status: 400 });
   }
+  const loginEmail = email;
+  const loginPassword = password;
 
   let backendRes: Response;
   try {

@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { NotificationBell } from "@/components/notifications/notification-bell";
-import { StaffRoleBar } from "@/components/staff/staff-role-bar";
 import { hasPermission, STAFF_ROLE_LABELS, type Permission } from "@/lib/auth/rbac";
 import { featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
@@ -313,8 +312,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
         <main className="navix-crm flex-1 p-3 lg:p-6">{children}</main>
       </div>
-
-      <StaffRoleBar />
     </div>
   );
 }

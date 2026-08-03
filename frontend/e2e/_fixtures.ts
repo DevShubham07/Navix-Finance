@@ -20,9 +20,25 @@ export const STAFF_PERSONA_NAMES: Record<StaffRole, string> = {
   DEVELOPER: "Dev Ops",
 };
 
+/** Seeded login email per role (V10 seed); the shared demo password is below. */
+export const STAFF_PERSONA_EMAILS: Record<StaffRole, string> = {
+  KYC_APPROVER: "ananya.rao@navix.example",
+  CREDIT_EXECUTIVE: "rahul.mehta@navix.example",
+  CREDIT_HEAD: "priya.nair@navix.example",
+  DISBURSEMENT_HEAD: "vikram.shah@navix.example",
+  ACCOUNTANT: "deepa.iyer@navix.example",
+  COLLECTION_HEAD: "arjun.patel@navix.example",
+  COLLECTION_EXECUTIVE: "sana.khan@navix.example",
+  ADMIN: "meera.krishnan@navix.example",
+  DEVELOPER: "dev.ops@navix.example",
+};
+export const STAFF_DEFAULT_PASSWORD = "Admin@12345";
+
 /** Log a staff member in via the BFF (sets the httpOnly navix_staff cookie on the context). */
 export async function loginStaff(page: Page, role: StaffRole): Promise<boolean> {
-  const res = await page.request.post("/api/auth/staff/login", { data: { role } });
+  const res = await page.request.post("/api/auth/staff/login", {
+    data: { email: STAFF_PERSONA_EMAILS[role], password: STAFF_DEFAULT_PASSWORD },
+  });
   return res.ok();
 }
 
