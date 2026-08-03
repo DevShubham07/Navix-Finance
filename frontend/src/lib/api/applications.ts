@@ -1005,6 +1005,137 @@ export const customersApi = {
     bff<CustomerDeletionResult>(`${CUSTOMERS_BASE}/${customerId}`, "DELETE"),
 };
 
+// ---------------------------------------------------------------------------
+// Telecaller leads — routes under /api/staff/leads/*
+// ---------------------------------------------------------------------------
+
+export type LeadCallStatus =
+  | "NOT_CALLED"
+  | "CALLED"
+  | "CALLBACK"
+  | "NO_ANSWER"
+  | "NOT_INTERESTED"
+  | "WRONG_NUMBER"
+  | "CONNECTED";
+
+export type LeadSource = "DSA" | "REFERRAL" | "WALK_IN" | "OTHER";
+
+export interface LeadView {
+  id: number;
+  name: string;
+  mobile: string;
+  email: string | null;
+  city: string | null;
+  employer: string | null;
+  monthlySalaryPaise: number | null;
+  loanAmountInterestedPaise: number | null;
+  source: LeadSource | null;
+  sourceDetail: string | null;
+  callStatus: LeadCallStatus;
+  qualityRating: number | null;
+  notes: string | null;
+  remarks: string | null;
+  createdByStaffId: number;
+  createdByStaffName: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface CreateLeadInput {
+  name: string;
+  mobile: string;
+  email?: string;
+  city?: string;
+  employer?: string;
+  monthlySalaryPaise?: number;
+  loanAmountInterestedPaise?: number;
+  source?: LeadSource;
+  sourceDetail?: string;
+  notes?: string;
+}
+
+export interface UpdateLeadInput {
+  name?: string;
+  mobile?: string;
+  email?: string;
+  city?: string;
+  employer?: string;
+  monthlySalaryPaise?: number;
+  loanAmountInterestedPaise?: number;
+  source?: LeadSource;
+  sourceDetail?: string;
+  notes?: string;
+}
+
+export interface DispositionInput {
+  callStatus: LeadCallStatus;
+  qualityRating?: number | null;
+  remarks?: string;
+}
+
+export interface LeadListParams {
+  q?: string;
+  callStatus?: LeadCallStatus;
+  source?: LeadSource;
+  createdBy?: number;
+  from?: string;
+  to?: string;
+  minRating?: number;
+  maxRating?: number;
+}
+
+export interface LeadStats {
+  total: number;
+  byCallStatus: { status: string; count: number }[];
+  bySource: { source: string; count: number }[];
+  byQualityRating: { rating: number; count: number }[];
+  unratedCount: number;
+  byDay: { date: string; created: number; called: number }[];
+  byStaff: { staffId: number; staffName: string | null; count: number }[];
+  avgQualityRating: number | null;
+}
+
+const LEADS_BASE = "/api/staff/leads";
+
+function leadsQuery(params?: LeadListParams): string {
+  if (!params) return "";
+  const sp = new URLSearchParams();
+  if (params.q) sp.set("q", params.q);
+  if (params.callStatus) sp.set("callStatus", params.callStatus);
+  if (params.source) sp.set("source", params.source);
+  if (params.createdBy != null) sp.set("createdBy", String(params.createdBy));
+  if (params.from) sp.set("from", params.from);
+  if (params.to) sp.set("to", params.to);
+  if (params.minRating != null) sp.set("minRating", String(params.minRating));
+  if (params.maxRating != null) sp.set("maxRating", String(params.maxRating));
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+export const leadsApi = {
+  list: (params?: LeadListParams) =>
+    bff<LeadView[]>(`${LEADS_BASE}${leadsQuery(params)}`, "GET"),
+
+  get: (id: number) => bff<LeadView>(`${LEADS_BASE}/${id}`, "GET"),
+
+  create: (body: CreateLeadInput) => bff<LeadView>(LEADS_BASE, "POST", body),
+
+  update: (id: number, body: UpdateLeadInput) =>
+    bff<LeadView>(`${LEADS_BASE}/${id}`, "PUT", body),
+
+  disposition: (id: number, body: DispositionInput) =>
+    bff<LeadView>(`${LEADS_BASE}/${id}/disposition`, "PUT", body),
+
+  stats: (params?: { from?: string; to?: string; createdBy?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.from) sp.set("from", params.from);
+    if (params?.to) sp.set("to", params.to);
+    if (params?.createdBy != null) sp.set("createdBy", String(params.createdBy));
+    const s = sp.toString();
+    return bff<LeadStats>(`${LEADS_BASE}/stats${s ? `?${s}` : ""}`, "GET");
+  },
+};
+
 /** Summary returned by a cascade customer delete. */
 export interface CustomerDeletionResult {
   customerId: number;

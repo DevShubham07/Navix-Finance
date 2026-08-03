@@ -19,6 +19,7 @@ import {
   Files,
   ListChecks,
   Gift,
+  Phone,
   LogOut,
   ChevronRight,
 } from "lucide-react";
@@ -75,6 +76,7 @@ const NAV: NavGroup[] = [
         perm: "customer:assign",
       },
       { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
+      { label: "Leads", href: "/staff/leads", Icon: Phone, perm: "leads:manage" },
       { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },
     ],
   },
@@ -93,6 +95,7 @@ const NAV: NavGroup[] = [
       { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
       { label: "Payment settings", href: "/staff/admin/payment-settings", Icon: CreditCard, perm: "staff:manage" },
       { label: "Company expenses", href: "/staff/admin/expenses", Icon: Wallet, perm: "staff:manage" },
+      { label: "Leads dashboard", href: "/staff/admin/leads", Icon: Phone, perm: "staff:manage" },
       { label: "All applications", href: "/staff/admin/all-applications", Icon: Files, perm: "staff:manage" },
       { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: "loan:activate" },
     ],

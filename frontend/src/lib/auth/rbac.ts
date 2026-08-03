@@ -61,6 +61,8 @@ export type Permission =
   | "customer:view"
   | "customer:manage"
   | "customer:assign"
+  // Telecaller lead intake + disposition; ADMIN shares write + owns the tracker dashboard.
+  | "leads:manage"
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
   // referral-expense dashboard; ADMIN has oversight.
   | "referral:payout";
@@ -85,9 +87,8 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "loan:pipeline",
   ],
   COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline"],
-  // Telecaller: view the lead list, open a customer, log the call. Nothing else — deliberately no
-  // lifecycle permission, so it can never appear in a maker-checker step.
-  TELECALLER: ["customer:view"],
+  // Telecaller: view customers, enter DSA-style leads, disposition calls. No lifecycle permission.
+  TELECALLER: ["customer:view", "leads:manage"],
   DEVELOPER: ["customer:view", "loan:pipeline"],
   ADMIN: [
     "kyc:approve",
@@ -102,6 +103,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:view",
     "customer:manage",
     "customer:assign",
+    "leads:manage",
     "referral:payout",
   ],
 };
