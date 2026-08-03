@@ -18,6 +18,14 @@ describe("segmentOf", () => {
     expect(segmentOf({ loanStatus: null, latestStatus: null })).toBe("pending");
   });
 
+  it("DRAFT → incomplete, not pending (abandoned mid-onboarding, no staff action)", () => {
+    expect(segmentOf({ loanStatus: null, latestStatus: "DRAFT" })).toBe("incomplete");
+  });
+
+  it("KYC_PENDING stays pending (a real staff queue item)", () => {
+    expect(segmentOf({ loanStatus: null, latestStatus: "KYC_PENDING" })).toBe("pending");
+  });
+
   it("ACTIVE loan → active", () => {
     expect(segmentOf({ loanStatus: "ACTIVE", latestStatus: "ACTIVE" })).toBe("active");
   });
@@ -40,6 +48,13 @@ describe("inSegment / segmentCounts", () => {
 
   it("segmentCounts(...).all === rows.length", () => {
     expect(segmentCounts(rows).all).toBe(rows.length);
+  });
+
+  it("the DRAFT row counts under incomplete, leaving pending empty", () => {
+    const counts = segmentCounts(rows);
+    expect(counts.incomplete).toBe(1);
+    expect(counts.pending).toBe(0);
+    expect(inSegment(rows[1], "incomplete")).toBe(true);
   });
 
   it("unallocated = null owner", () => {

@@ -12,6 +12,7 @@ export type SegmentableCustomer = {
 };
 
 export type CustomerSegment =
+  | "incomplete"
   | "pending"
   | "review"
   | "approved"
@@ -25,6 +26,7 @@ export type CustomerSegment =
 
 export const SEGMENT_LABEL: Record<CustomerSegment, string> = {
   all: "All",
+  incomplete: "Incomplete",
   pending: "Pending",
   review: "Review",
   approved: "Approved",
@@ -38,6 +40,7 @@ export const SEGMENT_LABEL: Record<CustomerSegment, string> = {
 
 /** Ordered chips / nav children (excludes `all` which is the default list view). */
 export const SEGMENTS: CustomerSegment[] = [
+  "incomplete",
   "pending",
   "review",
   "approved",
@@ -53,7 +56,9 @@ const OVERDUE_LOAN = new Set(["OVERDUE", "IN_COLLECTIONS"]);
 const ACTIVE_LOAN = new Set(["ACTIVE", "DISBURSING"]);
 const OVERDUE_APP = new Set(["OVERDUE", "DEFAULTED"]);
 const ACTIVE_APP = new Set(["DISBURSED", "ACTIVE"]);
-const PENDING_APP = new Set(["DRAFT", "KYC_PENDING", "PRE_APPROVED"]);
+// DRAFT is deliberately NOT "pending": the DRAFT row is minted right after mobile-OTP, so it means
+// "abandoned mid-onboarding, nobody can action it" — a chase/call target, not a staff queue item.
+const PENDING_APP = new Set(["KYC_PENDING", "PRE_APPROVED"]);
 const REVIEW_APP = new Set(["REVIEW_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_HEAD_PENDING"]);
 const APPROVED_APP = new Set([
   "KYC_APPROVED",
@@ -81,6 +86,7 @@ export function segmentOf(
   if (app && REVIEW_APP.has(app)) return "review";
   if (app && APPROVED_APP.has(app)) return "approved";
   if (app === "DISBURSEMENT_FAILED") return "hold";
+  if (app === "DRAFT") return "incomplete";
   if (app && REJECTED_APP.has(app)) return "rejected";
   if (app && CLOSED_APP.has(app)) return "closed";
   if (app && PENDING_APP.has(app)) return "pending";
@@ -100,6 +106,7 @@ export type SegmentCounts = Record<CustomerSegment, number>;
 export function segmentCounts(rows: SegmentableCustomer[]): SegmentCounts {
   const counts: SegmentCounts = {
     all: rows.length,
+    incomplete: 0,
     pending: 0,
     review: 0,
     approved: 0,
