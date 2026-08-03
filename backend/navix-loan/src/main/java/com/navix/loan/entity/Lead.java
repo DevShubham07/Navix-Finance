@@ -7,6 +7,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Pre-customer telecaller lead — DSA-style intake with call disposition.
@@ -51,7 +53,8 @@ public class Lead extends BaseAuditEntity {
     @Column(name = "call_status", nullable = false, length = 32)
     private String callStatus = "NOT_CALLED";
 
-    /** 1–5 quality stars; null until rated. */
+    /** 1–5 quality stars; null until rated. Matches DB smallint (V43). */
+    @JdbcTypeCode(SqlTypes.SMALLINT)
     @Column(name = "quality_rating")
     private Integer qualityRating;
 
