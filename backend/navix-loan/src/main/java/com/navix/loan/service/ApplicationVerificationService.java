@@ -489,10 +489,14 @@ public class ApplicationVerificationService {
             }
         }
 
+        // The full e-Aadhaar card as DigiLocker returned it — staff read this off the CRM. The
+        // number stays MASKED (last 4 only); the raw UID is never persisted.
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("fullName", a.fullName());
         derived.put("dob", a.dob());
+        derived.put("gender", a.gender());
         derived.put("maskedAadhaar", a.maskedAadhaar());
+        derived.put("address", a.fullAddress());
         derived.put("state", a.state());
         derived.put("pincode", a.pincode());
         ApplicationVerification row = upsert(appId, AADHAAR, PASS, "DIGILOCKER", a.txnId(), clientId,

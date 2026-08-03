@@ -1054,6 +1054,7 @@ export type StaffRoleName =
   | "ACCOUNTANT"
   | "COLLECTION_HEAD"
   | "COLLECTION_EXECUTIVE"
+  | "TELECALLER"
   | "ADMIN"
   | "DEVELOPER";
 

@@ -326,5 +326,13 @@ class ApplicationVerificationServiceTest {
         assertThat(result.status()).isEqualTo("PASS");
         assertThat(p.getAadhaarVerified()).isTrue();             // the DigiLocker-verified flag (no raw number stored)
         assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 3, 24));
+        // The whole e-Aadhaar card is recorded for the CRM — not just the photo.
+        assertThat(result.derived()).containsEntry("fullName", "SHUBHAM")
+                .containsEntry("dob", "2003-03-24")
+                .containsEntry("gender", "M")
+                .containsEntry("maskedAadhaar", "XXXXXXXX1234")
+                .containsEntry("address", "addr")
+                .containsEntry("state", "Haryana")
+                .containsEntry("pincode", "131001");
     }
 }

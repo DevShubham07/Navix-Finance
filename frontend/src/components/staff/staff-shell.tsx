@@ -60,7 +60,7 @@ const NAV: NavGroup[] = [
     heading: "Operations",
     items: [
       { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard },
-      { label: "Live applications", href: "/staff/applications", Icon: Workflow },
+      { label: "Live applications", href: "/staff/applications", Icon: Workflow, perm: "loan:pipeline" },
       {
         label: "Customers",
         href: "/staff/customers",

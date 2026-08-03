@@ -51,6 +51,7 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
   ACCOUNTANT: "Accountant",
   COLLECTION_HEAD: "Collection Head",
   COLLECTION_EXECUTIVE: "Collection Executive",
+  TELECALLER: "Telecaller",
   ADMIN: "Administrator",
   DEVELOPER: "Developer",
 };

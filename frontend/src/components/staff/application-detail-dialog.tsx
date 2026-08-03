@@ -78,6 +78,8 @@ const ROLE_FOCUS: Record<StaffRole, Array<"disbursement" | "collections" | "cred
   CREDIT_HEAD: ["credit"],
   CREDIT_EXECUTIVE: ["credit"],
   KYC_APPROVER: ["kyc", "credit"],
+  // Telecaller has no lifecycle stage — no focus card.
+  TELECALLER: [],
   // Oversight roles see everything.
   ADMIN: ["kyc", "credit", "disbursement", "collections"],
   DEVELOPER: ["kyc", "credit", "disbursement", "collections"],

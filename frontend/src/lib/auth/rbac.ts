@@ -18,6 +18,7 @@ export const STAFF_ROLES = [
   "ACCOUNTANT",
   "COLLECTION_HEAD",
   "COLLECTION_EXECUTIVE",
+  "TELECALLER",
   "ADMIN",
   "DEVELOPER",
 ] as const;
@@ -33,6 +34,7 @@ export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   ACCOUNTANT: "Accountant",
   COLLECTION_HEAD: "Collection Head",
   COLLECTION_EXECUTIVE: "Collection Executive",
+  TELECALLER: "Telecaller",
   ADMIN: "Administrator",
   DEVELOPER: "Developer",
 };
@@ -50,6 +52,9 @@ export type Permission =
   | "collections:manage"
   | "collections:interact"
   | "staff:manage"
+  // The loan pipeline workbench ("Live applications"). Held by every role that has a stage in the
+  // lifecycle — i.e. everyone except TELECALLER, whose job stops at calling and logging.
+  | "loan:pipeline"
   // Customers pane: every staff role may view the borrower-centric roll-up (product decision —
   // all staff see customer details incl. PII); only ADMIN may edit it / take lifecycle actions.
   // customer:assign is Heads (+ ADMIN) — allocate book of business without granting KYC-edit/delete.
@@ -67,20 +72,30 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   // KYC approver holds loan:review/loan:approve for the instant-loan credit fast-path only
   // (KycCreditActions). It never works the exec→head queues — "Live applications" gates those
   // panels on the role itself, so the fast-path grant can't leak the credit workbench to it.
-  KYC_APPROVER: ["kyc:approve", "loan:review", "loan:approve", "customer:view"],
-  CREDIT_EXECUTIVE: ["loan:review", "customer:view"],
-  CREDIT_HEAD: ["loan:approve", "customer:view", "customer:assign"],
-  DISBURSEMENT_HEAD: ["loan:disburse", "customer:view", "referral:payout"],
-  ACCOUNTANT: ["loan:activate", "customer:view"],
-  COLLECTION_HEAD: ["collections:manage", "collections:interact", "customer:view", "customer:assign"],
-  COLLECTION_EXECUTIVE: ["collections:interact", "customer:view"],
-  DEVELOPER: ["customer:view"],
+  KYC_APPROVER: ["kyc:approve", "loan:review", "loan:approve", "customer:view", "loan:pipeline"],
+  CREDIT_EXECUTIVE: ["loan:review", "customer:view", "loan:pipeline"],
+  CREDIT_HEAD: ["loan:approve", "customer:view", "customer:assign", "loan:pipeline"],
+  DISBURSEMENT_HEAD: ["loan:disburse", "customer:view", "referral:payout", "loan:pipeline"],
+  ACCOUNTANT: ["loan:activate", "customer:view", "loan:pipeline"],
+  COLLECTION_HEAD: [
+    "collections:manage",
+    "collections:interact",
+    "customer:view",
+    "customer:assign",
+    "loan:pipeline",
+  ],
+  COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline"],
+  // Telecaller: view the lead list, open a customer, log the call. Nothing else — deliberately no
+  // lifecycle permission, so it can never appear in a maker-checker step.
+  TELECALLER: ["customer:view"],
+  DEVELOPER: ["customer:view", "loan:pipeline"],
   ADMIN: [
     "kyc:approve",
     "loan:review",
     "loan:approve",
     "loan:disburse",
     "loan:activate",
+    "loan:pipeline",
     "collections:manage",
     "collections:interact",
     "staff:manage",

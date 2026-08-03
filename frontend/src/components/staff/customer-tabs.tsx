@@ -153,6 +153,8 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
         />
       </Section>
 
+      {latestApp != null && <AadhaarCard applicationId={latestApp.id} />}
+
       <Section title="Emergency contact">
         <KV k="Name" v={p?.emergencyContactName} />
         <KV k="Phone" v={p?.emergencyContactPhone} mono />
@@ -194,14 +196,18 @@ function OwnerCard({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void
     queryKey: ["staff-picker", "COLLECTION_EXECUTIVE"],
     queryFn: () => staffApi.creditExecutives("COLLECTION_EXECUTIVE"),
   });
+  const telecallers = useQuery({
+    queryKey: ["staff-picker", "TELECALLER"],
+    queryFn: () => staffApi.creditExecutives("TELECALLER"),
+  });
 
   const options = React.useMemo(() => {
     const map = new Map<number, StaffSummary>();
-    for (const s of [...(execs.data ?? []), ...(collectors.data ?? [])]) {
+    for (const s of [...(execs.data ?? []), ...(collectors.data ?? []), ...(telecallers.data ?? [])]) {
       map.set(s.id, s);
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [execs.data, collectors.data]);
+  }, [execs.data, collectors.data, telecallers.data]);
 
   const assign = useMutation({
     mutationFn: () =>
@@ -367,6 +373,34 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
         />
       </Section>
     </div>
+  );
+}
+
+/**
+ * The e-Aadhaar card as DigiLocker returned it, off the AADHAAR verification row's `derived`.
+ * The number is masked (last 4) — the raw UID is never stored. Rows completed before the
+ * backend started recording gender/address show "—" for those two.
+ */
+function AadhaarCard({ applicationId }: { applicationId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["verifications", applicationId],
+    queryFn: () => staffApi.verifications(applicationId),
+  });
+  const row = data?.find((s) => s.checkType === "AADHAAR");
+  if (isLoading || !row) return null;
+  const d = row.derived as Record<string, string | null | undefined>;
+
+  return (
+    <Section title="Aadhaar (DigiLocker)">
+      <KV k="Name on Aadhaar" v={d.fullName} />
+      <KV k="Aadhaar number" v={d.maskedAadhaar} mono />
+      <KV k="Date of birth" v={d.dob} />
+      <KV k="Gender" v={d.gender} />
+      <KV k="Address" v={d.address} />
+      <KV k="State" v={d.state} />
+      <KV k="PIN code" v={d.pincode} mono />
+      <KV k="Status" v={row.status === "PASS" ? <Bool on /> : row.message || row.status} />
+    </Section>
   );
 }
 
