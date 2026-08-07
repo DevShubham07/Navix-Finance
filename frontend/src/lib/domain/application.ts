@@ -16,7 +16,7 @@ export type SignupStep =
 
 /** Where an application sits in the staff maker-checker pipeline (badge rendering). */
 export type AppStage =
-  | "KYC_REVIEW" // KYC Approver must clear identity
+  | "KYC_REVIEW" // the credit team must clear identity
   | "CREDIT_QUEUE" // Credit Head assigns to an executive
   | "CREDIT_REVIEW" // Credit Executive reviews + recommends
   | "CREDIT_DECISION" // Credit Head gives final approval

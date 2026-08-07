@@ -15,7 +15,7 @@ export const html = `<section class="page active" id="home">
       </h1>
       <p class="lead reveal d3">A paperless application and transparent terms, from first tap to funds in your account. Borrow ₹5,000 to ₹10,00,000 with no advance fees, ever.</p>
       <div class="hero-cta reveal d4">
-        <a href="/signup/mobile-otp" class="btn btn-gold btn-lg" data-link="">Apply for a Loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+        <a href="/signup/start" class="btn btn-gold btn-lg" data-link="">Apply for a Loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
         <a href="/how-it-works" class="btn btn-ghost btn-lg" data-link="">How It Works</a>
       </div>
       <div class="hero-trust">
@@ -259,7 +259,7 @@ export const html = `<section class="page active" id="home">
           <div class="cr-total"><span class="t-lbl">Total payable</span><span class="t-val" id="calOTotal">₹13,000</span></div>
         </div>
         <p class="cal-note">Interest is a fixed 1% per day across your selected tenure. Figures are indicative — your exact due date and APR are confirmed before you accept, with no pre-closure or prepayment charge.</p>
-        <a href="/signup/mobile-otp" class="btn btn-gold btn-block" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+        <a href="/signup/start" class="btn btn-gold btn-block" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
       </div>
     </div>
   </div></div>
@@ -269,7 +269,7 @@ export const html = `<section class="page active" id="home">
     <h2>Ready when you are</h2>
     <p>Check your eligibility in minutes. It's free, it won't affect your credit score, and there's never an advance fee.</p>
     <div class="hero-cta">
-      <a href="/signup/mobile-otp" class="btn btn-gold btn-lg" data-link="">Apply Now <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+      <a href="/signup/start" class="btn btn-gold btn-lg" data-link="">Apply Now <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
       <a href="/calculator" class="btn btn-outline-light btn-lg" data-link="">Try the calculator</a>
     </div>
   </div></div></div>

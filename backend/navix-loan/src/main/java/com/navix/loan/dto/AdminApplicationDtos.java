@@ -16,6 +16,28 @@ public final class AdminApplicationDtos {
     private AdminApplicationDtos() {
     }
 
+    /** One row of the rejection register (V44). {@code applicationId} is null for a blocked re-attempt. */
+    public record RejectionView(
+            Long id,
+            Long applicationId,
+            Long customerId,
+            String borrowerName,
+            String mobile,
+            String reasonCode,
+            String reasonDetail,
+            boolean auto,
+            Instant blockedUntil,
+            Instant createdAt) {
+
+        public static RejectionView of(com.navix.loan.entity.ApplicationRejection r, CustomerProfile p) {
+            return new RejectionView(r.getId(), r.getApplicationId(), r.getCustomerId(),
+                    p == null ? null : p.getFullName(),
+                    r.getMobile() != null ? r.getMobile() : (p == null ? null : p.getMobile()),
+                    r.getReasonCode(), r.getReasonDetail(), Boolean.TRUE.equals(r.getAuto()),
+                    r.getBlockedUntil(), r.getCreatedAt());
+        }
+    }
+
     public record AdminApplicationView(
             // --- application ---
             Long id,

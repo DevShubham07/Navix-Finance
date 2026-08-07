@@ -172,7 +172,7 @@ class InviteServiceTest {
 
     @Test
     void acceptInviteRejectsAlreadyAccepted() {
-        StaffInvite accepted = invite(StaffRole.KYC_APPROVER,
+        StaffInvite accepted = invite(StaffRole.CREDIT_EXECUTIVE,
                 Instant.now().plus(1, ChronoUnit.DAYS), Instant.now().minus(1, ChronoUnit.HOURS));
         when(inviteRepository.findByToken("tok-123")).thenReturn(Optional.of(accepted));
 

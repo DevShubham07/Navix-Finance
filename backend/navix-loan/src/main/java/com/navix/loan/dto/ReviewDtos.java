@@ -30,7 +30,29 @@ public final class ReviewDtos {
             String employmentStatus,
             Long monthlySalaryPaise,
             String salaryBank,
-            String email) {
+            String email,
+            // --- Phase 1 intake (V44). Every field is optional: the wizard saves in slices. ---
+            /** Official work email — the only address the email-verification API is run against. */
+            String officialEmail,
+            String salaryAccountNumber,
+            String salaryIfsc,
+            String salaryAccountMobile,
+            /** Last salary credit date; loan_application.salary_credit_day is derived from its day. */
+            LocalDate previousSalaryDate,
+            /** Self-employed declared annual income. */
+            Long annualSalaryPaise,
+            /** T&C version accepted on screen 1 — the accepted-at timestamp is stamped server-side. */
+            String termsVersion,
+            /** True = "I am not a Politically Exposed Person"; stamped server-side. */
+            Boolean pepDeclared) {
+
+        /** Pre-V44 shape — the Phase-1 fields default to null (they are all optional slices). */
+        public ProfileRequest(String fullName, String pan, String mobile, LocalDate dob, String address,
+                              String employer, String employmentStatus, Long monthlySalaryPaise,
+                              String salaryBank, String email) {
+            this(fullName, pan, mobile, dob, address, employer, employmentStatus, monthlySalaryPaise,
+                    salaryBank, email, null, null, null, null, null, null, null, null);
+        }
     }
 
     /**
@@ -88,7 +110,16 @@ public final class ReviewDtos {
             Boolean pennyDropVerified,
             Double nameMatchScore,
             String creditBriefSummary,
-            Instant creditBriefGeneratedAt) {
+            Instant creditBriefGeneratedAt,
+            // --- Phase 1 intake (V44). Also what the wizard re-hydrates from on another device. ---
+            String officialEmail,
+            String salaryAccountNumber,
+            String salaryIfsc,
+            String salaryAccountMobile,
+            LocalDate previousSalaryDate,
+            String termsVersion,
+            Instant termsAcceptedAt,
+            Instant pepDeclaredAt) {
 
         public static ProfileView of(CustomerProfile p) {
             return new ProfileView(
@@ -104,7 +135,10 @@ public final class ReviewDtos {
                     p.getCreditRecommendation(), p.getBureauSource(), p.getRiskCategory(),
                     p.getPanVerified(), p.getAadhaarLinked(), p.getAadhaarVerified(), p.getEmailVerified(),
                     p.getAddressVerified(), p.getPennyDropVerified(), p.getNameMatchScore(),
-                    p.getCreditBriefSummary(), p.getCreditBriefGeneratedAt());
+                    p.getCreditBriefSummary(), p.getCreditBriefGeneratedAt(),
+                    p.getOfficialEmail(), p.getSalaryAccountNumber(), p.getSalaryIfsc(),
+                    p.getSalaryAccountMobile(), p.getPreviousSalaryDate(),
+                    p.getTermsVersion(), p.getTermsAcceptedAt(), p.getPepDeclaredAt());
         }
 
         /**
@@ -118,7 +152,9 @@ public final class ReviewDtos {
                     emergencyContactName, emergencyContactPhone, emergencyContactRelation,
                     null, null, null, null, null,
                     panVerified, aadhaarLinked, aadhaarVerified, emailVerified, addressVerified, pennyDropVerified,
-                    null, null, null);
+                    null, null, null,
+                    officialEmail, salaryAccountNumber, salaryIfsc, salaryAccountMobile, previousSalaryDate,
+                    termsVersion, termsAcceptedAt, pepDeclaredAt);
         }
     }
 

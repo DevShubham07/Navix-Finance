@@ -8,8 +8,8 @@ import { Loader2, KeyRound, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
+import { passwordOk, PASSWORD_HINT } from "@/lib/password";
 
-const policyOk = (pw: string) => pw.length >= 10 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
 
 /**
  * Activate a staff account from a one-time invite token (the link in the invite email) and set a
@@ -31,7 +31,7 @@ function ActivateInner() {
   const submit = async () => {
     if (!token.trim()) { setError("Your invite token is missing — use the link from your invite email, or paste the token."); return; }
     if (!name.trim()) { setError("Please enter your name."); return; }
-    if (!policyOk(password)) { setError("Password must be at least 10 characters and include letters and digits."); return; }
+    if (!passwordOk(password)) { setError(`Password must be ${PASSWORD_HINT}.`); return; }
     if (password !== confirm) { setError("Passwords don't match."); return; }
     setBusy(true);
     setError(undefined);
@@ -72,7 +72,7 @@ function ActivateInner() {
           <Input label="Invite token" value={token} onChange={(e) => setToken(e.target.value)} placeholder="paste your one-time token" />
           <Input label="Your name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Aanya Rao" />
           <Input label="Mobile (optional, for password recovery)" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="9876543210" />
-          <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="at least 10 chars, letters + digits" />
+          <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={PASSWORD_HINT} />
           <Input label="Confirm password" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="re-enter your password" />
           {error && <p className="mb-2 text-sm text-error-700">{error}</p>}
           <button

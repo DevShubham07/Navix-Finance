@@ -1,4 +1,6 @@
 import { Mail, Phone, ShieldAlert, ChevronDown } from "lucide-react";
+import { BRAND } from "@/lib/brand";
+import { PaymentSafetyTicker } from "@/components/site/payment-safety-ticker";
 
 /**
  * Borrower support + Help & FAQ. Serves both the "Support" and "Help & FAQ"
@@ -6,8 +8,10 @@ import { Mail, Phone, ShieldAlert, ChevronDown } from "lucide-react";
  * Static content — product facts mirror CLAUDE.md §1.
  */
 
-const SUPPORT_EMAIL = "info@dhanboost.com";
-const SUPPORT_PHONE = "+91 97167 60246";
+// Single source of truth — these used to be hardcoded copies that could drift from lib/brand.ts.
+const SUPPORT_EMAIL = BRAND.email;
+const SUPPORT_PHONE = BRAND.phone;
+const GRIEVANCE = BRAND.grievanceOfficer;
 
 const FAQ: Array<{ q: string; a: string }> = [
   {
@@ -78,7 +82,9 @@ export default function SupportPage() {
         </a>
       </div>
 
-      {/* Grievance redressal — /grievance isn't a live route, so this points to the grievance inbox. */}
+      <PaymentSafetyTicker className="mt-6 rounded" />
+
+      {/* Grievance redressal — names the officer required under the Consumer Protection Act, 2019. */}
       <div className="mt-4 flex items-start gap-3 rounded border border-gold-soft bg-gold-50/60 p-5">
         <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full bg-gold-soft text-gold-dark">
           <ShieldAlert size={20} />
@@ -86,11 +92,15 @@ export default function SupportPage() {
         <div>
           <div className="text-sm font-semibold text-ink">Raise a grievance</div>
           <p className="text-sm text-muted">
-            Not satisfied with a resolution? Escalate to our Grievance Redressal Officer and we&apos;ll respond
-            within the regulatory timeline.
+            Not satisfied with a resolution? Escalate to our Grievance Redressal Officer,{" "}
+            <strong className="text-ink">{GRIEVANCE.name}</strong>, and we&apos;ll respond within the
+            regulatory timeline.
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            {GRIEVANCE.email} · {GRIEVANCE.phone}
           </p>
           <a
-            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Grievance — DhanBoost")}`}
+            href={`mailto:${GRIEVANCE.email}?subject=${encodeURIComponent("Grievance — DhanBoost")}`}
             className="btn btn-outline btn-sm mt-3"
           >
             <ShieldAlert size={15} /> File a grievance

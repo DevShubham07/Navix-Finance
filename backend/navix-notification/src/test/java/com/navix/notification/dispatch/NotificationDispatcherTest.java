@@ -97,7 +97,7 @@ class NotificationDispatcherTest {
     }
 
     private static ContactInfo staff(long id) {
-        return new ContactInfo(RecipientType.STAFF, id, "Staff " + id, "s" + id + "@navix.test", null, "KYC_APPROVER");
+        return new ContactInfo(RecipientType.STAFF, id, "Staff " + id, "s" + id + "@navix.test", null, "CREDIT_EXECUTIVE");
     }
 
     @Test

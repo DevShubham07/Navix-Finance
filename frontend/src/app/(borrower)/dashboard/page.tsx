@@ -13,18 +13,17 @@ import {
   useBorrowerSession,
   updateBorrowerName,
   appStatusToStage,
-  canChooseAmount,
   isTerminalBad,
+  hasOffer,
 } from "@/lib/api/live-journey";
 import {
   borrowerApi,
-  rupeesToPaise,
   paiseToINR,
   statusLabel,
   type ApplicationStatus,
 } from "@/lib/api/applications";
 import { useOnboardingStore } from "@/stores/application-store";
-import { eligibleLimit, daysBetween } from "@/lib/calc/loan-math";
+import { daysBetween } from "@/lib/calc/loan-math";
 import { formatINR0, formatDate } from "@/lib/utils";
 import { ReferralCard } from "@/components/borrower/referral-card";
 import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
@@ -38,7 +37,7 @@ export default function DashboardPage() {
   // Loan-details popup: any clickable loan surface on this page drives this single instance.
   const [detailsLoanId, setDetailsLoanId] = React.useState<number | null>(null);
 
-  // Eligible limit (25% of salary) — from the persisted backend profile, else the onboarding draft.
+  // The borrower's KYC snapshot (name, DOB, salary) for the tiles below.
   const profileQuery = useQuery({
     queryKey: ["live-profile", appId],
     queryFn: () => borrowerApi.getProfile(appId as number),
@@ -55,10 +54,9 @@ export default function DashboardPage() {
       updateBorrowerName(knownName).then(() => queryClient.invalidateQueries({ queryKey: ["borrower-me"] }));
     }
   }, [session.data, knownName, queryClient]);
-  const salaryPaise =
-    profileQuery.data?.monthlySalaryPaise ??
-    (draft.monthlySalary ? rupeesToPaise(draft.monthlySalary) : 0);
-  const limitRupees = eligibleLimit(Math.round(salaryPaise / 100));
+  // There is no client-side limit formula any more — a Credit Executive sanctions the amount, and
+  // it reaches the borrower on the application (revamp.md decision 33). Zero until they do.
+  const limitRupees = app?.eligibleLimitPaise != null ? Math.round(app.eligibleLimitPaise / 100) : 0;
 
   // Date of birth from the backend identity record (captured at the PAN/Aadhaar step). Shown
   // whenever it's on file — regardless of whether KYC is fully verified or a loan is active.
@@ -87,15 +85,16 @@ export default function DashboardPage() {
   const closed = app?.status === "CLOSED";
   const declined = isTerminalBad(app);
 
-  // Resume from the last wizard step the user was on (persisted by the signup layout).
-  const [lastOnboardingStep, setLastOnboardingStep] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    setLastOnboardingStep(localStorage.getItem("navix.onboarding.lastStep"));
-  }, []);
-
+  // Resume enters the relevant wizard at its first screen; that wizard's journey guard then jumps
+  // to wherever the SERVER says this borrower actually is — so it works on a fresh device too
+  // (revamp.md C1). This used to read a localStorage breadcrumb, which a new browser never had.
+  // Two wizards now: the intake (DRAFT) and the post-sanction offer journey (SANCTIONED).
+  const offer = hasOffer(app);
   const continueHref = app?.status === "DRAFT"
-    ? `/signup/${lastOnboardingStep ?? "mobile-otp"}`
-    : canChooseAmount(app) ? "/loan/apply" : "/loan/status";
+    ? "/signup/start"
+    : offer
+      ? "/loan/amount"
+      : "/loan/status";
 
   if (isLoading && !app) {
     return <div className="container py-10"><div className="h-72 animate-pulse rounded border border-line bg-white" /></div>;
@@ -142,8 +141,12 @@ export default function DashboardPage() {
             <InfoCard
               icon={<FileClock size={26} />}
               tone="navy"
-              title="Application in progress"
-              body="Pick up where you left off — track your application or choose your amount."
+              title={offer ? "You're approved" : "Application in progress"}
+              body={
+                offer
+                  ? "Our credit team has approved your loan. A few steps left to receive your money."
+                  : "Pick up where you left off — track your application or choose your amount."
+              }
               extra={
                 <div className="mb-5 rounded border border-line bg-grey-100 px-4 py-3">
                   <div className="mb-1 flex items-center justify-between gap-2">
@@ -156,10 +159,10 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               }
-              cta={{ href: continueHref, label: "Continue" }}
+              cta={{ href: continueHref, label: offer ? "Continue your loan" : "Continue" }}
             />
           ) : (
-            <PreApprovedBanner limitRupees={limitRupees} href="/signup/mobile-otp" />
+            <PreApprovedBanner limitRupees={limitRupees} href="/signup/start" />
           )}
         </div>
 
@@ -176,13 +179,13 @@ export default function DashboardPage() {
 
           <div className="rounded border border-line bg-white p-5 shadow-sm">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-navy">
-              <Wallet size={16} /> Eligible limit
+              <Wallet size={16} /> Approved limit
             </div>
             <div className="font-serif text-2xl font-bold text-navy">
               {limitRupees > 0 ? formatINR0(limitRupees) : "—"}
             </div>
             <p className="mt-1 text-xs text-muted">
-              {limitRupees > 0 ? "Instant loan up to ₹10,00,000" : "Add your salary to see your limit"}
+              {limitRupees > 0 ? "Approved by our credit team" : "Set by our credit team once your application is reviewed"}
             </p>
           </div>
 
@@ -326,7 +329,7 @@ function stageDescription(status: BorrowerStatus): string {
     NEW: "Continue your application where you left off.",
     APPLIED: "Submitted — your application is in the queue.",
     UNDER_REVIEW: "Our team is verifying your KYC and details.",
-    APPROVED: "KYC approved — choose your amount to continue.",
+    APPROVED: "Approved by our credit team — a few steps left to receive your money.",
     DOCS_SIGNED: "Documents signed — moving to disbursal.",
     DISBURSING: "Approved — your disbursal is being arranged.",
   };
@@ -338,7 +341,7 @@ function StatusChip({ status }: { status: BorrowerStatus }) {
     NEW: { label: "Not started", variant: "neutral" },
     APPLIED: { label: "Applied", variant: "info" },
     UNDER_REVIEW: { label: "Under review", variant: "warning" },
-    APPROVED: { label: "KYC approved", variant: "success" },
+    APPROVED: { label: "Approved", variant: "success" },
     DOCS_SIGNED: { label: "Docs signed", variant: "info" },
     BANK_VERIFIED: { label: "Bank verified", variant: "info" },
     DISBURSING: { label: "Processing", variant: "warning" },

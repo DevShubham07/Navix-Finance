@@ -16,6 +16,7 @@ import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.ProfileChangeLogRepository;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Comparator;
@@ -96,6 +97,33 @@ public class CustomerReviewService {
         if (salaryBank != null) p.setSalaryBank(salaryBank);
         String email = trimToNull(req.email());
         if (email != null) p.setEmail(email);
+
+        // --- Phase 1 intake slices (V44) ---
+        String officialEmail = trimToNull(req.officialEmail());
+        if (officialEmail != null) p.setOfficialEmail(officialEmail);
+        String accountNumber = trimToNull(req.salaryAccountNumber());
+        if (accountNumber != null) p.setSalaryAccountNumber(accountNumber);
+        String ifsc = trimToNull(req.salaryIfsc());
+        if (ifsc != null) p.setSalaryIfsc(ifsc.toUpperCase());
+        String accountMobile = normalizeMobile(req.salaryAccountMobile());
+        if (accountMobile != null) p.setSalaryAccountMobile(accountMobile);
+        if (req.annualSalaryPaise() != null) p.setAnnualSalaryPaise(req.annualSalaryPaise());
+        if (req.previousSalaryDate() != null) {
+            p.setPreviousSalaryDate(req.previousSalaryDate());
+            // The recurring salary day drives the salary-linked due date; the borrower gives us the
+            // date they were last paid, so derive it here rather than asking twice.
+            app.setSalaryCreditDay(req.previousSalaryDate().getDayOfMonth());
+            applicationRepository.save(app);
+        }
+        // Consent timestamps are stamped server-side — the client sends only the version / the tick.
+        String termsVersion = trimToNull(req.termsVersion());
+        if (termsVersion != null) {
+            p.setTermsVersion(termsVersion);
+            p.setTermsAcceptedAt(Instant.now());
+        }
+        if (Boolean.TRUE.equals(req.pepDeclared())) {
+            p.setPepDeclaredAt(Instant.now());
+        }
         return profileRepository.save(p);
     }
 

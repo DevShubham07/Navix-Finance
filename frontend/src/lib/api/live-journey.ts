@@ -419,6 +419,9 @@ export function appStatusToStage(app: ApplicationView | null | undefined): Borro
       // choose-amount step. Once an amount is submitted it's in credit/disbursement
       // review — still shown as approved (the audit trail on /loan/status disambiguates).
       return "APPROVED";
+    case "SANCTIONED":
+      // Credit has approved an amount and a date; the borrower now walks the Phase-3 offer journey.
+      return "APPROVED";
     case "REVIEW_PENDING":
       // Returning borrower with past delinquency, held for KYC re-review.
       return "UNDER_REVIEW";
@@ -462,6 +465,16 @@ export function canChooseAmount(app: ApplicationView | null | undefined): boolea
     (app.status === "KYC_APPROVED" || app.status === "PRE_APPROVED") &&
     app.amountRequestedPaise == null
   );
+}
+
+/**
+ * The credit team has sanctioned this application and the borrower's own offer journey is open
+ * (revamp.md Phase 3). This is the signal every "resume where you left off" CTA hangs off — the
+ * borrower may be anywhere from the amount screen to the disbursal account, and
+ * `GET /{id}/journey` resolves which.
+ */
+export function hasOffer(app: ApplicationView | null | undefined): boolean {
+  return !!app && app.status === "SANCTIONED";
 }
 
 export function isTerminalBad(app: ApplicationView | null | undefined): boolean {
@@ -632,7 +645,7 @@ export async function submitOnboarding(
  * Submit the desired amount once KYC is approved (enters the credit queue). The eligible limit sent
  * to the backend (which both enforces it and stores it) is the explicit {@code eligibleLimitRupees}
  * when given — this is the application's sanctioned limit, already reduced by any current outstanding
- * for a reborrow — and only falls back to the 25%-of-salary figure for a fresh borrower.
+ * for a reborrow — and only falls back to the salary-derived guidance figure for a fresh borrower.
  */
 export async function applyForAmount(
   appId: number,

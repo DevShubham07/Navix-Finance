@@ -2,14 +2,13 @@ import { type Page } from "@playwright/test";
 
 /** Staff roles (mirrors lib/auth/rbac.ts). */
 export const STAFF_ROLES = [
-  "KYC_APPROVER", "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD", "ACCOUNTANT",
+  "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD", "ACCOUNTANT",
   "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN", "DEVELOPER",
 ] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
 /** Persona display names per role (from staff-personas.ts / V10 seed) — for UI clicks. */
 export const STAFF_PERSONA_NAMES: Record<StaffRole, string> = {
-  KYC_APPROVER: "Ananya Rao",
   CREDIT_EXECUTIVE: "Rahul Mehta",
   CREDIT_HEAD: "Priya Nair",
   DISBURSEMENT_HEAD: "Vikram Shah",
@@ -22,7 +21,6 @@ export const STAFF_PERSONA_NAMES: Record<StaffRole, string> = {
 
 /** Seeded login email per role (V10 seed); the shared demo password is below. */
 export const STAFF_PERSONA_EMAILS: Record<StaffRole, string> = {
-  KYC_APPROVER: "ananya.rao@navix.example",
   CREDIT_EXECUTIVE: "rahul.mehta@navix.example",
   CREDIT_HEAD: "priya.nair@navix.example",
   DISBURSEMENT_HEAD: "vikram.shah@navix.example",

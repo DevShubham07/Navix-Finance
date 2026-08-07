@@ -16,7 +16,7 @@ import {
 } from "@/lib/api/applications";
 
 const ROLES: StaffRoleName[] = [
-  "KYC_APPROVER", "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
+  "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
   "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "TELECALLER", "ADMIN", "DEVELOPER",
 ];
 const STATUSES: StaffStatus[] = ["INVITED", "ACTIVE", "DISABLED"];
@@ -88,7 +88,7 @@ function CreateStaffForm() {
   const qc = useQueryClient();
   const [email, setEmail] = React.useState("");
   const [name, setName] = React.useState("");
-  const [role, setRole] = React.useState<StaffRoleName>("KYC_APPROVER");
+  const [role, setRole] = React.useState<StaffRoleName>("CREDIT_EXECUTIVE");
   const [password, setPassword] = React.useState("");
 
   const canSubmit =
@@ -102,7 +102,7 @@ function CreateStaffForm() {
       setEmail("");
       setName("");
       setPassword("");
-      setRole("KYC_APPROVER");
+      setRole("CREDIT_EXECUTIVE");
     },
   });
 

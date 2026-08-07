@@ -103,6 +103,16 @@ public class NotificationTemplates {
                 "Hi {name},\n\nAfter review, we're unable to approve your loan application "
                         + "#{applicationId} at this time.\n\n— DhanBoost");
 
+        inApp(NotificationType.LOAN_SANCTIONED, "Your loan is sanctioned",
+                "Application #{applicationId} is sanctioned — finish the remaining steps to receive it.");
+        sms(NotificationType.LOAN_SANCTIONED,
+                "Dear {name}, your DhanBoost loan application {applicationId} is sanctioned. Complete the "
+                        + "remaining steps at https://dhanboost.com/login. - DhanBoost");
+        email(NotificationType.LOAN_SANCTIONED, "Your DhanBoost loan is sanctioned",
+                "Hi {name},\n\nGood news — loan application #{applicationId} has been sanctioned by our "
+                        + "credit team. Sign in to review your offer and complete the remaining steps."
+                        + "\n\n— DhanBoost");
+
         // ---------------- DISBURSEMENT ----------------
         inApp(NotificationType.LOAN_APPLIED_FAST_TRACK, "Fast-track disbursal",
                 "Pre-approved application #{applicationId} is ready for disbursement (fast-track).");
@@ -192,6 +202,20 @@ public class NotificationTemplates {
 
         inApp(NotificationType.SETTLEMENT_REJECTED, "Settlement rejected",
                 "Your proposed settlement of {settlementAmount} on loan #{loanId} was not approved.");
+
+        inApp(NotificationType.COLLECTION_PAYMENT_TO_APPROVE, "Settlement payment to approve",
+                "A settlement payment of {paymentAmount} was recorded on loan #{loanId} — your approval "
+                        + "is needed before it reaches the accountant.");
+
+        inApp(NotificationType.COLLECTION_PAYMENT_TO_VALIDATE, "Collections payment to validate",
+                "A {paymentKind} of {paymentAmount} was collected on loan #{loanId} — validate it against "
+                        + "the bank to credit the loan.");
+
+        inApp(NotificationType.COLLECTION_PAYMENT_VALIDATED, "Collections payment validated",
+                "The {paymentAmount} collected on loan #{loanId} was validated and credited.");
+
+        inApp(NotificationType.COLLECTION_PAYMENT_REJECTED, "Collections payment rejected",
+                "The {paymentAmount} recorded on loan #{loanId} was not validated: {remarks}");
 
         // ---------------- SYSTEM ----------------
         inApp(NotificationType.APPLICATION_CANCELLED, "Application cancelled",

@@ -89,7 +89,7 @@ export const html = `<section class="page active" id="calculator">
           <div class="cr-total"><span class="t-lbl">Total payable</span><span class="t-val" id="calOTotal">₹13,000</span></div>
         </div>
         <p class="cal-note">Interest is a fixed 1% per day across your selected tenure. Figures are indicative — your exact due date and APR are confirmed before you accept, with no pre-closure or prepayment charge.</p>
-        <a href="/signup/mobile-otp" class="btn btn-gold btn-block" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+        <a href="/signup/start" class="btn btn-gold btn-block" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
       </div>
     </div>
   </div></div>
@@ -160,7 +160,7 @@ export const html = `<section class="page active" id="calculator">
           <div class="cr-line apr"><span>Representative APR</span><b>365.0%</b></div>
           <div class="cr-total"><span class="t-lbl">You repay</span><span class="t-val">₹13,000</span></div>
         </div>
-        <a href="/signup/mobile-otp" class="btn btn-gold btn-block" style="margin-top:22px" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
+        <a href="/signup/start" class="btn btn-gold btn-block" style="margin-top:22px" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
         <p style="font-size:.78rem;color:#9fb3cc;margin-top:14px;text-align:center;position:relative">Borrow responsibly. APR shown for illustration.</p>
       </div>
     </div>

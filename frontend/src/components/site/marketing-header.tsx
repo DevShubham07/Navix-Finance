@@ -177,7 +177,7 @@ export function MarketingHeader() {
             </div>
 
             <div className="nav-cta">
-              <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm">
+              <Link href="/signup/start" className="btn btn-gold btn-sm">
                 Apply Now <ArrowR />
               </Link>
               <Link href="/login" className="btn btn-ghost btn-sm">
@@ -217,7 +217,7 @@ export function MarketingHeader() {
           ))}
         </nav>
         <div className="drawer-cta">
-          <Link href="/signup/mobile-otp" className="btn btn-gold btn-block" onClick={close}>
+          <Link href="/signup/start" className="btn btn-gold btn-block" onClick={close}>
             Apply Now
           </Link>
           <Link href="/login" className="btn btn-ghost btn-block" onClick={close}>

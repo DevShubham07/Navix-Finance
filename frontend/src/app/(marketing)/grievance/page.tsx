@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { html } from "../_content/grievance";
 import { MarketingHtml } from "@/components/site/marketing-html";
+import { PaymentSafetyTicker } from "@/components/site/payment-safety-ticker";
 
 export const metadata: Metadata = {
   title: 'Grievance Redressal — DhanBoost',
@@ -9,5 +10,10 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <MarketingHtml html={html} />;
+  return (
+    <>
+      <PaymentSafetyTicker />
+      <MarketingHtml html={html} />
+    </>
+  );
 }

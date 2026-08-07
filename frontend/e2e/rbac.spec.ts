@@ -1,22 +1,32 @@
 import { test, expect } from "@playwright/test";
 import { loginStaff } from "./_fixtures";
 
-// Every pipeline queue now lives on /staff/applications, gated per role by RoleQueues. The KYC
-// approver holds loan:review/loan:approve only for the instant-loan fast-path, so it must NOT get
-// the credit exec→head panels — every action there is rejected by the backend anyway.
+// Every pipeline queue lives on /staff/applications, gated per role by RoleQueues.
+//
+// These assertions were rewritten for the revamp: V45 deleted KYC_APPROVER and the Credit Head's
+// counter-approval (the executive's sanction is final), and V48 deleted the accountant's
+// disbursement hop. The old spec asserted on "Applications awaiting KYC clearance", "Credit head
+// decision" and "Transfers to confirm" — three panels the product no longer has — so five of these
+// tests failed against a correctly-working app.
 test.describe("RBAC", () => {
-  test("KYC approver does not get the credit maker-checker panels", async ({ page }) => {
-    await loginStaff(page, "KYC_APPROVER");
+  test("Credit executive gets the review queue but not the head's assign queue", async ({ page }) => {
+    await loginStaff(page, "CREDIT_EXECUTIVE");
     await page.goto("/staff/applications");
-    await expect(page.getByText("Applications awaiting KYC clearance")).toBeVisible();
-    await expect(page.getByText("Credit head decision")).toHaveCount(0);
+    await expect(page.getByText("Credit review — accept, reject or park")).toBeVisible();
     await expect(page.getByText("Credit queue — assign an executive")).toHaveCount(0);
   });
 
-  test("ADMIN sees the credit-head queue", async ({ page }) => {
+  test("Credit head gets the assign queue", async ({ page }) => {
+    await loginStaff(page, "CREDIT_HEAD");
+    await page.goto("/staff/applications");
+    await expect(page.getByText("Credit queue — assign an executive")).toBeVisible();
+  });
+
+  test("ADMIN sees the credit queues", async ({ page }) => {
     await loginStaff(page, "ADMIN");
     await page.goto("/staff/applications");
-    await expect(page.getByText("Credit head decision")).toBeVisible();
+    await expect(page.getByText("Credit queue — assign an executive")).toBeVisible();
+    await expect(page.getByText("Credit review — accept, reject or park")).toBeVisible();
   });
 
   test("Disbursement head gets the three release panels", async ({ page }) => {
@@ -27,30 +37,34 @@ test.describe("RBAC", () => {
     await expect(page.getByText("Disbursement failed — retry")).toBeVisible();
   });
 
-  test("Accountant gets transfers + the repayment-verify queue", async ({ page }) => {
+  /**
+   * Since V48 the Accountant has NO disbursement step — the Disbursement Head's transaction id is
+   * the validation. What is left is money coming back in.
+   */
+  test("Accountant gets the two money-in queues and no transfers queue", async ({ page }) => {
     await loginStaff(page, "ACCOUNTANT");
     await page.goto("/staff/applications");
-    await expect(page.getByText("Transfers to confirm")).toBeVisible();
     await expect(page.getByText("Repayments to verify")).toBeVisible();
+    await expect(page.getByText("Collections payments to validate")).toBeVisible();
+    await expect(page.getByText("Transfers to confirm")).toHaveCount(0);
   });
 
-  // KYC approvals now live on /staff/applications (the single per-role workbench).
-  test("non-KYC role does not get the KYC clearance queue", async ({ page }) => {
+  test("Accountant does not get the credit queues", async ({ page }) => {
     await loginStaff(page, "ACCOUNTANT");
     await page.goto("/staff/applications");
-    await expect(page.getByText("Applications awaiting KYC clearance")).toHaveCount(0);
+    await expect(page.getByText("Credit review — accept, reject or park")).toHaveCount(0);
+    await expect(page.getByText("Credit queue — assign an executive")).toHaveCount(0);
   });
 
-  test("KYC approver sees the KYC clearance queue", async ({ page }) => {
-    await loginStaff(page, "KYC_APPROVER");
+  /** A settlement concedes debt, so only the Collection Head sees the release queue. */
+  test("Collection head gets the settlement-payment approval queue, the executive does not", async ({ page }) => {
+    await loginStaff(page, "COLLECTION_HEAD");
     await page.goto("/staff/applications");
-    await expect(page.getByText("Applications awaiting KYC clearance")).toBeVisible();
-  });
+    await expect(page.getByText("Settlement payments to approve")).toBeVisible();
 
-  test("KYC approver sees the instant-loan credit fast-path", async ({ page }) => {
-    await loginStaff(page, "KYC_APPROVER");
+    await loginStaff(page, "COLLECTION_EXECUTIVE");
     await page.goto("/staff/applications");
-    await expect(page.getByText("Approve instant loans (credit clearance)")).toBeVisible();
+    await expect(page.getByText("Settlement payments to approve")).toHaveCount(0);
   });
 
   // Collections works the same single workbench: the awaiting-repayment split + the DPD grid that

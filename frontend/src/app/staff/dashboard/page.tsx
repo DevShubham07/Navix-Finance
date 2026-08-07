@@ -44,17 +44,13 @@ const REFRESH_MS = 10_000;
 
 /** Per-role "your queue" label (+ an ⓘ explanation) and the live statuses that feed it. */
 const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
-  KYC_APPROVER: {
-    label: "KYC clearances & reborrow reviews",
-    info: "Review fresh customers' KYC, plus returning borrowers flagged for a past overdue. Approve to advance, or reject to send it back.",
-  },
   CREDIT_EXECUTIVE: {
-    label: "Applications to review",
-    info: "Assess income, employment and risk, then recommend or reject. Your recommendation goes to the Credit Head for final approval.",
+    label: "Leads to decide",
+    info: "Verify the file, then accept it with a sanctioned amount and repayment date, reject it, or park it as pending. Your decision is final — it goes straight to disbursement.",
   },
   CREDIT_HEAD: {
-    label: "Decisions awaiting your approval",
-    info: "Assign an executive, then give final approval. You cannot approve an application you recommended as executive (separation of duties).",
+    label: "Leads to assign",
+    info: "Hand each submitted intake to an ACTIVE credit executive. You can also decide a lead yourself; either way that decision is the final one.",
   },
   DISBURSEMENT_HEAD: {
     label: "Approved loans to release",
@@ -91,7 +87,6 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
  * the DPD grid; the Head's settlements worklist is still its own page, reached from the nav.
  */
 const ROLE_HREF: Partial<Record<StaffRole, string>> = {
-  KYC_APPROVER: "/staff/applications",
   CREDIT_EXECUTIVE: "/staff/applications",
   CREDIT_HEAD: "/staff/applications",
   DISBURSEMENT_HEAD: "/staff/applications",
@@ -119,8 +114,14 @@ const pendingSettlementCount = () =>
 /** Mirrors the accountant's repayment-verify queue on /staff/applications. */
 const pendingRepaymentCount = () => countOf(staffApi.pendingRepayments());
 
+/** Mirrors the accountant's collections-payment validation queue on /staff/applications. */
+const pendingCollectionPaymentCount = () =>
+  countOf(collectionsApi.listPayments("PENDING_ACCOUNTANT"));
+
 const repaymentsExtra = (count: number): QueueExtra =>
   ({ key: "repayments", label: "Repayments to verify", count, href: "/staff/applications" });
+const collectionPaymentsExtra = (count: number): QueueExtra =>
+  ({ key: "collection-payments", label: "Collections payments to validate", count, href: "/staff/applications" });
 const settlementsExtra = (count: number): QueueExtra =>
   ({ key: "settlements", label: "Settlements to approve", count, href: "/staff/collections/settlements" });
 
@@ -136,25 +137,17 @@ const settlementsExtra = (count: number): QueueExtra =>
 async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promise<RoleQueue> {
   let base: RoleQueue;
   switch (role) {
-    case "KYC_APPROVER": {
-      const [kyc, review, approved] = await Promise.all([
-        safe(staffApi.listByStatus("KYC_PENDING")),
-        safe(staffApi.listByStatus("REVIEW_PENDING")),
-        safe(staffApi.listByStatus("KYC_APPROVED")),
-      ]);
-      const instant = approved.filter((a) => a.amountRequestedPaise != null);
-      base = { apps: [...kyc, ...review, ...instant], extras: [] };
-      break;
-    }
     case "CREDIT_EXECUTIVE":
       base = { apps: await safe(staffApi.listByStatus("CREDIT_EXEC_PENDING")), extras: [] };
       break;
     case "CREDIT_HEAD": {
-      const [queue, headPending] = await Promise.all([
+      // Everything the Head can act on: intakes to assign, plus files already out with an
+      // executive (the Head may decide those too).
+      const [queue, withExec] = await Promise.all([
         safe(staffApi.creditQueue()),
-        safe(staffApi.listByStatus("CREDIT_HEAD_PENDING")),
+        safe(staffApi.listByStatus("CREDIT_EXEC_PENDING")),
       ]);
-      base = { apps: [...queue, ...headPending], extras: [] };
+      base = { apps: [...queue, ...withExec], extras: [] };
       break;
     }
     case "DISBURSEMENT_HEAD": {
@@ -174,11 +167,16 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
       break;
     }
     case "ACCOUNTANT": {
-      const [apps, repayments] = await Promise.all([
-        safe(staffApi.listByStatus("ACCOUNTANT_PENDING")),
+      // No application queue: since V48 the Accountant has no disbursement step at all. Their work
+      // is money coming back in — borrower repayments and what collections took in the field.
+      const [repayments, collected] = await Promise.all([
         pendingRepaymentCount(),
+        pendingCollectionPaymentCount(),
       ]);
-      base = { apps, extras: repayments > 0 ? [repaymentsExtra(repayments)] : [] };
+      const extras: QueueExtra[] = [];
+      if (repayments > 0) extras.push(repaymentsExtra(repayments));
+      if (collected > 0) extras.push(collectionPaymentsExtra(collected));
+      base = { apps: [], extras };
       break;
     }
     case "COLLECTION_HEAD": {
@@ -196,7 +194,7 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
     case "ADMIN": {
       const [lists, repayments, settlements] = await Promise.all([
         Promise.all(
-          (["KYC_PENDING", "REVIEW_PENDING", "CREDIT_EXEC_PENDING", "CREDIT_HEAD_PENDING", "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING"] as ApplicationStatus[]).map(
+          (["KYC_PENDING", "CREDIT_EXEC_PENDING", "SANCTIONED", "DISBURSEMENT_PENDING"] as ApplicationStatus[]).map(
             (s) => safe(staffApi.listByStatus(s)),
           ),
         ),

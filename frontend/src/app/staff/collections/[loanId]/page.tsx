@@ -9,6 +9,7 @@ import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import { CreditBadge } from "@/components/staff/credit-badge";
+import { CasePaymentsCard, RecordPaymentCard } from "@/components/staff/collection-payments";
 import { collectionsApi, customersApi, paiseToINR, rupeesToPaise, type InteractionView, type LoanSummary } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
@@ -71,6 +72,8 @@ export default function CollectionsCasePage() {
             <LoanCard loan={c.loan} />
             <BorrowerCard loan={c.loan} />
 
+            <CasePaymentsCard caseId={caseId} />
+
             <InteractionsCard
               caseId={caseId}
               interactions={interQ.data ?? []}
@@ -88,6 +91,7 @@ export default function CollectionsCasePage() {
             >
               <AssignCard caseId={caseId} currentOfficerName={c.assignedOfficerName} onAssigned={invalidate} />
             </PermissionGate>
+            <RecordPaymentCard caseId={caseId} onRaised={invalidate} />
             <SettlementCard caseId={caseId} />
           </div>
         </div>

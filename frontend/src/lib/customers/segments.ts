@@ -64,6 +64,9 @@ const APPROVED_APP = new Set([
   "KYC_APPROVED",
   "CREDIT_EXEC_APPROVED",
   "CREDIT_HEAD_APPROVED",
+  // The credit team has decided; the borrower is walking the post-approval journey (V45). Without
+  // this the row falls through segmentOf's default and shows as "pending" — decided but invisible.
+  "SANCTIONED",
   "DISBURSEMENT_PENDING",
   "ACCOUNTANT_PENDING",
 ]);

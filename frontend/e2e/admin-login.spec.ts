@@ -50,7 +50,7 @@ test.describe("staff email + password login", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/staff\/dashboard/, { timeout: 20_000 });
 
-    // create a staff account via the admin form (role defaults to KYC_APPROVER)
+    // create a staff account via the admin form (role defaults to CREDIT_EXECUTIVE)
     await page.goto("/staff/admin/staff");
     await page.getByPlaceholder("person@navix.example").fill(email);
     await page.getByPlaceholder("Full name").fill("PW Test Staff");

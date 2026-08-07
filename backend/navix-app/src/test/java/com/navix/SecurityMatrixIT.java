@@ -83,7 +83,7 @@ class SecurityMatrixIT {
     void wrongRoleStaffBearer_onKycDecision_isForbiddenRole() throws Exception {
         long appId = createApplication(22L);
 
-        // An ACCOUNTANT is staff but not a KYC_APPROVER → FORBIDDEN_ROLE before any state check.
+        // An ACCOUNTANT is staff but not on the credit team → FORBIDDEN_ROLE before any state check.
         mvc.perform(post("/api/applications/{id}/kyc-decision", appId)
                         .header("Authorization", bearer("15", "ACCOUNTANT"))
                         .contentType(MediaType.APPLICATION_JSON)

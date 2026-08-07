@@ -8,6 +8,7 @@ import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.CustomerProfile;
@@ -51,6 +52,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ApplicationVerificationService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(ApplicationVerificationService.class);
+
     // ---- check types ----
     public static final String PAN = "PAN";
     public static final String EMAIL = "EMAIL";
@@ -64,6 +68,11 @@ public class ApplicationVerificationService {
     public static final String PENNY_DROP = "PENNY_DROP";
     public static final String SELFIE = "SELFIE";
     public static final String AGREEMENT = "AGREEMENT";
+    /** The borrower's eSignature on the sanction letter / KFS — the per-loan legal act (Phase 3). */
+    public static final String ESIGN = "ESIGN";
+    /** Document types the Phase-3 sanction letter + eSign write (not verification check types). */
+    public static final String SANCTION_LETTER = "SANCTION_LETTER";
+    public static final String SIGNED_AGREEMENT = "SIGNED_AGREEMENT";
     /**
      * The borrower's OTP-verified consent to the credit-bureau enquiry. Deliberately NOT in
      * {@link #REQUIRED} (that would wedge every application whose PAN passed before this shipped)
@@ -77,13 +86,23 @@ public class ApplicationVerificationService {
     public static final String REVIEW = "REVIEW";
     public static final String PENDING = "PENDING";
 
-    /** Checks that must be PASS or REVIEW (plus agreement consent) to submit KYC. */
-    static final List<String> REQUIRED =
-            List.of(PAN, EMAIL, ADDRESS, AADHAAR, BUREAU, SALARY, PENNY_DROP, SELFIE);
+    /**
+     * Intake checks — the ones the Phase-1 consent screen fires, and the set every completeness
+     * surface reports on. They must have been <b>attempted</b> to submit; a FAIL still goes to the
+     * credit team flagged (revamp.md decision 10).
+     */
+    static final List<String> REQUIRED = List.of(PAN, EMAIL, BUREAU, SALARY);
+
+    /**
+     * Phase-3 checks, run after credit approval. Non-blocking (revamp.md decision 11) — they surface
+     * in the Verification Dashboard, not as a gate. PENNY_DROP is deliberately absent: it only fires
+     * when the borrower changes their disbursal account, so it may legitimately never run.
+     */
+    static final List<String> REQUIRED_SANCTION = List.of(AADHAAR, SELFIE, ADDRESS, ESIGN);
 
     /** Every recognised check type — guards the staff manual-override target. */
-    static final Set<String> KNOWN_CHECKS =
-            Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU, SALARY, PENNY_DROP, SELFIE, AGREEMENT);
+    static final Set<String> KNOWN_CHECKS = Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU,
+            SALARY, PENNY_DROP, SELFIE, AGREEMENT, ESIGN);
 
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
@@ -93,6 +112,7 @@ public class ApplicationVerificationService {
     private final LoanApplicationRepository applicationRepo;
     private final ApplicationDocumentRepository documentRepo;
     private final VerificationPort verification;
+    private final EsignPort esign;
     private final OtpVerifierPort otpVerifier;
     private final DocumentStoragePort storage;
     private final RiskPort risk;
@@ -136,7 +156,15 @@ public class ApplicationVerificationService {
             return view(existing.get());
         }
         String ref = ref(appId, PAN);
-        VerificationPort.PanCheck r = verification.verifyPan(pan, ref);
+        VerificationPort.PanCheck r;
+        try {
+            r = verification.verifyPan(pan, ref);
+        } catch (RuntimeException providerFailure) {
+            // The provider couldn't be reached. Record it and let the borrower through — a technical
+            // failure must not wedge an application on the last screen (revamp.md decision 10); the
+            // credit team sees the flag and decides. Mirrors verifyEmail below.
+            return providerUnavailable(appId, PAN, "PAN check unavailable — pending manual review");
+        }
         CustomerProfile profile = profile(appId);
         profile.setPanVerified(r.valid());
         profile.setAadhaarLinked(r.aadhaarLinked());
@@ -148,6 +176,12 @@ public class ApplicationVerificationService {
             if (panDob != null) {
                 profile.setDob(panDob);
             }
+        }
+        // The intake never asks for a name (revamp.md decision 12), so the PAN record is where the
+        // borrower's identity arrives. Same don't-overwrite guard as the DOB above.
+        if ((profile.getFullName() == null || profile.getFullName().isBlank())
+                && r.fullName() != null && !r.fullName().isBlank()) {
+            profile.setFullName(r.fullName());
         }
         profileRepo.save(profile);
 
@@ -289,14 +323,28 @@ public class ApplicationVerificationService {
                 null, null, null, derived, "Manual address — pending review"));
     }
 
-    /** App-scoped presigned PUT target for a browser upload (salary slip, selfie). */
+    /**
+     * App-scoped presigned PUT target for a browser upload (salary slip, selfie).
+     *
+     * <p>Storage failures are translated into a typed, borrower-readable error. This sits on the
+     * mandatory payslip step: when object storage is unreachable (no credentials, an S3 outage) the
+     * raw {@code SdkClientException} escaped as a bare {@code INTERNAL_ERROR} plus a UUID, which
+     * told the borrower "an unexpected error occurred" and stranded them at step 8 of 10 with
+     * nothing to act on. Same treatment as the sanction letter.
+     */
     @Transactional(readOnly = true)
     public PresignedUpload presignUpload(Long appId, String docType, String fileName, String contentType) {
         requireApplication(appId);
         String ext = extensionOf(fileName, contentType);
         String key = storage.buildApplicationKey(appId, docType, ext);
-        String url = storage.presignUpload(key, contentType);
-        return new PresignedUpload(key, url);
+        try {
+            return new PresignedUpload(key, storage.presignUpload(key, contentType));
+        } catch (RuntimeException storageFailure) {
+            log.error("presign failed application={} docType={}: {}", appId, docType,
+                    storageFailure.toString());
+            throw new BusinessException("UPLOAD_UNAVAILABLE",
+                    "We can't accept uploads just now. Please try again in a few minutes.");
+        }
     }
 
     /** Presigned PUT target (key the caller echoes back on the verify/* call; url the browser PUTs to). */
@@ -651,9 +699,22 @@ public class ApplicationVerificationService {
     /** Penny-drop bank verify + name-at-bank match (payout gate). */
     @Transactional
     public StepResult verifyPennyDrop(Long appId, String accountNumber, String ifsc) {
-        Optional<ApplicationVerification> existing = passed(appId, PENNY_DROP);
-        if (existing.isPresent()) {
-            return view(existing.get());
+        return verifyPennyDrop(appId, accountNumber, ifsc, false);
+    }
+
+    /**
+     * As above, but {@code force} re-runs the check even when this application already has a PASSed
+     * penny drop. Phase 3's disbursal-account screen needs that: the stored PASS belongs to whatever
+     * account was checked before, and the borrower is now naming a <em>different</em> one — replaying
+     * the old result would wave through an account nobody verified.
+     */
+    @Transactional
+    public StepResult verifyPennyDrop(Long appId, String accountNumber, String ifsc, boolean force) {
+        if (!force) {
+            Optional<ApplicationVerification> existing = passed(appId, PENNY_DROP);
+            if (existing.isPresent()) {
+                return view(existing.get());
+            }
         }
         CustomerProfile profile = profile(appId);
         String ref = ref(appId, PENNY_DROP);
@@ -883,6 +944,76 @@ public class ApplicationVerificationService {
     }
 
     /**
+     * eSign the sanction letter / Key Fact Statement (Phase 3, screen 9) — the per-loan legal act.
+     *
+     * <p>Runs the {@link EsignPort} seam end to end (initiate → fetch) against the stored
+     * {@code SANCTION_LETTER}, then persists the outcome two ways: an {@code ESIGN} verification row
+     * carrying the provider's signature reference, and a {@code SIGNED_AGREEMENT} document so the
+     * signed copy sits with the borrower's other files. When the provider returns its own signed PDF
+     * that copy is stored; the mock does not, so the document points at the letter as rendered and the
+     * signature lives on the verification row.
+     *
+     * <p>Unlike the intake checks, this one is a real gate: {@code ApplicationFlowService.acceptOffer}
+     * refuses to move an application to disbursement without a terminal ESIGN row.
+     */
+    @Transactional
+    public StepResult recordEsign(Long appId) {
+        Optional<ApplicationVerification> existing = passed(appId, ESIGN);
+        if (existing.isPresent()) {
+            return view(existing.get());
+        }
+        ApplicationDocument letter = documentRepo
+                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, SANCTION_LETTER)
+                .orElseThrow(() -> new BusinessException("SANCTION_LETTER_MISSING",
+                        "Open your sanction letter before signing it"));
+        CustomerProfile profile = profile(appId);
+        String ref = ref(appId, ESIGN);
+        String documentUrl = storage.presignDownload(letter.getS3ObjectKey());
+
+        EsignPort.EsignSession session =
+                esign.initiate(documentUrl, profile.getFullName(), profile.getMobile(), ref);
+        EsignPort.EsignResult result = esign.fetch(session.sessionId());
+
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("sessionId", session.sessionId());
+        derived.put("signatureRef", result.signatureRef());
+        derived.put("signedAt", result.signedAt() != null ? result.signedAt().toString() : null);
+        derived.put("sanctionLetterDocumentId", letter.getId());
+
+        if (!result.completed() || !result.signed()) {
+            return view(upsert(appId, ESIGN, REVIEW, session.provider(), result.signatureRef(), ref,
+                    null, null, null, derived,
+                    result.reason() != null ? result.reason() : "Signature not completed"));
+        }
+
+        // The signed copy: the provider's own PDF when it returns one, else the letter as rendered.
+        String signedKey = letter.getS3ObjectKey();
+        long size = letter.getSizeBytes() != null ? letter.getSizeBytes() : 0L;
+        if (result.signedPdf() != null && result.signedPdf().length > 0) {
+            signedKey = "applications/" + appId + "/signed_agreement/sanction-letter-signed.pdf";
+            storage.store(signedKey, result.signedPdf(), "application/pdf");
+            size = result.signedPdf().length;
+        }
+        ApplicationDocument signed = documentRepo
+                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, SIGNED_AGREEMENT)
+                .orElseGet(ApplicationDocument::new);
+        signed.setApplicationId(appId);
+        signed.setDocType(SIGNED_AGREEMENT);
+        signed.setFileName("sanction-letter-signed.pdf");
+        signed.setContentType("application/pdf");
+        signed.setSizeBytes(size);
+        signed.setS3ObjectKey(signedKey);
+        signed.setData(null);
+        documentRepo.save(signed);
+        derived.put("signedDocumentId", signed.getId());
+
+        profile.setAgreementAccepted(Boolean.TRUE);
+        profileRepo.save(profile);
+        return view(upsert(appId, ESIGN, PASS, session.provider(), result.signatureRef(), ref,
+                null, null, signedKey, derived, "Sanction letter signed"));
+    }
+
+    /**
      * Record the borrower's consent to the credit-bureau enquiry, step-up verified by their mobile OTP.
      *
      * <p>This is a check type of its own rather than extra {@code derived} data on the PAN row, because
@@ -914,21 +1045,41 @@ public class ApplicationVerificationService {
 
     // ---------------------------------------------------------------- gating + summary
 
-    /** True if every required check is PASS/REVIEW and the agreement has been accepted. */
+    /**
+     * Submission gate: every intake check has been <b>attempted</b> (any terminal status, FAIL
+     * included) and the borrower accepted the T&C on screen 1. A failed PAN or bureau pull is a
+     * credit decision, not a blocker (revamp.md decision 10) — so this only stops an application
+     * where a step never ran at all, e.g. no payslips uploaded.
+     */
     @Transactional(readOnly = true)
     public boolean allRequiredPassed(Long appId) {
         Map<String, String> byType = verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
                 .collect(Collectors.toMap(ApplicationVerification::getCheckType,
                         ApplicationVerification::getStatus, (a, b) -> b));
         for (String required : REQUIRED) {
-            String status = byType.get(required);
-            if (!PASS.equals(status) && !REVIEW.equals(status)) {
+            if (!attempted(byType.get(required))) {
                 return false;
             }
         }
         return profileRepo.findByApplicationId(appId)
-                .map(p -> Boolean.TRUE.equals(p.getAgreementAccepted()))
+                .map(p -> p.getTermsAcceptedAt() != null)
                 .orElse(false);
+    }
+
+    /** A check has been attempted once it holds any terminal status — PENDING/absent means never run. */
+    private static boolean attempted(String status) {
+        return PASS.equals(status) || REVIEW.equals(status) || FAIL.equals(status);
+    }
+
+    /**
+     * Record a check the provider couldn't run at all, as REVIEW. The borrower continues and staff
+     * pick it up — a provider outage is not the applicant's fault and must not strand them.
+     */
+    private StepResult providerUnavailable(Long appId, String checkType, String message) {
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("providerError", true);
+        return view(upsert(appId, checkType, REVIEW, null, null, ref(appId, checkType),
+                null, null, null, derived, message));
     }
 
     /**
@@ -1049,12 +1200,21 @@ public class ApplicationVerificationService {
      * to PASS or FAIL with a note — used when an external check is stuck/inconclusive and needs human
      * judgement. Recorded via {@link #upsert} with provider {@code MANUAL} (idempotent per check type).
      */
+    /**
+     * The credit team owns KYC judgement calls since the KYC_APPROVER role was deleted (V45).
+     * ADMIN passes for oversight.
+     */
+    private void requireCreditTeam(String what) {
+        String role = ActorContext.get().role();
+        if (!"CREDIT_EXECUTIVE".equals(role) && !"CREDIT_HEAD".equals(role) && !"ADMIN".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    what + " requires CREDIT_EXECUTIVE or CREDIT_HEAD");
+        }
+    }
+
     @Transactional
     public StepResult manualDecision(Long appId, String checkType, boolean pass, String notes) {
-        String role = ActorContext.get().role();
-        if (!"KYC_APPROVER".equals(role) && !"ADMIN".equals(role)) {
-            throw new BusinessException("FORBIDDEN_ROLE", "Manual verification override requires KYC_APPROVER");
-        }
+        requireCreditTeam("Manual verification override");
         String type = checkType == null ? "" : checkType.trim().toUpperCase();
         if (!KNOWN_CHECKS.contains(type)) {
             throw new BusinessException("UNKNOWN_CHECK", "Unknown verification check: " + checkType);
@@ -1075,10 +1235,7 @@ public class ApplicationVerificationService {
      */
     @Transactional
     public ReminderResult sendKycReminder(Long appId) {
-        String role = ActorContext.get().role();
-        if (!"KYC_APPROVER".equals(role) && !"ADMIN".equals(role)) {
-            throw new BusinessException("FORBIDDEN_ROLE", "Sending a reminder requires KYC_APPROVER");
-        }
+        requireCreditTeam("Sending a reminder");
         LoanApplication app = requireApplication(appId);
         Map<String, String> byType = verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
                 .collect(Collectors.toMap(ApplicationVerification::getCheckType,

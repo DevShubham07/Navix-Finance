@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ContactSection } from "@/components/site/contact-form";
+import { PaymentSafetyTicker } from "@/components/site/payment-safety-ticker";
 
 export const metadata: Metadata = {
   title: 'Contact Us — DhanBoost',
@@ -8,5 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <ContactSection />;
+  return (
+    <>
+      <PaymentSafetyTicker />
+      <ContactSection />
+    </>
+  );
 }

@@ -12,13 +12,15 @@ const RETRY_MS = 4000;
 const MAX_ATTEMPTS = 45; // ~3min of retrying while the provider materialises the Aadhaar XML
 
 /**
- * Real DigiLocker return target (the `redirectUrl` passed to verify/digilocker/init).
+ * DigiLocker's return target (the `redirectUrl` passed to verify/digilocker/init).
  *
- * Landing here IS the post-consent signal (DigiLocker redirected the user back), so we
- * finalise directly — `digilockerComplete` probes the Aadhaar XML, which is the true
- * source of truth — instead of waiting for the provider's status flag, which is unreliable
- * and routinely never reports completed. If the XML isn't ready the instant we ask, the
- * backend returns a retryable DIGILOCKER_NOT_READY and we poll a bounded number of times.
+ * <p>Landing here IS the post-consent signal — DigiLocker redirected the user back — so we finalise
+ * directly rather than waiting on the provider's status flag, which routinely never reports
+ * completed. `digilockerComplete` probes the Aadhaar XML, which is the real source of truth; if it
+ * isn't ready the instant we ask, the backend returns a retryable DIGILOCKER_NOT_READY and we poll
+ * a bounded number of times.
+ *
+ * <p>The step moved to the Phase-3 offer journey, so the routes here point at `/loan/*`.
  */
 export default function KycDigiLockerCallbackPage() {
   const router = useRouter();
@@ -60,8 +62,8 @@ export default function KycDigiLockerCallbackPage() {
               <CheckCircle2 size={34} />
             </span>
             <h1 className="text-2xl">Aadhaar verified</h1>
-            <p className="mb-6 text-muted">Your identity is confirmed via DigiLocker. You can return to your application.</p>
-            <button onClick={() => router.push("/signup/pan")} className="btn btn-gold btn-block">
+            <p className="mb-6 text-muted">Your identity is confirmed via DigiLocker. You can carry on with your loan.</p>
+            <button onClick={() => router.push("/loan/references")} className="btn btn-gold btn-block">
               Continue <ArrowRight size={16} />
             </button>
           </>
@@ -72,7 +74,7 @@ export default function KycDigiLockerCallbackPage() {
             </span>
             <h1 className="text-2xl">Couldn&apos;t confirm DigiLocker</h1>
             <p className="mb-6 text-muted">Please return to your application and try the DigiLocker step again.</p>
-            <button onClick={() => router.push("/signup/digilocker")} className="btn btn-gold btn-block">
+            <button onClick={() => router.push("/loan/digilocker")} className="btn btn-gold btn-block">
               Back to DigiLocker <ArrowRight size={16} />
             </button>
           </>

@@ -187,11 +187,17 @@ const config: Config = {
       animation: {
         spin: "spin 1s linear infinite",
         "fade-up": "fadeUp 0.4s ease",
+        // Two copies of the message sit side by side, so shifting by exactly half loops seamlessly.
+        ticker: "ticker 38s linear infinite",
       },
       keyframes: {
         fadeUp: {
           "0%": { opacity: "0", transform: "translateY(14px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        ticker: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
         },
       },
     },

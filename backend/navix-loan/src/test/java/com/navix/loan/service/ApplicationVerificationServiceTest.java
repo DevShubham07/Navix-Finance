@@ -41,6 +41,7 @@ class ApplicationVerificationServiceTest {
     @Mock private LoanApplicationRepository applicationRepo;
     @Mock private ApplicationDocumentRepository documentRepo;
     @Mock private VerificationPort verification;
+    @Mock private com.navix.common.verification.EsignPort esign;
     @Mock private com.navix.common.verification.OtpVerifierPort otpVerifier;
     @Mock private DocumentStoragePort storage;
     @Mock private RiskPort risk;
@@ -55,7 +56,7 @@ class ApplicationVerificationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
-                documentRepo, verification, otpVerifier, storage, risk, new ObjectMapper(),
+                documentRepo, verification, esign, otpVerifier, storage, risk, new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger);
         // save() echoes its argument
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -273,19 +274,37 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
-    void allRequiredPassed_falseWhenIncomplete_trueWhenAllPassAndAgreed() {
-        // incomplete: no rows
+    void allRequiredPassed_gatesOnAttemptedNotPassed() {
+        // Nothing run yet.
         assertThat(service.allRequiredPassed(APP)).isFalse();
 
-        // all required PASS/REVIEW
-        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
-                row("PAN", "PASS"), row("EMAIL", "REVIEW"), row("ADDRESS", "PASS"), row("AADHAAR", "PASS"),
-                row("BUREAU", "PASS"), row("SALARY", "PASS"), row("PENNY_DROP", "PASS"), row("SELFIE", "REVIEW")));
         CustomerProfile agreed = profile();
-        agreed.setAgreementAccepted(true);
+        agreed.setTermsAcceptedAt(java.time.Instant.now());
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(agreed));
 
+        // A FAILED intake check still submits — the credit team decides, not the gate
+        // (revamp.md decision 10). PENNY_DROP/SELFIE/ADDRESS/AADHAAR are no longer intake checks.
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("PAN", "FAIL"), row("EMAIL", "REVIEW"), row("BUREAU", "PASS"), row("SALARY", "PASS")));
         assertThat(service.allRequiredPassed(APP)).isTrue();
+    }
+
+    @Test
+    void allRequiredPassed_falseWhenAStepNeverRan() {
+        // No SALARY row at all — the borrower never uploaded payslips. Short-circuits before the
+        // profile is ever read, so there is deliberately no profileRepo stub here.
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("PAN", "PASS"), row("EMAIL", "PASS"), row("BUREAU", "PASS")));
+        assertThat(service.allRequiredPassed(APP)).isFalse();
+    }
+
+    @Test
+    void allRequiredPassed_falseWithoutTermsAcceptance() {
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("PAN", "PASS"), row("EMAIL", "PASS"), row("BUREAU", "PASS"), row("SALARY", "PASS")));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+
+        assertThat(service.allRequiredPassed(APP)).isFalse();
     }
 
     @Test

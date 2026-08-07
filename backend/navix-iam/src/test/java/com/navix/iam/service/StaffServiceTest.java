@@ -157,10 +157,10 @@ class StaffServiceTest {
         when(staffUserRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         StaffResponse result = staffService.createStaff(
-                new CreateStaffRequest("new@navix.test", "New Person", StaffRole.KYC_APPROVER, "secret123"));
+                new CreateStaffRequest("new@navix.test", "New Person", StaffRole.CREDIT_EXECUTIVE, "secret123"));
 
         assertThat(result.email()).isEqualTo("new@navix.test");
-        assertThat(result.role()).isEqualTo(StaffRole.KYC_APPROVER);
+        assertThat(result.role()).isEqualTo(StaffRole.CREDIT_EXECUTIVE);
         assertThat(result.status()).isEqualTo(StaffStatus.ACTIVE);
         ArgumentCaptor<StaffUser> captor = ArgumentCaptor.forClass(StaffUser.class);
         verify(staffUserRepository).save(captor.capture());

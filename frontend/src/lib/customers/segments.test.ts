@@ -37,6 +37,12 @@ describe("segmentOf", () => {
   it("REJECTED → rejected", () => {
     expect(segmentOf({ loanStatus: null, latestStatus: "REJECTED" })).toBe("rejected");
   });
+
+  // Regression guard: SANCTIONED is a V45 status. Missing from APPROVED_APP it falls through
+  // segmentOf's default and a decided customer silently reads as "pending" in the CRM.
+  it("SANCTIONED → approved, not the pending fallback", () => {
+    expect(segmentOf({ loanStatus: null, latestStatus: "SANCTIONED" })).toBe("approved");
+  });
 });
 
 describe("inSegment / segmentCounts", () => {

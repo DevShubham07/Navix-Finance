@@ -12,19 +12,18 @@ import {
   ReviewLookup,
   StatusQueue,
   CreditQueuePanel,
-  KycActions,
-  KycCreditActions,
-  ReviewActions,
-  ExecActions,
-  HeadActions,
+  CreditDecisionActions,
   DisbursementActions,
-  AccountantActions,
   AppRow,
   errMessage,
   ROLE_LABEL,
   PIPELINE_ROLES,
 } from "@/components/staff/live-pipeline";
 import { RepaymentVerifyQueue } from "@/components/staff/repayment-verify-queue";
+import {
+  CollectionPaymentApprovalQueue,
+  CollectionPaymentValidationQueue,
+} from "@/components/staff/collection-payments";
 import { CollectionAssignActions } from "@/components/staff/pipeline/collection-actions";
 import { DpdBucketsPanel } from "@/components/staff/pipeline/dpd-buckets-panel";
 import { InfoTooltip } from "@/components/ui";
@@ -116,45 +115,23 @@ function RoleQueues({ role }: { role: StaffRole }) {
 
   return (
     <div className="space-y-8">
-      {(showAll || role === "KYC_APPROVER") && (
+      {/* The Credit Head's only lifecycle step (V45): hand a submitted intake to an executive. */}
+      {(showAll || role === "CREDIT_HEAD") && <CreditQueuePanel />}
+
+      {(showAll || role === "CREDIT_HEAD" || role === "CREDIT_EXECUTIVE") && (
         <>
           <StatusQueue
-            title="Applications awaiting KYC clearance"
-            status="KYC_PENDING"
-            actions={(app) => <KycActions app={app} />}
-            info="Fresh customers who have completed onboarding. Review their details and documents, then clear or reject KYC."
-          />
-          {/* Instant-loan credit fast-path: KYC-approved applications the borrower has applied on.
-              Approving routes straight to the Disbursement Head, skipping the credit exec→head
-              maker-checker (deliberate — the limit is a flat 25%-of-salary formula). */}
-          <StatusQueue
-            title="Approve instant loans (credit clearance)"
-            status="KYC_APPROVED"
-            info="KYC-approved applications the borrower has chosen an amount on. Approve to send straight to the Disbursement Head — no separate credit review needed."
-            filter={(app) => app.amountRequestedPaise != null}
-            actions={(app) => <KycCreditActions app={app} />}
+            title="Credit review — accept, reject or park"
+            status="CREDIT_EXEC_PENDING"
+            actions={(app) => <CreditDecisionActions app={app} />}
+            info="Files assigned to a credit executive. Accepting sets the sanctioned amount and repayment date — that decision is final and goes straight to disbursement, so there is no second approval behind it."
           />
           <StatusQueue
-            title="Reborrow reviews — returning borrowers"
-            status="REVIEW_PENDING"
-            actions={(app) => <ReviewActions app={app} />}
-            info="These borrowers had at least one overdue repayment in the past, so each new advance needs a KYC approver's sign-off before it proceeds to disbursement."
-            // The clear/reject decision hinges on past delinquency — keep the loan history inline
-            // on the decision surface (documented AppRow exception).
-            withLoanHistory
+            title="Sanctioned — borrower completing their journey"
+            status="SANCTIONED"
+            info="Credit has decided. The borrower is finishing the post-approval steps; the file reaches the Disbursement Head once they accept the offer."
           />
         </>
-      )}
-
-      {(showAll || role === "CREDIT_HEAD") && (
-        <>
-          <CreditQueuePanel />
-          <StatusQueue title="Credit head decision" status="CREDIT_HEAD_PENDING" actions={(app) => <HeadActions app={app} />} />
-        </>
-      )}
-
-      {(showAll || role === "CREDIT_EXECUTIVE") && (
-        <StatusQueue title="Credit executive review" status="CREDIT_EXEC_PENDING" actions={(app) => <ExecActions app={app} />} />
       )}
 
       {(showAll || role === "DISBURSEMENT_HEAD") && (
@@ -171,28 +148,28 @@ function RoleQueues({ role }: { role: StaffRole }) {
             status="DISBURSEMENT_PENDING"
             filter={(app) => app.fastTrack !== true}
             actions={(app) => <DisbursementActions app={app} />}
-            info="Credit-approved loans awaiting release. Enter the bank/UPI transaction id to release & activate the loan immediately; approve without one to route it to the accountant to confirm the transfer."
+            info="Credit-approved loans awaiting release. Make the transfer, then enter its bank/UPI transaction id here — that releases and activates the loan straight away. There is no accountant step behind you."
           />
           <StatusQueue
             title="Disbursement failed — retry"
             status="DISBURSEMENT_FAILED"
             actions={(app) => <DisbursementActions app={app} />}
-            info="Transfers the accountant marked as failed. Re-release them here once the bank issue is resolved."
+            info="Transfers that were marked failed. Re-release them here once the bank issue is resolved."
           />
         </>
       )}
 
+      {/* The Accountant no longer touches disbursement at all (V48): the Disbursement Head's
+          transaction id IS the validation. What's left is money coming back in — borrower
+          repayments and what collections took in the field. */}
       {(showAll || role === "ACCOUNTANT") && (
         <>
-          <StatusQueue
-            title="Transfers to confirm"
-            status="ACCOUNTANT_PENDING"
-            actions={(app) => <AccountantActions app={app} />}
-            info="Disbursals the Disbursement Head released without a transaction id. Confirm the bank transfer landed to mint & activate the loan, or mark it failed to send it back for retry."
-          />
           <RepaymentVerifyQueue />
+          <CollectionPaymentValidationQueue />
         </>
       )}
+
+      {(showAll || role === "COLLECTION_HEAD") && <CollectionPaymentApprovalQueue />}
 
       {showAwaitingRepayment && <AwaitingRepaymentPanel />}
       {showDpdBuckets && <DpdBucketsPanel />}

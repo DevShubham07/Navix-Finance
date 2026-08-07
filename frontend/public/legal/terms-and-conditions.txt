@@ -1,0 +1,291 @@
+TERMS AND CONDITIONS
+Version: terms-and-conditions@1
+
+PLEASE READ THESE TERMS AND CONDITIONS ("TERMS") CAREFULLY. THESE TERMS CONSTITUTE A LEGALLY BINDING
+AGREEMENT BETWEEN YOU AND DHANBOOST, A BRAND LEGALLY REGISTERED UNDER NAVIX FINANCE PRIVATE LIMITED
+("THE COMPANY") IN JOINT VENTURE WITH FINTECH CLOUD PRIVATE LIMITED.
+
+I have read and agreed to the Terms of Use and hereby appoint Fintech Cloud Loan and its Lending NBFC
+to receive my credit information from credit bureaus, KYC from Government Regulated Database. By
+submitting my details, I override my NDNC registration to authorize Fintech Cloud Loan and its Lending
+NBFC/representatives to contact me through Call, SMS, Email, Whatsapp or any other mode. You may
+collect my address from various data sources for user verification and security purposes. I also
+authorize you to send me promotional offers of financial products or services from time to time.
+
+BY CLICKING "I ACCEPT" OR "I AGREE," OR BY DOWNLOADING, INSTALLING, OR USING THE SERVICES IN ANY
+MANNER, YOU ACKNOWLEDGE THAT YOU HAVE READ, UNDERSTOOD, AND AGREE TO BE BOUND BY THESE TERMS. IF YOU
+DO NOT AGREE TO THESE TERMS, YOU MUST NOT USE, INSTALL, OR ACCESS THE SERVICES.
+
+
+DEFINITIONS
+
+"Web Platform", "Application" or "App" refers to "DhanBoost", the web platform / mobile software
+application developed and maintained by the Company to facilitate access to its Services.
+
+"LENDER" denotes the financial institutions, including banks and non-banking financial companies, that
+partner with the Company to sanction, process, and disburse loans via the Platform.
+
+"Company" or "we" means DhanBoost, a platform managed by Navix Finance Private Limited, incorporated
+under the Companies Act, 2013, and administered by its appointed representatives.
+
+"Customer(s)", "you", or "End-Users" refers to any person who visits, downloads, accesses, or uses the
+Platform or Services.
+
+"Loan" means the credit facility that a Customer may apply for through the Platform, which is
+subsequently sanctioned by the LENDER under mutually agreed terms.
+
+"Loan Agreement" refers to the agreement executed between the Customer and the LENDER for the provision
+of the Loan, in physical or electronic form.
+
+"Outstanding Amount(s)" includes the total of the principal loan, interest, fees, penalties, and other
+charges due to the LENDER.
+
+"Platform" collectively refers to both the mobile Application and the official Website.
+
+"Services" means the facilitation of short-term lending solutions offered by the LENDER through the
+Platform.
+
+"Third Party Platforms" refers to external websites or applications such as Facebook, LinkedIn, or
+other social media or data services.
+
+"User Data" includes all personal or financial information, documents, or materials submitted or
+uploaded by the Customer during or prior to availing the Services.
+
+"Website" refers to www.dhanboost.com, the official web portal managed by the Company for rendering its
+Services.
+
+
+DESCRIPTION OF SERVICES
+
+The Platform enables eligible Customers to apply for credit facilities subject to verification and
+validation of requisite criteria. The Company, acting on behalf of the LENDER, may collect, verify, and
+assess User Data and related documents to process such applications.
+
+By using the Services, you consent to the Company accessing, importing, and processing your data,
+including information sourced from Third Party Platforms, for the purpose of validating your
+credentials. You also acknowledge and agree that updates to your information may be periodically
+fetched from such sources to ensure continued compliance with applicable laws and regulations.
+
+Data obtained from Central KYC Registry, UIDAI, or similar KYC verification systems is used strictly in
+accordance with the Prevention of Money Laundering Act, 2002 and RBI's KYC Master Directions, 2016. You
+hereby provide your informed and voluntary consent authorizing the Company and the LENDER to access,
+store, use, and process such information as required for regulatory or operational purposes.
+
+Loan disbursement shall be made through the method opted by the Customer on the Platform. Customers are
+obliged to repay all Outstanding Amounts to the LENDER on or before the stipulated due dates as
+reflected within the Application.
+
+The Company reserves the right to track the Customer's location during and after the use of the
+Services, including in cases where the Application is uninstalled or discontinued, until all financial
+obligations to the LENDER are fully discharged. Discontinuation of the Platform shall not absolve the
+Customer from repayment responsibilities.
+
+Customers are solely responsible for maintaining the confidentiality and security of their user
+credentials and for any activity conducted under their account. The Company disclaims all liability for
+loss, damages, or claims arising from unauthorized access or misuse of the Services. We reserve the
+right to accept or deny service requests at our sole discretion without obligation to provide reasoning.
+
+The performance of the Platform is contingent on the technical capabilities of the Customer's device and
+network connectivity. It is the Customer's responsibility to ensure that such devices and networks meet
+the minimum requirements for Service usage.
+
+The Company and its Lenders adhere to the RBI's Fair Practices Code and Digital Lending Guidelines,
+including disclosure of the Key Fact Statement (KFS), loan terms, interest rates, and recovery practices.
+
+By accepting these Terms, you authorize the Company to access, track, and process your Personal
+Information and User Data for identity authentication, creditworthiness evaluation, and operational
+continuity.
+
+These Terms govern platform usage and do not replace the Loan Agreement executed between the Customer
+and the Lender, which shall prevail in the event of any conflict between the two documents.
+
+
+CONSENT FOR COMMUNICATION
+
+You hereby expressly consent to and authorize the Company, its representatives, affiliates, or
+LENDING/NBFC partners, including employees or agents, to contact you via phone calls, SMS, or other
+communication modes to share transaction-related updates, promotional offers, and product information.
+
+
+REGULATIONS
+
+By using the Platform and Services, you agree not to:
+
+- Engage in any fraudulent activities, embezzlement, money laundering, or unlawful conduct of any nature.
+- Reproduce, duplicate, copy, sell, resell, or otherwise exploit any portion of the Platform without
+  proper authorization.
+- Upload, post, email, transmit, or make available any content that is unlawful, harmful, threatening,
+  abusive, harassing, defamatory, vulgar, obscene, libelous, invasive of another's privacy, hateful, or
+  otherwise objectionable based on race, ethnicity, or other discriminatory grounds.
+- Use the Platform to cause harm or injury to any third party.
+- Impersonate any individual or entity while using the Platform.
+- Forge headers or manipulate identifiers to obscure the origin of any content transmitted through the
+  Platform.
+- Upload, post, email, transmit, or otherwise make available any content that you do not have the legal
+  right to disseminate under applicable laws or contractual or fiduciary obligations.
+- Upload, post, email, transmit, or otherwise make available any content that infringes upon the
+  intellectual property rights of any party.
+- Upload, post, email, transmit, or otherwise make available any unsolicited or unauthorized advertising,
+  promotional materials, "junk mail", "spam", "chain letters", "pyramid schemes", or any other form of
+  solicitation.
+- Upload, post, email, transmit, or otherwise make available any material containing software viruses or
+  any other computer code, files, or programs designed to disrupt, damage, or limit the functionality of
+  any computer software, hardware, or telecommunications equipment.
+- Disrupt the normal flow of communication or otherwise act in a manner that negatively affects other
+  users' ability to engage in real-time interactions.
+- Interfere with or disrupt the operation of the Platform or servers or networks connected to the Platform.
+- Intentionally or unintentionally violate any applicable local, state, national, or international laws,
+  regulations, or ordinances with the force of law.
+
+
+CONTENT AVAILABLE
+
+You acknowledge that the Company makes no representations or warranties about the material, data, and
+information, such as data files, text, facts and figures, computer software, code, audio files or other
+sounds, photographs, videos, or other images (collectively, the "Content") which you may have access to
+as part of the Services, or through your use of the Platform. Under no circumstances shall the Company be
+liable in any way for any Content, including, but not limited to any infringing Content, any errors or
+omissions in Content, or for any loss or damage of any kind incurred as a result of the use of any
+Content posted, transmitted, linked from, or otherwise accessible through or made available via the
+Platform. The Content on the Platform should not be regarded as an offer, solicitation, invitation,
+advice or recommendation to buy or sell investments, securities or any other instrument or financial
+products.
+
+
+PROPRIETARY RIGHTS OF THE COMPANY
+
+You understand, acknowledge and agree that the Company is the sole owner of all rights, title and
+interest, including any and all intellectual property rights in the Content, Platform, Services, logos,
+trade names, brand names, designs and any necessary software used in connection with the Platform.
+
+There may be proprietary logos, service marks and trademarks found on the Platform whether owned/used by
+the Company or otherwise. By displaying them on the Platform, the Company is not granting you any license
+to utilize the proprietary logos, service marks, or trademarks. Any unauthorized use of the same may
+violate applicable intellectual property laws.
+
+You understand and acknowledge that the Platform is owned by the Company. Nothing under these Terms shall
+be deemed to be a transfer in ownership, rights, title, from the Company to you or any third party, in
+the Platform. You are entitled to avail the Services offered by the Company during the validity of your
+registration with the Company.
+
+
+USE OF THIRD-PARTY APIS / PLATFORMS
+
+Our services may incorporate or rely on data obtained through third-party Application Programming
+Interfaces ("APIs"). These third-party APIs are used to enhance functionality and provide up-to-date
+information. By using our services, you acknowledge and agree that such data is subject to the
+availability, accuracy, and terms of service of the respective third-party providers. We do not guarantee
+the uninterrupted availability or accuracy of data sourced from these external APIs and shall not be held
+liable for any errors, omissions, or delays in the content provided by such third parties. The list of
+APIs / Platforms are as follows:
+
+- Surepass
+- Novel Pattern
+- Credgenics
+
+
+TERMINATION
+
+The Company reserves its rights to terminate these Terms in the event:
+
+- You breach any provision of these Terms;
+- the Company is required to do so under law;
+- the Company chooses to discontinue the Services being offered or discontinue to operate the Platform;
+- the license granted to use the App expires;
+- of non-payment of Outstanding Amount(s).
+
+The Company reserves its right to track you, even when you have uninstalled the App or even after
+termination of these Terms, until all your obligations, including but not limited to payment of the
+Outstanding Amount(s) is in subsistence.
+
+Upon termination of these Terms, the rights and licenses granted to you under these Terms shall cease to
+exist, and you must forthwith stop using the Platform and the Services and repay the Outstanding
+Amount(s). Notwithstanding anything contained in these Terms or otherwise, the termination of these Terms
+for any reason whatsoever, shall not affect your obligations, including but not limited to repayment of
+the Outstanding Amount(s).
+
+
+INDEMNITY
+
+You agree to indemnify and hold the Company, and its subsidiaries, affiliates, officers, agents,
+co-branders or other partners, and employees, harmless from any claim or demand, including attorneys'
+fees, made by any third party due to or arising out of (i) your violation of these Terms; (ii) your
+violation of any rights of other users of the Platform; (iii) your use or misuse of the Platform or the
+Services; (iv) your violation of applicable laws.
+
+
+LIMITATIONS OF LIABILITY
+
+You expressly understand and agree that the Company, including its directors, officers, employees,
+representatives or the service provider, shall not be liable for any direct, indirect, incidental,
+special, consequential or exemplary damages, including but not limited to, damages for loss of profits,
+goodwill, use, data or other intangible losses (even if the Company has been advised of the possibility
+of such damages), resulting from:
+
+- Use or the inability to avail the Services
+- inability to use the Platform
+- failure or delay in providing the Services or access to the Platform
+- any performance or non-performance by the Company
+- any damages to or viruses that may infect your electronic devices or other property as the result of
+  your access to the Platform or your downloading of any content from the Platform
+- server failure or otherwise or in any way relating to the Services
+
+
+FORCE MAJEURE
+
+Notwithstanding anything to the contrary herein, the Company shall not be held liable for any loss,
+damage, or unavailability of the Platform or Services arising from any failure or deficiency in
+performance, whether in whole or in part, caused directly or indirectly by events, circumstances, or
+conditions beyond the reasonable control of the Company. Such events include, but are not limited to,
+acts of God, natural disasters, internet outages, failures of computer or telecommunication systems,
+changes in applicable laws or regulations (including those issued by the Reserve Bank of India), power
+outages, government actions, civil unrest, riots, or other force majeure events.
+
+
+YOUR RIGHTS
+
+As a user, you are entitled to the following rights regarding your personal data and how it is handled:
+
+Access and Update Your Personal Information — You have the right to request access to the personal
+information we hold about you. This includes the right to view, verify, and request corrections or
+updates to ensure your information remains accurate and up to date.
+
+Withdraw Consent for Data Collection and Usage — You may withdraw your consent for us to collect, use, or
+process your personal data at any time. Upon receiving such a request, we will cease processing your data
+unless we are legally required or permitted to retain it for specific purposes.
+
+Opt Out of Marketing Communications — You have the right to opt out of receiving promotional or marketing
+communications from us at any time. This can typically be done by following the unsubscribe link provided
+in our emails or by contacting our support team directly. Please note that you may still receive
+important service-related communications even after opting out of marketing messages.
+
+
+CHANGES TO TERMS
+
+The Company reserves the right to modify, change, substitute, remove, suspend or update these Terms or
+any information thereof at any time by posting the updated Terms on the Platform. Such changes shall be
+effective immediately upon such posting. Continued use of the Services or the Platform, subsequent to
+making the changes, shall be deemed to be your acceptance of the revised Terms.
+
+
+DISCLOSURE
+
+The Grievance Redressal Officer as required under the Consumer Protection Act, 2019 is Lalit Kumar.
+
+  Name:           Lalit Kumar
+  Contact Number: 9716760246
+  Email ID:       grievance@dhanboost.com
+
+
+CONTACT INFORMATION
+
+Please report any concern to the below address:
+
+  Registered Office (NBFC): NAVIX FINANCE PRIVATE LIMITED
+  Address: Plot No 268, First Floor, Sector 33, Subhash Chowk, Islampur, Gurgaon, Haryana 122001
+
+  For General Queries:     info@dhanboost.com
+  For Existing Customers:  support@dhanboost.com
+  Phone:                   8510028510
+
+  Customer Support Hours:  09:00 AM to 05:30 PM (Monday to Saturday)

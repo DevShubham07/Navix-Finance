@@ -63,7 +63,7 @@ export function AppHeader() {
               <Link href="/login" className="btn btn-outline btn-sm">
                 Sign in
               </Link>
-              <Link href="/signup/mobile-otp" className="btn btn-gold btn-sm">
+              <Link href="/signup/start" className="btn btn-gold btn-sm">
                 Apply Now
               </Link>
             </div>

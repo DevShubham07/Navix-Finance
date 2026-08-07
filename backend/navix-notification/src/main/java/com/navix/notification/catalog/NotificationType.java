@@ -17,7 +17,7 @@ import static com.navix.notification.catalog.RecipientPolicy.TO_COLLECTION_EXECU
 import static com.navix.notification.catalog.RecipientPolicy.TO_COLLECTION_HEADS;
 import static com.navix.notification.catalog.RecipientPolicy.TO_CREDIT_HEADS;
 import static com.navix.notification.catalog.RecipientPolicy.TO_DISBURSEMENT_HEADS;
-import static com.navix.notification.catalog.RecipientPolicy.TO_KYC_APPROVERS;
+import static com.navix.notification.catalog.RecipientPolicy.TO_CREDIT_TEAM;
 import static com.navix.notification.catalog.RecipientPolicy.TO_STAFF_SUBJECT;
 
 import com.navix.common.notification.NotificationCategory;
@@ -34,12 +34,14 @@ import java.util.Set;
 public enum NotificationType {
 
     // ---- KYC ----
-    KYC_SUBMITTED(KYC, Set.of(IN_APP), Set.of(TO_KYC_APPROVERS)),
+    KYC_SUBMITTED(KYC, Set.of(IN_APP), Set.of(TO_CREDIT_TEAM)),
     KYC_APPROVED(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     KYC_REJECTED(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     KYC_REMINDER(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     REBORROW_PREAPPROVED(KYC, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
-    REBORROW_REVIEW_PENDING(KYC, Set.of(IN_APP), Set.of(TO_KYC_APPROVERS, TO_BORROWER)),
+    /** @deprecated The manual reborrow review was retired in V45 (decision 29). Historical rows only. */
+    @Deprecated
+    REBORROW_REVIEW_PENDING(KYC, Set.of(IN_APP), Set.of(TO_CREDIT_TEAM, TO_BORROWER)),
     REBORROW_REVIEW_APPROVED(KYC, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
     REBORROW_REVIEW_REJECTED(KYC, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
 
@@ -49,9 +51,13 @@ public enum NotificationType {
     CREDIT_RECOMMENDED(CREDIT, Set.of(IN_APP), Set.of(TO_CREDIT_HEADS)),
     CREDIT_APPROVED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER, TO_DISBURSEMENT_HEADS)),
     CREDIT_REJECTED(CREDIT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    /** The Credit Executive's final sanction (V45) — the borrower's offer is ready to accept. */
+    LOAN_SANCTIONED(CREDIT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
 
     // ---- DISBURSEMENT ----
     LOAN_APPLIED_FAST_TRACK(DISBURSEMENT, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS, TO_BORROWER)),
+    /** @deprecated The accountant disbursement hop was retired in V48; historical rows only. */
+    @Deprecated
     DISBURSEMENT_PENDING_ACCOUNTANT(DISBURSEMENT, Set.of(IN_APP), Set.of(TO_ACCOUNTANTS)),
     DISBURSEMENT_FAILED(DISBURSEMENT, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS)),
     DISBURSEMENT_REJECTED(DISBURSEMENT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
@@ -71,6 +77,14 @@ public enum NotificationType {
     SETTLEMENT_PROPOSED(COLLECTIONS, Set.of(IN_APP), Set.of(TO_COLLECTION_HEADS)),
     SETTLEMENT_APPROVED(COLLECTIONS, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
     SETTLEMENT_REJECTED(COLLECTIONS, Set.of(IN_APP), Set.of(TO_STAFF_SUBJECT)),
+    // A collections payment awaits its checker (V47): the Collection Head for a settlement, the
+    // Accountant for everything else. Two types, because they are two different desks.
+    COLLECTION_PAYMENT_TO_APPROVE(COLLECTIONS, Set.of(IN_APP), Set.of(TO_COLLECTION_HEADS)),
+    COLLECTION_PAYMENT_TO_VALIDATE(COLLECTIONS, Set.of(IN_APP), Set.of(TO_ACCOUNTANTS)),
+    // The Accountant decided — back to the officer who took the payment AND the Head who owns the
+    // case (decision 44), so a rejection can't sit unseen in one person's inbox.
+    COLLECTION_PAYMENT_VALIDATED(COLLECTIONS, Set.of(IN_APP), Set.of(TO_STAFF_SUBJECT, TO_COLLECTION_HEADS)),
+    COLLECTION_PAYMENT_REJECTED(COLLECTIONS, Set.of(IN_APP), Set.of(TO_STAFF_SUBJECT, TO_COLLECTION_HEADS)),
 
     // ---- SYSTEM ----
     APPLICATION_CANCELLED(SYSTEM, Set.of(IN_APP), Set.of(TO_BORROWER)),

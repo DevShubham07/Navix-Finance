@@ -4,6 +4,8 @@ import com.navix.common.notification.ContactInfo;
 import com.navix.common.notification.RecipientType;
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.notification.event.CollectionCaseOpenedEvent;
+import com.navix.common.notification.event.CollectionPaymentDecidedEvent;
+import com.navix.common.notification.event.CollectionPaymentRaisedEvent;
 import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
@@ -169,6 +171,47 @@ public class NotificationEventListener {
                 .build());
     }
 
+    /**
+     * A collections payment was recorded (or the Head released a settlement one) — nudge whichever
+     * desk it is now waiting on (V47; revamp.md decision 43).
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onCollectionPaymentRaised(CollectionPaymentRaisedEvent e) {
+        dispatcher.dispatch(
+                e.awaitingHead()
+                        ? NotificationType.COLLECTION_PAYMENT_TO_APPROVE
+                        : NotificationType.COLLECTION_PAYMENT_TO_VALIDATE,
+                NotificationContext.builder()
+                        .customerId(e.customerId())
+                        .loanId(e.loanId())
+                        .caseId(e.caseId())
+                        .put("paymentAmount", NotificationFormat.inr(e.amountPaise()))
+                        .put("paymentKind", e.kind().toLowerCase().replace('_', ' '))
+                        .build());
+    }
+
+    /**
+     * The Accountant validated or rejected a collections payment — tell the officer who took it
+     * (the staff subject) and the Collection Head who owns the case (decision 44).
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onCollectionPaymentDecided(CollectionPaymentDecidedEvent e) {
+        dispatcher.dispatch(
+                e.validated()
+                        ? NotificationType.COLLECTION_PAYMENT_VALIDATED
+                        : NotificationType.COLLECTION_PAYMENT_REJECTED,
+                NotificationContext.builder()
+                        .staffSubjectId(e.raisedBy())
+                        .customerId(e.customerId())
+                        .loanId(e.loanId())
+                        .caseId(e.caseId())
+                        .put("paymentAmount", NotificationFormat.inr(e.amountPaise()))
+                        .put("remarks", e.remarks() != null ? e.remarks() : "no reason given")
+                        .build());
+    }
+
     /** A referral qualified at disbursement — nudge the Disbursement Heads to settle the two payouts. */
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -220,20 +263,27 @@ public class NotificationEventListener {
             case "APPLY_FAST_TRACK" -> NotificationType.LOAN_APPLIED_FAST_TRACK;
             case "ASSIGN" -> NotificationType.CREDIT_ASSIGNED;
             case "EXEC_APPROVE" -> NotificationType.CREDIT_RECOMMENDED;
-            case "EXEC_REJECT", "HEAD_REJECT", "KYC_CREDIT_REJECT" -> NotificationType.CREDIT_REJECTED;
-            case "HEAD_APPROVE", "KYC_CREDIT_APPROVE" -> NotificationType.CREDIT_APPROVED;
-            case "DISB_ACCEPT", "RETRY" -> NotificationType.DISBURSEMENT_PENDING_ACCOUNTANT;
+            // "Reject lead" reaches the borrower with NO reason given (revamp.md decision 31) — the
+            // executive's remarks stay in the staff-only rejection register.
+            case "EXEC_REJECT", "HEAD_REJECT", "REJECT_LEAD" -> NotificationType.CREDIT_REJECTED;
+            case "HEAD_APPROVE" -> NotificationType.CREDIT_APPROVED;
+            case "SANCTION" -> NotificationType.LOAN_SANCTIONED;
+            case "ACCEPT_OFFER" -> NotificationType.LOAN_APPLIED_FAST_TRACK;
+            // DISB_ACCEPT / VALIDATE_FAIL were the accountant hop, retired in V48 — no live action
+            // emits them. RETRY is deliberately silent: it returns the file to the Disbursement
+            // Head, who is the person who just clicked retry.
             case "DISB_REJECT" -> NotificationType.DISBURSEMENT_REJECTED;
-            case "VALIDATE_FAIL" -> NotificationType.DISBURSEMENT_FAILED;
             case "ACTIVATE" -> NotificationType.LOAN_DISBURSED;
             case "REPAID" -> NotificationType.LOAN_CLOSED;
             case "CANCEL" -> NotificationType.APPLICATION_CANCELLED;
             case "REVIEW_APPROVE" -> NotificationType.REBORROW_REVIEW_APPROVED;
             case "REVIEW_REJECT" -> NotificationType.REBORROW_REVIEW_REJECTED;
+            // Since V45 the delinquent fork auto-rejects rather than queuing a manual review.
             case "REBORROW" -> "PRE_APPROVED".equals(e.toStatus())
                     ? NotificationType.REBORROW_PREAPPROVED
-                    : NotificationType.REBORROW_REVIEW_PENDING;
-            default -> null; // CREATE, AUTO_ROUTE, VALIDATE_SUCCESS
+                    : NotificationType.CREDIT_REJECTED;
+            // MARK_PENDING is deliberately silent: a staff-only tag the borrower never sees (decision 30).
+            default -> null; // CREATE, AUTO_ROUTE, VALIDATE_SUCCESS, MARK_PENDING
         };
     }
 }

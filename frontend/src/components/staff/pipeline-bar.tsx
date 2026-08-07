@@ -34,9 +34,9 @@ const STAGE_INFO: Record<JourneyStageKey, string> = {
   STARTED:
     "New applications the borrower is still completing before submitting them for KYC.",
   KYC:
-    "Identity (PAN/Aadhaar) and documents awaiting a KYC Approver, plus returning borrowers flagged for a past overdue.",
+    "Identity (PAN/Aadhaar) and documents on submitted intakes, awaiting a credit review.",
   CREDIT_REVIEW:
-    "Applications being assessed by the Credit Executive (recommend) and Credit Head (final approve, SoD-checked).",
+    "Leads assigned by the Credit Head and being decided by a Credit Executive, whose sanction is final.",
   DISBURSEMENT:
     "Approved loans waiting to be released by the Disbursement Head, then confirmed by the Accountant.",
   ACTIVE_REPAYMENT:
@@ -53,9 +53,9 @@ const TERMINAL_STAGES: ReadonlySet<JourneyStageKey> = new Set(["CLOSED"]);
  * queue) sees all at full opacity too (nothing to emphasise).
  */
 const ROLE_STAGES: Partial<Record<StaffRole, JourneyStageKey[]>> = {
-  KYC_APPROVER: ["KYC"],
-  CREDIT_EXECUTIVE: ["CREDIT_REVIEW"],
-  CREDIT_HEAD: ["CREDIT_REVIEW"],
+  // The credit roles absorbed KYC in V45, so their span covers both stages.
+  CREDIT_EXECUTIVE: ["KYC", "CREDIT_REVIEW"],
+  CREDIT_HEAD: ["KYC", "CREDIT_REVIEW"],
   DISBURSEMENT_HEAD: ["DISBURSEMENT"],
   ACCOUNTANT: ["DISBURSEMENT"],
   COLLECTION_HEAD: ["ACTIVE_REPAYMENT"],

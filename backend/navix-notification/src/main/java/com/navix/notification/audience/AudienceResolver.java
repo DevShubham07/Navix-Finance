@@ -50,7 +50,11 @@ public class AudienceResolver {
             case TO_STAFF_SUBJECT -> ctx.explicitStaffSubject() != null
                     ? List.of(ctx.explicitStaffSubject())
                     : staffOne(ctx.staffSubjectId());
-            case TO_KYC_APPROVERS -> staff.contactsByRole("KYC_APPROVER");
+            case TO_CREDIT_TEAM -> {
+                List<ContactInfo> team = new ArrayList<>(staff.contactsByRole("CREDIT_HEAD"));
+                team.addAll(staff.contactsByRole("CREDIT_EXECUTIVE"));
+                yield team;
+            }
             case TO_CREDIT_HEADS -> staff.contactsByRole("CREDIT_HEAD");
             case TO_CREDIT_EXECUTIVES -> staff.contactsByRole("CREDIT_EXECUTIVE");
             case TO_DISBURSEMENT_HEADS -> staff.contactsByRole("DISBURSEMENT_HEAD");

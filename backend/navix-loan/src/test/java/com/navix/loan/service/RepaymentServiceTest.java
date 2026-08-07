@@ -70,6 +70,41 @@ class RepaymentServiceTest {
         return loan;
     }
 
+    /**
+     * A borrower may only pay down their own loan. Without the guard, borrower A could post a
+     * payment onto borrower B's loan and the only thing between it and a real balance reduction was
+     * an accountant not noticing.
+     */
+    @Test
+    void aBorrowerCannotRecordAPaymentOnSomeoneElsesLoan() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan())); // owned by customer 7
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor("99", "Someone Else", "BORROWER"));
+        try {
+            assertThatThrownBy(() -> repaymentService.recordPayment(
+                    1L, 500_000L, PaymentMethod.UPI, "TXN-X", null, DUE))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("your own loan");
+        } finally {
+            com.navix.common.security.ActorContext.clear();
+        }
+    }
+
+    @Test
+    void theOwningBorrowerCanRecordTheirOwnPayment() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan())); // customer 7
+        when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(0L);
+        when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor("7", "Asha", "BORROWER"));
+        try {
+            assertThat(repaymentService.recordPayment(1L, 500_000L, PaymentMethod.UPI, "TXN-OK", null, DUE)
+                    .getStatus()).isEqualTo(PaymentStatus.PENDING_VERIFICATION);
+        } finally {
+            com.navix.common.security.ActorContext.clear();
+        }
+    }
+
     @Test
     void recordsPendingPartialPayment() {
         when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));

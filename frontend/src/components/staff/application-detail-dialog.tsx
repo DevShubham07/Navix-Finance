@@ -44,16 +44,13 @@ import {
   type LoanView,
   type OutstandingView,
   type VerificationProgress,
+  type EventView,
 } from "@/lib/api/applications";
 import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import {
-  KycActions,
-  ReviewActions,
   AssignActions,
-  ExecActions,
-  HeadActions,
+  CreditDecisionActions,
   DisbursementActions,
-  AccountantActions,
   NoAccessNotice,
 } from "@/components/staff/live-pipeline";
 
@@ -75,9 +72,9 @@ const ROLE_FOCUS: Record<StaffRole, Array<"disbursement" | "collections" | "cred
   ACCOUNTANT: ["disbursement", "collections"],
   COLLECTION_HEAD: ["collections"],
   COLLECTION_EXECUTIVE: ["collections"],
-  CREDIT_HEAD: ["credit"],
-  CREDIT_EXECUTIVE: ["credit"],
-  KYC_APPROVER: ["kyc", "credit"],
+  // The credit roles absorbed KYC (V45), so they see both cards.
+  CREDIT_HEAD: ["kyc", "credit"],
+  CREDIT_EXECUTIVE: ["kyc", "credit"],
   // Telecaller has no lifecycle stage — no focus card.
   TELECALLER: [],
   // Oversight roles see everything.
@@ -89,20 +86,16 @@ const ROLE_FOCUS: Record<StaffRole, Array<"disbursement" | "collections" | "cred
 function actionFor(app: ApplicationView): React.ReactNode {
   switch (app.status) {
     case "KYC_PENDING":
-      return <KycActions app={app} />;
-    case "REVIEW_PENDING":
-      return <ReviewActions app={app} />;
     case "KYC_APPROVED":
-      return app.amountRequestedPaise != null ? <AssignActions app={app} /> : null;
+      // V45: a submitted intake is assigned by the Credit Head, not KYC-approved first.
+      return <AssignActions app={app} />;
     case "CREDIT_EXEC_PENDING":
-      return <ExecActions app={app} />;
-    case "CREDIT_HEAD_PENDING":
-      return <HeadActions app={app} />;
+      return <CreditDecisionActions app={app} />;
     case "DISBURSEMENT_PENDING":
     case "DISBURSEMENT_FAILED":
       return <DisbursementActions app={app} />;
-    case "ACCOUNTANT_PENDING":
-      return <AccountantActions app={app} />;
+    // ACCOUNTANT_PENDING deliberately has no action: the hop was retired in V48 and V48's migration
+    // moved every live row out of it. A historical row opens read-only.
     default:
       return null;
   }
@@ -176,10 +169,11 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
 
   return (
     <>
-      {/* !max-w-5xl / !w-[...]: globals.css's un-layered `.modal { max-width: 460px }` outranks
-          plain utilities in the cascade (mirrors customer-detail-dialog.tsx). Wider than the
-          customer dialog because this one carries the journey stepper. */}
-      <Dialog open={open} onClose={onClose} className="!max-w-5xl !w-[min(72rem,96vw)]">
+      {/* !max-w / !w: globals.css's un-layered `.modal { max-width: 460px }` outranks plain
+          utilities in the cascade (mirrors customer-detail-dialog.tsx). 80vw since V45 — the
+          credit decision is now made off this one surface, so it carries the whole file. Type
+          size is deliberately unchanged; emphasis comes from the KV weights, not scaling. */}
+      <Dialog open={open} onClose={onClose} className="!max-w-[80vw] !w-[80vw]">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-3">
           <div className="min-w-0">
             <h3 className="font-serif text-lg text-navy">
@@ -216,7 +210,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
 
         <Tabs tabs={tabs} active={tab} onChange={setTab} className="mt-2" />
 
-        <div className="mt-3 max-h-[68vh] overflow-y-auto pr-1 text-[13px]">
+        <div className="mt-3 max-h-[80vh] overflow-y-auto pr-1 text-[13px]">
           {appQ.isLoading ? (
             <p className="flex items-center gap-2 py-8 text-sm text-muted">
               <Loader2 size={15} className="animate-spin" /> Loading…
@@ -229,7 +223,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
             <>
               {tab === "basic" &&
                 (canReview ? (
-                  <OverviewTab app={app} p={p} role={role} loading={profileQ.isLoading} />
+                  <OverviewTab app={app} p={p} role={role} loading={profileQ.isLoading} events={events} />
                 ) : (
                   <NoAccessNotice message="Customer details (incl. PII) aren't available to your role." />
                 ))}
@@ -293,11 +287,13 @@ function OverviewTab({
   p,
   role,
   loading,
+  events,
 }: {
   app: ApplicationView;
   p: ProfileView | undefined;
   role: StaffRole | undefined;
   loading: boolean;
+  events: EventView[];
 }) {
   if (loading && !p) {
     return <p className="py-6 text-sm text-muted">Loading…</p>;
@@ -308,10 +304,42 @@ function OverviewTab({
   return (
     <div className="space-y-4">
       <BorrowerStrip app={app} p={p} />
+      <WaitTime app={app} events={events} />
       {focus.includes("kyc") && <KycFocus applicationId={app.id} p={p} />}
       {focus.includes("credit") && <CreditFocus app={app} p={p} />}
       {focus.includes("disbursement") && <DisbursementFocus app={app} p={p} />}
       {focus.includes("collections") && <CollectionsFocus app={app} />}
+      <ReferencesFocus applicationId={app.id} />
+    </div>
+  );
+}
+
+/**
+ * How long this borrower has been waiting — total since they submitted, and how long the file has
+ * sat at its current stage. Read off the event trail rather than stored, so it can never drift.
+ *
+ * The "pending" tag lives here too: it explains a stalled clock, so it belongs beside it rather
+ * than buried in Remarks.
+ */
+function WaitTime({ app, events }: { app: ApplicationView; events: EventView[] }) {
+  const submitted = events.find((e) => e.action === "SUBMIT_KYC") ?? events[0];
+  const stageEntered = [...events].reverse().find((e) => e.toStatus === app.status);
+  const since = (iso: string | undefined) => {
+    if (!iso) return null;
+    const hours = (Date.now() - new Date(iso).getTime()) / 3_600_000;
+    if (hours < 1) return "under an hour";
+    if (hours < 48) return `${Math.round(hours)} hours`;
+    return `${Math.round(hours / 24)} days`;
+  };
+
+  return (
+    <div className="grid gap-x-6 gap-y-1 rounded border border-line p-4 sm:grid-cols-3">
+      <KV k="Waiting since submission" v={since(submitted?.at)} />
+      <KV k="At this stage for" v={since(stageEntered?.at)} />
+      <KV
+        k="Marked pending"
+        v={app.markedPendingAt ? app.pendingReason || "yes" : null}
+      />
     </div>
   );
 }
@@ -372,16 +400,57 @@ function FocusCard({ icon: Icon, title, children }: {
   );
 }
 
+// ---- References (every role) -----------------------------------------------
+
+const RELATION_LABEL: Record<string, string> = {
+  PARENT: "Parent", SPOUSE: "Spouse", SIBLING: "Sibling", RELATIVE: "Relative",
+  FRIEND: "Friend", COLLEAGUE: "Colleague", MANAGER: "Manager", NEIGHBOUR: "Neighbour",
+};
+
+/**
+ * The two contacts the borrower named in the offer journey (V46). Shown to every role rather than
+ * scoped to collections: credit reads them as part of the file, and collections is simply the role
+ * that eventually calls them. Renders nothing before the borrower reaches that screen.
+ */
+function ReferencesFocus({ applicationId }: { applicationId: number }) {
+  const q = useQuery({
+    queryKey: ["staff-references", applicationId],
+    queryFn: () => staffApi.references(applicationId),
+    retry: false,
+  });
+  const rows = q.data ?? [];
+  if (rows.length === 0) return null;
+
+  return (
+    <FocusCard icon={PhoneCall} title="References">
+      <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+        {rows.map((r) => (
+          <KV
+            key={r.slot}
+            k={`${RELATION_LABEL[r.relation] ?? r.relation} · ${r.fullName}`}
+            v={r.mobile}
+            mono
+          />
+        ))}
+      </dl>
+    </FocusCard>
+  );
+}
+
 // ---- Disbursement (DISBURSEMENT_HEAD, ACCOUNTANT, ADMIN) -------------------
 
 /**
- * What the release roles decide on: the exact amount to transfer and whether the payout gate
- * (penny-drop + name-at-bank match) is clear.
+ * What the release roles decide on: the exact amount to transfer, the account it goes to, and
+ * whether that account was externally verified.
  *
- * NOTE: the borrower's account number / IFSC are deliberately NOT shown because the backend never
- * persists them — `ApplicationVerificationService.verifyPennyDrop` passes them to the provider and
- * keeps only the bank name, `accountExists` and the name-match score. Showing the verified bank +
- * gate status is the honest maximum until a masked account number is stored.
+ * <p>The account number and IFSC are shown in full — the Disbursement Head cannot make a transfer
+ * without them, and V46 persists them for exactly that reason (revamp.md decision 16). Never log
+ * them and never put them in an export.
+ *
+ * <p>The penny-drop line reads three ways on purpose. A borrower who kept their salary account is
+ * never penny-dropped at all (decision 9), which is NOT the same as one who failed a check — and
+ * the release desk is the last human who can catch a wrong account number, so the difference has to
+ * be legible rather than collapsed into a green tick.
  */
 function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefined }) {
   const hasLoan = app.loanId != null;
@@ -398,7 +467,13 @@ function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | 
   const fee = loan?.processingFeePaise ?? (principal != null ? Math.round(principal * 0.1) : null);
   const gst = loan?.gstPaise ?? (fee != null ? Math.round(fee * 0.18) : null);
   const net = loan?.netDisbursedPaise ?? (principal != null && fee != null && gst != null ? principal - fee - gst : null);
-  const gateClear = p?.pennyDropVerified === true;
+
+  // The account the borrower confirmed on the last offer screen, falling back to the salary
+  // account on file for applications that predate V46.
+  const account = app.disbursalAccountNumber ?? p?.salaryAccountNumber ?? null;
+  const ifsc = app.disbursalIfsc ?? p?.salaryIfsc ?? null;
+  const changed = app.disbursalAccountChanged === true;
+  const dropVerified = app.disbursalAccountVerified === true || p?.pennyDropVerified === true;
 
   return (
     <FocusCard icon={Banknote} title="Disbursement">
@@ -412,14 +487,21 @@ function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | 
         }
       />
       <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-        <KV k="Bank" v={p?.salaryBank} />
+        <KV k="Account number" v={account} mono />
+        <KV k="IFSC" v={ifsc} mono />
+        <KV k="Account holder" v={app.disbursalHolderName ?? p?.fullName} />
+        <KV k="Bank" v={app.disbursalBank ?? p?.salaryBank} />
         <KV
-          k="Payout gate (penny drop)"
+          k="Penny drop"
           v={
-            gateClear ? (
+            dropVerified ? (
               <span className="font-semibold text-success-700">Verified</span>
-            ) : (
+            ) : changed ? (
               <span className="font-semibold text-warning-800">Not verified — needs review</span>
+            ) : (
+              <span className="font-semibold text-warning-800">
+                Not run — borrower kept their salary account
+              </span>
             )
           }
         />
@@ -427,21 +509,18 @@ function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | 
           k="Name match at bank"
           v={p?.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null}
         />
-        <KV k="Account holder" v={p?.fullName} />
         <KV k="Transaction ref" v={loan?.disbursalTxnRef} mono />
         <KV k="Disbursed on" v={loan?.disbursedOn ? formatDate(loan.disbursedOn) : null} />
         <KV k="Repayment due" v={loan?.dueDate ? formatDate(loan.dueDate) : null} />
         <KV k="Total repayable" v={loan ? paiseToINR(loan.totalRepayablePaise) : null} />
       </dl>
-      {!gateClear && (
+      {!dropVerified && (
         <p className="mt-3 rounded border border-warning-100 bg-warning-50 px-3 py-2 text-xs text-warning-800">
-          The penny-drop check has not passed. Confirm the account before releasing funds.
+          {changed
+            ? "The penny-drop check has not passed on this account. Confirm it before releasing funds."
+            : "This account was never penny-dropped — the borrower kept the salary account they typed at intake. Check the number against their payslips before releasing funds."}
         </p>
       )}
-      <p className="mt-2 text-[11px] text-muted">
-        Account number and IFSC are not stored after the penny-drop check — only the verified bank
-        and the name-match result are retained.
-      </p>
     </FocusCard>
   );
 }
@@ -566,15 +645,14 @@ function CollectionsFocus({ app }: { app: ApplicationView }) {
   );
 }
 
-// ---- Credit (CREDIT_HEAD/EXECUTIVE, KYC_APPROVER, ADMIN) -------------------
+// ---- Credit (CREDIT_HEAD/EXECUTIVE, ADMIN) ---------------------------------
 
 /**
  * What the credit roles decide on: the bureau headline against the limit and the ask.
  *
- * The ask only exists once the borrower has applied (post KYC-approval), so before that the
- * headline falls back to the eligible limit and says so — this card also renders for the
- * KYC_APPROVER (who holds `loan:approve` in the instant-loan model), where the application is
- * still pre-apply and an "amount requested" would be a lie.
+ * Since Phase 1 the borrower never names an amount — the Credit Executive sets the sanctioned
+ * figure — so `amountRequestedPaise` is null right up to the sanction and the headline falls back
+ * to the salary-derived eligible limit, labelled as guidance rather than a cap (decision 33).
  */
 function CreditFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefined }) {
   const limit = app.eligibleLimitPaise;
@@ -591,7 +669,7 @@ function CreditFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefi
           caption={
             limit != null ? (
               <>
-                against an eligible limit of {paiseToINR(limit)} (25% of salary)
+                against an approved limit of {paiseToINR(limit)}
                 {withinLimit === false && (
                   <span className="ml-1 font-semibold text-error-700">— over limit</span>
                 )}
@@ -603,9 +681,9 @@ function CreditFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefi
         />
       ) : (
         <Headline
-          label="Eligible limit"
+          label="Indicative limit"
           value={limit != null ? paiseToINR(limit) : "—"}
-          caption="25% of salary. The borrower chooses an amount after KYC approval — nothing requested yet."
+          caption="Salary-derived guidance. The credit team sets the sanctioned amount — nothing requested yet."
         />
       )}
       <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
@@ -625,9 +703,9 @@ function CreditFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefi
   );
 }
 
-// ---- KYC (KYC_APPROVER, ADMIN) --------------------------------------------
+// ---- KYC (CREDIT_HEAD/EXECUTIVE, ADMIN) ------------------------------------
 
-/** What the KYC approver decides on: are the required checks clear? */
+/** Are the intake checks clear? Judged by the credit team since V45. */
 function KycFocus({ applicationId, p }: { applicationId: number; p: ProfileView | undefined }) {
   const progQ = useQuery({
     queryKey: ["staff-verification-progress", applicationId],

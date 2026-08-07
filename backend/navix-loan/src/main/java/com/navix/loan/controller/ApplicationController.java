@@ -7,13 +7,16 @@ import com.navix.common.staff.StaffSummary;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationView;
+import com.navix.loan.dto.AdminApplicationDtos.RejectionView;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.ApplicationDtos.ApplyRequest;
 import com.navix.loan.dto.ApplicationDtos.AssignRequest;
 import com.navix.loan.dto.ApplicationDtos.CreateApplicationRequest;
 import com.navix.loan.dto.ApplicationDtos.DecisionRequest;
 import com.navix.loan.dto.ApplicationDtos.EventView;
+import com.navix.loan.dto.ApplicationDtos.SanctionRequest;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
+import com.navix.loan.dto.OfferDtos;
 import com.navix.loan.dto.ReviewDtos.DocumentContentView;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.DocumentUrlView;
@@ -21,6 +24,7 @@ import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
@@ -30,6 +34,8 @@ import com.navix.loan.service.CustomerReviewService;
 import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService;
 import com.navix.loan.service.CreditBriefService;
+import com.navix.loan.service.JourneyService;
+import com.navix.loan.service.OfferService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +68,8 @@ public class ApplicationController {
     private final ApplicationVerificationService verification;
     private final CreditBriefService creditBrief;
     private final AdminApplicationService adminApplications;
+    private final JourneyService journey;
+    private final OfferService offer;
     private final StaffDirectory staffDirectory;
     private final LoanRepository loanRepository;
 
@@ -130,6 +138,12 @@ public class ApplicationController {
         return ApiResponse.ok(adminApplications.listAll());
     }
 
+    /** ADMIN — the rejection register (self-employed, past delinquency, manual), newest first. */
+    @GetMapping("/rejections")
+    public ApiResponse<List<RejectionView>> rejections(@RequestParam(required = false) String reason) {
+        return ApiResponse.ok(adminApplications.listRejections(reason));
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<ApplicationView> get(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
@@ -140,6 +154,17 @@ public class ApplicationController {
     public ApiResponse<List<EventView>> events(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(flow.eventViews(id));
+    }
+
+    /**
+     * The two references the borrower named in Phase 3 (V46). Staff-readable — collections and the
+     * disbursement desk are the reason these are captured at all, so the write path on
+     * {@code OfferController} is deliberately not the only way to reach them.
+     */
+    @GetMapping("/{id}/references")
+    public ApiResponse<List<OfferDtos.ReferenceView>> references(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
+        return ApiResponse.ok(offer.references(id));
     }
 
     /** Staff-readable verification summary for the approver review (per-step status + safe derived). */
@@ -187,32 +212,62 @@ public class ApplicationController {
     }
 
     /**
-     * Borrower submits KYC (DRAFT → KYC_PENDING). Hardened gate: all mandatory verification
-     * steps must be PASS/REVIEW and the agreement accepted (the onboarding-completeness check)
-     * before the application enters the approver queue.
+     * Borrower submits their application (DRAFT → KYC_PENDING). The gate is completeness, not
+     * outcome: every intake check must have been <b>attempted</b> and the T&C accepted. A failed
+     * PAN or bureau pull still reaches the credit team, flagged (revamp.md decision 10).
      */
     @PostMapping("/{id}/submit-kyc")
     public ApiResponse<ApplicationView> submitKyc(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
-        // DigiLocker is best-effort: if Aadhaar didn't come through, let the app submit anyway
-        // with Aadhaar flagged for manual staff review (other required checks still gate).
-        verification.allowAadhaarManualReview(id);
         if (!verification.allRequiredPassed(id)) {
             throw new BusinessException("KYC_INCOMPLETE",
-                    "Complete all verification steps and accept the agreement before submitting");
+                    "Complete every step and accept the Terms & Conditions before submitting");
         }
         return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)));
+    }
+
+    /** Where this application is in the onboarding journey — the server answer that makes a second
+     *  device resume at the right screen (revamp.md C1). */
+    @GetMapping("/{id}/journey")
+    public ApiResponse<JourneyService.JourneyView> journey(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
+        return ApiResponse.ok(journey.current(id));
+    }
+
+    /**
+     * Borrower finished a step (including skipping an optional one) — move the pointer forward.
+     *
+     * <p>Takes the step as a raw string and resolves it against <em>both</em> registries: the
+     * Phase-1 intake ({@link JourneyService.Step}) and the Phase-3 offer journey
+     * ({@link JourneyService.OfferStep}). Binding the path variable straight to the intake enum
+     * silently 400'd every {@code OFFER_*} advance, and the client swallows that failure by design —
+     * so the pointer never moved and cross-device resume fell back to derivation alone, which cannot
+     * see the four offer screens that leave no trace of their own.
+     */
+    @PostMapping("/{id}/journey/{step}")
+    public ApiResponse<JourneyService.JourneyView> advanceJourney(@PathVariable Long id,
+                                                                 @PathVariable String step) {
+        requireBorrowerOwnsOrStaff(id);
+        journey.advance(id, step);
+        return ApiResponse.ok(journey.current(id));
+    }
+
+    /**
+     * Borrower declared self-employed at intake — auto-reject and start the cooling-off window
+     * (revamp.md decisions 20, 21). The response is a plain application view; the borrower is shown a
+     * neutral "not eligible" screen and never told which rule fired.
+     */
+    @PostMapping("/{id}/self-employed")
+    public ApiResponse<ApplicationView> selfEmployed(@PathVariable Long id) {
+        requireBorrowerOwnsOrStaff(id);
+        return ApiResponse.ok(ApplicationView.of(flow.autoReject(id,
+                ApplicationRejection.SELF_EMPLOYED, "Declared self-employed at intake",
+                ApplicationFlowService.SELF_EMPLOYED_BLOCK_DAYS)));
     }
 
     @PostMapping("/{id}/kyc-decision")
     public ApiResponse<ApplicationView> kycDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
         return ApiResponse.ok(ApplicationView.of(flow.decideKyc(id, req.decision(), req.notes())));
-    }
-
-    /** KYC approver clears (or rejects) a flagged returning borrower: REVIEW_PENDING → PRE_APPROVED. */
-    @PostMapping("/{id}/review-decision")
-    public ApiResponse<ApplicationView> reviewDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
-        return ApiResponse.ok(ApplicationView.of(flow.decideReview(id, req.decision(), req.notes())));
     }
 
     @PostMapping("/{id}/apply")
@@ -228,22 +283,31 @@ public class ApplicationController {
         return ApiResponse.ok(ApplicationView.of(flow.assignExecutive(id, req.executiveId())));
     }
 
-    @PostMapping("/{id}/exec-decision")
-    public ApiResponse<ApplicationView> execDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
-        return ApiResponse.ok(ApplicationView.of(flow.execDecision(id, req.decision(), req.notes())));
+    /** "Accept lead" — the Credit Executive's final decision: sanction an amount + repayment date. */
+    @PostMapping("/{id}/sanction")
+    public ApiResponse<ApplicationView> sanction(@PathVariable Long id, @Valid @RequestBody SanctionRequest req) {
+        return ApiResponse.ok(ApplicationView.of(
+                flow.sanction(id, req.sanctionedAmountPaise(), req.repaymentDate(), req.remarks())));
     }
 
-    @PostMapping("/{id}/head-decision")
-    public ApiResponse<ApplicationView> headDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
-        return ApiResponse.ok(ApplicationView.of(
-                flow.headDecision(id, req.decision(), req.approvedAmountPaise(), req.notes())));
+    /** "Reject lead" — borrower notified with no reason; remarks go to the staff-only register. */
+    @PostMapping("/{id}/reject-lead")
+    public ApiResponse<ApplicationView> rejectLead(@PathVariable Long id, @RequestBody DecisionRequest req) {
+        return ApiResponse.ok(ApplicationView.of(flow.rejectLead(id, req.notes())));
     }
 
-    /** KYC-approver credit fast-path: applied KYC_APPROVED → DISBURSEMENT_PENDING (approve) / REJECTED. */
-    @PostMapping("/{id}/kyc-credit-decision")
-    public ApiResponse<ApplicationView> kycCreditDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
+    /** "Mark lead pending" — a staff-only tag + reason; the lead stays in the queue. */
+    @PostMapping("/{id}/mark-pending")
+    public ApiResponse<ApplicationView> markPending(@PathVariable Long id, @RequestBody DecisionRequest req) {
+        return ApiResponse.ok(ApplicationView.of(flow.markPending(id, req.notes())));
+    }
+
+    /** Borrower accepts the sanctioned offer → the Disbursement Head. Phase 3 fronts this with screens. */
+    @PostMapping("/{id}/accept-offer")
+    public ApiResponse<ApplicationView> acceptOffer(@PathVariable Long id, @RequestBody(required = false) ApplyRequest req) {
+        requireBorrowerOwnsOrStaff(id);
         return ApiResponse.ok(ApplicationView.of(
-                flow.kycCreditDecision(id, req.decision(), req.approvedAmountPaise(), req.notes())));
+                flow.acceptOffer(id, req == null || req.amountPaise() == 0 ? null : req.amountPaise())));
     }
 
     @PostMapping("/{id}/disbursement-decision")
@@ -252,11 +316,9 @@ public class ApplicationController {
                 flow.disbursementDecision(id, req.decision(), req.txnRef(), req.notes())));
     }
 
-    @PostMapping("/{id}/accountant-validate")
-    public ApiResponse<ApplicationView> accountantValidate(@PathVariable Long id, @RequestBody DecisionRequest req) {
-        return ApiResponse.ok(ApplicationView.of(
-                flow.accountantValidate(id, req.decision(), req.txnRef(), req.notes())));
-    }
+    // No accountant-validate endpoint: the Disbursement Head's transaction id IS the validation
+    // (V48). The Accountant's remaining money work is repayment verification and collections
+    // payments, both under /api/loan and /api/collections.
 
     @PostMapping("/{id}/retry-disbursement")
     public ApiResponse<ApplicationView> retry(@PathVariable Long id) {

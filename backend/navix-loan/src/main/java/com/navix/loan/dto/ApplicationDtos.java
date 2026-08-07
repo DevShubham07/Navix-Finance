@@ -39,6 +39,14 @@ public final class ApplicationDtos {
     public record DecisionRequest(boolean decision, Long approvedAmountPaise, String notes, String txnRef) {
     }
 
+    /**
+     * "Accept lead" — the Credit Executive's final sanction (V45): the ceiling the borrower may draw
+     * down from and the repayment date they'll be held to, plus staff-only remarks.
+     */
+    public record SanctionRequest(@Positive long sanctionedAmountPaise, @NotNull LocalDate repaymentDate,
+                                  String remarks) {
+    }
+
     public record ApplicationView(
             Long id,
             Long customerId,
@@ -56,7 +64,26 @@ public final class ApplicationDtos {
             String customerName,
             String customerMobile,
             String loanStatus,
-            LocalDate loanDueDate) {
+            LocalDate loanDueDate,
+            // The credit sanction (V45). Null until a Credit Executive accepts the lead.
+            Long sanctionedAmountPaise,
+            LocalDate approvedRepaymentDate,
+            Integer sanctionTenureDays,
+            String sanctionRemarks,
+            Instant sanctionedAt,
+            // "Mark lead pending" — a staff-only tag; the borrower is never told.
+            Instant markedPendingAt,
+            String pendingReason,
+            // Where this advance is paid (V46). Staff-visible in full (revamp.md decision 16) —
+            // the Disbursement Head cannot make the transfer without it. Never logged, never exported.
+            String disbursalAccountNumber,
+            String disbursalIfsc,
+            String disbursalHolderName,
+            String disbursalBank,
+            /** The borrower typed a different account, so a penny drop ran. */
+            Boolean disbursalAccountChanged,
+            /** False on the unchanged-salary-account path, which never runs a penny drop. */
+            Boolean disbursalAccountVerified) {
 
         public static ApplicationView of(LoanApplication a) {
             return of(a, null, null);
@@ -97,7 +124,13 @@ public final class ApplicationDtos {
                     p != null ? p.getFullName() : null,
                     p != null ? p.getMobile() : null,
                     loan != null ? loan.effectiveStatus(LocalDate.now()).name() : null,
-                    loan != null ? loan.getDueDate() : null);
+                    loan != null ? loan.getDueDate() : null,
+                    a.getSanctionedAmountPaise(), a.getApprovedRepaymentDate(), a.getSanctionTenureDays(),
+                    a.getSanctionRemarks(), a.getSanctionedAt(),
+                    a.getMarkedPendingAt(), a.getPendingReason(),
+                    a.getDisbursalAccountNumber(), a.getDisbursalIfsc(), a.getDisbursalHolderName(),
+                    a.getDisbursalBank(), a.getDisbursalAccountChanged(),
+                    a.getDisbursalAccountVerified());
         }
     }
 

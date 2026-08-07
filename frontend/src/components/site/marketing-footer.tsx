@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { BrandMark } from "./brand-mark";
+import { PaymentSafetyTicker } from "./payment-safety-ticker";
 
 /** Public marketing footer — ported from the design export (classes styled by marketing-theme.css). */
 export function MarketingFooter() {
   return (
     <footer className="footer">
+      <PaymentSafetyTicker />
       <div className="wrap">
         <div className="f-grid">
           <div>

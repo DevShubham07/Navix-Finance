@@ -3,6 +3,7 @@ package com.navix.loan.service;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
 import com.navix.loan.domain.LoanStatus;
+import com.navix.loan.domain.PaymentMethod;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
@@ -65,6 +66,24 @@ public class LoanDirectoryAdapter implements LoanDirectory {
                 loanRepository.save(loan);
             }
         });
+    }
+
+    /**
+     * Post a validated collections payment to the ledger. Recorded and verified in one step: the
+     * Accountant's validation is the verification, so leaving the row PENDING_VERIFICATION would
+     * queue the same payment for them a second time. Verifying recomputes the penalty-aware
+     * outstanding and closes the loan (and its application) at zero.
+     */
+    @Override
+    @Transactional
+    public Long creditCollectionPayment(Long loanId, long amountPaise, String txnRef,
+                                        String proofRef, LocalDate paidOn) {
+        // BANK_TRANSFER is the honest default: collections captures a reference and a proof, not the
+        // rail. The method is display metadata here — nothing in the math branches on it.
+        var payment = repaymentService.recordPayment(
+                loanId, amountPaise, PaymentMethod.BANK_TRANSFER, txnRef, proofRef, paidOn);
+        repaymentService.verifyPayment(payment.getId());
+        return payment.getId();
     }
 
     /** Build the snapshot, resolving the borrower via the application's KYC profile (both nullable). */

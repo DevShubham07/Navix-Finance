@@ -11,7 +11,6 @@
  */
 
 export const STAFF_ROLES = [
-  "KYC_APPROVER",
   "CREDIT_EXECUTIVE",
   "CREDIT_HEAD",
   "DISBURSEMENT_HEAD",
@@ -27,7 +26,6 @@ export type StaffRole = (typeof STAFF_ROLES)[number];
 
 /** Human-readable label per staff role (mirrors the backend role names). */
 export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
-  KYC_APPROVER: "KYC Approver",
   CREDIT_EXECUTIVE: "Credit Executive",
   CREDIT_HEAD: "Credit Head",
   DISBURSEMENT_HEAD: "Disbursement Head",
@@ -69,14 +67,18 @@ export type Permission =
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
-  // KYC approver additionally clears the credit gate in the instant-loan model (loan:review/approve),
-  // routing an applied KYC-approved application straight to the Disbursement Head.
-  // KYC approver holds loan:review/loan:approve for the instant-loan credit fast-path only
-  // (KycCreditActions). It never works the exec→head queues — "Live applications" gates those
-  // panels on the role itself, so the fast-path grant can't leak the credit workbench to it.
-  KYC_APPROVER: ["kyc:approve", "loan:review", "loan:approve", "customer:view", "loan:pipeline"],
-  CREDIT_EXECUTIVE: ["loan:review", "customer:view", "loan:pipeline"],
-  CREDIT_HEAD: ["loan:approve", "customer:view", "customer:assign", "loan:pipeline"],
+  // The credit roles absorbed the deleted KYC_APPROVER (V45). The Executive holds kyc:approve
+  // because the sanction IS the credit decision — there is no Head counter-approval; the Head's
+  // loan:approve now gates assignment (handing work out), not a second sign-off.
+  CREDIT_EXECUTIVE: ["kyc:approve", "loan:review", "customer:view", "loan:pipeline"],
+  CREDIT_HEAD: [
+    "kyc:approve",
+    "loan:review",
+    "loan:approve",
+    "customer:view",
+    "customer:assign",
+    "loan:pipeline",
+  ],
   DISBURSEMENT_HEAD: ["loan:disburse", "customer:view", "referral:payout", "loan:pipeline"],
   ACCOUNTANT: ["loan:activate", "customer:view", "loan:pipeline"],
   COLLECTION_HEAD: [

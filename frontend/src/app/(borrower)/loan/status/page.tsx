@@ -10,11 +10,11 @@ import {
   useLiveApplication,
   useLiveEvents,
   appStatusToStage,
-  canChooseAmount,
+  hasOffer,
   isTerminalBad,
 } from "@/lib/api/live-journey";
 import { statusLabel } from "@/lib/api/applications";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatINR0 } from "@/lib/utils";
 import { BRAND } from "@/lib/brand";
 
 /**
@@ -37,7 +37,7 @@ export default function LoanStatusPage() {
           </span>
           <h1 className="text-2xl">No application yet</h1>
           <p className="mb-5 text-muted">Start your application to track it here in real time.</p>
-          <Link href="/signup/mobile-otp" className="btn btn-gold">Start application <ArrowRight size={16} /></Link>
+          <Link href="/signup/start" className="btn btn-gold">Start application <ArrowRight size={16} /></Link>
         </div>
       </div>
     );
@@ -45,8 +45,11 @@ export default function LoanStatusPage() {
 
   const active = app?.status === "ACTIVE";
   const declined = isTerminalBad(app);
-  const choose = canChooseAmount(app);
-  const processing = !!app && !active && !declined && !choose;
+  // Credit has sanctioned an amount + date: the borrower's own offer journey is open (Phase 3).
+  // `/loan/amount` is its entry point; the layout's journey guard then jumps them to whichever
+  // step they actually left off at, so this one link resumes from anywhere.
+  const offer = hasOffer(app);
+  const processing = !!app && !active && !declined && !offer;
   const events = eventsQuery.data ?? [];
   const declineNote = [...events].reverse().find((e) => e.notes)?.notes;
 
@@ -82,15 +85,19 @@ export default function LoanStatusPage() {
         </div>
 
         <div className="flex flex-col gap-4">
-          {choose && (
+          {offer && (
             <div className="rounded border border-success-100 bg-success-50/60 p-6 text-center shadow-sm">
               <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-success-50 text-success-600">
                 <Sparkles size={26} />
               </span>
-              <h3 className="font-serif text-lg text-navy">KYC approved</h3>
-              <p className="mb-4 text-sm text-muted">Choose how much you&apos;d like to draw to continue.</p>
-              <Link href="/loan/apply" className="btn btn-gold btn-block">
-                Choose your amount <ArrowRight size={16} />
+              <h3 className="font-serif text-lg text-navy">You&apos;re approved</h3>
+              <p className="mb-4 text-sm text-muted">
+                {app?.sanctionedAmountPaise
+                  ? `Our credit team has approved up to ${formatINR0(Math.round(app.sanctionedAmountPaise / 100))}. A few steps left to receive it.`
+                  : "A few steps left to receive your money."}
+              </p>
+              <Link href="/loan/amount" className="btn btn-gold btn-block">
+                Continue your loan <ArrowRight size={16} />
               </Link>
             </div>
           )}

@@ -117,6 +117,9 @@ export function stageOf(
       return { stage: "CREDIT_REVIEW", state: "pending" };
     case "CREDIT_HEAD_APPROVED":
       return { stage: "CREDIT_REVIEW", state: "done" };
+    // Credit has decided (V45); the borrower is completing the post-approval journey.
+    case "SANCTIONED":
+      return { stage: "CREDIT_REVIEW", state: "done" };
     case "DISBURSEMENT_PENDING":
       return { stage: "DISBURSEMENT", state: "pending" };
     case "ACCOUNTANT_PENDING":

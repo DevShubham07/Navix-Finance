@@ -119,4 +119,55 @@ public final class CollectionsDtos {
     /** Live DPD helper result: days-past-due plus the derived bucket. */
     public record DpdView(LocalDate dueDate, LocalDate asOf, int dpd, DpdBucket bucket) {
     }
+
+    // ---- collections payments (V47) ---------------------------------------------------
+
+    /**
+     * A collections officer records what the borrower paid. {@code kind} is one of
+     * {@code PART_PAYMENT} / {@code FULL_PAYMENT} / {@code SETTLEMENT}; a settlement must have an
+     * open settlement on the case, named by {@code settlementId} when there is more than one.
+     *
+     * <p>{@code proofRef} is deliberately free text — collections proof is flexible (a screenshot
+     * key, a UTR, or the officer's own note), an existing product rule.
+     */
+    public record RaiseCollectionPaymentRequest(
+            @NotBlank String kind,
+            @Positive long amountPaise,
+            LocalDate paidOn,
+            String txnRef,
+            String proofRef,
+            UUID settlementId) {
+    }
+
+    /** The Accountant's decision on a collections payment; {@code remarks} required on a reject. */
+    public record ValidateCollectionPaymentRequest(@NotNull Boolean accept, String remarks) {
+    }
+
+    /**
+     * A collections payment with its approval chain resolved to real staff names. {@code status} is
+     * the source of truth ({@code PENDING_HEAD} → {@code PENDING_ACCOUNTANT} → {@code VALIDATED} /
+     * {@code REJECTED}); {@code ledgerPaymentId} is the loan-ledger payment the validation minted,
+     * and is null for anything that has not been validated.
+     */
+    public record CollectionPaymentView(
+            UUID id,
+            UUID collectionCaseId,
+            Long loanId,
+            String kind,
+            Long amountPaise,
+            LocalDate paidOn,
+            String txnRef,
+            String proofRef,
+            UUID settlementId,
+            String status,
+            Long raisedBy,
+            String raisedByName,
+            Instant raisedAt,
+            Long validatedBy,
+            String validatedByName,
+            Instant validatedAt,
+            String remarks,
+            Long ledgerPaymentId,
+            String borrowerName) {
+    }
 }

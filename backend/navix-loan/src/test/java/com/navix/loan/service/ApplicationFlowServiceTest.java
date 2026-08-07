@@ -3,7 +3,9 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
@@ -17,6 +19,8 @@ import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.dto.ApplicationDtos.EventView;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationEvent;
+import com.navix.loan.entity.ApplicationRejection;
+import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
@@ -26,6 +30,7 @@ import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -36,6 +41,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -57,9 +63,15 @@ class ApplicationFlowServiceTest {
     @Mock
     private CustomerProfileRepository profileRepository;
     @Mock
+    private com.navix.loan.repository.ApplicationRejectionRepository rejectionRepository;
+    @Mock
     private com.navix.common.risk.RiskPort riskPort;
     @Mock
     private ReferralService referralService;
+    @Mock
+    private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
+    @Mock
+    private com.navix.loan.repository.ApplicationReferenceRepository referenceRepository;
 
     private ApplicationFlowService flow;
     private final List<ApplicationEvent> events = new ArrayList<>();
@@ -68,8 +80,8 @@ class ApplicationFlowServiceTest {
     void setUp() {
         flow = new ApplicationFlowService(applicationRepository, eventRepository,
                 new EligibilityService(applicationRepository, riskPort), loanService, staffDirectory,
-                loanRepository, paymentRepository, profileRepository, new LoanMath(), event -> {},
-                referralService);
+                loanRepository, paymentRepository, profileRepository, rejectionRepository,
+                verificationRepository, referenceRepository, new LoanMath(), event -> {}, referralService);
         // Default: assignee passes activation gating; negative case overrides below.
         lenient().when(staffDirectory.isActiveWithRole(any(), any())).thenReturn(true);
         lenient().when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -100,8 +112,51 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
-    void creditToActiveHappyPathWithDistinctActors() {
-        LoanApplication app = appAt(ApplicationStatus.KYC_APPROVED);
+    void autoReject_recordsTheReasonAndStartsTheCoolingOffWindow() {
+        LoanApplication app = appAt(ApplicationStatus.DRAFT);
+        actor("7", "BORROWER");
+        CustomerProfile p = new CustomerProfile();
+        p.setMobile("9876543210");
+        when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(p));
+
+        LoanApplication out = flow.autoReject(app.getId(), ApplicationRejection.SELF_EMPLOYED,
+                "Declared self-employed at intake", ApplicationFlowService.SELF_EMPLOYED_BLOCK_DAYS);
+
+        assertThat(out.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        ArgumentCaptor<ApplicationRejection> saved = ArgumentCaptor.forClass(ApplicationRejection.class);
+        verify(rejectionRepository).save(saved.capture());
+        assertThat(saved.getValue().getReasonCode()).isEqualTo(ApplicationRejection.SELF_EMPLOYED);
+        assertThat(saved.getValue().getMobile()).isEqualTo("9876543210");
+        assertThat(saved.getValue().getBlockedUntil())
+                .isAfter(Instant.now().plus(Duration.ofDays(89)));
+    }
+
+    @Test
+    void blockedMobile_cannotStartANewApplication() {
+        actor("7", "BORROWER");
+        CustomerProfile prior = new CustomerProfile();
+        prior.setApplicationId(1L);
+        prior.setMobile("9876543210");
+        LoanApplication rejected = new LoanApplication();
+        rejected.setId(1L);
+        rejected.setCustomerId(7L);
+        rejected.setStatus(ApplicationStatus.REJECTED);
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(rejected));
+        when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(prior));
+        ApplicationRejection block = new ApplicationRejection();
+        block.setBlockedUntil(Instant.now().plus(Duration.ofDays(90)));
+        when(rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                eq("9876543210"), any())).thenReturn(Optional.of(block));
+
+        // Re-answering the employment question must not get them back in.
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("not eligible");
+    }
+
+    @Test
+    void creditToActiveHappyPath() {
+        LoanApplication app = appAt(ApplicationStatus.KYC_PENDING);
         Loan loan = new Loan();
         loan.setId(99L);
         when(loanService.disburse(any(), any(), any())).thenReturn(loan);
@@ -110,23 +165,102 @@ class ApplicationFlowServiceTest {
         flow.assignExecutive(1L, 55L);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
 
+        // The executive's sanction is FINAL — no Head counter-approval (V45).
+        LocalDate repay = LocalDate.now().plusDays(28);
         actor("exec1", "CREDIT_EXECUTIVE");
-        flow.execDecision(1L, true, "looks good");
-        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.CREDIT_HEAD_PENDING);
+        flow.sanction(1L, 2_000_000L, repay, "salary slips verified");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+        assertThat(app.getSanctionedAmountPaise()).isEqualTo(2_000_000L);
+        assertThat(app.getApprovedRepaymentDate()).isEqualTo(repay);
+        assertThat(app.getSanctionTenureDays()).isEqualTo(28);
 
-        actor("head1", "CREDIT_HEAD");
-        flow.headDecision(1L, true, null, "approved");
+        // The borrower accepts the offer, drawing down less than the ceiling. Phase 3's offer screens
+        // sit in front of this call; all it needs from them is a signed sanction letter.
+        actor("7", "BORROWER");
+        esigned(1L);
+        flow.acceptOffer(1L, 1_500_000L);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
+        assertThat(app.getAmountRequested()).isEqualTo(1_500_000L);
 
-        // No transaction id at disbursement → hand off to the accountant.
+        // The Disbursement Head makes the transfer and releases it directly — no accountant hop
+        // behind them since V47 (decision 42).
         actor("disb1", "DISBURSEMENT_HEAD");
-        flow.disbursementDecision(1L, true, null, null);
-        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.ACCOUNTANT_PENDING);
-
-        actor("acct1", "ACCOUNTANT");
-        flow.accountantValidate(1L, true, "UTR123", "UTR ok");
+        flow.disbursementDecision(1L, true, "UTR123", "UTR ok");
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.ACTIVE);
         assertThat(app.getLoanId()).isEqualTo(99L);
+    }
+
+    @Test
+    void acceptOfferRejectsMoreThanTheSanctionedCeiling() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        actor("7", "BORROWER");
+        esigned(1L);
+
+        assertThatThrownBy(() -> flow.acceptOffer(1L, 2_500_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("exceeds the sanctioned amount");
+    }
+
+    @Test
+    void acceptOfferRefusesAnUnsignedSanctionLetter() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        actor("7", "BORROWER");
+
+        assertThatThrownBy(() -> flow.acceptOffer(1L, 2_000_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Sign your sanction letter");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+    }
+
+    /** Stand in for the borrower having eSigned their Key Fact Statement (V46). */
+    private void esigned(Long appId) {
+        com.navix.loan.entity.ApplicationVerification row =
+                new com.navix.loan.entity.ApplicationVerification();
+        row.setApplicationId(appId);
+        row.setCheckType(ApplicationVerificationService.ESIGN);
+        row.setStatus(ApplicationVerificationService.PASS);
+        lenient().when(verificationRepository.findByApplicationIdAndCheckType(
+                appId, ApplicationVerificationService.ESIGN)).thenReturn(Optional.of(row));
+    }
+
+    @Test
+    void sanctionRejectsARepaymentDateInThePast() {
+        appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        actor("exec1", "CREDIT_EXECUTIVE");
+
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, LocalDate.now().minusDays(1), null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("must be in the future");
+    }
+
+    @Test
+    void rejectLeadRecordsAManualRegisterRowWithNoBlock() {
+        LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        actor("exec1", "CREDIT_EXECUTIVE");
+
+        flow.rejectLead(1L, "salary slips inconsistent");
+
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        ArgumentCaptor<ApplicationRejection> captor = ArgumentCaptor.forClass(ApplicationRejection.class);
+        verify(rejectionRepository).save(captor.capture());
+        assertThat(captor.getValue().getReasonCode()).isEqualTo(ApplicationRejection.MANUAL);
+        assertThat(captor.getValue().getAuto()).isFalse();
+        // A judgement call, not an engine rule — the borrower is not locked out.
+        assertThat(captor.getValue().getBlockedUntil()).isNull();
+    }
+
+    @Test
+    void markPendingTagsWithoutChangingStatus() {
+        LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        actor("exec1", "CREDIT_EXECUTIVE");
+
+        flow.markPending(1L, "waiting on bank statement");
+
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
+        assertThat(app.getPendingReason()).isEqualTo("waiting on bank statement");
+        assertThat(app.getMarkedPendingAt()).isNotNull();
     }
 
     @Test
@@ -144,32 +278,35 @@ class ApplicationFlowServiceTest {
         assertThat(app.getLoanId()).isEqualTo(99L);
     }
 
+    /**
+     * The transaction id is the evidence that the transfer happened. Accepting without one used to
+     * park the file with an accountant; with that hop gone (V47) it would release money on nothing
+     * but an assertion, so it is refused.
+     */
     @Test
-    void disbursementWithoutTxnRefGoesToAccountant() {
+    void disbursementWithoutTxnRefIsRefused() {
         LoanApplication app = appAt(ApplicationStatus.DISBURSEMENT_PENDING);
         actor("disb1", "DISBURSEMENT_HEAD");
-        flow.disbursementDecision(1L, true, "   ", null); // blank txn id counts as none
 
-        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.ACCOUNTANT_PENDING);
+        assertThatThrownBy(() -> flow.disbursementDecision(1L, true, "   ", null)) // blank counts as none
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("transaction id");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
     }
 
+    /** A failed transfer goes back to the Disbursement Head, who owns the release. */
     @Test
-    void separationOfDutiesBlocksHeadEqualsExec() {
-        appAt(ApplicationStatus.KYC_APPROVED);
-        actor("same", "CREDIT_HEAD");
-        flow.assignExecutive(1L, 55L);
-        actor("same", "CREDIT_EXECUTIVE");
-        flow.execDecision(1L, true, "recommend");
+    void retryReturnsAFailedTransferToTheDisbursementHead() {
+        LoanApplication app = appAt(ApplicationStatus.DISBURSEMENT_FAILED);
+        actor("disb1", "DISBURSEMENT_HEAD");
+        flow.retryDisbursement(1L);
 
-        actor("same", "CREDIT_HEAD"); // same human as the recommender
-        assertThatThrownBy(() -> flow.headDecision(1L, true, null, "approve"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Credit Executive cannot also give final approval");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
     }
 
     @Test
     void assignRejectsNonActiveOrNonExecutiveAssignee() {
-        appAt(ApplicationStatus.KYC_APPROVED);
+        appAt(ApplicationStatus.KYC_PENDING);
         when(staffDirectory.isActiveWithRole(55L, "CREDIT_EXECUTIVE")).thenReturn(false);
         actor("head1", "CREDIT_HEAD");
         assertThatThrownBy(() -> flow.assignExecutive(1L, 55L))
@@ -181,7 +318,7 @@ class ApplicationFlowServiceTest {
     void illegalTransitionIsRejected() {
         appAt(ApplicationStatus.DRAFT);
         actor("exec1", "CREDIT_EXECUTIVE");
-        assertThatThrownBy(() -> flow.execDecision(1L, true, null))
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, LocalDate.now().plusDays(20), null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("not allowed");
     }
@@ -198,7 +335,7 @@ class ApplicationFlowServiceTest {
     @Test
     void kycApprovalAdvancesFromPending() {
         LoanApplication app = appAt(ApplicationStatus.KYC_PENDING);
-        actor("kyc1", "KYC_APPROVER");
+        actor("exec1", "CREDIT_EXECUTIVE"); // the credit team absorbed KYC approval (V45)
         flow.decideKyc(1L, true, "verified");
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.KYC_APPROVED);
     }
@@ -253,22 +390,58 @@ class ApplicationFlowServiceTest {
         assertThat(result.getSalaryCreditDay()).isEqualTo(30);
     }
 
-    /** Any past delinquency — here a loan repaid LATE (now closed) — routes to a KYC re-review. */
+    /**
+     * The Phase-4 engine rule (V47, decision 47): being a few days late is not disqualifying — the
+     * product already prices those days as a penalty. Exactly at the five-day tolerance still passes.
+     */
     @Test
-    void reborrowWithLateRepaymentNeedsReview() {
+    void reborrowForgivesARepaymentWithinTheLateTolerance() {
         actor("7", "BORROWER");
         when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
         when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
-        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(10));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(20));
         when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
-        Payment late = new Payment();
-        late.setLoanId(50L);
-        late.setStatus(PaymentStatus.VERIFIED);
-        late.setPaidOn(LocalDate.now().minusDays(5)); // after the due date
-        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(late));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(
+                paidOn(50L, closed.getDueDate().plusDays(ApplicationFlowService.LATE_REPAYMENT_TOLERANCE_DAYS))));
 
-        // Delinquent → a KYC approver must clear them (REVIEW_PENDING → PRE_APPROVED).
-        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REVIEW_PENDING);
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
+    }
+
+    /** One day past the tolerance, and the borrower is auto-rejected — there is no review queue. */
+    @Test
+    void reborrowRejectsARepaymentBeyondTheLateTolerance() {
+        actor("7", "BORROWER");
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(20));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of(
+                paidOn(50L, closed.getDueDate().plusDays(ApplicationFlowService.LATE_REPAYMENT_TOLERANCE_DAYS + 1))));
+
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        ArgumentCaptor<ApplicationRejection> captor = ArgumentCaptor.forClass(ApplicationRejection.class);
+        verify(rejectionRepository).save(captor.capture());
+        assertThat(captor.getValue().getReasonCode()).isEqualTo(ApplicationRejection.PAST_DELINQUENCY);
+    }
+
+    /** Never fully repaid — still owed past the due date — is disqualifying regardless of days. */
+    @Test
+    void reborrowRejectsALoanThatWasNeverFullyRepaid() {
+        actor("7", "BORROWER");
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp()));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(
+                loanAt(50L, LoanStatus.IN_COLLECTIONS, LocalDate.now().minusDays(3))));
+
+        assertThat(flow.reborrow().getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+    }
+
+    private static Payment paidOn(Long loanId, LocalDate on) {
+        Payment p = new Payment();
+        p.setLoanId(loanId);
+        p.setStatus(PaymentStatus.VERIFIED);
+        p.setPaidOn(on);
+        return p;
     }
 
     /** Credit score does NOT gate reborrow: a clean-history borrower with a low rating is still pre-approved. */
@@ -335,28 +508,12 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
-    void reviewApproveClearsToPreApproved() {
-        LoanApplication app = appAt(ApplicationStatus.REVIEW_PENDING);
-        actor("kyc1", "KYC_APPROVER");
-        flow.decideReview(1L, true, "manual check ok");
-        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
-    }
-
-    @Test
-    void reviewRejectDeclines() {
-        LoanApplication app = appAt(ApplicationStatus.REVIEW_PENDING);
-        actor("kyc1", "KYC_APPROVER");
-        flow.decideReview(1L, false, "too risky");
-        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
-    }
-
-    @Test
-    void reviewRequiresKycApproverRole() {
-        appAt(ApplicationStatus.REVIEW_PENDING);
-        actor("head1", "CREDIT_HEAD");
-        assertThatThrownBy(() -> flow.decideReview(1L, true, null))
+    void sanctionRequiresACreditRole() {
+        appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        actor("acct1", "ACCOUNTANT");
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, LocalDate.now().plusDays(20), null))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("requires role KYC_APPROVER");
+                .hasMessageContaining("CREDIT_EXECUTIVE or CREDIT_HEAD");
     }
 
     /** Pre-approved borrower applying skips the credit gates → straight to disbursement (fast-track). */
@@ -403,8 +560,8 @@ class ApplicationFlowServiceTest {
     void eventViewsResolvesStaffNameFromDirectory() {
         appAt(ApplicationStatus.KYC_PENDING);
         when(staffDirectory.findStaff(42L))
-                .thenReturn(Optional.of(new StaffSummary(42L, "Priya Sharma", "KYC_APPROVER", true)));
-        events.add(event("42", "KYC_APPROVER"));
+                .thenReturn(Optional.of(new StaffSummary(42L, "Priya Sharma", "CREDIT_EXECUTIVE", true)));
+        events.add(event("42", "CREDIT_EXECUTIVE"));
 
         List<EventView> views = flow.eventViews(1L);
 
@@ -474,6 +631,51 @@ class ApplicationFlowServiceTest {
                 return count;
             }
         };
+    }
+
+    /**
+     * A clean returning borrower whose prior file carried a credit sanction is re-sanctioned on the
+     * spot (V47, decisions 45/46) — the ceiling, the account and the evidence come with them, so the
+     * only thing they re-walk is the short offer journey. The repayment date is recomputed, never
+     * copied: the prior one is in the past by definition.
+     */
+    @Test
+    void reapplyCarriesTheSanctionEvidenceAndAccountForward() {
+        actor("7", "BORROWER");
+        LoanApplication prior = priorApp();
+        prior.setSanctionedAmountPaise(2_500_000L);
+        prior.setApprovedRepaymentDate(LocalDate.now().minusDays(15)); // long past
+        prior.setDisbursalAccountNumber("123456789012");
+        prior.setDisbursalIfsc("HDFC0001234");
+        prior.setDisbursalAccountVerified(Boolean.TRUE);
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(15));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of());
+        ApplicationVerification aadhaar = new ApplicationVerification();
+        aadhaar.setApplicationId(10L);
+        aadhaar.setCheckType(ApplicationVerificationService.AADHAAR);
+        aadhaar.setStatus(ApplicationVerificationService.PASS);
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(10L)).thenReturn(List.of(aadhaar));
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+        assertThat(out.getReappliedFrom()).isEqualTo(10L);
+        assertThat(out.getSanctionedAmountPaise()).isEqualTo(2_500_000L);
+        // The ceiling carries; the draw-down does not — they pick an amount again on screen one.
+        assertThat(out.getAmountRequested()).isNull();
+        assertThat(out.getApprovedRepaymentDate()).isAfter(LocalDate.now());
+        assertThat(out.getDisbursalAccountNumber()).isEqualTo("123456789012");
+        // …but they still confirm the destination, so it starts unchanged and unconfirmed.
+        assertThat(out.getDisbursalAccountChanged()).isFalse();
+        assertThat(out.getDisbursalConfirmedAt()).isNull();
+        // The Aadhaar evidence is copied onto the new file so the journey can skip DigiLocker.
+        ArgumentCaptor<ApplicationVerification> copied = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepository).save(copied.capture());
+        assertThat(copied.getValue().getCheckType()).isEqualTo(ApplicationVerificationService.AADHAAR);
+        assertThat(copied.getValue().getMessage()).contains("Carried over from application 10");
     }
 
     private LoanApplication priorApp() {

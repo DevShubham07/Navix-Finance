@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.notification.event.RepaymentRejectedEvent;
@@ -58,10 +59,16 @@ class NotificationEventListenerTest {
         assertThat(dispatched()).isEqualTo(NotificationType.CREDIT_APPROVED);
     }
 
+    /**
+     * The accountant disbursement hop was retired in V48, so nothing emits DISB_ACCEPT any more —
+     * and a stale event replayed from the audit trail must not wake an accountant for work that no
+     * longer exists.
+     */
     @Test
-    void mapsDisbAcceptToAccountantPending() {
+    void retiredDisbursementActionsNotifyNobody() {
         listener.onApplicationTransitioned(transition("DISB_ACCEPT", "ACCOUNTANT_PENDING"));
-        assertThat(dispatched()).isEqualTo(NotificationType.DISBURSEMENT_PENDING_ACCOUNTANT);
+        listener.onApplicationTransitioned(transition("RETRY", "DISBURSEMENT_PENDING"));
+        verifyNoInteractions(dispatcher);
     }
 
     @Test
@@ -83,9 +90,10 @@ class NotificationEventListenerTest {
     }
 
     @Test
-    void reborrowForkReviewPending() {
-        listener.onApplicationTransitioned(transition("REBORROW", "REVIEW_PENDING"));
-        assertThat(dispatched()).isEqualTo(NotificationType.REBORROW_REVIEW_PENDING);
+    void reborrowForkDelinquentAutoRejects() {
+        // Since V45 the delinquent reborrow fork auto-rejects instead of queuing a manual review.
+        listener.onApplicationTransitioned(transition("REBORROW", "REJECTED"));
+        assertThat(dispatched()).isEqualTo(NotificationType.CREDIT_REJECTED);
     }
 
     @Test

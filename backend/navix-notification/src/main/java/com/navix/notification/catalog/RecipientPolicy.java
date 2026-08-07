@@ -9,7 +9,11 @@ package com.navix.notification.catalog;
 public enum RecipientPolicy {
     TO_BORROWER,
     TO_ASSIGNED_EXECUTIVE,
-    TO_KYC_APPROVERS,
+    /**
+     * The credit team — Credit Heads + Credit Executives. Replaced {@code TO_KYC_APPROVERS} when the
+     * dedicated KYC_APPROVER role was deleted (V45) and the credit roles absorbed its work.
+     */
+    TO_CREDIT_TEAM,
     TO_CREDIT_HEADS,
     TO_CREDIT_EXECUTIVES,
     TO_DISBURSEMENT_HEADS,

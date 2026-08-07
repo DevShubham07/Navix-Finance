@@ -25,16 +25,24 @@ export function StatusQueue({
   info,
   filter,
   withLoanHistory,
+  hideWhenEmpty,
 }: {
   title: string;
   status: ApplicationStatus;
-  actions: (app: ApplicationView) => React.ReactNode;
+  /** Omit for a read-only queue (e.g. SANCTIONED, which nobody on staff actions). */
+  actions?: (app: ApplicationView) => React.ReactNode;
   /** Optional ⓘ explanation shown beside the queue title. */
   info?: string;
   /** Optional client-side filter to split one status into sections (e.g. fast-track disbursement). */
   filter?: (app: ApplicationView) => boolean;
   /** Inline loan-history on each row — the reborrow-review queue's documented exception (see AppRow). */
   withLoanHistory?: boolean;
+  /**
+   * Render nothing at all when the queue is empty, instead of an "nothing here" panel. For a status
+   * nothing routes to any more (ACCOUNTANT_PENDING since V47): a permanent empty box on a desk that
+   * will never receive work again is just noise.
+   */
+  hideWhenEmpty?: boolean;
 }) {
   const q = useQuery({
     queryKey: ["staff-queue", status],
@@ -44,6 +52,8 @@ export function StatusQueue({
 
   const apps = filter ? (q.data ?? []).filter(filter) : q.data ?? [];
 
+  if (hideWhenEmpty && !q.isLoading && !q.error && apps.length === 0) return null;
+
   return (
     <QueuePanel
       title={title}
@@ -52,7 +62,7 @@ export function StatusQueue({
       isLoading={q.isLoading}
       error={q.error}
       onRefresh={() => q.refetch()}
-      actions={actions}
+      actions={actions ?? (() => null)}
       info={info}
       withLoanHistory={withLoanHistory}
     />
@@ -75,7 +85,7 @@ export function CreditQueuePanel() {
       error={q.error}
       onRefresh={() => q.refetch()}
       actions={(app) => <AssignActions app={app} />}
-      info="KYC-approved applications the borrower has applied on. Assign each to an ACTIVE Credit Executive to start the credit review."
+      info="Submitted intakes awaiting a credit review. Assign each to an ACTIVE Credit Executive — their decision is the final one."
     />
   );
 }

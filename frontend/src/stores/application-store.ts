@@ -34,6 +34,12 @@ export interface OnboardingDraft {
   /** Optional refer-a-friend code typed at signup (applied best-effort; never blocks onboarding). */
   referralCode: string;
   /**
+   * Screen 1 consents. Held here only until screen 2 creates the application and persists them —
+   * there is no application to write to before the OTP succeeds.
+   */
+  termsVersion: string;
+  pepDeclared: boolean;
+  /**
    * Whether the (otherwise hidden) co-applicant step should be shown. The
    * backend does not drive this yet, so it defaults to hidden.
    */
@@ -59,6 +65,8 @@ const EMPTY: OnboardingDraft = {
   ifsc: "",
   address: "",
   referralCode: "",
+  termsVersion: "",
+  pepDeclared: false,
   coApplicantRequired: false,
 };
 

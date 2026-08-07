@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: navix-finance
+  mvc:
+    # Raise NoHandlerFoundException for an unmapped path so GlobalExceptionHandler can answer 404
+    # instead of letting it fall through and surface as a 500. The static-resource handler stays
+    # mapped (Swagger UI serves its assets through it); its NoResourceFoundException is handled too.
+    throw-exception-if-no-handler-found: true
   # Load config + secrets from AWS SSM Parameter Store. `optional:` lets the app
   # still start without AWS (local fallback to env vars / defaults below).
   # Parameters under /navix/<env>/ map to properties, e.g.
@@ -161,6 +166,12 @@ navix:
   # Marketing "Contact us" form — where website enquiries are emailed (via the shared EmailClient).
   contact:
     recipient: ${NAVIX_CONTACT_RECIPIENT:navixfinance@gmail.com}
+  # Grievance Redressal Officer — named on the Key Fact Statement the borrower eSigns, and mirrored
+  # by BRAND.grievanceOfficer in the frontend. Regulatory copy: change both together.
+  grievance:
+    officer-name: ${NAVIX_GRIEVANCE_NAME:Lalit Kumar}
+    officer-phone: ${NAVIX_GRIEVANCE_PHONE:9716760246}
+    officer-email: ${NAVIX_GRIEVANCE_EMAIL:grievance@dhanboost.com}
   # SES bounce/complaint ingestion (SES config-set -> SNS -> SQS -> SesEventSqsListener). Off by
   # default so the app boots without an SQS queue; flip on in AWS environments.
   ses:

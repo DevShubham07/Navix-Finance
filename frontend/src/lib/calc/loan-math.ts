@@ -68,8 +68,9 @@ export function latePenalty(amount: number, daysLate: number): number {
 }
 
 /**
- * Eligible loan limit — 25% of monthly salary, floored to the nearest ₹100 and capped at the
- * ₹10,00,000 instant ceiling. Mirrors the backend `LoanMath.eligibleLimitPaise`.
+ * Salary-derived limit guidance. NOT a borrower-facing cap any more — a Credit Executive sanctions
+ * the amount (revamp.md decision 33). Kept because staff surfaces still show it as a reference figure
+ * and it mirrors the backend `LoanMath.eligibleLimitPaise`.
  */
 export function eligibleLimit(monthlySalary: number): number {
   return Math.min(Math.floor((monthlySalary * 0.25) / 100) * 100, MAX_INSTANT_LOAN_AMOUNT);

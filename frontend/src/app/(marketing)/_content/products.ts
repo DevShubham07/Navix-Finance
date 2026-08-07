@@ -12,7 +12,7 @@ export const html = `<section class="page active" id="products">
     <div class="pcard reveal" style="flex-direction:column;border:2px solid var(--gold-400);box-shadow:var(--shadow-md)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;width:100%">
         <div><span class="ptag" style="background:var(--success);color:#fff">● Live now</span><h3 style="font-size:1.7rem;margin:10px 0 6px">Instant Personal Loan</h3><p style="max-width:520px">Quick personal loans for any purpose — medical emergencies, education, travel, bills or a cash-flow gap before payday. Fully digital, disbursed by our RBI-registered NBFC partners.</p></div>
-        <a href="/signup/mobile-otp" class="btn btn-gold" data-link="">Apply Now</a>
+        <a href="/signup/start" class="btn btn-gold" data-link="">Apply Now</a>
       </div>
       <div class="grid-3" style="width:100%;margin-top:26px;gap:16px">
         <div style="background:var(--cream-50);border:1px solid var(--line);border-radius:16px;padding:22px;text-align:center"><div style="font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em">Amount</div><div style="font-family:var(--font-display);font-size:1.5rem;color:var(--navy-800);font-weight:600">₹5,000 – ₹10,00,000</div></div>

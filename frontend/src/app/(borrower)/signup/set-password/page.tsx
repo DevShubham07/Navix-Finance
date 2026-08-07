@@ -5,25 +5,39 @@ import { useRouter } from "next/navigation";
 import { Lock, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
-
-const policyOk = (pw: string) => pw.length >= 10 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
+import { useOnboarding, useSavedProfile, completeStep } from "@/lib/onboarding";
+import { passwordOk, PASSWORD_HINT } from "@/lib/password";
 
 /**
- * Optional "set a password" step, offered right after the mobile-OTP step. Lets the borrower add a
- * password so they can later sign in without an OTP. Fully skippable — they can also add one from
- * their profile later. The session cookie already exists (from mobile-otp), so this posts to the
- * authenticated set-password endpoint.
+ * Optional "set a password" step. Skippable — the borrower can add one later from their profile.
+ * The session cookie already exists, so this posts to the authenticated set-password endpoint.
  */
 export default function SignupSetPasswordPage() {
   const router = useRouter();
+  const { appId } = useOnboarding();
+  const saved = useSavedProfile(appId);
   const [password, setPassword] = React.useState("");
   const [confirm, setConfirm] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
 
+  // Salaried and self-employed branch here (revamp.md screens 5a / 5b).
+  const next = saved?.employmentStatus === "SELF_EMPLOYED" ? "/signup/self-employed" : "/signup/employer";
+
+  const go = async () => {
+    if (appId == null) return;
+    await completeStep(appId, "SET_PASSWORD", router, next);
+  };
+
   const save = async () => {
-    if (!policyOk(password)) { setError("Password must be at least 10 characters and include letters and digits."); return; }
-    if (password !== confirm) { setError("Passwords don't match."); return; }
+    if (!passwordOk(password)) {
+      setError(`Password must be ${PASSWORD_HINT}.`);
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords don't match.");
+      return;
+    }
     setBusy(true);
     setError(undefined);
     try {
@@ -37,7 +51,7 @@ export default function SignupSetPasswordPage() {
         setBusy(false);
         return;
       }
-      router.push("/signup/email");
+      await go();
     } catch {
       setError("Something went wrong — please try again.");
       setBusy(false);
@@ -55,17 +69,23 @@ export default function SignupSetPasswordPage() {
           label="Password"
           type="password"
           value={password}
-          onChange={(e) => { setPassword(e.target.value); setError(undefined); }}
-          placeholder="At least 10 characters"
+          onChange={(e) => {
+            setPassword(e.target.value);
+            setError(undefined);
+          }}
+          placeholder={`${PASSWORD_HINT}`}
           leftIcon={<Lock size={16} />}
           autoComplete="new-password"
-          helperText="10+ characters, including letters and digits"
+          helperText={PASSWORD_HINT}
         />
         <Input
           label="Confirm password"
           type="password"
           value={confirm}
-          onChange={(e) => { setConfirm(e.target.value); setError(undefined); }}
+          onChange={(e) => {
+            setConfirm(e.target.value);
+            setError(undefined);
+          }}
           placeholder="Re-enter your password"
           leftIcon={<Lock size={16} />}
           autoComplete="new-password"
@@ -74,7 +94,7 @@ export default function SignupSetPasswordPage() {
         <button onClick={save} disabled={busy} className="btn btn-gold btn-block">
           {busy ? "Saving…" : "Set password & continue"} <ArrowRight size={16} />
         </button>
-        <button onClick={() => router.push("/signup/email")} className="btn btn-outline btn-block mt-2">
+        <button onClick={go} className="btn btn-outline btn-block mt-2">
           Skip for now
         </button>
       </div>

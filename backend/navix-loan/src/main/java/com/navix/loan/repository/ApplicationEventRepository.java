@@ -13,4 +13,7 @@ public interface ApplicationEventRepository extends JpaRepository<ApplicationEve
 
     /** All events with a given action label (e.g. CREATE) — backs the dashboard trend aggregation. */
     List<ApplicationEvent> findByAction(String action);
+
+    /** One staffer's actions, newest first — backs the decision history (/staff/my-decisions). */
+    List<ApplicationEvent> findByActorIdOrderByAtDesc(String actorId);
 }

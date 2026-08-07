@@ -10,11 +10,13 @@ test.describe("staff console", () => {
     await expect(page.getByText(/UPI/i).first()).toBeVisible();
   });
 
-  test("live applications renders the KYC approver's queue shell", async ({ page }) => {
-    await loginStaff(page, "KYC_APPROVER");
+  // V45 deleted KYC_APPROVER and its "awaiting KYC clearance" queue: a submitted intake is assigned
+  // by the Credit Head straight to an executive, whose sanction is final.
+  test("live applications renders the credit executive's queue shell", async ({ page }) => {
+    await loginStaff(page, "CREDIT_EXECUTIVE");
     await page.goto("/staff/applications");
     await expect(page.getByRole("heading", { name: "Live applications" })).toBeVisible();
-    await expect(page.getByText("Applications awaiting KYC clearance")).toBeVisible();
+    await expect(page.getByText("Credit review — accept, reject or park")).toBeVisible();
   });
 
   test("dashboard greets the signed-in staff member", async ({ page }) => {

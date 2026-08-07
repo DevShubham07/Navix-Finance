@@ -2,7 +2,7 @@
  * Loan domain types for the salary-linked single-repayment product.
  *
  * Pricing rules (see lib/calc/loan-math.ts):
- *  - eligible limit = 25% of monthly salary
+ *  - eligible limit = the amount a Credit Executive sanctions (salary-derived figure is guidance only)
  *  - up-front 10% processing fee + 18% GST on the fee
  *  - 1%/day interest, prepay anytime with no penalty
  *  - single repayment on salary day
@@ -57,7 +57,7 @@ export interface LoanApplication {
   /** Requested principal in INR. */
   requestedAmount: number;
   monthlySalary: number;
-  /** Computed 25%-of-salary cap at time of application. */
+  /** The sanctioned amount the borrower may draw against. */
   eligibleLimit: number;
   status: LoanStatus;
   createdAt: string;

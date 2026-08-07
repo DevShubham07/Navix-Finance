@@ -76,6 +76,48 @@ public class CustomerProfile extends BaseAuditEntity {
     @Column(name = "email", length = 255)
     private String email;
 
+    // --- Phase 1 intake (V44; revamp.md) ---
+
+    /**
+     * Official work email. The <b>only</b> address the email-verification API is run against — it
+     * corroborates the employer. The personal {@link #email} above stays the contact address so a
+     * job change never costs the borrower their reset links (revamp.md decision 15).
+     */
+    @Column(name = "official_email", length = 255)
+    private String officialEmail;
+
+    /** Salary account number, stored in full (revamp.md decision 16). Never logged, never exported. */
+    @Column(name = "salary_account_number", length = 32)
+    private String salaryAccountNumber;
+
+    @Column(name = "salary_ifsc", length = 16)
+    private String salaryIfsc;
+
+    /** The mobile registered against the salary account — may differ from the login mobile. */
+    @Column(name = "salary_account_mobile", length = 15)
+    private String salaryAccountMobile;
+
+    /**
+     * The date the borrower was last paid. {@code loan_application.salary_credit_day} is derived
+     * from its day-of-month; this keeps the evidence the credit team actually reviews.
+     */
+    @Column(name = "previous_salary_date")
+    private LocalDate previousSalaryDate;
+
+    /** Version of the T&C the borrower accepted on screen 1 (e.g. {@code terms-and-conditions@1}). */
+    @Column(name = "terms_version", length = 40)
+    private String termsVersion;
+
+    @Column(name = "terms_accepted_at")
+    private Instant termsAcceptedAt;
+
+    /**
+     * When the borrower declared they are <b>not</b> a Politically Exposed Person. The tick is
+     * mandatory, so any application that got past screen 1 has this set — there is no PEP path.
+     */
+    @Column(name = "pep_declared_at")
+    private Instant pepDeclaredAt;
+
     // --- emergency contact (editable on the borrower profile; not verified). V27 ---
 
     @Column(name = "emergency_contact_name", length = 160)

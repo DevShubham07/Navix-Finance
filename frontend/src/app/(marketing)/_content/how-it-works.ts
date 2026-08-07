@@ -44,10 +44,10 @@ export const html = `<section class="page active" id="how">
           <div class="chk" style="border-color:var(--line)"><span class="ck" style="background:var(--cream-100);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 4-6 8-6s8 2 8 6"></path></svg></span><div><b>Aadhaar</b><small>For paperless e-KYC</small></div></div>
           <div class="chk" style="border-color:var(--line)"><span class="ck" style="background:var(--cream-100);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M3 10l2-6h14l2 6M5 10v10h14V10"></path></svg></span><div><b>Bank details</b><small>For salary check &amp; disbursal</small></div></div>
         </div>
-        <a href="/signup/mobile-otp" class="btn btn-navy btn-block" style="margin-top:22px" data-link="">Start your application</a>
+        <a href="/signup/start" class="btn btn-navy btn-block" style="margin-top:22px" data-link="">Start your application</a>
       </div>
     </div>
   </div></div></div>
 
-  <div class="sec"><div class="wrap"><div class="ctaband reveal"><h2>It only takes two minutes</h2><p>Check your eligibility now — free, with no impact on your credit score.</p><div class="hero-cta"><a href="/signup/mobile-otp" class="btn btn-gold btn-lg" data-link="">Apply Now</a><a href="/calculator" class="btn btn-outline-light btn-lg" data-link="">Calculate repayment</a></div></div></div></div>
+  <div class="sec"><div class="wrap"><div class="ctaband reveal"><h2>It only takes two minutes</h2><p>Check your eligibility now — free, with no impact on your credit score.</p><div class="hero-cta"><a href="/signup/start" class="btn btn-gold btn-lg" data-link="">Apply Now</a><a href="/calculator" class="btn btn-outline-light btn-lg" data-link="">Calculate repayment</a></div></div></div></div>
 </section>`;

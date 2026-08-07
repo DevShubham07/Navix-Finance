@@ -41,6 +41,63 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.failure(error));
     }
 
+    /**
+     * An unmapped URL is a 404, not a 500.
+     *
+     * <p>Without this, both of Spring's "no handler" exceptions fell through to
+     * {@link #handleGeneric} — so a typo'd path, a client calling a retired endpoint, or a scanner
+     * probing the API all answered {@code 500 INTERNAL_ERROR} and logged a full stack trace at
+     * ERROR. That is wrong twice over: it tells the caller the server broke when the request was
+     * simply wrong, and it fills the error log (and any alerting off it) with noise nobody can act
+     * on.
+     */
+    @ExceptionHandler({
+            org.springframework.web.servlet.NoHandlerFoundException.class,
+            org.springframework.web.servlet.resource.NoResourceFoundException.class})
+    public ResponseEntity<ApiResponse<Void>> handleNoHandler(Exception ex, HttpServletRequest request) {
+        log.warn("no handler path={} method={}", request.getRequestURI(), request.getMethod());
+        ApiError error = ApiError.builder()
+                .code("NOT_FOUND")
+                .message("No such endpoint")
+                .path(request.getRequestURI())
+                .build();
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.failure(error));
+    }
+
+    /**
+     * A body the server can't parse is the caller's mistake — 400, not 500.
+     *
+     * <p>Malformed JSON, a truncated payload, or a wrong-typed field all raise this. Letting it fall
+     * through to {@link #handleGeneric} reported "an unexpected error occurred" for a request that
+     * was simply invalid, and logged a stack trace at ERROR for it. The parser's own message is not
+     * echoed back — it can quote the offending body, which may carry PII.
+     */
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnreadableBody(
+            org.springframework.http.converter.HttpMessageNotReadableException ex,
+            HttpServletRequest request) {
+        log.warn("unreadable request body path={}", request.getRequestURI());
+        ApiError error = ApiError.builder()
+                .code("MALFORMED_REQUEST")
+                .message("The request body could not be read. Send valid JSON.")
+                .path(request.getRequestURI())
+                .build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.failure(error));
+    }
+
+    /** The path exists but not for this verb — 405, again not a 500. */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(
+            org.springframework.web.HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+        log.warn("method not allowed path={} method={}", request.getRequestURI(), request.getMethod());
+        ApiError error = ApiError.builder()
+                .code("METHOD_NOT_ALLOWED")
+                .message(request.getMethod() + " is not supported on this endpoint")
+                .path(request.getRequestURI())
+                .build();
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(ApiResponse.failure(error));
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex,
                                                            HttpServletRequest request) {

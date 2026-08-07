@@ -5,7 +5,11 @@ package com.navix.iam.domain;
  * TODO: map each role to its permitted actions / API scopes.
  */
 public enum StaffRole {
-    KYC_APPROVER,
+    /**
+     * Credit Executive — verifies the file and makes the <b>final</b> credit decision (V45): they
+     * sanction the amount + repayment date, or reject. There is no Head counter-approval; the
+     * Credit Head's role is to assign the work. Absorbed the deleted KYC_APPROVER's duties.
+     */
     CREDIT_EXECUTIVE,
     CREDIT_HEAD,
     DISBURSEMENT_HEAD,

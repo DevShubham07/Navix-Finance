@@ -16,6 +16,7 @@ import { Check, X, Loader2 } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { hasPermission, type Permission } from "@/lib/auth/rbac";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
+import { SanctionDialog } from "@/components/staff/sanction-dialog";
 import { useStaffMe, useRefreshAfterAction, errMessage } from "@/components/staff/pipeline/hooks";
 
 function ApproveRejectButtons({
@@ -187,32 +188,6 @@ export function KycActions({ app }: { app: ApplicationView }) {
   );
 }
 
-/**
- * Reborrow review (KYC approver): clear or reject a returning borrower flagged for past delinquency.
- * Separate from fresh KYC — REVIEW_PENDING → PRE_APPROVED (clear) / REJECTED. Same `kyc:approve` perm.
- */
-export function ReviewActions({ app }: { app: ApplicationView }) {
-  const refresh = useRefreshAfterAction();
-  const m = useMutation({
-    mutationFn: (decision: boolean) => staffApi.reviewDecision(app.id, decision),
-    onSuccess: () => refresh(app.id),
-  });
-  return (
-    <ActionGate permission="kyc:approve">
-      <div className="flex items-center gap-2">
-        <ApproveRejectButtons
-          pending={m.isPending}
-          onApprove={() => m.mutate(true)}
-          onReject={() => m.mutate(false)}
-          approveLabel="Clear borrower"
-          rejectLabel="Reject"
-        />
-        <ActionError error={m.error} />
-      </div>
-    </ActionGate>
-  );
-}
-
 export function AssignActions({ app }: { app: ApplicationView }) {
   const refresh = useRefreshAfterAction();
   const me = useStaffMe();
@@ -293,73 +268,86 @@ export function AssignActions({ app }: { app: ApplicationView }) {
   );
 }
 
-export function ExecActions({ app }: { app: ApplicationView }) {
+/**
+ * The Credit Executive's row actions (V45) — Reject lead · Mark lead pending · Accept lead.
+ *
+ * "Accept lead" is the FINAL credit decision, so it opens {@link SanctionDialog} rather than firing
+ * inline: the executive must set an amount and a repayment date, and see what they cost, before it
+ * commits. Reject and Mark pending both capture a reason inline — "Mark lead pending" is only a tag
+ * (the lead keeps its status and its place in the queue, and the borrower is never told).
+ */
+export function CreditDecisionActions({ app }: { app: ApplicationView }) {
   const refresh = useRefreshAfterAction();
-  const m = useMutation({
-    mutationFn: (decision: boolean) => staffApi.execDecision(app.id, decision),
-    onSuccess: () => refresh(app.id),
+  const [sanctioning, setSanctioning] = React.useState(false);
+  const [prompt, setPrompt] = React.useState<"reject" | "pending" | null>(null);
+  const [reason, setReason] = React.useState("");
+
+  const reject = useMutation({
+    mutationFn: () => staffApi.rejectLead(app.id, reason.trim() || undefined),
+    onSuccess: () => {
+      refresh(app.id);
+      setPrompt(null);
+    },
   });
+  const pending = useMutation({
+    mutationFn: () => staffApi.markPending(app.id, reason.trim()),
+    onSuccess: () => {
+      refresh(app.id);
+      setPrompt(null);
+      setReason("");
+    },
+  });
+
+  const busy = reject.isPending || pending.isPending;
+
   return (
     <ActionGate permission="loan:review">
-      <div className="flex items-center gap-2">
-        <ApproveRejectButtons pending={m.isPending} onApprove={() => m.mutate(true)} onReject={() => m.mutate(false)} />
-        <ActionError error={m.error} />
+      <div className="flex flex-col gap-2">
+        {app.markedPendingAt && (
+          <p className="text-xs text-warning-700">
+            Marked pending{app.pendingReason ? ` — ${app.pendingReason}` : ""}
+          </p>
+        )}
+        {prompt ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              aria-label={prompt === "reject" ? "Rejection remarks" : "Reason for marking pending"}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              inputClassName="w-64"
+              className="!mb-0"
+              placeholder={prompt === "reject" ? "Why (staff-only)" : "What you're waiting on"}
+            />
+            <button
+              onClick={() => (prompt === "reject" ? reject.mutate() : pending.mutate())}
+              disabled={busy || (prompt === "pending" && !reason.trim())}
+              className="btn btn-sm btn-navy disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : null} Confirm
+            </button>
+            <button onClick={() => setPrompt(null)} disabled={busy} className="btn btn-sm btn-outline">
+              Cancel
+            </button>
+            <ActionError error={reject.error || pending.error} />
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setPrompt("reject")}
+              className="btn btn-sm bg-error-600 border-error-600 text-white hover:bg-error-700"
+            >
+              <X size={14} /> Reject lead
+            </button>
+            <button onClick={() => setPrompt("pending")} className="btn btn-sm btn-outline">
+              Mark lead pending
+            </button>
+            <button onClick={() => setSanctioning(true)} className="btn btn-sm btn-gold">
+              <Check size={14} /> Accept lead
+            </button>
+          </div>
+        )}
       </div>
-    </ActionGate>
-  );
-}
-
-export function HeadActions({ app }: { app: ApplicationView }) {
-  const refresh = useRefreshAfterAction();
-  const m = useMutation({
-    mutationFn: (decision: boolean) =>
-      staffApi.headDecision(app.id, {
-        decision,
-        // Approve at the requested amount by default.
-        approvedAmountPaise: decision ? app.amountRequestedPaise ?? undefined : undefined,
-      }),
-    onSuccess: () => refresh(app.id),
-  });
-  return (
-    <ActionGate permission="loan:approve">
-      <div className="flex items-center gap-2">
-        <ApproveRejectButtons pending={m.isPending} onApprove={() => m.mutate(true)} onReject={() => m.mutate(false)} />
-        <ActionError error={m.error} />
-      </div>
-    </ActionGate>
-  );
-}
-
-/**
- * KYC-approver credit fast-path: on an applied KYC_APPROVED application the KYC approver clears the
- * credit gate in one step (→ DISBURSEMENT_PENDING) or rejects it. The action only appears once the
- * borrower has chosen an amount (amountRequestedPaise set).
- */
-export function KycCreditActions({ app }: { app: ApplicationView }) {
-  const refresh = useRefreshAfterAction();
-  const m = useMutation({
-    mutationFn: (decision: boolean) =>
-      staffApi.kycCreditDecision(app.id, {
-        decision,
-        approvedAmountPaise: decision ? app.amountRequestedPaise ?? undefined : undefined,
-      }),
-    onSuccess: () => refresh(app.id),
-  });
-  if (app.amountRequestedPaise == null) {
-    return <span className="text-xs italic text-muted">Awaiting the borrower&apos;s amount</span>;
-  }
-  return (
-    <ActionGate permission="loan:approve">
-      <div className="flex items-center gap-2">
-        <ApproveRejectButtons
-          pending={m.isPending}
-          onApprove={() => m.mutate(true)}
-          onReject={() => m.mutate(false)}
-          approveLabel="Approve for disbursement"
-          rejectLabel="Reject"
-        />
-        <ActionError error={m.error} />
-      </div>
+      <SanctionDialog app={app} open={sanctioning} onClose={() => setSanctioning(false)} />
     </ActionGate>
   );
 }
@@ -378,33 +366,14 @@ export function DisbursementActions({ app }: { app: ApplicationView }) {
       rejectLabel="Reject"
       pending={m.isPending}
       error={m.error}
-      // Txn id optional here: with one the loan activates immediately (skips the
-      // accountant); without one it routes to the accountant to confirm.
-      requireProofOnApprove={false}
-      proofPlaceholder="Transaction id (optional)"
-      hint="Enter a transaction id to release & activate immediately, or approve without one to send it to the accountant."
+      // Phase 4 (decision 42): the Head makes the transfer and releases directly — there is no
+      // accountant hop left to approve into, so the transaction id is required, not optional.
+      requireProofOnApprove
+      proofPlaceholder="Transaction id"
+      hint="Enter the transaction id of the transfer you made. Releasing activates the loan immediately."
       onApprove={(proof) => m.mutate({ decision: true, txnRef: proof || undefined, notes: proof ? `Txn/ref: ${proof}` : undefined })}
       onReject={(proof) => m.mutate({ decision: false, notes: proof })}
     />
   );
 }
 
-export function AccountantActions({ app }: { app: ApplicationView }) {
-  const refresh = useRefreshAfterAction();
-  const m = useMutation({
-    mutationFn: (vars: { decision: boolean; txnRef?: string; notes?: string }) =>
-      staffApi.accountantValidate(app.id, vars.decision, vars.txnRef, vars.notes),
-    onSuccess: () => refresh(app.id),
-  });
-  return (
-    <ProofDecisionActions
-      permission="loan:activate"
-      approveLabel="Confirm transfer"
-      rejectLabel="Mark failed"
-      pending={m.isPending}
-      error={m.error}
-      onApprove={(proof) => m.mutate({ decision: true, txnRef: proof || undefined, notes: proof ? `Txn/ref: ${proof}` : undefined })}
-      onReject={(proof) => m.mutate({ decision: false, notes: proof })}
-    />
-  );
-}

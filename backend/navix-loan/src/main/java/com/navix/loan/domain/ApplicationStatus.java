@@ -10,11 +10,16 @@ import java.util.Set;
  * states it may legally transition to; {@link #canTransitionTo} enforces it server-side.
  *
  * <pre>
- *  DRAFT → KYC_PENDING → KYC_APPROVED → CREDIT_EXEC_PENDING → CREDIT_EXEC_APPROVED →
- *  CREDIT_HEAD_PENDING → CREDIT_HEAD_APPROVED → DISBURSEMENT_PENDING → ACCOUNTANT_PENDING →
+ *  DRAFT → KYC_PENDING → CREDIT_EXEC_PENDING → SANCTIONED → DISBURSEMENT_PENDING →
  *  DISBURSED → ACTIVE → {CLOSED | OVERDUE → DEFAULTED → WRITTEN_OFF}
- *  branches: KYC_REJECTED, REJECTED, CANCELLED, DISBURSEMENT_FAILED → (retry) ACCOUNTANT_PENDING
+ *  branches: KYC_REJECTED, REJECTED, CANCELLED, DISBURSEMENT_FAILED → (retry) DISBURSEMENT_PENDING
  * </pre>
+ *
+ * <p>The credit maker-checker (CREDIT_EXEC_APPROVED → CREDIT_HEAD_PENDING → CREDIT_HEAD_APPROVED)
+ * and the reborrow review (REVIEW_PENDING) were retired in V45: the Credit Executive's sanction is
+ * final. The accountant disbursement hop (ACCOUNTANT_PENDING) was retired in V48: the Disbursement
+ * Head's transaction id <em>is</em> the validation. Those values stay in the enum so historical rows
+ * and the {@code application_event} trail still deserialize; nothing transitions to them.
  */
 public enum ApplicationStatus {
     DRAFT,
@@ -26,12 +31,28 @@ public enum ApplicationStatus {
     // straight to DISBURSEMENT_PENDING. REVIEW_PENDING = a borrower with past delinquency held for a
     // KYC-approver re-review before they may proceed (→ PRE_APPROVED on approve).
     PRE_APPROVED,
+    /** @deprecated Retired with the manual reborrow review (V45); kept for historical rows. */
+    @Deprecated
     REVIEW_PENDING,
     CREDIT_EXEC_PENDING,
+    /** @deprecated Retired with the credit maker-checker (V45); kept for historical rows. */
+    @Deprecated
     CREDIT_EXEC_APPROVED,
+    /** @deprecated Retired with the credit maker-checker (V45); kept for historical rows. */
+    @Deprecated
     CREDIT_HEAD_PENDING,
+    /** @deprecated Retired with the credit maker-checker (V45); kept for historical rows. */
+    @Deprecated
     CREDIT_HEAD_APPROVED,
+    /**
+     * Credit sanctioned an amount + repayment date, and the borrower is walking the post-approval
+     * journey (DigiLocker → references → selfie → eSign → disbursal account). Completing it routes
+     * to {@link #DISBURSEMENT_PENDING}. A sanction never expires (revamp.md decision 41).
+     */
+    SANCTIONED,
     DISBURSEMENT_PENDING,
+    /** @deprecated Retired with the accountant disbursement hop (V48); historical rows only. */
+    @Deprecated
     ACCOUNTANT_PENDING,
     DISBURSEMENT_FAILED,
     DISBURSED,
@@ -48,27 +69,35 @@ public enum ApplicationStatus {
     static {
         // A fresh draft normally goes to KYC; a reborrow draft is routed to PRE_APPROVED (clean
         // history) or REVIEW_PENDING (past delinquency) by ApplicationFlowService.reborrow.
-        TRANSITIONS.put(DRAFT, EnumSet.of(KYC_PENDING, PRE_APPROVED, REVIEW_PENDING, CANCELLED));
-        TRANSITIONS.put(KYC_PENDING, EnumSet.of(KYC_APPROVED, KYC_REJECTED));
-        // A KYC-approved applied application normally enters the credit maker-checker (CREDIT_EXEC_PENDING).
-        // The KYC approver may also clear the credit gate directly in the instant-loan model — routing
-        // straight to DISBURSEMENT_PENDING (or REJECTED) — while disbursement stays with the Disb. Head.
-        TRANSITIONS.put(KYC_APPROVED, EnumSet.of(CREDIT_EXEC_PENDING, DISBURSEMENT_PENDING, REJECTED, CANCELLED));
+        // REJECTED is reachable straight from DRAFT for the engine rules that turn an applicant away
+        // during intake — today the self-employed gate, from Phase 4 also past delinquency (V44).
+        TRANSITIONS.put(DRAFT, EnumSet.of(KYC_PENDING, PRE_APPROVED, REVIEW_PENDING, REJECTED, CANCELLED));
+        // The Credit Head assigns a submitted file straight to an executive (V45); the intermediate
+        // KYC_APPROVED stop survives for the credit team's optional explicit KYC clearance.
+        TRANSITIONS.put(KYC_PENDING, EnumSet.of(CREDIT_EXEC_PENDING, KYC_APPROVED, KYC_REJECTED, REJECTED, CANCELLED));
+        TRANSITIONS.put(KYC_APPROVED, EnumSet.of(CREDIT_EXEC_PENDING, SANCTIONED, REJECTED, CANCELLED));
         TRANSITIONS.put(KYC_REJECTED, EnumSet.noneOf(ApplicationStatus.class));
-        // Reborrow review gate: a KYC approver clears the borrower (→ PRE_APPROVED) or rejects.
+        // Retired with the manual reborrow review (V45) — historical rows only.
         TRANSITIONS.put(REVIEW_PENDING, EnumSet.of(PRE_APPROVED, REJECTED, CANCELLED));
-        // Pre-approved returning borrower: applying for an amount routes straight to disbursement
-        // (skips the credit maker-checker — a deliberate relaxation for repeat borrowers).
-        TRANSITIONS.put(PRE_APPROVED, EnumSet.of(DISBURSEMENT_PENDING, CANCELLED));
-        TRANSITIONS.put(CREDIT_EXEC_PENDING, EnumSet.of(CREDIT_EXEC_APPROVED, REJECTED));
+        // Pre-approved returning borrower: re-applying carries the prior sanction (→ SANCTIONED, where
+        // they re-walk the short offer journey). DISBURSEMENT_PENDING remains legal for rows minted
+        // before V45 that already skipped straight to the Disbursement Head.
+        TRANSITIONS.put(PRE_APPROVED, EnumSet.of(SANCTIONED, DISBURSEMENT_PENDING, CANCELLED));
+        // The Credit Executive's decision is FINAL (decision 27) — sanction or reject, no Head
+        // counter-approval. CREDIT_EXEC_APPROVED / CREDIT_HEAD_* are off the live path.
+        TRANSITIONS.put(CREDIT_EXEC_PENDING, EnumSet.of(SANCTIONED, REJECTED, CANCELLED));
         TRANSITIONS.put(CREDIT_EXEC_APPROVED, EnumSet.of(CREDIT_HEAD_PENDING));
         TRANSITIONS.put(CREDIT_HEAD_PENDING, EnumSet.of(CREDIT_HEAD_APPROVED, REJECTED));
         TRANSITIONS.put(CREDIT_HEAD_APPROVED, EnumSet.of(DISBURSEMENT_PENDING));
-        // The Disbursement Head may either hand off to the accountant, or — when they supply a
-        // transaction id — finalize the release directly (DISBURSED, then auto → ACTIVE).
-        TRANSITIONS.put(DISBURSEMENT_PENDING, EnumSet.of(ACCOUNTANT_PENDING, DISBURSED, REJECTED));
-        TRANSITIONS.put(ACCOUNTANT_PENDING, EnumSet.of(DISBURSED, DISBURSEMENT_FAILED));
-        TRANSITIONS.put(DISBURSEMENT_FAILED, EnumSet.of(ACCOUNTANT_PENDING, CANCELLED));
+        // The borrower accepts the offer (Phase 3: amount → eSign → disbursal account) → disbursement.
+        TRANSITIONS.put(SANCTIONED, EnumSet.of(DISBURSEMENT_PENDING, REJECTED, CANCELLED));
+        // The Disbursement Head releases DIRECTLY, always with a transaction id (V47/V48,
+        // decision 42): DISBURSEMENT_PENDING → DISBURSED → ACTIVE. The transaction id IS the
+        // validation — there is no second desk behind the Head, so nothing reaches
+        // ACCOUNTANT_PENDING any more and a retry returns to the Head who owns the release.
+        TRANSITIONS.put(DISBURSEMENT_PENDING, EnumSet.of(DISBURSED, REJECTED));
+        TRANSITIONS.put(ACCOUNTANT_PENDING, EnumSet.noneOf(ApplicationStatus.class));
+        TRANSITIONS.put(DISBURSEMENT_FAILED, EnumSet.of(DISBURSEMENT_PENDING, CANCELLED));
         TRANSITIONS.put(DISBURSED, EnumSet.of(ACTIVE));
         TRANSITIONS.put(ACTIVE, EnumSet.of(CLOSED, OVERDUE));
         TRANSITIONS.put(OVERDUE, EnumSet.of(CLOSED, DEFAULTED));

@@ -7,8 +7,8 @@ import { useSearchParams } from "next/navigation";
 import { Lock, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
+import { passwordOk, PASSWORD_HINT } from "@/lib/password";
 
-const policyOk = (pw: string) => pw.length >= 10 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
 
 function ResetInner() {
   const token = useSearchParams().get("token") ?? "";
@@ -20,7 +20,7 @@ function ResetInner() {
 
   const submit = async () => {
     if (!token) { setError("This reset link is invalid or has expired."); return; }
-    if (!policyOk(password)) { setError("Password must be at least 10 characters and include letters and digits."); return; }
+    if (!passwordOk(password)) { setError(`Password must be ${PASSWORD_HINT}.`); return; }
     if (password !== confirm) { setError("Passwords don't match."); return; }
     setBusy(true);
     setError(undefined);
@@ -47,7 +47,7 @@ function ResetInner() {
       <div className="mx-auto w-full max-w-md">
         <div className="mb-6 text-center">
           <h1 className="mb-1">Set a new password</h1>
-          <p className="text-muted">Choose a password of at least 10 characters with letters and digits.</p>
+          <p className="text-muted">Choose a password of {PASSWORD_HINT}.</p>
         </div>
         <div className="form-card">
           {done ? (

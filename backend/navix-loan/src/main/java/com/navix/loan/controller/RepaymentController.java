@@ -45,9 +45,19 @@ public class RepaymentController {
                 .toList());
     }
 
-    /** Confirm proof for a recorded payment (maker-checker: typically an accountant/ops action). */
+    /**
+     * Confirm proof for a recorded payment — <b>Accountant/Admin only</b>.
+     *
+     * <p>This is the single call that turns a claimed payment into money the ledger believes in: it
+     * reduces the outstanding and closes the loan at zero. It carried no role check at all, so any
+     * caller with a valid token could make it — including a Collection Executive chasing the debt,
+     * a Telecaller, or <b>the borrower themselves</b>, who could record a payment with an invented
+     * transaction reference and then verify it, writing off their own loan without paying.
+     * The counterpart {@link #reject} was guarded; this was not.
+     */
     @PostMapping("/{paymentId}/verify")
     public ApiResponse<PaymentView> verify(@PathVariable Long loanId, @PathVariable Long paymentId) {
+        requireRole("ACCOUNTANT", "ADMIN");
         return ApiResponse.ok(PaymentView.of(repaymentService.verifyPayment(paymentId)));
     }
 

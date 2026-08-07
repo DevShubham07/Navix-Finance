@@ -12,7 +12,7 @@ import { adminApi, type StaffRoleName, type InviteResponse } from "@/lib/api/app
 import { formatDateTime } from "@/lib/utils";
 
 const ROLES: StaffRoleName[] = [
-  "KYC_APPROVER", "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
+  "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
   "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN", "DEVELOPER",
 ];
 
@@ -22,7 +22,7 @@ export default function AdminInvitesPage() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-invites"], queryFn: adminApi.listInvites });
   const [email, setEmail] = React.useState("");
-  const [role, setRole] = React.useState<StaffRoleName>("KYC_APPROVER");
+  const [role, setRole] = React.useState<StaffRoleName>("CREDIT_EXECUTIVE");
 
   const create = useMutation({
     mutationFn: () => adminApi.createInvite({ email: email.trim(), role }),

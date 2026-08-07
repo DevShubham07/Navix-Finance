@@ -29,6 +29,8 @@ export type ApplicationStatus =
   | "CREDIT_EXEC_APPROVED"
   | "CREDIT_HEAD_PENDING"
   | "CREDIT_HEAD_APPROVED"
+  // Credit has decided; the borrower is walking the post-approval journey (V45).
+  | "SANCTIONED"
   | "DISBURSEMENT_PENDING"
   | "ACCOUNTANT_PENDING"
   | "DISBURSEMENT_FAILED"
@@ -71,6 +73,42 @@ export interface ApplicationView {
    */
   loanStatus?: string | null;
   loanDueDate?: string | null;
+  /**
+   * The credit sanction (V45) — null until a Credit Executive accepts the lead. The sanctioned
+   * amount is the CEILING the borrower may draw from, not what they end up requesting.
+   */
+  sanctionedAmountPaise?: number | null;
+  approvedRepaymentDate?: string | null;
+  sanctionTenureDays?: number | null;
+  sanctionRemarks?: string | null;
+  sanctionedAt?: string | null;
+  /** "Mark lead pending" — a staff-only tag; the borrower is never told (revamp.md decision 30). */
+  markedPendingAt?: string | null;
+  pendingReason?: string | null;
+  /**
+   * Where this advance is paid (V46), confirmed by the borrower on the last offer screen. Held in
+   * full because the Disbursement Head cannot make the transfer otherwise (revamp.md decision 16) —
+   * so never log these and never put them in an export.
+   */
+  disbursalAccountNumber?: string | null;
+  disbursalIfsc?: string | null;
+  disbursalHolderName?: string | null;
+  disbursalBank?: string | null;
+  /** The borrower named a different account, so a penny drop ran against it. */
+  disbursalAccountChanged?: boolean | null;
+  /** False on the unchanged-salary-account path, which never runs a penny drop (decision 9). */
+  disbursalAccountVerified?: boolean | null;
+}
+
+/** One staffer's action off the application-event trail (backs /staff/my-decisions). */
+export interface DecisionView {
+  applicationId: number;
+  customerName: string | null;
+  action: string;
+  fromStatus: string | null;
+  toStatus: string;
+  notes: string | null;
+  at: string;
 }
 
 /**
@@ -243,6 +281,15 @@ export interface ProfileView {
   addressVerified?: boolean | null;
   pennyDropVerified?: boolean | null;
   nameMatchScore?: number | null;
+  /** Phase 1 intake — also what the wizard re-hydrates from on another device (revamp.md C1). */
+  officialEmail?: string | null;
+  salaryAccountNumber?: string | null;
+  salaryIfsc?: string | null;
+  salaryAccountMobile?: string | null;
+  previousSalaryDate?: string | null;
+  termsVersion?: string | null;
+  termsAcceptedAt?: string | null;
+  pepDeclaredAt?: string | null;
   creditBriefSummary?: string | null;
   creditBriefGeneratedAt?: string | null;
 }
@@ -259,6 +306,49 @@ export interface ProfileInput {
   employmentStatus?: string;
   monthlySalaryPaise?: number;
   salaryBank?: string;
+  // --- Phase 1 intake (revamp.md). All optional: the wizard saves in slices. ---
+  /** Official work email — the only address the email-verification API is run against. */
+  officialEmail?: string;
+  salaryAccountNumber?: string;
+  salaryIfsc?: string;
+  salaryAccountMobile?: string;
+  /** Last salary credit date (ISO yyyy-mm-dd); the recurring salary day is derived from it. */
+  previousSalaryDate?: string;
+  /** Self-employed declared annual income, in paise. */
+  annualSalaryPaise?: number;
+  /** T&C version accepted on screen 1; the accepted-at timestamp is stamped server-side. */
+  termsVersion?: string;
+  /** True = "I am not a Politically Exposed Person". */
+  pepDeclared?: boolean;
+}
+
+/** Where the borrower is in the onboarding journey, answered server-side (revamp.md C1). */
+export interface JourneyView {
+  step: string;
+  route: string;
+  index: number;
+  total: number;
+  completed: string[];
+  /**
+   * The steps THIS borrower's journey actually has, in order. Not a constant: a re-apply drops the
+   * screens whose evidence carried over from the prior advance (V47), so `index`/`total` count
+   * against this list rather than a fixed eleven.
+   */
+  steps: string[];
+}
+
+/** One row of the ADMIN rejection register. */
+export interface RejectionView {
+  id: number;
+  applicationId: number | null;
+  customerId: number;
+  borrowerName: string | null;
+  mobile: string | null;
+  reasonCode: string;
+  reasonDetail: string | null;
+  auto: boolean;
+  blockedUntil: string | null;
+  createdAt: string | null;
 }
 
 /**
@@ -582,6 +672,10 @@ export const borrowerApi = {
   submitKyc: (id: number) =>
     bff<ApplicationView>(`${BORROWER_BASE}/${id}/submit-kyc`, "POST"),
 
+  /** Borrower declared self-employed — auto-rejects and starts the 90-day cooling-off window. */
+  selfEmployed: (id: number) =>
+    bff<ApplicationView>(`${BORROWER_BASE}/${id}/self-employed`, "POST"),
+
   /** Set amount/purpose/salary-day once KYC is approved (stays KYC_APPROVED). */
   apply: (
     id: number,
@@ -645,6 +739,13 @@ export const borrowerApi = {
 
   /** List documents already uploaded for this application. */
   documents: (id: number) => bff<DocumentView[]>(`${BORROWER_BASE}/${id}/documents`, "GET"),
+};
+
+/** Server-side onboarding position — what makes a second device resume mid-flow (revamp.md C1). */
+export const journeyApi = {
+  get: (id: number) => bff<JourneyView>(`${BORROWER_BASE}/${id}/journey`, "GET"),
+  advance: (id: number, step: string) =>
+    bff<JourneyView>(`${BORROWER_BASE}/${id}/journey/${step}`, "POST"),
 };
 
 // ---------------------------------------------------------------------------
@@ -800,6 +901,102 @@ export const verificationApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Offer journey (revamp.md Phase 3) — what the borrower walks after credit sanctions their file.
+// Routes under /api/borrower/applications/{id}/offer/*. The identity checks inside this journey
+// (DigiLocker, selfie, address) stay on `verificationApi` — only what Phase 3 newly captures is here.
+// ---------------------------------------------------------------------------
+
+export type ReferenceRelation =
+  | "PARENT" | "SPOUSE" | "SIBLING" | "RELATIVE" | "FRIEND" | "COLLEAGUE" | "MANAGER" | "NEIGHBOUR";
+
+/** The relations the references screen offers, in the order the backend lists them. */
+export const REFERENCE_RELATIONS: ReferenceRelation[] = [
+  "PARENT", "SPOUSE", "SIBLING", "RELATIVE", "FRIEND", "COLLEAGUE", "MANAGER", "NEIGHBOUR",
+];
+
+export interface ReferenceView {
+  slot: number;
+  fullName: string;
+  mobile: string;
+  relation: string;
+}
+
+export interface ReferenceInput {
+  fullName: string;
+  mobile: string;
+  relation: string;
+}
+
+/** Every number on the loan-summary screen, computed server-side with the real loan math. */
+export interface OfferSummaryView {
+  applicationId: number;
+  /** What credit sanctioned — the ceiling. */
+  ceilingPaise: number;
+  /** What the borrower chose to draw. */
+  principalPaise: number;
+  processingFeePaise: number;
+  gstPaise: number;
+  netDisbursedPaise: number;
+  interestPaise: number;
+  totalRepayablePaise: number;
+  tenureDays: number;
+  repaymentDate: string | null;
+  /** Calendar days, 18:00 IST cut-off — no weekend or holiday roll. */
+  expectedDisbursalDate: string;
+}
+
+export interface SanctionLetterView {
+  documentId: number;
+  url: string;
+}
+
+export interface DisbursalAccountView {
+  accountNumber: string | null;
+  ifsc: string | null;
+  holderName: string | null;
+  bank: string | null;
+  verified: boolean;
+  /** Non-null: the borrower burnt their penny-drop attempts and must wait this out. */
+  lockedUntil: string | null;
+  attemptsLeft: number;
+}
+
+const OFFER = (id: number) => `${BORROWER_BASE}/${id}/offer`;
+
+export const offerApi = {
+  /** Draw down an amount within the sanctioned ceiling. Stays SANCTIONED. */
+  chooseAmount: (id: number, amountPaise: number) =>
+    bff<ApplicationView>(`${OFFER(id)}/amount`, "POST", { amountPaise }),
+
+  references: (id: number) => bff<ReferenceView[]>(`${OFFER(id)}/references`, "GET"),
+
+  /** Both references at once — the backend rejects anything but two distinct, non-self contacts. */
+  saveReferences: (id: number, references: ReferenceInput[]) =>
+    bff<ReferenceView[]>(`${OFFER(id)}/references`, "POST", { references }),
+
+  summary: (id: number) => bff<OfferSummaryView>(`${OFFER(id)}/summary`, "GET"),
+
+  /** Renders the Key Fact Statement to S3 and returns a short-lived URL to read it. */
+  sanctionLetter: (id: number) =>
+    bff<SanctionLetterView>(`${OFFER(id)}/sanction-letter`, "POST"),
+
+  /** Sign the letter. Without this the application cannot reach disbursement. */
+  esign: (id: number) => bff<StepResult>(`${OFFER(id)}/esign`, "POST"),
+
+  disbursalAccount: (id: number) =>
+    bff<DisbursalAccountView>(`${OFFER(id)}/disbursal-account`, "GET"),
+
+  /**
+   * The last step: confirms where the money lands and hands the file to disbursement. A penny drop
+   * fires only when the account differs from the salary account on file.
+   */
+  confirmDisbursalAccount: (
+    id: number,
+    payload: { accountNumber: string; ifsc: string; holderName?: string; bank?: string },
+  ) => bff<ApplicationView>(`${OFFER(id)}/disbursal-account`, "POST", payload),
+};
+
+// ---------------------------------------------------------------------------
 // Staff client — routes under /api/staff/*
 // ---------------------------------------------------------------------------
 
@@ -831,40 +1028,49 @@ export const staffApi = {
   /** ADMIN-only: every application (complete + incomplete) with full KYC detail + completeness. */
   listAllApplications: () => bff<AdminApplicationView[]>(`${STAFF_BASE}/all`, "GET"),
 
+  /** ADMIN — the rejection register, optionally filtered by reason code. */
+  rejections: (reason?: string) =>
+    bff<RejectionView[]>(`${STAFF_BASE}/rejections${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, "GET"),
+
   get: (id: number) => bff<ApplicationView>(`${STAFF_BASE}/${id}`, "GET"),
 
   events: (id: number) => bff<EventView[]>(`${STAFF_BASE}/${id}/events`, "GET"),
+
+  /** The two contacts the borrower named in the Phase-3 offer journey (V46). */
+  references: (id: number) => bff<ReferenceView[]>(`${STAFF_BASE}/${id}/references`, "GET"),
 
   // --- maker-checker actions ---
   kycDecision: (id: number, decision: boolean, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/kyc-decision`, "POST", { decision, notes }),
 
-  /** Clear (or reject) a flagged returning borrower: REVIEW_PENDING → PRE_APPROVED / REJECTED. */
-  reviewDecision: (id: number, decision: boolean, notes?: string) =>
-    bff<ApplicationView>(`${STAFF_BASE}/${id}/review-decision`, "POST", { decision, notes }),
-
+  /** Credit Head hands the file to an executive: KYC_PENDING → CREDIT_EXEC_PENDING. */
   assign: (id: number, executiveId: number) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/assign`, "POST", { executiveId }),
 
-  execDecision: (id: number, decision: boolean, notes?: string) =>
-    bff<ApplicationView>(`${STAFF_BASE}/${id}/exec-decision`, "POST", { decision, notes }),
-
-  headDecision: (
+  /** "Accept lead" — the Credit Executive's FINAL decision (V45). No Head counter-approval. */
+  sanction: (
     id: number,
-    payload: { decision: boolean; approvedAmountPaise?: number; notes?: string },
-  ) => bff<ApplicationView>(`${STAFF_BASE}/${id}/head-decision`, "POST", payload),
+    payload: { sanctionedAmountPaise: number; repaymentDate: string; remarks?: string },
+  ) => bff<ApplicationView>(`${STAFF_BASE}/${id}/sanction`, "POST", payload),
 
-  /** KYC-approver credit fast-path: applied KYC_APPROVED → DISBURSEMENT_PENDING / REJECTED. */
-  kycCreditDecision: (
-    id: number,
-    payload: { decision: boolean; approvedAmountPaise?: number; notes?: string },
-  ) => bff<ApplicationView>(`${STAFF_BASE}/${id}/kyc-credit-decision`, "POST", payload),
+  /** "Reject lead" — the borrower is told nothing; the remarks go to the staff-only register. */
+  rejectLead: (id: number, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/reject-lead`, "POST", { notes }),
+
+  /** "Mark lead pending" — a staff-only tag; the lead keeps its status and its place in the queue. */
+  markPending: (id: number, notes: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/mark-pending`, "POST", { notes }),
+
+  /** Own decisions by default; a Head may pass a team member's id, ADMIN anyone's. */
+  decisions: (staffId?: number) =>
+    bff<DecisionView[]>(`/api/staff/decisions${staffId ? `?staffId=${staffId}` : ""}`, "GET"),
+
+  /** Staff whose decision history the caller may open (a Head's team; everyone for ADMIN). */
+  inspectableStaff: () => bff<StaffSummary[]>(`/api/staff/decisions/inspectable`, "GET"),
 
   disbursementDecision: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/disbursement-decision`, "POST", { decision, txnRef, notes }),
 
-  accountantValidate: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
-    bff<ApplicationView>(`${STAFF_BASE}/${id}/accountant-validate`, "POST", { decision, txnRef, notes }),
 
   /** Cancel a pre-disbursement application (staff/admin). Backend rejects once past disbursement. */
   cancel: (id: number, notes?: string) =>
@@ -1178,7 +1384,6 @@ export const dashboardApi = {
 // ---------------------------------------------------------------------------
 
 export type StaffRoleName =
-  | "KYC_APPROVER"
   | "CREDIT_EXECUTIVE"
   | "CREDIT_HEAD"
   | "DISBURSEMENT_HEAD"
@@ -1547,6 +1752,53 @@ export interface SettlementView {
   rejectedAt: string | null;
 }
 
+/**
+ * What a collections officer is recording (V47; revamp.md decision 43). A settlement writes off
+ * part of the debt, so it takes an extra hop through the Collection Head; part and full payments go
+ * straight to the Accountant.
+ */
+export type CollectionPaymentKind = "PART_PAYMENT" | "FULL_PAYMENT" | "SETTLEMENT";
+
+export const COLLECTION_PAYMENT_KINDS: Array<{ value: CollectionPaymentKind; label: string; hint: string }> = [
+  { value: "PART_PAYMENT", label: "Part payment", hint: "Some of the balance; the rest is still owed." },
+  { value: "FULL_PAYMENT", label: "Full payment", hint: "Clears the balance outright." },
+  {
+    value: "SETTLEMENT",
+    label: "Settlement",
+    hint: "Full & final for less than the balance — needs a settlement open on the case, and the Collection Head's approval.",
+  },
+];
+
+export type CollectionPaymentStatusName =
+  | "PENDING_HEAD"
+  | "PENDING_ACCOUNTANT"
+  | "VALIDATED"
+  | "REJECTED";
+
+/** A collections payment and its approval chain (mirrors backend CollectionPaymentView). */
+export interface CollectionPaymentView {
+  id: string;
+  collectionCaseId: string;
+  loanId: number | null;
+  kind: CollectionPaymentKind;
+  amountPaise: number | null;
+  paidOn: string | null;
+  txnRef: string | null;
+  proofRef: string | null;
+  settlementId: string | null;
+  status: CollectionPaymentStatusName;
+  raisedBy: number | null;
+  raisedByName: string | null;
+  raisedAt: string;
+  validatedBy: number | null;
+  validatedByName: string | null;
+  validatedAt: string | null;
+  remarks: string | null;
+  /** The loan-ledger payment the Accountant's validation minted; null until validated. */
+  ledgerPaymentId: number | null;
+  borrowerName: string | null;
+}
+
 export interface DpdView {
   dueDate: string;
   asOf: string;
@@ -1584,6 +1836,41 @@ export const collectionsApi = {
     bff<SettlementView>(`${COLLECTIONS_BASE}/settlements/${settlementId}/approve`, "POST"),
   rejectSettlement: (settlementId: string) =>
     bff<SettlementView>(`${COLLECTIONS_BASE}/settlements/${settlementId}/reject`, "POST"),
+
+  // ---- collections payments (V47) ----
+  // The officer records, the Accountant books. Nothing here moves the borrower's balance except
+  // `validatePayment(id, true)` — that is the whole shape of the rule (decision 44).
+
+  raisePayment: (
+    caseId: string,
+    payload: {
+      kind: CollectionPaymentKind;
+      amountPaise: number;
+      paidOn?: string;
+      txnRef?: string;
+      proofRef?: string;
+      settlementId?: string;
+    },
+  ) => bff<CollectionPaymentView>(`${COLLECTIONS_BASE}/cases/${caseId}/payments`, "POST", payload),
+
+  listCasePayments: (caseId: string) =>
+    bff<CollectionPaymentView[]>(`${COLLECTIONS_BASE}/cases/${caseId}/payments`, "GET"),
+
+  /** Omit `status` for the full register; pass one to read a specific desk's queue. */
+  listPayments: (status?: CollectionPaymentStatusName) =>
+    bff<CollectionPaymentView[]>(
+      `${COLLECTIONS_BASE}/payments${status ? `?status=${status}` : ""}`,
+      "GET",
+    ),
+
+  headApprovePayment: (paymentId: string) =>
+    bff<CollectionPaymentView>(`${COLLECTIONS_BASE}/payments/${paymentId}/head-approve`, "POST"),
+
+  validatePayment: (paymentId: string, accept: boolean, remarks?: string) =>
+    bff<CollectionPaymentView>(`${COLLECTIONS_BASE}/payments/${paymentId}/validate`, "POST", {
+      accept,
+      remarks,
+    }),
 
   dpd: (dueDate: string, asOf?: string) =>
     bff<DpdView>(

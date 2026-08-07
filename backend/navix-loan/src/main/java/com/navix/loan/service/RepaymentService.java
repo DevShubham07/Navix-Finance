@@ -46,6 +46,7 @@ public class RepaymentService {
     public Payment recordPayment(Long loanId, long amountPaise, PaymentMethod method,
                                  String txnRef, String proofUrl, LocalDate paidOn) {
         Loan loan = requireLoan(loanId);
+        requireOwnLoanIfBorrower(loan);
         if (loan.getStatus() == LoanStatus.CLOSED || loan.getStatus() == LoanStatus.REPAID) {
             throw new BusinessException("LOAN_SETTLED", "Loan is already settled");
         }
@@ -209,6 +210,24 @@ public class RepaymentService {
         // Mirror full repayment onto the application aggregate (ACTIVE/OVERDUE → CLOSED).
         if (owed == 0L) {
             applicationFlowService.closeForLoan(loanId);
+        }
+    }
+
+    /**
+     * A borrower may only record payments against their <em>own</em> loan.
+     *
+     * <p>Without this any borrower could post a payment onto a stranger's loan: the row lands
+     * PENDING_VERIFICATION on that loan, and the only thing standing between it and a real balance
+     * reduction is an accountant noticing. Staff roles are unrestricted — recording on a borrower's
+     * behalf (a branch walk-in, a phoned-in reference) is legitimate.
+     */
+    private void requireOwnLoanIfBorrower(Loan loan) {
+        var actor = com.navix.common.security.ActorContext.get();
+        if (!"BORROWER".equals(actor.role())) {
+            return;
+        }
+        if (!String.valueOf(loan.getCustomerId()).equals(actor.id())) {
+            throw new BusinessException("FORBIDDEN", "You can only record payments on your own loan");
         }
     }
 

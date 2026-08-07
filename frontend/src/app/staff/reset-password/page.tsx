@@ -8,8 +8,8 @@ import { ShieldCheck, Lock, CheckCircle2 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { Input } from "@/components/ui";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
+import { passwordOk, PASSWORD_HINT } from "@/lib/password";
 
-const policyOk = (pw: string) => pw.length >= 10 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
 
 function StaffResetInner() {
   const token = useSearchParams().get("token") ?? "";
@@ -22,7 +22,7 @@ function StaffResetInner() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) { setError("This reset link is invalid or has expired."); return; }
-    if (!policyOk(password)) { setError("Password must be at least 10 characters and include letters and digits."); return; }
+    if (!passwordOk(password)) { setError(`Password must be ${PASSWORD_HINT}.`); return; }
     if (password !== confirm) { setError("Passwords don't match."); return; }
     setBusy(true);
     setError(undefined);

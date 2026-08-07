@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { html } from "../_content/faq";
 import { MarketingHtml } from "@/components/site/marketing-html";
 import { FaqSchema } from "@/components/site/faq-schema";
+import { PaymentSafetyTicker } from "@/components/site/payment-safety-ticker";
 
 export const metadata: Metadata = {
   title: 'Frequently Asked Questions — DhanBoost',
@@ -13,6 +14,7 @@ export default function Page() {
   return (
     <>
       <FaqSchema />
+      <PaymentSafetyTicker />
       <MarketingHtml html={html} />
     </>
   );

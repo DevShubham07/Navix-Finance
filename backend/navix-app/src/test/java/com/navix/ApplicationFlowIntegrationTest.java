@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.security.JwtService;
 import com.navix.loan.service.ApplicationVerificationService;
+import java.time.LocalDate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -67,15 +68,17 @@ class ApplicationFlowIntegrationTest {
         assertStatusEquals(appId, "DRAFT");
 
         act(appId, "submit-kyc", "7", "BORROWER", null, "KYC_PENDING");
-        act(appId, "kyc-decision", "11", "KYC_APPROVER", "{\"decision\":true}", "KYC_APPROVED");
-        act(appId, "apply", "7", "BORROWER",
-                "{\"amountPaise\":1000000,\"purpose\":\"medical\",\"eligibleLimitPaise\":1250000,\"salaryCreditDay\":30}",
-                "KYC_APPROVED");
+        // V45: the Credit Head assigns straight off the submitted intake and the executive's
+        // sanction is final — no KYC approver, no Head counter-approval.
         act(appId, "assign", "12", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
-        act(appId, "exec-decision", "13", "CREDIT_EXECUTIVE", "{\"decision\":true}", "CREDIT_HEAD_PENDING");
-        act(appId, "head-decision", "12", "CREDIT_HEAD", "{\"decision\":true}", "DISBURSEMENT_PENDING");
-        act(appId, "disbursement-decision", "14", "DISBURSEMENT_HEAD", "{\"decision\":true}", "ACCOUNTANT_PENDING");
-        act(appId, "accountant-validate", "15", "ACCOUNTANT", "{\"decision\":true}", "ACTIVE");
+        act(appId, "sanction", "13", "CREDIT_EXECUTIVE",
+                "{\"sanctionedAmountPaise\":1000000,\"repaymentDate\":\"" + LocalDate.now().plusDays(28)
+                        + "\",\"remarks\":\"verified\"}", "SANCTIONED");
+        act(appId, "accept-offer", "7", "BORROWER", "{\"amountPaise\":1000000}", "DISBURSEMENT_PENDING");
+        // V48: the Disbursement Head releases directly and their transaction id IS the validation —
+        // there is no accountant hop behind them, so this one call lands the loan ACTIVE.
+        act(appId, "disbursement-decision", "14", "DISBURSEMENT_HEAD",
+                "{\"decision\":true,\"txnRef\":\"UTR-IT-001\"}", "ACTIVE");
 
         MvcResult appView = mvc.perform(get("/api/applications/{id}", appId)
                         .header("Authorization", bearer("1", "ADMIN")))
@@ -101,13 +104,11 @@ class ApplicationFlowIntegrationTest {
         assertStatusEquals(appId, "DRAFT");
 
         act(appId, "submit-kyc", "10", "BORROWER", null, "KYC_PENDING");
-        act(appId, "kyc-decision", "1", "ADMIN", "{\"decision\":true}", "KYC_APPROVED");
-        act(appId, "apply", "10", "BORROWER",
-                "{\"amountPaise\":1000000,\"purpose\":\"medical\",\"eligibleLimitPaise\":1250000,\"salaryCreditDay\":30}",
-                "KYC_APPROVED");
         act(appId, "assign", "1", "ADMIN", "{\"executiveId\":10}", "CREDIT_EXEC_PENDING");
-        act(appId, "exec-decision", "1", "ADMIN", "{\"decision\":true}", "CREDIT_HEAD_PENDING");
-        act(appId, "head-decision", "1", "ADMIN", "{\"decision\":true}", "DISBURSEMENT_PENDING");
+        act(appId, "sanction", "1", "ADMIN",
+                "{\"sanctionedAmountPaise\":1000000,\"repaymentDate\":\"" + LocalDate.now().plusDays(28) + "\"}",
+                "SANCTIONED");
+        act(appId, "accept-offer", "10", "BORROWER", "{\"amountPaise\":1000000}", "DISBURSEMENT_PENDING");
         act(appId, "disbursement-decision", "1", "ADMIN",
                 "{\"decision\":true,\"txnRef\":\"ADMIN-TXN-10\"}", "ACTIVE");
 
@@ -117,31 +118,57 @@ class ApplicationFlowIntegrationTest {
                 .andExpect(jsonPath("$.data.loanId", notNullValue()));
     }
 
+    /**
+     * The credit team's approved repayment date — not the salary-derived one — becomes the loan's
+     * due date (V45). Sanctions a date the salary rule would never pick so the assertion can only
+     * pass if {@code LoanService.disburse} honoured it.
+     */
     @Test
-    void separationOfDutiesBlocksSameActorAsExecutiveAndHead() throws Exception {
+    void sanctionedRepaymentDateBecomesTheLoanDueDate() throws Exception {
         long appId = createApplication(8L);
-        act(appId, "submit-kyc", "8", "BORROWER", null, "KYC_PENDING");
-        act(appId, "kyc-decision", "11", "KYC_APPROVER", "{\"decision\":true}", "KYC_APPROVED");
-        act(appId, "apply", "8", "BORROWER", "{\"amountPaise\":1000000}", "KYC_APPROVED");
-        act(appId, "assign", "12", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
-        act(appId, "exec-decision", "99", "CREDIT_EXECUTIVE", "{\"decision\":true}", "CREDIT_HEAD_PENDING");
+        LocalDate repay = LocalDate.now().plusDays(17);
 
-        // The same human (id 99) who recommended cannot give final approval (dfd.md D3).
-        mvc.perform(post("/api/applications/{id}/head-decision", appId)
-                        .header("Authorization", bearer("99", "CREDIT_HEAD"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"decision\":true}"))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.error.code").value("SOD_VIOLATION"));
+        act(appId, "submit-kyc", "8", "BORROWER", null, "KYC_PENDING");
+        act(appId, "assign", "12", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
+        act(appId, "sanction", "13", "CREDIT_EXECUTIVE",
+                "{\"sanctionedAmountPaise\":1000000,\"repaymentDate\":\"" + repay + "\"}", "SANCTIONED");
+        act(appId, "accept-offer", "8", "BORROWER", "{\"amountPaise\":1000000}", "DISBURSEMENT_PENDING");
+        act(appId, "disbursement-decision", "14", "DISBURSEMENT_HEAD",
+                "{\"decision\":true,\"txnRef\":\"UTR-8\"}", "ACTIVE");
+
+        MvcResult appView = mvc.perform(get("/api/applications/{id}", appId)
+                        .header("Authorization", bearer("1", "ADMIN")))
+                .andExpect(status().isOk())
+                .andReturn();
+        long loanId = data(appView).get("loanId").asLong();
+
+        mvc.perform(get("/api/loan/{id}", loanId).header("Authorization", bearer("1", "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.dueDate").value(repay.toString()));
+    }
+
+    /** A rejected lead lands in the staff-only register tagged MANUAL (revamp.md decision 31). */
+    @Test
+    void rejectLeadIsRecordedInTheRejectionRegister() throws Exception {
+        long appId = createApplication(20L);
+        act(appId, "submit-kyc", "20", "BORROWER", null, "KYC_PENDING");
+        act(appId, "assign", "12", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
+        act(appId, "reject-lead", "13", "CREDIT_EXECUTIVE", "{\"notes\":\"income unverifiable\"}", "REJECTED");
+
+        mvc.perform(get("/api/applications/rejections").param("reason", "MANUAL")
+                        .header("Authorization", bearer("1", "ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.applicationId==" + appId + ")]").exists());
     }
 
     @Test
     void illegalTransitionIsRejected() throws Exception {
         long appId = createApplication(9L);
-        mvc.perform(post("/api/applications/{id}/exec-decision", appId)
+        mvc.perform(post("/api/applications/{id}/sanction", appId)
                         .header("Authorization", bearer("13", "CREDIT_EXECUTIVE"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"decision\":true}"))
+                        .content("{\"sanctionedAmountPaise\":1000000,\"repaymentDate\":\""
+                                + LocalDate.now().plusDays(20) + "\"}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code").value("ILLEGAL_TRANSITION"));
     }

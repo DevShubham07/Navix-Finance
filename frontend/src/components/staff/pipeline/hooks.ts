@@ -44,7 +44,6 @@ export function errMessage(e: unknown): string {
 }
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
-  KYC_APPROVER: "KYC Approver",
   CREDIT_EXECUTIVE: "Credit Executive",
   CREDIT_HEAD: "Credit Head",
   DISBURSEMENT_HEAD: "Disbursement Head",
@@ -58,7 +57,6 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
 
 /** Roles that drive the application state machine. */
 export const PIPELINE_ROLES: StaffRole[] = [
-  "KYC_APPROVER",
   "CREDIT_HEAD",
   "CREDIT_EXECUTIVE",
   "DISBURSEMENT_HEAD",

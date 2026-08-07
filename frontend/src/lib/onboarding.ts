@@ -1,54 +1,42 @@
 "use client";
 
 import * as React from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useOnboardingStore } from "@/stores/application-store";
 import { readStoredAppId } from "@/lib/api/live-journey";
-import { borrowerApi, type ProfileInput } from "@/lib/api/applications";
+import { borrowerApi, journeyApi, type ProfileInput, type ProfileView } from "@/lib/api/applications";
 import { useMounted } from "@/hooks/use-mounted";
 
 /**
- * The canonical ordered list of wizard steps (financials removed; co-applicant
- * is conditional and intentionally not in the linear order). Drives the
- * progress bar in the signup layout.
+ * The Phase-1 intake, in order — mirrors `JourneyService.Step` on the backend (revamp.md).
+ * `set-password` is the one optional step: it is in the linear count but skippable.
  */
-export const ONBOARDING_STEPS: Array<{ seg: string; label: string }> = [
-  { seg: "mobile-otp", label: "Mobile & OTP" },
-  { seg: "email", label: "Email & employer" },
-  { seg: "address", label: "Current address" },
-  { seg: "digilocker", label: "DigiLocker KYC" },
-  { seg: "pan", label: "PAN details" },
-  { seg: "pan-consent", label: "Consent & OTP" },
-  { seg: "bureau", label: "Credit check" },
-  { seg: "salary", label: "Salary & slip" },
-  { seg: "penny-drop", label: "Bank verification" },
-  { seg: "selfie", label: "Selfie" },
-  { seg: "agreement", label: "Agreements" },
-  { seg: "review", label: "Review & submit" },
+export const ONBOARDING_STEPS: Array<{ seg: string; step: string; label: string }> = [
+  { seg: "start", step: "START", label: "Your details" },
+  { seg: "otp", step: "OTP", label: "Verify your mobile" },
+  { seg: "employment", step: "EMPLOYMENT", label: "Employment status" },
+  { seg: "set-password", step: "SET_PASSWORD", label: "Set a password" },
+  { seg: "employer", step: "EMPLOYER", label: "Employer & salary" },
+  { seg: "email", step: "EMAIL", label: "Email addresses" },
+  { seg: "bank", step: "BANK", label: "Salary account" },
+  { seg: "payslips", step: "PAYSLIPS", label: "Salary slips" },
+  { seg: "consent", step: "CONSENT", label: "Consent & verification" },
+  { seg: "submitted", step: "SUBMITTED", label: "With our credit team" },
 ];
+
+/** The T&C accepted on screen 1. Bump the version to re-prompt every borrower. */
+export const TERMS_VERSION = "terms-and-conditions@1";
+export const TERMS_DOC_HREF = "/legal/terms-and-conditions.txt";
 
 /**
  * The credit-bureau consent wording. Single source of truth: the consent step renders this string
  * AND sends it to the backend, which stores it verbatim on the audit row — so what was displayed and
- * what was recorded cannot drift apart. Changing this text changes what future consents record; past
- * rows keep the wording that was actually shown at the time.
+ * what was recorded cannot drift apart.
  */
 export const BUREAU_CONSENT_TEXT =
-  "I authorize the retrieval of my CRIF High Mark credit report for verification and assessment purposes.";
+  "I authorize DhanBoost to retrieve my credit report from a credit bureau for verification and assessment purposes.";
 
-/** The three legal documents shown on the agreement step. */
-export const AGREEMENT_DOCS: Array<{ key: string; version: string; title: string; href: string }> = [
-  { key: "loan-agreement", version: "loan-agreement@1", title: "Master Loan Agreement", href: "/legal/loan-agreement.txt" },
-  { key: "loan-sanction", version: "loan-sanction@1", title: "Sanction Letter", href: "/legal/loan-sanction.txt" },
-  { key: "privacy-declaration", version: "privacy-declaration@1", title: "Privacy & Consent Declaration", href: "/legal/privacy-declaration.txt" },
-];
-
-export const AGREEMENT_VERSIONS = AGREEMENT_DOCS.map((d) => d.version);
-
-/**
- * Shared per-step context: a hydration guard (so persisted inputs don't trip
- * React's SSR mismatch), the persisted draft + its `patch`, and the resolved
- * in-flight application id (null until the DRAFT is created at mobile-otp).
- */
+/** Shared per-step context: hydration guard, the persisted draft, and the in-flight application id. */
 export function useOnboarding() {
   const mounted = useMounted();
   const draft = useOnboardingStore();
@@ -60,20 +48,27 @@ export function useOnboarding() {
 }
 
 /**
- * Where to navigate after a wizard step succeeds. When the step was opened from the review page to
- * fix a single failed check (the URL carries `?return=review`), go straight back to review instead
- * of walking the rest of the wizard again — so retrying one step (e.g. DigiLocker) doesn't drag the
- * borrower through the entire flow. Otherwise advance to the given linear next step.
+ * The saved profile for this application — every step hydrates its fields from here rather than from
+ * localStorage, so a borrower resuming on another device finds what they already typed (decision 26).
+ * `null` while loading or when nothing has been saved yet.
  */
-export function nextAfterStep(defaultNext: string): string {
-  if (typeof window !== "undefined") {
-    const ret = new URLSearchParams(window.location.search).get("return");
-    if (ret === "review") return "/signup/review";
-  }
-  return defaultNext;
+export function useSavedProfile(appId: number | null): ProfileView | null {
+  const [profile, setProfile] = React.useState<ProfileView | null>(null);
+  React.useEffect(() => {
+    if (appId == null) return;
+    let live = true;
+    borrowerApi
+      .getProfile(appId)
+      .then((p) => live && setProfile(p))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [appId]);
+  return profile;
 }
 
-/** Persist a profile slice, dropping empty/undefined fields so we never clobber stored data. */
+/** Persist a profile slice, dropping empty fields so a later slice never clobbers an earlier one. */
 export async function saveProfileSlice(appId: number, slice: ProfileInput): Promise<void> {
   const compact: ProfileInput = {};
   for (const [k, v] of Object.entries(slice)) {
@@ -82,4 +77,32 @@ export async function saveProfileSlice(appId: number, slice: ProfileInput): Prom
   }
   if (Object.keys(compact).length === 0) return;
   await borrowerApi.saveProfile(appId, compact);
+}
+
+/** Record a finished step server-side, then go to `next`. Failing to record must not block the borrower. */
+export async function completeStep(appId: number, step: string, router: { push: (h: string) => void }, next: string) {
+  await journeyApi.advance(appId, step).catch(() => {});
+  router.push(next);
+}
+
+/**
+ * On entering the wizard, jump to wherever the server says this borrower actually is — that is what
+ * makes a second device resume mid-flow (revamp.md C1). Deliberately mount-only: once they are in the
+ * wizard the step pages drive navigation, so this never fights a Back button.
+ */
+export function useJourneyGuard(appId: number | null) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const checked = React.useRef(false);
+
+  React.useEffect(() => {
+    if (appId == null || checked.current) return;
+    checked.current = true;
+    journeyApi
+      .get(appId)
+      .then((j) => {
+        if (j.route && j.route !== pathname) router.replace(j.route);
+      })
+      .catch(() => {});
+  }, [appId, pathname, router]);
 }
