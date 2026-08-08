@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * The single application aggregate (dfd.md §8). Carries the borrower's loan request through the
+ * The single application aggregate. Carries the borrower's loan request through the
  * canonical lifecycle ({@link ApplicationStatus}) from DRAFT/KYC through credit decisioning and
  * disbursement to ACTIVE. The disbursed {@link Loan} (money/ledger) is linked via {@link #loanId}.
  */

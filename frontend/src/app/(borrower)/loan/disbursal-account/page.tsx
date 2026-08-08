@@ -102,9 +102,13 @@ export default function DisbursalAccountPage() {
             </dl>
             {saved.verified ? (
               <p className="mt-3 flex items-center gap-1.5 text-sm text-success-700">
-                <CheckCircle2 size={15} /> This account has been verified.
+                <CheckCircle2 size={15} /> We&apos;ll reuse the successful verification for this account.
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-3 text-sm text-muted">
+                Confirming will perform a ₹1 account check. {saved.attemptsLeft} attempt{saved.attemptsLeft === 1 ? "" : "s"} remaining.
+              </p>
+            )}
             <button
               type="button"
               onClick={() => setChanging(true)}
@@ -162,8 +166,7 @@ export default function DisbursalAccountPage() {
         {isLocked ? (
           <p className="mt-4 flex items-start gap-2 rounded border border-warning-100 bg-warning-50 p-4 text-sm text-warning-800">
             <Lock size={15} className="mt-0.5 flex-shrink-0" />
-            Too many failed attempts. You can try a different account again after{" "}
-            {formatDateTime(lockedUntil)}. Your salary account can still be confirmed now.
+            Too many failed account checks. Try again after {formatDateTime(lockedUntil)}.
           </p>
         ) : null}
 
@@ -178,7 +181,7 @@ export default function DisbursalAccountPage() {
         continueLabel={changing ? "Verify & confirm" : "Confirm this account"}
         onContinue={submit}
         loading={busy}
-        disabled={busy || (changing && isLocked) || !formOk}
+        disabled={busy || (isLocked && (changing || saved.pennyDropRequired)) || !formOk}
       />
       <Reassurance />
     </div>

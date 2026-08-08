@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 > **⚠️ Rebrand (2026-07-22): the product is now "DhanBoost" (domain `dhanboost.com`).**
 > The user-visible brand across the frontend + backend was renamed NAVIX → **DhanBoost**. The
@@ -19,7 +19,7 @@
 > actually deliver.
 > Below, "NAVIX" in infra/namespace contexts = the retained internal name; the product is DhanBoost.
 
-Guidance for Claude Code (and any human) working in this repo. This file is the **single
+Guidance for Codex (and any human) working in this repo. This file is the **single
 onboarding doc** — read it first on a fresh machine and you have the full picture: what NAVIX
 is, the end-to-end workflow, how the borrower flow works, how the staff/admin login flow works,
 how to run it, and what is real vs. deferred.
@@ -683,8 +683,7 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   it that way (don't reintroduce header-trust or move authz out of the services).
 - **Separate staff/borrower sessions.** Never share a cookie or BFF namespace; the JWT audience
   (`staff`/`borrower`) keeps them apart.
-- **Salary-linked due date ≤ 40 days.** At disbursal, use the latest clamped occurrence of the
-  selected salary-credit day inside the following 40-day window.
+- **Salary-linked due date ≤ 40 days** (final, over dfd D10).
 - **Notifications are event-driven & non-blocking.** Domain code never calls the engine directly — it
   **publishes a Spring event**; the `@TransactionalEventListener(AFTER_COMMIT) @Async` listener in
   `navix-notification` does the rest. Adding a new notification = add a `NotificationType` + template +
@@ -893,6 +892,6 @@ When `navix.email.configuration-set` is set, sends are tagged with a SES **confi
 - **`QA_CHECKLIST.md`** — test inventory; **`populateDummyData.md`** — seed demo data at every lifecycle
   stage (`scripts/seed-demo-data.ps1`); **`DEMO_WALKTHROUGH.md`** — chaptered recording script for the
   admin/staff console walkthrough.
-- Memory (`~/.claude/.../memory/`) — `navix-application-state-machine.md` (lifecycle),
+- Memory (`~/.Codex/.../memory/`) — `navix-application-state-machine.md` (lifecycle),
   `navix-execution-plan.md` (plan), `navix-unified-design-system.md` (the 2026 "calendar" re-skin), and
   `navix-feature-flags.md` (dev-only DB flags) capture the same decisions for cross-session continuity.

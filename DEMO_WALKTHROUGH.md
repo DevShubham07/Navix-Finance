@@ -68,7 +68,7 @@ then, because you're ADMIN, all eight queue panels stacked: KYC pending, Reborro
 queue — assign an executive, Credit head decision, Credit executive review, Disbursement pending,
 Accountant validation, Awaiting repayment (active & overdue), and the collapsed Closed panel.
 
-**Say:** this page is a literal rendering of the state machine in `dfd.md`/`CLAUDE.md` §5 — every
+**Say:** this page is a literal rendering of the state machine in `CLAUDE.md` §5 — every
 panel here is one `ApplicationStatus`.
 
 **Trap:** the **"Closed (fully repaid)"** panel is a native `<details>` that doesn't even fire its
@@ -154,12 +154,12 @@ link on camera.
 | Persona | role-bar: CREDIT_EXECUTIVE (Rahul Mehta) → CREDIT_HEAD (Priya Nair) |
 
 **Point at:** the role bar itself — click it open, show the list of all 9 personas with the current
-one marked; switch to **Rahul Mehta (Credit Executive)**, open an app in `CREDIT_EXEC_PENDING`,
-click **Approve**; switch to **Priya Nair (Credit Head)** via the role bar, open the same app (now
-`CREDIT_HEAD_PENDING`), click **Approve**.
+one marked; switch to **Rahul Mehta (Credit Executive)**, open an assigned app in
+`CREDIT_EXEC_PENDING`, and sanction it. Switch to **Priya Nair (Credit Head)** to show that the Head
+can reassign or make the same final decision from the single shared review stage.
 
-**Say:** this *is* separation of duties working as designed — the recommendation and the final
-approval are two different, real logins with two different staff ids. The backend replays the
+**Say:** assignment controls ownership and queue visibility. The append-only event trail records
+every assignment, reassignment, pending note, and final decision. The backend enforces the
 `application_event` trail on every head-decision call and would reject it with `SOD_VIOLATION` if
 the same actor tried to close the loop.
 

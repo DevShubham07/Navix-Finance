@@ -54,7 +54,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The single application API (dfd.md §8): create, stage queues, and the role-gated lifecycle
+ * The single application API: create, stage queues, and the role-gated lifecycle
  * transitions. Staff identity (and thus the required role + SoD) comes from the demo actor headers
  * (X-Demo-Actor-Id / X-Demo-Actor-Role).
  */
@@ -104,7 +104,7 @@ public class ApplicationController {
 
     /**
      * ACTIVE credit executives, for the Credit Head's assignee picker (activation gating,
-     * dfd.md §13.4) — the credit-side twin of {@code GET /api/collections/officers}.
+     * active-role assignment rule — the credit-side twin of {@code GET /api/collections/officers}.
      *
      * <p>This exists because the picker must NOT source its list from {@code GET /api/staff}: that
      * route is ADMIN-only, so a real Credit Head got {@code FORBIDDEN_ROLE} and the picker rendered
@@ -287,7 +287,7 @@ public class ApplicationController {
     @PostMapping("/{id}/sanction")
     public ApiResponse<ApplicationView> sanction(@PathVariable Long id, @Valid @RequestBody SanctionRequest req) {
         return ApiResponse.ok(ApplicationView.of(
-                flow.sanction(id, req.sanctionedAmountPaise(), req.repaymentDate(), req.remarks())));
+                flow.sanction(id, req.sanctionedAmountPaise(), req.salaryCreditDay(), req.remarks())));
     }
 
     /** "Reject lead" — borrower notified with no reason; remarks go to the staff-only register. */

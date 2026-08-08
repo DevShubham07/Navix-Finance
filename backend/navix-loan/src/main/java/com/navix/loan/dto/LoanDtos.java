@@ -88,7 +88,7 @@ public final class LoanDtos {
      * settlement caps the figure, these components may sum to more than {@code outstandingPaise}.
      *
      * <p>{@code interestDays} / {@code penaltyDays} are the day counts those amounts were charged
-     * over (interest capped at the tenure; penalty net of the 1-day grace and capped at 30), so the
+     * over (interest capped at tenure plus the 1-day grace; penalty starts after grace and is capped at 30), so the
      * UI can show the working — "1%/day × 27 days" — instead of a bare rupee figure.
      */
     public record OutstandingView(Long loanId, LocalDate asOf, long outstandingPaise,

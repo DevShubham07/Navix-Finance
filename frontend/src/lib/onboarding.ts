@@ -6,24 +6,12 @@ import { useOnboardingStore } from "@/stores/application-store";
 import { readStoredAppId } from "@/lib/api/live-journey";
 import { borrowerApi, journeyApi, type ProfileInput, type ProfileView } from "@/lib/api/applications";
 import { useMounted } from "@/hooks/use-mounted";
+export { ONBOARDING_STEPS } from "@/lib/onboarding-config";
 
 /**
  * The Phase-1 intake, in order — mirrors `JourneyService.Step` on the backend (revamp.md).
  * `set-password` is the one optional step: it is in the linear count but skippable.
  */
-export const ONBOARDING_STEPS: Array<{ seg: string; step: string; label: string }> = [
-  { seg: "start", step: "START", label: "Your details" },
-  { seg: "otp", step: "OTP", label: "Verify your mobile" },
-  { seg: "employment", step: "EMPLOYMENT", label: "Employment status" },
-  { seg: "set-password", step: "SET_PASSWORD", label: "Set a password" },
-  { seg: "employer", step: "EMPLOYER", label: "Employer & salary" },
-  { seg: "email", step: "EMAIL", label: "Email addresses" },
-  { seg: "bank", step: "BANK", label: "Salary account" },
-  { seg: "payslips", step: "PAYSLIPS", label: "Salary slips" },
-  { seg: "consent", step: "CONSENT", label: "Consent & verification" },
-  { seg: "submitted", step: "SUBMITTED", label: "With our credit team" },
-];
-
 /** The T&C accepted on screen 1. Bump the version to re-prompt every borrower. */
 export const TERMS_VERSION = "terms-and-conditions@1";
 export const TERMS_DOC_HREF = "/legal/terms-and-conditions.txt";

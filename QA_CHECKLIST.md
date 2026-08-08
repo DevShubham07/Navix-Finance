@@ -212,9 +212,9 @@ SoD**):
 | BE-APP-21 | KYC_APPROVED app, `$BORROWER` | `POST …/apply {amountPaise:50000,…}` (< ₹1,000) | `422` (below `MIN_LOAN_PAISE` / over eligible limit) | |
 | BE-APP-22 | PRE_APPROVED app, `$BORROWER` | `POST …/apply {…}` | `200`, **`DISBURSEMENT_PENDING`** (skips credit) | |
 | BE-APP-23 | applied app, `$CHEAD` | `POST …/assign {executiveId:<id>}` | `200`, `CREDIT_EXEC_PENDING` | |
-| BE-APP-24 | CREDIT_EXEC_PENDING, `$CEXEC` | `POST …/exec-decision {decision:"APPROVE"}` | `200`, `CREDIT_EXEC_APPROVED` → auto `CREDIT_HEAD_PENDING` | |
-| BE-APP-25 | CREDIT_HEAD_PENDING, **same actor who recommended** | `POST …/head-decision {decision:"APPROVE"}` | `422` `SOD_VIOLATION` | |
-| BE-APP-26 | CREDIT_HEAD_PENDING, a **different** `$CHEAD` | `POST …/head-decision {decision:"APPROVE",approvedAmountPaise:1000000}` | `200`, `CREDIT_HEAD_APPROVED` → auto `DISBURSEMENT_PENDING` | |
+| BE-APP-24 | CREDIT_EXEC_PENDING assigned to `$CEXEC` | `POST …/sanction {sanctionedAmountPaise:1000000,salaryCreditDay:31}` | `200`, `SANCTIONED`; projected date clamps correctly | |
+| BE-APP-25 | CREDIT_EXEC_PENDING assigned to another executive | `$CEXEC` reads or decides it | `403` ownership violation | |
+| BE-APP-26 | CREDIT_EXEC_PENDING, `$CHEAD` | reassign, sanction, reject, or mark pending | Allowed; reassignment preserves notes and appends a `REASSIGN` audit event | |
 | BE-APP-27 | DISBURSEMENT_PENDING, `$DHEAD` | `POST …/disbursement-decision {decision:"APPROVE",txnRef:"TXN123"}` | `200`, **fast-path** `DISBURSED`→`ACTIVE` (mints loan, records `disbursal_txn_ref`) | |
 | BE-APP-28 | DISBURSEMENT_PENDING, `$DHEAD` | `POST …/disbursement-decision {decision:"APPROVE"}` (no txnRef) | `200`, `ACCOUNTANT_PENDING` (routes to accountant) | |
 | BE-APP-29 | ACCOUNTANT_PENDING, `$ACCT` | `POST …/accountant-validate {decision:"SUCCESS",txnRef:"TXN9"}` | `200`, `DISBURSED`→`ACTIVE` | |
@@ -577,6 +577,5 @@ also has `customer:view`; only ADMIN has `staff:manage` + `customer:manage`.
 - Strategy/automation: [`TESTING_PLAN.md`](TESTING_PLAN.md)
 - Onboarding & architecture: [`CLAUDE.md`](CLAUDE.md)
 - Stage-data seeding: [`populateDummyData.md`](populateDummyData.md) (`scripts/seed-demo-data.ps1`)
-- State machine & roles: [`dfd.md`](dfd.md)
 </content>
 </invoke>

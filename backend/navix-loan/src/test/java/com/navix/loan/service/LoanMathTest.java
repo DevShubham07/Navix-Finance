@@ -199,5 +199,13 @@ class LoanMathTest {
             assertThat(math.dueDateFromSalary(LocalDate.of(2028, 1, 25), 31))
                     .isEqualTo(LocalDate.of(2028, 2, 29));
         }
+
+        @Test
+        @DisplayName("salary day 31 clamps to day 30 in a 30-day month")
+        void clampsThirtyDayMonth() {
+            // Disbursed 25 Mar → 31 Mar and 30 Apr (36d) are both in-window → later date wins.
+            assertThat(math.dueDateFromSalary(LocalDate.of(2026, 3, 25), 31))
+                    .isEqualTo(LocalDate.of(2026, 4, 30));
+        }
     }
 }

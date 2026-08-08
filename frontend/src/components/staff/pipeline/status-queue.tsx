@@ -16,7 +16,8 @@ import { InfoTooltip } from "@/components/ui";
 import { staffApi, type ApplicationStatus, type ApplicationView } from "@/lib/api/applications";
 import { errMessage } from "@/components/staff/pipeline/hooks";
 import { AppRow } from "@/components/staff/pipeline/app-row";
-import { AssignActions } from "@/components/staff/pipeline/actions";
+import { AssignActions, CreditDecisionActions } from "@/components/staff/pipeline/actions";
+import { useStaffMe } from "@/components/staff/pipeline/hooks";
 
 export function StatusQueue({
   title,
@@ -90,7 +91,63 @@ export function CreditQueuePanel() {
   );
 }
 
-function QueuePanel({
+export function CreditWorkbench() {
+  const me = useStaffMe();
+  const unallocatedQ = useQuery({
+    queryKey: ["staff-queue", "credit-queue"],
+    queryFn: () => staffApi.creditQueue(),
+    refetchInterval: 8000,
+  });
+  const assignedQ = useQuery({
+    queryKey: ["staff-queue", "CREDIT_EXEC_PENDING"],
+    queryFn: () => staffApi.listByStatus("CREDIT_EXEC_PENDING"),
+    refetchInterval: 8000,
+  });
+  const execQ = useQuery({
+    queryKey: ["staff-executives"],
+    queryFn: () => staffApi.creditExecutives(),
+    staleTime: 60_000,
+  });
+  const refresh = () => {
+    void unallocatedQ.refetch();
+    void assignedQ.refetch();
+    void execQ.refetch();
+  };
+  const assigned = assignedQ.data ?? [];
+  const myId = Number(me.data?.id);
+  const groups = [
+    { title: "Unallocated", apps: unallocatedQ.data ?? [], actions: (app: ApplicationView) => <AssignActions app={app} /> },
+    { title: "Assigned to me", apps: assigned.filter((app) => app.assignedExecutiveId === myId), actions: (app: ApplicationView) => <CreditDecisionActions app={app} /> },
+    ...(execQ.data ?? []).map((executive) => ({
+      title: executive.name,
+      apps: assigned.filter((app) => app.assignedExecutiveId === executive.id),
+      actions: (app: ApplicationView) => <CreditDecisionActions app={app} />,
+    })),
+  ];
+  const knownIds = new Set([myId, ...(execQ.data ?? []).map((executive) => executive.id)]);
+  const unknown = assigned.filter((app) => app.assignedExecutiveId == null || !knownIds.has(app.assignedExecutiveId));
+  if (unknown.length) groups.push({ title: "Other assignees", apps: unknown, actions: (app) => <CreditDecisionActions app={app} /> });
+
+  return (
+    <div className="space-y-5">
+      {groups.map((group) => (
+        <QueuePanel
+          key={group.title}
+          title={group.title}
+          countBadge={group.title}
+          apps={group.apps}
+          isLoading={unallocatedQ.isLoading || assignedQ.isLoading || execQ.isLoading}
+          error={unallocatedQ.error || assignedQ.error || execQ.error}
+          onRefresh={refresh}
+          actions={group.actions}
+          info="Credit review remains one stage. The Credit Head may decide any file or reassign it; executives can decide only their own files."
+        />
+      ))}
+    </div>
+  );
+}
+
+export function QueuePanel({
   title,
   countBadge,
   apps,

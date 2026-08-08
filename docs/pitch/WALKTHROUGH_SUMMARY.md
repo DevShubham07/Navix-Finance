@@ -62,16 +62,14 @@ floating **"Act as role"** bar in the bottom-right, never by logging out.
 Everything is **one aggregate** — a single `loan_application` row whose `status` walks this path:
 
 ```
-DRAFT → KYC_PENDING → KYC_APPROVED → (borrower applies: amount + purpose + salary day)
-      → CREDIT_EXEC_PENDING → CREDIT_EXEC_APPROVED → CREDIT_HEAD_PENDING → CREDIT_HEAD_APPROVED
-      → DISBURSEMENT_PENDING → ACCOUNTANT_PENDING → DISBURSED → ACTIVE → CLOSED
+DRAFT → KYC_PENDING → CREDIT_EXEC_PENDING → SANCTIONED
+      → DISBURSEMENT_PENDING → DISBURSED → ACTIVE → CLOSED
                                                               ↘ OVERDUE → DEFAULTED → WRITTEN_OFF
 ```
 
-Rejections branch out at each decision point; `CANCELLED` is available pre-disbursement. Three
-transitions are auto-routed by the system without a separate actor call
-(`CREDIT_EXEC_APPROVED → CREDIT_HEAD_PENDING`, `CREDIT_HEAD_APPROVED → DISBURSEMENT_PENDING`,
-`DISBURSED → ACTIVE`, which mints the loan).
+Rejections branch out at each decision point; `CANCELLED` is available pre-disbursement. Credit is
+a single shared review stage: the Head or assigned Executive sanctions directly to `SANCTIONED`.
+`DISBURSED → ACTIVE` is auto-routed and mints the loan.
 
 Nine staff roles map onto it: KYC_APPROVER, CREDIT_HEAD, CREDIT_EXECUTIVE, DISBURSEMENT_HEAD,
 ACCOUNTANT, COLLECTION_HEAD, COLLECTION_EXECUTIVE, ADMIN (oversight, bypasses role checks) and
@@ -146,9 +144,9 @@ score, rating and facts all render.
 
 ### Ch. 6 — Maker-checker on camera (~3 min)
 
-The centrepiece. Switch to **Rahul Mehta (Credit Executive)** via the role bar, approve an
-application in `CREDIT_EXEC_PENDING`; switch to **Priya Nair (Credit Head)**, open the same
-application, now `CREDIT_HEAD_PENDING`, and approve. Two real logins, two real staff ids, one loan.
+The centrepiece. Switch to **Rahul Mehta (Credit Executive)** via the role bar and sanction an
+assigned application in `CREDIT_EXEC_PENDING`; switch to **Priya Nair (Credit Head)** to demonstrate
+self-assignment, reassignment, and the Head's authority to decide any file in the same stage.
 
 **An important correction the script carries:** you cannot produce a live `SOD_VIOLATION` error on
 screen under the current build. Three reasons —

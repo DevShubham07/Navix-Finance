@@ -33,7 +33,7 @@ export function LoanBreakdown({
       <Row label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
       <Row label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
       {/* Day counts come from the backend breakdown (they're what the amount was actually charged
-          over — interest capped at the tenure, penalty net of grace and capped at 30). Older
+          over — interest includes the one-day grace, then stops; penalty starts after grace and is capped at 30). Older
           backends omit them, so the label degrades to the bare figure. */}
       {out && (
         <Row

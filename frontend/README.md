@@ -25,9 +25,9 @@ The App Router uses two route groups to separate audiences:
 
 - `(borrower)` — public/borrower-facing flows: landing page, login, signup
   (`/signup/pan`), loan application, repayment, etc.
-- `(staff)` — internal back-office flows for the maker-checker roles:
-  Credit Executive (review), Credit Head (final approve), Disbursement Head
-  (release), and Accountant (confirms bank transfer to activate a loan).
+- `(staff)` — internal back-office flows: Credit Head and assigned Credit Executive
+  share the single credit-decision stage, the Disbursement Head owns release, and the
+  Accountant verifies borrower repayments.
 
 Route groups in parentheses do not affect the URL path; they only organize
 files and let each group have its own layout.

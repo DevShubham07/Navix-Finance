@@ -8,6 +8,8 @@ import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice, completeStep, useSavedProfile } from "@/lib/onboarding";
 import { formatApiError } from "@/lib/api/errors";
+import { INDIAN_BANKS, isListedIndianBank } from "@/lib/indian-banks";
+import { normalizeMobile } from "@/lib/utils";
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
@@ -15,7 +17,8 @@ export default function SignupBankPage() {
   const router = useRouter();
   const { mounted, appId } = useOnboarding();
   const saved = useSavedProfile(appId);
-  const [bank, setBank] = React.useState("");
+  const [bankChoice, setBankChoice] = React.useState("");
+  const [otherBank, setOtherBank] = React.useState("");
   const [account, setAccount] = React.useState("");
   const [ifsc, setIfsc] = React.useState("");
   const [mobile, setMobile] = React.useState("");
@@ -25,7 +28,13 @@ export default function SignupBankPage() {
 
   React.useEffect(() => {
     if (!saved) return;
-    if (saved.salaryBank) setBank(saved.salaryBank);
+    if (saved.salaryBank) {
+      if (isListedIndianBank(saved.salaryBank)) setBankChoice(saved.salaryBank);
+      else {
+        setBankChoice("Other bank");
+        setOtherBank(saved.salaryBank);
+      }
+    }
     if (saved.salaryAccountNumber) setAccount(saved.salaryAccountNumber);
     if (saved.salaryIfsc) setIfsc(saved.salaryIfsc);
     if (saved.salaryAccountMobile) setMobile(saved.salaryAccountMobile);
@@ -35,7 +44,8 @@ export default function SignupBankPage() {
     if (mounted && appId == null) router.replace("/signup/start");
   }, [mounted, appId, router]);
 
-  const bankOk = bank.trim().length > 1;
+  const bank = bankChoice === "Other bank" ? otherBank : bankChoice;
+  const bankOk = bank.trim().length > 1 && (bankChoice === "Other bank" || isListedIndianBank(bankChoice));
   const accountOk = /^\d{9,18}$/.test(account);
   const ifscOk = IFSC_RE.test(ifsc);
   const mobileOk = /^[6-9]\d{9}$/.test(mobile);
@@ -71,12 +81,27 @@ export default function SignupBankPage() {
         <Input
           label="Salary bank"
           required
-          value={bank}
-          onChange={(e) => setBank(e.target.value)}
-          placeholder="HDFC Bank"
+          value={bankChoice}
+          onChange={(e) => setBankChoice(e.target.value)}
+          placeholder="Search or select a bank"
+          list="indian-bank-options"
           leftIcon={<Landmark size={16} />}
-          error={touched && !bankOk ? "Enter your bank's name" : undefined}
+          error={touched && !bankOk ? "Select a listed bank or choose Other bank" : undefined}
         />
+        <datalist id="indian-bank-options">
+          {INDIAN_BANKS.map((name) => <option key={name} value={name} />)}
+          <option value="Other bank" />
+        </datalist>
+        {bankChoice === "Other bank" ? (
+          <Input
+            label="Other bank name"
+            required
+            value={otherBank}
+            onChange={(e) => setOtherBank(e.target.value)}
+            placeholder="Enter your bank's name"
+            error={touched && otherBank.trim().length < 2 ? "Enter your bank's name" : undefined}
+          />
+        ) : null}
         <Input
           label="Account number"
           required
@@ -100,7 +125,7 @@ export default function SignupBankPage() {
           required
           inputMode="numeric"
           value={mobile}
-          onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
+          onChange={(e) => setMobile(normalizeMobile(e.target.value))}
           placeholder="9876543210"
           leftIcon={<Phone size={16} />}
           error={touched && !mobileOk ? "Enter a valid 10-digit mobile number" : undefined}

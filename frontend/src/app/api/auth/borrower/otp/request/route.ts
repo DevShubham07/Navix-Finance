@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { config } from "@/lib/config";
+import { normalizeMobile } from "@/lib/utils";
 
 /**
  * Request a borrower OTP. Proxies `POST { mobile }` to the backend
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { mobile } = (body ?? {}) as { mobile?: unknown };
-  const cleanMobile = typeof mobile === "string" ? mobile.replace(/\D/g, "") : "";
+  const cleanMobile = typeof mobile === "string" ? normalizeMobile(mobile) : "";
   if (cleanMobile.length < 10) {
     return NextResponse.json({ error: "Enter a valid 10-digit mobile number." }, { status: 400 });
   }

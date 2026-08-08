@@ -49,4 +49,19 @@ class LoanServiceTest {
         assertThat(loan.getOutstanding()).isEqualTo(1_270_000L);
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.ACTIVE);
     }
+
+    @Test
+    void disbursementRecomputesDueDateFromTheSanctionedSalaryDay() {
+        LoanApplication app = new LoanApplication();
+        app.setCustomerId(7L);
+        app.setAmountRequested(1_000_000L);
+        app.setSalaryCreditDay(31);
+        app.setApprovedRepaymentDate(LocalDate.of(2026, 2, 28)); // sanction-time projection
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        Loan loan = loanService.disburse(app, LocalDate.of(2028, 1, 25), "UTR-LEAP");
+
+        assertThat(loan.getDueDate()).isEqualTo(LocalDate.of(2028, 2, 29));
+        assertThat(loan.getTotalRepayable()).isEqualTo(1_350_000L);
+    }
 }

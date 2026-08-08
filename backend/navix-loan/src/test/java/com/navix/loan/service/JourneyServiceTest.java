@@ -102,12 +102,12 @@ class JourneyServiceTest {
     }
 
     @Test
-    void storedPointerWins_soASkippedOptionalStepIsNotRepeated() {
-        // Data only proves EMPLOYMENT is done; the pointer says the borrower already skipped
-        // set-password. Derivation alone would send them back to it.
-        through(JourneyService.Step.EMPLOYER);
-        app.setJourneyStep("EMPLOYER");
-        assertThat(journey.current(APP).step()).isEqualTo("EMPLOYER");
+    void passwordFollowsOtpAndSkippingItResumesAtEmployment() {
+        through(JourneyService.Step.SET_PASSWORD);
+        assertThat(journey.current(APP).step()).isEqualTo("SET_PASSWORD");
+
+        app.setJourneyStep("SET_PASSWORD");
+        assertThat(journey.current(APP).step()).isEqualTo("EMPLOYMENT");
     }
 
     @Test

@@ -34,8 +34,8 @@ public class JourneyService {
     public enum Step {
         START("start"),
         OTP("otp"),
-        EMPLOYMENT("employment"),
         SET_PASSWORD("set-password"),
+        EMPLOYMENT("employment"),
         EMPLOYER("employer"),
         EMAIL("email"),
         BANK("bank"),
@@ -204,7 +204,8 @@ public class JourneyService {
         }
         Step derived = derive(app);
         return parse(app.getJourneyStep())
-                .filter(stored -> stored.ordinal() > derived.ordinal())
+                .map(stored -> Step.values()[Math.max(derived.ordinal(),
+                        Math.min(stored.ordinal() + 1, Step.DONE.ordinal()))])
                 .orElse(derived);
     }
 
@@ -268,7 +269,10 @@ public class JourneyService {
             return Step.OTP;
         }
         if (blank(p.getEmploymentStatus())) {
-            return Step.EMPLOYMENT;
+            return parse(app.getJourneyStep())
+                    .filter(step -> step.ordinal() >= Step.SET_PASSWORD.ordinal())
+                    .map(step -> Step.EMPLOYMENT)
+                    .orElse(Step.SET_PASSWORD);
         }
         // SET_PASSWORD is skippable and leaves no trace, so derivation steps over it — only the
         // stored pointer can hold a borrower there, which is what the max() in currentStep is for.

@@ -66,7 +66,7 @@ export default function RepayPage() {
   });
   // The penalty-free pay-by dates: the salary day (the loan's due date) and the day after (the
   // built-in 1-day grace). We read the outstanding *as of* each so the borrower sees the exact
-  // amount for each choice (both are penalty-free; paying today is the cheapest).
+  // amount for each choice. Grace day adds one normal-interest day but no late penalty.
   const dueISO = loanQuery.data?.dueDate ?? null;
   const graceISO = dueISO ? addDaysISO(dueISO, 1) : null;
   const outDueQuery = useQuery({
@@ -242,7 +242,7 @@ export default function RepayPage() {
               title="Day after salary"
               date={graceISO ?? loan.dueDate}
               amount={outGraceQuery.data?.outstandingPaise ?? loan.totalRepayablePaise}
-              note="Still penalty-free (grace day)"
+              note="One extra interest day · no late penalty"
             />
           </div>
         </div>

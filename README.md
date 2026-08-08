@@ -25,9 +25,9 @@ This is a monorepo containing:
   ~40 days of disbursement.
 - **Late handling:** penalty **2%/day capped at 30 days**, then moves to collections.
 - **Risk categories A/B/C/D:** affect the limit and the checks required, **not** the price.
-- **Maker-checker (separation of duties):**
-  Credit Executive (review) ≠ Credit Head (final approve) ≠ Disbursement Head (release);
-  the Accountant manually confirms the bank transfer to activate the loan.
+- **Credit review:** one shared `CREDIT_EXEC_PENDING` stage. The Credit Head can assign to
+  themselves or an active Credit Executive and can decide any file; Executives can decide only
+  files assigned to them. The Disbursement Head separately owns release.
 
 ---
 

@@ -25,6 +25,7 @@ import {
   type ProfileInput,
 } from "@/lib/api/applications";
 import { eligibleLimit as eligibleLimitRupees } from "@/lib/calc/loan-math";
+import { normalizeMobile } from "@/lib/utils";
 import { useOnboardingStore } from "@/stores/application-store";
 import type { CustomerProfile, BorrowerStatus } from "@/lib/domain/borrower";
 
@@ -527,7 +528,7 @@ export function buildProfileInput(a: CustomerProfile): ProfileInput {
   return {
     fullName: a.fullName?.trim() || undefined,
     pan: a.pan?.trim().toUpperCase() || undefined,
-    mobile: a.mobile?.replace(/\D/g, "") || undefined,
+    mobile: a.mobile ? normalizeMobile(a.mobile) : undefined,
     email: a.email?.trim() || undefined,
     address: address || undefined,
     employer: a.employer?.trim() || undefined,
@@ -615,7 +616,7 @@ export async function submitOnboarding(
   customer: CustomerProfile,
   docs: Array<{ docType: string; fileName: string; contentType?: string; dataBase64: string }> = [],
 ): Promise<ApplicationView> {
-  const mobile = customer.mobile?.replace(/\s/g, "") || "";
+  const mobile = customer.mobile ? normalizeMobile(customer.mobile) : "";
   // The mobile-otp step already established the session with a real OTP; reuse it.
   const session = await ensureBorrowerSession(mobile, undefined, customer.fullName);
   if (!session) {

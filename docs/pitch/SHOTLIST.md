@@ -39,7 +39,7 @@ python3 docs/pitch/build_pitch_deck.py    # re-reads shots/, embeds what's there
 | 15 | `staff-kyc.png` | `/staff/kyc-approvals` with the "Approve instant loans" panel visible, or `/staff/kyc-review` | KYC_APPROVER (Ananya Rao). The reborrow-review queue shows loan history inline — good detail if it's populated. |
 | 16 | `staff-credit.png` | `/staff/applications` → **Open** on a row → the detail popup, Journey tab | ADMIN or CREDIT_HEAD. Get the score/★ badge, the cost card and the audit log in frame. Don't click the credit-brief PDF download — no S3 offline, it won't resolve. |
 | 18 | `staff-disbursement.png` | Disbursement panels with the txn-id input, or `/staff/accounting/transactions` | DISBURSEMENT_HEAD / ACCOUNTANT. On the ledger, set the period to **"All time"** first or it looks empty. |
-| 19 | `staff-collections.png` | The overdue queue with live DPD, the DPD buckets grid, or a case detail with the amount-due arithmetic | COLLECTION_HEAD (Arjun Patel). The amount-due card that spells out "1%/day × N days" is the best shot on this page. |
+| 19 | `staff-collections.png` | A filtered DPD-bucket pane from the Collections sidebar, or a case detail with the amount-due arithmetic | COLLECTION_HEAD (Arjun Patel). The amount-due card that spells out the interest and penalty arithmetic is the best shot on this page. |
 | 20 | `staff-admin.png` | `/staff/customers/{id}` (customer 360 + change history), or `/staff/admin/all-applications` | ADMIN. If you show change history, make a salary edit first so there's a fresh audit row. Payment-settings QR/PDF previews stay blank offline — avoid that page. |
 
 ## Known-empty things (so you don't chase them)
@@ -51,8 +51,8 @@ offline stack.
 
 ## Optional extra credit
 
-- **Record a 60–90s screen capture** of the maker-checker handoff (Credit Executive recommends →
-  role-bar switch → Credit Head approves) and embed it on slide 17. That slide is the deck's
+- **Record a 60–90s screen capture** of credit assignment and review (Credit Head assigns →
+  Credit Executive decides, or the Head reassigns) and embed it on slide 17. That slide is the deck's
   differentiator and it plays far better as motion than as bullets.
 - **Swap the palette** to SoftSolutionsAI's brand: `PALETTE` and `LOGO` at the top of
   `build_pitch_deck.py`. The DhanBoost navy/gold is the current default because this is a DhanBoost

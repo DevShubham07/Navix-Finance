@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/live-journey";
 import { formatApiError } from "@/lib/api/errors";
 import { ApplicationApiError, journeyApi } from "@/lib/api/applications";
+import { normalizeMobile } from "@/lib/utils";
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
@@ -59,7 +60,7 @@ export default function SignupStartPage() {
           .then((j) => j.route)
           .catch(() => null);
         if (!live) return;
-        router.replace(route && route.startsWith("/signup/") ? route : "/signup/employment");
+        router.replace(route && route.startsWith("/signup/") ? route : "/signup/set-password");
       })
       .catch((e) => {
         const code = e instanceof ApplicationApiError ? e.code : undefined;
@@ -116,7 +117,7 @@ export default function SignupStartPage() {
           required
           inputMode="numeric"
           value={mobile}
-          onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
+          onChange={(e) => setMobile(normalizeMobile(e.target.value))}
           placeholder="9876543210"
           leftIcon={<Phone size={16} />}
           autoComplete="tel"

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 import { passwordOk, PASSWORD_HINT } from "@/lib/password";
+import { normalizeMobile } from "@/lib/utils";
 
 
 /**
@@ -71,7 +72,7 @@ function ActivateInner() {
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-navy"><KeyRound size={16} /> Set up your access</div>
           <Input label="Invite token" value={token} onChange={(e) => setToken(e.target.value)} placeholder="paste your one-time token" />
           <Input label="Your name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Aanya Rao" />
-          <Input label="Mobile (optional, for password recovery)" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="9876543210" />
+          <Input label="Mobile (optional, for password recovery)" value={mobile} onChange={(e) => setMobile(normalizeMobile(e.target.value))} placeholder="9876543210" />
           <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={PASSWORD_HINT} />
           <Input label="Confirm password" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="re-enter your password" />
           {error && <p className="mb-2 text-sm text-error-700">{error}</p>}

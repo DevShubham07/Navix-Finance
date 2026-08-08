@@ -46,9 +46,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Owns the canonical application lifecycle (dfd.md §8): one aggregate, one status, server-enforced
- * transitions with role checks, separation-of-duties (the Credit Executive who recommends ≠ the
- * Credit Head who approves, D3), and an append-only {@link ApplicationEvent} trail. Auto-routes the
+ * Owns the canonical application lifecycle: one aggregate, one status, server-enforced
+ * transitions with role checks, assignment-based credit ownership, and an append-only
+ * {@link ApplicationEvent} trail. Credit Head and assigned Credit Executive share final decision
+ * authority in the single {@code CREDIT_EXEC_PENDING} stage. The service auto-routes the
  * system transitions (exec-approved→head-pending, head-approved→disbursement-pending, disbursed→
  * active). At DISBURSED→ACTIVE it mints the 30-day loan via {@link LoanService#disburse}.
  *
@@ -404,15 +405,24 @@ public class ApplicationFlowService {
         LoanApplication app = require(appId);
         // No amount check: since Phase 1 the borrower never names an amount — the Credit Executive
         // sets the sanctioned figure. The old NOT_APPLIED gate would block every intake.
-        // Activation gating (dfd.md §13.4): the assignee must be an ACTIVE Credit Executive.
+        // Activation gating: the assignee must be an ACTIVE Credit Executive or the acting Head.
         // ADMIN is exempt — oversight may self-assign and drive the credit step solo (per-step control).
-        if (!"ADMIN".equals(ActorContext.get().role())
+        CurrentActor actor = ActorContext.get();
+        Long actorId = actorIdOrNull();
+        boolean selfAssignment = "CREDIT_HEAD".equals(actor.role()) && executiveId.equals(actorId);
+        if (!"ADMIN".equals(actor.role()) && !selfAssignment
                 && !staffDirectory.isActiveWithRole(executiveId, "CREDIT_EXECUTIVE")) {
             throw new BusinessException("INVALID_ASSIGNEE",
-                    "The assignee must be an active Credit Executive");
+                    "The assignee must be the Credit Head or an active Credit Executive");
         }
+        Long previous = app.getAssignedExecutiveId();
         app.setAssignedExecutiveId(executiveId);
-        transition(app, ApplicationStatus.CREDIT_EXEC_PENDING, "ASSIGN", "executiveId=" + executiveId);
+        if (app.getStatus() == ApplicationStatus.CREDIT_EXEC_PENDING) {
+            logEvent(app, app.getStatus(), app.getStatus(), "REASSIGN",
+                    "previousExecutiveId=" + previous + " newExecutiveId=" + executiveId);
+        } else {
+            transition(app, ApplicationStatus.CREDIT_EXEC_PENDING, "ASSIGN", "executiveId=" + executiveId);
+        }
         return applicationRepository.save(app);
     }
 
@@ -426,28 +436,32 @@ public class ApplicationFlowService {
      * computed from salary survives only as on-screen guidance.
      */
     @Transactional
-    public LoanApplication sanction(Long appId, long sanctionedAmountPaise, LocalDate repaymentDate,
+    public LoanApplication sanction(Long appId, long sanctionedAmountPaise, Integer salaryCreditDay,
                                     String remarks) {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
+        requireCreditOwnership(app);
         if (sanctionedAmountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "The sanctioned amount is below the minimum of ₹1,000");
         }
-        if (repaymentDate == null || !repaymentDate.isAfter(LocalDate.now())) {
-            throw new BusinessException("INVALID_REPAYMENT_DATE", "The repayment date must be in the future");
+        if (salaryCreditDay == null || salaryCreditDay < 1 || salaryCreditDay > 31) {
+            throw new BusinessException("INVALID_SALARY_DAY", "Salary credit day must be between 1 and 31");
         }
+        LocalDate projectedRepaymentDate = loanMath.dueDateFromSalary(LocalDate.now(), salaryCreditDay);
         app.setSanctionedAmountPaise(sanctionedAmountPaise);
-        app.setApprovedRepaymentDate(repaymentDate);
-        app.setSanctionTenureDays((int) java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), repaymentDate));
+        app.setApprovedRepaymentDate(projectedRepaymentDate);
+        app.setSanctionTenureDays((int) java.time.temporal.ChronoUnit.DAYS.between(
+                LocalDate.now(), projectedRepaymentDate));
         app.setSanctionRemarks(remarks);
         app.setSanctionedBy(actorIdOrNull());
         app.setSanctionedAt(Instant.now());
-        app.setSalaryCreditDay(repaymentDate.getDayOfMonth());
+        app.setSalaryCreditDay(salaryCreditDay);
         // Clearing the pending tag: a sanctioned lead is no longer parked.
         app.setMarkedPendingAt(null);
         app.setPendingReason(null);
         transition(app, ApplicationStatus.SANCTIONED, "SANCTION",
-                "amountPaise=" + sanctionedAmountPaise + " repaymentDate=" + repaymentDate
+                "amountPaise=" + sanctionedAmountPaise + " salaryCreditDay=" + salaryCreditDay
+                        + " projectedRepaymentDate=" + projectedRepaymentDate
                         + (remarks == null || remarks.isBlank() ? "" : " — " + remarks));
         return applicationRepository.save(app);
     }
@@ -461,6 +475,7 @@ public class ApplicationFlowService {
     public LoanApplication rejectLead(Long appId, String remarks) {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
+        requireCreditOwnership(app);
         recordRejection(app, ApplicationRejection.MANUAL, remarks, false, null);
         transition(app, ApplicationStatus.REJECTED, "REJECT_LEAD", remarks);
         return applicationRepository.save(app);
@@ -475,6 +490,7 @@ public class ApplicationFlowService {
     public LoanApplication markPending(Long appId, String reason) {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
+        requireCreditOwnership(app);
         app.setMarkedPendingAt(Instant.now());
         app.setPendingReason(reason);
         // Same-status event: an audit entry, not a transition.
@@ -620,11 +636,18 @@ public class ApplicationFlowService {
 
     @Transactional(readOnly = true)
     public LoanApplication get(Long appId) {
-        return require(appId);
+        LoanApplication app = require(appId);
+        requireCreditOwnership(app);
+        return app;
     }
 
     @Transactional(readOnly = true)
     public List<LoanApplication> byStatus(ApplicationStatus status) {
+        if ("CREDIT_EXECUTIVE".equals(ActorContext.get().role())) {
+            Long actorId = actorIdOrNull();
+            return actorId == null ? List.of()
+                    : applicationRepository.findByAssignedExecutiveIdAndStatusOrderByIdAsc(actorId, status);
+        }
         return applicationRepository.findByStatusOrderByIdAsc(status);
     }
 
@@ -635,6 +658,7 @@ public class ApplicationFlowService {
      */
     @Transactional(readOnly = true)
     public List<LoanApplication> creditHeadQueue() {
+        requireRole("CREDIT_HEAD");
         return java.util.stream.Stream.concat(
                         applicationRepository.findByStatusOrderByIdAsc(ApplicationStatus.KYC_PENDING).stream(),
                         applicationRepository.findByStatusOrderByIdAsc(ApplicationStatus.KYC_APPROVED).stream())
@@ -787,6 +811,17 @@ public class ApplicationFlowService {
             return Long.valueOf(ActorContext.get().id());
         } catch (RuntimeException e) {
             return null;
+        }
+    }
+
+    private void requireCreditOwnership(LoanApplication app) {
+        if (!"CREDIT_EXECUTIVE".equals(ActorContext.get().role())) {
+            return;
+        }
+        Long actorId = actorIdOrNull();
+        if (actorId == null || !actorId.equals(app.getAssignedExecutiveId())) {
+            throw new BusinessException("CREDIT_FILE_NOT_ASSIGNED",
+                    "This credit file is not assigned to you");
         }
     }
 

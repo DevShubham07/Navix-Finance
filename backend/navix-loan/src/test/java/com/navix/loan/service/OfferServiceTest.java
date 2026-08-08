@@ -200,6 +200,7 @@ class OfferServiceTest {
         app.setReappliedFrom(41L);
         app.setDisbursalAccountNumber("555544443333");
         app.setDisbursalIfsc("SBIN0009999");
+        app.setDisbursalAccountVerified(true);
         // …and their salary now lands somewhere else entirely, so only the carried account matches.
         profile.setSalaryAccountNumber(null);
         profile.setSalaryIfsc(null);
@@ -230,19 +231,36 @@ class OfferServiceTest {
     }
 
     @Test
-    void confirmingTheUnchangedSalaryAccountNeverRunsAPennyDrop() {
+    void firstDisbursalPennyDropsEvenTheUnchangedSalaryAccount() {
         app.setAmountRequested(1_500_000L);
+        when(verification.verifyPennyDrop(eq(APP), eq("123456789012"), eq("HDFC0001234"), eq(true)))
+                .thenReturn(pass());
 
         offer.confirmDisbursalAccount(APP,
                 new DisbursalAccountRequest("123456789012", "HDFC0001234", "Asha Kumari", null));
 
-        verify(verification, never()).verifyPennyDrop(any(), anyString(), anyString(), anyBoolean());
-        verify(pennyDropGuard, never()).record(any(), any(), anyString(), anyString(), anyBoolean(), any());
+        verify(verification).verifyPennyDrop(eq(APP), eq("123456789012"), eq("HDFC0001234"), eq(true));
+        verify(pennyDropGuard).record(eq(CUSTOMER), eq(APP), eq("123456789012"), eq("HDFC0001234"),
+                eq(true), eq(null));
         assertThat(app.getDisbursalAccountChanged()).isFalse();
-        // Deliberate (decision 9): the money goes to an account nobody externally verified.
-        assertThat(app.getDisbursalAccountVerified()).isFalse();
+        assertThat(app.getDisbursalAccountVerified()).isTrue();
         assertThat(app.getDisbursalConfirmedAt()).isNotNull();
         verify(flow).acceptOffer(APP, 1_500_000L);
+    }
+
+    @Test
+    void aSuccessfulVerificationIsReusedOnlyForTheSameAccountPair() {
+        app.setAmountRequested(1_500_000L);
+        app.setDisbursalAccountNumber("123456789012");
+        app.setDisbursalIfsc("HDFC0001234");
+        app.setDisbursalAccountVerified(true);
+
+        offer.confirmDisbursalAccount(APP,
+                new DisbursalAccountRequest("123456789012", "hdfc0001234", "Asha Kumari", null));
+
+        verify(verification, never()).verifyPennyDrop(any(), anyString(), anyString(), anyBoolean());
+        verify(pennyDropGuard, never()).record(any(), any(), anyString(), anyString(), anyBoolean(), any());
+        assertThat(app.getDisbursalAccountVerified()).isTrue();
     }
 
     @Test

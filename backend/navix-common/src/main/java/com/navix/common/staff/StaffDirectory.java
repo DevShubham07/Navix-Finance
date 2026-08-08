@@ -15,7 +15,7 @@ public interface StaffDirectory {
     /**
      * True iff a staff user with {@code staffId} exists, is ACTIVE, and holds the
      * given role (e.g. {@code "CREDIT_EXECUTIVE"}). Used to enforce activation
-     * gating on assignee pickers (dfd.md §13.4): a Head may assign work only to an
+     * gating on assignee pickers: a Head may assign work only to an
      * active staff member who holds the required role.
      */
     boolean isActiveWithRole(Long staffId, String role);

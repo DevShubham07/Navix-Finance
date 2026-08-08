@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ShieldCheck, Mail, Smartphone, CheckCircle2 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { Input } from "@/components/ui";
+import { normalizeMobile } from "@/lib/utils";
 
 /**
  * Staff forgot-password. The email + mobile must match an active staff account; on a match the
@@ -21,14 +22,14 @@ export default function StaffForgotPasswordPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim().includes("@")) { setError("Enter your staff email."); return; }
-    if (mobile.replace(/\D/g, "").length < 10) { setError("Enter your registered mobile number."); return; }
+    if (normalizeMobile(mobile).length !== 10) { setError("Enter your registered mobile number."); return; }
     setBusy(true);
     setError(undefined);
     try {
       await fetch("/api/auth/staff/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), mobile: mobile.replace(/\D/g, "") }),
+        body: JSON.stringify({ email: email.trim(), mobile: normalizeMobile(mobile) }),
       });
       setSent(true);
     } catch {
@@ -67,7 +68,7 @@ export default function StaffForgotPasswordPage() {
             label="Registered mobile"
             inputMode="numeric"
             value={mobile}
-            onChange={(e) => { setMobile(e.target.value); setError(undefined); }}
+            onChange={(e) => { setMobile(normalizeMobile(e.target.value)); setError(undefined); }}
             placeholder="90000 00000"
             leftIcon={<Smartphone size={16} />}
             autoComplete="tel"

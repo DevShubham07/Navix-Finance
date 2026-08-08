@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Canonical loan-application lifecycle (dfd.md §8). A single application aggregate carries one
+ * Canonical loan-application lifecycle. A single application aggregate carries one
  * {@code status} through this state machine — no stage-skipping. Each enum value declares the
  * states it may legally transition to; {@link #canTransitionTo} enforces it server-side.
  *
@@ -16,8 +16,9 @@ import java.util.Set;
  * </pre>
  *
  * <p>The credit maker-checker (CREDIT_EXEC_APPROVED → CREDIT_HEAD_PENDING → CREDIT_HEAD_APPROVED)
- * and the reborrow review (REVIEW_PENDING) were retired in V45: the Credit Executive's sanction is
- * final. The accountant disbursement hop (ACCOUNTANT_PENDING) was retired in V48: the Disbursement
+ * and the reborrow review (REVIEW_PENDING) were retired in V45. Credit Head and assigned Credit
+ * Executive now share final decision authority in one stage. The accountant disbursement hop
+ * (ACCOUNTANT_PENDING) was retired in V48: the Disbursement
  * Head's transaction id <em>is</em> the validation. Those values stay in the enum so historical rows
  * and the {@code application_event} trail still deserialize; nothing transitions to them.
  */
@@ -83,7 +84,7 @@ public enum ApplicationStatus {
         // they re-walk the short offer journey). DISBURSEMENT_PENDING remains legal for rows minted
         // before V45 that already skipped straight to the Disbursement Head.
         TRANSITIONS.put(PRE_APPROVED, EnumSet.of(SANCTIONED, DISBURSEMENT_PENDING, CANCELLED));
-        // The Credit Executive's decision is FINAL (decision 27) — sanction or reject, no Head
+        // Credit Head or assigned Credit Executive sanctions or rejects here; there is no Head
         // counter-approval. CREDIT_EXEC_APPROVED / CREDIT_HEAD_* are off the live path.
         TRANSITIONS.put(CREDIT_EXEC_PENDING, EnumSet.of(SANCTIONED, REJECTED, CANCELLED));
         TRANSITIONS.put(CREDIT_EXEC_APPROVED, EnumSet.of(CREDIT_HEAD_PENDING));
@@ -108,7 +109,7 @@ public enum ApplicationStatus {
         TRANSITIONS.put(CANCELLED, EnumSet.noneOf(ApplicationStatus.class));
     }
 
-    /** Whether this status may legally transition to {@code next} (dfd.md §8). */
+    /** Whether this status may legally transition to {@code next}. */
     public boolean canTransitionTo(ApplicationStatus next) {
         return TRANSITIONS.getOrDefault(this, EnumSet.noneOf(ApplicationStatus.class)).contains(next);
     }

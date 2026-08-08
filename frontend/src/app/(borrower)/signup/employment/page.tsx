@@ -36,7 +36,12 @@ export default function SignupEmploymentPage() {
     setError(undefined);
     try {
       await saveProfileSlice(appId, { employmentStatus: status });
-      await completeStep(appId, "EMPLOYMENT", router, "/signup/set-password");
+      await completeStep(
+        appId,
+        "EMPLOYMENT",
+        router,
+        status === "SELF_EMPLOYED" ? "/signup/self-employed" : "/signup/employer",
+      );
     } catch (err) {
       setError(formatApiError(err, "Could not save — please try again."));
       setBusy(false);
@@ -60,7 +65,7 @@ export default function SignupEmploymentPage() {
         </Select>
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>
-      <WizardActions backHref="/signup/otp" submit loading={busy} disabled={busy} />
+      <WizardActions backHref="/signup/set-password" submit loading={busy} disabled={busy} />
       <Reassurance />
     </form>
   );

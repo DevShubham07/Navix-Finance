@@ -58,6 +58,7 @@ public final class OfferDtos {
             String holderName,
             String bank,
             boolean verified,
+            boolean pennyDropRequired,
             Instant lockedUntil,
             int attemptsLeft) {
     }

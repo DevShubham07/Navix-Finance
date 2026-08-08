@@ -15,26 +15,13 @@ import * as React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui";
+import { Input, Select } from "@/components/ui";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
-import { buildCostBreakdown } from "@/lib/calc/loan-math";
-import { formatINR } from "@/lib/utils";
+import { buildCostBreakdown, daysBetween, dueDateFromSalary } from "@/lib/calc/loan-math";
+import { formatDate, formatINR } from "@/lib/utils";
 import { useRefreshAfterAction, errMessage } from "@/components/staff/pipeline/hooks";
 
 const MIN_AMOUNT = 1000;
-
-function daysUntil(iso: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(`${iso}T00:00:00`);
-  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
-}
-
-function todayPlus(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 export function SanctionDialog({
   app,
@@ -47,7 +34,7 @@ export function SanctionDialog({
 }) {
   const refresh = useRefreshAfterAction();
   const [amount, setAmount] = React.useState("");
-  const [repaymentDate, setRepaymentDate] = React.useState(todayPlus(30));
+  const [salaryCreditDay, setSalaryCreditDay] = React.useState(String(app.salaryCreditDay ?? 30));
   const [remarks, setRemarks] = React.useState("");
 
   // The salary account credit verified at intake — read-only context for the decision.
@@ -61,7 +48,7 @@ export function SanctionDialog({
     mutationFn: () =>
       staffApi.sanction(app.id, {
         sanctionedAmountPaise: Math.round(Number(amount) * 100),
-        repaymentDate,
+        salaryCreditDay: Number(salaryCreditDay),
         remarks: remarks.trim() || undefined,
       }),
     onSuccess: () => {
@@ -71,9 +58,12 @@ export function SanctionDialog({
   });
 
   const rupees = Number(amount);
-  const tenure = daysUntil(repaymentDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const projectedDate = dueDateFromSalary({ disbursedOn: today, salaryDay: Number(salaryCreditDay) });
+  const tenure = daysBetween(today, projectedDate);
   const amountOk = Number.isFinite(rupees) && rupees >= MIN_AMOUNT;
-  const dateOk = tenure > 0;
+  const dateOk = Number(salaryCreditDay) >= 1 && Number(salaryCreditDay) <= 31 && tenure > 0;
   const preview = amountOk && dateOk ? buildCostBreakdown(rupees, tenure) : null;
 
   return (
@@ -99,16 +89,18 @@ export function SanctionDialog({
           helperText="The ceiling the borrower may draw from — they may take less."
           error={amount && !amountOk ? `Minimum ₹${MIN_AMOUNT.toLocaleString("en-IN")}` : undefined}
         />
-        <Input
-          label="Repayment date"
+        <Select
+          label="Salary credit day"
           required
-          type="date"
-          value={repaymentDate}
-          min={todayPlus(1)}
-          onChange={(e) => setRepaymentDate(e.target.value)}
-          helperText={dateOk ? `${tenure} days from today` : undefined}
-          error={!dateOk ? "Must be a future date" : undefined}
-        />
+          value={salaryCreditDay}
+          onChange={(e) => setSalaryCreditDay(e.target.value)}
+          helperText={dateOk ? `Projected ${formatDate(projectedDate)} — ${tenure} days from today. Final due date is set from actual disbursal.` : undefined}
+          error={!dateOk ? "Select a day from 1 to 31" : undefined}
+        >
+          {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+            <option key={day} value={day}>{day}</option>
+          ))}
+        </Select>
       </div>
 
       <div className="mt-4 rounded border border-line bg-ivory p-4">

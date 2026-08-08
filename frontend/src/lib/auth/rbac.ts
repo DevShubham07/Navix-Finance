@@ -3,11 +3,9 @@
  *
  * StaffRole mirrors the backend (com.navix.iam) role enum exactly.
  *
- * Separation of duties (maker-checker): the same person must not perform
- * conflicting steps of a loan. Specifically CREDIT_EXECUTIVE (review) must
- * differ from CREDIT_HEAD (final approve) must differ from DISBURSEMENT_HEAD
- * (release); the ACCOUNTANT independently confirms the bank transfer to
- * activate the loan. See {@link enforceSeparationOfDuties}.
+ * Credit Head and the assigned Credit Executive share the single credit-decision
+ * stage; assignment controls Executive ownership. The Disbursement Head separately
+ * owns release, and the Accountant verifies borrower repayments.
  */
 
 export const STAFF_ROLES = [

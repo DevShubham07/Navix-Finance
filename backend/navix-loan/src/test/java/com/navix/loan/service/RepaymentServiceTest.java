@@ -204,7 +204,26 @@ class RepaymentServiceTest {
         assertThat(repaymentService.outstandingAsOf(1L, DISBURSED.plusDays(10))).isEqualTo(1_100_000L);
 
         // 5 days past due: full 27d interest + penalty for (5 − 1 grace) = 4 days
-        assertThat(repaymentService.outstandingAsOf(1L, DUE.plusDays(5))).isEqualTo(1_350_000L);
+        assertThat(repaymentService.outstandingAsOf(1L, DUE.plusDays(5))).isEqualTo(1_360_000L);
+    }
+
+    @Test
+    void graceDayAddsOneDayOfInterestWithoutPenalty() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED))).thenReturn(0L);
+
+        var due = repaymentService.outstandingBreakdownAsOf(1L, DUE);
+        var grace = repaymentService.outstandingBreakdownAsOf(1L, DUE.plusDays(1));
+        var firstPenaltyDay = repaymentService.outstandingBreakdownAsOf(1L, DUE.plusDays(2));
+
+        assertThat(due.outstandingPaise()).isEqualTo(1_270_000L);
+        assertThat(due.interestDays()).isEqualTo(27);
+        assertThat(grace.outstandingPaise()).isEqualTo(1_280_000L);
+        assertThat(grace.interestDays()).isEqualTo(28);
+        assertThat(grace.penaltyPaise()).isZero();
+        assertThat(firstPenaltyDay.outstandingPaise()).isEqualTo(1_300_000L);
+        assertThat(firstPenaltyDay.interestDays()).isEqualTo(28);
+        assertThat(firstPenaltyDay.penaltyDays()).isEqualTo(1);
     }
 
     @Test
@@ -225,10 +244,10 @@ class RepaymentServiceTest {
 
         // Overdue (5 days past due): full 27d interest ₹2,700 + penalty for (5 − 1 grace) = 4 days → ₹800.
         var overdue = repaymentService.outstandingBreakdownAsOf(1L, DUE.plusDays(5));
-        assertThat(overdue.interestPaise()).isEqualTo(270_000L);
+        assertThat(overdue.interestPaise()).isEqualTo(280_000L);
         assertThat(overdue.penaltyPaise()).isEqualTo(80_000L);
-        assertThat(overdue.outstandingPaise()).isEqualTo(1_350_000L);
-        assertThat(overdue.interestDays()).isEqualTo(27);
+        assertThat(overdue.outstandingPaise()).isEqualTo(1_360_000L);
+        assertThat(overdue.interestDays()).isEqualTo(28);
         assertThat(overdue.penaltyDays()).isEqualTo(4);
     }
 

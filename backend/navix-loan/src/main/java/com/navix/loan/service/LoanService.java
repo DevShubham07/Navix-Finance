@@ -50,10 +50,7 @@ public class LoanService {
         // sanction never expires (decision 41), so a borrower who returns months later can carry a
         // date that has already passed — fall back to the computed date rather than mint a loan with
         // a negative tenure.
-        LocalDate approved = application.getApprovedRepaymentDate();
-        LocalDate dueDate = approved != null && approved.isAfter(disbursed)
-                ? approved
-                : loanMath.dueDateFromSalary(disbursed, salaryDay);
+        LocalDate dueDate = loanMath.dueDateFromSalary(disbursed, salaryDay);
         int tenureDays = (int) java.time.temporal.ChronoUnit.DAYS.between(disbursed, dueDate);
 
         Loan loan = new Loan();

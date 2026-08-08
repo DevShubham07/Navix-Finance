@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Lock, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
-import { useOnboarding, useSavedProfile, completeStep } from "@/lib/onboarding";
+import { useOnboarding, completeStep } from "@/lib/onboarding";
 import { passwordOk, PASSWORD_HINT } from "@/lib/password";
 
 /**
@@ -15,18 +15,14 @@ import { passwordOk, PASSWORD_HINT } from "@/lib/password";
 export default function SignupSetPasswordPage() {
   const router = useRouter();
   const { appId } = useOnboarding();
-  const saved = useSavedProfile(appId);
   const [password, setPassword] = React.useState("");
   const [confirm, setConfirm] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
 
-  // Salaried and self-employed branch here (revamp.md screens 5a / 5b).
-  const next = saved?.employmentStatus === "SELF_EMPLOYED" ? "/signup/self-employed" : "/signup/employer";
-
   const go = async () => {
     if (appId == null) return;
-    await completeStep(appId, "SET_PASSWORD", router, next);
+    await completeStep(appId, "SET_PASSWORD", router, "/signup/employment");
   };
 
   const save = async () => {
@@ -65,6 +61,9 @@ export default function SignupSetPasswordPage() {
         now and add one later from your profile.
       </p>
       <div className="form-card">
+        <button type="button" onClick={() => router.push("/signup/otp")} className="mb-4 text-sm font-semibold text-navy hover:underline">
+          Back
+        </button>
         <Input
           label="Password"
           type="password"

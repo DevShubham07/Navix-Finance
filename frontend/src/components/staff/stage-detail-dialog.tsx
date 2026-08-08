@@ -230,7 +230,7 @@ export function StageDetailDialog({
           ) : (
             <>
               {stage.key === "STARTED" && <StartedSection app={app} allEvents={allEvents} />}
-              {stage.key === "KYC" && <KycSection applicationId={applicationId} />}
+              {stage.key === "KYC" && <KycSection applicationId={applicationId} showCreditBrief={app.status !== "DRAFT"} />}
               {stage.key === "CREDIT_REVIEW" && <CreditSection app={app} />}
               {stage.key === "DISBURSEMENT" && (
                 <DisbursementSection app={app} events={stage.events} />
@@ -359,7 +359,7 @@ function StartedSection({ app, allEvents }: { app: ApplicationView; allEvents: E
 // KYC
 // ---------------------------------------------------------------------------
 
-function KycSection({ applicationId }: { applicationId: number }) {
+function KycSection({ applicationId, showCreditBrief }: { applicationId: number; showCreditBrief: boolean }) {
   const progressQ = useQuery({
     queryKey: ["staff-verification-progress", applicationId],
     queryFn: () => staffApi.verificationProgress(applicationId),
@@ -379,6 +379,7 @@ function KycSection({ applicationId }: { applicationId: number }) {
     queryKey: ["credit-brief", applicationId],
     queryFn: () => staffApi.creditBrief(applicationId),
     retry: false,
+    enabled: showCreditBrief,
   });
 
   const p = progressQ.data;

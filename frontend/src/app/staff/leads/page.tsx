@@ -7,6 +7,7 @@ import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { hasPermission } from "@/lib/auth/rbac";
+import { normalizeMobile } from "@/lib/utils";
 import {
   leadsApi,
   rupeesToPaise,
@@ -222,7 +223,7 @@ function NewLeadForm({ onCreated }: { onCreated: () => void }) {
             label="Mobile"
             required
             value={mobile}
-            onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            onChange={(e) => setMobile(normalizeMobile(e.target.value))}
             inputMode="numeric"
             placeholder="10 digits"
             className="!mb-0"

@@ -40,11 +40,11 @@ export default function SignupOtpPage() {
     }
     if (requested.current) return;
     requested.current = true;
-    send();
+    send(false);
   }, [mounted, mobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function send() {
-    if (resends >= MAX_RESENDS) {
+  async function send(isResend = true) {
+    if (isResend && resends >= MAX_RESENDS) {
       setError("Maximum resend attempts reached. Please contact support.");
       return;
     }
@@ -52,7 +52,7 @@ export default function SignupOtpPage() {
     setError(undefined);
     try {
       setSent(await requestBorrowerOtp(mobile));
-      setResends((n) => n + 1);
+      if (isResend) setResends((n) => n + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send the code.");
     }
@@ -89,7 +89,7 @@ export default function SignupOtpPage() {
         termsVersion: draft.termsVersion,
         pepDeclared: draft.pepDeclared,
       });
-      await completeStep(app.id, "OTP", router, "/signup/employment");
+      await completeStep(app.id, "OTP", router, "/signup/set-password");
     } catch (e) {
       setError(formatApiError(e, "Something went wrong — please try again."));
       setBusy(false);

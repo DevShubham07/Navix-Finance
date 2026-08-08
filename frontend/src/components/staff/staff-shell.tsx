@@ -27,10 +27,11 @@ import {
 import { Brand } from "@/components/site/brand";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { hasPermission, STAFF_ROLE_LABELS, type Permission } from "@/lib/auth/rbac";
-import { featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
+import { collectionsApi, featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { cn } from "@/lib/utils";
 import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
+import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
 
@@ -43,6 +44,7 @@ type NavItem = {
   flag?: string;
   /** Optional segment children (Customers). href for a child = `${parent.href}?seg=${seg}`. */
   sub?: { label: string; seg: CustomerSegment }[];
+  collectionBuckets?: boolean;
 };
 type NavGroup = { heading: string; items: NavItem[] };
 
@@ -86,6 +88,7 @@ const NAV: NavGroup[] = [
   {
     heading: "Collections",
     items: [
+      { label: "DPD buckets", href: "/staff/collections", Icon: HandCoins, perm: "collections:interact", collectionBuckets: true },
       // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
       { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: "collections:interact" },
     ],
@@ -137,6 +140,14 @@ function MobileNavLinks({ role, pathname, flags }: { role: Parameters<typeof has
 function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<typeof hasPermission>[0]; pathname: string; onNavigate?: () => void; flags?: FeatureFlags }) {
   const searchParams = useSearchParams();
   const currentSeg = searchParams.get("seg");
+  const currentBucket = searchParams.get("bucket");
+  const collectionCases = useQuery({
+    queryKey: ["collection-cases"],
+    queryFn: collectionsApi.listCases,
+    enabled: role === "COLLECTION_HEAD" || role === "COLLECTION_EXECUTIVE" || role === "ADMIN",
+    refetchInterval: 8000,
+  });
+  const bucketCounts = collectionBucketCounts(collectionCases.data ?? []);
 
   return (
     <>
@@ -148,12 +159,42 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
             <p className="px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-wider text-navix-300">{group.heading}</p>
             <ul className="space-y-0.5">
               {items.map((it) => {
-                const { label, href, Icon, sub } = it;
+                const { label, href, Icon, sub, collectionBuckets } = it;
                 const pathOnly = href.split("?")[0];
                 const hrefSeg = href.includes("?")
                   ? new URL(href, "http://local").searchParams.get("seg")
                   : null;
                 const parentActive = pathname === pathOnly || pathname.startsWith(pathOnly + "/");
+
+                if (collectionBuckets) {
+                  return (
+                    <li key={href}>
+                      <details open={pathname === pathOnly} className="group">
+                        <summary className={cn(
+                          "flex cursor-pointer list-none items-center gap-3 rounded px-3 py-2 text-sm transition-colors [&::-webkit-details-marker]:hidden",
+                          pathname === pathOnly ? "bg-white/10 font-semibold text-white shadow-[inset_3px_0_0_0_var(--gold)]" : "text-navix-200 hover:bg-white/5 hover:text-white",
+                        )}>
+                          <Icon size={17} className="flex-shrink-0" />
+                          <span className="flex-1 truncate">{label}</span>
+                          <ChevronRight size={14} className="opacity-60 transition-transform group-open:rotate-90" />
+                        </summary>
+                        <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
+                          {COLLECTION_BUCKETS.map((item) => (
+                            <li key={item.bucket}>
+                              <Link href={`${href}?bucket=${item.bucket}`} onClick={onNavigate} className={cn(
+                                "flex items-center justify-between rounded px-2 py-1.5 text-xs transition-colors",
+                                pathname === pathOnly && currentBucket === item.bucket ? "bg-white/10 font-semibold text-white" : "text-navix-300 hover:bg-white/5 hover:text-white",
+                              )}>
+                                <span>{item.label}</span>
+                                <span className="rounded-full bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">{bucketCounts[item.bucket]}</span>
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </li>
+                  );
+                }
 
                 if (sub?.length) {
                   return (

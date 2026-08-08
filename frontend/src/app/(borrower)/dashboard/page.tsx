@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Wallet, CalendarClock, CalendarDays, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
+  Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
 import type { BorrowerStatus } from "@/lib/domain/borrower";
@@ -25,6 +25,10 @@ import {
 import { useOnboardingStore } from "@/stores/application-store";
 import { daysBetween } from "@/lib/calc/loan-math";
 import { formatINR0, formatDate } from "@/lib/utils";
+import {
+  nextBorrowerMilestone,
+  type BorrowerMilestoneIcon,
+} from "@/lib/borrower-next-milestone";
 import { ReferralCard } from "@/components/borrower/referral-card";
 import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
 
@@ -37,7 +41,7 @@ export default function DashboardPage() {
   // Loan-details popup: any clickable loan surface on this page drives this single instance.
   const [detailsLoanId, setDetailsLoanId] = React.useState<number | null>(null);
 
-  // The borrower's KYC snapshot (name, DOB, salary) for the tiles below.
+  // The borrower's KYC snapshot supplies the real name used in the greeting.
   const profileQuery = useQuery({
     queryKey: ["live-profile", appId],
     queryFn: () => borrowerApi.getProfile(appId as number),
@@ -57,10 +61,6 @@ export default function DashboardPage() {
   // There is no client-side limit formula any more — a Credit Executive sanctions the amount, and
   // it reaches the borrower on the application (revamp.md decision 33). Zero until they do.
   const limitRupees = app?.eligibleLimitPaise != null ? Math.round(app.eligibleLimitPaise / 100) : 0;
-
-  // Date of birth from the backend identity record (captured at the PAN/Aadhaar step). Shown
-  // whenever it's on file — regardless of whether KYC is fully verified or a loan is active.
-  const dobDisplay = formatDOB(profileQuery.data?.dob ?? null);
 
   // "Repaid" is the sum of VERIFIED payments — not total − outstanding, since the (now penalty- and
   // prepayment-aware) outstanding can be below the on-time total without any payment being made.
@@ -84,6 +84,7 @@ export default function DashboardPage() {
   const active = app?.status === "ACTIVE" || app?.status === "OVERDUE";
   const closed = app?.status === "CLOSED";
   const declined = isTerminalBad(app);
+  const nextMilestone = nextBorrowerMilestone(app?.status, loan?.dueDate);
 
   // Resume enters the relevant wizard at its first screen; that wizard's journey guard then jumps
   // to wherever the SERVER says this borrower actually is — so it works on a fresh device too
@@ -167,15 +168,21 @@ export default function DashboardPage() {
         </div>
 
         <aside className="flex flex-col gap-4">
-          {dobDisplay && (
-            <div className="rounded border border-line bg-white p-5 shadow-sm">
-              <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-navy">
-                <CalendarDays size={16} /> Date of birth
-              </div>
-              <div className="font-serif text-2xl font-bold text-navy">{dobDisplay}</div>
-              <p className="mt-1 text-xs text-muted">As per your identity records</p>
+          <div className="rounded border border-line bg-white p-5 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-navy">
+              <NextMilestoneIcon icon={nextMilestone.icon} /> Next milestone
             </div>
-          )}
+            <div className="font-serif text-xl font-bold leading-tight text-navy">
+              {nextMilestone.title}
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted">{nextMilestone.detail}</p>
+            <Link
+              href={nextMilestone.href}
+              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-gold-dark hover:underline"
+            >
+              {nextMilestone.actionLabel} <ArrowRight size={14} />
+            </Link>
+          </div>
 
           <div className="rounded border border-line bg-white p-5 shadow-sm">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-navy">
@@ -307,20 +314,23 @@ function appStatusVariant(status: ApplicationStatus): React.ComponentProps<typeo
   }
 }
 
-/**
- * Format an ISO `yyyy-MM-dd` date of birth for display (e.g. "15 Aug 1992"). Builds a *local*
- * Date from the parts so the day never shifts across timezones (`new Date("yyyy-MM-dd")` parses
- * as UTC midnight, which can roll back a day in negative-offset zones). Returns null when absent.
- */
-function formatDOB(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const [y, m, d] = iso.split("-").map((n) => Number(n));
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+function NextMilestoneIcon({ icon }: { icon: BorrowerMilestoneIcon }) {
+  switch (icon) {
+    case "application":
+    case "review":
+      return <FileClock size={16} />;
+    case "offer":
+    case "reborrow":
+      return <Sparkles size={16} />;
+    case "disbursal":
+      return <Wallet size={16} />;
+    case "repayment":
+      return <CalendarClock size={16} />;
+    case "overdue":
+      return <AlertTriangle size={16} />;
+    case "closed":
+      return <CheckCircle2 size={16} />;
+  }
 }
 
 /** One-line, customer-friendly description of where the application currently stands. */

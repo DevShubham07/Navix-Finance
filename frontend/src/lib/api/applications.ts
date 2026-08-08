@@ -96,7 +96,7 @@ export interface ApplicationView {
   disbursalBank?: string | null;
   /** The borrower named a different account, so a penny drop ran against it. */
   disbursalAccountChanged?: boolean | null;
-  /** False on the unchanged-salary-account path, which never runs a penny drop (decision 9). */
+  /** True only when this exact account-number/IFSC pair has a reusable successful verification. */
   disbursalAccountVerified?: boolean | null;
 }
 
@@ -980,6 +980,7 @@ export interface DisbursalAccountView {
   holderName: string | null;
   bank: string | null;
   verified: boolean;
+  pennyDropRequired: boolean;
   /** Non-null: the borrower burnt their penny-drop attempts and must wait this out. */
   lockedUntil: string | null;
   attemptsLeft: number;
@@ -1012,7 +1013,7 @@ export const offerApi = {
 
   /**
    * The last step: confirms where the money lands and hands the file to disbursement. A penny drop
-   * fires only when the account differs from the salary account on file.
+   * fires unless this exact account-number/IFSC pair already has a successful verification.
    */
   confirmDisbursalAccount: (
     id: number,
@@ -1074,7 +1075,7 @@ export const staffApi = {
   /** "Accept lead" — the Credit Executive's FINAL decision (V45). No Head counter-approval. */
   sanction: (
     id: number,
-    payload: { sanctionedAmountPaise: number; repaymentDate: string; remarks?: string },
+    payload: { sanctionedAmountPaise: number; salaryCreditDay: number; remarks?: string },
   ) => bff<ApplicationView>(`${STAFF_BASE}/${id}/sanction`, "POST", payload),
 
   /** "Reject lead" — the borrower is told nothing; the remarks go to the staff-only register. */

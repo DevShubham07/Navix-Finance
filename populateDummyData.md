@@ -122,7 +122,7 @@ identity across states.
 | KYC queue | 3 | 010–012 | `KYC_PENDING` |
 | Credit queue | 3 | 013–015 | `KYC_APPROVED` + applied |
 | Exec review | 3 | 016–018 | `CREDIT_EXEC_PENDING` (assigned by Credit Head) |
-| Head decision | 3 | 019–021 | `CREDIT_HEAD_PENDING` (recommended by Credit Executive) |
+| Head-owned review | 3 | 019–021 | `CREDIT_EXEC_PENDING` (assigned to the Credit Head) |
 | Disbursement | 3 | 022–024 | `DISBURSEMENT_PENDING` |
 | Accountant | 2 | 025–026 | `ACCOUNTANT_PENDING` (released with no `txnRef`) |
 | Disbursement failed | 1 | 027 | `accountant-validate {decision:false}` → `DISBURSEMENT_FAILED` |

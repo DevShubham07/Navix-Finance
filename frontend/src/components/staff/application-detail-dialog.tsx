@@ -135,7 +135,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
   const briefQ = useQuery({
     queryKey: ["credit-brief", id],
     queryFn: () => staffApi.creditBrief(id),
-    enabled: open,
+    enabled: open && appQ.data != null && appQ.data.status !== "DRAFT",
   });
   // Backs the header identity (name/mobile/PAN/risk) and the Basic details tab.
   const profileQ = useQuery({
@@ -591,8 +591,8 @@ function CollectionsFocus({ app }: { app: ApplicationView }) {
         <p className="mb-1 text-[11px] text-muted">
           Interest runs from disbursal on {formatDate(loan.disbursedOn)}
           {loan.dueDate ? ` and stops on the due date ${formatDate(loan.dueDate)}` : ""}; the late
-          penalty starts the day after {loan.dueDate ? formatDate(loan.dueDate) : "the due date"} (1-day
-          salary grace) and is capped at 30 days.
+          the grace day adds one normal-interest day without penalty. The 2% daily penalty starts the
+          following day and is capped at 30 days.
         </p>
       )}
       <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">

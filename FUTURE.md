@@ -3,8 +3,7 @@
 The forward plan for taking DhanBoost to production. This file owns only the **not-yet-built** items.
 Completed work is recorded in `CLAUDE.md` §2 (and the git history).
 
-> Companion docs: `CLAUDE.md` (onboarding / current state; §10 has the full migration record),
-> `dfd.md` (authoritative lifecycle + roles).
+> Companion doc: `CLAUDE.md` (onboarding, lifecycle, roles, and the full migration record in §10).
 
 > ## ⚑ Update 2026-06-27 — P0–P8 production migration SHIPPED (most of A/B/C is now 🟢)
 >

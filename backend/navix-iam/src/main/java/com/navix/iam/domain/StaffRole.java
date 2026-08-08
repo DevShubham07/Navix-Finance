@@ -23,6 +23,6 @@ public enum StaffRole {
      */
     TELECALLER,
     ADMIN,
-    /** Internal read-only operations role (health, logs, read-only DB) — dfd.md §6.3 / W7. */
+    /** Internal read-only operations role (health, logs, read-only DB). */
     DEVELOPER
 }

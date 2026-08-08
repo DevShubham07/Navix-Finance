@@ -6,11 +6,13 @@ import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import java.time.Instant;
 import java.time.LocalDate;
 
-/** Request/response DTOs for the application lifecycle (dfd.md §8). Money is integer paise. */
+/** Request/response DTOs for the application lifecycle. Money is integer paise. */
 public final class ApplicationDtos {
 
     private ApplicationDtos() {
@@ -43,7 +45,8 @@ public final class ApplicationDtos {
      * "Accept lead" — the Credit Executive's final sanction (V45): the ceiling the borrower may draw
      * down from and the repayment date they'll be held to, plus staff-only remarks.
      */
-    public record SanctionRequest(@Positive long sanctionedAmountPaise, @NotNull LocalDate repaymentDate,
+    public record SanctionRequest(@Positive long sanctionedAmountPaise,
+                                  @NotNull @Min(1) @Max(31) Integer salaryCreditDay,
                                   String remarks) {
     }
 

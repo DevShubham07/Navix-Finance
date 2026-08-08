@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { setBorrowerSession } from "@/lib/api/bff-session";
 import { config } from "@/lib/config";
+import { normalizeMobile } from "@/lib/utils";
 
 /**
  * Borrower login by password (the OTP-less alternative). POST `{ mobile, password }` ->
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { mobile, password } = (body ?? {}) as { mobile?: unknown; password?: unknown };
-  const cleanMobile = typeof mobile === "string" ? mobile.replace(/\D/g, "") : "";
+  const cleanMobile = typeof mobile === "string" ? normalizeMobile(mobile) : "";
   if (cleanMobile.length < 10) {
     return NextResponse.json({ error: "Enter a valid 10-digit mobile number." }, { status: 400 });
   }

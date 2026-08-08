@@ -56,7 +56,7 @@ public class LoanMath {
     /** Maximum loan term: the due date must fall within this many days of disbursement. */
     public static final int MAX_TERM_DAYS = 40;
 
-    /** Fixed loan term: 30-day single-repayment bullet loan, due = disbursed + 30d (dfd.md D10). */
+    /** Legacy/default tenure used only when a salary-derived tenure is unavailable. */
     public static final int TERM_DAYS = 30;
 
     /** Grace after the due date before any penalty accrues (paying the day after salary is free). */

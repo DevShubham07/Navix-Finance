@@ -191,9 +191,9 @@ export function KycActions({ app }: { app: ApplicationView }) {
 export function AssignActions({ app }: { app: ApplicationView }) {
   const refresh = useRefreshAfterAction();
   const me = useStaffMe();
-  const isAdmin = me.data?.role === "ADMIN";
+  const canAssignSelf = me.data?.role === "ADMIN" || me.data?.role === "CREDIT_HEAD";
   const [execId, setExecId] = React.useState("");
-  // Assignee picker: only ACTIVE Credit Executives (dfd §13.4 activation gating).
+  // Assignee picker: only active Credit Executives, plus the acting Credit Head via self-assign.
   // Sourced from the dedicated staff-readable endpoint, NOT adminApi.listStaff() — that route is
   // ADMIN-only, so it 403'd for the Credit Head and left this picker permanently empty
   // ("No active credit executives"), making assignment impossible for the role that owns the step.
@@ -248,18 +248,18 @@ export function AssignActions({ app }: { app: ApplicationView }) {
               disabled={m.isPending || !execId}
               className="btn btn-sm btn-navy disabled:opacity-50"
             >
-              {m.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Assign
+              {m.isPending ? <Loader2 size={14} className="animate-spin" /> : null} {app.assignedExecutiveId ? "Reassign" : "Assign"}
             </button>
           </>
         )}
-        {isAdmin && me.data && (
+        {canAssignSelf && me.data && (
           <button
             onClick={() => mSelf.mutate()}
             disabled={mSelf.isPending}
             className="btn btn-sm btn-outline disabled:opacity-50"
-            title="Assign this credit review to yourself (admin oversight)"
+            title="Assign this credit review to yourself"
           >
-            {mSelf.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Assign to me
+            {mSelf.isPending ? <Loader2 size={14} className="animate-spin" /> : null} {app.assignedExecutiveId ? "Reassign to me" : "Assign to me"}
           </button>
         )}
         <ActionError error={m.error || mSelf.error} />
@@ -272,12 +272,13 @@ export function AssignActions({ app }: { app: ApplicationView }) {
  * The Credit Executive's row actions (V45) — Reject lead · Mark lead pending · Accept lead.
  *
  * "Accept lead" is the FINAL credit decision, so it opens {@link SanctionDialog} rather than firing
- * inline: the executive must set an amount and a repayment date, and see what they cost, before it
+ * inline: the reviewer must set an amount and salary-credit day, and see the projection before it
  * commits. Reject and Mark pending both capture a reason inline — "Mark lead pending" is only a tag
  * (the lead keeps its status and its place in the queue, and the borrower is never told).
  */
 export function CreditDecisionActions({ app }: { app: ApplicationView }) {
   const refresh = useRefreshAfterAction();
+  const me = useStaffMe();
   const [sanctioning, setSanctioning] = React.useState(false);
   const [prompt, setPrompt] = React.useState<"reject" | "pending" | null>(null);
   const [reason, setReason] = React.useState("");
@@ -303,6 +304,7 @@ export function CreditDecisionActions({ app }: { app: ApplicationView }) {
   return (
     <ActionGate permission="loan:review">
       <div className="flex flex-col gap-2">
+        {(me.data?.role === "CREDIT_HEAD" || me.data?.role === "ADMIN") && <AssignActions app={app} />}
         {app.markedPendingAt && (
           <p className="text-xs text-warning-700">
             Marked pending{app.pendingReason ? ` — ${app.pendingReason}` : ""}

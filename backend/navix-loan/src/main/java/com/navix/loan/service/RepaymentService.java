@@ -171,7 +171,7 @@ public class RepaymentService {
         LocalDate at = asOf != null ? asOf : LocalDate.now();
         int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
         int daysToAsOf = (int) Math.max(0L, ChronoUnit.DAYS.between(loan.getDisbursedOn(), at));
-        int interestDays = Math.min(daysToAsOf, tenureDays);
+        int interestDays = Math.min(daysToAsOf, tenureDays + LoanMath.SALARY_GRACE_DAYS);
         int rawDpd = loanMath.daysPastDue(loan.getDueDate(), at);
         int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
         long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);

@@ -12,9 +12,9 @@ The product: a borrower can take a short-term loan capped at **25% of monthly sa
 pays an up-front **10% processing fee + 18% GST on that fee**, accrues **1%/day interest**
 (prepay anytime, no penalty), and makes a **single repayment on salary day**. Late penalty
 is **2%/day capped at 30 days**, after which the loan moves to collections. Risk categories
-**A/B/C/D** affect limit and required checks — not price. A strict **maker-checker** split
-applies: Credit Executive (review) != Credit Head (final approve) != Disbursement Head
-(release), and an Accountant manually confirms the bank transfer to activate the loan.
+**A/B/C/D** affect limit and required checks — not price. Credit Head and the assigned Credit
+Executive share final decision authority in one credit-review stage; assignment limits Executive
+ownership, while the Head retains access to every file. The Disbursement Head separately owns release.
 
 ## Modules
 

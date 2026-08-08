@@ -166,13 +166,12 @@ class ApplicationFlowServiceTest {
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
 
         // The executive's sanction is FINAL — no Head counter-approval (V45).
-        LocalDate repay = LocalDate.now().plusDays(28);
-        actor("exec1", "CREDIT_EXECUTIVE");
-        flow.sanction(1L, 2_000_000L, repay, "salary slips verified");
+        actor("55", "CREDIT_EXECUTIVE");
+        flow.sanction(1L, 2_000_000L, 28, "salary slips verified");
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
         assertThat(app.getSanctionedAmountPaise()).isEqualTo(2_000_000L);
-        assertThat(app.getApprovedRepaymentDate()).isEqualTo(repay);
-        assertThat(app.getSanctionTenureDays()).isEqualTo(28);
+        assertThat(app.getSalaryCreditDay()).isEqualTo(28);
+        assertThat(app.getApprovedRepaymentDate()).isAfter(LocalDate.now());
 
         // The borrower accepts the offer, drawing down less than the ceiling. Phase 3's offer screens
         // sit in front of this call; all it needs from them is a signed sanction letter.
@@ -226,19 +225,21 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
-    void sanctionRejectsARepaymentDateInThePast() {
-        appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
-        actor("exec1", "CREDIT_EXECUTIVE");
+    void sanctionRejectsAnInvalidSalaryCreditDay() {
+        LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        app.setAssignedExecutiveId(55L);
+        actor("55", "CREDIT_EXECUTIVE");
 
-        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, LocalDate.now().minusDays(1), null))
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, 32, null))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("must be in the future");
+                .hasMessageContaining("between 1 and 31");
     }
 
     @Test
     void rejectLeadRecordsAManualRegisterRowWithNoBlock() {
         LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
-        actor("exec1", "CREDIT_EXECUTIVE");
+        app.setAssignedExecutiveId(55L);
+        actor("55", "CREDIT_EXECUTIVE");
 
         flow.rejectLead(1L, "salary slips inconsistent");
 
@@ -254,7 +255,8 @@ class ApplicationFlowServiceTest {
     @Test
     void markPendingTagsWithoutChangingStatus() {
         LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
-        actor("exec1", "CREDIT_EXECUTIVE");
+        app.setAssignedExecutiveId(55L);
+        actor("55", "CREDIT_EXECUTIVE");
 
         flow.markPending(1L, "waiting on bank statement");
 
@@ -315,10 +317,59 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
+    void creditHeadCanAssignTheFileToThemselves() {
+        LoanApplication app = appAt(ApplicationStatus.KYC_PENDING);
+        actor("12", "CREDIT_HEAD");
+
+        flow.assignExecutive(1L, 12L);
+
+        assertThat(app.getAssignedExecutiveId()).isEqualTo(12L);
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
+    }
+
+    @Test
+    void creditHeadCanReassignWithoutClearingPendingNotes() {
+        LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        app.setAssignedExecutiveId(55L);
+        app.setPendingReason("waiting on bank statement");
+        app.setMarkedPendingAt(Instant.now());
+        actor("12", "CREDIT_HEAD");
+
+        flow.assignExecutive(1L, 56L);
+
+        assertThat(app.getAssignedExecutiveId()).isEqualTo(56L);
+        assertThat(app.getPendingReason()).isEqualTo("waiting on bank statement");
+        assertThat(events).anySatisfy(e -> {
+            assertThat(e.getAction()).isEqualTo("REASSIGN");
+            assertThat(e.getNotes()).contains("previousExecutiveId=55", "newExecutiveId=56");
+        });
+    }
+
+    @Test
+    void creditExecutiveOnlySeesAndActsOnAssignedFiles() {
+        LoanApplication mine = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        mine.setAssignedExecutiveId(55L);
+        LoanApplication somebodyElses = new LoanApplication();
+        somebodyElses.setId(2L);
+        somebodyElses.setStatus(ApplicationStatus.CREDIT_EXEC_PENDING);
+        somebodyElses.setAssignedExecutiveId(56L);
+        when(applicationRepository.findById(2L)).thenReturn(Optional.of(somebodyElses));
+        when(applicationRepository.findByAssignedExecutiveIdAndStatusOrderByIdAsc(
+                55L, ApplicationStatus.CREDIT_EXEC_PENDING)).thenReturn(List.of(mine));
+        actor("55", "CREDIT_EXECUTIVE");
+
+        assertThat(flow.byStatus(ApplicationStatus.CREDIT_EXEC_PENDING)).containsExactly(mine);
+        assertThatThrownBy(() -> flow.markPending(2L, "not mine"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("assigned");
+    }
+
+    @Test
     void illegalTransitionIsRejected() {
-        appAt(ApplicationStatus.DRAFT);
-        actor("exec1", "CREDIT_EXECUTIVE");
-        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, LocalDate.now().plusDays(20), null))
+        LoanApplication app = appAt(ApplicationStatus.DRAFT);
+        app.setAssignedExecutiveId(55L);
+        actor("55", "CREDIT_EXECUTIVE");
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, 20, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("not allowed");
     }
@@ -509,9 +560,10 @@ class ApplicationFlowServiceTest {
 
     @Test
     void sanctionRequiresACreditRole() {
-        appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        app.setAssignedExecutiveId(55L);
         actor("acct1", "ACCOUNTANT");
-        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, LocalDate.now().plusDays(20), null))
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, 20, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("CREDIT_EXECUTIVE or CREDIT_HEAD");
     }

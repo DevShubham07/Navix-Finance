@@ -2,8 +2,7 @@
 
 > **Status:** approved spec, 2026-08-06. Phase 1 is being built now; Phases 2–4 are specified here so the
 > schema and state machine are designed once. Every decision below was explicitly confirmed — see
-> [Confirmed decisions](#confirmed-decisions). When this file and `dfd.md` disagree on the lifecycle, **this
-> file wins for the revamped flow**; `dfd.md` still describes the pre-revamp product.
+> [Confirmed decisions](#confirmed-decisions). `AGENTS.md` / `CLAUDE.md` document the implemented lifecycle.
 
 ## Context
 

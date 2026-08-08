@@ -276,12 +276,17 @@ public class OfferService {
         LoanApplication app = requireSanctioned(appId);
         CustomerProfile p = profileRepo.findByApplicationId(appId).orElse(null);
         Instant lockedUntil = pennyDropGuard.lockedUntil(app.getCustomerId()).orElse(null);
+        String account = firstNonBlank(app.getDisbursalAccountNumber(), p != null ? p.getSalaryAccountNumber() : null);
+        String ifsc = firstNonBlank(app.getDisbursalIfsc(), p != null ? p.getSalaryIfsc() : null);
+        boolean reusable = Boolean.TRUE.equals(app.getDisbursalAccountVerified())
+                && matches(account, ifsc, app.getDisbursalAccountNumber(), app.getDisbursalIfsc());
         return new DisbursalAccountView(
-                firstNonBlank(app.getDisbursalAccountNumber(), p != null ? p.getSalaryAccountNumber() : null),
-                firstNonBlank(app.getDisbursalIfsc(), p != null ? p.getSalaryIfsc() : null),
+                account,
+                ifsc,
                 firstNonBlank(app.getDisbursalHolderName(), p != null ? p.getFullName() : null),
                 firstNonBlank(app.getDisbursalBank(), p != null ? p.getSalaryBank() : null),
-                Boolean.TRUE.equals(app.getDisbursalAccountVerified()),
+                reusable,
+                !reusable,
                 lockedUntil,
                 pennyDropGuard.remainingAttempts(app.getCustomerId()));
     }
@@ -319,8 +324,9 @@ public class OfferService {
                 p == null ? null : p.getSalaryIfsc())
                 && !matches(account, ifsc, app.getDisbursalAccountNumber(), app.getDisbursalIfsc());
 
-        boolean verified = false;
-        if (changed) {
+        boolean verified = Boolean.TRUE.equals(app.getDisbursalAccountVerified())
+                && matches(account, ifsc, app.getDisbursalAccountNumber(), app.getDisbursalIfsc());
+        if (!verified) {
             if (pennyDropGuard.lockedUntil(app.getCustomerId()).isPresent()) {
                 throw new BusinessException("PENNY_DROP_LOCKED",
                         "Too many failed attempts. Please try again after "

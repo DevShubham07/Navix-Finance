@@ -9,6 +9,7 @@ import { Reassurance } from "@/components/borrower/reassurance";
 import { offerApi, REFERENCE_RELATIONS, type ReferenceInput } from "@/lib/api/applications";
 import { useOffer, completeOfferStep, nextOfferRoute, prevOfferRoute } from "@/lib/offer";
 import { formatApiError } from "@/lib/api/errors";
+import { normalizeMobile } from "@/lib/utils";
 
 const RELATION_LABEL: Record<string, string> = {
   PARENT: "Parent",
@@ -121,7 +122,7 @@ export default function LoanReferencesPage() {
               required
               inputMode="numeric"
               value={refs[i].mobile}
-              onChange={(e) => set(i, { mobile: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+              onChange={(e) => set(i, { mobile: normalizeMobile(e.target.value) })}
               placeholder="9876543210"
               leftIcon={<Phone size={16} />}
               error={

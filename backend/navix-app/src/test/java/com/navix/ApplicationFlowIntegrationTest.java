@@ -13,6 +13,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.security.JwtService;
 import com.navix.loan.service.ApplicationVerificationService;
+import com.navix.loan.service.LoanMath;
+import com.navix.loan.entity.ApplicationVerification;
+import com.navix.loan.repository.ApplicationVerificationRepository;
 import java.time.LocalDate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -30,7 +33,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * End-to-end integration test of the application state machine (dfd.md §8) over the FULL app:
+ * End-to-end integration test of the application state machine over the FULL app:
  * real controllers → services → Flyway-migrated Postgres (Testcontainers), now over the real
  * JWT auth chain (P6). Each actor is a minted bearer token; the onboarding verification gate
  * (P3) is mocked-PASS here so this test stays focused on the maker-checker lifecycle.
@@ -51,6 +54,10 @@ class ApplicationFlowIntegrationTest {
     private ObjectMapper om;
     @Autowired
     private JwtService jwt;
+    @Autowired
+    private LoanMath loanMath;
+    @Autowired
+    private ApplicationVerificationRepository verificationRepository;
 
     /** The onboarding completeness gate is exercised by unit tests; here it is PASS so the
      *  lifecycle test reaches KYC_PENDING without seeding every external verification. */
@@ -70,14 +77,14 @@ class ApplicationFlowIntegrationTest {
         act(appId, "submit-kyc", "7", "BORROWER", null, "KYC_PENDING");
         // V45: the Credit Head assigns straight off the submitted intake and the executive's
         // sanction is final — no KYC approver, no Head counter-approval.
-        act(appId, "assign", "12", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
-        act(appId, "sanction", "13", "CREDIT_EXECUTIVE",
-                "{\"sanctionedAmountPaise\":1000000,\"repaymentDate\":\"" + LocalDate.now().plusDays(28)
-                        + "\",\"remarks\":\"verified\"}", "SANCTIONED");
+        act(appId, "assign", "5", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
+        act(appId, "sanction", "2", "CREDIT_EXECUTIVE",
+                "{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":28,\"remarks\":\"verified\"}", "SANCTIONED");
+        recordEsign(appId);
         act(appId, "accept-offer", "7", "BORROWER", "{\"amountPaise\":1000000}", "DISBURSEMENT_PENDING");
         // V48: the Disbursement Head releases directly and their transaction id IS the validation —
         // there is no accountant hop behind them, so this one call lands the loan ACTIVE.
-        act(appId, "disbursement-decision", "14", "DISBURSEMENT_HEAD",
+        act(appId, "disbursement-decision", "6", "DISBURSEMENT_HEAD",
                 "{\"decision\":true,\"txnRef\":\"UTR-IT-001\"}", "ACTIVE");
 
         MvcResult appView = mvc.perform(get("/api/applications/{id}", appId)
@@ -104,12 +111,13 @@ class ApplicationFlowIntegrationTest {
         assertStatusEquals(appId, "DRAFT");
 
         act(appId, "submit-kyc", "10", "BORROWER", null, "KYC_PENDING");
-        act(appId, "assign", "1", "ADMIN", "{\"executiveId\":10}", "CREDIT_EXEC_PENDING");
-        act(appId, "sanction", "1", "ADMIN",
-                "{\"sanctionedAmountPaise\":1000000,\"repaymentDate\":\"" + LocalDate.now().plusDays(28) + "\"}",
+        act(appId, "assign", "10", "ADMIN", "{\"executiveId\":10}", "CREDIT_EXEC_PENDING");
+        act(appId, "sanction", "10", "ADMIN",
+                "{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":28}",
                 "SANCTIONED");
+        recordEsign(appId);
         act(appId, "accept-offer", "10", "BORROWER", "{\"amountPaise\":1000000}", "DISBURSEMENT_PENDING");
-        act(appId, "disbursement-decision", "1", "ADMIN",
+        act(appId, "disbursement-decision", "10", "ADMIN",
                 "{\"decision\":true,\"txnRef\":\"ADMIN-TXN-10\"}", "ACTIVE");
 
         mvc.perform(get("/api/applications/{id}", appId).header("Authorization", bearer("1", "ADMIN")))
@@ -124,16 +132,18 @@ class ApplicationFlowIntegrationTest {
      * pass if {@code LoanService.disburse} honoured it.
      */
     @Test
-    void sanctionedRepaymentDateBecomesTheLoanDueDate() throws Exception {
+    void salaryCreditDayDeterminesTheDisbursalBasedLoanDueDate() throws Exception {
         long appId = createApplication(8L);
-        LocalDate repay = LocalDate.now().plusDays(17);
+        int salaryDay = 17;
+        LocalDate repay = loanMath.dueDateFromSalary(LocalDate.now(), salaryDay);
 
         act(appId, "submit-kyc", "8", "BORROWER", null, "KYC_PENDING");
-        act(appId, "assign", "12", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
-        act(appId, "sanction", "13", "CREDIT_EXECUTIVE",
-                "{\"sanctionedAmountPaise\":1000000,\"repaymentDate\":\"" + repay + "\"}", "SANCTIONED");
+        act(appId, "assign", "5", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
+        act(appId, "sanction", "2", "CREDIT_EXECUTIVE",
+                "{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":" + salaryDay + "}", "SANCTIONED");
+        recordEsign(appId);
         act(appId, "accept-offer", "8", "BORROWER", "{\"amountPaise\":1000000}", "DISBURSEMENT_PENDING");
-        act(appId, "disbursement-decision", "14", "DISBURSEMENT_HEAD",
+        act(appId, "disbursement-decision", "6", "DISBURSEMENT_HEAD",
                 "{\"decision\":true,\"txnRef\":\"UTR-8\"}", "ACTIVE");
 
         MvcResult appView = mvc.perform(get("/api/applications/{id}", appId)
@@ -152,8 +162,8 @@ class ApplicationFlowIntegrationTest {
     void rejectLeadIsRecordedInTheRejectionRegister() throws Exception {
         long appId = createApplication(20L);
         act(appId, "submit-kyc", "20", "BORROWER", null, "KYC_PENDING");
-        act(appId, "assign", "12", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
-        act(appId, "reject-lead", "13", "CREDIT_EXECUTIVE", "{\"notes\":\"income unverifiable\"}", "REJECTED");
+        act(appId, "assign", "5", "CREDIT_HEAD", "{\"executiveId\":2}", "CREDIT_EXEC_PENDING");
+        act(appId, "reject-lead", "2", "CREDIT_EXECUTIVE", "{\"notes\":\"income unverifiable\"}", "REJECTED");
 
         mvc.perform(get("/api/applications/rejections").param("reason", "MANUAL")
                         .header("Authorization", bearer("1", "ADMIN")))
@@ -165,10 +175,9 @@ class ApplicationFlowIntegrationTest {
     void illegalTransitionIsRejected() throws Exception {
         long appId = createApplication(9L);
         mvc.perform(post("/api/applications/{id}/sanction", appId)
-                        .header("Authorization", bearer("13", "CREDIT_EXECUTIVE"))
+                        .header("Authorization", bearer("10", "ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sanctionedAmountPaise\":1000000,\"repaymentDate\":\""
-                                + LocalDate.now().plusDays(20) + "\"}"))
+                        .content("{\"sanctionedAmountPaise\":1000000,\"salaryCreditDay\":20}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code").value("ILLEGAL_TRANSITION"));
     }
@@ -195,6 +204,15 @@ class ApplicationFlowIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("DRAFT"))
                 .andReturn();
         return data(result).get("id").asLong();
+    }
+
+    private void recordEsign(long appId) {
+        ApplicationVerification row = new ApplicationVerification();
+        row.setApplicationId(appId);
+        row.setCheckType(ApplicationVerificationService.ESIGN);
+        row.setStatus(ApplicationVerificationService.PASS);
+        row.setProvider("TEST");
+        verificationRepository.save(row);
     }
 
     private void act(long appId, String action, String actorId, String role, String body,

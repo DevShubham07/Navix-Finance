@@ -11,7 +11,7 @@ import {
   useStaffMe,
   ReviewLookup,
   StatusQueue,
-  CreditQueuePanel,
+  CreditWorkbench,
   CreditDecisionActions,
   DisbursementActions,
   AppRow,
@@ -25,7 +25,6 @@ import {
   CollectionPaymentValidationQueue,
 } from "@/components/staff/collection-payments";
 import { CollectionAssignActions } from "@/components/staff/pipeline/collection-actions";
-import { DpdBucketsPanel } from "@/components/staff/pipeline/dpd-buckets-panel";
 import { InfoTooltip } from "@/components/ui";
 
 /** Roles that don't drive the credit/disbursement pipeline but do need the repayment/closed
@@ -110,15 +109,13 @@ function RoleQueues({ role }: { role: StaffRole }) {
   const showBothRepaymentPanels = showAll || role === "DEVELOPER" || role === "ACCOUNTANT";
   const isCollections = role === "COLLECTION_HEAD" || role === "COLLECTION_EXECUTIVE";
   const showAwaitingRepayment = showBothRepaymentPanels || isCollections;
-  // DPD buckets moved here off the removed /staff/collections/buckets page.
-  const showDpdBuckets = showAll || role === "DEVELOPER" || isCollections;
 
   return (
     <div className="space-y-8">
       {/* The Credit Head's only lifecycle step (V45): hand a submitted intake to an executive. */}
-      {(showAll || role === "CREDIT_HEAD") && <CreditQueuePanel />}
+      {(showAll || role === "CREDIT_HEAD") && <CreditWorkbench />}
 
-      {(showAll || role === "CREDIT_HEAD" || role === "CREDIT_EXECUTIVE") && (
+      {role === "CREDIT_EXECUTIVE" && (
         <>
           <StatusQueue
             title="Credit review — accept, reject or park"
@@ -172,7 +169,6 @@ function RoleQueues({ role }: { role: StaffRole }) {
       {(showAll || role === "COLLECTION_HEAD") && <CollectionPaymentApprovalQueue />}
 
       {showAwaitingRepayment && <AwaitingRepaymentPanel />}
-      {showDpdBuckets && <DpdBucketsPanel />}
       {showBothRepaymentPanels && <ClosedPanel />}
     </div>
   );
