@@ -1006,7 +1006,8 @@ export const offerApi = {
     bff<SanctionLetterView>(`${OFFER(id)}/sanction-letter`, "POST"),
 
   /** Sign the letter. Without this the application cannot reach disbursement. */
-  esign: (id: number) => bff<StepResult>(`${OFFER(id)}/esign`, "POST"),
+  esign: (id: number, payload: { signatureDataUrl: string; latitude?: number; longitude?: number; accuracyMeters?: number }) =>
+    bff<StepResult>(`${OFFER(id)}/esign`, "POST", payload),
 
   disbursalAccount: (id: number) =>
     bff<DisbursalAccountView>(`${OFFER(id)}/disbursal-account`, "GET"),

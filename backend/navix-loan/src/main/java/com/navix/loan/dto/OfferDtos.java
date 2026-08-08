@@ -48,6 +48,10 @@ public final class OfferDtos {
     public record SanctionLetterView(Long documentId, String url) {
     }
 
+    public record ManualEsignRequest(@NotBlank String signatureDataUrl,
+                                     Double latitude, Double longitude, Double accuracyMeters) {
+    }
+
     /**
      * Screen 11. {@code lockedUntil} non-null means the borrower has burnt their penny-drop attempts
      * and must wait; {@code attemptsLeft} is how many changed-account tries remain before that.

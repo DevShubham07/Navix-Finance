@@ -11,6 +11,7 @@ import com.navix.loan.dto.OfferDtos.OfferSummaryView;
 import com.navix.loan.dto.OfferDtos.ReferenceView;
 import com.navix.loan.dto.OfferDtos.ReferencesRequest;
 import com.navix.loan.dto.OfferDtos.SanctionLetterView;
+import com.navix.loan.dto.OfferDtos.ManualEsignRequest;
 import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService.StepResult;
 import com.navix.loan.service.OfferService;
@@ -73,9 +74,9 @@ public class OfferController {
     }
 
     @PostMapping("/esign")
-    public ApiResponse<StepResult> esign(@PathVariable Long id) {
+    public ApiResponse<StepResult> esign(@PathVariable Long id, @RequestBody ManualEsignRequest req) {
         authorize(id);
-        return ApiResponse.ok(offer.esign(id));
+        return ApiResponse.ok(offer.manualEsign(id, req));
     }
 
     @GetMapping("/disbursal-account")

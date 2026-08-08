@@ -7,6 +7,7 @@ import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountView;
 import com.navix.loan.dto.OfferDtos.OfferSummaryView;
+import com.navix.loan.dto.OfferDtos.ManualEsignRequest;
 import com.navix.loan.dto.OfferDtos.ReferenceInput;
 import com.navix.loan.dto.OfferDtos.ReferenceView;
 import com.navix.loan.dto.OfferDtos.SanctionLetterView;
@@ -261,6 +262,15 @@ public class OfferService {
     public StepResult esign(Long appId) {
         requireSanctioned(appId);
         StepResult result = verification.recordEsign(appId);
+        journey.advance(appId, JourneyService.OfferStep.OFFER_SANCTIONED);
+        return result;
+    }
+
+    @Transactional
+    public StepResult manualEsign(Long appId, ManualEsignRequest req) {
+        requireSanctioned(appId);
+        StepResult result = verification.recordManualEsign(appId, req.signatureDataUrl(),
+                req.latitude(), req.longitude(), req.accuracyMeters());
         journey.advance(appId, JourneyService.OfferStep.OFFER_SANCTIONED);
         return result;
     }

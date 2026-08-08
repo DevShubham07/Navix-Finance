@@ -20,6 +20,7 @@ import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.time.Instant;
+import java.util.Base64;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -1116,6 +1117,43 @@ public class ApplicationVerificationService {
         profileRepo.save(profile);
         return view(upsert(appId, ESIGN, PASS, session.provider(), result.signatureRef(), ref,
                 null, null, signedKey, derived, "Sanction letter signed"));
+    }
+
+    @Transactional
+    public StepResult recordManualEsign(Long appId, String signatureDataUrl,
+                                        Double latitude, Double longitude, Double accuracyMeters) {
+        if ((latitude != null && (latitude < -90 || latitude > 90))
+                || (longitude != null && (longitude < -180 || longitude > 180))
+                || (accuracyMeters != null && (accuracyMeters < 0 || accuracyMeters > 100_000))) {
+            throw new BusinessException("SIGNATURE_LOCATION_INVALID", "The signing location is invalid");
+        }
+        if (signatureDataUrl == null || !signatureDataUrl.startsWith("data:image/png;base64,")) {
+            throw new BusinessException("SIGNATURE_INVALID", "Draw your signature in the signing area");
+        }
+        byte[] signature;
+        try {
+            signature = Base64.getDecoder().decode(signatureDataUrl.substring("data:image/png;base64,".length()));
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException("SIGNATURE_INVALID", "Draw your signature again");
+        }
+        if (signature.length == 0 || signature.length > 1_000_000) {
+            throw new BusinessException("SIGNATURE_INVALID", "The signature image is invalid");
+        }
+        StepResult result = recordEsign(appId);
+        ApplicationVerification row = verificationRepo.findByApplicationIdAndCheckType(appId, ESIGN)
+                .orElseThrow(() -> new BusinessException("ESIGN_FAILED", "Signature could not be recorded"));
+        String key = "applications/" + appId + "/signed_agreement/signature.png";
+        storage.store(key, signature, "image/png");
+        Map<String, Object> derived = fromJson(row.getDerived());
+        derived.put("signatureObjectKey", key);
+        derived.put("signedAt", Instant.now().toString());
+        derived.put("latitude", latitude);
+        derived.put("longitude", longitude);
+        derived.put("accuracyMeters", accuracyMeters);
+        row.setDerived(toJson(derived));
+        row.setMessage("Sanction letter signed manually");
+        verificationRepo.save(row);
+        return new StepResult(row.getCheckType(), row.getStatus(), row.getMessage(), derived);
     }
 
     /**

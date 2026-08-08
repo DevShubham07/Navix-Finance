@@ -61,16 +61,15 @@ export default function SanctionLetterPage() {
             {/* An <object> renders inline where the browser has a PDF viewer, and falls back to the
                 link below where it doesn't (most mobile browsers) — the letter must be readable on
                 a phone, which is where most borrowers are. */}
-            <object
-              data={q.data.url}
-              type="application/pdf"
+            <iframe
+              src={q.data.url}
               aria-label="Sanction letter"
-              className="hidden h-[32rem] w-full rounded border border-line sm:block"
+              className="h-[32rem] w-full rounded border border-line bg-white"
             >
               <p className="p-6 text-sm text-muted">
                 Your browser can&apos;t display the PDF here — open it using the link below.
               </p>
-            </object>
+            </iframe>
             <a
               href={q.data.url}
               target="_blank"
