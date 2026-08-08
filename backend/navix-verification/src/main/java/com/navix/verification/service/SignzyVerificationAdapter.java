@@ -171,7 +171,9 @@ public class SignzyVerificationAdapter implements VerificationPort {
             // Carry the Aadhaar face-photo URL in profileImageBase64 (Signzy returns a persist URL, not
             // base64) so the selfie step can face-match the borrower's selfie against it.
             return new AadhaarResult(a.txnId(), trim(a.fullName()), a.dob(), a.gender(), a.maskedUid(),
-                    a.fullAddress(), a.state(), a.pincode(), a.photoUrl(), a.xmlUrl());
+                    a.fullAddress(), a.state(), a.district(), a.city(), a.pincode(), a.country(),
+                    a.addressLine(), a.landmark(), a.dscSubject(), a.photoUrl(), a.pdfUrl(), a.jpegUrl(),
+                    a.xmlUrl());
         } catch (VerificationException notReadyYet) {
             // Consent not completed / XML not materialised yet — surface blank demographics so the
             // caller's readiness gate throws DIGILOCKER_NOT_READY and the bounded retry kicks in.
@@ -180,7 +182,8 @@ public class SignzyVerificationAdapter implements VerificationPort {
     }
 
     private static AadhaarResult notReady(String clientId) {
-        return new AadhaarResult(clientId, null, null, null, null, null, null, null, null, null);
+        return new AadhaarResult(clientId, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null);
     }
 
     private static boolean isBlank(String s) {

@@ -535,26 +535,34 @@ public class ApplicationVerificationService {
         profile.setAadhaarVerified(true);
         profileRepo.save(profile);
 
-        // Server-side ingest of the Aadhaar PDF (bytes never reach the browser).
+        // Server-side ingest of the e-Aadhaar PDF (bytes never reach the browser). Signzy v2 returns
+        // its persisted URL directly; older adapters still use the list/download fallback.
         String s3Key = null;
         try {
-            String fileId = pickAadhaarFile(clientId);
-            if (fileId != null) {
+            String sourceUrl = a.pdfUrl();
+            String mimeType = "application/pdf";
+            if (isBlank(sourceUrl)) {
+                String fileId = pickAadhaarFile(clientId);
                 VerificationPort.DigiLockerDownload d = verification.digilockerDownload(clientId, fileId);
-                String key = storage.buildApplicationKey(appId, AADHAAR, "pdf");
-                s3Key = storage.storeFromUrl(key, d.downloadUrl(),
-                        d.mimeType() != null ? d.mimeType() : "application/pdf");
-                ApplicationDocument doc = new ApplicationDocument();
-                doc.setApplicationId(appId);
-                doc.setDocType(AADHAAR);
-                doc.setFileName("aadhaar.pdf");
-                doc.setContentType("application/pdf");
-                doc.setS3ObjectKey(s3Key);
-                documentRepo.save(doc);
+                sourceUrl = d.downloadUrl();
+                if (!isBlank(d.mimeType())) {
+                    mimeType = d.mimeType();
+                }
             }
+            s3Key = storeProviderDocument(appId, AADHAAR, "aadhaar.pdf", "pdf", sourceUrl, mimeType);
         } catch (RuntimeException ingestFailure) {
             // Demographics still recorded; the PDF can be re-fetched. Don't fail the whole step.
             s3Key = null;
+        }
+
+        // Keep the Aadhaar card image separately from the face photo. It is useful to staff as an
+        // original issuer document, whereas AADHAAR_PHOTO is used only for selfie face matching.
+        if (!isBlank(a.jpegUrl())) {
+            try {
+                storeProviderDocument(appId, "AADHAAR_JPEG", "aadhaar.jpeg", "jpeg", a.jpegUrl(), "image/jpeg");
+            } catch (RuntimeException jpegIngestFailure) {
+                // The PDF and demographics remain available if the optional image cannot be fetched.
+            }
         }
 
         // Server-side ingest of the Aadhaar face photo (a provider persist URL) → S3, so the SELFIE step
@@ -585,8 +593,14 @@ public class ApplicationVerificationService {
         derived.put("maskedAadhaar", a.maskedAadhaar());
         derived.put("address", a.fullAddress());
         derived.put("state", a.state());
+        derived.put("district", a.district());
+        derived.put("city", a.city());
         derived.put("pincode", a.pincode());
-        ApplicationVerification row = upsert(appId, AADHAAR, PASS, "DIGILOCKER", a.txnId(), clientId,
+        derived.put("country", a.country());
+        derived.put("addressLine", a.addressLine());
+        derived.put("landmark", a.landmark());
+        derived.put("dscSubject", a.dscSubject());
+        ApplicationVerification row = upsert(appId, AADHAAR, PASS, "DIGILOCKER", a.txnId(), null,
                 null, null, s3Key, derived, "Aadhaar fetched from DigiLocker");
         double match = recomputeNameMatch(appId);
         if (match > 0 && match < NAME_MATCH_THRESHOLD) {
@@ -594,7 +608,69 @@ public class ApplicationVerificationService {
             row.setMessage("Name mismatch vs PAN — manual review");
             verificationRepo.save(row);
         }
+        // Signzy's requestId is single-use consent state, not customer data. Clear it from the
+        // profile and replace the temporary DIGILOCKER row so it cannot be retained in CRM/audits.
+        profile.setDigilockerClientId(null);
+        profileRepo.save(profile);
+        upsert(appId, DIGILOCKER, PASS, "DIGILOCKER", null, null,
+                null, null, null, Map.of("completed", true), "DigiLocker completed");
         return view(row);
+    }
+
+    /** ADMIN-only re-run of a provider-backed customer check. Inputs fill prerequisites that cannot be recovered. */
+    @Transactional
+    public StepResult retryExternalCheck(Long appId, String checkType, Map<String, Object> input) {
+        if (!"ADMIN".equals(ActorContext.get().role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Retrying a verification API requires ADMIN");
+        }
+        String type = checkType == null ? "" : checkType.trim().toUpperCase();
+        Map<String, Object> values = input == null ? Map.of() : input;
+        CustomerProfile p = profile(appId);
+        if (!Set.of(PAN, EMAIL, ADDRESS, BUREAU, PENNY_DROP, SELFIE).contains(type)) {
+            throw new BusinessException("RETRY_NOT_SUPPORTED", "This verification requires a borrower session and cannot be retried here");
+        }
+        verificationRepo.findByApplicationIdAndCheckType(appId, type).ifPresent(row -> {
+            row.setStatus(PENDING);
+            row.setMessage("Retry requested by administrator");
+            verificationRepo.save(row);
+        });
+        return switch (type) {
+            case PAN -> verifyPan(appId, value(values, "pan", p.getPan()));
+            case EMAIL -> verifyEmail(appId, value(values, "email", p.getOfficialEmail() != null ? p.getOfficialEmail() : p.getEmail()));
+            case ADDRESS -> verifyAddress(appId, number(values, "latitude"), number(values, "longitude"));
+            case BUREAU -> pullBureau(appId, value(values, "otp", null));
+            case PENNY_DROP -> verifyPennyDrop(appId, value(values, "accountNumber", p.getSalaryAccountNumber()), value(values, "ifsc", p.getSalaryIfsc()), true);
+            case SELFIE -> verifySelfie(appId, value(values, "selfieObjectKey", null));
+            default -> throw new BusinessException("RETRY_NOT_SUPPORTED", "Unsupported verification retry");
+        };
+    }
+
+    private static String value(Map<String, Object> values, String key, String fallback) {
+        Object v = values.get(key);
+        String result = v == null ? fallback : String.valueOf(v).trim();
+        if (result == null || result.isBlank()) throw new BusinessException("RETRY_INPUT_REQUIRED", key + " is required to retry this check");
+        return result;
+    }
+    private static double number(Map<String, Object> values, String key) {
+        try { return Double.parseDouble(value(values, key, null)); }
+        catch (NumberFormatException e) { throw new BusinessException("RETRY_INPUT_INVALID", key + " must be numeric"); }
+    }
+
+    private String storeProviderDocument(Long appId, String docType, String fileName, String extension,
+                                         String sourceUrl, String contentType) {
+        if (isBlank(sourceUrl)) {
+            throw new IllegalArgumentException("Provider document URL is blank");
+        }
+        String key = storage.buildApplicationKey(appId, docType, extension);
+        String s3Key = storage.storeFromUrl(key, sourceUrl, contentType);
+        ApplicationDocument doc = new ApplicationDocument();
+        doc.setApplicationId(appId);
+        doc.setDocType(docType);
+        doc.setFileName(fileName);
+        doc.setContentType(contentType);
+        doc.setS3ObjectKey(s3Key);
+        documentRepo.save(doc);
+        return s3Key;
     }
 
     /**

@@ -65,7 +65,7 @@ public interface VerificationPort {
     /** DigiLocker: resolve a file id to a short-lived (~10 min) presigned download URL. */
     DigiLockerDownload digilockerDownload(String clientId, String fileId);
 
-    /** DigiLocker: parsed Aadhaar demographics + photo + raw-XML URL. */
+    /** DigiLocker: parsed Aadhaar demographics + document URLs. */
     AadhaarResult digilockerAadhaar(String clientId);
 
     // ---- neutral result records ----
@@ -130,7 +130,8 @@ public interface VerificationPort {
     }
 
     record AadhaarResult(String txnId, String fullName, String dob, String gender, String maskedAadhaar,
-                         String fullAddress, String state, String pincode, String profileImageBase64,
-                         String xmlUrl) {
+                          String fullAddress, String state, String district, String city, String pincode,
+                          String country, String addressLine, String landmark, String dscSubject,
+                          String profileImageBase64, String pdfUrl, String jpegUrl, String xmlUrl) {
     }
 }

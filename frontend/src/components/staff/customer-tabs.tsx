@@ -480,8 +480,14 @@ function AadhaarCard({ applicationId }: { applicationId: number }) {
       <KV k="Date of birth" v={d.dob} />
       <KV k="Gender" v={d.gender} />
       <KV k="Address" v={d.address} />
+      <KV k="Address line" v={d.addressLine} />
+      <KV k="Landmark" v={d.landmark} />
       <KV k="State" v={d.state} />
+      <KV k="District" v={d.district} />
+      <KV k="City" v={d.city} />
       <KV k="PIN code" v={d.pincode} mono />
+      <KV k="Country" v={d.country} />
+      <KV k="Aadhaar signer" v={d.dscSubject} />
       <KV k="Status" v={row.status === "PASS" ? <Bool on /> : row.message || row.status} />
     </Section>
   );

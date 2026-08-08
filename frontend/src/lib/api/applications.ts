@@ -1159,6 +1159,15 @@ export const staffApi = {
   /** Staff manual override of a verification step (KYC approver / admin): PASS or FAIL with a note. */
   manualVerificationDecision: (id: number, checkType: string, decision: boolean, notes?: string) =>
     bff<StepResult>(`${STAFF_BASE}/${id}/verifications/${checkType}/decision`, "POST", { decision, notes }),
+  retryVerification: async (id: number, checkType: string, input: Record<string, unknown>) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        bff<StepResult>(`${STAFF_BASE}/${id}/verifications/${checkType}/retry`, "POST", input),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Verification retry timed out after 30 seconds.")), 30_000); }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
+  },
   /** Pending-API dashboard: cross-application verification overview + tallies (Phase 3.3). */
   verificationOverview: (filters?: { status?: string; checkType?: string; q?: string }) => {
     const params = new URLSearchParams();
@@ -1953,6 +1962,16 @@ export type NotificationsApi = ReturnType<typeof makeNotificationsApi>;
 
 export const borrowerNotificationsApi = makeNotificationsApi("/api/borrower/notifications");
 export const staffNotificationsApi = makeNotificationsApi("/api/staff/notifications");
+
+export type ProviderApiField = { key: string; label: string; type: string; required: boolean };
+export type ProviderApiCatalogItem = { operation: string; providers: string[]; fields: ProviderApiField[] };
+export type ProviderApiExecution = { id: number; operation: string; provider: string; status: string; durationMs: number; request: Record<string, unknown>; response: unknown; error?: string | null; createdAt: string };
+export const providerApi = {
+  catalog: () => bff<ProviderApiCatalogItem[]>("/api/staff/provider-apis/catalog", "GET"),
+  history: () => bff<ProviderApiExecution[]>("/api/staff/provider-apis/history", "GET"),
+  execute: (operation: string, provider: string, input: Record<string, unknown>) =>
+    bff<ProviderApiExecution>("/api/staff/provider-apis/execute", "POST", { operation, provider, input }),
+};
 
 /** Pick the right notifications client for a scope. */
 export function notificationsApiFor(scope: NotificationScope): NotificationsApi {

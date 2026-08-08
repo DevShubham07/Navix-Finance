@@ -79,10 +79,18 @@ public class SignzyDigiLockerClient {
                 text(result.path("dob")),
                 text(result.path("gender")),
                 bool(result.path("x509Data").path("validAadhaarDSC")),
+                text(result.path("x509Data").path("subjectName")),
                 text(result.path("address")),
                 text(split.path("state").path(0).path(0)),
+                text(split.path("district").path(0)),
+                text(split.path("city").path(0)),
                 text(split.path("pincode")),
+                text(split.path("country").path(2)),
+                text(split.path("addressLine")),
+                text(split.path("landMark")),
                 text(result.path("photo")),
+                text(result.path("aadhaarPdf")),
+                text(result.path("aadhaarJpeg")),
                 // v2 renamed the signed-XML link; keep the v1 key as a fallback.
                 firstText(result, "eAadhaarXmlLink", "xmlFileLink"));
     }

@@ -18,7 +18,7 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Bell, ShieldCheck } from "lucide-react";
+import { Loader2, Bell, ShieldCheck, RotateCcw } from "lucide-react";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { staffApi, type StepResult, type CheckStatus } from "@/lib/api/applications";
 import { humanizeCheck } from "@/lib/utils";
@@ -75,6 +75,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
 
   // The check currently open in the manual-override dialog (KYC approver / admin), or null.
   const [override, setOverride] = React.useState<StepResult | null>(null);
+  const [retry, setRetry] = React.useState<StepResult | null>(null);
 
   const steps: StepResult[] = q.data ?? [];
   const p = progressQ.data;
@@ -148,6 +149,13 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                     </button>
                   </div>
                 </PermissionGate>
+                <PermissionGate permission="verification:retry">
+                  <div className="mt-2">
+                    <button onClick={() => setRetry(s)} className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-navy hover:bg-navy-tint">
+                      <RotateCcw size={12} /> Retry API
+                    </button>
+                  </div>
+                </PermissionGate>
               </div>
             );
           })}
@@ -156,8 +164,30 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
       {override && (
         <OverrideDialog applicationId={applicationId} step={override} onClose={() => setOverride(null)} />
       )}
+      {retry && <RetryDialog applicationId={applicationId} step={retry} onClose={() => setRetry(null)} />}
     </div>
   );
+}
+
+function RetryDialog({ applicationId, step, onClose }: { applicationId: number; step: StepResult; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [json, setJson] = React.useState("{}");
+  const retry = useMutation({
+    mutationFn: () => {
+      let input: Record<string, unknown>;
+      try { input = JSON.parse(json) as Record<string, unknown>; }
+      catch { throw new Error("Inputs must be valid JSON."); }
+      return staffApi.retryVerification(applicationId, step.checkType, input);
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] }); qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] }); onClose(); },
+  });
+  return <Dialog open onClose={onClose} className="!max-w-md" aria-labelledby="retry-api-title">
+    <h3 id="retry-api-title" className="font-serif text-lg text-navy">Retry {humanizeCheck(step.checkType)}</h3>
+    <p className="mt-1 text-sm text-muted">Uses saved customer details where available. Supply JSON only for missing prerequisites such as OTP, coordinates, or selfie object key. Timeout: 30 seconds.</p>
+    <textarea value={json} onChange={(e) => setJson(e.target.value)} rows={6} className="mt-3 w-full rounded border border-line p-2 font-mono text-xs" aria-label="Retry API inputs" />
+    {retry.error && <p className="mt-2 text-xs text-error-700">{errMessage(retry.error)}</p>}
+    <DialogFooter><button className="btn btn-sm btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-sm btn-navy" disabled={retry.isPending} onClick={() => retry.mutate()}>{retry.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Retry</button></DialogFooter>
+  </Dialog>;
 }
 
 /**

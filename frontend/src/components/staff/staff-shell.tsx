@@ -104,6 +104,7 @@ const NAV: NavGroup[] = [
       { label: "Leads dashboard", href: "/staff/admin/leads", Icon: Phone, perm: "staff:manage" },
       { label: "All applications", href: "/staff/admin/all-applications", Icon: Files, perm: "staff:manage" },
       { label: "Rejections", href: "/staff/admin/rejections", Icon: Ban, perm: "staff:manage" },
+      { label: "Provider API dashboard", href: "/staff/admin/api-dashboard", Icon: ListChecks, perm: "verification:retry" },
       { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: "loan:activate" },
     ],
   },

@@ -225,10 +225,18 @@ public final class SignzyDtos {
             String dob,
             String gender,
             Boolean validDsc,
+            String dscSubject,
             String fullAddress,
             String state,
+            String district,
+            String city,
             String pincode,
+            String country,
+            String addressLine,
+            String landmark,
             String photoUrl,
+            String pdfUrl,
+            String jpegUrl,
             String xmlUrl
     ) {
     }

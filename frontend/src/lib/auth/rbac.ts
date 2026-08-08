@@ -61,7 +61,8 @@ export type Permission =
   | "leads:manage"
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
   // referral-expense dashboard; ADMIN has oversight.
-  | "referral:payout";
+  | "referral:payout"
+  | "verification:retry";
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
@@ -105,6 +106,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:assign",
     "leads:manage",
     "referral:payout",
+    "verification:retry",
   ],
 };
 

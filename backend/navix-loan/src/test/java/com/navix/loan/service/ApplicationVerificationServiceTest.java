@@ -512,7 +512,9 @@ class ApplicationVerificationServiceTest {
 
     private VerificationPort.AadhaarResult aadhaar(String masked) {
         return new VerificationPort.AadhaarResult("TXN-DL", "SHUBHAM", "2003-03-24", "M", masked,
-                "addr", "Haryana", "131001", null, null);
+                "addr", "Haryana", "Sonipat", "Sonipat", "131001", "INDIA", "House 1", "Near park",
+                "DS NATIONAL E-GOVERNANCE DIVISION 1", null, "https://signzy.test/aadhaar.pdf",
+                "https://signzy.test/aadhaar.jpeg", null);
     }
 
     @Test
@@ -521,13 +523,18 @@ class ApplicationVerificationServiceTest {
         p.setDigilockerClientId("CL1"); // session started
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234"));
-        // Skip the S3 ingest cleanly: the doc-list lookup throws and is swallowed by the ingest try/catch.
-        when(verification.digilockerList("CL1")).thenThrow(new RuntimeException("no docs in test"));
+        when(storage.buildApplicationKey(APP, "AADHAAR", "pdf")).thenReturn("apps/42/aadhaar.pdf");
+        when(storage.storeFromUrl("apps/42/aadhaar.pdf", "https://signzy.test/aadhaar.pdf", "application/pdf"))
+                .thenReturn("apps/42/aadhaar.pdf");
+        when(storage.buildApplicationKey(APP, "AADHAAR_JPEG", "jpeg")).thenReturn("apps/42/aadhaar.jpeg");
+        when(storage.storeFromUrl("apps/42/aadhaar.jpeg", "https://signzy.test/aadhaar.jpeg", "image/jpeg"))
+                .thenReturn("apps/42/aadhaar.jpeg");
 
         var result = service.digilockerComplete(APP);
 
         assertThat(result.status()).isEqualTo("PASS");
         assertThat(p.getAadhaarVerified()).isTrue();             // the DigiLocker-verified flag (no raw number stored)
+        assertThat(p.getDigilockerClientId()).isNull();           // completed consent request IDs are ephemeral
         assertThat(p.getDob()).isEqualTo(LocalDate.of(2003, 3, 24));
         // The whole e-Aadhaar card is recorded for the CRM — not just the photo.
         assertThat(result.derived()).containsEntry("fullName", "SHUBHAM")
@@ -536,6 +543,10 @@ class ApplicationVerificationServiceTest {
                 .containsEntry("maskedAadhaar", "XXXXXXXX1234")
                 .containsEntry("address", "addr")
                 .containsEntry("state", "Haryana")
-                .containsEntry("pincode", "131001");
+                .containsEntry("district", "Sonipat")
+                .containsEntry("city", "Sonipat")
+                .containsEntry("pincode", "131001")
+                .containsEntry("dscSubject", "DS NATIONAL E-GOVERNANCE DIVISION 1");
+        verify(storage).storeFromUrl("apps/42/aadhaar.pdf", "https://signzy.test/aadhaar.pdf", "application/pdf");
     }
 }

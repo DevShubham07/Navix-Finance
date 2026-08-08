@@ -39,6 +39,7 @@ import com.navix.loan.service.OfferService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -186,6 +187,14 @@ public class ApplicationController {
     public ApiResponse<ApplicationVerificationService.StepResult> manualVerificationDecision(
             @PathVariable Long id, @PathVariable String checkType, @RequestBody DecisionRequest req) {
         return ApiResponse.ok(verification.manualDecision(id, checkType, req.decision(), req.notes()));
+    }
+
+    /** ADMIN-only retry for direct external verification APIs. */
+    @PostMapping("/{id}/verifications/{checkType}/retry")
+    public ApiResponse<ApplicationVerificationService.StepResult> retryVerification(@PathVariable Long id,
+                                                                                      @PathVariable String checkType,
+                                                                                      @RequestBody(required = false) Map<String, Object> input) {
+        return ApiResponse.ok(verification.retryExternalCheck(id, checkType, input));
     }
 
     /** Pending-API dashboard: cross-application verification overview + status tallies (Phase 3.3). Staff. */

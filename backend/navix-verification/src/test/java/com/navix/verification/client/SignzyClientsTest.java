@@ -19,6 +19,7 @@ import com.navix.verification.dto.SignzyDtos.LivenessResult;
 import com.navix.verification.dto.SignzyDtos.LivenessSession;
 import com.navix.verification.dto.SignzyDtos.PanResponse;
 import com.navix.verification.exception.VerificationException;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -256,17 +257,37 @@ class SignzyClientsTest {
         Bound b2 = bind();
         stub(b2.server(), "/api/v3/digilocker-v2/geteAadhaar", """
                 {"result":{"name":"  NAME","uid":"xxxxxxxx0353","dob":"01/01/1990","gender":"FEMALE",
-                "x509Data":{"validAadhaarDSC":"yes"},"address":"addr",
-                "splitAddress":{"state":[["TAMIL NADU","TN"]],"pincode":"612001"},
-                "photo":"https://persist.signzy.tech/p.jpeg","eAadhaarXmlLink":"https://persist.signzy.tech/a.xml"}}
+                "x509Data":{"validAadhaarDSC":"yes","subjectName":"DS NATIONAL E-GOVERNANCE DIVISION 1"},"address":"addr",
+                "splitAddress":{"district":["THANJAVUR"],"state":[["TAMIL NADU","TN"]],"city":["KUMBAKONAM"],
+                "pincode":"612001","country":["IN","IND","INDIA"],"addressLine":"Address","landMark":"KUMBAKONAM"},
+                "photo":"https://persist.signzy.tech/p.jpeg","aadhaarPdf":"https://persist.signzy.tech/a.pdf",
+                "aadhaarJpeg":"https://persist.signzy.tech/a.jpeg","eAadhaarXmlLink":"https://persist.signzy.tech/a.xml"}}
                 """);
         AadhaarResponse a = new SignzyDigiLockerClient(b2.restClient()).getEAadhaar("REQ-1");
         assertThat(a.fullName()).isEqualTo("NAME");
         assertThat(a.maskedUid()).isEqualTo("xxxxxxxx0353");
         assertThat(a.validDsc()).isTrue();
         assertThat(a.state()).isEqualTo("TAMIL NADU");
+        assertThat(a.district()).isEqualTo("THANJAVUR");
+        assertThat(a.city()).isEqualTo("KUMBAKONAM");
+        assertThat(a.country()).isEqualTo("INDIA");
+        assertThat(a.addressLine()).isEqualTo("Address");
+        assertThat(a.landmark()).isEqualTo("KUMBAKONAM");
+        assertThat(a.dscSubject()).isEqualTo("DS NATIONAL E-GOVERNANCE DIVISION 1");
+        assertThat(a.pdfUrl()).endsWith(".pdf");
+        assertThat(a.jpegUrl()).endsWith(".jpeg");
         assertThat(a.xmlUrl()).endsWith(".xml");
         b2.server().verify();
+    }
+
+    @Test
+    void eAadhaarResponseRetainsAdminSafeDocumentAndAddressFields() {
+        var fields = Arrays.stream(AadhaarResponse.class.getRecordComponents())
+                .map(component -> component.getName())
+                .toList();
+
+        assertThat(fields).contains("district", "city", "country", "addressLine", "landmark",
+                "dscSubject", "pdfUrl", "jpegUrl");
     }
 
     @Test
