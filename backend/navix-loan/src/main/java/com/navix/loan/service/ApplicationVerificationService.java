@@ -711,6 +711,12 @@ public class ApplicationVerificationService {
             // stays absent until then. (Product decision: never stop the borrower at this step.)
             Map<String, Object> soft = new LinkedHashMap<>();
             soft.put("providerError", true);
+            String providerErrorCode = providerErrorCode(providerFailure);
+            soft.put("providerErrorCode", providerErrorCode);
+            // ProviderJson reduces upstream errors to an endpoint + status. Retain only the status
+            // category here: response bodies and the request (PAN, mobile, DOB, OTP) stay out of logs.
+            log.warn("bureau pull failed application={} ref={} errorCode={} exception={}", appId, ref,
+                    providerErrorCode, providerFailure.getClass().getSimpleName());
             ApplicationVerification row = upsert(appId, BUREAU, REVIEW, null, null, ref,
                     null, null, null, soft,
                     "We couldn't run the credit check right now — you can continue; our team will review it.");
@@ -1578,6 +1584,24 @@ public class ApplicationVerificationService {
         row.setRawResponse(toJson(raw));
         row.setMessage(message);
         return verificationRepo.save(row);
+    }
+
+    /**
+     * Converts an upstream failure into a PII-safe diagnostic category. Provider response bodies,
+     * request values, and OTPs must never enter application logs or the verification audit JSON.
+     */
+    private static String providerErrorCode(RuntimeException failure) {
+        String message = failure.getMessage();
+        if (message != null && message.matches("HTTP [1-5]\\d{2}(?: from .+)?")) {
+            return "HTTP_" + message.substring(5, 8);
+        }
+        if (message != null && message.startsWith("Empty response body")) {
+            return "EMPTY_RESPONSE";
+        }
+        if (message != null && message.startsWith("Provider reported error")) {
+            return "PROVIDER_REPORTED_ERROR";
+        }
+        return "UNEXPECTED_PROVIDER_FAILURE";
     }
 
     private StepResult view(ApplicationVerification row) {

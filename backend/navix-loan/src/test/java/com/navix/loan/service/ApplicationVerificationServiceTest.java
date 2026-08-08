@@ -26,6 +26,7 @@ import com.navix.loan.repository.LoanApplicationRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -185,7 +186,7 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
-    void bureau_providerFailure_isReview_notError() {
+    void bureau_providerFailure_isReview_andPersistsSafeHttpStatus() throws Exception {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
         when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
                 .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
@@ -197,6 +198,10 @@ class ApplicationVerificationServiceTest {
         var result = service.pullBureau(APP, "123456");
 
         assertThat(result.status()).isEqualTo("REVIEW");
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(new ObjectMapper().readTree(saved.getValue().getDerived())
+                .path("providerErrorCode").asText()).isEqualTo("HTTP_403");
     }
 
     @Test
