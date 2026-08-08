@@ -36,9 +36,9 @@ const csp = [
   "font-src 'self'",
   `connect-src 'self' ${gaConnect} ${s3}`,
   "worker-src 'self' blob:",
-  // signzy.app: the KYC selfie step embeds Signzy's hosted liveness journey in an iframe
-  // (liveliness[-preproduction].signzy.app).
-  "frame-src 'self' https://*.signzy.app",
+  // The KYC selfie step embeds Signzy's hosted liveness journey, and the sanction-letter
+  // step embeds its short-lived S3 PDF URL. Both must be explicitly allowed in frames.
+  "frame-src 'self' https://*.signzy.app " + s3,
   "frame-ancestors 'self'",
   "form-action 'self'",
   "base-uri 'self'",
