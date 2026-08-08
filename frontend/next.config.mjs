@@ -13,8 +13,15 @@
 const isDev = process.env.NODE_ENV !== "production";
 // Google Analytics origins, split by directive.
 const gaScript = "https://www.googletagmanager.com";
+// `www.google.com` is not redundant with the google-analytics hosts: GA4 sends a second
+// `/g/collect` beacon to www.google.com (the Google Signals ping). Without it the browser blocked
+// those with "Refused to connect ... violates the document's Content Security Policy", so a share
+// of events was being dropped silently — the page still worked, so nothing surfaced it.
+// NOTE: Google Signals uses a country TLD in some regions (www.google.co.in and friends). Those are
+// deliberately NOT allowed here; widen only if the analytics data shows them being blocked.
 const gaConnect =
-  "https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com";
+  "https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com "
+  + "https://www.googletagmanager.com https://www.google.com";
 const gaImg =
   "https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com";
 // S3 (ap-south-1) — presigned direct browser<->S3 upload/view. Region-scoped: virtual-hosted

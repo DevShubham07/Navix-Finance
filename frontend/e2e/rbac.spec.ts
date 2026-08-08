@@ -49,6 +49,45 @@ test.describe("RBAC", () => {
     await expect(page.getByText("Transfers to confirm")).toHaveCount(0);
   });
 
+  /**
+   * The same assertion on the DASHBOARD, which is a separate page with its own per-role copy.
+   * Checking only /staff/applications was not enough: the retired "Transfers to confirm" wording
+   * survived on the dashboard's "Your work" card for the whole of V48, and the accountant's help
+   * text still described confirming a bank transfer that activates the loan — a step that role no
+   * longer has. A queue can be deleted while the label pointing at it is left behind.
+   */
+  test("Accountant's dashboard names repayments, not the retired transfer step", async ({ page }) => {
+    await loginStaff(page, "ACCOUNTANT");
+    await page.goto("/staff/dashboard");
+    // The label renders twice (the "Your work" card and the queue card under it) — hence .first().
+    await expect(page.getByText("Repayments to verify").first()).toBeVisible();
+    await expect(page.getByText("Transfers to confirm")).toHaveCount(0);
+  });
+
+  /**
+   * The Disbursement Head's own help text must not promise the retired hop either: since V48 the
+   * transaction id is required, so "approve without one to send it to the accountant" described a
+   * path the backend now rejects with TXN_REF_REQUIRED.
+   *
+   * <p>The assertion is POSITIVE on purpose. That copy lives in an InfoTooltip, which renders its
+   * content only while open (`{open && …}`), so a bare `toHaveCount(0)` on the stale phrase passes
+   * whether the wording is right or wrong — it is absent either way. Opening the tooltip and
+   * asserting what it actually says is the only form of this test that can fail.
+   */
+  test("Disbursement head's dashboard help text states the transaction id is required", async ({ page }) => {
+    await loginStaff(page, "DISBURSEMENT_HEAD");
+    await page.goto("/staff/dashboard");
+    await expect(page.getByText("Approved loans to release").first()).toBeVisible();
+
+    // hover, not click: the wrapper opens on mouseenter and the button's onClick toggles, so a
+    // click (which hovers first) opens and then immediately closes it again.
+    await page.getByRole("button", { name: "More information" }).first().hover();
+    const tip = page.getByRole("tooltip").first();
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText(/transaction id is required/i);
+    await expect(tip).not.toContainText(/send it to the accountant/i);
+  });
+
   test("Accountant does not get the credit queues", async ({ page }) => {
     await loginStaff(page, "ACCOUNTANT");
     await page.goto("/staff/applications");

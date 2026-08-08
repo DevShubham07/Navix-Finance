@@ -23,7 +23,7 @@ class CreditBriefDemoTest {
     @Test
     void runOnSampleReport() throws Exception {
         ExperianResponse r = new SignzyExperianClient(RestClient.create(), new ObjectMapper(),
-                "classpath:samplepan.json").pull("DEMO", "DEMO DEMO", "DEMO", "1990-01-01");
+                "classpath:samplepan.json", "3.109.169.131").pull("DEMO", "DEMO DEMO", "DEMO", "1990-01-01");
         BureauReportFacts f = r.facts();
         Rating rating = new CreditRatingCalculator().rate(f);
 

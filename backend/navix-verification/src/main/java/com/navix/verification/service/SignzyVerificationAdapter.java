@@ -83,8 +83,9 @@ public class SignzyVerificationAdapter implements VerificationPort {
     }
 
     @Override
-    public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String clientRef) {
-        // Experian PRIMARY → CRIF FALLBACK, mirroring the retired BureauService.
+    public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
+        // Experian PRIMARY → CRIF FALLBACK, mirroring the retired BureauService. `otp` is unused here —
+        // Signzy's Experian-lite call has no OTP requirement (only Digitap's Credit Analytics does).
         try {
             SignzyDtos.ExperianResponse e = experianClient.pull(pan, name, mobile, dob);
             if (e != null && e.creditScore() != null && !Boolean.TRUE.equals(e.noRecord())) {

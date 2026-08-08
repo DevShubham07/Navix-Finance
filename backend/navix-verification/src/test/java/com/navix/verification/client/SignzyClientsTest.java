@@ -143,7 +143,7 @@ class SignzyClientsTest {
                 "TotalCAPS_Summary":{"TotalCAPSLast30Days":"1"}}}}
                 """);
 
-        ExperianResponse r = new SignzyExperianClient(b.restClient(), new ObjectMapper(), "")
+        ExperianResponse r = new SignzyExperianClient(b.restClient(), new ObjectMapper(), "", "3.109.169.131")
                 .pull("ABCPE1234Z", "Ravi Kumar", "9999999999", "1990-01-01");
 
         assertThat(r.txnId()).isEqualTo("1712213567495");

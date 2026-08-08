@@ -54,7 +54,11 @@ public final class CustomerDtos {
             List<LoanView> loans,
             List<PaymentView> payments,
             Long ownerStaffId,
-            String ownerName) {
+            String ownerName,
+            /** The latest application's full credit brief (categorized bureau facts + PDF doc id) — null
+             *  when no bureau pull has happened yet. Reuses {@link CreditBriefDtos.CreditBriefView} as-is
+             *  so the Customer roll-up and the per-application endpoint stay in lockstep. */
+            CreditBriefDtos.CreditBriefView creditBrief) {
     }
 
     /**

@@ -2,6 +2,9 @@ package com.navix.verification.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.matchesPattern;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
@@ -137,14 +140,43 @@ class DigitapClientsTest {
                 "TotalCAPS_Summary":{"TotalCAPSLast30Days":"0"}}}}}
                 """);
 
-        CreditResponse r = new DigitapCreditClient(b.restClient())
-                .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "ref-1");
+        CreditResponse r = new DigitapCreditClient(b.restClient(), "3.109.169.131")
+                .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "ref-1");
 
         assertThat(r.txnId()).isEqualTo("REQ-CR-1");
         assertThat(r.creditScore()).isEqualTo(800);
         assertThat(r.noRecord()).isFalse();
         assertThat(r.facts()).isNotNull();
         assertThat(r.facts().activeAccounts()).isEqualTo(2);
+        b.server().verify();
+    }
+
+    /**
+     * Regression test for the four payload bugs found by live-testing Digitap's production API: a
+     * placeholder {@code device_ip} (0.0.0.0) is rejected with {@code 403 IP not allowed} regardless of
+     * the caller's real network IP, an empty {@code otp} is rejected once IP passes, {@code timestamp}
+     * must be {@code ddMMyyyy-HH:mm:ss} (not epoch millis), and {@code consent_message} must contain
+     * "Experian" or Digitap rejects it as an invalid consent message.
+     */
+    @Test
+    void creditRequest_sendsRealOtpDeviceIpTimestampAndExperianConsent() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/credit_analytics/request"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(containsString("\"otp\":\"654321\"")))
+                .andExpect(content().string(containsString("\"device_ip\":\"3.109.169.131\"")))
+                .andExpect(content().string(containsString("Experian")))
+                .andExpect(content().string(matchesPattern(
+                        "(?s).*\"timestamp\":\"\\d{2}\\d{2}\\d{4}-\\d{2}:\\d{2}:\\d{2}\".*")))
+                .andRespond(withSuccess("""
+                        {"http_response_code":200,"result_code":101,"request_id":"REQ-CR-2","result":{
+                        "result_json":{"INProfileResponse":{"SCORE":{"BureauScore":"778"}}}}}
+                        """, MediaType.APPLICATION_JSON));
+
+        CreditResponse r = new DigitapCreditClient(b.restClient(), "3.109.169.131")
+                .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "ref-2");
+
+        assertThat(r.creditScore()).isEqualTo(778);
         b.server().verify();
     }
 

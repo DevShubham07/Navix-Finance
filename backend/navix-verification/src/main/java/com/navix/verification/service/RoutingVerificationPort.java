@@ -104,8 +104,8 @@ public class RoutingVerificationPort implements VerificationPort {
     }
 
     @Override
-    public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String clientRef) {
-        return route("bureau", p -> p.pullBureau(pan, name, mobile, dob, clientRef));
+    public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
+        return route("bureau", p -> p.pullBureau(pan, name, mobile, dob, otp, clientRef));
     }
 
     @Override

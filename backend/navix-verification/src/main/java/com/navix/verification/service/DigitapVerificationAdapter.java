@@ -61,8 +61,8 @@ public class DigitapVerificationAdapter implements VerificationPort {
     }
 
     @Override
-    public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String clientRef) {
-        DigitapDtos.CreditResponse r = creditClient.pull(pan, name, mobile, dob, clientRef);
+    public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
+        DigitapDtos.CreditResponse r = creditClient.pull(pan, name, mobile, dob, otp, clientRef);
         BureauReportFacts f = r.facts();
         return new BureauCheck(r.txnId(), "DIGITAP_EXPERIAN", r.creditScore(),
                 Boolean.TRUE.equals(r.noRecord()),

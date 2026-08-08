@@ -25,7 +25,7 @@ class ProductionConfigGuardTest {
 
     private static SmsProperties sms(boolean mock, boolean devEcho) {
         return new SmsProperties(null, null, null, null, null, null, null, null, null,
-                java.util.Map.of(), null, true, devEcho, 300, 6, mock, "123456");
+                java.util.Map.of(), null, null, true, devEcho, 300, 6, mock, "123456");
     }
 
     @Test

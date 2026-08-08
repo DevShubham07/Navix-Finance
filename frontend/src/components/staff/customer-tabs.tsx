@@ -442,6 +442,19 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
           <KV k="Total balance" v={bd.totalBalance != null ? String(bd.totalBalance) : null} />
         </Section>
       )}
+      {c.creditBrief?.facts && (
+        <Section title="Credit facts (customer record)">
+          <KV k="Total accounts" v={String(c.creditBrief.facts.totalAccounts ?? "—")} />
+          <KV k="Active accounts" v={String(c.creditBrief.facts.activeAccounts ?? "—")} />
+          <KV k="Closed accounts" v={String(c.creditBrief.facts.closedAccounts ?? "—")} />
+          <KV k="Defaults" v={String(c.creditBrief.facts.defaults ?? "—")} />
+          <KV
+            k="Total balance"
+            v={c.creditBrief.facts.totalBalance != null ? `₹${c.creditBrief.facts.totalBalance.toLocaleString("en-IN")}` : "—"}
+          />
+          <KV k="Inquiries (30d)" v={String(c.creditBrief.facts.recentInquiries30d ?? "—")} />
+        </Section>
+      )}
     </div>
   );
 }

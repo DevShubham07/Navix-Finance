@@ -2,10 +2,12 @@ package com.navix.loan.controller;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
+import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.VerificationDtos.AddressVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.AgreementRequest;
 import com.navix.loan.dto.VerificationDtos.BureauConsentRequest;
+import com.navix.loan.dto.VerificationDtos.BureauPullRequest;
 import com.navix.loan.dto.VerificationDtos.DigilockerInitRequest;
 import com.navix.loan.dto.VerificationDtos.EmailVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.PanVerifyRequest;
@@ -82,9 +84,10 @@ public class ApplicationVerificationController {
     }
 
     @PostMapping("/bureau")
-    public ApiResponse<StepResult> bureau(@PathVariable Long id) {
+    public ApiResponse<StepResult> bureau(@PathVariable Long id,
+                                          @RequestBody(required = false) BureauPullRequest req) {
         authorize(id);
-        return ApiResponse.ok(verification.pullBureau(id));
+        return ApiResponse.ok(verification.pullBureau(id, req == null ? null : req.otp()));
     }
 
     @PostMapping("/salary")
@@ -123,6 +126,13 @@ public class ApplicationVerificationController {
     public ApiResponse<StepResult> agreement(@PathVariable Long id, @RequestBody AgreementRequest req) {
         authorize(id);
         return ApiResponse.ok(verification.recordAgreement(id, req.versions()));
+    }
+
+    /** Sends the bureau-consent OTP — a purpose-dedicated code, isolated from the login OTP. */
+    @PostMapping("/bureau-consent/otp")
+    public ApiResponse<OtpVerifierPort.OtpRequestResult> requestBureauConsentOtp(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.requestBureauConsentOtp(id));
     }
 
     /** OTP-verified credit-bureau consent — runs before the PAN fetch in the borrower wizard. */

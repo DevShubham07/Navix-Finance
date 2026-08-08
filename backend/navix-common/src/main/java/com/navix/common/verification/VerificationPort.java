@@ -23,8 +23,13 @@ public interface VerificationPort {
     /** Geo (lat/long) → address within India — Digitap {@code ent} (Signzy has no address API). */
     AddressCheck verifyAddress(double latitude, double longitude, String clientRef);
 
-    /** Credit bureau pull — Signzy Experian→CRIF primary, Digitap Credit Analytics fallback. */
-    BureauCheck pullBureau(String pan, String name, String mobile, String dob, String clientRef);
+    /**
+     * Credit bureau pull — Signzy Experian→CRIF primary, Digitap Credit Analytics fallback.
+     * @param otp the borrower's already-verified bureau-consent OTP (see
+     *            {@code ApplicationVerificationService.recordBureauConsent}) — Digitap's live Credit
+     *            Analytics mandates this in its payload; Signzy ignores it (no OTP requirement).
+     */
+    BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef);
 
     /** Penny-drop bank account verify + name-at-bank — Signzy only (Digitap lacks it). */
     PennyDropCheck pennyDrop(String accountNumber, String ifsc, String clientRef);

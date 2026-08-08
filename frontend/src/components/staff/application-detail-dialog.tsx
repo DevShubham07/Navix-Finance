@@ -19,7 +19,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, Loader2, Zap, Banknote, ShieldCheck, PhoneCall, Gauge } from "lucide-react";
+import { X, Loader2, Zap, Banknote, ShieldCheck, PhoneCall, Gauge, Check } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { CreditBadge } from "@/components/staff/credit-badge";
@@ -29,7 +29,7 @@ import { StageDetailDialog } from "@/components/staff/stage-detail-dialog";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
-import { Section, KV, Bool, DocumentsTab, RemarksTab } from "@/components/staff/detail-parts";
+import { Section, KV, DocumentsTab, RemarksTab } from "@/components/staff/detail-parts";
 import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
 import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
 import { dpdBucket, daysBetween } from "@/lib/calc/loan-math";
@@ -705,14 +705,33 @@ function CreditFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefi
 
 // ---- KYC (CREDIT_HEAD/EXECUTIVE, ADMIN) ------------------------------------
 
-/** Are the intake checks clear? Judged by the credit team since V45. */
+/**
+ * Are the intake checks clear? Judged by the credit team since V45.
+ *
+ * <p>The headline and the per-check list must come from the SAME source. They used not to: the
+ * headline counted verification rows (where a REVIEW counts as cleared) while each line rendered a
+ * `customer_profile` boolean that is only set on a PASS. A file with PAN and email in REVIEW read
+ * "4/4 · 100% complete" directly above five "No"s — and on older rows those booleans were never
+ * backfilled at all, so checks that had genuinely PASSED also showed "No". Both halves now read the
+ * verification rows, and a REVIEW says "Review" rather than being flattened to a no.
+ */
 function KycFocus({ applicationId, p }: { applicationId: number; p: ProfileView | undefined }) {
   const progQ = useQuery({
     queryKey: ["staff-verification-progress", applicationId],
     queryFn: () => staffApi.verificationProgress(applicationId),
     retry: false,
   });
+  const checksQ = useQuery({
+    queryKey: ["staff-verifications", applicationId],
+    queryFn: () => staffApi.verifications(applicationId),
+    retry: false,
+  });
   const prog = progQ.data as VerificationProgress | undefined;
+
+  const statusOf = React.useMemo(() => {
+    const byType = new Map((checksQ.data ?? []).map((s) => [s.checkType, s.status]));
+    return (...types: string[]) => types.map((t) => byType.get(t)).find(Boolean) ?? null;
+  }, [checksQ.data]);
 
   return (
     <FocusCard icon={ShieldCheck} title="KYC & verification">
@@ -727,16 +746,33 @@ function KycFocus({ applicationId, p }: { applicationId: number; p: ProfileView 
         }
       />
       <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-        <KV k="PAN" v={<Bool on={p?.panVerified} />} />
-        <KV k="Aadhaar (DigiLocker)" v={<Bool on={p?.aadhaarVerified} />} />
-        <KV k="Email" v={<Bool on={p?.emailVerified} />} />
-        <KV k="Address" v={<Bool on={p?.addressVerified} />} />
-        <KV k="Penny drop" v={<Bool on={p?.pennyDropVerified} />} />
+        <KV k="PAN" v={<CheckState status={statusOf("PAN")} />} />
+        <KV k="Aadhaar (DigiLocker)" v={<CheckState status={statusOf("AADHAAR", "DIGILOCKER")} />} />
+        <KV k="Email" v={<CheckState status={statusOf("EMAIL")} />} />
+        <KV k="Address" v={<CheckState status={statusOf("ADDRESS")} />} />
+        {/* Penny drop legitimately never runs when the borrower keeps their salary account
+            (revamp.md decision 9), so "Not run" here is not a gap to chase. */}
+        <KV k="Penny drop" v={<CheckState status={statusOf("PENNY_DROP")} notRun="Not run" />} />
         <KV k="Identity match" v={p?.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null} />
       </dl>
       <p className="mt-2 text-[11px] text-muted">Per-check detail and manual overrides are on the Verifications tab.</p>
     </FocusCard>
   );
+}
+
+/** One check's real status, in the same vocabulary the Verifications tab uses. */
+function CheckState({ status, notRun = "Not run" }: { status: string | null; notRun?: string }) {
+  if (status === "PASS") {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-success-700">
+        <Check size={13} /> Passed
+      </span>
+    );
+  }
+  if (status === "FAIL") return <span className="font-semibold text-error-700">Failed</span>;
+  if (status === "REVIEW") return <span className="text-warning-800">Review</span>;
+  if (status === "PENDING") return <span className="text-muted">In progress</span>;
+  return <span className="text-muted">{notRun}</span>;
 }
 
 // ---------------------------------------------------------------------------

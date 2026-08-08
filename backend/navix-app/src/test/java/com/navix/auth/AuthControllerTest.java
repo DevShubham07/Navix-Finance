@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.navix.auth.AuthDtos.BorrowerLoginRequest;
 import com.navix.auth.AuthDtos.StaffLoginRequest;
 import com.navix.common.exception.BusinessException;
+import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.security.JwtService;
 import com.navix.iam.domain.StaffRole;
 import com.navix.iam.domain.StaffStatus;
@@ -90,7 +91,7 @@ class AuthControllerTest {
 
     @Test
     void borrowerLogin_rejectsWrongOtp() {
-        when(otpService.verify("9819000001", "000000")).thenReturn(false);
+        when(otpService.verify("9819000001", "000000", OtpVerifierPort.LOGIN)).thenReturn(false);
         assertThatThrownBy(() ->
                 controller.borrowerLogin(new BorrowerLoginRequest("9819000001", "000000", null)))
                 .isInstanceOf(BusinessException.class);
@@ -98,7 +99,7 @@ class AuthControllerTest {
 
     @Test
     void borrowerLogin_issuesBorrowerToken_derivingCustomerId() {
-        when(otpService.verify("98190 00001", "123456")).thenReturn(true);
+        when(otpService.verify("98190 00001", "123456", OtpVerifierPort.LOGIN)).thenReturn(true);
         when(mobileRepository.findById(9000001L)).thenReturn(Optional.empty());
         var resp = controller.borrowerLogin(new BorrowerLoginRequest("98190 00001", "123456", "Asha"));
 
@@ -115,7 +116,7 @@ class AuthControllerTest {
      */
     @Test
     void borrowerLogin_rejectsMobileCollidingWithAClaimedCustomerId() {
-        when(otpService.verify("9919000001", "123456")).thenReturn(true);
+        when(otpService.verify("9919000001", "123456", OtpVerifierPort.LOGIN)).thenReturn(true);
         when(mobileRepository.findById(9000001L))
                 .thenReturn(Optional.of(claim(9000001L, "9819000001")));
 

@@ -12,7 +12,7 @@ class UltronSmsClientTest {
         SmsProperties props = new SmsProperties(
                 "https://ultronsms.test/api/mt/", "user", "password", null, "DhanBoost", "Trans",
                 "route", "peid", globalId, perType,
-                "otp {otp} {ttl}", true, false, 300, 6, false, "123456");
+                "otp {otp} {ttl}", null, true, false, 300, 6, false, "123456");
         return new UltronSmsClient(props);
     }
 

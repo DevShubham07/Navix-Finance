@@ -49,6 +49,7 @@ class CustomerServiceTest {
     @Mock private com.navix.common.staff.StaffDirectory staffDirectory;
     @Mock private RiskPort risk;
     @Mock private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Mock private CreditBriefService creditBriefService;
 
     private CustomerService service;
 
@@ -57,7 +58,7 @@ class CustomerServiceTest {
         service = new CustomerService(applicationRepository, loanRepository, profileRepository,
                 paymentRepository, repaymentService, changeLogRepository,
                 applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
-                staffDirectory, risk, jdbc);
+                staffDirectory, risk, jdbc, creditBriefService);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
     }
 

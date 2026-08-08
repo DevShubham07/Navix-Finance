@@ -7,8 +7,8 @@ import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, completeStep, useSavedProfile, BUREAU_CONSENT_TEXT } from "@/lib/onboarding";
-import { verificationApi } from "@/lib/api/applications";
-import { fetchBorrowerSession, requestBorrowerOtp, type OtpRequestResult } from "@/lib/api/live-journey";
+import { verificationApi, type OtpRequestResult } from "@/lib/api/applications";
+import { fetchBorrowerSession } from "@/lib/api/live-journey";
 import { formatApiError } from "@/lib/api/errors";
 
 /**
@@ -46,26 +46,25 @@ export default function SignupConsentPage() {
     if (mounted && appId == null) router.replace("/signup/start");
   }, [mounted, appId, router]);
 
-  const sendOtp = React.useCallback(
-    async (to?: string) => {
-      const number = to ?? mobile;
-      if (!number) return;
-      setBusy(true);
-      setError(undefined);
-      try {
-        setSent(await requestBorrowerOtp(number));
-        setResends((n) => n + 1);
-      } catch (e) {
-        setError(formatApiError(e, "Could not send the code — please try again."));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [mobile],
-  );
+  // Sends the bureau-consent OTP — a purpose-dedicated code, isolated server-side from the login OTP.
+  // Application-scoped (the backend resolves the mobile from the profile), so no mobile is passed here.
+  const sendOtp = React.useCallback(async () => {
+    if (appId == null) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      setSent(await verificationApi.requestBureauConsentOtp(appId));
+      setResends((n) => n + 1);
+    } catch (e) {
+      setError(formatApiError(e, "Could not send the code — please try again."));
+    } finally {
+      setBusy(false);
+    }
+  }, [appId]);
 
   // The live session is authoritative for the mobile — a returning borrower who skipped screens 1–2
-  // has no locally-typed number, and the backend back-fills the profile for exactly this case.
+  // has no locally-typed number, and the backend back-fills the profile for exactly this case. This is
+  // display-only now (the OTP send itself no longer needs the mobile — it's resolved server-side).
   React.useEffect(() => {
     if (!mounted || appId == null || requested.current) return;
     requested.current = true;
@@ -77,7 +76,7 @@ export default function SignupConsentPage() {
         return;
       }
       setMobile(number);
-      await sendOtp(number);
+      await sendOtp();
     })();
   }, [mounted, appId, saved?.mobile, sendOtp]);
 
@@ -98,7 +97,7 @@ export default function SignupConsentPage() {
       const pan = saved?.pan ?? "";
       if (pan) await verificationApi.pan(appId, pan).catch(() => {});
       if (saved?.officialEmail) await verificationApi.email(appId, saved.officialEmail).catch(() => {});
-      await verificationApi.bureau(appId).catch(() => {});
+      await verificationApi.bureau(appId, otp).catch(() => {});
       await completeStep(appId, "CONSENT", router, "/signup/submitted");
     } catch (err) {
       setVerifying(false);
@@ -145,7 +144,7 @@ export default function SignupConsentPage() {
         ) : (
           <p className="mt-3 text-sm text-muted">
             {resends < MAX_RESENDS ? (
-              <button type="button" onClick={() => sendOtp()} disabled={busy} className="font-semibold text-navy hover:underline">
+              <button type="button" onClick={sendOtp} disabled={busy} className="font-semibold text-navy hover:underline">
                 Resend code ({MAX_RESENDS - resends} left)
               </button>
             ) : (

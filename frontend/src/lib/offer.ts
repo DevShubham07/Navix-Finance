@@ -74,14 +74,22 @@ function segments(): readonly string[] {
   return applicableSegments ?? ALL_SEGMENTS;
 }
 
-/** The steps to render, in order — the server's list once known, the full one until then. */
-export function useOfferSteps(): typeof OFFER_STEPS {
+/**
+ * The steps to render, in order — the server's list once known, the full one until then.
+ *
+ * <p>{@code resolved} says which of those two you got. It matters: on a deep link the fallback is
+ * the full eleven, so a re-apply's chrome briefly read "Step 10 of 11" for a journey that is
+ * actually seven steps long — two different numbers for the same screen depending on how the
+ * borrower arrived. Callers should hold the count back until this is true.
+ */
+export function useOfferSteps(): { steps: typeof OFFER_STEPS; resolved: boolean } {
   // The same `segments` for both client and server snapshots — identical reference, no loop.
   const segs = React.useSyncExternalStore(subscribeOfferSteps, segments, segments);
-  return React.useMemo(
+  const steps = React.useMemo(
     () => segs.map((seg) => OFFER_STEPS.find((s) => s.seg === seg)!).filter(Boolean),
     [segs],
   );
+  return { steps, resolved: segs !== ALL_SEGMENTS };
 }
 
 export function offerStepIndex(seg: string): number {

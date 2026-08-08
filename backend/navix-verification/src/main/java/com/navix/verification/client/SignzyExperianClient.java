@@ -40,13 +40,16 @@ public class SignzyExperianClient {
     private final RestClient signzy;
     private final ObjectMapper objectMapper;
     private final String fixturePath;
+    private final String deviceIp;
 
     public SignzyExperianClient(@Qualifier(VerificationClientConfig.SIGNZY_CLIENT) RestClient signzy,
                                 ObjectMapper objectMapper,
-                                @Value("${navix.bureau.fixture:}") String fixturePath) {
+                                @Value("${navix.bureau.fixture:}") String fixturePath,
+                                @Value("${navix.signzy.device-ip:3.109.169.131}") String deviceIp) {
         this.signzy = signzy;
         this.objectMapper = objectMapper;
         this.fixturePath = fixturePath;
+        this.deviceIp = deviceIp;
     }
 
     public ExperianResponse pull(String pan, String name, String mobile, String dob) {
@@ -56,9 +59,9 @@ public class SignzyExperianClient {
         return parse(root, name, pan, mobile);
     }
 
-    private static ExperianRequest buildRequest(String pan, String name, String mobile, String dob) {
+    private ExperianRequest buildRequest(String pan, String name, String mobile, String dob) {
         String[] parts = splitName(name);
-        Consent consent = new Consent(true, System.currentTimeMillis(), "0.0.0.0", "CM_1");
+        Consent consent = new Consent(true, System.currentTimeMillis(), deviceIp, "CM_1");
         return new ExperianRequest(mobile, pan, parts[0], parts[1], dob, consent);
     }
 

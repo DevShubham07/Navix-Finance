@@ -58,8 +58,28 @@ test.describe("staff email + password login", () => {
     await page.getByRole("button", { name: /create staff/i }).click();
     await expect(page.getByText(/staff account created/i)).toBeVisible({ timeout: 20_000 });
 
+    // Find the new account's id WHILE STILL ADMIN — /api/staff/users is ADMIN-only, and the login
+    // below replaces this context's session with the new CREDIT_EXECUTIVE's.
+    const listed = await page.request.get("/api/staff/users");
+    expect(listed.ok(), "staff list should be readable as admin").toBeTruthy();
+    const body = (await listed.json()) as { data?: Array<{ id: number; email: string }> };
+    const created = (body.data ?? []).find((s) => s.email === email);
+    expect(created, "the account just created should be listed").toBeTruthy();
+
     // the newly-created staff can authenticate (via the BFF → backend)
     const res = await page.request.post("/api/auth/staff/login", { data: { email, password } });
     expect(res.ok()).toBeTruthy();
+
+    // Clean up after ourselves — back as admin, since we are now signed in as the new staffer.
+    // Without this each run left a permanent ACTIVE CREDIT_EXECUTIVE behind, and the Credit Head's
+    // "assign an executive" picker (which lists ACTIVE staff) filled up with fourteen identical
+    // "PW Test Staff" entries nobody could tell apart. Disabling is enough — the picker filters on
+    // ACTIVE — and it keeps any audit rows the account owns.
+    const backAsAdmin = await page.request.post("/api/auth/staff/login", {
+      data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
+    });
+    expect(backAsAdmin.ok(), "should be able to sign back in as admin").toBeTruthy();
+    const removed = await page.request.delete(`/api/staff/users/${created!.id}`);
+    expect(removed.ok(), "cleanup should disable the created account").toBeTruthy();
   });
 });

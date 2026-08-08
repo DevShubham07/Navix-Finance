@@ -431,6 +431,10 @@ export interface CustomerDetail {
   payments: PaymentView[];
   ownerStaffId?: number | null;
   ownerName?: string | null;
+  /** The latest application's full credit brief (categorized facts + PDF doc id) — null until a bureau
+   *  pull has happened. Same shape `staffApi.creditBrief` returns, attached here to avoid a second
+   *  round-trip when the Credit Report tab just needs "all the info" already on the customer object. */
+  creditBrief?: CreditBriefView | null;
 }
 
 /** Parsed bureau facts behind the credit brief (Categories A/B/C). Amounts are rupees (bureau unit). */
@@ -763,6 +767,13 @@ export interface StepResult {
   derived: Record<string, unknown>;
 }
 
+/** Result of an OTP send: whether it went out, and (dev/mock only) the code itself. */
+export interface OtpRequestResult {
+  sent: boolean;
+  devCode: string | null;
+  ttlSeconds: number;
+}
+
 /** Required-step completion snapshot (Phase 3.2) — mirrors backend VerificationProgress. */
 export interface VerificationProgress {
   required: number;
@@ -841,8 +852,13 @@ export const verificationApi = {
   digilockerComplete: (id: number) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/complete`, "POST"),
 
-  /** Credit bureau pull (automatic — no input; score/category never surfaced to the borrower). */
-  bureau: (id: number) => bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau`, "POST"),
+  /**
+   * Credit bureau pull. `otp` is the already-verified bureau-consent code (see `bureauConsent` below)
+   * forwarded so it can be threaded into Digitap's Credit Analytics payload, which mandates it — omit
+   * it only for a staff-triggered manual retry. Score/category are never surfaced to the borrower.
+   */
+  bureau: (id: number, otp?: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau`, "POST", otp ? { otp } : undefined),
 
   /**
    * Declared salary + uploaded slip object keys (min 3 months). Optionally sets the salary-credit day
@@ -879,6 +895,14 @@ export const verificationApi = {
   /** Record consent to the agreement document set. */
   agreement: (id: number, versions: AgreementVersion[]) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/agreement`, "POST", { versions }),
+
+  /**
+   * Send the bureau-consent OTP — a purpose-dedicated code, isolated from the login OTP (a concurrent
+   * login OTP request can no longer clobber this one, or vice versa). Application-scoped: the mobile is
+   * resolved server-side from the profile, not passed by the client.
+   */
+  requestBureauConsentOtp: (id: number) =>
+    bff<OtpRequestResult>(`${BORROWER_BASE}/${id}/verify/bureau-consent/otp`, "POST"),
 
   /**
    * Record OTP-verified consent to the credit-bureau enquiry. Runs BEFORE the PAN fetch; the OTP is

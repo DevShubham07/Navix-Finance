@@ -11,7 +11,10 @@ import com.navix.verification.config.VerificationClientConfig;
 import com.navix.verification.dto.DigitapDtos.CreditRequest;
 import com.navix.verification.dto.DigitapDtos.CreditResponse;
 import com.navix.verification.support.ExperianFactsParser;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -21,29 +24,38 @@ import org.springframework.web.client.RestClient;
  * {@code result.result_json.INProfileResponse} — the same shape {@link ExperianFactsParser} reads — with
  * the score at {@code SCORE.BureauScore}.
  *
- * <p>Note: Digitap's live Credit Analytics requires OTP-based consent (an {@code otp} the borrower
- * receives). This fallback sends the consent block with the fields it has; a real production pull would
- * need the collected OTP threaded in.
+ * <p>Digitap's live Credit Analytics requires OTP-based consent: {@code otp} must be the code the
+ * borrower actually verified (threaded in by the caller — see {@code VerificationPort.pullBureau}), and
+ * {@code device_ip} must match the IP Digitap has allow-listed for this account (a placeholder like
+ * {@code 0.0.0.0} is rejected with {@code 403 IP not allowed} — confirmed by live testing). {@code
+ * timestamp} must be the literal {@code ddMMyyyy-HH:mm:ss} format, not epoch millis, and {@code
+ * consent_message} must contain the words I/authorize/Experian/credit/report or Digitap rejects it
+ * with {@code "please provide proper consent message"}.
  */
 @Component
 public class DigitapCreditClient {
 
     private static final String ENDPOINT = "/credit_analytics/request";
     private static final String CONSENT_MESSAGE =
-            "I hereby authorize the pull of my credit report for loan evaluation.";
+            "I hereby authorize Experian to pull my credit report for loan evaluation.";
+    private static final DateTimeFormatter TIMESTAMP_FORMAT =
+            DateTimeFormatter.ofPattern("ddMMyyyy-HH:mm:ss");
 
     private final RestClient digitapApi;
+    private final String deviceIp;
 
-    public DigitapCreditClient(@Qualifier(VerificationClientConfig.DIGITAP_API_CLIENT) RestClient digitapApi) {
+    public DigitapCreditClient(@Qualifier(VerificationClientConfig.DIGITAP_API_CLIENT) RestClient digitapApi,
+                               @Value("${navix.digitap.device-ip:3.109.169.131}") String deviceIp) {
         this.digitapApi = digitapApi;
+        this.deviceIp = deviceIp;
     }
 
-    public CreditResponse pull(String pan, String name, String mobile, String dob, String clientRef) {
+    public CreditResponse pull(String pan, String name, String mobile, String dob, String otp, String clientRef) {
         String[] parts = splitName(name);
         CreditRequest req = new CreditRequest(
                 ref(clientRef), mobile, 0, parts[0], parts[1], pan, dob,
-                CONSENT_MESSAGE, "Yes", "server", "",
-                String.valueOf(System.currentTimeMillis()), "0.0.0.0", "navix");
+                CONSENT_MESSAGE, "Yes", "server", otp == null ? "" : otp,
+                TIMESTAMP_FORMAT.format(LocalDateTime.now()), deviceIp, "navix");
         JsonNode root = post(digitapApi, ENDPOINT, req);
         JsonNode report = root.path("result").path("result_json").path("INProfileResponse");
         Integer score = integer(report.path("SCORE").path("BureauScore"));

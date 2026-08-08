@@ -170,11 +170,15 @@ export default function DisbursalAccountPage() {
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>
 
+      {/* `formOk` was computed but never reached the button: on the "different account" form,
+          Verify & confirm stayed clickable with all three required fields empty. Clicking it burns
+          one of only three penny-drop attempts before a 12-hour lock, so an accidental submit is
+          expensive here in a way it is not on the other screens. */}
       <WizardActions
         continueLabel={changing ? "Verify & confirm" : "Confirm this account"}
         onContinue={submit}
         loading={busy}
-        disabled={busy || (changing && isLocked)}
+        disabled={busy || (changing && isLocked) || !formOk}
       />
       <Reassurance />
     </div>

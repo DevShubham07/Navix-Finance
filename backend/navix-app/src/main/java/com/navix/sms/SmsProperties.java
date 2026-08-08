@@ -31,6 +31,9 @@ public record SmsProperties(
         /** DLT-registered OTP message; {@code {otp}} → the code, {@code {ttl}} → minutes. Must
          *  match a template registered for the sender, or the gateway returns "Invalid template text". */
         String otpTemplate,
+        /** Optional DLT-registered bureau-consent OTP message (same placeholders as {@link #otpTemplate}).
+         *  Blank/unset falls back to {@link #otpTemplate} until a dedicated template is registered. */
+        String bureauConsentOtpTemplate,
         boolean enabled,
         boolean devEcho,
         int otpTtlSeconds,

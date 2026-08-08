@@ -187,14 +187,45 @@ class ApplicationVerificationServiceTest {
     @Test
     void bureau_providerFailure_isReview_notError() {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
+                .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
         // Both bureau providers unavailable (no credits / OTP-gated) → the router rethrows, which used
         // to surface as HTTP 500. It must instead degrade to REVIEW so onboarding is never hard-blocked.
-        when(verification.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString()))
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("HTTP 403 from bureau_crif"));
 
-        var result = service.pullBureau(APP);
+        var result = service.pullBureau(APP, "123456");
 
         assertThat(result.status()).isEqualTo("REVIEW");
+    }
+
+    @Test
+    void bureau_isDeferredToReview_whenConsentNotYetGiven() {
+        // No BUREAU_CONSENT row stubbed → passed(appId, BUREAU_CONSENT) is empty. The gate must trip
+        // before profile/provider lookups happen at all.
+
+        var result = service.pullBureau(APP, "123456");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.message()).contains("consent");
+        verify(verification, never()).pullBureau(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void bureau_forwardsVerifiedOtp_toTheProvider_onceConsentPassed() {
+        CustomerProfile p = profile();
+        p.setPan("QVEPS0901K");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
+                .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
+        when(verification.pullBureau(any(), any(), any(), any(), eq("999111"), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-B1", "DIGITAP_EXPERIAN", 778, false,
+                        9, 0, 805314.0, null));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(verification).pullBureau(any(), any(), any(), any(), eq("999111"), any());
     }
 
     @Test
@@ -224,11 +255,25 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void requestBureauConsentOtp_sendsUnderTheBureauConsentPurpose_notLogin() {
+        CustomerProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        var expected = new com.navix.common.verification.OtpVerifierPort.OtpRequestResult(true, "654321", 300);
+        when(otpVerifier.request(eq("7206485966"), eq("BUREAU_CONSENT"))).thenReturn(expected);
+
+        var result = service.requestBureauConsentOtp(APP);
+
+        assertThat(result.sent()).isTrue();
+        verify(otpVerifier).request(eq("7206485966"), eq("BUREAU_CONSENT"));
+        verify(otpVerifier, never()).request(eq("7206485966"), eq("LOGIN"));
+    }
+
+    @Test
     void bureauConsent_recordsRowWithConsentText_whenOtpVerifies() {
         CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         // The mobile MUST come from the profile, never from the caller.
-        when(otpVerifier.verify(eq("7206485966"), eq("123456"))).thenReturn(true);
+        when(otpVerifier.verify(eq("7206485966"), eq("123456"), eq("BUREAU_CONSENT"))).thenReturn(true);
 
         var result = service.recordBureauConsent(APP, "123456", "I authorize the retrieval of my credit report.");
 
@@ -251,7 +296,7 @@ class ApplicationVerificationServiceTest {
         app.setCustomerId(77L);
         when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
         when(profileRepo.findMobilesForCustomer(77L)).thenReturn(List.of("7206485966"));
-        when(otpVerifier.verify(eq("7206485966"), eq("123456"))).thenReturn(true);
+        when(otpVerifier.verify(eq("7206485966"), eq("123456"), eq("BUREAU_CONSENT"))).thenReturn(true);
 
         var result = service.recordBureauConsent(APP, "123456", "consent");
 
@@ -263,7 +308,7 @@ class ApplicationVerificationServiceTest {
     void bureauConsent_rejectsBadOtp_andWritesNothing() {
         CustomerProfile p = profile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
-        when(otpVerifier.verify(anyString(), anyString())).thenReturn(false);
+        when(otpVerifier.verify(anyString(), anyString(), anyString())).thenReturn(false);
 
         assertThatThrownBy(() -> service.recordBureauConsent(APP, "000000", "consent"))
                 .isInstanceOf(BusinessException.class)
@@ -350,12 +395,119 @@ class ApplicationVerificationServiceTest {
     }
 
     private static ApplicationVerification row(String type, String status) {
+        return row(APP, type, status);
+    }
+
+    private static ApplicationVerification row(Long appId, String type, String status) {
         ApplicationVerification v = new ApplicationVerification();
-        v.setApplicationId(APP);
+        v.setApplicationId(appId);
         v.setCheckType(type);
         v.setStatus(status);
         v.setMessage(type + " " + status);
         return v;
+    }
+
+    /**
+     * A fresh intake counts only the four intake checks — the sanction ones haven't been asked for
+     * yet, so counting them would show every new file as part-done before anyone touched it.
+     */
+    @Test
+    void progress_countsOnlyIntakeChecks_beforeSanction() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("PAN", "PASS"), row("EMAIL", "REVIEW"), row("BUREAU", "PASS"), row("SALARY", "PASS")));
+
+        var p = service.progress(APP);
+
+        assertThat(p.required()).isEqualTo(4);
+        assertThat(p.completed()).isEqualTo(4);
+        assertThat(p.percent()).isEqualTo(100);
+    }
+
+    /**
+     * A re-apply never re-runs PAN/email/bureau/salary — that evidence carried over from the
+     * application it was sanctioned against (revamp.md decision 45). Counting only its own rows
+     * reported a fully-verified file about to be disbursed as "0/4 done · 0%" underneath four PASS
+     * cards, which is what a staff member reads right before releasing money.
+     */
+    @Test
+    void progress_countsIntakeEvidenceCarriedFromThePriorApplication() {
+        Long prior = 41L;
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setReappliedFrom(prior);
+        app.setSanctionedAt(java.time.Instant.now());
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        LoanApplication source = new LoanApplication();
+        source.setId(prior);
+        when(applicationRepo.findById(prior)).thenReturn(Optional.of(source));
+
+        // This application carries only the sanction-stage checks…
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("AADHAAR", "PASS"), row("SELFIE", "PASS"), row("ADDRESS", "PASS"), row("ESIGN", "PASS")));
+        // …while the intake evidence sits on the one it re-applied from.
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(prior)).thenReturn(List.of(
+                row(prior, "PAN", "PASS"), row(prior, "EMAIL", "REVIEW"),
+                row(prior, "BUREAU", "PASS"), row(prior, "SALARY", "PASS")));
+
+        var p = service.progress(APP);
+
+        // Sanctioned, so all eight are in scope — and all eight are accounted for.
+        assertThat(p.required()).isEqualTo(8);
+        assertThat(p.completed()).isEqualTo(8);
+        assertThat(p.pending()).isZero();
+        assertThat(p.percent()).isEqualTo(100);
+    }
+
+    /**
+     * The one thing a re-apply must NOT inherit is the signature. eSign is the legal act for a
+     * single advance and is signed again every time, so counting the previous one reported a file
+     * as 8/8 · 100% verified while the borrower had not yet signed for the money about to be paid
+     * out — which is exactly the screen a releasing staff member reads.
+     */
+    @Test
+    void progress_neverInheritsThePriorApplicationsEsign() {
+        Long prior = 41L;
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setReappliedFrom(prior);
+        app.setSanctionedAt(java.time.Instant.now());
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(applicationRepo.findById(prior)).thenReturn(Optional.of(new LoanApplication()));
+        // Carried identity evidence, but this advance has not been signed yet.
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("AADHAAR", "PASS"), row("SELFIE", "PASS"), row("ADDRESS", "PASS")));
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(prior)).thenReturn(List.of(
+                row(prior, "PAN", "PASS"), row(prior, "EMAIL", "REVIEW"), row(prior, "BUREAU", "PASS"),
+                row(prior, "SALARY", "PASS"), row(prior, "ESIGN", "PASS")));
+
+        var p = service.progress(APP);
+
+        assertThat(p.required()).isEqualTo(8);
+        assertThat(p.completed()).isEqualTo(7);
+        assertThat(p.pending()).isEqualTo(1); // the unsigned eSign
+        assertThat(p.percent()).isEqualTo(88);
+    }
+
+    /** A newer row always wins over the carried one, so a re-run check is not masked by history. */
+    @Test
+    void progress_prefersThisApplicationsOwnRowOverTheCarriedOne() {
+        Long prior = 41L;
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setReappliedFrom(prior);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(applicationRepo.findById(prior)).thenReturn(Optional.of(new LoanApplication()));
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(row("PAN", "FAIL")));
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(prior)).thenReturn(List.of(
+                row(prior, "PAN", "PASS")));
+
+        var p = service.progress(APP);
+
+        assertThat(p.failed()).isEqualTo(1);
+        assertThat(p.completed()).isZero();
     }
 
     private VerificationPort.AadhaarResult aadhaar(String masked) {

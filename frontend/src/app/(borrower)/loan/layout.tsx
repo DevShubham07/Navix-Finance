@@ -21,7 +21,7 @@ export default function LoanLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const seg = pathname.split("/").filter(Boolean).pop() ?? "";
   const isOfferStep = OFFER_SEGMENTS.has(seg);
-  const steps = useOfferSteps();
+  const { steps, resolved } = useOfferSteps();
 
   const [appId, setAppId] = React.useState<number | null>(null);
   React.useEffect(() => setAppId(readStoredAppId()), []);
@@ -42,8 +42,11 @@ export default function LoanLayout({ children }: { children: React.ReactNode }) 
       <div className="border-b border-line bg-white">
         <div className="container py-5">
           <div className="mb-2 flex items-center justify-between">
+            {/* Held back until the server's list lands. On a deep link the fallback is the full
+                eleven, so showing it here told a seven-step re-apply "Step 10 of 11" — a number
+                that then changed under them a moment later. */}
             <span className="text-xs font-semibold uppercase tracking-wider text-gold-dark">
-              Step {idx + 1} of {steps.length}
+              {resolved ? `Step ${idx + 1} of ${steps.length}` : " "}
             </span>
             <span className="flex items-center gap-1.5 text-xs text-muted">
               <ShieldCheck size={14} className="text-success-600" /> Secure &amp; encrypted

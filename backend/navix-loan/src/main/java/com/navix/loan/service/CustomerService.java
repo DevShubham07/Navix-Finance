@@ -11,6 +11,7 @@ import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
+import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
@@ -81,6 +82,7 @@ public class CustomerService {
     private final StaffDirectory staffDirectory;
     private final RiskPort risk;
     private final JdbcTemplate jdbc;
+    private final CreditBriefService creditBriefService;
 
     /**
      * All customers (distinct customers), optionally filtered by {@code q} matching the name
@@ -183,8 +185,14 @@ public class CustomerService {
         String ownerName = ownerStaffId != null
                 ? staffDirectory.findStaff(ownerStaffId).map(StaffSummary::name).orElse(null)
                 : null;
+        // The full categorized brief (facts + PDF doc id) for the latest application — reuses
+        // CreditBriefService.view() as-is (null-safe: returns an available=false shell, never throws,
+        // when no bureau pull has happened yet) so the Customer roll-up and the per-application Credit
+        // Report tab always agree.
+        Long latestAppId = appViews.isEmpty() ? null : appViews.get(0).id();
+        CreditBriefView creditBrief = latestAppId != null ? creditBriefService.view(latestAppId) : null;
         return new CustomerDetail(customerId, profileView, appViews, loanViews, payments,
-                ownerStaffId, ownerName);
+                ownerStaffId, ownerName, creditBrief);
     }
 
     /**

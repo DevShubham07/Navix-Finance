@@ -12,6 +12,7 @@ import com.navix.auth.AuthDtos.ResetPasswordRequest;
 import com.navix.auth.AuthDtos.SetPasswordRequest;
 import com.navix.auth.AuthDtos.StaffLoginRequest;
 import com.navix.common.exception.BusinessException;
+import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.JwtService;
 import com.navix.common.util.Masking;
@@ -62,17 +63,39 @@ public class AuthController {
     private final BorrowerMobileRepository mobileRepository;
     private final AttemptLimiter limiter;
 
-    /** Sign-in attempts allowed per identifier per {@link #LOGIN_WINDOW} (either audience). */
-    private static final int MAX_LOGIN_ATTEMPTS = 10;
+    /**
+     * Sign-in attempts allowed per identifier per {@link #LOGIN_WINDOW} (either audience).
+     *
+     * <p>Three wrong passwords, then a 30-second cool-off, then three more — rather than the previous
+     * 10-per-15-min lock-out, where one bad afternoon shut a staff member out for a quarter of an
+     * hour. The count is remembered for {@link #LOGIN_WINDOW} so slow guessing is caught too; only
+     * the WAIT is short.
+     *
+     * <p>Only WRONG passwords count — {@link AttemptLimiter#clear} runs on success. Counting
+     * successes at a cap of three locks out anyone who signs in on two devices in a row.
+     *
+     * <p>Trade-off, stated plainly: this raises the ceiling on an online password-guessing attack
+     * from ~40 to ~360 attempts an hour per account. It is a throttle, not the defence — the
+     * password policy and BCrypt are.
+     */
+    private static final int MAX_LOGIN_ATTEMPTS = 3;
+    /**
+     * How long wrong passwords are remembered. Must be much longer than {@link #LOGIN_COOLOFF}:
+     * when both were 30s the limiter never fired against anyone typing by hand, because each
+     * attempt more than 30s after the last started a fresh count.
+     */
     private static final Duration LOGIN_WINDOW = Duration.ofMinutes(15);
-    private static final String TOO_MANY_LOGINS = "Too many sign-in attempts. Try again in a few minutes.";
+    /** How long the borrower/staff waits once they have used up the three. */
+    private static final Duration LOGIN_COOLOFF = Duration.ofSeconds(30);
+    /** Lead sentence only — {@link AttemptLimiter} appends the real remaining wait. */
+    private static final String TOO_MANY_LOGINS = "Too many sign-in attempts.";
 
     @PostMapping("/staff/login")
     public ApiResponse<AuthResponse> staffLogin(@Valid @RequestBody StaffLoginRequest req) {
         String maskedEmail = Masking.maskEmail(req.email() == null ? null : req.email().trim());
+        String limitKey = "staff:" + req.email().trim().toLowerCase(Locale.ROOT);
         // Before the lookup AND before BCrypt — otherwise the endpoint is an unbounded password oracle.
-        limiter.hit("staff:" + req.email().trim().toLowerCase(Locale.ROOT),
-                MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, TOO_MANY_LOGINS);
+        limiter.hit(limitKey, MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, LOGIN_COOLOFF, TOO_MANY_LOGINS);
         StaffUser staff = staffRepository.findByEmail(req.email().trim()).orElse(null);
         if (staff == null) {
             log.warn("staff login failed reason=INVALID_CREDENTIALS email={}", maskedEmail);
@@ -87,6 +110,8 @@ public class AuthController {
             log.warn("staff login failed reason=INVALID_CREDENTIALS staffId={} email={}", staff.getId(), maskedEmail);
             throw new BusinessException("INVALID_CREDENTIALS", "Invalid email or password");
         }
+        // Right password: the three strikes are three WRONG ones, so wipe the slate.
+        limiter.clear(limitKey);
         String id = String.valueOf(staff.getId());
         String token = jwtService.issue(id, staff.getName(), staff.getRole().name(), JwtService.AUDIENCE_STAFF);
         log.info("staff login ok staffId={} role={}", id, staff.getRole());
@@ -112,13 +137,13 @@ public class AuthController {
     /** Generate an OTP and SMS it to the borrower's mobile (UltronSMS). Call before login. */
     @PostMapping("/borrower/otp/request")
     public ApiResponse<OtpRequestResponse> requestBorrowerOtp(@Valid @RequestBody OtpRequestRequest req) {
-        BorrowerOtpService.OtpRequest result = otpService.request(req.mobile());
+        OtpVerifierPort.OtpRequestResult result = otpService.request(req.mobile(), OtpVerifierPort.LOGIN);
         return ApiResponse.ok(new OtpRequestResponse(result.sent(), result.ttlSeconds(), result.devCode()));
     }
 
     @PostMapping("/borrower/login")
     public ApiResponse<AuthResponse> borrowerLogin(@Valid @RequestBody BorrowerLoginRequest req) {
-        if (!otpService.verify(req.mobile(), req.otp())) {
+        if (!otpService.verify(req.mobile(), req.otp(), OtpVerifierPort.LOGIN)) {
             log.warn("borrower login failed reason=INVALID_OTP mobile={}", Masking.maskPhone(req.mobile()));
             throw new BusinessException("INVALID_OTP", "Invalid or expired OTP");
         }
@@ -133,8 +158,8 @@ public class AuthController {
     /** Borrower sign-in by password (the OTP-less alternative; requires a previously set password). */
     @PostMapping("/borrower/password-login")
     public ApiResponse<AuthResponse> borrowerPasswordLogin(@Valid @RequestBody BorrowerPasswordLoginRequest req) {
-        limiter.hit("pw:" + req.mobile().replaceAll("\\D", ""),
-                MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, TOO_MANY_LOGINS);
+        String limitKey = "pw:" + req.mobile().replaceAll("\\D", "");
+        limiter.hit(limitKey, MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, LOGIN_COOLOFF, TOO_MANY_LOGINS);
         long customerId = claimCustomerId(req.mobile());
         BorrowerCredential cred = credentialRepository.findById(customerId).orElse(null);
         if (cred == null) {
@@ -146,6 +171,7 @@ public class AuthController {
             log.warn("borrower password login failed reason=INVALID_CREDENTIALS customerId={}", customerId);
             throw new BusinessException("INVALID_CREDENTIALS", "Invalid mobile or password");
         }
+        limiter.clear(limitKey); // as on staff login: only wrong passwords count toward the three
         String name = resolveBorrowerName(null, req.mobile());
         String id = String.valueOf(customerId);
         String token = jwtService.issue(id, name, "BORROWER", JwtService.AUDIENCE_BORROWER);

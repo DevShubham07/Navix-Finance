@@ -54,11 +54,11 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
   },
   DISBURSEMENT_HEAD: {
     label: "Approved loans to release",
-    info: "Release funds to the borrower's bank. Enter a transaction id to activate the loan immediately, or approve without one to send it to the accountant.",
+    info: "Release funds to the borrower's bank, then enter the transaction id — that activates the loan immediately. The transaction id is required; there is no second pair of eyes after you.",
   },
   ACCOUNTANT: {
-    label: "Transfers to confirm",
-    info: "Confirm the bank transfer landed (activates the loan) and verify borrower repayments. See all money movement under Accounting → all transactions.",
+    label: "Repayments to verify",
+    info: "Confirm borrower repayments landed, and validate the payments collections raise. See all money movement under Accounting → all transactions.",
   },
   COLLECTION_HEAD: {
     label: "Settlements awaiting your approval",

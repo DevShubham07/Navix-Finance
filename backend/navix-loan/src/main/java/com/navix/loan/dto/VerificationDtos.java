@@ -49,6 +49,15 @@ public final class VerificationDtos {
     public record BureauConsentRequest(@NotBlank String otp, @NotBlank String consentText) {
     }
 
+    /**
+     * The bureau-consent OTP the borrower already verified (see {@link BureauConsentRequest}), forwarded
+     * so it can be threaded into Digitap's Credit Analytics payload. Optional/nullable: a staff-triggered
+     * manual pull (or a request made before consent exists) simply omits it, which degrades the pull to
+     * {@code REVIEW} rather than proceeding without consent.
+     */
+    public record BureauPullRequest(String otp) {
+    }
+
     /** App-scoped presigned-upload request (salary slip, selfie). */
     public record PresignUploadRequest(@NotBlank String docType, String fileName, @NotBlank String contentType) {
     }

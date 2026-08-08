@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +100,18 @@ public class ApplicationVerificationService {
      * when the borrower changes their disbursal account, so it may legitimately never run.
      */
     static final List<String> REQUIRED_SANCTION = List.of(AADHAAR, SELFIE, ADDRESS, ESIGN);
+
+    /**
+     * The checks a re-apply legitimately inherits from the advance it carried from — everything the
+     * borrower proved about <em>themselves</em>, which does not become untrue between advances.
+     *
+     * <p>ESIGN is deliberately absent. It is the legal act for one specific loan and is signed again
+     * on every advance (revamp.md decision 45), so inheriting the previous signature would report a
+     * file as fully verified before the borrower had signed anything for the money about to be
+     * released. PENNY_DROP is absent because it is never counted anywhere (revamp.md decision 9).
+     */
+    private static final Set<String> INHERITABLE_CHECKS =
+            Set.of(PAN, EMAIL, BUREAU, SALARY, AADHAAR, SELFIE, ADDRESS);
 
     /** Every recognised check type — guards the staff manual-override target. */
     static final Set<String> KNOWN_CHECKS = Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU,
@@ -584,12 +597,28 @@ public class ApplicationVerificationService {
         return view(row);
     }
 
-    /** Credit bureau pull (Experian → CRIF). Recorded for staff/risk; never shown to borrower. */
+    /**
+     * Credit bureau pull (Experian → CRIF). Recorded for staff/risk; never shown to borrower.
+     *
+     * <p>Gated on {@link #BUREAU_CONSENT} having already passed (via {@link #recordBureauConsent}):
+     * Digitap's live Credit Analytics mandates the borrower's verified OTP in its payload, and calling
+     * out to either bureau provider before consent exists would be pulling a report the borrower never
+     * authorised. Missing consent degrades to {@code REVIEW} rather than throwing — matching this
+     * method's existing "never hard-block onboarding at this step" policy (see the {@code
+     * providerFailure} catch below) — the frontend simply calls {@code bureau-consent} immediately
+     * before this, so in the normal flow this branch never triggers.
+     */
     @Transactional
-    public StepResult pullBureau(Long appId) {
+    public StepResult pullBureau(Long appId, String otp) {
         Optional<ApplicationVerification> existing = passed(appId, BUREAU);
         if (existing.isPresent()) {
             return new StepResult(BUREAU, existing.get().getStatus(), existing.get().getMessage(), Map.of());
+        }
+        if (passed(appId, BUREAU_CONSENT).isEmpty()) {
+            ApplicationVerification row = upsert(appId, BUREAU, REVIEW, null, null, ref(appId, BUREAU),
+                    null, null, null, Map.of(),
+                    "Bureau consent not yet given — pull deferred.");
+            return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
         }
         CustomerProfile profile = profile(appId);
         String ref = ref(appId, BUREAU);
@@ -597,7 +626,7 @@ public class ApplicationVerificationService {
         try {
             r = verification.pullBureau(
                     profile.getPan(), nz(profile.getFullName()), nz(resolveMobile(appId, profile)),
-                    profile.getDob() != null ? profile.getDob().toString() : "", ref);
+                    profile.getDob() != null ? profile.getDob().toString() : "", otp, ref);
         } catch (RuntimeException providerFailure) {
             // Both bureau providers couldn't run (e.g. no API credits / OTP-gated / upstream error).
             // Don't hard-block onboarding with a 500 — record for manual review and let the borrower
@@ -1014,6 +1043,23 @@ public class ApplicationVerificationService {
     }
 
     /**
+     * Send the bureau-consent OTP for this application, scoped to {@link OtpVerifierPort#BUREAU_CONSENT}
+     * so it never shares a stored code or send budget with the borrower's login OTP. The mobile is
+     * resolved server-side (same helper {@link #recordBureauConsent} uses) rather than trusted from the
+     * request.
+     */
+    @Transactional(readOnly = true)
+    public OtpVerifierPort.OtpRequestResult requestBureauConsentOtp(Long appId) {
+        CustomerProfile profile = profile(appId);
+        String mobile = resolveMobile(appId, profile);
+        if (mobile == null || mobile.isBlank()) {
+            throw new BusinessException("MOBILE_MISSING",
+                    "No mobile on file for this application — complete the mobile step first");
+        }
+        return otpVerifier.request(mobile, OtpVerifierPort.BUREAU_CONSENT);
+    }
+
+    /**
      * Record the borrower's consent to the credit-bureau enquiry, step-up verified by their mobile OTP.
      *
      * <p>This is a check type of its own rather than extra {@code derived} data on the PAN row, because
@@ -1033,7 +1079,7 @@ public class ApplicationVerificationService {
             throw new BusinessException("MOBILE_MISSING",
                     "No mobile on file for this application — complete the mobile step first");
         }
-        if (!otpVerifier.verify(mobile, otp)) {
+        if (!otpVerifier.verify(mobile, otp, OtpVerifierPort.BUREAU_CONSENT)) {
             throw new BusinessException("INVALID_OTP", "Invalid or expired OTP");
         }
         Map<String, Object> derived = new LinkedHashMap<>();
@@ -1116,12 +1162,12 @@ public class ApplicationVerificationService {
     }
 
     /** How many of the {@link #requiredCount()} required checks are currently PASS/REVIEW for an
-     *  application — the onboarding-completeness signal used by the admin all-applications register. */
+     *  application — the onboarding-completeness signal used by the admin all-applications register.
+     *  Evidence carried forward by a re-apply counts, for the reason given on {@link #progress}. */
     @Transactional(readOnly = true)
     public int requiredPassedCount(Long appId) {
-        Map<String, String> byType = verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
-                .collect(Collectors.toMap(ApplicationVerification::getCheckType,
-                        ApplicationVerification::getStatus, (a, b) -> b));
+        Map<String, String> byType = statusesWithCarriedEvidence(
+                applicationRepo.findById(appId).orElse(null), appId);
         int done = 0;
         for (String required : REQUIRED) {
             String status = byType.get(required);
@@ -1169,18 +1215,36 @@ public class ApplicationVerificationService {
     }
 
     /**
-     * Completion snapshot over the {@link #REQUIRED} checks (Phase 3.2): how many are cleared
+     * Completion snapshot (Phase 3.2): how many of this application's applicable checks are cleared
      * (PASS/REVIEW), failed (FAIL), or pending (PENDING / never-run), plus a 0–100 percent.
+     *
+     * <p>Two things make the applicable set narrower or wider than a constant list, and getting
+     * either wrong shows staff a number that contradicts the cards printed directly beneath it:
+     *
+     * <ul>
+     *   <li><b>Sanction checks count once the file has been sanctioned.</b> Before that they haven't
+     *       been asked for, so counting them would show every fresh intake as half-done.</li>
+     *   <li><b>A re-apply's intake evidence lives on the application it carried from.</b> PAN, email,
+     *       bureau and salary are deliberately not re-run (revamp.md decision 45), so counting only
+     *       this application's own rows reported a fully-verified re-apply as <i>0/4 done · 0%</i>
+     *       with four PASS cards under it — the tracker looked like nothing had been checked on a
+     *       file about to have money released against it.</li>
+     * </ul>
      */
     @Transactional(readOnly = true)
     public VerificationProgress progress(Long appId) {
-        Map<String, String> byType = verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
-                .collect(Collectors.toMap(ApplicationVerification::getCheckType,
-                        ApplicationVerification::getStatus, (a, b) -> b));
+        LoanApplication app = applicationRepo.findById(appId).orElse(null);
+        Map<String, String> byType = statusesWithCarriedEvidence(app, appId);
+
+        List<String> applicable = new ArrayList<>(REQUIRED);
+        if (app != null && app.getSanctionedAt() != null) {
+            applicable.addAll(REQUIRED_SANCTION);
+        }
+
         int completed = 0;
         int failed = 0;
         int pending = 0;
-        for (String r : REQUIRED) {
+        for (String r : applicable) {
             String s = byType.get(r);
             if (PASS.equals(s) || REVIEW.equals(s)) {
                 completed++;
@@ -1190,9 +1254,34 @@ public class ApplicationVerificationService {
                 pending++; // PENDING or never-run
             }
         }
-        int required = REQUIRED.size();
+        int required = applicable.size();
         int percent = required == 0 ? 100 : (int) Math.round(completed * 100.0 / required);
         return new VerificationProgress(required, completed, failed, pending, percent);
+    }
+
+    /**
+     * This application's check statuses, with anything it never ran resolved from the application it
+     * re-applied from. Walks the re-apply chain (a borrower may take several advances), bounded so a
+     * cycle in the data can never spin here. A row on the newer application always wins.
+     */
+    private Map<String, String> statusesWithCarriedEvidence(LoanApplication app, Long appId) {
+        Map<String, String> byType = new HashMap<>(statusesOf(appId));
+        Long source = app == null ? null : app.getReappliedFrom();
+        for (int hop = 0; source != null && hop < 5; hop++) {
+            statusesOf(source).forEach((check, status) -> {
+                if (INHERITABLE_CHECKS.contains(check)) {
+                    byType.putIfAbsent(check, status);
+                }
+            });
+            source = applicationRepo.findById(source).map(LoanApplication::getReappliedFrom).orElse(null);
+        }
+        return byType;
+    }
+
+    private Map<String, String> statusesOf(Long appId) {
+        return verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
+                .collect(Collectors.toMap(ApplicationVerification::getCheckType,
+                        ApplicationVerification::getStatus, (a, b) -> b));
     }
 
     /**

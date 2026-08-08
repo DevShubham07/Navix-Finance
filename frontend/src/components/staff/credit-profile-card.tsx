@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Gauge, Download, Loader2, FileText } from "lucide-react";
 import { InfoTooltip } from "@/components/ui";
 import { StarRating } from "@/components/ui/star-rating";
+import { PdfPreviewDialog } from "@/components/staff/pdf-preview-dialog";
 import { staffApi, type CreditBriefFacts } from "@/lib/api/applications";
 
 const inr = (rupees: number | null | undefined): string =>
@@ -70,6 +71,8 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
     queryFn: () => staffApi.creditBrief(applicationId),
   });
   const [downloading, setDownloading] = React.useState(false);
+  const [pdfOpen, setPdfOpen] = React.useState(false);
+  const [pdfUrl, setPdfUrl] = React.useState<string | null>(null);
 
   const brief = briefQ.data;
 
@@ -78,7 +81,8 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
     setDownloading(true);
     try {
       const { url } = await staffApi.documentUrl(applicationId, brief.documentId);
-      window.open(url, "_blank", "noopener,noreferrer");
+      setPdfUrl(url);
+      setPdfOpen(true);
     } finally {
       setDownloading(false);
     }
@@ -148,6 +152,8 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
           )}
         </>
       )}
+
+      <PdfPreviewDialog open={pdfOpen} onClose={() => setPdfOpen(false)} url={pdfUrl} title="Credit brief" />
     </div>
   );
 }
