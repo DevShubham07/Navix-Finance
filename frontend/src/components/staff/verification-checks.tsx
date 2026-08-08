@@ -171,23 +171,66 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
 
 function RetryDialog({ applicationId, step, onClose }: { applicationId: number; step: StepResult; onClose: () => void }) {
   const qc = useQueryClient();
-  const [json, setJson] = React.useState("{}");
+  const fields = retryFields(step.checkType);
+  const [input, setInput] = React.useState<Record<string, string>>({});
+  const missingRequired = fields.some((field) => field.required && !input[field.key]?.trim());
   const retry = useMutation({
-    mutationFn: () => {
-      let input: Record<string, unknown>;
-      try { input = JSON.parse(json) as Record<string, unknown>; }
-      catch { throw new Error("Inputs must be valid JSON."); }
-      return staffApi.retryVerification(applicationId, step.checkType, input);
-    },
+    mutationFn: () => staffApi.retryVerification(
+      applicationId,
+      step.checkType,
+      Object.fromEntries(Object.entries(input).filter(([, value]) => value.trim() !== "")),
+    ),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] }); qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] }); onClose(); },
   });
   return <Dialog open onClose={onClose} className="!max-w-md" aria-labelledby="retry-api-title">
     <h3 id="retry-api-title" className="font-serif text-lg text-navy">Retry {humanizeCheck(step.checkType)}</h3>
-    <p className="mt-1 text-sm text-muted">Uses saved customer details where available. Supply JSON only for missing prerequisites such as OTP, coordinates, or selfie object key. Timeout: 30 seconds.</p>
-    <textarea value={json} onChange={(e) => setJson(e.target.value)} rows={6} className="mt-3 w-full rounded border border-line p-2 font-mono text-xs" aria-label="Retry API inputs" />
+    <p className="mt-1 text-sm text-muted">Saved customer details are used where available. Add only the fields required for this retry. Timeout: 30 seconds.</p>
+    <div className="mt-4 space-y-3">
+      {fields.length === 0 ? <p className="text-sm text-muted">No extra information is needed.</p> : fields.map((field) => (
+        <label key={field.key} className="block text-xs font-semibold text-navy">
+          {field.label}{field.required ? " *" : ""}
+          <input
+            type={field.type ?? "text"}
+            value={input[field.key] ?? ""}
+            onChange={(event) => setInput((current) => ({ ...current, [field.key]: event.target.value }))}
+            placeholder={field.placeholder}
+            className="mt-1 w-full rounded border border-line px-3 py-2 text-sm font-normal text-ink"
+            aria-label={field.label}
+          />
+          {field.help ? <span className="mt-1 block font-normal text-muted">{field.help}</span> : null}
+        </label>
+      ))}
+    </div>
     {retry.error && <p className="mt-2 text-xs text-error-700">{errMessage(retry.error)}</p>}
-    <DialogFooter><button className="btn btn-sm btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-sm btn-navy" disabled={retry.isPending} onClick={() => retry.mutate()}>{retry.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Retry</button></DialogFooter>
+    <DialogFooter><button className="btn btn-sm btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-sm btn-navy" disabled={retry.isPending || missingRequired} onClick={() => retry.mutate()}>{retry.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Retry</button></DialogFooter>
   </Dialog>;
+}
+
+type RetryField = { key: string; label: string; placeholder?: string; help?: string; type?: "text" | "number"; required?: boolean };
+
+function retryFields(checkType: string): RetryField[] {
+  switch (checkType) {
+    case "PAN":
+      return [{ key: "pan", label: "PAN", placeholder: "Uses saved PAN when blank" }];
+    case "EMAIL":
+      return [{ key: "email", label: "Email address", placeholder: "Uses saved email when blank", type: "text" }];
+    case "ADDRESS":
+      return [
+        { key: "latitude", label: "Latitude", placeholder: "e.g. 28.6139", type: "number", required: true },
+        { key: "longitude", label: "Longitude", placeholder: "e.g. 77.2090", type: "number", required: true },
+      ];
+    case "BUREAU":
+      return [{ key: "otp", label: "Consent OTP", placeholder: "Enter the borrower’s fresh 6-digit consent OTP", required: true, help: "A fresh OTP is required by Digitap. Do not reuse a previous code." }];
+    case "PENNY_DROP":
+      return [
+        { key: "accountNumber", label: "Account number", placeholder: "Uses saved account when blank" },
+        { key: "ifsc", label: "IFSC", placeholder: "Uses saved IFSC when blank" },
+      ];
+    case "SELFIE":
+      return [{ key: "selfieObjectKey", label: "Selfie storage key", placeholder: "applications/…/selfie.jpg", required: true }];
+    default:
+      return [];
+  }
 }
 
 /**
