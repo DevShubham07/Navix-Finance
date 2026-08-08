@@ -187,7 +187,9 @@ class ApplicationVerificationServiceTest {
 
     @Test
     void bureau_providerFailure_isReview_andPersistsSafeHttpStatus() throws Exception {
-        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        CustomerProfile p = profile();
+        p.setDob(LocalDate.of(1992, 8, 15));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
                 .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
         // Both bureau providers unavailable (no credits / OTP-gated) → the router rethrows, which used
@@ -217,9 +219,24 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void bureau_isDeferredToReview_whenDateOfBirthIsMissing_andDoesNotCallProvider() {
+        CustomerProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
+                .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
+
+        var result = service.pullBureau(APP, "123456");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.message()).contains("date of birth");
+        verify(verification, never()).pullBureau(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void bureau_forwardsVerifiedOtp_toTheProvider_onceConsentPassed() {
         CustomerProfile p = profile();
         p.setPan("QVEPS0901K");
+        p.setDob(LocalDate.of(1992, 8, 15));
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
                 .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));

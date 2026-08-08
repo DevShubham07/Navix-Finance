@@ -699,6 +699,12 @@ public class ApplicationVerificationService {
         }
         CustomerProfile profile = profile(appId);
         String ref = ref(appId, BUREAU);
+        if (profile.getDob() == null) {
+            ApplicationVerification row = upsert(appId, BUREAU, REVIEW, null, null, ref,
+                    null, null, null, Map.of("missingProfileField", "dob"),
+                    "Your date of birth is required before we can run the credit check.");
+            return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
+        }
         VerificationPort.BureauCheck r;
         try {
             r = verification.pullBureau(

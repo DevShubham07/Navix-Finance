@@ -6,7 +6,7 @@ import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { useOnboarding, completeStep, useSavedProfile, BUREAU_CONSENT_TEXT } from "@/lib/onboarding";
+import { useOnboarding, completeStep, saveProfileSlice, useSavedProfile, BUREAU_CONSENT_TEXT } from "@/lib/onboarding";
 import { verificationApi, type OtpRequestResult } from "@/lib/api/applications";
 import { fetchBorrowerSession } from "@/lib/api/live-journey";
 import { formatApiError } from "@/lib/api/errors";
@@ -28,6 +28,7 @@ export default function SignupConsentPage() {
   const { mounted, appId } = useOnboarding();
   const saved = useSavedProfile(appId);
   const [mobile, setMobile] = React.useState("");
+  const [dob, setDob] = React.useState("");
   const [otp, setOtp] = React.useState("");
   const [consent, setConsent] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
@@ -43,6 +44,10 @@ export default function SignupConsentPage() {
   React.useEffect(() => {
     if (mounted && appId == null) router.replace("/signup/start");
   }, [mounted, appId, router]);
+
+  React.useEffect(() => {
+    if (saved?.dob) setDob(saved.dob);
+  }, [saved?.dob]);
 
   // Sends the bureau-consent OTP — a purpose-dedicated code, isolated server-side from the login OTP.
   // Application-scoped (the backend resolves the mobile from the profile), so no mobile is passed here.
@@ -81,7 +86,7 @@ export default function SignupConsentPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otp.length !== 6 || !consent) {
+    if (otp.length !== 6 || !consent || !dob) {
       setTouched(true);
       return;
     }
@@ -89,6 +94,7 @@ export default function SignupConsentPage() {
     setBusy(true);
     setError(undefined);
     try {
+      await saveProfileSlice(appId, { dob });
       await verificationApi.bureauConsent(appId, otp, BUREAU_CONSENT_TEXT);
       setVerifying(true);
       // All three run here. A FAIL is recorded and passed on to the credit team, so failures are
@@ -135,6 +141,23 @@ export default function SignupConsentPage() {
           disabled={busy}
         />
 
+        <label className="field mt-5">
+          <span>Date of birth</span>
+          <input
+            type="date"
+            value={dob}
+            onChange={(e) => {
+              setDob(e.target.value);
+              setError(undefined);
+            }}
+            disabled={busy}
+            required
+          />
+        </label>
+        {touched && !dob ? (
+          <p className="mt-1 text-sm text-error-600">Your date of birth is required for the credit check.</p>
+        ) : null}
+
         {sent?.devCode ? (
           <p className="mt-3 flex items-center gap-1.5 text-sm text-muted">
             <CheckCircle2 size={15} className="text-success-600" /> Dev code:{" "}
@@ -170,7 +193,7 @@ export default function SignupConsentPage() {
         submit
         continueLabel="Confirm & submit"
         loading={busy}
-        disabled={busy || otp.length !== 6 || !consent}
+        disabled={busy || otp.length !== 6 || !consent || !dob}
       />
       <Reassurance />
     </form>
