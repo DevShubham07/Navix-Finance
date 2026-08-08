@@ -54,8 +54,7 @@ public final class DigitapDtos {
             @JsonProperty("device_type") String deviceType,
             @JsonProperty("otp") String otp,
             @JsonProperty("timestamp") String timestamp,
-            @JsonProperty("device_ip") String deviceIp,
-            @JsonProperty("device_id") String deviceId) {
+            @JsonProperty("device_ip") String deviceIp) {
     }
 
     public record CreditResponse(

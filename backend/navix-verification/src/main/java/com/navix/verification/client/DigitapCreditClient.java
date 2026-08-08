@@ -28,9 +28,10 @@ import org.springframework.web.client.RestClient;
  * borrower actually verified (threaded in by the caller — see {@code VerificationPort.pullBureau}), and
  * {@code device_ip} must match the IP Digitap has allow-listed for this account (a placeholder like
  * {@code 0.0.0.0} is rejected with {@code 403 IP not allowed} — confirmed by live testing). {@code
- * timestamp} must be the literal {@code ddMMyyyy-HH:mm:ss} format, not epoch millis, and {@code
- * consent_message} must contain the words I/authorize/Experian/credit/report or Digitap rejects it
- * with {@code "please provide proper consent message"}.
+ * timestamp} must be the literal {@code ddMMyyyy-HH:mm:ss} format, not epoch millis, {@code
+ * device_type} must be {@code web} or {@code mobile}, and {@code consent_message} must contain the
+ * words I/authorize/Experian/credit/report or Digitap rejects it with
+ * {@code "please provide proper consent message"}.
  */
 @Component
 public class DigitapCreditClient {
@@ -54,8 +55,8 @@ public class DigitapCreditClient {
         String[] parts = splitName(name);
         CreditRequest req = new CreditRequest(
                 ref(clientRef), mobile, 0, parts[0], parts[1], pan, dob,
-                CONSENT_MESSAGE, "Yes", "server", otp == null ? "" : otp,
-                TIMESTAMP_FORMAT.format(LocalDateTime.now()), deviceIp, "navix");
+                CONSENT_MESSAGE, "Yes", "web", otp == null ? "" : otp,
+                TIMESTAMP_FORMAT.format(LocalDateTime.now()), deviceIp);
         JsonNode root = post(digitapApi, ENDPOINT, req);
         JsonNode report = root.path("result").path("result_json").path("INProfileResponse");
         Integer score = integer(report.path("SCORE").path("BureauScore"));

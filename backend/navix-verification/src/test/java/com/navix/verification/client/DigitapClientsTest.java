@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
@@ -175,6 +176,25 @@ class DigitapClientsTest {
 
         CreditResponse r = new DigitapCreditClient(b.restClient(), "3.109.169.131")
                 .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "ref-2");
+
+        assertThat(r.creditScore()).isEqualTo(778);
+        b.server().verify();
+    }
+
+    @Test
+    void creditRequest_usesWebDeviceTypeWithoutMobileDeviceId() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/credit_analytics/request"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.device_type").value("web"))
+                .andExpect(jsonPath("$.device_id").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"http_response_code":200,"result_code":101,"request_id":"REQ-CR-3","result":{
+                        "result_json":{"INProfileResponse":{"SCORE":{"BureauScore":"778"}}}}}
+                        """, MediaType.APPLICATION_JSON));
+
+        CreditResponse r = new DigitapCreditClient(b.restClient(), "3.109.169.131")
+                .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "ref-3");
 
         assertThat(r.creditScore()).isEqualTo(778);
         b.server().verify();
