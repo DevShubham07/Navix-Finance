@@ -2,7 +2,7 @@ package com.navix.verification.client;
 
 import static com.navix.verification.support.ProviderJson.bool;
 import static com.navix.verification.support.ProviderJson.integer;
-import static com.navix.verification.support.ProviderJson.postWithRawPanDiagnostics;
+import static com.navix.verification.support.ProviderJson.postWithRawDiagnostics;
 import static com.navix.verification.support.ProviderJson.ref;
 import static com.navix.verification.support.ProviderJson.text;
 import static com.navix.verification.support.ProviderJson.trimmed;
@@ -33,7 +33,7 @@ public class DigitapPanClient {
 
     public PanResponse verify(String pan, String clientRef) {
         PanRequest request = new PanRequest(ref(clientRef), pan);
-        JsonNode root = postWithRawPanDiagnostics(digitapSvc, ENDPOINT, request, "digitap-pan");
+        JsonNode root = postWithRawDiagnostics(digitapSvc, ENDPOINT, request, "digitap-pan");
         Integer resultCode = integer(root.path("result_code"));
         JsonNode result = root.path("result");
         JsonNode address = result.path("address");

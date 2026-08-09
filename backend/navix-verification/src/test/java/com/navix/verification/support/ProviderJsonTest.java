@@ -28,7 +28,7 @@ class ProviderJsonTest {
                         "{\"result_code\":102,\"message\":\"PAN ABCDE1234F could not be verified\"}",
                         MediaType.APPLICATION_JSON));
 
-        ProviderJson.postWithRawPanDiagnostics(
+        ProviderJson.postWithRawDiagnostics(
                 builder.build(), "/pan", Map.of("pan", "ABCDE1234F"), "digitap-pan");
 
         assertThat(output).contains(

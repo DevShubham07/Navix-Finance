@@ -205,6 +205,38 @@ class DigitapClientsTest {
 
     @Test
     @ExtendWith(OutputCaptureExtension.class)
+    void creditErrorLogsCompleteTemporaryRawRequestAndResponse(CapturedOutput output) {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/credit_analytics/request"))
+                .andRespond(withBadRequest()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"http_response_code\":400,\"result_code\":400,"
+                                + "\"message\":\"PAN ABCPE1234Z and mobile 9876543210 rejected\"}"));
+
+        DigitapCreditClient client = new DigitapCreditClient(b.restClient(), "3.109.169.131");
+        assertThatThrownBy(() -> client.pull(
+                "ABCPE1234Z", "Jane Doe", "9876543210", "1990-01-01", "654321", "credit-ref"))
+                .isInstanceOf(VerificationException.class);
+
+        assertThat(output).contains(
+                "TEMP_PII_DEBUG",
+                "provider=digitap-credit",
+                "endpoint=/credit_analytics/request",
+                "requestPayload={\"client_ref_num\":\"credit-ref\"",
+                "\"mobile_no\":\"9876543210\"",
+                "\"first_name\":\"Jane\"",
+                "\"last_name\":\"Doe\"",
+                "\"pan\":\"ABCPE1234Z\"",
+                "\"date_of_birth\":\"1990-01-01\"",
+                "\"otp\":\"654321\"",
+                "\"device_ip\":\"3.109.169.131\"",
+                "responsePayload={\"http_response_code\":400,\"result_code\":400,"
+                        + "\"message\":\"PAN ABCPE1234Z and mobile 9876543210 rejected\"}");
+        b.server().verify();
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
     void panErrorLogsTemporaryRawRequestAndResponse(CapturedOutput output) {
         Bound b = bind();
         b.server().expect(requestTo(BASE + "/validation/kyc/v1/pan_details_plus"))

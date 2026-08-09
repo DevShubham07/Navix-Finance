@@ -20,7 +20,7 @@ import org.springframework.web.client.RestClientResponseException;
  * </ul>
  *
  * <p>Provider-neutral (formerly {@code FintrixJson}) and PII-safe by default. The explicitly named
- * temporary PAN diagnostic method is the sole pre-go-live exception.
+ * temporary raw diagnostic method is the sole pre-go-live exception.
  */
 public final class ProviderJson {
 
@@ -44,44 +44,45 @@ public final class ProviderJson {
     }
 
     /**
-     * Temporary pre-go-live diagnostic transport for PAN providers. This deliberately logs the raw
-     * JSON request and raw provider error response, including PII, but never logs HTTP headers or
-     * credentials. Remove every {@code TEMP_PII_DEBUG} call before production go-live.
+     * Temporary pre-go-live diagnostic transport for explicitly selected verification providers.
+     * This deliberately logs the complete raw JSON request and provider error response, including
+     * PII, but never logs HTTP headers or credentials. Remove every {@code TEMP_PII_DEBUG} call
+     * before production go-live.
      */
-    public static JsonNode postWithRawPanDiagnostics(
+    public static JsonNode postWithRawDiagnostics(
             RestClient client, String uri, Object body, String provider) {
         return post(client, uri, body, provider);
     }
 
-    private static JsonNode post(RestClient client, String uri, Object body, String rawPanProvider) {
-        if (rawPanProvider != null) {
+    private static JsonNode post(RestClient client, String uri, Object body, String rawProvider) {
+        if (rawProvider != null) {
             log.warn("TEMP_PII_DEBUG provider={} endpoint={} requestPayload={}",
-                    rawPanProvider, uri, rawJson(body));
+                    rawProvider, uri, rawJson(body));
         }
         JsonNode node;
         try {
             node = client.post().uri(uri).body(body).retrieve().body(JsonNode.class);
         } catch (RestClientResponseException e) {
-            if (rawPanProvider != null) {
+            if (rawProvider != null) {
                 log.error("TEMP_PII_DEBUG provider={} endpoint={} httpStatus={} responsePayload={}",
-                        rawPanProvider, uri, e.getStatusCode().value(), e.getResponseBodyAsString());
+                        rawProvider, uri, e.getStatusCode().value(), e.getResponseBodyAsString());
             }
-            // Do not log the body — it may carry PII; surface only the endpoint + status.
+            // Keep the exception metadata safe/redacted even when temporary raw logging is enabled.
             SafeDiagnostic diagnostic = safeDiagnostic(e.getResponseBodyAsString());
             throw new VerificationException(
                     "HTTP " + e.getStatusCode().value() + " from " + uri, e,
                     e.getStatusCode().value(), uri, diagnostic.code(), diagnostic.detail());
         }
         if (node == null) {
-            if (rawPanProvider != null) {
+            if (rawProvider != null) {
                 log.error("TEMP_PII_DEBUG provider={} endpoint={} responsePayload=<empty>",
-                        rawPanProvider, uri);
+                        rawProvider, uri);
             }
             throw new VerificationException("Empty response body from " + uri);
         }
-        if (rawPanProvider != null && isPanProviderError(node)) {
+        if (rawProvider != null && isProviderErrorEnvelope(node)) {
             log.error("TEMP_PII_DEBUG provider={} endpoint={} responsePayload={}",
-                    rawPanProvider, uri, node);
+                    rawProvider, uri, node);
         }
         if ("error".equalsIgnoreCase(node.path("status").asText(""))) {
             throw new VerificationException("Provider reported error for " + uri);
@@ -89,7 +90,7 @@ public final class ProviderJson {
         return node;
     }
 
-    private static boolean isPanProviderError(JsonNode node) {
+    private static boolean isProviderErrorEnvelope(JsonNode node) {
         String status = node.path("status").asText("");
         if ("error".equalsIgnoreCase(status)
                 || "failed".equalsIgnoreCase(status)

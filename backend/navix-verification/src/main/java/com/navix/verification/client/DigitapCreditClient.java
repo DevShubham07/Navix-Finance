@@ -1,7 +1,7 @@
 package com.navix.verification.client;
 
 import static com.navix.verification.support.ProviderJson.integer;
-import static com.navix.verification.support.ProviderJson.post;
+import static com.navix.verification.support.ProviderJson.postWithRawDiagnostics;
 import static com.navix.verification.support.ProviderJson.ref;
 import static com.navix.verification.support.ProviderJson.text;
 
@@ -57,7 +57,7 @@ public class DigitapCreditClient {
                 ref(clientRef), mobile, 0, parts[0], parts[1], pan, dob,
                 CONSENT_MESSAGE, "Yes", "web", otp == null ? "" : otp,
                 TIMESTAMP_FORMAT.format(LocalDateTime.now()), deviceIp);
-        JsonNode root = post(digitapApi, ENDPOINT, req);
+        JsonNode root = postWithRawDiagnostics(digitapApi, ENDPOINT, req, "digitap-credit");
         JsonNode report = root.path("result").path("result_json").path("INProfileResponse");
         Integer score = integer(report.path("SCORE").path("BureauScore"));
         Integer resultCode = integer(root.path("result_code"));
