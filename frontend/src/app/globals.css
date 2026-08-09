@@ -398,6 +398,29 @@ table.data td strong { color: var(--navy); }
 .kv-table th { width: 38%; background: var(--grey-100); color: var(--navy); font-weight: 600; }
 .kv-table thead { display: none; }
 
+/* Staff registers share one dense, semantic table treatment. Wide datasets swipe horizontally on
+   phones; the live-pipeline identity and action columns remain visible while the middle scrolls. */
+.navix-crm table { border-collapse: collapse; min-width: 720px; width: 100%; background: #fff; }
+.navix-crm table th { white-space: nowrap; }
+.navix-crm table th,
+.navix-crm table td { vertical-align: top; }
+.staff-table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.staff-data-table th,
+.staff-data-table td { border-bottom: 1px solid var(--line); padding: 12px 14px; text-align: left; }
+.staff-data-table thead th { background: var(--navy); color: #fff; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.staff-data-table tbody tr:nth-child(even) td { background: var(--grey-100); }
+.staff-data-table tbody tr:last-child td { border-bottom: 0; }
+.staff-data-table .staff-sticky-identity { left: 0; min-width: 118px; position: sticky; z-index: 2; }
+.staff-data-table .staff-sticky-actions { position: sticky; right: 0; z-index: 2; }
+.staff-data-table tbody .staff-sticky-identity,
+.staff-data-table tbody .staff-sticky-actions { background: #fff; }
+.staff-data-table tbody tr:nth-child(even) .staff-sticky-identity,
+.staff-data-table tbody tr:nth-child(even) .staff-sticky-actions { background: var(--grey-100); }
+.staff-data-table thead .staff-sticky-identity,
+.staff-data-table thead .staff-sticky-actions { background: var(--navy); z-index: 3; }
+.staff-data-table .staff-sticky-identity { box-shadow: 5px 0 8px -8px rgba(12, 37, 64, .7); }
+.staff-data-table .staff-sticky-actions { box-shadow: -5px 0 8px -8px rgba(12, 37, 64, .7); }
+
 /* ==========================================================================
    Forms
    ========================================================================== */

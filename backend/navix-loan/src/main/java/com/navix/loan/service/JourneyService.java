@@ -145,7 +145,7 @@ public class JourneyService {
      */
     private List<OfferStep> applicableOfferSteps(LoanApplication app) {
         List<OfferStep> all = java.util.Arrays.stream(OfferStep.values())
-                .filter(s -> s != OfferStep.OFFER_DONE)
+                .filter(s -> s != OfferStep.OFFER_DONE && s != OfferStep.OFFER_ESIGN)
                 .toList();
         if (app.getReappliedFrom() == null) {
             return all;
@@ -211,9 +211,12 @@ public class JourneyService {
 
     private OfferStep currentOfferStep(LoanApplication app) {
         OfferStep derived = deriveOffer(app);
-        return parseOffer(app.getJourneyStep())
+        OfferStep resolved = parseOffer(app.getJourneyStep())
                 .filter(stored -> stored.ordinal() > derived.ordinal())
                 .orElse(derived);
+        // Signing now lives on the agreement page. Historical rows may still hold the retired
+        // OFFER_ESIGN pointer; normalize them instead of reopening a separate signing screen.
+        return resolved == OfferStep.OFFER_ESIGN ? OfferStep.OFFER_SANCTION_LETTER : resolved;
     }
 
     /**
@@ -245,7 +248,7 @@ public class JourneyService {
             return OfferStep.OFFER_ADDRESS;
         }
         if (!checks.contains(ApplicationVerificationService.ESIGN)) {
-            return OfferStep.OFFER_ESIGN;
+            return OfferStep.OFFER_SANCTION_LETTER;
         }
         if (app.getDisbursalConfirmedAt() == null) {
             return OfferStep.OFFER_DISBURSAL_ACCOUNT;

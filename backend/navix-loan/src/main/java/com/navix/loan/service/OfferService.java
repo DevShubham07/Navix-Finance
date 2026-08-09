@@ -28,6 +28,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -205,27 +206,7 @@ public class OfferService {
     public SanctionLetterView sanctionLetter(Long appId) {
         LoanApplication app = requireSanctioned(appId);
         CustomerProfile p = profileRepo.findByApplicationId(appId).orElse(null);
-        long principal = drawdownOf(app);
-        int tenure = tenureDays(app);
-
-        byte[] pdf = letterRenderer.render(new SanctionLetterPdfRenderer.Facts(
-                appId,
-                p != null ? p.getFullName() : null,
-                p != null ? p.getPan() : null,
-                p != null ? p.getMobile() : null,
-                principal,
-                loanMath.processingFeePaise(principal),
-                loanMath.gstPaise(principal),
-                loanMath.netDisbursedPaise(principal),
-                loanMath.interestPaise(principal, tenure),
-                loanMath.totalRepayablePaise(principal, tenure),
-                tenure,
-                app.getSanctionedAt() != null
-                        ? LocalDate.ofInstant(app.getSanctionedAt(), IST) : LocalDate.now(IST),
-                app.getApprovedRepaymentDate(),
-                maskAccount(firstNonBlank(app.getDisbursalAccountNumber(),
-                        p != null ? p.getSalaryAccountNumber() : null)),
-                grievanceOfficerName, grievanceOfficerPhone, grievanceOfficerEmail));
+        byte[] pdf = letterRenderer.render(agreementFacts(app, p));
 
         String key = "applications/" + appId + "/sanction_letter/sanction-letter.pdf";
         try {
@@ -251,7 +232,7 @@ public class OfferService {
         doc.setData(null); // S3-backed: keep the "exactly one of data / s3ObjectKey" invariant
         documentRepo.save(doc);
 
-        journey.advance(appId, JourneyService.OfferStep.OFFER_ESIGN);
+        journey.advance(appId, JourneyService.OfferStep.OFFER_SANCTION_LETTER);
         return new SanctionLetterView(doc.getId(), storage.presignDownload(key));
     }
 
@@ -268,9 +249,40 @@ public class OfferService {
 
     @Transactional
     public StepResult manualEsign(Long appId, ManualEsignRequest req) {
-        requireSanctioned(appId);
+        LoanApplication app = requireSanctioned(appId);
         StepResult result = verification.recordManualEsign(appId, req.signatureDataUrl(),
                 req.latitude(), req.longitude(), req.accuracyMeters());
+
+        CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
+        String signedAtValue = String.valueOf(result.derived().get("signedAt"));
+        Instant signedAt = Instant.parse(signedAtValue);
+        byte[] signature = Base64.getDecoder().decode(
+                req.signatureDataUrl().substring(req.signatureDataUrl().indexOf(',') + 1));
+        byte[] signedPdf = letterRenderer.renderSigned(
+                agreementFacts(app, profile), signature,
+                profile != null ? profile.getFullName() : "Borrower", signedAt);
+        String key = "applications/" + appId + "/signed_agreement/sanction-letter-signed.pdf";
+        try {
+            storage.store(key, signedPdf, "application/pdf");
+        } catch (RuntimeException storageFailure) {
+            log.error("Signed agreement storage failed for application {}: {}",
+                    appId, storageFailure.toString());
+            throw new BusinessException("SIGNED_AGREEMENT_UNAVAILABLE",
+                    "We couldn't save your signed agreement just now. Please try again.");
+        }
+        ApplicationDocument document = documentRepo
+                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                        appId, ApplicationVerificationService.SIGNED_AGREEMENT)
+                .orElseGet(ApplicationDocument::new);
+        document.setApplicationId(appId);
+        document.setDocType(ApplicationVerificationService.SIGNED_AGREEMENT);
+        document.setFileName("sanction-letter-signed.pdf");
+        document.setContentType("application/pdf");
+        document.setSizeBytes((long) signedPdf.length);
+        document.setS3ObjectKey(key);
+        document.setData(null);
+        documentRepo.save(document);
+
         journey.advance(appId, JourneyService.OfferStep.OFFER_SANCTIONED);
         return result;
     }
@@ -405,6 +417,30 @@ public class OfferService {
         }
         long days = ChronoUnit.DAYS.between(LocalDate.now(IST), due);
         return (int) Math.max(1, days);
+    }
+
+    private SanctionLetterPdfRenderer.Facts agreementFacts(
+            LoanApplication app, CustomerProfile profile) {
+        long principal = drawdownOf(app);
+        int tenure = tenureDays(app);
+        return new SanctionLetterPdfRenderer.Facts(
+                app.getId(),
+                profile != null ? profile.getFullName() : null,
+                profile != null ? profile.getPan() : null,
+                profile != null ? profile.getMobile() : null,
+                principal,
+                loanMath.processingFeePaise(principal),
+                loanMath.gstPaise(principal),
+                loanMath.netDisbursedPaise(principal),
+                loanMath.interestPaise(principal, tenure),
+                loanMath.totalRepayablePaise(principal, tenure),
+                tenure,
+                app.getSanctionedAt() != null
+                        ? LocalDate.ofInstant(app.getSanctionedAt(), IST) : LocalDate.now(IST),
+                app.getApprovedRepaymentDate(),
+                maskAccount(firstNonBlank(app.getDisbursalAccountNumber(),
+                        profile != null ? profile.getSalaryAccountNumber() : null)),
+                grievanceOfficerName, grievanceOfficerPhone, grievanceOfficerEmail);
     }
 
     private static String maskAccount(String account) {

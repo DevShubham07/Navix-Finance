@@ -15,9 +15,11 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
+import com.navix.loan.dto.OfferDtos.ManualEsignRequest;
 import com.navix.loan.dto.OfferDtos.OfferSummaryView;
 import com.navix.loan.dto.OfferDtos.ReferenceInput;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.pdf.SanctionLetterPdfRenderer;
 import com.navix.loan.repository.ApplicationDocumentRepository;
@@ -32,6 +34,8 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Base64;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -185,6 +189,34 @@ class OfferServiceTest {
 
         assertThat(OfferService.expectedDisbursalDate(beforeCutoff)).isEqualTo(LocalDate.of(2026, 8, 6));
         assertThat(OfferService.expectedDisbursalDate(afterCutoff)).isEqualTo(LocalDate.of(2026, 8, 7));
+    }
+
+    @Test
+    void manualSigningStoresAPdfContainingTheDrawnSignatureAndServerIdentity() {
+        app.setAmountRequested(1_500_000L);
+        Instant signedAt = Instant.parse("2026-08-09T13:17:18Z");
+        byte[] signature = new byte[] {1, 2, 3, 4};
+        byte[] signedPdf = new byte[] {9, 8, 7};
+        when(verification.recordManualEsign(eq(APP), anyString(), eq(null), eq(null), eq(null)))
+                .thenReturn(new StepResult(ApplicationVerificationService.ESIGN,
+                        ApplicationVerificationService.PASS, "signed",
+                        Map.of("signedAt", signedAt.toString())));
+        when(letterRenderer.renderSigned(any(), eq(signature), eq("Asha Kumari"), eq(signedAt)))
+                .thenReturn(signedPdf);
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.SIGNED_AGREEMENT)).thenReturn(Optional.empty());
+
+        offer.manualEsign(APP, new ManualEsignRequest(
+                "data:image/png;base64," + Base64.getEncoder().encodeToString(signature),
+                null, null, null));
+
+        verify(storage).store("applications/1/signed_agreement/sanction-letter-signed.pdf",
+                signedPdf, "application/pdf");
+        ArgumentCaptor<ApplicationDocument> document = ArgumentCaptor.forClass(ApplicationDocument.class);
+        verify(documentRepo).save(document.capture());
+        assertThat(document.getValue().getDocType()).isEqualTo(ApplicationVerificationService.SIGNED_AGREEMENT);
+        assertThat(document.getValue().getS3ObjectKey())
+                .isEqualTo("applications/1/signed_agreement/sanction-letter-signed.pdf");
     }
 
     // ---------------------------------------------------------------- disbursal account

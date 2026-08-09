@@ -73,7 +73,9 @@ public class RoutingVerificationPort implements VerificationPort {
             } catch (CapabilityNotSupportedException unsupported) {
                 lastUnsupported = unsupported; // provider doesn't offer this capability — try the next
             } catch (VerificationException failed) {
-                log.warn("verification[{}] provider {} failed — falling through", capability, e.getKey());
+                log.warn("verification[{}] provider {} failed status={} endpoint={} code={} detail={} — falling through",
+                        capability, e.getKey(), failed.httpStatus(), failed.endpoint(),
+                        failed.providerCode(), failed.safeDetail());
                 lastRealFailure = failed; // provider tried and failed — fall back to the next
             }
         }

@@ -3,67 +3,134 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ExternalLink, FileText, Loader2 } from "lucide-react";
-import { WizardActions } from "@/components/borrower/wizard-actions";
+import { AlertTriangle, ExternalLink, FileSignature, FileText, Loader2, ShieldCheck } from "lucide-react";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { offerApi } from "@/lib/api/applications";
+import { StepResultBanner } from "@/components/borrower/step-result-banner";
+import { offerApi, type StepResult } from "@/lib/api/applications";
 import { useOffer, completeOfferStep, nextOfferRoute, prevOfferRoute } from "@/lib/offer";
 import { formatApiError } from "@/lib/api/errors";
 
-/**
- * Screen 8: read the sanction letter — a full Key Fact Statement (revamp.md decision 38).
- *
- * <p>No submit button of its own: the borrower reads here and signs on the next screen. The PDF is
- * re-rendered server-side on every visit, so a borrower who went back and changed their amount reads
- * the letter matching what they'll actually sign, never a cached earlier one.
- */
+/** Read and sign the exact agreement in one responsive page. */
 export default function SanctionLetterPage() {
   const router = useRouter();
   const { appId } = useOffer();
   const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState<StepResult | null>(null);
+  const [error, setError] = React.useState<string>();
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const drawing = React.useRef(false);
 
   const q = useQuery({
     queryKey: ["sanction-letter", appId],
     queryFn: () => offerApi.sanctionLetter(appId as number),
     enabled: appId != null,
-    // The URL is a short-lived presign; don't serve a stale one from cache on a revisit.
     gcTime: 0,
     staleTime: 0,
     retry: false,
   });
 
-  const submit = async () => {
+  const canvasPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (canvas.width / rect.width),
+      y: (event.clientY - rect.top) * (canvas.height / rect.height),
+    };
+  };
+
+  const beginDrawing = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const point = canvasPoint(event);
+    const context = canvasRef.current?.getContext("2d");
+    if (!point || !context) return;
+    drawing.current = true;
+    canvasRef.current?.setPointerCapture(event.pointerId);
+    context.strokeStyle = "#0C2540";
+    context.lineWidth = 3;
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+  };
+
+  const draw = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawing.current) return;
+    const point = canvasPoint(event);
+    const context = canvasRef.current?.getContext("2d");
+    if (!point || !context) return;
+    context.lineTo(point.x, point.y);
+    context.stroke();
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const sign = async () => {
     if (appId == null) return;
     setBusy(true);
-    await completeOfferStep(appId, "OFFER_SANCTION_LETTER", router, nextOfferRoute("sanction-letter"));
+    setError(undefined);
+    try {
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error("Signature area is unavailable");
+      const pixels = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data;
+      if (!pixels || !Array.from(pixels).some((value, index) => index % 4 === 3 && value > 0)) {
+        throw new Error("Please draw your signature inside the box first");
+      }
+      const location = await new Promise<GeolocationPosition | null>((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
+          enableHighAccuracy: true,
+          timeout: 7000,
+        });
+      });
+      const response = await offerApi.esign(appId, {
+        signatureDataUrl: canvas.toDataURL("image/png"),
+        latitude: location?.coords.latitude,
+        longitude: location?.coords.longitude,
+        accuracyMeters: location?.coords.accuracy,
+      });
+      setResult(response);
+      if (response.status === "PASS") {
+        await completeOfferStep(
+          appId,
+          "OFFER_SANCTION_LETTER",
+          router,
+          nextOfferRoute("sanction-letter"),
+        );
+        return;
+      }
+      setBusy(false);
+    } catch (err) {
+      setError(formatApiError(err, "Could not sign your agreement — please try again."));
+      setBusy(false);
+    }
   };
 
   return (
     <div>
       <div className="form-card">
-        <p className="lead mb-1">Your sanction letter</p>
+        <p className="lead mb-1">Your loan agreement</p>
         <p className="mb-5 text-sm text-muted">
-          This is the Key Fact Statement for your loan — the amount, the charges, what reaches your
-          account, and what you repay. Read it before you sign on the next screen.
+          Read the Key Fact Statement and sign it directly below. The final saved PDF includes your
+          signature, name, and the server-recorded date and time.
         </p>
 
         {q.isLoading ? (
           <div className="flex items-center justify-center gap-2 rounded border border-line bg-grey-100 py-16 text-sm text-muted">
-            <Loader2 size={16} className="animate-spin" /> Preparing your sanction letter…
+            <Loader2 size={16} className="animate-spin" /> Preparing your agreement…
           </div>
         ) : q.error ? (
           <div className="flex items-start gap-2 rounded border border-error-100 bg-error-50 p-4 text-sm text-error-700">
             <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
-            <span>{formatApiError(q.error, "Could not prepare your sanction letter.")}</span>
+            <span>{formatApiError(q.error, "Could not prepare your agreement.")}</span>
           </div>
         ) : q.data ? (
           <>
-            {/* An <object> renders inline where the browser has a PDF viewer, and falls back to the
-                link below where it doesn't (most mobile browsers) — the letter must be readable on
-                a phone, which is where most borrowers are. */}
             <iframe
               src={q.data.url}
-              aria-label="Sanction letter"
+              aria-label="Loan agreement"
               className="h-[32rem] w-full rounded border border-line bg-white"
             >
               <p className="p-6 text-sm text-muted">
@@ -76,19 +143,53 @@ export default function SanctionLetterPage() {
               rel="noopener noreferrer"
               className="btn btn-outline mt-4 sm:btn-sm"
             >
-              <FileText size={16} /> Open sanction letter <ExternalLink size={14} />
+              <FileText size={16} /> Open agreement <ExternalLink size={14} />
             </a>
+
+            <div className="mt-8 border-t border-line pt-6 text-left">
+              <h2 className="flex items-center gap-2 text-xl">
+                <FileSignature size={21} /> Sign this agreement
+              </h2>
+              <p className="mt-2 text-sm text-muted">
+                Use your pointer, mouse, or touchscreen to sign inside the box.
+              </p>
+              <ul className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                {["Your drawn signature is saved", "A signed copy is saved to your documents"].map((text) => (
+                  <li key={text} className="flex items-center gap-2 text-ink">
+                    <ShieldCheck size={15} className="text-success-600" /> {text}
+                  </li>
+                ))}
+              </ul>
+              <canvas
+                ref={canvasRef}
+                width={720}
+                height={220}
+                aria-label="Draw your signature"
+                className="mt-4 h-44 w-full touch-none rounded-lg border-2 border-dashed border-navy/40 bg-white"
+                onPointerDown={beginDrawing}
+                onPointerMove={draw}
+                onPointerUp={() => { drawing.current = false; }}
+                onPointerCancel={() => { drawing.current = false; }}
+              />
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button type="button" onClick={clearSignature} disabled={busy} className="btn btn-outline">
+                  Clear signature
+                </button>
+                <button type="button" onClick={sign} disabled={busy} className="btn btn-gold">
+                  {busy ? <Loader2 size={16} className="animate-spin" /> : <FileSignature size={16} />}
+                  {busy ? "Saving signature…" : "Sign and continue"}
+                </button>
+              </div>
+              <StepResultBanner result={result} />
+              {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
+            </div>
           </>
         ) : null}
       </div>
 
-      <WizardActions
-        backHref={prevOfferRoute("sanction-letter")}
-        continueLabel="I've read it — continue"
-        onContinue={submit}
-        loading={busy}
-        disabled={busy || !q.data}
-      />
+      <div className="mt-8">
+        <a href={prevOfferRoute("sanction-letter")} className="btn btn-outline btn-sm">Back</a>
+      </div>
       <Reassurance />
     </div>
   );

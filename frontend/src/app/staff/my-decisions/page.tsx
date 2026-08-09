@@ -82,7 +82,7 @@ export default function MyDecisionsPage() {
         </div>
       )}
 
-      <section className="rounded border border-line bg-white shadow-sm">
+      <section className="overflow-x-auto rounded border border-line bg-white shadow-sm">
         {q.error ? (
           <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
         ) : q.isLoading ? (

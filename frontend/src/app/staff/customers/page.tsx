@@ -148,7 +148,7 @@ function CustomersPageInner() {
           )}
         </div>
 
-        <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
+        <div className="overflow-x-auto rounded border border-line bg-white shadow-sm">
           {q.isLoading ? (
             <div className="h-40 animate-pulse rounded bg-grey-100" />
           ) : q.error ? (

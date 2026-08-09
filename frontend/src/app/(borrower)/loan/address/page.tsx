@@ -11,6 +11,7 @@ import { saveProfileSlice, useSavedProfile } from "@/lib/onboarding";
 import { useOffer, completeOfferStep, nextOfferRoute, prevOfferRoute } from "@/lib/offer";
 import { verificationApi, type StepResult } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
+import { needsManualAddressFallback } from "@/lib/borrower-flow";
 
 /**
  * Screen 7: geo address verification. Moved from `/signup/address`. The typed-address fallback still
@@ -47,9 +48,16 @@ export default function LoanAddressPage() {
     try {
       const r = await verificationApi.address(appId, { latitude, longitude });
       const resolved = typeof r.derived?.address === "string" ? (r.derived.address as string) : undefined;
+      if (needsManualAddressFallback(r)) {
+        setResult(r);
+        setMode("manual");
+        setError("We couldn't resolve your address from this location. Please enter it below.");
+        return;
+      }
       if (resolved) await saveProfileSlice(appId, { address: resolved });
       finish(r);
     } catch (err) {
+      setMode("manual");
       setError(formatApiError(err, "Could not verify your location."));
     } finally {
       setBusy(false);
@@ -118,11 +126,6 @@ export default function LoanAddressPage() {
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Navigation size={16} />}
               {busy ? "Getting your location…" : "Use my current location"}
             </button>
-            <div className="mt-4">
-              <button type="button" onClick={() => setMode("manual")} className="text-sm font-semibold text-navy hover:underline">
-                Enter address manually
-              </button>
-            </div>
           </div>
           <StepResultBanner result={result} />
           {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}

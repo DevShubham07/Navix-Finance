@@ -10,6 +10,7 @@ import { useLiveApplication, writeStoredAppId, routeForBlockedStart } from "@/li
 import { borrowerApi, paiseToINR, ApplicationApiError, type ApplicationView } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { ActiveLoanNotice } from "@/components/borrower/active-loan-notice";
+import { preferredApprovedAmountPaise } from "@/lib/borrower-flow";
 
 /**
  * Returning-borrower reborrow (live). A repeat borrower in good standing is pre-approved — one tap
@@ -90,7 +91,7 @@ export default function ReloanPage() {
     }
   };
 
-  const limitPaise = app?.eligibleLimitPaise ?? null;
+  const limitPaise = app ? preferredApprovedAmountPaise(app) : null;
 
   return (
     <div className="container max-w-content py-10">

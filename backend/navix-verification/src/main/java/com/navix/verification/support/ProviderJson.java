@@ -1,7 +1,9 @@
 package com.navix.verification.support;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.verification.exception.VerificationException;
+import java.util.List;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -20,6 +22,12 @@ import org.springframework.web.client.RestClientResponseException;
  */
 public final class ProviderJson {
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final List<String> CODE_FIELDS = List.of(
+            "error_code", "errorCode", "result_code", "resultCode", "code");
+    private static final List<String> DETAIL_FIELDS = List.of(
+            "message", "error_message", "errorMessage", "description", "detail");
+
     private ProviderJson() {
     }
 
@@ -34,8 +42,10 @@ public final class ProviderJson {
             node = client.post().uri(uri).body(body).retrieve().body(JsonNode.class);
         } catch (RestClientResponseException e) {
             // Do not log the body — it may carry PII; surface only the endpoint + status.
+            SafeDiagnostic diagnostic = safeDiagnostic(e.getResponseBodyAsString());
             throw new VerificationException(
-                    "HTTP " + e.getStatusCode().value() + " from " + uri, e);
+                    "HTTP " + e.getStatusCode().value() + " from " + uri, e,
+                    e.getStatusCode().value(), uri, diagnostic.code(), diagnostic.detail());
         }
         if (node == null) {
             throw new VerificationException("Empty response body from " + uri);
@@ -44,6 +54,49 @@ public final class ProviderJson {
             throw new VerificationException("Provider reported error for " + uri);
         }
         return node;
+    }
+
+    /** Keep only allowlisted provider error fields and redact identity values before logging. */
+    private static SafeDiagnostic safeDiagnostic(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return new SafeDiagnostic(null, null);
+        }
+        try {
+            JsonNode root = JSON.readTree(responseBody);
+            return new SafeDiagnostic(
+                    limit(firstValue(root, CODE_FIELDS), 80),
+                    limit(redact(firstValue(root, DETAIL_FIELDS)), 180));
+        } catch (Exception ignored) {
+            return new SafeDiagnostic(null, null);
+        }
+    }
+
+    private static String firstValue(JsonNode root, List<String> fields) {
+        for (String field : fields) {
+            String value = trimmed(root.findValue(field));
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String redact(String detail) {
+        if (detail == null) {
+            return null;
+        }
+        return detail
+                .replaceAll("(?i)\\b[A-Z]{5}[0-9]{4}[A-Z]\\b", "[REDACTED]")
+                .replaceAll("(?<![0-9])(?:\\+?91[- ]?)?[6-9][0-9]{9}(?![0-9])", "[REDACTED]")
+                .replaceAll("(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b", "[REDACTED]")
+                .replaceAll("(?<![0-9])[0-9]{12,18}(?![0-9])", "[REDACTED]");
+    }
+
+    private static String limit(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
+    }
+
+    private record SafeDiagnostic(String code, String detail) {
     }
 
     /** Null-safe text: missing/JSON-null &rarr; {@code null}; otherwise the node's text value. */

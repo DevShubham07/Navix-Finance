@@ -31,6 +31,7 @@ import {
 } from "@/lib/borrower-next-milestone";
 import { ReferralCard } from "@/components/borrower/referral-card";
 import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
+import { preferredApprovedAmountPaise } from "@/lib/borrower-flow";
 
 export default function DashboardPage() {
   const session = useBorrowerSession();
@@ -60,7 +61,8 @@ export default function DashboardPage() {
   }, [session.data, knownName, queryClient]);
   // There is no client-side limit formula any more — a Credit Executive sanctions the amount, and
   // it reaches the borrower on the application (revamp.md decision 33). Zero until they do.
-  const limitRupees = app?.eligibleLimitPaise != null ? Math.round(app.eligibleLimitPaise / 100) : 0;
+  const approvedPaise = app ? preferredApprovedAmountPaise(app) : null;
+  const limitRupees = approvedPaise != null ? Math.round(approvedPaise / 100) : 0;
 
   // "Repaid" is the sum of VERIFIED payments — not total − outstanding, since the (now penalty- and
   // prepayment-aware) outstanding can be below the on-time total without any payment being made.

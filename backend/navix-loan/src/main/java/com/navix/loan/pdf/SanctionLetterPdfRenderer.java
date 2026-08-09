@@ -4,6 +4,7 @@ import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
 import com.lowagie.text.Font;
+import com.lowagie.text.Image;
 import com.lowagie.text.PageSize;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.Phrase;
@@ -14,8 +15,11 @@ import com.lowagie.text.pdf.PdfWriter;
 import com.lowagie.text.pdf.draw.LineSeparator;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.text.NumberFormat;
 import java.time.LocalDate;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
@@ -55,6 +59,9 @@ public class SanctionLetterPdfRenderer {
 
     private static final NumberFormat IN = NumberFormat.getInstance(new Locale("en", "IN"));
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
+    private static final DateTimeFormatter SIGNED_TIME =
+            DateTimeFormatter.ofPattern("d MMM yyyy, h:mm:ss a 'IST'", Locale.ENGLISH);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     /** Everything the letter states. Assembled by the caller so this class stays free of repositories. */
     public record Facts(
@@ -78,6 +85,18 @@ public class SanctionLetterPdfRenderer {
     }
 
     public byte[] render(Facts f) {
+        return renderDocument(f, null, null, null);
+    }
+
+    /** Render the immutable signed copy with the borrower's actual signature and server timestamp. */
+    public byte[] renderSigned(Facts f, byte[] signaturePng, String signerName, Instant signedAt) {
+        if (signaturePng == null || signaturePng.length == 0 || signedAt == null) {
+            throw new IllegalArgumentException("Signature bytes and signing time are required");
+        }
+        return renderDocument(f, signaturePng, signerName, signedAt);
+    }
+
+    private byte[] renderDocument(Facts f, byte[] signaturePng, String signerName, Instant signedAt) {
         Document doc = new Document(PageSize.A4, 44, 44, 40, 40);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
@@ -134,6 +153,12 @@ public class SanctionLetterPdfRenderer {
                             + ". If your complaint is not resolved within 30 days you may escalate it to "
                             + "the RBI Ombudsman.", BODY));
 
+            if (signaturePng != null) {
+                doc.add(spaced(new Paragraph("Borrower signature", SECTION), 12, 3));
+                doc.add(signatureBlock(f.applicationId(), signaturePng,
+                        safe(signerName, f.borrowerName()), signedAt));
+            }
+
             doc.add(footerSpacer());
             doc.add(rule());
             Paragraph footer = new Paragraph(
@@ -145,9 +170,35 @@ public class SanctionLetterPdfRenderer {
 
             doc.close();
             return out.toByteArray();
-        } catch (DocumentException e) {
+        } catch (DocumentException | IOException e) {
             throw new IllegalStateException("Failed to render sanction-letter PDF", e);
         }
+    }
+
+    private PdfPTable signatureBlock(long applicationId, byte[] signaturePng,
+                                     String signerName, Instant signedAt) throws DocumentException, IOException {
+        PdfPTable table = new PdfPTable(2);
+        table.setWidthPercentage(100);
+        table.setWidths(new float[] {1.1f, 1.4f});
+
+        Image signature = Image.getInstance(signaturePng);
+        signature.scaleToFit(170, 55);
+        PdfPCell imageCell = new PdfPCell(signature, false);
+        imageCell.setBorder(Rectangle.BOX);
+        imageCell.setBorderColor(LINE);
+        imageCell.setPadding(8);
+        imageCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+        table.addCell(imageCell);
+
+        PdfPCell meta = new PdfPCell();
+        meta.setBorder(Rectangle.BOX);
+        meta.setBorderColor(LINE);
+        meta.setPadding(8);
+        meta.addElement(new Paragraph("Signed by " + safe(signerName, "Customer"), VALUE));
+        meta.addElement(new Paragraph("Signed at " + SIGNED_TIME.format(signedAt.atZone(IST)), BODY));
+        meta.addElement(new Paragraph("Application #" + applicationId, BODY));
+        table.addCell(meta);
+        return table;
     }
 
     private PdfPTable header() throws DocumentException {

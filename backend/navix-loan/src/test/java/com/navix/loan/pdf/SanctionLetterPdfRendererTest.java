@@ -3,7 +3,13 @@ package com.navix.loan.pdf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
+import java.awt.image.BufferedImage;
+import java.time.Instant;
 import java.time.LocalDate;
+import javax.imageio.ImageIO;
+import com.lowagie.text.pdf.PdfReader;
+import com.lowagie.text.pdf.parser.PdfTextExtractor;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,5 +48,29 @@ class SanctionLetterPdfRendererTest {
 
         assertThat(pdf).isNotEmpty();
         assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+    }
+
+    @Test
+    void signedAgreementContainsSignatureNameAndServerTimestamp() throws Exception {
+        SanctionLetterPdfRenderer.Facts f = new SanctionLetterPdfRenderer.Facts(
+                54L, "Asha Kumari", "AZKPQ3156X", "9811100948",
+                1_500_000L, 150_000L, 27_000L, 1_323_000L, 450_000L, 1_950_000L, 30,
+                LocalDate.of(2026, 8, 7), LocalDate.of(2026, 9, 6), "•••• 9012",
+                "Lalit Kumar", "9716760246", "grievance@dhanboost.com");
+        BufferedImage signature = new BufferedImage(180, 50, BufferedImage.TYPE_INT_ARGB);
+        signature.setRGB(20, 20, 0xff0c2540);
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(signature, "png", png);
+
+        byte[] pdf = renderer.renderSigned(f, png.toByteArray(), "Asha Kumari",
+                Instant.parse("2026-08-09T13:17:18Z"));
+
+        PdfReader reader = new PdfReader(pdf);
+        String text = new PdfTextExtractor(reader).getTextFromPage(1);
+        assertThat(text).contains("Borrower signature", "Signed by Asha Kumari",
+                "9 Aug 2026", "IST", "Application #54");
+        assertThat(reader.getPageN(1).getAsDict(com.lowagie.text.pdf.PdfName.RESOURCES)
+                .getAsDict(com.lowagie.text.pdf.PdfName.XOBJECT).size()).isGreaterThan(0);
+        reader.close();
     }
 }

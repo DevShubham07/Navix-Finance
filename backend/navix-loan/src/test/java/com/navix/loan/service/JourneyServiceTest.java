@@ -142,7 +142,8 @@ class JourneyServiceTest {
 
         assertThat(journey.current(APP).step()).isEqualTo("OFFER_AMOUNT");
         assertThat(journey.current(APP).route()).isEqualTo("/loan/amount");
-        assertThat(journey.current(APP).total()).isEqualTo(11);
+        assertThat(journey.current(APP).total()).isEqualTo(10);
+        assertThat(journey.current(APP).steps()).doesNotContain("OFFER_ESIGN");
     }
 
     @Test
@@ -190,6 +191,40 @@ class JourneyServiceTest {
 
         journey.advance(APP, "NOT_A_STEP"); // a stale client must not hard-fail
         assertThat(app.getJourneyStep()).isEqualTo("OFFER_SELFIE");
+    }
+
+    @Test
+    void aLegacyEsignPointerResumesOnTheAgreementPage() {
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setAmountRequested(1_500_000L);
+        app.setJourneyStep("OFFER_ESIGN");
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                check(ApplicationVerificationService.AADHAAR),
+                check(ApplicationVerificationService.SELFIE),
+                check(ApplicationVerificationService.ADDRESS)));
+        when(referenceRepository.findByApplicationIdOrderBySlotAsc(APP)).thenReturn(List.of(
+                new com.navix.loan.entity.ApplicationReference(),
+                new com.navix.loan.entity.ApplicationReference()));
+
+        assertThat(journey.current(APP).step()).isEqualTo("OFFER_SANCTION_LETTER");
+        assertThat(journey.current(APP).route()).isEqualTo("/loan/sanction-letter");
+    }
+
+    @Test
+    void aReapplyWithCarriedIdentityNeverOffersDigiLockerAgain() {
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setReappliedFrom(99L);
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                check(ApplicationVerificationService.AADHAAR),
+                check(ApplicationVerificationService.SELFIE),
+                check(ApplicationVerificationService.ADDRESS)));
+        when(referenceRepository.findByApplicationIdOrderBySlotAsc(APP)).thenReturn(List.of(
+                new com.navix.loan.entity.ApplicationReference(),
+                new com.navix.loan.entity.ApplicationReference()));
+
+        assertThat(journey.current(APP).steps())
+                .doesNotContain("OFFER_DIGILOCKER", "OFFER_SELFIE", "OFFER_ADDRESS", "OFFER_REFERENCES", "OFFER_ESIGN");
+        assertThat(journey.current(APP).total()).isEqualTo(6);
     }
 
     private static ApplicationVerification check(String type) {

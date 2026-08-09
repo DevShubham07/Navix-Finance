@@ -60,7 +60,7 @@ export default function AdminStaffPage() {
       ) : q.error ? (
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : (
-        <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
+        <div className="overflow-x-auto rounded border border-line bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
               <tr>

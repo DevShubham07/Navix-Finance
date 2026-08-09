@@ -11,11 +11,49 @@ package com.navix.verification.exception;
  */
 public class VerificationException extends RuntimeException {
 
+    private final Integer httpStatus;
+    private final String endpoint;
+    private final String providerCode;
+    private final String safeDetail;
+
     public VerificationException(String message) {
         super(message);
+        this.httpStatus = null;
+        this.endpoint = null;
+        this.providerCode = null;
+        this.safeDetail = null;
     }
 
     public VerificationException(String message, Throwable cause) {
         super(message, cause);
+        this.httpStatus = null;
+        this.endpoint = null;
+        this.providerCode = null;
+        this.safeDetail = null;
+    }
+
+    public VerificationException(String message, Throwable cause, Integer httpStatus,
+                                 String endpoint, String providerCode, String safeDetail) {
+        super(message, cause);
+        this.httpStatus = httpStatus;
+        this.endpoint = endpoint;
+        this.providerCode = providerCode;
+        this.safeDetail = safeDetail;
+    }
+
+    public Integer httpStatus() {
+        return httpStatus;
+    }
+
+    public String endpoint() {
+        return endpoint;
+    }
+
+    public String providerCode() {
+        return providerCode;
+    }
+
+    public String safeDetail() {
+        return safeDetail;
     }
 }

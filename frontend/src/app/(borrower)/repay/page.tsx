@@ -20,13 +20,9 @@ import {
 import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
 import { daysBetween } from "@/lib/calc/loan-math";
+import { addIsoCalendarDays } from "@/lib/borrower-flow";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const addDaysISO = (iso: string, days: number) => {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-};
 
 export default function RepayPage() {
   const mounted = useMounted();
@@ -68,7 +64,7 @@ export default function RepayPage() {
   // built-in 1-day grace). We read the outstanding *as of* each so the borrower sees the exact
   // amount for each choice. Grace day adds one normal-interest day but no late penalty.
   const dueISO = loanQuery.data?.dueDate ?? null;
-  const graceISO = dueISO ? addDaysISO(dueISO, 1) : null;
+  const graceISO = dueISO ? addIsoCalendarDays(dueISO, 1) : null;
   const outDueQuery = useQuery({
     queryKey: ["repay-out-due", loanId, dueISO],
     queryFn: () => borrowerApi.outstanding(loanId as number, dueISO as string),
