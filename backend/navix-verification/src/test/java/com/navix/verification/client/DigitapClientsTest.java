@@ -8,7 +8,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.navix.verification.dto.DigitapDtos.AddressResponse;
@@ -18,6 +18,9 @@ import com.navix.verification.dto.DigitapDtos.FaceMatchResponse;
 import com.navix.verification.dto.DigitapDtos.PanResponse;
 import com.navix.verification.exception.VerificationException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -201,14 +204,22 @@ class DigitapClientsTest {
     }
 
     @Test
-    void serverErrorBecomesVerificationException() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void panErrorLogsTemporaryRawRequestAndResponse(CapturedOutput output) {
         Bound b = bind();
         b.server().expect(requestTo(BASE + "/validation/kyc/v1/pan_details_plus"))
-                .andRespond(withServerError());
+                .andRespond(withBadRequest()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"result_code\":400,\"message\":\"PAN ABCPE1234Z rejected for ref-1\"}"));
 
         DigitapPanClient client = new DigitapPanClient(b.restClient());
-        assertThatThrownBy(() -> client.verify("BAD", "ref-1"))
+        assertThatThrownBy(() -> client.verify("ABCPE1234Z", "ref-1"))
                 .isInstanceOf(VerificationException.class);
+        assertThat(output).contains(
+                "TEMP_PII_DEBUG",
+                "provider=digitap-pan",
+                "requestPayload={\"client_ref_num\":\"ref-1\",\"pan\":\"ABCPE1234Z\"}",
+                "responsePayload={\"result_code\":400,\"message\":\"PAN ABCPE1234Z rejected for ref-1\"}");
         b.server().verify();
     }
 }

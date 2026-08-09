@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -21,6 +21,9 @@ import com.navix.verification.dto.SignzyDtos.PanResponse;
 import com.navix.verification.exception.VerificationException;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -291,14 +294,22 @@ class SignzyClientsTest {
     }
 
     @Test
-    void serverErrorBecomesVerificationException() {
+    @ExtendWith(OutputCaptureExtension.class)
+    void panErrorLogsTemporaryRawRequestAndResponse(CapturedOutput output) {
         Bound b = bind();
         b.server().expect(requestTo(BASE + "/api/v3/pan/compliance-206-individual-search"))
-                .andRespond(withServerError());
+                .andRespond(withBadRequest()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":{\"message\":\"PAN ABCPE1234Z is not entitled\"}}"));
 
         SignzyPanClient client = new SignzyPanClient(b.restClient());
-        assertThatThrownBy(() -> client.verify("BAD"))
+        assertThatThrownBy(() -> client.verify("ABCPE1234Z"))
                 .isInstanceOf(VerificationException.class);
+        assertThat(output).contains(
+                "TEMP_PII_DEBUG",
+                "provider=signzy-pan",
+                "requestPayload={\"panNumber\":\"ABCPE1234Z\",\"maskedName\":\"false\"}",
+                "responsePayload={\"error\":{\"message\":\"PAN ABCPE1234Z is not entitled\"}}");
         b.server().verify();
     }
 }

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.verification.exception.VerificationException;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -17,11 +19,12 @@ import org.springframework.web.client.RestClientResponseException;
  *       JSON strings.</li>
  * </ul>
  *
- * <p>Provider-neutral (formerly {@code FintrixJson}) and PII-safe: this layer never logs request or
- * response bodies.
+ * <p>Provider-neutral (formerly {@code FintrixJson}) and PII-safe by default. The explicitly named
+ * temporary PAN diagnostic method is the sole pre-go-live exception.
  */
 public final class ProviderJson {
 
+    private static final Logger log = LoggerFactory.getLogger(ProviderJson.class);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final List<String> CODE_FIELDS = List.of(
             "error_code", "errorCode", "result_code", "resultCode", "code");
@@ -37,10 +40,32 @@ public final class ProviderJson {
      * (non-2xx, null body, or an envelope whose {@code status} is {@code "error"}).
      */
     public static JsonNode post(RestClient client, String uri, Object body) {
+        return post(client, uri, body, null);
+    }
+
+    /**
+     * Temporary pre-go-live diagnostic transport for PAN providers. This deliberately logs the raw
+     * JSON request and raw provider error response, including PII, but never logs HTTP headers or
+     * credentials. Remove every {@code TEMP_PII_DEBUG} call before production go-live.
+     */
+    public static JsonNode postWithRawPanDiagnostics(
+            RestClient client, String uri, Object body, String provider) {
+        return post(client, uri, body, provider);
+    }
+
+    private static JsonNode post(RestClient client, String uri, Object body, String rawPanProvider) {
+        if (rawPanProvider != null) {
+            log.warn("TEMP_PII_DEBUG provider={} endpoint={} requestPayload={}",
+                    rawPanProvider, uri, rawJson(body));
+        }
         JsonNode node;
         try {
             node = client.post().uri(uri).body(body).retrieve().body(JsonNode.class);
         } catch (RestClientResponseException e) {
+            if (rawPanProvider != null) {
+                log.error("TEMP_PII_DEBUG provider={} endpoint={} httpStatus={} responsePayload={}",
+                        rawPanProvider, uri, e.getStatusCode().value(), e.getResponseBodyAsString());
+            }
             // Do not log the body — it may carry PII; surface only the endpoint + status.
             SafeDiagnostic diagnostic = safeDiagnostic(e.getResponseBodyAsString());
             throw new VerificationException(
@@ -48,12 +73,40 @@ public final class ProviderJson {
                     e.getStatusCode().value(), uri, diagnostic.code(), diagnostic.detail());
         }
         if (node == null) {
+            if (rawPanProvider != null) {
+                log.error("TEMP_PII_DEBUG provider={} endpoint={} responsePayload=<empty>",
+                        rawPanProvider, uri);
+            }
             throw new VerificationException("Empty response body from " + uri);
+        }
+        if (rawPanProvider != null && isPanProviderError(node)) {
+            log.error("TEMP_PII_DEBUG provider={} endpoint={} responsePayload={}",
+                    rawPanProvider, uri, node);
         }
         if ("error".equalsIgnoreCase(node.path("status").asText(""))) {
             throw new VerificationException("Provider reported error for " + uri);
         }
         return node;
+    }
+
+    private static boolean isPanProviderError(JsonNode node) {
+        String status = node.path("status").asText("");
+        if ("error".equalsIgnoreCase(status)
+                || "failed".equalsIgnoreCase(status)
+                || "failure".equalsIgnoreCase(status)
+                || node.hasNonNull("error")) {
+            return true;
+        }
+        Integer resultCode = integer(node.path("result_code"));
+        return resultCode != null && resultCode != 101;
+    }
+
+    private static String rawJson(Object value) {
+        try {
+            return JSON.writeValueAsString(value);
+        } catch (Exception serializationFailure) {
+            return String.valueOf(value);
+        }
     }
 
     /** Keep only allowlisted provider error fields and redact identity values before logging. */
