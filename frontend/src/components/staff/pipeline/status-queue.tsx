@@ -192,11 +192,17 @@ export function QueuePanel({
           Nothing in the <code className="text-xs">{countBadge}</code> queue.
         </p>
       ) : (
+        <>
+        <div className="hidden grid-cols-[minmax(18rem,1fr)_minmax(26rem,auto)] gap-4 border-b border-line bg-grey-50 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-muted lg:grid">
+          <span>Application &amp; customer</span>
+          <span>Actions</span>
+        </div>
         <ul className="divide-y divide-line">
           {apps.map((app) => (
             <AppRow key={app.id} app={app} actions={actions} withLoanHistory={withLoanHistory} />
           ))}
         </ul>
+        </>
       )}
     </section>
   );

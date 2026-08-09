@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, AlertTriangle, Clock, X } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Clock, UserRound, X } from "lucide-react";
 import { staffApi, paiseToINR, type PaymentView } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
+import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 
 /**
  * Accountant maker-checker queue for repayments. Borrowers record manual UPI/bank
@@ -14,6 +15,7 @@ import { formatDate } from "@/lib/utils";
  * at zero. Mirrors the "Accountant confirms manually" product rule.
  */
 export function RepaymentVerifyQueue() {
+  const [openCustomerId, setOpenCustomerId] = React.useState<number | null>(null);
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["staff-pending-repayments"],
@@ -60,6 +62,7 @@ export function RepaymentVerifyQueue() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+                <th className="py-2 pr-3 font-semibold">Customer</th>
                 <th className="py-2 pr-3 font-semibold">Loan</th>
                 <th className="py-2 pr-3 font-semibold">Amount</th>
                 <th className="py-2 pr-3 font-semibold">Method</th>
@@ -71,6 +74,14 @@ export function RepaymentVerifyQueue() {
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id} className="border-b border-line/60">
+                  <td className="py-2.5 pr-3">
+                    {p.customerId != null ? (
+                      <button type="button" onClick={() => setOpenCustomerId(p.customerId ?? null)} className="text-left hover:underline" title="Open full customer details">
+                        <span className="block font-semibold text-ink">{p.customerName || `Customer #${p.customerId}`}</span>
+                        <span className="block text-xs text-muted">Customer #{p.customerId}</span>
+                      </button>
+                    ) : <span className="text-muted">Customer details unavailable</span>}
+                  </td>
                   <td className="py-2.5 pr-3 font-semibold text-ink">#{p.loanId}</td>
                   <td className="py-2.5 pr-3">
                     {paiseToINR(p.amountPaise)}
@@ -83,6 +94,11 @@ export function RepaymentVerifyQueue() {
                   <td className="py-2.5 pr-3 text-muted">{p.paidOn ? formatDate(p.paidOn) : "—"}</td>
                   <td className="py-2.5 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      {p.customerId != null && (
+                        <button type="button" onClick={() => setOpenCustomerId(p.customerId ?? null)} className="btn btn-sm btn-outline" title="Open full customer details">
+                          <UserRound size={15} /> Customer
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => verify.mutate(p)}
@@ -114,6 +130,7 @@ export function RepaymentVerifyQueue() {
         <Clock size={13} /> Verifying confirms the transfer landed; it reduces the borrower&apos;s balance and
         closes the loan at zero. Reject if the proof doesn&apos;t match — the balance is left unchanged.
       </p>
+      <CustomerDetailDialog customerId={openCustomerId} onClose={() => setOpenCustomerId(null)} />
     </section>
   );
 }

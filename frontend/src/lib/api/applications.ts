@@ -222,6 +222,9 @@ export interface PaymentView {
   proofUrl: string | null;
   paidOn: string | null;
   partial: boolean;
+  /** Staff-only context populated by the accountant's pending-verification queue. */
+  customerId?: number | null;
+  customerName?: string | null;
 }
 
 export type TransactionType = "DISBURSAL" | "REPAYMENT";

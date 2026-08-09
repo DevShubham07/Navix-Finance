@@ -86,7 +86,7 @@ public class CustomerService {
 
     /**
      * All customers (distinct customers), optionally filtered by {@code q} matching the name
-     * (case-insensitive contains) or the customer id. Ordered by customer id.
+     * (case-insensitive contains), PAN, mobile, or the customer id. Ordered by customer id.
      */
     @Transactional(readOnly = true)
     public List<CustomerSummary> list(String q) {
@@ -519,6 +519,12 @@ public class CustomerService {
             return true;
         }
         if (cs.name() != null && cs.name().toLowerCase().contains(needle)) {
+            return true;
+        }
+        if (cs.pan() != null && cs.pan().toLowerCase().contains(needle)) {
+            return true;
+        }
+        if (cs.mobile() != null && cs.mobile().contains(needle)) {
             return true;
         }
         return String.valueOf(cs.customerId()).contains(needle);

@@ -38,24 +38,29 @@ export function TermsModal({
       className="!max-w-3xl !w-[min(52rem,94vw)]"
     >
       <div className="border-b border-line pb-3">
-        <h3 className="font-serif text-lg text-navy">Terms &amp; Conditions</h3>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-dark">DhanBoost borrower agreement</p>
+        <h3 className="font-serif text-xl text-navy">Terms &amp; Conditions</h3>
+        <p className="mt-1 text-sm text-muted">Review the agreement before recording your consent.</p>
       </div>
 
-      <div className="mt-3 max-h-[70vh] overflow-y-auto pr-1 text-left">
+      <div className="mt-3 max-h-[60vh] overflow-y-auto rounded-lg border border-line bg-ivory/40 p-4 pr-3 text-left">
         {text === null ? (
           <p className="py-8 text-center text-sm text-muted">Loading…</p>
         ) : (
-          <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-ink">{text}</pre>
+          <pre className="whitespace-pre-wrap font-sans text-[13px] leading-7 text-ink">{text}</pre>
         )}
       </div>
 
-      <div className="mt-5 flex justify-end gap-2 border-t border-line pt-4">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+        <span className="text-xs text-muted">Version: terms-and-conditions@1</span>
+        <div className="flex gap-2">
         <button type="button" className="btn btn-outline" onClick={onDecline}>
           Decline
         </button>
         <button type="button" className="btn btn-gold" onClick={onAgree} disabled={text === null}>
           Agree
         </button>
+        </div>
       </div>
     </Dialog>
   );

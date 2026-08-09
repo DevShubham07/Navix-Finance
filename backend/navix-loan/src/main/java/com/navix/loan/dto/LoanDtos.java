@@ -69,11 +69,19 @@ public final class LoanDtos {
             String txnRef,
             String proofUrl,
             LocalDate paidOn,
-            boolean partial) {
+            boolean partial,
+            Long customerId,
+            String customerName) {
 
         public static PaymentView of(Payment p) {
             return new PaymentView(p.getId(), p.getLoanId(), p.getAmount(), p.getMethod(), p.getStatus(),
-                    p.getTxnRef(), p.getProofUrl(), p.getPaidOn(), p.isPartial());
+                    p.getTxnRef(), p.getProofUrl(), p.getPaidOn(), p.isPartial(), null, null);
+        }
+
+        /** Staff queue variant: associates a repayment with the borrower without exposing it to borrower APIs. */
+        public static PaymentView of(Payment p, Long customerId, String customerName) {
+            return new PaymentView(p.getId(), p.getLoanId(), p.getAmount(), p.getMethod(), p.getStatus(),
+                    p.getTxnRef(), p.getProofUrl(), p.getPaidOn(), p.isPartial(), customerId, customerName);
         }
     }
 

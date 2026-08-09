@@ -22,7 +22,7 @@ import {
 
 /**
  * Customers — a borrower-centric roll-up across the loan aggregate. Segment chips filter
- * client-side (?seg=); search matches name or customer id (server-side).
+ * client-side (?seg=); search matches name, PAN, mobile or customer id (server-side).
  */
 export default function CustomersPage() {
   return (
@@ -56,7 +56,7 @@ function CustomersPageInner() {
     queryFn: () => customersApi.list(debounced || undefined),
   });
 
-  const rows = q.data ?? [];
+  const rows = React.useMemo(() => q.data ?? [], [q.data]);
   const scoped = React.useMemo(() => {
     let list = rows;
     if (mine && me?.id != null) {
@@ -136,7 +136,7 @@ function CustomersPageInner() {
             aria-label="Search customers"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or customer ID"
+            placeholder="Name, PAN, mobile or customer ID"
             leftIcon={<Search size={15} />}
             className="!mb-0"
             inputClassName="w-72"

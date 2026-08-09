@@ -12,6 +12,8 @@ import com.navix.loan.service.RepaymentService;
 import com.navix.loan.service.TransactionService;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,7 +50,16 @@ public class LoanController {
      */
     @GetMapping("/pending-repayments")
     public ApiResponse<List<PaymentView>> pendingRepayments() {
-        return ApiResponse.ok(repaymentService.listPending().stream().map(PaymentView::of).toList());
+        // Reuse the staff-only ledger's loan → customer enrichment so the verifier can identify the
+        // borrower before accepting a transfer. Borrower repayment endpoints still use PaymentView.of(payment).
+        Map<String, TransactionView> byPaymentId = transactionService.listTransactions(null, "INCOMING").stream()
+                .collect(Collectors.toMap(TransactionView::id, t -> t, (a, b) -> a));
+        return ApiResponse.ok(repaymentService.listPending().stream().map(payment -> {
+            TransactionView transaction = byPaymentId.get("P-" + payment.getId());
+            return PaymentView.of(payment,
+                    transaction != null ? transaction.customerId() : null,
+                    transaction != null ? transaction.borrowerName() : null);
+        }).toList());
     }
 
     /**

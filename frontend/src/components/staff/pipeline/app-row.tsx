@@ -50,7 +50,7 @@ export function AppRow({
   const [showDetail, setShowDetail] = React.useState(false);
   return (
     <li className="px-5 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="grid gap-3 lg:grid-cols-[minmax(18rem,1fr)_minmax(26rem,auto)] lg:items-center">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <span className="font-serif text-base font-semibold text-navy">Application #{app.id}</span>
@@ -64,6 +64,11 @@ export function AppRow({
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">{statusLabel(app.status)}</span>
+            {app.markedPendingAt && (
+              <span className="rounded-full bg-warning-100 px-2 py-0.5 font-semibold text-warning-700" title={app.pendingReason || "Pending review"}>
+                Pending review
+              </span>
+            )}
             {/* The aggregate stays ACTIVE for the whole repayment window, so an "Active" pill on a
                 90-days-late loan reads as a contradiction — flag the loan-level truth beside it. */}
             {dpdDays(app) > 0 && (
@@ -91,7 +96,7 @@ export function AppRow({
             />
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowDetail(true)}
             className="btn btn-sm btn-outline"

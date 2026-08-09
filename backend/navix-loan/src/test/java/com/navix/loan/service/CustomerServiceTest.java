@@ -107,15 +107,19 @@ class CustomerServiceTest {
     }
 
     @Test
-    void listFiltersByNameOrCustomerId() {
+    void listFiltersByNamePanMobileOrCustomerId() {
         when(applicationRepository.findAll()).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.ACTIVE),
                 app(2, 9000002L, ApplicationStatus.ACTIVE)));
-        lenient().when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(profile(1, "Asha Rao", "AAAAA1111A")));
+        CustomerProfile asha = profile(1, "Asha Rao", "AAAAA1111A");
+        asha.setMobile("9876543210");
+        lenient().when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(asha));
         lenient().when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(profile(2, "Bhavya Reddy", "BBBBB2222B")));
         lenient().when(loanRepository.findByCustomerId(any())).thenReturn(List.of());
 
         assertThat(service.list("asha")).extracting(CustomerSummary::customerId).containsExactly(9000001L);
+        assertThat(service.list("aaaaa1111a")).extracting(CustomerSummary::customerId).containsExactly(9000001L);
+        assertThat(service.list("9876543210")).extracting(CustomerSummary::customerId).containsExactly(9000001L);
         assertThat(service.list("9000002")).extracting(CustomerSummary::customerId).containsExactly(9000002L);
         assertThat(service.list("")).hasSize(2);
     }
