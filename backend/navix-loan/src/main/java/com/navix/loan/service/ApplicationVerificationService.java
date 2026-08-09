@@ -739,7 +739,7 @@ public class ApplicationVerificationService {
         }
         // Build the staff credit brief (1–5★ rating + one-page PDF → S3 + CREDIT_BRIEF document) from
         // the parsed report. Best-effort and self-saving; no-op on a thin-file (facts == null).
-        creditBriefService.generate(appId, profile, r.facts());
+        creditBriefService.generate(appId, profile, r.facts(), r.rawResponseJson());
         profileRepo.save(profile);
 
         // Staff CRM derived: aggregates + noRecord (score stays on row.score / profile — not here for borrower summary).
@@ -751,7 +751,7 @@ public class ApplicationVerificationService {
         derived.put("source", r.source());
         ApplicationVerification row = upsert(appId, BUREAU, PASS, r.source(), r.txnId(), ref,
                 null, bureauScore != null ? bureauScore.longValue() : null, null, derived,
-                r.noRecord() ? "Thin-file (no bureau record)" : "Bureau pulled");
+                r.noRecord() ? "Thin-file (no bureau record)" : "Bureau pulled", r.rawResponseJson());
         return new StepResult(BUREAU, PASS, row.getMessage(), Map.of());
     }
 
@@ -1564,6 +1564,14 @@ public class ApplicationVerificationService {
     private ApplicationVerification upsert(Long appId, String checkType, String status, String provider,
                                            String txnId, String ref, Double nameMatch, Long score,
                                            String s3Key, Map<String, Object> derived, String message) {
+        return upsert(appId, checkType, status, provider, txnId, ref, nameMatch, score,
+                s3Key, derived, message, null);
+    }
+
+    private ApplicationVerification upsert(Long appId, String checkType, String status, String provider,
+                                           String txnId, String ref, Double nameMatch, Long score,
+                                           String s3Key, Map<String, Object> derived, String message,
+                                           String providerRawResponse) {
         ApplicationVerification row = verificationRepo.findByApplicationIdAndCheckType(appId, checkType)
                 .orElseGet(ApplicationVerification::new);
         row.setApplicationId(appId);
@@ -1587,9 +1595,20 @@ public class ApplicationVerificationService {
         if (derived != null) {
             raw.put("fields", derived);
         }
-        row.setRawResponse(toJson(raw));
+        row.setRawResponse(validJsonOrFallback(providerRawResponse, raw));
         row.setMessage(message);
         return verificationRepo.save(row);
+    }
+
+    private String validJsonOrFallback(String providerRawResponse, Map<String, Object> fallback) {
+        if (providerRawResponse != null && !providerRawResponse.isBlank()) {
+            try {
+                return objectMapper.readTree(providerRawResponse).toString();
+            } catch (Exception malformedProviderPayload) {
+                log.warn("Ignoring malformed provider response JSON while persisting verification snapshot");
+            }
+        }
+        return toJson(fallback);
     }
 
     /**

@@ -422,7 +422,7 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
     <div className="space-y-4">
       {latestAppId != null && <CreditProfileCard applicationId={latestAppId} />}
       <Section title="Credit headline">
-        <KV k="CIBIL score" v={p?.creditScore != null ? String(p.creditScore) : null} mono />
+        <KV k="Bureau score" v={p?.creditScore != null ? String(p.creditScore) : null} mono />
         <KV k="Star rating" v={p?.starRating != null ? `${p.starRating.toFixed(1)}★` : null} />
         <KV k="Recommendation" v={p?.recommendation} />
         <KV k="Risk category" v={p?.riskCategory} />

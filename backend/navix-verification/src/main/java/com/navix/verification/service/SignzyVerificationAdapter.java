@@ -94,14 +94,14 @@ public class SignzyVerificationAdapter implements VerificationPort {
                         f != null ? f.activeAccounts() : null,
                         f != null ? f.defaults() : null,
                         f != null && f.totalBalanceRupees() != null ? f.totalBalanceRupees().doubleValue() : null,
-                        f);
+                        f, e.rawResponseJson());
             }
         } catch (VerificationException experianMiss) {
             // fall through to CRIF
         }
         SignzyDtos.CrifResponse c = crifClient.pull(pan, name, mobile, dob);
         return new BureauCheck(c.txnId(), "SIGNZY_CRIF", c.score(), c.score() == null,
-                null, null, null, null);
+                null, null, null, null, c.rawResponseJson());
     }
 
     @Override

@@ -61,7 +61,8 @@ public final class DigitapDtos {
             String txnId,
             Integer creditScore,
             Boolean noRecord,
-            BureauReportFacts facts
+            BureauReportFacts facts,
+            String rawResponseJson
     ) {
     }
 

@@ -152,6 +152,76 @@ class DigitapClientsTest {
         assertThat(r.noRecord()).isFalse();
         assertThat(r.facts()).isNotNull();
         assertThat(r.facts().activeAccounts()).isEqualTo(2);
+        assertThat(r.rawResponseJson()).contains(
+                "\"request_id\":\"REQ-CR-1\"",
+                "\"INProfileResponse\"",
+                "\"BureauScore\":\"800\"");
+        b.server().verify();
+    }
+
+    @Test
+    void creditPreservesEveryProviderFieldIncludingTradelinesAndEnquiries() throws Exception {
+        Bound b = bind();
+        stub(b.server(), "/credit_analytics/request", """
+                {"http_response_code":200,"result_code":101,"request_id":"REQ-FULL-1","message":"success",
+                "result":{"result_json":{"INProfileResponse":{
+                  "Header":{"SystemCode":"0","ReportDate":"20260809"},
+                  "Current_Application":{"Current_Application_Details":{
+                    "Current_Applicant_Details":{"Date_Of_Birth_Applicant":"20020902"},
+                    "Current_Other_Details":{"Income":"85000"},
+                    "Current_Applicant_Address_Details":[{"City":"Meerut","PINCode":"122002"}]
+                  }},
+                  "CAIS_Account":{"CAIS_Summary":{"Credit_Account":{"CreditAccountTotal":"11"},
+                    "Total_Outstanding_Balance":{"Outstanding_Balance_All":"805314"}},
+                    "CAIS_Account_DETAILS":[{
+                    "Subscriber_Name":"TEST BANK","Account_Number":"XXXX1234",
+                    "Payment_History_Profile":"000000",
+                    "CAIS_Account_History":[{"Year":"2026","Month":"07","Days_Past_Due":"0"}]
+                  }]},
+                  "CAPS":{"CAPS_Application_Details":[{"Subscriber_Name":"LENDER","Amount_Financed":"10000"}]},
+                  "TotalCAPS_Summary":{"TotalCAPSLast7Days":"1","TotalCAPSLast90Days":"3"},
+                  "SCORE":{"BureauScore":"800","BureauScoreConfidLevel":"H"}
+                }}}}
+                """);
+
+        CreditResponse r = new DigitapCreditClient(b.restClient(), "3.109.169.131")
+                .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "full-ref");
+
+        var raw = new com.fasterxml.jackson.databind.ObjectMapper().readTree(r.rawResponseJson());
+        var report = raw.path("result").path("result_json").path("INProfileResponse");
+        assertThat(report.path("Current_Application").path("Current_Application_Details")
+                .path("Current_Other_Details").path("Income").asText()).isEqualTo("85000");
+        assertThat(report.path("CAIS_Account").path("CAIS_Account_DETAILS").path(0)
+                .path("Payment_History_Profile").asText()).isEqualTo("000000");
+        assertThat(report.path("CAIS_Account").path("CAIS_Account_DETAILS").path(0)
+                .path("CAIS_Account_History").path(0).path("Days_Past_Due").asText()).isEqualTo("0");
+        assertThat(report.path("CAPS").path("CAPS_Application_Details").path(0)
+                .path("Amount_Financed").asText()).isEqualTo("10000");
+        assertThat(report.path("SCORE").path("BureauScoreConfidLevel").asText()).isEqualTo("H");
+        assertThat(r.facts().dob()).isEqualTo("2002-09-02");
+        assertThat(r.facts().city()).isEqualTo("Meerut");
+        assertThat(r.facts().pin()).isEqualTo("122002");
+        b.server().verify();
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void creditSuccessLogsCompleteTemporaryRawResponse(CapturedOutput output) {
+        Bound b = bind();
+        stub(b.server(), "/credit_analytics/request", """
+                {"http_response_code":200,"result_code":101,"request_id":"REQ-LOG-1","result":{
+                "result_json":{"INProfileResponse":{"SCORE":{"BureauScore":"812"},
+                "CAIS_Account":{"CAIS_Account_DETAILS":[{"Account_Number":"XXXX4321"}]}}}}}
+                """);
+
+        new DigitapCreditClient(b.restClient(), "3.109.169.131")
+                .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "log-ref");
+
+        assertThat(output).contains(
+                "TEMP_PII_DEBUG",
+                "provider=digitap-credit",
+                "responsePayload={\"http_response_code\":200",
+                "\"CAIS_Account_DETAILS\":[{\"Account_Number\":\"XXXX4321\"}]");
         b.server().verify();
     }
 

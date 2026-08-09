@@ -17,7 +17,8 @@ import org.hibernate.type.SqlTypes;
  * already PASSed is not re-called.
  *
  * <p>{@code rawResponse}/{@code derived} are {@code jsonb} (mapped natively on
- * Hibernate 6). PII is minimised before persisting raw provider envelopes.
+ * Hibernate 6). Bureau rows retain the complete provider response for the staff-only underwriting
+ * report; other verification types retain a minimized audit snapshot.
  */
 @Entity
 @Table(name = "application_verification")

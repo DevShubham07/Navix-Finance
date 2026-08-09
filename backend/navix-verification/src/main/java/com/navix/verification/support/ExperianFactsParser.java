@@ -42,7 +42,10 @@ public final class ExperianFactsParser {
         }
         JsonNode appDetails = report.path("Current_Application").path("Current_Application_Details");
         JsonNode customer = appDetails.path("Current_Applicant_Details");
-        JsonNode addr = appDetails.path("Current_Applicant_Address_Details");
+        JsonNode addressNode = appDetails.path("Current_Applicant_Address_Details");
+        // Experian/Digitap have returned both shapes in production: an address object and a
+        // one-or-more-address array. Read the first array item while preserving object responses.
+        JsonNode addr = addressNode.isArray() ? addressNode.path(0) : addressNode;
         JsonNode summary = report.path("CAIS_Account").path("CAIS_Summary");
         JsonNode creditAcct = summary.path("Credit_Account");
         JsonNode bal = summary.path("Total_Outstanding_Balance");

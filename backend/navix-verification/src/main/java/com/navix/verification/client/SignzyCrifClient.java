@@ -38,7 +38,7 @@ public class SignzyCrifClient {
                 .path("INDV-REPORT-FILE").path("INDV-REPORTS")
                 .path(0).path("INDV-REPORT");
         Integer score = integer(indvReport.path("SCORES").path(0).path("SCORE-VALUE"));
-        return new CrifResponse(null, score, score == null);
+        return new CrifResponse(null, score, score == null, root.toString());
     }
 
     private static String[] splitName(String name) {

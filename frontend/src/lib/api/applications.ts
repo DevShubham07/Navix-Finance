@@ -13,6 +13,7 @@
  */
 
 import { daysBetween } from "@/lib/calc/loan-math";
+import type { JsonValue } from "@/lib/credit/provider-report";
 
 // ---------------------------------------------------------------------------
 // Domain types (mirror the backend exactly)
@@ -471,6 +472,8 @@ export interface CreditBriefView {
   /** The stored CREDIT_BRIEF document id — fetch its presigned URL via staffApi.documentUrl. */
   documentId: number | null;
   facts: CreditBriefFacts | null;
+  /** Exact staff-only provider response, including every nested bureau field and tradeline. */
+  providerResponse: JsonValue | null;
 }
 
 /** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */

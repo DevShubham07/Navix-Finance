@@ -69,7 +69,7 @@ public class DigitapVerificationAdapter implements VerificationPort {
                 f != null ? f.activeAccounts() : null,
                 f != null ? f.defaults() : null,
                 f != null && f.totalBalanceRupees() != null ? f.totalBalanceRupees().doubleValue() : null,
-                f);
+                f, r.rawResponseJson());
     }
 
     @Override

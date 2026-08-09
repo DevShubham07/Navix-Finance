@@ -64,7 +64,7 @@ public class DigitapCreditClient {
         boolean noRecord = score == null || (resultCode != null && resultCode == 103);
         BureauReportFacts facts = ExperianFactsParser.parse(report, score, name, pan, mobile);
         String txnId = text(root.path("request_id"));
-        return new CreditResponse(txnId, score, noRecord, facts);
+        return new CreditResponse(txnId, score, noRecord, facts, root.toString());
     }
 
     private static String[] splitName(String name) {

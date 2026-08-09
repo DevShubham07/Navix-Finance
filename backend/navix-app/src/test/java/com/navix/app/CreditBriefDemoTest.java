@@ -72,7 +72,8 @@ class CreditBriefDemoTest {
         Files.writeString(txt.toPath(), report);
 
         byte[] pdf = new CreditBriefPdfRenderer()
-                .render(123L, 45L, "EXPERIAN", f, rating, LocalDate.of(2026, 6, 28));
+                .render(123L, 45L, "EXPERIAN", f, rating, LocalDate.of(2026, 6, 28),
+                        r.rawResponseJson());
         File pdfFile = new File(outDir, "credit-brief-sample.pdf");
         Files.write(pdfFile.toPath(), pdf);
 

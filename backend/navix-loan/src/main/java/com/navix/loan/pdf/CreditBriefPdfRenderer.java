@@ -1,5 +1,7 @@
 package com.navix.loan.pdf;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
@@ -20,7 +22,11 @@ import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.text.NumberFormat;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 /**
@@ -51,12 +57,23 @@ public class CreditBriefPdfRenderer {
     private static final Font VALUE = new Font(Font.HELVETICA, 9.5f, Font.BOLD, new Color(33, 43, 54));
     private static final Font BODY = new Font(Font.HELVETICA, 10, Font.NORMAL, new Color(33, 43, 54));
     private static final Font FOOTER = new Font(Font.HELVETICA, 8, Font.ITALIC, GREY);
+    private static final Font REPORT_HEADER = new Font(Font.HELVETICA, 7.5f, Font.BOLD, Color.WHITE);
+    private static final Font REPORT_PATH = new Font(Font.HELVETICA, 6.5f, Font.NORMAL, GREY);
+    private static final Font REPORT_VALUE = new Font(Font.HELVETICA, 7f, Font.NORMAL, new Color(33, 43, 54));
 
     private static final NumberFormat IN = NumberFormat.getInstance(new Locale("en", "IN"));
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /** Render the brief. {@code generatedOn} is supplied by the caller (keeps the renderer pure). */
     public byte[] render(long applicationId, Long customerId, String bureauSource,
                          BureauReportFacts f, Rating rating, LocalDate generatedOn) {
+        return render(applicationId, customerId, bureauSource, f, rating, generatedOn, null);
+    }
+
+    /** Render the summary followed by every scalar field in the exact provider response. */
+    public byte[] render(long applicationId, Long customerId, String bureauSource,
+                         BureauReportFacts f, Rating rating, LocalDate generatedOn,
+                         String rawResponseJson) {
         Document doc = new Document(PageSize.A4, 42, 42, 40, 40);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
@@ -81,6 +98,15 @@ public class CreditBriefPdfRenderer {
             doc.add(spaced(new Paragraph("Underwriter Summary", SECTION), 8, 2));
             doc.add(new Paragraph(pdfSafe(rating.summary()), BODY));
 
+            PdfPTable providerReport = providerReportTable(rawResponseJson);
+            if (providerReport != null) {
+                doc.add(spaced(new Paragraph("Complete Provider Response", SECTION), 12, 3));
+                doc.add(new Paragraph(
+                        "Every field received from the bureau provider is listed below. Array positions are one-based.",
+                        META));
+                doc.add(providerReport);
+            }
+
             doc.add(footerSpacer());
             doc.add(rule());
             Paragraph footer = new Paragraph(
@@ -94,6 +120,103 @@ public class CreditBriefPdfRenderer {
         } catch (DocumentException e) {
             throw new IllegalStateException("Failed to render credit-brief PDF", e);
         }
+    }
+
+    private PdfPTable providerReportTable(String rawResponseJson) throws DocumentException {
+        if (rawResponseJson == null || rawResponseJson.isBlank()) {
+            return null;
+        }
+        JsonNode root;
+        try {
+            root = JSON.readTree(rawResponseJson);
+        } catch (Exception invalidJson) {
+            throw new IllegalArgumentException("Invalid provider response JSON", invalidJson);
+        }
+        List<ReportField> fields = new ArrayList<>();
+        flatten(root, "", fields);
+
+        PdfPTable table = new PdfPTable(2);
+        table.setWidthPercentage(100);
+        table.setWidths(new float[] {2.2f, 1.8f});
+        table.setSpacingBefore(5f);
+        table.setSplitLate(false);
+        table.setHeaderRows(1);
+        table.addCell(reportHeader("Provider field path"));
+        table.addCell(reportHeader("Provider value"));
+        for (ReportField field : fields) {
+            table.addCell(reportCell(field.path(), REPORT_PATH));
+            table.addCell(reportCell(field.value(), REPORT_VALUE));
+        }
+        return table;
+    }
+
+    private static void flatten(JsonNode node, String path, List<ReportField> out) {
+        if (node == null || node.isNull()) {
+            out.add(new ReportField(nonBlankPath(path), "null"));
+            return;
+        }
+        if (node.isObject()) {
+            if (node.isEmpty()) {
+                out.add(new ReportField(nonBlankPath(path), "{}"));
+                return;
+            }
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                flatten(field.getValue(), appendPath(path, humanize(field.getKey())), out);
+            }
+            return;
+        }
+        if (node.isArray()) {
+            if (node.isEmpty()) {
+                out.add(new ReportField(nonBlankPath(path), "[]"));
+                return;
+            }
+            for (int i = 0; i < node.size(); i++) {
+                flatten(node.get(i), nonBlankPath(path) + " [" + (i + 1) + "]", out);
+            }
+            return;
+        }
+        String value = node.isTextual() && node.asText().isEmpty() ? "\"\"" : node.asText();
+        out.add(new ReportField(nonBlankPath(path), pdfSafe(value)));
+    }
+
+    private static String appendPath(String path, String part) {
+        return path == null || path.isBlank() ? part : path + " > " + part;
+    }
+
+    private static String nonBlankPath(String path) {
+        return path == null || path.isBlank() ? "Response" : path;
+    }
+
+    private static String humanize(String key) {
+        String spaced = key.replace('_', ' ').replace('-', ' ')
+                .replaceAll("([a-z0-9])([A-Z])", "$1 $2")
+                .replaceAll("\\s+", " ").trim();
+        StringBuilder result = new StringBuilder(spaced.length());
+        for (String part : spaced.split(" ")) {
+            if (part.isEmpty()) continue;
+            if (result.length() > 0) result.append(' ');
+            result.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return result.toString();
+    }
+
+    private static PdfPCell reportHeader(String text) {
+        PdfPCell cell = new PdfPCell(new Phrase(text, REPORT_HEADER));
+        cell.setBackgroundColor(NAVY);
+        cell.setPadding(5f);
+        return cell;
+    }
+
+    private static PdfPCell reportCell(String text, Font font) {
+        PdfPCell cell = new PdfPCell(new Phrase(pdfSafe(text), font));
+        cell.setBorderColor(LINE);
+        cell.setPadding(4f);
+        return cell;
+    }
+
+    private record ReportField(String path, String value) {
     }
 
     private PdfPTable headerTable() throws DocumentException {

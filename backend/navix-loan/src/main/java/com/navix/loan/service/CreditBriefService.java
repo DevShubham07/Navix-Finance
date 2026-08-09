@@ -1,6 +1,7 @@
 package com.navix.loan.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
@@ -10,6 +11,7 @@ import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.pdf.CreditBriefPdfRenderer;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
+import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.service.CreditRatingCalculator.Rating;
 import java.math.BigDecimal;
@@ -46,6 +48,7 @@ public class CreditBriefService {
     private final ApplicationDocumentRepository documentRepo;
     private final CustomerProfileRepository profileRepo;
     private final LoanApplicationRepository applicationRepo;
+    private final ApplicationVerificationRepository verificationRepo;
     private final ObjectMapper objectMapper;
 
     /**
@@ -54,6 +57,12 @@ public class CreditBriefService {
      */
     @Transactional
     public void generate(Long appId, CustomerProfile profile, BureauReportFacts facts) {
+        generate(appId, profile, facts, null);
+    }
+
+    /** Generate the summarized brief while retaining the complete provider response for its appendix. */
+    @Transactional
+    public void generate(Long appId, CustomerProfile profile, BureauReportFacts facts, String rawResponseJson) {
         if (profile == null || facts == null) {
             return;
         }
@@ -80,7 +89,7 @@ public class CreditBriefService {
                     .map(LoanApplication::getCustomerId).orElse(null);
             // Render with the borrower's REAL KYC identity (not the bureau report's copy / demo fixture).
             byte[] pdf = renderer.render(appId, customerId, profile.getBureauSource(),
-                    displayFacts(facts, profile), rating, LocalDate.now());
+                    displayFacts(facts, profile), rating, LocalDate.now(), rawResponseJson);
             String key = "applications/" + appId + "/credit_brief/" + FILE_NAME;
             storage.store(key, pdf, CONTENT_TYPE);
             upsertDocument(appId, key, pdf.length);
@@ -105,7 +114,8 @@ public class CreditBriefService {
         try {
             BureauReportFacts facts = objectMapper.readValue(profile.getCreditBriefFacts(),
                     BureauReportFacts.class);
-            generate(appId, profile, facts);
+            JsonNode response = providerResponse(appId);
+            generate(appId, profile, facts, response != null ? response.toString() : null);
         } catch (Exception e) {
             log.warn("Credit brief lazy regeneration failed for application {}: {}", appId, e.toString());
         }
@@ -119,8 +129,10 @@ public class CreditBriefService {
     @Transactional
     public CreditBriefView view(Long appId) {
         CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
+        JsonNode providerResponse = providerResponse(appId);
         if (profile == null || profile.getCreditStarRating() == null) {
-            return new CreditBriefView(appId, false, null, null, null, null, null, null, null);
+            return new CreditBriefView(appId, providerResponse != null, null, null, null, null,
+                    null, null, null, providerResponse);
         }
         ensureBrief(appId, profile);
         // The identity shown on the brief must be the borrower's REAL KYC — the same profile the staff
@@ -141,7 +153,23 @@ public class CreditBriefService {
                 profile.getCreditRecommendation(),
                 profile.getCreditBriefSummary(),
                 profile.getCreditBriefGeneratedAt(),
-                docId, facts);
+                docId, facts, providerResponse);
+    }
+
+    private JsonNode providerResponse(Long appId) {
+        return verificationRepo.findByApplicationIdAndCheckType(appId, "BUREAU")
+                .map(row -> row.getRawResponse())
+                .filter(raw -> raw != null && !raw.isBlank())
+                .map(raw -> {
+                    try {
+                        return objectMapper.readTree(raw);
+                    } catch (Exception invalidStoredJson) {
+                        log.warn("Could not parse stored provider response for application {}: {}",
+                                appId, invalidStoredJson.toString());
+                        return null;
+                    }
+                })
+                .orElse(null);
     }
 
     /** The stored CREDIT_BRIEF document for an application, if any (for the download presign). */
@@ -183,7 +211,7 @@ public class CreditBriefService {
                 firstNonBlank(profile.getPan(), bureau.pan()),
                 firstNonBlank(profile.getMobile(), bureau.mobile()),
                 firstNonBlank(dob, bureau.dob()),
-                null, null,
+                bureau.city(), bureau.pin(),
                 bureau.creditScore(), bureau.totalAccounts(), bureau.activeAccounts(),
                 bureau.closedAccounts(), bureau.defaults(),
                 bureau.totalBalanceRupees(), bureau.securedBalanceRupees(),

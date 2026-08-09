@@ -7,6 +7,7 @@ import { InfoTooltip } from "@/components/ui";
 import { StarRating } from "@/components/ui/star-rating";
 import { PdfPreviewDialog } from "@/components/staff/pdf-preview-dialog";
 import { staffApi, type CreditBriefFacts } from "@/lib/api/applications";
+import { flattenProviderReport, type JsonValue } from "@/lib/credit/provider-report";
 
 const inr = (rupees: number | null | undefined): string =>
   rupees == null
@@ -36,12 +37,13 @@ function Facts({ f }: { f: CreditBriefFacts }) {
     <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-3">
       <dl>
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">A · Identity</div>
-        {/* Identity comes from the borrower's real KYC profile (consistent with the Profile card),
-            not the bureau report. City/PIN have no KYC equivalent, so they're not shown here. */}
+        {/* Core identity comes from KYC; city/PIN are the bureau-reported values. */}
         <Row label="Name" value={f.name} />
         <Row label="PAN" value={f.pan} />
         <Row label="Mobile" value={f.mobile} />
         <Row label="DOB" value={f.dob} />
+        <Row label="City" value={f.city} />
+        <Row label="PIN" value={f.pin} />
       </dl>
       <dl>
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">B · Credit health</div>
@@ -58,6 +60,47 @@ function Facts({ f }: { f: CreditBriefFacts }) {
         <Row label="Inquiries (30d)" value={f.recentInquiries30d} />
       </dl>
     </div>
+  );
+}
+
+function CompleteProviderReport({ report }: { report: JsonValue }) {
+  const rows = React.useMemo(() => flattenProviderReport(report), [report]);
+  return (
+    <section className="mt-5 overflow-hidden rounded border border-line bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-navy-tint/60 px-3 py-2.5">
+        <div>
+          <h3 className="text-sm font-semibold text-navy">Complete provider response</h3>
+          <p className="text-xs text-muted">
+            Exact payload for new pulls; older records may contain only the legacy verification snapshot.
+          </p>
+        </div>
+        <span className="rounded-full border border-line bg-white px-2 py-0.5 text-xs font-semibold tabular-nums text-muted">
+          {rows.length.toLocaleString("en-IN")} fields
+        </span>
+      </div>
+      <div className="max-h-[48rem] overflow-auto">
+        <table className="w-full table-fixed border-collapse text-left">
+          <thead className="sticky top-0 z-10 bg-navy text-white">
+            <tr>
+              <th scope="col" className="w-[56%] px-3 py-2 text-xs font-semibold">Provider field path</th>
+              <th scope="col" className="w-[44%] px-3 py-2 text-xs font-semibold">Provider value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.path}-${index}`} className="border-t border-line align-top odd:bg-neutral-50/60">
+                <th scope="row" className="break-words px-3 py-2 text-xs font-medium leading-relaxed text-muted">
+                  {row.path}
+                </th>
+                <td className="break-all whitespace-pre-wrap px-3 py-2 font-mono text-xs leading-relaxed text-ink">
+                  {row.value}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -150,6 +193,8 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
               <p className="text-sm leading-relaxed text-ink">{brief.summary}</p>
             </div>
           )}
+
+          {brief.providerResponse != null && <CompleteProviderReport report={brief.providerResponse} />}
         </>
       )}
 

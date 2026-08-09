@@ -156,6 +156,7 @@ class SignzyClientsTest {
         assertThat(r.facts()).isNotNull();
         assertThat(r.facts().activeAccounts()).isEqualTo(3);
         assertThat(r.facts().totalBalanceRupees()).isEqualTo(120000L);
+        assertThat(r.rawResponseJson()).contains("\"jsonExperianReport\"", "\"ReportNumber\":\"1712213567495\"");
         b.server().verify();
     }
 
@@ -172,6 +173,7 @@ class SignzyClientsTest {
 
         assertThat(r.score()).isEqualTo(690);
         assertThat(r.noRecord()).isFalse();
+        assertThat(r.rawResponseJson()).contains("\"crifReport\"", "\"SCORE-FACTORS\":\"SF02|\"");
         b.server().verify();
     }
 

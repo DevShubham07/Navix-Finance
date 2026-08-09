@@ -80,9 +80,14 @@ public final class ProviderJson {
             }
             throw new VerificationException("Empty response body from " + uri);
         }
-        if (rawProvider != null && isProviderErrorEnvelope(node)) {
-            log.error("TEMP_PII_DEBUG provider={} endpoint={} responsePayload={}",
-                    rawProvider, uri, node);
+        if (rawProvider != null) {
+            if (isProviderErrorEnvelope(node)) {
+                log.error("TEMP_PII_DEBUG provider={} endpoint={} responsePayload={}",
+                        rawProvider, uri, node);
+            } else {
+                log.warn("TEMP_PII_DEBUG provider={} endpoint={} responsePayload={}",
+                        rawProvider, uri, node);
+            }
         }
         if ("error".equalsIgnoreCase(node.path("status").asText(""))) {
             throw new VerificationException("Provider reported error for " + uri);

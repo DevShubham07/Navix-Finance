@@ -251,6 +251,39 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void bureauPersistsCompleteProviderResponseAndPassesItToTheGeneratedReport() throws Exception {
+        CustomerProfile p = profile();
+        p.setPan("QVEPS0901K");
+        p.setDob(LocalDate.of(1992, 8, 15));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
+                .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
+        var facts = new com.navix.common.verification.BureauReportFacts(
+                "SHUBHAM", "QVEPS0901K", "7206485966", "1992-08-15", "Sonipat", "131001",
+                778, 3, 2, 1, 0, 25000L, 10000L, 15000L, 2, "RPT-FULL-1");
+        String raw = """
+                {"http_response_code":200,"request_id":"REQ-FULL-1","result":{"result_json":{
+                "INProfileResponse":{"CAIS_Account":{"CAIS_Account_DETAILS":[{
+                "Subscriber_Name":"TEST BANK","Payment_History_Profile":"000000"}]},
+                "CAPS":{"CAPS_Application_Details":[{"Amount_Financed":"10000"}]}}}}}
+                """;
+        when(verification.pullBureau(any(), any(), any(), any(), eq("999111"), any()))
+                .thenReturn(new VerificationPort.BureauCheck("REQ-FULL-1", "DIGITAP_EXPERIAN", 778,
+                        false, 2, 0, 25000.0, facts, raw));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        var persisted = new ObjectMapper().readTree(saved.getValue().getRawResponse());
+        assertThat(persisted.path("result").path("result_json").path("INProfileResponse")
+                .path("CAIS_Account").path("CAIS_Account_DETAILS").path(0)
+                .path("Payment_History_Profile").asText()).isEqualTo("000000");
+        verify(creditBriefService).generate(APP, p, facts, raw);
+    }
+
+    @Test
     void salary_setsEligibleLimitOnApplication() {
         CustomerProfile p = profile();
         LoanApplication app = new LoanApplication();

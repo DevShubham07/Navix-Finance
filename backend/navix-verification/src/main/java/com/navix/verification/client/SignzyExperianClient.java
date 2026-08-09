@@ -78,7 +78,7 @@ public class SignzyExperianClient {
                 || (message != null && message.toLowerCase().contains("no record"));
         BureauReportFacts facts = ExperianFactsParser.parse(report, score, name, pan, mobile);
         String txnId = text(report.path("CreditProfileHeader").path("ReportNumber"));
-        return new ExperianResponse(txnId, score, noRecord, facts);
+        return new ExperianResponse(txnId, score, noRecord, facts, root.toString());
     }
 
     private static JsonNode firstPresent(JsonNode a, JsonNode b) {

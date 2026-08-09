@@ -91,7 +91,14 @@ public interface VerificationPort {
     /** {@code source} is the bureau that answered (e.g. SIGNZY_EXPERIAN / DIGITAP_EXPERIAN); facts null on thin-file/CRIF. */
     record BureauCheck(String txnId, String source, Integer score, boolean noRecord,
                        Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
-                       BureauReportFacts facts) {
+                       BureauReportFacts facts, String rawResponseJson) {
+
+        /** Backward-compatible constructor for providers/tests that do not yet expose a raw report. */
+        public BureauCheck(String txnId, String source, Integer score, boolean noRecord,
+                           Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
+                           BureauReportFacts facts) {
+            this(txnId, source, score, noRecord, activeAccounts, overdueAccounts, totalBalance, facts, null);
+        }
     }
 
     record PennyDropCheck(String txnId, String provider, boolean accountExists, String fullName,

@@ -1,5 +1,6 @@
 package com.navix.loan.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 
 /**
@@ -21,7 +22,8 @@ public final class CreditBriefDtos {
             String summary,
             Instant generatedAt,
             Long documentId,
-            Facts facts) {
+            Facts facts,
+            JsonNode providerResponse) {
 
         /** Categorized facts for the card. Full PAN/mobile (staff-only); amounts in rupees (the bureau's unit). */
         public record Facts(

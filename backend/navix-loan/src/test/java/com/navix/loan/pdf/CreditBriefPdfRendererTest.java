@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.loan.service.CreditRatingCalculator;
+import com.lowagie.text.pdf.PdfReader;
+import com.lowagie.text.pdf.parser.PdfTextExtractor;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -37,5 +39,44 @@ class CreditBriefPdfRendererTest {
 
         assertThat(pdf).isNotEmpty();
         assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+    }
+
+    @Test
+    void completeProviderResponseIsRenderedWithoutDroppingNestedOrArrayFields() throws Exception {
+        BureauReportFacts f = new BureauReportFacts(
+                "TEST BORROWER", "ABCDE1234F", "9000000000", "1990-01-01", "Testville", "100001",
+                778, 11, 9, 2, 0, 805314L, 717556L, 87758L, 0, "TEST-REPORT-1");
+        String raw = """
+                {"http_response_code":200,"request_id":"REQ-FULL","result":{"result_json":{
+                  "INProfileResponse":{
+                    "Header":{"ReportDate":"20260809"},
+                    "Current_Application":{"Current_Application_Details":{"Current_Other_Details":{"Income":"85000"}}},
+                    "CAIS_Account":{"CAIS_Account_DETAILS":[{
+                      "Subscriber_Name":"TEST BANK","Payment_History_Profile":"000000",
+                      "CAIS_Account_History":[{"Year":"2026","Days_Past_Due":"0"}]
+                    }]},
+                    "CAPS":{"CAPS_Application_Details":[{"Amount_Financed":"10000"}]},
+                    "SCORE":{"BureauScore":"778","BureauScoreConfidLevel":"H"}
+                  }
+                }}}
+                """;
+
+        byte[] pdf = renderer.render(123L, 45L, "DIGITAP_EXPERIAN", f, calc.rate(f),
+                LocalDate.of(2026, 8, 9), raw);
+
+        PdfReader reader = new PdfReader(pdf);
+        StringBuilder text = new StringBuilder();
+        for (int page = 1; page <= reader.getNumberOfPages(); page++) {
+            text.append(new PdfTextExtractor(reader).getTextFromPage(page));
+        }
+        reader.close();
+        String normalized = text.toString().replaceAll("\\s+", " ");
+        assertThat(normalized).contains(
+                "Complete Provider Response",
+                "Subscriber Name", "TEST BANK",
+                "Payment History Profile", "000000",
+                "Days Past Due",
+                "Amount Financed", "10000",
+                "Bureau Score Confid Level", "H");
     }
 }

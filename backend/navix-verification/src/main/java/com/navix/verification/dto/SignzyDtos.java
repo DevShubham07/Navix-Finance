@@ -124,7 +124,8 @@ public final class SignzyDtos {
             String txnId,
             Integer creditScore,
             Boolean noRecord,
-            BureauReportFacts facts
+            BureauReportFacts facts,
+            String rawResponseJson
     ) {
     }
 
@@ -144,7 +145,8 @@ public final class SignzyDtos {
     public record CrifResponse(
             String txnId,
             Integer score,
-            Boolean noRecord
+            Boolean noRecord,
+            String rawResponseJson
     ) {
     }
 
