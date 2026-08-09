@@ -88,7 +88,7 @@ export function AppRow({
           {app.loanDueDate && <div className="mt-1">Due {formatDate(app.loanDueDate)}</div>}
         </td>
         <td className="staff-sticky-actions">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-max flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setShowDetail(true)}

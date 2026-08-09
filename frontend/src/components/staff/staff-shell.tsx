@@ -32,7 +32,6 @@ import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { cn } from "@/lib/utils";
 import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
 import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
-import { applyStaffDesktopDensity } from "@/lib/staff-density";
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
 
@@ -282,11 +281,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { session, loading } = useStaffSession();
   const isPublic = PUBLIC_STAFF.some((p) => pathname.startsWith(p));
-
-  React.useEffect(
-    () => applyStaffDesktopDensity(document.documentElement.classList),
-    [],
-  );
 
   const { data: flags } = useQuery({
     queryKey: ["feature-flags"],

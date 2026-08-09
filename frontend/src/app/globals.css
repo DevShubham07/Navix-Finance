@@ -421,57 +421,6 @@ table.data td strong { color: var(--navy); }
 .staff-data-table .staff-sticky-identity { box-shadow: 5px 0 8px -8px rgba(12, 37, 64, .7); }
 .staff-data-table .staff-sticky-actions { box-shadow: -5px 0 8px -8px rgba(12, 37, 64, .7); }
 
-/* The back-office carries dense operational data. On laptop/desktop screens, reduce the shared
-   staff scale by 20% and let semantic tables use the available width before falling back to scroll.
-   Mobile keeps the original sizing and horizontal table behavior for readable touch targets. */
-@media (min-width: 1024px) {
-  html.staff-desktop-density { font-size: 80%; }
-
-  html.staff-desktop-density .navix-crm table {
-    min-width: 100%;
-    table-layout: auto;
-  }
-
-  html.staff-desktop-density .navix-crm table th {
-    white-space: normal;
-  }
-
-  html.staff-desktop-density .navix-crm table td {
-    overflow-wrap: break-word;
-  }
-
-  html.staff-desktop-density .staff-data-table th,
-  html.staff-desktop-density .staff-data-table td {
-    padding: .625rem .75rem;
-  }
-
-  html.staff-desktop-density .btn {
-    gap: 7px;
-    padding: 11px 19px;
-    border-radius: 10px;
-  }
-
-  html.staff-desktop-density .btn-sm {
-    gap: 6px;
-    padding: 8px 12px;
-  }
-
-  html.staff-desktop-density .card {
-    padding: 22px;
-  }
-
-  html.staff-desktop-density .field {
-    margin-bottom: 14px;
-  }
-
-  html.staff-desktop-density .field input,
-  html.staff-desktop-density .field select,
-  html.staff-desktop-density .field textarea {
-    padding: 10px 12px;
-    border-radius: 10px;
-  }
-}
-
 /* ==========================================================================
    Forms
    ========================================================================== */
