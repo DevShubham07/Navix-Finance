@@ -13,6 +13,7 @@ import { type TabDef } from "@/components/ui/tabs";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
+import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import { Section, KV, Bool, DocumentsTab, RemarksTab } from "@/components/staff/detail-parts";
@@ -420,6 +421,14 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
 
   return (
     <div className="space-y-4">
+      <div className="rounded border border-line bg-white p-5 shadow-sm">
+        <CreditScoreGauge
+          score={p?.creditScore ?? c.creditBrief?.creditScore ?? null}
+          starRating={p?.starRating ?? c.creditBrief?.starRating ?? null}
+          recommendation={p?.recommendation ?? c.creditBrief?.recommendation ?? null}
+          size="md"
+        />
+      </div>
       {latestAppId != null && <CreditProfileCard applicationId={latestAppId} />}
       <Section title="Credit headline">
         <KV k="Bureau score" v={p?.creditScore != null ? String(p.creditScore) : null} mono />
@@ -695,7 +704,7 @@ function CallLogsTab({ customerId }: { customerId: number }) {
                 {r.callbackOn ? ` · callback ${r.callbackOn}` : ""}
               </p>
               {r.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{r.notes}</p>}
-              <p className="mt-1 text-[11px] text-muted">
+              <p className="mt-1 text-[8.8px] text-muted">
                 {r.author ?? "staff"}
                 {r.at ? ` · ${formatDateTime(r.at)}` : ""}
               </p>
@@ -724,7 +733,7 @@ function AuditLogsTab({ customerId }: { customerId: number }) {
       {items.map((e: ActivityEntry, i) => (
         <li key={i} className="flex gap-3 border-b border-line pb-2 last:border-0">
           <span
-            className={`mt-0.5 h-fit rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${TYPE_STYLE[e.type] ?? "bg-grey-100 text-muted"}`}
+            className={`mt-0.5 h-fit rounded-full px-1.5 py-0.5 text-[8px] font-semibold ${TYPE_STYLE[e.type] ?? "bg-grey-100 text-muted"}`}
           >
             {e.type}
           </span>
@@ -736,10 +745,10 @@ function AuditLogsTab({ customerId }: { customerId: number }) {
                   <span className="font-normal text-muted"> · app #{e.applicationId}</span>
                 ) : null}
               </span>
-              <span className="text-[11px] text-muted">{e.at ? formatDateTime(e.at) : ""}</span>
+              <span className="text-[8.8px] text-muted">{e.at ? formatDateTime(e.at) : ""}</span>
             </div>
             {e.detail && <p className="break-words text-xs text-muted">{e.detail}</p>}
-            {e.actor && <p className="text-[11px] text-muted">by {e.actor}</p>}
+            {e.actor && <p className="text-[8.8px] text-muted">by {e.actor}</p>}
           </div>
         </li>
       ))}

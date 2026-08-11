@@ -124,36 +124,36 @@ export default function AdminAllApplicationsPage() {
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <th className="whitespace-nowrap px-4 py-2.5">App</th>
-                  <th className="px-4 py-2.5">Customer</th>
-                  <th className="whitespace-nowrap px-4 py-2.5">PAN</th>
-                  <th className="whitespace-nowrap px-4 py-2.5">Mobile</th>
-                  <th className="whitespace-nowrap px-4 py-2.5">Status</th>
-                  <th className="whitespace-nowrap px-4 py-2.5">Completeness</th>
-                  <th className="whitespace-nowrap px-4 py-2.5 text-right">Amount</th>
-                  <th className="whitespace-nowrap px-4 py-2.5">Credit</th>
-                  <th className="whitespace-nowrap px-4 py-2.5">Risk</th>
-                  <th className="px-4 py-2.5 text-right">Open</th>
+                  <th className="whitespace-nowrap">App</th>
+                  <th>Customer</th>
+                  <th className="whitespace-nowrap">PAN</th>
+                  <th className="whitespace-nowrap">Mobile</th>
+                  <th className="whitespace-nowrap">Status</th>
+                  <th className="whitespace-nowrap">Completeness</th>
+                  <th className="whitespace-nowrap text-right">Amount</th>
+                  <th className="whitespace-nowrap">Credit</th>
+                  <th className="whitespace-nowrap">Risk</th>
+                  <th className="text-right">Open</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
                 {rows.map((a) => (
                   <tr key={a.id} className="hover:bg-grey-50">
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-muted">#{a.id}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap font-mono text-muted">#{a.id}</td>
+                    <td>
                       <span className="block max-w-[14rem] truncate font-semibold text-ink" title={a.fullName ?? ""}>{a.fullName || "—"}</span>
                       <span className="block text-xs text-muted">#{a.customerId}{a.email ? ` · ${a.email}` : ""}</span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-ink">{a.pan || "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-muted">{a.mobile || "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-3">
+                    <td className="whitespace-nowrap font-mono text-ink">{a.pan || "—"}</td>
+                    <td className="whitespace-nowrap font-mono text-muted">{a.mobile || "—"}</td>
+                    <td className="whitespace-nowrap">
                       <span className="rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">{statusLabel(a.status)}</span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3">
+                    <td className="whitespace-nowrap">
                       {a.complete ? (
                         <span className="rounded-full bg-success-50 px-2.5 py-0.5 text-xs font-semibold text-success-700">Complete</span>
                       ) : (
@@ -163,15 +163,15 @@ export default function AdminAllApplicationsPage() {
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right text-ink">
+                    <td className="whitespace-nowrap text-right text-ink">
                       {a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "—"}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted">
+                    <td className="whitespace-nowrap text-muted">
                       {a.creditScore != null ? a.creditScore : "—"}
                       {a.starRating != null ? <span className="text-gold-dark"> · {a.starRating.toFixed(1)}★</span> : null}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted">{a.riskCategory || "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <td className="whitespace-nowrap text-muted">{a.riskCategory || "—"}</td>
+                    <td className="whitespace-nowrap text-right">
                       <button onClick={() => setOpenId(a.customerId)} className="inline-flex items-center gap-1 text-navy hover:underline">
                         Open <ArrowRight size={14} />
                       </button>
@@ -179,7 +179,7 @@ export default function AdminAllApplicationsPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={10} className="px-4 py-6 text-center text-muted">No applications match.</td></tr>
+                  <tr><td colSpan={10} className="text-center text-muted">No applications match.</td></tr>
                 )}
               </tbody>
             </table>

@@ -320,7 +320,7 @@ function AppCardTile({ card, onOpen }: { card: AppCard; onOpen: () => void }) {
         <div className="mt-3 text-xs text-muted">No verification checks started yet.</div>
       )}
 
-      <div className="mt-3 text-[11px] text-muted">
+      <div className="mt-3 text-[8.8px] text-muted">
         {card.lastUpdate ? `Updated ${formatDateTime(card.lastUpdate)}` : "Awaiting first check"}
       </div>
     </button>

@@ -73,7 +73,7 @@ export function NotificationBell({ scope }: { scope: NotificationScope }) {
       >
         <Bell size={18} />
         {count > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 grid min-w-[1.05rem] place-items-center rounded-full bg-error-600 px-1 text-[0.62rem] font-bold leading-[1.05rem] text-white">
+          <span className="absolute -right-0.5 -top-0.5 grid min-w-[1.05rem] place-items-center rounded-full bg-error-600 px-1 text-[0.496rem] font-bold leading-[1.05rem] text-white">
             {count > 99 ? "99+" : count}
           </span>
         )}
@@ -134,7 +134,7 @@ export function NotificationBell({ scope }: { scope: NotificationScope }) {
                     <span className="mt-0.5 block text-xs leading-snug text-muted line-clamp-2">
                       {n.body}
                     </span>
-                    <span className="mt-1 block text-[0.68rem] text-muted/80">
+                    <span className="mt-1 block text-[0.544rem] text-muted/80">
                       {timeAgo(n.createdAt)}
                     </span>
                   </span>

@@ -74,32 +74,37 @@ export default function CollectionsSettlementsPage() {
       ) : q.error ? (
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : (
-        <div className="overflow-x-auto rounded border border-line bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+          <table className="staff-data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-2.5">Settlement</th>
-                <th className="px-4 py-2.5">Amount</th>
-                <th className="px-4 py-2.5">Status</th>
-                <th className="px-4 py-2.5 text-right">Action</th>
+                <th>Settlement</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th className="text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody>
               {(q.data ?? []).map((s: SettlementView) => {
                 return (
                   <tr key={s.id}>
-                    <td className="px-4 py-3">
-                      <div className="font-mono text-xs text-ink">{s.id.slice(0, 8)}…</div>
-                      <div className="text-xs text-muted">case {s.collectionCaseId.slice(0, 8)}… · {s.createdAt ? formatDateTime(s.createdAt) : ""}</div>
-                      <div className="text-xs text-muted">by {s.proposedByName ?? (s.proposedBy != null ? `#${s.proposedBy}` : "—")}</div>
+                    <td className="staff-cell">
+                      <div className="truncate">
+                        <span className="font-mono text-xs text-ink">{s.id.slice(0, 8)}…</span>{" "}
+                        <span className="text-xs text-muted">case {s.collectionCaseId.slice(0, 8)}…</span>
+                      </div>
+                      <div className="truncate text-xs text-muted">
+                        {s.createdAt ? formatDateTime(s.createdAt) : ""} · by{" "}
+                        {s.proposedByName ?? (s.proposedBy != null ? `#${s.proposedBy}` : "—")}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-ink">{paiseToINR(s.settlementAmountPaise)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_PILL[s.status]}`}>
+                    <td className="font-semibold text-ink">{paiseToINR(s.settlementAmountPaise)}</td>
+                    <td>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_PILL[s.status]}`}>
                         {STATUS_LABEL[s.status] ?? s.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="text-right">
                       {s.status === "APPROVED" ? (
                         <span className="text-xs text-muted">{s.approvedByName ?? (s.approvedBy != null ? `#${s.approvedBy}` : "")} · {s.approvedAt ? formatDateTime(s.approvedAt) : "—"}</span>
                       ) : s.status === "REJECTED" ? (

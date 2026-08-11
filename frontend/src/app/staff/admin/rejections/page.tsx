@@ -101,16 +101,16 @@ export default function AdminRejectionsPage() {
         </p>
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2.5">Borrower</th>
-                  <th className="px-4 py-2.5">Reason</th>
-                  <th className="px-4 py-2.5">Detail</th>
-                  <th className="px-4 py-2.5">Source</th>
-                  <th className="px-4 py-2.5">Blocked until</th>
-                  <th className="px-4 py-2.5">Rejected on</th>
+                  <th>Borrower</th>
+                  <th>Reason</th>
+                  <th>Detail</th>
+                  <th>Source</th>
+                  <th>Blocked until</th>
+                  <th>Rejected on</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -118,7 +118,7 @@ export default function AdminRejectionsPage() {
                   const blocked = r.blockedUntil != null && Date.parse(r.blockedUntil) > now;
                   return (
                     <tr key={r.id} className="hover:bg-grey-50">
-                      <td className="px-4 py-2.5">
+                      <td>
                         <div className="font-semibold text-navy">{r.borrowerName ?? "Name unavailable"}</div>
                         <div className="text-xs text-muted">
                           #{r.customerId}
@@ -126,14 +126,14 @@ export default function AdminRejectionsPage() {
                           {r.applicationId ? ` · app ${r.applicationId}` : ""}
                         </div>
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td>
                         <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">
                           {REASON_LABEL[r.reasonCode] ?? r.reasonCode}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-muted">{r.reasonDetail ?? "—"}</td>
-                      <td className="px-4 py-2.5 text-muted">{r.auto ? "Automatic" : "Manual"}</td>
-                      <td className="px-4 py-2.5">
+                      <td className="text-muted">{r.reasonDetail ?? "—"}</td>
+                      <td className="text-muted">{r.auto ? "Automatic" : "Manual"}</td>
+                      <td>
                         {r.blockedUntil ? (
                           <span className={blocked ? "font-semibold text-error-700" : "text-muted"}>
                             {day(r.blockedUntil)}
@@ -143,7 +143,7 @@ export default function AdminRejectionsPage() {
                           <span className="text-muted">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-muted">{day(r.createdAt)}</td>
+                      <td className="text-muted">{day(r.createdAt)}</td>
                     </tr>
                   );
                 })}

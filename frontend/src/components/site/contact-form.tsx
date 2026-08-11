@@ -164,8 +164,8 @@ function ContactForm() {
               <path d="M20 6 9 17l-5-5" />
             </svg>
           </div>
-          <h3 style={{ fontSize: "1.5rem", marginBottom: 8 }}>Message sent</h3>
-          <p style={{ fontSize: ".95rem", lineHeight: 1.6, marginBottom: 24 }}>
+          <h3 style={{ fontSize: "1.2rem", marginBottom: 8 }}>Message sent</h3>
+          <p style={{ fontSize: ".76rem", lineHeight: 1.6, marginBottom: 24 }}>
             Thanks for reaching out — your query has reached our team. We&apos;ll get back to you as soon as
             possible, usually within one business day.
           </p>
@@ -181,8 +181,8 @@ function ContactForm() {
 
   return (
     <div className="formcard reveal d1">
-      <h3 style={{ fontSize: "1.5rem", marginBottom: 6 }}>Send us a message</h3>
-      <p style={{ fontSize: ".92rem", marginBottom: 24 }}>
+      <h3 style={{ fontSize: "1.2rem", marginBottom: 6 }}>Send us a message</h3>
+      <p style={{ fontSize: ".736rem", marginBottom: 24 }}>
         We&apos;ll never share your details. Required fields are marked *.
       </p>
       <form onSubmit={onSubmit} noValidate>
@@ -243,7 +243,7 @@ function ContactForm() {
         {error && (
           <p
             role="alert"
-            style={{ fontSize: ".85rem", color: "#c0392b", margin: "0 0 14px", lineHeight: 1.5 }}
+            style={{ fontSize: ".68rem", color: "#c0392b", margin: "0 0 14px", lineHeight: 1.5 }}
           >
             {error}
           </p>

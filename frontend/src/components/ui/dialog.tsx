@@ -1,12 +1,19 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 /**
  * Lightweight modal using the design's `.modal-overlay` / `.modal` styling.
  * Used for confirm actions such as maker-checker approvals and disbursement
  * release. Closes on overlay click and Escape.
+ *
+ * Rendered through a portal to `document.body`. Call sites legitimately mount a dialog deep inside
+ * the tree — the staff queue rows open theirs from inside a `position: sticky` table cell, which
+ * creates a stacking context that trapped the overlay *below* the sticky table header (the navy
+ * header bars painted straight over the open modal). A portal takes the overlay out of every
+ * ancestor's stacking context, so its `z-index: 200` means what it says.
  */
 export interface DialogProps {
   open: boolean;
@@ -26,6 +33,10 @@ export function Dialog({
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledby,
 }: DialogProps) {
+  // Portals need a DOM target, which doesn't exist during SSR / the first render pass.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -33,8 +44,8 @@ export function Dialog({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-  return (
+  if (!open || !mounted) return null;
+  return createPortal(
     <div className="modal-overlay show" onClick={onClose}>
       <div
         role="dialog"
@@ -47,7 +58,8 @@ export function Dialog({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

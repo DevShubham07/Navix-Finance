@@ -146,7 +146,7 @@ export function EventTimeline({ events, className, dense }: EventTimelineProps) 
                   </span>
                 ) : null}
               </div>
-              <div className={cn("text-muted", dense ? "text-[11px]" : "text-xs")}>
+              <div className={cn("text-muted", dense ? "text-[8.8px]" : "text-xs")}>
                 by {actorLabel(e)}
                 {e.actorName && e.actorRole ? ` · ${e.actorRole}` : ""} · {formatDateTime(e.at)}
               </div>

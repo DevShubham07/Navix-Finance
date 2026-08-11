@@ -47,7 +47,7 @@ export function TermsModal({
         {text === null ? (
           <p className="py-8 text-center text-sm text-muted">Loading…</p>
         ) : (
-          <pre className="whitespace-pre-wrap font-sans text-[13px] leading-7 text-ink">{text}</pre>
+          <pre className="whitespace-pre-wrap font-sans text-[10.4px] leading-7 text-ink">{text}</pre>
         )}
       </div>
 

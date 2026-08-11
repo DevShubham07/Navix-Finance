@@ -1,9 +1,16 @@
 "use client";
 
 /**
- * Unified customer detail popup — persistent tabbed dialog. Parent keeps it mounted and swaps
- * `customerId` so the active tab persists across row clicks. Tabs come from customer-tabs.tsx
- * (shared with the full customer page).
+ * Customer-first entry point into the **one** staff detail modal.
+ *
+ * There used to be two modals — this one (customer tabs) and {@link ApplicationDetailDialog}
+ * (application tabs + the stage actions) — and which fields you got depended on which row you
+ * happened to click. They are now a single dialog carrying the union of both tab sets, so this
+ * component's whole job is to resolve "customer #N" to their latest application and hand over.
+ *
+ * A customer with no application at all (a lead that never applied) can't open the application
+ * dialog, so they fall back to the customer tabs on their own — the one case where the two
+ * surfaces still differ, because there is genuinely no application to show.
  */
 
 import * as React from "react";
@@ -12,6 +19,7 @@ import { Loader2, X, ExternalLink } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Tabs } from "@/components/ui/tabs";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { customersApi } from "@/lib/api/applications";
 
 export function CustomerDetailDialog({
@@ -31,6 +39,13 @@ export function CustomerDetailDialog({
   });
 
   const c = detailQ.data;
+  const latestApplicationId = c?.applications?.[0]?.id ?? null;
+
+  // The normal path: hand straight over to the unified modal, opened on this customer's most
+  // recent application. It carries every customer tab too, so nothing is lost.
+  if (open && latestApplicationId != null) {
+    return <ApplicationDetailDialog applicationId={latestApplicationId} onClose={onClose} />;
+  }
 
   return (
     <Dialog open={open} onClose={onClose} className="!max-w-4xl !w-[min(56rem,94vw)]">
@@ -55,7 +70,7 @@ export function CustomerDetailDialog({
 
       <Tabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} className="mt-2" />
 
-      <div className="mt-3 max-h-[68vh] overflow-y-auto pr-1 text-[13px]">
+      <div className="mt-3 max-h-[68vh] overflow-y-auto pr-1 text-[10.4px]">
         {detailQ.isLoading ? (
           <p className="flex items-center gap-2 py-8 text-sm text-muted">
             <Loader2 size={15} className="animate-spin" /> Loading…

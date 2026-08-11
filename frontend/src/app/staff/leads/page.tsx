@@ -105,22 +105,22 @@ export default function StaffLeadsPage() {
       )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="overflow-x-auto rounded-lg border border-navy/10 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-navy/10 bg-ivory text-xs uppercase text-navy/60">
+        <div className="staff-table-scroll rounded-lg border border-navy/10 bg-white">
+          <table className="staff-data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Mobile</th>
-                <th className="px-3 py-2">Source</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">★</th>
-                <th className="px-3 py-2">City</th>
+                <th>Name</th>
+                <th>Mobile</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>★</th>
+                <th>City</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-navy/40">
+                  <td colSpan={6} className="py-8 text-center text-navy/40">
                     {list.isLoading ? "Loading…" : "No leads yet — add one above."}
                   </td>
                 </tr>
@@ -129,21 +129,19 @@ export default function StaffLeadsPage() {
                 <tr
                   key={row.id}
                   onClick={() => setSelectedId(row.id)}
-                  className={`cursor-pointer border-b border-navy/5 hover:bg-ivory/80 ${
-                    selectedId === row.id ? "bg-gold/10" : ""
-                  }`}
+                  className={`cursor-pointer hover:bg-ivory/80 ${selectedId === row.id ? "bg-gold/10" : ""}`}
                 >
-                  <td className="px-3 py-2 font-medium text-navy">{row.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{row.mobile}</td>
-                  <td className="px-3 py-2 text-navy/70">
+                  <td className="staff-cell font-medium text-navy">{row.name}</td>
+                  <td className="font-mono text-xs">{row.mobile}</td>
+                  <td className="staff-cell text-navy/70">
                     {row.source ? row.source.replace(/_/g, " ") : "—"}
                     {row.sourceDetail ? ` · ${row.sourceDetail}` : ""}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <StatusChip status={row.callStatus} />
                   </td>
-                  <td className="px-3 py-2">{row.qualityRating ? `${row.qualityRating}★` : "—"}</td>
-                  <td className="px-3 py-2 text-navy/70">{row.city || "—"}</td>
+                  <td>{row.qualityRating ? `${row.qualityRating}★` : "—"}</td>
+                  <td className="staff-cell text-navy/70">{row.city || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -401,7 +399,7 @@ function StatusChip({ status }: { status: LeadCallStatus }) {
           ? "bg-amber-50 text-amber-900"
           : "bg-emerald-50 text-emerald-800";
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${tone}`}>
+    <span className={`inline-block rounded px-2 py-0.5 text-[8px] font-semibold uppercase ${tone}`}>
       {status.replace(/_/g, " ")}
     </span>
   );

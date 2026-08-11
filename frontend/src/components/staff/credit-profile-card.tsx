@@ -159,7 +159,7 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
             <div>
               <div className="text-xs text-muted">Recommendation</div>
               <div className="mt-0.5 flex items-center gap-2">
-                <StarRating value={brief.starRating} size="1.1rem" />
+                <StarRating value={brief.starRating} size="0.88rem" />
                 <span className="text-sm font-semibold tabular-nums text-ink">
                   {brief.starRating != null ? `${brief.starRating.toFixed(1)} / 5` : "—"}
                 </span>

@@ -158,21 +158,21 @@ export default function ReferralPayoutsPage() {
         <p className="text-sm text-error-700">{errMessage(payoutsQ.error)}</p>
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2.5">Beneficiary</th>
-                  <th className="px-4 py-2.5">Referral</th>
-                  <th className="whitespace-nowrap px-4 py-2.5 text-right">Amount</th>
-                  <th className="whitespace-nowrap px-4 py-2.5">Loan #</th>
+                  <th>Beneficiary</th>
+                  <th>Referral</th>
+                  <th className="whitespace-nowrap text-right">Amount</th>
+                  <th className="whitespace-nowrap">Loan #</th>
                   {tab === "PENDING" ? (
-                    <th className="px-4 py-2.5 text-right">Pay &amp; log txn id</th>
+                    <th className="text-right">Pay &amp; log txn id</th>
                   ) : (
                     <>
-                      <th className="px-4 py-2.5">Txn ref</th>
-                      <th className="px-4 py-2.5">Paid by</th>
-                      <th className="whitespace-nowrap px-4 py-2.5">Paid at</th>
+                      <th>Txn ref</th>
+                      <th>Paid by</th>
+                      <th className="whitespace-nowrap">Paid at</th>
                     </>
                   )}
                 </tr>
@@ -180,17 +180,17 @@ export default function ReferralPayoutsPage() {
               <tbody className="divide-y divide-line align-top">
                 {rows.map((p) => (
                   <tr key={p.id} className="hover:bg-grey-50">
-                    <td className="px-4 py-3">
+                    <td>
                       <span className="block font-medium text-ink">{p.beneficiaryName ?? `#${p.beneficiaryCustomerId}`}</span>
                       <span className="text-xs text-muted">{roleLabel(p.beneficiaryRole)}</span>
                     </td>
-                    <td className="px-4 py-3 text-muted">
+                    <td className="text-muted">
                       with {p.counterpartyName ?? (p.counterpartyCustomerId ? `#${p.counterpartyCustomerId}` : "—")}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-ink">{paiseToINR(p.amountPaise)}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted">{p.qualifyingLoanId ? `#${p.qualifyingLoanId}` : "—"}</td>
+                    <td className="whitespace-nowrap text-right font-semibold text-ink">{paiseToINR(p.amountPaise)}</td>
+                    <td className="whitespace-nowrap text-muted">{p.qualifyingLoanId ? `#${p.qualifyingLoanId}` : "—"}</td>
                     {tab === "PENDING" ? (
-                      <td className="px-4 py-3">
+                      <td>
                         <div className="flex items-center justify-end gap-2">
                           <Input
                             value={txnRefs[p.id] ?? ""}
@@ -210,16 +210,16 @@ export default function ReferralPayoutsPage() {
                       </td>
                     ) : (
                       <>
-                        <td className="px-4 py-3 font-mono text-xs text-ink">{p.txnRef ?? "—"}</td>
-                        <td className="px-4 py-3 text-muted">{p.paidBy ?? "—"}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-muted">{fmtDate(p.paidAt)}</td>
+                        <td className="font-mono text-xs text-ink">{p.txnRef ?? "—"}</td>
+                        <td className="text-muted">{p.paidBy ?? "—"}</td>
+                        <td className="whitespace-nowrap text-muted">{fmtDate(p.paidAt)}</td>
                       </>
                     )}
                   </tr>
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={tab === "PENDING" ? 5 : 7} className="px-4 py-6 text-center text-muted">
+                    <td colSpan={tab === "PENDING" ? 5 : 7} className="text-center text-muted">
                       {tab === "PENDING" ? "No pending referral payouts." : "No referral rewards paid yet."}
                     </td>
                   </tr>

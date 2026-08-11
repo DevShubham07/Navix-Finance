@@ -112,8 +112,13 @@ export function NoAccessNotice({ message = "You don't have access to this queue.
  * release) and the Accountant (confirm the bank transfer). Approve is disabled
  * until a reference is entered; Reject doesn't require one (the text, if any, is
  * passed as the rejection/failure reason).
+ *
+ * Both paths need a reference typed in, and a free-text input is far too wide for
+ * a table cell — so in `compact` (queue-row) mode this renders nothing at all and
+ * the staffer uses `Open`, where the same cluster renders in full.
  */
 function ProofDecisionActions({
+  compact,
   permission,
   approveLabel,
   rejectLabel,
@@ -125,6 +130,7 @@ function ProofDecisionActions({
   proofPlaceholder = "Transaction id / reference",
   hint,
 }: {
+  compact?: boolean;
   permission: Permission;
   approveLabel: string;
   rejectLabel: string;
@@ -138,6 +144,7 @@ function ProofDecisionActions({
 }) {
   const [proof, setProof] = React.useState("");
   const proofMissing = requireProofOnApprove && proof.trim().length === 0;
+  if (compact) return null;
   return (
     <ActionGate permission={permission}>
       <div className="flex flex-col gap-1">
@@ -172,7 +179,7 @@ function ProofDecisionActions({
   );
 }
 
-export function KycActions({ app }: { app: ApplicationView }) {
+export function KycActions({ app, compact }: { app: ApplicationView; compact?: boolean }) {
   const refresh = useRefreshAfterAction();
   const m = useMutation({
     mutationFn: (decision: boolean) => staffApi.kycDecision(app.id, decision),
@@ -181,14 +188,35 @@ export function KycActions({ app }: { app: ApplicationView }) {
   return (
     <ActionGate permission="kyc:approve">
       <div className="flex items-center gap-2">
-        <ApproveRejectButtons pending={m.isPending} onApprove={() => m.mutate(true)} onReject={() => m.mutate(false)} />
+        {/* Reject is a rejection of a person's file — it belongs on the detail dialog next to the
+            evidence, not as a one-click button on a dense queue row. */}
+        {compact ? (
+          <button
+            onClick={() => m.mutate(true)}
+            disabled={m.isPending}
+            className="btn btn-sm bg-success-600 border-success-600 text-white hover:bg-success-700 disabled:opacity-50"
+          >
+            {m.isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Approve
+          </button>
+        ) : (
+          <ApproveRejectButtons
+            pending={m.isPending}
+            onApprove={() => m.mutate(true)}
+            onReject={() => m.mutate(false)}
+          />
+        )}
         <ActionError error={m.error} />
       </div>
     </ActionGate>
   );
 }
 
-export function AssignActions({ app }: { app: ApplicationView }) {
+/**
+ * The credit assignment picker. `compact` (queue-row) renders nothing: a `<select>` of executives
+ * cannot fit a table cell without forcing the grid to scroll sideways, so assignment happens on the
+ * application detail dialog that `Open` raises.
+ */
+export function AssignActions({ app, compact }: { app: ApplicationView; compact?: boolean }) {
   const refresh = useRefreshAfterAction();
   const me = useStaffMe();
   const canAssignSelf = me.data?.role === "ADMIN" || me.data?.role === "CREDIT_HEAD";
@@ -213,9 +241,11 @@ export function AssignActions({ app }: { app: ApplicationView }) {
     mutationFn: () => staffApi.assign(app.id, Number(me.data!.id)),
     onSuccess: () => refresh(app.id),
   });
+  if (compact) return null;
   return (
     <ActionGate permission="loan:approve">
-      <div className="flex items-center gap-2">
+      {/* `items-end` so the buttons sit on the select's baseline rather than its label's. */}
+      <div className="flex flex-wrap items-end gap-2">
         {execQ.isLoading ? (
           <span className="text-xs text-muted">Loading executives…</span>
         ) : execQ.error ? (
@@ -227,22 +257,24 @@ export function AssignActions({ app }: { app: ApplicationView }) {
         ) : execs.length === 0 ? (
           <span className="text-xs text-muted">No active credit executives</span>
         ) : (
-          <>
-            <Select
-              aria-label="Credit executive"
-              className="!mb-0"
-              value={execId}
-              onChange={(e) => setExecId(e.target.value)}
-            >
-              <option value="" disabled>
-                Select executive…
+          <Select
+            label="Credit executive"
+            className="w-56"
+            value={execId}
+            onChange={(e) => setExecId(e.target.value)}
+          >
+            <option value="" disabled>
+              Select executive…
+            </option>
+            {execs.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
               </option>
-              {execs.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
+            ))}
+          </Select>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {execs.length > 0 && (
             <button
               onClick={() => m.mutate()}
               disabled={m.isPending || !execId}
@@ -250,18 +282,18 @@ export function AssignActions({ app }: { app: ApplicationView }) {
             >
               {m.isPending ? <Loader2 size={14} className="animate-spin" /> : null} {app.assignedExecutiveId ? "Reassign" : "Assign"}
             </button>
-          </>
-        )}
-        {canAssignSelf && me.data && (
-          <button
-            onClick={() => mSelf.mutate()}
-            disabled={mSelf.isPending}
-            className="btn btn-sm btn-outline disabled:opacity-50"
-            title="Assign this credit review to yourself"
-          >
-            {mSelf.isPending ? <Loader2 size={14} className="animate-spin" /> : null} {app.assignedExecutiveId ? "Reassign to me" : "Assign to me"}
-          </button>
-        )}
+          )}
+          {canAssignSelf && me.data && (
+            <button
+              onClick={() => mSelf.mutate()}
+              disabled={mSelf.isPending}
+              className="btn btn-sm btn-outline disabled:opacity-50"
+              title="Assign this credit review to yourself"
+            >
+              {mSelf.isPending ? <Loader2 size={14} className="animate-spin" /> : null} {app.assignedExecutiveId ? "Reassign to me" : "Assign to me"}
+            </button>
+          )}
+        </div>
         <ActionError error={m.error || mSelf.error} />
       </div>
     </ActionGate>
@@ -273,10 +305,16 @@ export function AssignActions({ app }: { app: ApplicationView }) {
  *
  * "Accept lead" is the FINAL credit decision, so it opens {@link SanctionDialog} rather than firing
  * inline: the reviewer must set an amount and salary-credit day, and see the projection before it
- * commits. Reject and Mark pending both capture a reason inline — "Mark lead pending" is only a tag
- * (the lead keeps its status and its place in the queue, and the borrower is never told).
+ * commits. Reject and Mark pending both capture a reason, and assignment needs an executive picker.
+ * "Mark lead pending" is only a tag (the lead keeps its status and its place in the queue, and the
+ * borrower is never told).
+ *
+ * `compact` is the queue-row rendering: only "Accept lead" — the one decision that needs no typing —
+ * stays on the row. Reject, Mark pending and assignment all need a text field or a picker, which
+ * would force the table to scroll sideways, so a row sends the reviewer to `Open` (the application
+ * detail dialog) where this same component renders in full.
  */
-export function CreditDecisionActions({ app }: { app: ApplicationView }) {
+export function CreditDecisionActions({ app, compact }: { app: ApplicationView; compact?: boolean }) {
   const refresh = useRefreshAfterAction();
   const me = useStaffMe();
   const [sanctioning, setSanctioning] = React.useState(false);
@@ -300,11 +338,24 @@ export function CreditDecisionActions({ app }: { app: ApplicationView }) {
   });
 
   const busy = reject.isPending || pending.isPending;
+  const canAssign = me.data?.role === "CREDIT_HEAD" || me.data?.role === "ADMIN";
+
+  // On a queue row: the one decision that needs no typing. Everything else is behind `Open`.
+  if (compact) {
+    return (
+      <ActionGate permission="loan:review">
+        <button onClick={() => setSanctioning(true)} className="btn btn-sm btn-gold">
+          <Check size={14} /> Accept
+        </button>
+        <SanctionDialog app={app} open={sanctioning} onClose={() => setSanctioning(false)} />
+      </ActionGate>
+    );
+  }
 
   return (
     <ActionGate permission="loan:review">
-      <div className="flex flex-col gap-2">
-        {(me.data?.role === "CREDIT_HEAD" || me.data?.role === "ADMIN") && <AssignActions app={app} />}
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+        {canAssign && <AssignActions app={app} />}
         {app.markedPendingAt && (
           <p className="text-xs text-warning-700">
             Marked pending{app.pendingReason ? ` — ${app.pendingReason}` : ""}
@@ -354,7 +405,7 @@ export function CreditDecisionActions({ app }: { app: ApplicationView }) {
   );
 }
 
-export function DisbursementActions({ app }: { app: ApplicationView }) {
+export function DisbursementActions({ app, compact }: { app: ApplicationView; compact?: boolean }) {
   const refresh = useRefreshAfterAction();
   const m = useMutation({
     mutationFn: (vars: { decision: boolean; txnRef?: string; notes?: string }) =>
@@ -363,6 +414,7 @@ export function DisbursementActions({ app }: { app: ApplicationView }) {
   });
   return (
     <ProofDecisionActions
+      compact={compact}
       permission="loan:disburse"
       approveLabel="Approve & release"
       rejectLabel="Reject"

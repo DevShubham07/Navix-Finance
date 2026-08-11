@@ -35,6 +35,71 @@ import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buc
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
 
+const SIDEBAR_WIDTH_KEY = "navix-staff-sidebar-width";
+const SIDEBAR_DEFAULT_WIDTH = 240; // px — matches the old fixed `w-60`
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 420;
+
+/** Drag-to-resize handle for the sidebar. Persists the chosen width to localStorage
+ *  and applies it via the CSS var `--sidebar-w` the <aside> reads (avoids a re-render
+ *  on every mousemove pixel). Double-click resets to the default width. */
+function SidebarResizer({ asideRef }: { asideRef: React.RefObject<HTMLElement | null> }) {
+  const draggingRef = React.useRef(false);
+
+  const applyWidth = React.useCallback((width: number) => {
+    const clamped = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
+    asideRef.current?.style.setProperty("--sidebar-w", `${clamped}px`);
+    return clamped;
+  }, [asideRef]);
+
+  React.useEffect(() => {
+    const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (stored) applyWidth(stored);
+  }, [applyWidth]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: PointerEvent) => {
+      if (!draggingRef.current || !asideRef.current) return;
+      const left = asideRef.current.getBoundingClientRect().left;
+      applyWidth(ev.clientX - left);
+    };
+    const onUp = () => {
+      draggingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      const width = asideRef.current?.getBoundingClientRect().width;
+      if (width) localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(width)));
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const onDoubleClick = () => {
+    applyWidth(SIDEBAR_DEFAULT_WIDTH);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_DEFAULT_WIDTH));
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      title="Drag to resize · double-click to reset"
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      className="group absolute -right-1 top-0 hidden h-full w-2 cursor-col-resize lg:block"
+    >
+      <div className="mx-auto h-full w-px bg-white/10 transition-colors group-hover:bg-gold group-active:bg-gold" />
+    </div>
+  );
+}
+
 type NavItem = {
   label: string;
   href: string;
@@ -157,7 +222,7 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
         if (!items.length) return null;
         return (
           <div key={group.heading} className="mb-5">
-            <p className="px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-wider text-navix-300">{group.heading}</p>
+            <p className="px-3 pb-2 text-[0.544rem] font-bold uppercase tracking-wider text-navix-300">{group.heading}</p>
             <ul className="space-y-0.5">
               {items.map((it) => {
                 const { label, href, Icon, sub, collectionBuckets } = it;
@@ -187,7 +252,7 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
                                 pathname === pathOnly && currentBucket === item.bucket ? "bg-white/10 font-semibold text-white" : "text-navix-300 hover:bg-white/5 hover:text-white",
                               )}>
                                 <span>{item.label}</span>
-                                <span className="rounded-full bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">{bucketCounts[item.bucket]}</span>
+                                <span className="rounded-full bg-white/10 px-1.5 py-0.5 font-mono text-[8px]">{bucketCounts[item.bucket]}</span>
                               </Link>
                             </li>
                           ))}
@@ -281,6 +346,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { session, loading } = useStaffSession();
   const isPublic = PUBLIC_STAFF.some((p) => pathname.startsWith(p));
+  const asideRef = React.useRef<HTMLElement>(null);
 
   const { data: flags } = useQuery({
     queryKey: ["feature-flags"],
@@ -317,7 +383,11 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-ivory">
-      <aside className="sticky top-0 hidden h-screen w-60 flex-shrink-0 flex-col bg-navy-900 lg:flex">
+      <aside
+        ref={asideRef}
+        style={{ width: "var(--sidebar-w, 240px)" }}
+        className="sticky top-0 hidden h-screen flex-shrink-0 flex-col bg-navy-900 lg:flex"
+      >
         <div className="border-b border-white/10 px-5 py-4">
           <Brand href="/staff/dashboard" tag="Staff Console" light />
         </div>
@@ -326,6 +396,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             <NavLinks role={session.role} pathname={pathname} flags={flags} />
           </React.Suspense>
         </nav>
+        <SidebarResizer asideRef={asideRef} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

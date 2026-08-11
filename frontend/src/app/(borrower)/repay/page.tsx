@@ -364,7 +364,7 @@ export default function RepayPage() {
                 <div>
                   Scan the QR or pay to <strong className="text-ink">{upiId}</strong>, then paste the
                   UPI reference below.
-                  <span className="mt-1 block text-[11px] text-muted">Tap the QR to enlarge it for scanning.</span>
+                  <span className="mt-1 block text-[8.8px] text-muted">Tap the QR to enlarge it for scanning.</span>
                 </div>
               </div>
             ) : (
@@ -428,8 +428,8 @@ function PayByOption({
     <div className={`rounded-lg border p-3 ${highlight ? "border-gold bg-gold-50/40" : "border-line bg-grey-50"}`}>
       <div className="text-xs font-semibold text-muted">{title}</div>
       <div className="font-serif text-lg font-bold text-navy">{paiseToINR(amount)}</div>
-      <div className="text-[11px] text-muted">{formatDate(date)}</div>
-      <div className={`mt-1 text-[11px] font-semibold ${highlight ? "text-gold-dark" : "text-success-700"}`}>{note}</div>
+      <div className="text-[8.8px] text-muted">{formatDate(date)}</div>
+      <div className={`mt-1 text-[8.8px] font-semibold ${highlight ? "text-gold-dark" : "text-success-700"}`}>{note}</div>
     </div>
   );
 }

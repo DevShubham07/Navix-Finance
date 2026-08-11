@@ -1,14 +1,22 @@
 "use client";
 
 /**
- * Unified application detail popup — replaces the old `/staff/credit/{id}` page.
+ * The single staff detail popup — every tab about a file and the person behind it, plus every
+ * action the signed-in role can take on it. Replaces the old `/staff/credit/{id}` page and folds in
+ * what used to be a second, separate customer dialog: a staffer opening a queue row should never
+ * have to work out which of two modals holds the field they need.
  *
- * "Continued context" like {@link CustomerDetailDialog}: open state is derived from
- * `applicationId != null` and the active-tab state lives above the data, so it survives
- * switching applications when the parent keeps this mounted and swaps the id. Seven tabs:
- * Overview · Journey · Verifications · Documents · Past details · Audit log · Remarks —
- * plus the stage's maker-checker action pinned in the header, so a reviewer never has to
- * leave the queue to act.
+ * It carries the **union** of both tab sets:
+ *   - application: Overview · Journey · Verifications · Documents · Past details · Audit log
+ *   - customer (`c:` prefixed, from {@link CUSTOMER_TABS}): Personal · Employment · Bank ·
+ *     Credit report · Loan applications · Calls & remarks · Customer activity
+ * The customer half loads lazily — nothing fetches `customersApi.get` until one of those tabs is
+ * actually opened, so the common case (glance at Overview, decide, close) costs no extra request.
+ *
+ * "Continued context": open state is derived from `applicationId != null` and the active-tab state
+ * lives above the data, so it survives switching applications when the parent keeps this mounted
+ * and swaps the id. The stage's maker-checker action is pinned in the header, so a reviewer never
+ * has to leave the queue to act.
  *
  * The **Overview** tab is deliberately role-shaped, not a field dump: a short shared borrower
  * strip, then the one card the signed-in role actually decides on ({@link RoleFocus}) —
@@ -29,7 +37,8 @@ import { StageDetailDialog } from "@/components/staff/stage-detail-dialog";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
-import { Section, KV, DocumentsTab, RemarksTab } from "@/components/staff/detail-parts";
+import { Section, KV, DocumentsTab } from "@/components/staff/detail-parts";
+import { CustomerTabBody } from "@/components/staff/customer-tabs";
 import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
 import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
 import { dpdBucket, daysBetween } from "@/lib/calc/loan-math";
@@ -101,6 +110,24 @@ function actionFor(app: ApplicationView): React.ReactNode {
   }
 }
 
+/**
+ * The customer half of the union, `c:`-prefixed so its keys can't collide with the application
+ * tabs (both sets have a "documents" and an "audit"). The bodies come from `customer-tabs.tsx`,
+ * shared with the full `/staff/customers/{id}` page so the two can't drift.
+ *
+ * `documents` is deliberately absent: the customer tab of that name just renders the *latest
+ * application's* documents, which is exactly what this dialog's own Documents tab already shows.
+ */
+const CUSTOMER_TAB_DEFS: TabDef[] = [
+  { key: "c:personal", label: "Personal" },
+  { key: "c:employment", label: "Employment" },
+  { key: "c:bank", label: "Bank" },
+  { key: "c:credit", label: "Credit report" },
+  { key: "c:loans", label: "Loan applications" },
+  { key: "c:calls", label: "Calls & remarks" },
+  { key: "c:audit", label: "Customer activity" },
+];
+
 export interface ApplicationDetailDialogProps {
   applicationId: number | null;
   onClose: () => void;
@@ -146,6 +173,16 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
   });
 
   const app = appQ.data;
+  // The customer half of the union. Lazy on purpose: a staffer who only glances at Overview and
+  // decides shouldn't pay for the whole customer roll-up. Once fetched it stays cached, so
+  // flipping between customer tabs costs nothing.
+  const onCustomerTab = tab.startsWith("c:");
+  const customerId = app?.customerId ?? null;
+  const customerQ = useQuery({
+    queryKey: ["customer-detail", customerId],
+    queryFn: () => customersApi.get(customerId as number),
+    enabled: open && onCustomerTab && customerId != null,
+  });
   const p = profileQ.data;
   const events = eventsQ.data ?? [];
   const journey = app ? deriveJourney(app, events) : null;
@@ -164,7 +201,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
     { key: "documents", label: "Documents" },
     { key: "past", label: "Past details" },
     { key: "audit", label: "Audit log", badge: events.length || undefined },
-    { key: "remarks", label: "Remarks" },
+    ...CUSTOMER_TAB_DEFS,
   ];
 
   return (
@@ -174,43 +211,50 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
           credit decision is now made off this one surface, so it carries the whole file. Type
           size is deliberately unchanged; emphasis comes from the KV weights, not scaling. */}
       <Dialog open={open} onClose={onClose} className="!max-w-[80vw] !w-[80vw]">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-3">
-          <div className="min-w-0">
-            <h3 className="font-serif text-lg text-navy">
-              {displayName} <span className="text-sm font-normal text-muted">— Application #{id}</span>
-            </h3>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
-              <span>#{app?.customerId ?? "—"}</span>
-              {displayMobile && <span>· {displayMobile}</span>}
-              {p?.pan && <span>· PAN {p.pan}</span>}
-              {p?.riskCategory && <span>· risk {p.riskCategory}</span>}
-              {app && (
-                <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">
-                  {statusLabel(app.status)}
-                </span>
-              )}
-              {briefQ.data?.available && (
-                <CreditBadge
-                  starRating={briefQ.data.starRating}
-                  creditScore={briefQ.data.creditScore}
-                  recommendation={briefQ.data.recommendation}
-                />
-              )}
+        <div className="border-b border-line pb-3">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-serif text-lg text-navy">
+                {displayName} <span className="text-sm font-normal text-muted">— Application #{id}</span>
+              </h3>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span>#{app?.customerId ?? "—"}</span>
+                {displayMobile && <span>· {displayMobile}</span>}
+                {p?.pan && <span>· PAN {p.pan}</span>}
+                {p?.riskCategory && <span>· risk {p.riskCategory}</span>}
+                {app && (
+                  <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">
+                    {statusLabel(app.status)}
+                  </span>
+                )}
+                {briefQ.data?.available && (
+                  <CreditBadge
+                    starRating={briefQ.data.starRating}
+                    creditScore={briefQ.data.creditScore}
+                    recommendation={briefQ.data.recommendation}
+                  />
+                )}
+              </div>
             </div>
-          </div>
-          {/* ml-auto keeps this cluster right-aligned when the header wraps on a narrow screen —
-              without it the close ✕ lands at the far LEFT under the identity block. */}
-          <div className="ml-auto flex items-center gap-2">
-            {action}
-            <button onClick={onClose} className="rounded p-1 text-muted hover:bg-grey-100 hover:text-ink" aria-label="Close">
+            {/* Close stays pinned to the top-right corner regardless of how tall the action
+                cluster below grows — it used to sit inline with the actions, which floated it to
+                the vertical middle of the dialog once the assignment picker appeared. */}
+            <button
+              onClick={onClose}
+              className="-mt-1 flex-shrink-0 rounded p-1 text-muted hover:bg-grey-100 hover:text-ink"
+              aria-label="Close"
+            >
               <X size={18} />
             </button>
           </div>
+          {/* The stage's maker-checker cluster gets its own full-width row: it can carry a select,
+              a text field and three buttons, which has no business competing with the title. */}
+          {action && <div className="mt-3 flex flex-wrap items-end gap-2">{action}</div>}
         </div>
 
         <Tabs tabs={tabs} active={tab} onChange={setTab} className="mt-2" />
 
-        <div className="mt-3 max-h-[80vh] overflow-y-auto pr-1 text-[13px]">
+        <div className="mt-3 max-h-[80vh] overflow-y-auto pr-1 text-[10.4px]">
           {appQ.isLoading ? (
             <p className="flex items-center gap-2 py-8 text-sm text-muted">
               <Loader2 size={15} className="animate-spin" /> Loading…
@@ -256,7 +300,23 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                 )
               )}
 
-              {tab === "remarks" && <RemarksTab customerId={app.customerId} />}
+              {onCustomerTab &&
+                (!canReview ? (
+                  <NoAccessNotice message="Customer details (incl. PII) aren't available to your role." />
+                ) : customerQ.isLoading ? (
+                  <p className="flex items-center gap-2 py-8 text-sm text-muted">
+                    <Loader2 size={15} className="animate-spin" /> Loading…
+                  </p>
+                ) : customerQ.error ? (
+                  <p className="py-8 text-sm text-error-700">{errMessage(customerQ.error)}</p>
+                ) : customerQ.data ? (
+                  <CustomerTabBody
+                    tab={tab.slice(2)}
+                    detail={customerQ.data}
+                    customerId={app.customerId}
+                    onChanged={() => customerQ.refetch()}
+                  />
+                ) : null)}
             </>
           )}
         </div>
@@ -588,7 +648,7 @@ function CollectionsFocus({ app }: { app: ApplicationView }) {
 
       <div className="text-xs font-semibold uppercase tracking-wide text-muted">How it adds up</div>
       {loan.disbursedOn && (
-        <p className="mb-1 text-[11px] text-muted">
+        <p className="mb-1 text-[8.8px] text-muted">
           Interest runs from disbursal on {formatDate(loan.disbursedOn)}
           {loan.dueDate ? ` and stops on the due date ${formatDate(loan.dueDate)}` : ""}; the late
           the grace day adds one normal-interest day without penalty. The 2% daily penalty starts the
@@ -755,7 +815,7 @@ function KycFocus({ applicationId, p }: { applicationId: number; p: ProfileView 
         <KV k="Penny drop" v={<CheckState status={statusOf("PENNY_DROP")} notRun="Not run" />} />
         <KV k="Identity match" v={p?.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null} />
       </dl>
-      <p className="mt-2 text-[11px] text-muted">Per-check detail and manual overrides are on the Verifications tab.</p>
+      <p className="mt-2 text-[8.8px] text-muted">Per-check detail and manual overrides are on the Verifications tab.</p>
     </FocusCard>
   );
 }

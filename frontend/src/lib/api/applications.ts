@@ -2013,6 +2013,7 @@ export function statusLabel(status: ApplicationStatus): string {
     .join(" ");
 }
 
+
 /** Read a browser File into base64 (no data: prefix), for the document-upload API. */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

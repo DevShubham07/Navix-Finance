@@ -8,6 +8,11 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      deploy_tag:
+        description: "Existing ECR image tag to deploy (manual rollback; leave empty for no deployment)"
+        required: false
+        type: string
 
 jobs:
   backend:
@@ -119,6 +124,116 @@ jobs:
             *"geolocation=(self)"*) echo "✓ live site is serving the current build" ;;
             *) echo "::warning::dhanboost.com did not show the expected header — check the alias." ;;
           esac
+
+  # ---------------------------------------------------------------------------
+  # Production backend deploy. Main pushes build an immutable image; manual
+  # dispatch can deploy an existing tag for rollback without rebuilding.
+  deploy-backend:
+    name: Deploy backend -> ECS (production)
+    needs: [backend]
+    if: >-
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_tag != '')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: ecs-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ap-south-1
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      ECR_REGISTRY: 382188661325.dkr.ecr.ap-south-1.amazonaws.com
+      ECR_REPOSITORY: navix-finance
+      ECS_CLUSTER: navix-cluster
+      ECS_SERVICE: navix-backend
+      ECS_TASK_FAMILY: navix-finance
+      BACKEND_HEALTH_URL: http://navix-alb-148184383.ap-south-1.elb.amazonaws.com/actuator/health
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check AWS deploy role is configured
+        run: |
+          if [ -z "$AWS_ROLE_TO_ASSUME" ]; then
+            echo "::error::AWS_ROLE_TO_ASSUME is not configured in the production environment."
+            exit 1
+          fi
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Select image tag
+        id: image
+        env:
+          MANUAL_TAG: ${{ inputs.deploy_tag }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          tag="$COMMIT_SHA"
+          if [ -n "$MANUAL_TAG" ]; then
+            if [[ ! "$MANUAL_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]]; then
+              echo "::error::deploy_tag contains invalid characters."
+              exit 1
+            fi
+            tag="$MANUAL_TAG"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$tag" >> "$GITHUB_OUTPUT"
+      - name: Build and push backend image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.backend
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.image.outputs.tag }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+      - name: Render task definition with selected image
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image }}
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "$ECS_TASK_FAMILY" \
+            --query taskDefinition \
+            --output json > task-definition.source.json
+          jq --arg image "$IMAGE_URI" '
+            if (.containerDefinitions | length) != 1 then
+              error("expected exactly one ECS container definition")
+            else
+              .containerDefinitions[0].image = $image |
+              del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+            end
+          ' task-definition.source.json > task-definition.deploy.json
+      - name: Register task definition and update ECS service
+        id: deploy
+        run: |
+          task_definition=$(aws ecs register-task-definition \
+            --cli-input-json file://task-definition.deploy.json \
+            --query taskDefinition.taskDefinitionArn \
+            --output text)
+          echo "task_definition=$task_definition" >> "$GITHUB_OUTPUT"
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "$task_definition" \
+            --force-new-deployment \
+            --output json > ecs-update.json
+      - name: Wait for ECS service stability
+        run: aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+      - name: Verify backend health through the ALB
+        run: |
+          curl --fail --silent --show-error --retry 12 --retry-delay 10 \
+            --retry-connrefused "$BACKEND_HEALTH_URL"
+          echo
+          echo "Backend deployment is healthy: ${{ steps.deploy.outputs.task_definition }}"
 
   # ---------------------------------------------------------------------------
   # Live E2E lane (manual): bring up Postgres + the backend (NAVIX_SMS_DEV_ECHO=true) +

@@ -203,7 +203,7 @@ export function MarketingHeader() {
       <aside className={`drawer${drawerOpen ? " open" : ""}`} id="drawer">
         <div className="drawer-top">
           <span className="brand-txt">
-            <b style={{ fontSize: "1.3rem", color: "var(--navy-800)" }}>DhanBoost</b>
+            <b style={{ fontSize: "1.04rem", color: "var(--navy-800)" }}>DhanBoost</b>
           </span>
           <button className="drawer-close" aria-label="Close menu" onClick={close}>
             ✕

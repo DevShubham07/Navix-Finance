@@ -208,17 +208,17 @@ export default function TransactionsPage() {
               No transactions{debounced ? ` for “${debounced}”` : ""}.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="staff-table-scroll">
+              <table className="staff-data-table">
                 <thead>
-                  <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                    <th className="px-4 py-2.5 font-semibold">Date</th>
-                    <th className="px-4 py-2.5 font-semibold">Borrower</th>
-                    <th className="px-4 py-2.5 font-semibold">Type</th>
-                    <th className="px-4 py-2.5 font-semibold">Amount</th>
-                    <th className="px-4 py-2.5 font-semibold">Reference</th>
-                    <th className="px-4 py-2.5 font-semibold">Status</th>
-                    <th className="px-4 py-2.5 font-semibold">Loan</th>
+                  <tr>
+                    <th>Date</th>
+                    <th>Borrower</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Reference</th>
+                    <th>Status</th>
+                    <th>Loan</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -238,24 +238,24 @@ export default function TransactionsPage() {
 function TxnRow({ t }: { t: TransactionView }) {
   const incoming = t.direction === "INCOMING";
   return (
-    <tr className="border-b border-line/60">
-      <td className="px-4 py-2.5 text-muted">{t.date ? formatDate(t.date) : "—"}</td>
-      <td className="px-4 py-2.5">
+    <tr>
+      <td className="text-muted">{t.date ? formatDate(t.date) : "—"}</td>
+      <td className="staff-cell" title={t.borrowerName ?? undefined}>
         <span className="font-medium text-ink">{t.borrowerName ?? "—"}</span>
         {t.pan && <span className="ml-1 font-mono text-xs text-muted">{t.pan}</span>}
       </td>
-      <td className="px-4 py-2.5">
+      <td>
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${incoming ? "bg-success-50 text-success-700" : "bg-navy-tint text-navy"}`}>
           {incoming ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
           {t.type === "REPAYMENT" ? "Repayment" : "Disbursal"}
         </span>
       </td>
-      <td className={`px-4 py-2.5 font-semibold ${incoming ? "text-success-700" : "text-ink"}`}>
+      <td className={`font-semibold ${incoming ? "text-success-700" : "text-ink"}`}>
         {incoming ? "+" : "−"}{paiseToINR(t.amountPaise)}
       </td>
-      <td className="px-4 py-2.5 text-muted">{t.txnRef || "—"}</td>
-      <td className="px-4 py-2.5 text-muted">{t.status ?? "—"}</td>
-      <td className="px-4 py-2.5 text-muted">{t.loanId != null ? `#${t.loanId}` : "—"}</td>
+      <td className="staff-cell text-muted" title={t.txnRef || undefined}>{t.txnRef || "—"}</td>
+      <td className="text-muted">{t.status ?? "—"}</td>
+      <td className="text-muted">{t.loanId != null ? `#${t.loanId}` : "—"}</td>
     </tr>
   );
 }

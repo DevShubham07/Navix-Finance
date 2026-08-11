@@ -44,7 +44,7 @@ export function Tabs({
           >
             {t.label}
             {t.badge != null && (
-              <span className="rounded-full bg-navy-tint px-1.5 py-0.5 text-[10px] font-semibold text-navy">
+              <span className="rounded-full bg-navy-tint px-1.5 py-0.5 text-[8px] font-semibold text-navy">
                 {t.badge}
               </span>
             )}

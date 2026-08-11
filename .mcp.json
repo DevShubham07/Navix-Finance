@@ -1,3 +1,17 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "C:\\Users\\KARTIK\\.local\\bin\\code-review-graph.exe",
+      "args": [
+        "serve",
+        "--repo",
+        "C:\\Users\\KARTIK\\Downloads\\navix-final\\Navix-Finance"
+      ],
+      "cwd": "C:\\Users\\KARTIK\\Downloads\\navix-final\\Navix-Finance",
+      "env": {
+        "PYTHONUTF8": "1"
+      },
+      "type": "stdio"
+    }
+  }
 }

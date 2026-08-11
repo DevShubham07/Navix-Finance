@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "docuseal-cli": {
+      "source": "docusealco/docuseal-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/docuseal-cli/SKILL.md",
+      "computedHash": "66593651909e1d954067b608d4e3554848e09ad4579f1a182706064008b8e547"
+    },
+    "docuseal-code": {
+      "source": "docusealco/docuseal-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/docuseal-code/SKILL.md",
+      "computedHash": "941fd4c4a93b701f0c28c12ed8c80ad93c229c676f5c66bdf715b39f2324180d"
+    }
+  }
+}

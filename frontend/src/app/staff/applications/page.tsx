@@ -14,7 +14,7 @@ import {
   CreditWorkbench,
   CreditDecisionActions,
   DisbursementActions,
-  AppRow,
+  QueueTable,
   errMessage,
   ROLE_LABEL,
   PIPELINE_ROLES,
@@ -120,7 +120,7 @@ function RoleQueues({ role }: { role: StaffRole }) {
           <StatusQueue
             title="Credit review — accept, reject or park"
             status="CREDIT_EXEC_PENDING"
-            actions={(app) => <CreditDecisionActions app={app} />}
+            actions={(app) => <CreditDecisionActions app={app} compact />}
             info="Files assigned to a credit executive. Accepting sets the sanctioned amount and repayment date — that decision is final and goes straight to disbursement, so there is no second approval behind it."
           />
           <StatusQueue
@@ -137,20 +137,20 @@ function RoleQueues({ role }: { role: StaffRole }) {
             title="Pre-approved — fast-track release"
             status="DISBURSEMENT_PENDING"
             filter={(app) => app.fastTrack === true}
-            actions={(app) => <DisbursementActions app={app} />}
+            actions={(app) => <DisbursementActions app={app} compact />}
             info="Returning borrowers pre-approved on a clean repayment history — these skipped credit review and came straight to you. Release the funds as usual."
           />
           <StatusQueue
             title="Standard disbursement"
             status="DISBURSEMENT_PENDING"
             filter={(app) => app.fastTrack !== true}
-            actions={(app) => <DisbursementActions app={app} />}
+            actions={(app) => <DisbursementActions app={app} compact />}
             info="Credit-approved loans awaiting release. Make the transfer, then enter its bank/UPI transaction id here — that releases and activates the loan straight away. There is no accountant step behind you."
           />
           <StatusQueue
             title="Disbursement failed — retry"
             status="DISBURSEMENT_FAILED"
-            actions={(app) => <DisbursementActions app={app} />}
+            actions={(app) => <DisbursementActions app={app} compact />}
             info="Transfers that were marked failed. Re-release them here once the bank issue is resolved."
           />
         </>
@@ -294,11 +294,7 @@ function RepaymentColumn({
       {apps.length === 0 ? (
         <p className="px-5 py-6 text-center text-sm text-muted">{emptyText}</p>
       ) : (
-        <ul className="divide-y divide-line">
-          {apps.map((app) => (
-            <AppRow key={app.id} app={app} actions={(a) => <CollectionAssignActions app={a} />} />
-          ))}
-        </ul>
+        <QueueTable apps={apps} actions={(a) => <CollectionAssignActions app={a} compact />} />
       )}
     </div>
   );
@@ -345,11 +341,7 @@ function ClosedPanel() {
               Nothing in the <code className="text-xs">CLOSED</code> queue.
             </p>
           ) : (
-            <ul className="divide-y divide-line">
-              {apps.map((app) => (
-                <AppRow key={app.id} app={app} actions={() => null} />
-              ))}
-            </ul>
+            <QueueTable apps={apps} actions={() => null} />
           )}
         </div>
       )}

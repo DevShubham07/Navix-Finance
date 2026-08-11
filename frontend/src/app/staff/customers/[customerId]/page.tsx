@@ -4,12 +4,13 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
+import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import {
   customersApi,
   adminApi,
@@ -59,11 +60,20 @@ export default function CustomerDetailPage() {
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
             <div className="min-w-0 rounded border border-line bg-white p-4 shadow-sm">
               <Tabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
-              <div className="mt-3 text-[13px]">
+              <div className="mt-3 text-[10.4px]">
                 <CustomerTabBody tab={tab} detail={c} customerId={id} onChanged={invalidate} />
               </div>
             </div>
             <div className="space-y-6">
+              {/* At-a-glance dial so the score is visible without opening the Credit Report tab. */}
+              <Card title="Credit score" icon={<Gauge size={16} />}>
+                <CreditScoreGauge
+                  score={c.profile?.creditScore ?? c.creditBrief?.creditScore ?? null}
+                  starRating={c.profile?.starRating ?? c.creditBrief?.starRating ?? null}
+                  recommendation={c.profile?.recommendation ?? c.creditBrief?.recommendation ?? null}
+                  size="sm"
+                />
+              </Card>
               <PermissionGate permission="customer:manage">
                 <AdminEditCard detail={c} onSaved={invalidate} />
                 <BlocklistCard customerId={id} />

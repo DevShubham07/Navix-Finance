@@ -82,7 +82,7 @@ export default function MyDecisionsPage() {
         </div>
       )}
 
-      <section className="overflow-x-auto rounded border border-line bg-white shadow-sm">
+      <section className="staff-table-scroll rounded border border-line bg-white shadow-sm">
         {q.error ? (
           <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
         ) : q.isLoading ? (
@@ -90,28 +90,28 @@ export default function MyDecisionsPage() {
         ) : rows.length === 0 ? (
           <p className="px-5 py-6 text-center text-sm text-muted">No decisions recorded yet.</p>
         ) : (
-          <table className="w-full text-[13px]">
-            <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+          <table className="staff-data-table">
+            <thead>
               <tr>
-                <th className="px-5 py-2 font-semibold">When</th>
-                <th className="px-5 py-2 font-semibold">Application</th>
-                <th className="px-5 py-2 font-semibold">Customer</th>
-                <th className="px-5 py-2 font-semibold">Decision</th>
-                <th className="px-5 py-2 font-semibold">Outcome</th>
-                <th className="px-5 py-2 font-semibold">Notes</th>
+                <th>When</th>
+                <th>Application</th>
+                <th>Customer</th>
+                <th>Decision</th>
+                <th>Outcome</th>
+                <th>Notes</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody>
               {rows.map((r, i) => (
                 <tr key={`${r.applicationId}-${r.at}-${i}`}>
-                  <td className="whitespace-nowrap px-5 py-2 text-muted">{formatDate(r.at)}</td>
-                  <td className="px-5 py-2 font-mono">#{r.applicationId}</td>
-                  <td className="px-5 py-2">{r.customerName ?? "—"}</td>
-                  <td className="px-5 py-2 font-semibold text-navy">
-                    {ACTION_LABEL[r.action] ?? r.action}
+                  <td className="text-muted">{formatDate(r.at)}</td>
+                  <td className="font-mono">#{r.applicationId}</td>
+                  <td className="staff-cell">{r.customerName ?? "—"}</td>
+                  <td className="font-semibold text-navy">{ACTION_LABEL[r.action] ?? r.action}</td>
+                  <td>{statusLabel(r.toStatus as ApplicationStatus)}</td>
+                  <td className="staff-cell text-muted" title={r.notes ?? undefined}>
+                    {r.notes ?? "—"}
                   </td>
-                  <td className="px-5 py-2">{statusLabel(r.toStatus as ApplicationStatus)}</td>
-                  <td className="px-5 py-2 text-muted">{r.notes ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

@@ -33,7 +33,7 @@ export function ZoomableQr({
         <span className="block rounded-lg border border-line bg-white p-3 shadow-2xl">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={src} alt="" className="h-60 w-60 max-w-[70vw] object-contain" />
-          <span className="mt-1.5 block text-center text-[11px] font-semibold text-muted">{zoomLabel}</span>
+          <span className="mt-1.5 block text-center text-[8.8px] font-semibold text-muted">{zoomLabel}</span>
         </span>
       </span>
     </span>

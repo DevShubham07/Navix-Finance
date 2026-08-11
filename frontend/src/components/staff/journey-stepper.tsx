@@ -189,7 +189,7 @@ export function JourneyStepper({ stages, activeIndex, onStageClick }: JourneySte
                   </span>
                   <span
                     className={cn(
-                      "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      "rounded-full px-2 py-0.5 text-[8.8px] font-semibold",
                       meta.pill,
                     )}
                   >

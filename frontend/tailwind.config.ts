@@ -124,16 +124,18 @@ const config: Config = {
         serif: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
         mono: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
       },
+      // Values are 80% of the previous scale (20% smaller base typography); line-heights
+      // scaled proportionally so leading stays visually consistent at the new size.
       fontSize: {
-        xs: ["12px", { lineHeight: "16px" }],
-        sm: ["14px", { lineHeight: "20px" }],
-        base: ["16px", { lineHeight: "26px" }],
-        lg: ["18px", { lineHeight: "28px" }],
-        xl: ["20px", { lineHeight: "28px" }],
-        "2xl": ["24px", { lineHeight: "32px" }],
-        "3xl": ["30px", { lineHeight: "38px" }],
-        "4xl": ["36px", { lineHeight: "42px" }],
-        "5xl": ["48px", { lineHeight: "1.1" }],
+        xs: ["9.6px", { lineHeight: "12.8px" }],
+        sm: ["11.2px", { lineHeight: "16px" }],
+        base: ["12.8px", { lineHeight: "20.8px" }],
+        lg: ["14.4px", { lineHeight: "22.4px" }],
+        xl: ["16px", { lineHeight: "22.4px" }],
+        "2xl": ["19.2px", { lineHeight: "25.6px" }],
+        "3xl": ["24px", { lineHeight: "30.4px" }],
+        "4xl": ["28.8px", { lineHeight: "33.6px" }],
+        "5xl": ["38.4px", { lineHeight: "1.1" }],
       },
       spacing: {
         0: "0",

@@ -145,35 +145,35 @@ export default function AdminExpensesPage() {
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <th className="whitespace-nowrap px-4 py-2.5">Date</th>
-                  <th className="px-4 py-2.5">Description</th>
-                  <th className="px-4 py-2.5">Paid to</th>
-                  <th className="whitespace-nowrap px-4 py-2.5 text-right">Amount</th>
-                  <th className="px-4 py-2.5">Notes</th>
-                  <th className="px-4 py-2.5">Receipt</th>
-                  <th className="whitespace-nowrap px-4 py-2.5">Added by</th>
-                  <th className="px-4 py-2.5 text-right">Action</th>
+                  <th className="whitespace-nowrap">Date</th>
+                  <th>Description</th>
+                  <th>Paid to</th>
+                  <th className="whitespace-nowrap text-right">Amount</th>
+                  <th>Notes</th>
+                  <th>Receipt</th>
+                  <th className="whitespace-nowrap">Added by</th>
+                  <th className="text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
                 {rows.map((e: ExpenseResponse) => (
                   <tr key={e.id} className="hover:bg-grey-50">
-                    <td className="whitespace-nowrap px-4 py-3 text-muted">{e.expenseDate}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap text-muted">{e.expenseDate}</td>
+                    <td>
                       <span className="block max-w-[18rem] truncate font-medium text-ink" title={e.description}>{e.description}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <span className="block max-w-[12rem] truncate text-ink" title={e.paidTo}>{e.paidTo}</span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-ink">{paiseToINR(e.amountPaise)}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap text-right font-semibold text-ink">{paiseToINR(e.amountPaise)}</td>
+                    <td>
                       <span className="block max-w-[16rem] truncate text-muted" title={e.notes ?? ""}>{e.notes || "—"}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {e.receiptUrl ? (
                         <a
                           href={e.receiptUrl}
@@ -187,8 +187,8 @@ export default function AdminExpensesPage() {
                         <span className="text-muted">—</span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted">{e.addedBy || "—"}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="whitespace-nowrap text-muted">{e.addedBy || "—"}</td>
+                    <td className="text-right">
                       <button onClick={() => remove.mutate(e.id)} disabled={remove.isPending} className="btn btn-sm btn-outline disabled:opacity-50">
                         <Trash2 size={13} /> Remove
                       </button>
@@ -196,16 +196,16 @@ export default function AdminExpensesPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-6 text-center text-muted">No expenses recorded yet.</td></tr>
+                  <tr><td colSpan={8} className="text-center text-muted">No expenses recorded yet.</td></tr>
                 )}
               </tbody>
               {rows.length > 0 && (
                 <tfoot className="border-t border-line bg-grey-50">
                   <tr>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted" colSpan={3}>
+                    <td className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted" colSpan={3}>
                       Total · {rows.length} {rows.length === 1 ? "expense" : "expenses"}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-navy">{paiseToINR(total)}</td>
+                    <td className="whitespace-nowrap text-right font-bold text-navy">{paiseToINR(total)}</td>
                     <td colSpan={4} />
                   </tr>
                 </tfoot>

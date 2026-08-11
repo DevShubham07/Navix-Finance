@@ -81,23 +81,23 @@ export default function AdminBlocklistPage() {
       ) : q.error ? (
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : (
-        <div className="overflow-x-auto rounded border border-line bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+          <table className="staff-data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-2.5">Type</th>
-                <th className="px-4 py-2.5">Value</th>
-                <th className="px-4 py-2.5">Reason</th>
-                <th className="px-4 py-2.5 text-right">Action</th>
+                <th>Type</th>
+                <th>Value</th>
+                <th>Reason</th>
+                <th className="text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {(q.data ?? []).map((b: BlocklistResponse) => (
                 <tr key={b.id}>
-                  <td className="px-4 py-3"><span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">{b.type}</span></td>
-                  <td className="px-4 py-3 font-mono text-ink">{b.value}</td>
-                  <td className="px-4 py-3 text-muted">{b.reason || "—"}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td><span className="rounded-full bg-navy-tint text-xs font-semibold text-navy">{b.type}</span></td>
+                  <td className="font-mono text-ink">{b.value}</td>
+                  <td className="text-muted">{b.reason || "—"}</td>
+                  <td className="text-right">
                     <button onClick={() => remove.mutate(b.id)} disabled={remove.isPending}
                       className="btn btn-sm btn-outline disabled:opacity-50">
                       <Trash2 size={13} /> Remove
@@ -106,7 +106,7 @@ export default function AdminBlocklistPage() {
                 </tr>
               ))}
               {(q.data ?? []).length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-6 text-center text-muted">No active blocklist entries.</td></tr>
+                <tr><td colSpan={4} className="text-center text-muted">No active blocklist entries.</td></tr>
               )}
             </tbody>
           </table>

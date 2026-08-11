@@ -58,8 +58,8 @@ export function RepaymentVerifyQueue() {
           <CheckCircle2 size={16} className="text-success-600" /> No repayments awaiting verification.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="staff-table-scroll">
+          <table className="staff-data-table">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
                 <th className="py-2 pr-3 font-semibold">Customer</th>

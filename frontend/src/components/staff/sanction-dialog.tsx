@@ -108,7 +108,7 @@ export function SanctionDialog({
         {profile.isLoading ? (
           <p className="text-sm text-muted">Loading…</p>
         ) : (
-          <dl className="grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-3">
+          <dl className="grid gap-x-6 gap-y-1 text-[10.4px] sm:grid-cols-3">
             <Kv label="Bank" value={profile.data?.salaryBank} />
             <Kv label="Account number" value={profile.data?.salaryAccountNumber} />
             <Kv label="IFSC" value={profile.data?.salaryIfsc} />
@@ -121,7 +121,7 @@ export function SanctionDialog({
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
             Repayment schedule
           </p>
-          <dl className="grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-2">
+          <dl className="grid gap-x-6 gap-y-1 text-[10.4px] sm:grid-cols-2">
             <Kv label="Principal" value={formatINR(preview.principal)} />
             <Kv label="Processing fee (excl. GST)" value={formatINR(preview.processingFee)} />
             <Kv label="GST on fee" value={formatINR(preview.gstOnFee)} />

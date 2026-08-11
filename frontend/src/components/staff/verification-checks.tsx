@@ -90,7 +90,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
               onClick={() => remind.mutate()}
               disabled={remind.isPending || remind.isSuccess}
               title="Remind the borrower of their pending verification steps"
-              className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-navy hover:bg-navy-tint disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint disabled:opacity-50"
             >
               {remind.isPending ? <Loader2 size={11} className="animate-spin" /> : <Bell size={11} />}
               {remind.isSuccess ? (remind.data?.sent ? "Reminded" : "Nothing pending") : "Send reminder"}
@@ -143,7 +143,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                   <div className="mt-2 border-t border-line pt-2">
                     <button
                       onClick={() => setOverride(s)}
-                      className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-navy hover:bg-navy-tint"
+                      className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint"
                     >
                       <ShieldCheck size={12} /> Manual override
                     </button>
@@ -151,7 +151,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                 </PermissionGate>
                 <PermissionGate permission="verification:retry">
                   <div className="mt-2">
-                    <button onClick={() => setRetry(s)} className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-navy hover:bg-navy-tint">
+                    <button onClick={() => setRetry(s)} className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint">
                       <RotateCcw size={12} /> Retry API
                     </button>
                   </div>

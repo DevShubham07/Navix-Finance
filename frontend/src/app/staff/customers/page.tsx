@@ -148,7 +148,7 @@ function CustomersPageInner() {
           )}
         </div>
 
-        <div className="overflow-x-auto rounded border border-line bg-white shadow-sm">
+        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
           {q.isLoading ? (
             <div className="h-40 animate-pulse rounded bg-grey-100" />
           ) : q.error ? (
@@ -158,30 +158,34 @@ function CustomersPageInner() {
               No customers{debounced ? ` for “${debounced}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}.
             </p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2.5">Customer</th>
-                  <th className="px-4 py-2.5">Mobile</th>
-                  <th className="px-4 py-2.5">Owner</th>
-                  <th className="px-4 py-2.5">Loans</th>
-                  <th className="px-4 py-2.5">Outstanding</th>
-                  <th className="px-4 py-2.5">CIBIL</th>
-                  <th className="px-4 py-2.5">Latest status</th>
-                  <th className="px-4 py-2.5 text-right">Open</th>
+                  <th>Customer</th>
+                  <th>Mobile</th>
+                  <th>Owner</th>
+                  <th>Loans</th>
+                  <th>Outstanding</th>
+                  <th>CIBIL</th>
+                  <th>Latest status</th>
+                  <th className="text-right">Open</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line">
+              <tbody>
                 {filtered.map((c) => (
                   <tr key={c.customerId} className="hover:bg-grey-50">
-                    <td className="px-4 py-3">
-                      <button onClick={() => setOpenId(c.customerId)} className="flex items-center gap-2 text-left">
-                        <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full bg-navy-tint text-navy">
-                          <Contact size={15} />
+                    <td className="staff-cell">
+                      <button
+                        onClick={() => setOpenId(c.customerId)}
+                        className="flex max-w-full items-center gap-2 text-left"
+                        title={c.name ?? undefined}
+                      >
+                        <span className="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full bg-navy-tint text-navy">
+                          <Contact size={13} />
                         </span>
                         <span className="min-w-0">
-                          <span className="block font-semibold text-ink hover:underline">{c.name ?? "—"}</span>
-                          <span className="block text-xs text-muted">
+                          <span className="block truncate font-semibold text-ink hover:underline">{c.name ?? "—"}</span>
+                          <span className="block truncate text-xs text-muted">
                             <Link
                               href={`/staff/customers/${c.customerId}`}
                               onClick={(e) => e.stopPropagation()}
@@ -194,25 +198,25 @@ function CustomersPageInner() {
                         </span>
                       </button>
                     </td>
-                    <td className="px-4 py-3 font-mono text-muted">{c.mobile ?? "—"}</td>
-                    <td className="px-4 py-3 text-sm text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>
-                    <td className="px-4 py-3 text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
-                    <td className="px-4 py-3 font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
-                    <td className="px-4 py-3">
+                    <td className="font-mono text-muted">{c.mobile ?? "—"}</td>
+                    <td className="staff-cell text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>
+                    <td className="text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
+                    <td className="font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
+                    <td>
                       {c.starRating != null || c.creditScore != null ? (
                         <CreditBadge starRating={c.starRating} creditScore={c.creditScore} />
                       ) : (
                         <span className="text-xs text-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {c.latestStatus ? (
-                        <span className="rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">
+                        <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">
                           {statusLabel(c.latestStatus as ApplicationStatus)}
                         </span>
                       ) : "—"}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="text-right">
                       <button onClick={() => setOpenId(c.customerId)} className="inline-flex items-center gap-1 text-navy hover:underline">
                         Open <ArrowRight size={14} />
                       </button>

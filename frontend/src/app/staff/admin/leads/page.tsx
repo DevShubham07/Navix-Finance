@@ -226,45 +226,45 @@ export default function AdminLeadsPage() {
 
       <section>
         <h2 className="mb-3 font-serif text-xl text-navy">Lead register</h2>
-        <div className="overflow-x-auto rounded-lg border border-navy/10 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-navy/10 bg-ivory text-xs uppercase text-navy/60">
+        <div className="staff-table-scroll rounded-lg border border-navy/10 bg-white">
+          <table className="staff-data-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Mobile</th>
-                <th className="px-3 py-2">Source</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">★</th>
-                <th className="px-3 py-2">Remarks</th>
-                <th className="px-3 py-2">By</th>
-                <th className="px-3 py-2">Created</th>
+                <th>Name</th>
+                <th>Mobile</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>★</th>
+                <th>Remarks</th>
+                <th>By</th>
+                <th>Created</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-navy/40">
+                  <td colSpan={8} className="text-center text-navy/40">
                     {list.isLoading ? "Loading…" : "No leads in this filter."}
                   </td>
                 </tr>
               )}
               {rows.map((row) => (
                 <tr key={row.id} className="border-b border-navy/5">
-                  <td className="px-3 py-2 font-medium text-navy">{row.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{row.mobile}</td>
-                  <td className="px-3 py-2">
+                  <td className="font-medium text-navy">{row.name}</td>
+                  <td className="font-mono text-xs">{row.mobile}</td>
+                  <td>
                     {row.source ?? "—"}
                     {row.sourceDetail ? ` · ${row.sourceDetail}` : ""}
                   </td>
-                  <td className="px-3 py-2 text-xs">{row.callStatus.replace(/_/g, " ")}</td>
-                  <td className="px-3 py-2">{row.qualityRating ? `${row.qualityRating}★` : "—"}</td>
-                  <td className="max-w-[200px] truncate px-3 py-2 text-navy/70">
+                  <td className="text-xs">{row.callStatus.replace(/_/g, " ")}</td>
+                  <td>{row.qualityRating ? `${row.qualityRating}★` : "—"}</td>
+                  <td className="max-w-[200px] truncate text-navy/70">
                     {row.remarks || "—"}
                   </td>
-                  <td className="px-3 py-2 text-navy/70">
+                  <td className="text-navy/70">
                     {row.createdByStaffName || row.createdByStaffId}
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-navy/50">
+                  <td className="font-mono text-xs text-navy/50">
                     {row.createdAt?.slice(0, 10)}
                   </td>
                 </tr>

@@ -135,7 +135,7 @@ function Row({ label, value, mono }: { label: string; value: React.ReactNode; mo
 /** Small green "Verified" pill shown next to an identity field that's been verified. */
 function VerifiedPill() {
   return (
-    <span className="inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[10px] font-semibold text-success-700">
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-success-50 px-1.5 py-0.5 text-[8px] font-semibold text-success-700">
       <Check size={10} /> Verified
     </span>
   );

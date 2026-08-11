@@ -6,7 +6,7 @@ import { CreditBadge } from "@/components/staff/credit-badge";
 import { ApplicationJourney } from "@/components/staff/application-journey";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
-import { statusLabel, paiseToINR, type ApplicationView } from "@/lib/api/applications";
+import { paiseToINR, type ApplicationView } from "@/lib/api/applications";
 import { daysBetween } from "@/lib/calc/loan-math";
 import { formatDate } from "@/lib/utils";
 
@@ -15,7 +15,17 @@ function dpdDays(app: ApplicationView): number {
   return Math.max(0, daysBetween(new Date(`${app.loanDueDate}T00:00:00`), new Date()));
 }
 
-/** A semantic staff-table row with identity and actions kept visible while horizontally scrolling. */
+/**
+ * One queue row, deliberately one line tall.
+ *
+ * The console is a triage grid. The row always carries the identifiers a staffer needs to recognise
+ * a file at a glance — application id, customer name, mobile, customer id, and the loan number once
+ * one exists — plus amount, stage and credit. Every *control* that needs typing or picking (assign
+ * an executive, reject with a reason, mark pending, enter a transaction id) lives in
+ * {@link ApplicationDetailDialog}, which `Open` and the id both raise and which already renders the
+ * full stage cluster. Long values truncate with an ellipsis and keep the full text in `title`, so
+ * nothing is lost and the table never scrolls sideways.
+ */
 export function AppRow({
   app,
   actions,
@@ -37,58 +47,68 @@ export function AppRow({
             type="button"
             onClick={() => setShowDetail(true)}
             className="text-left font-serif font-semibold text-navy hover:underline"
+            title={`Open application #${app.id}`}
           >
             #{app.id}
           </button>
-          <div className="mt-1 text-xs text-muted">Customer #{app.customerId}</div>
+          <div className="text-xs text-muted">Cust #{app.customerId}</div>
         </td>
-        <td>
-          <div className="font-semibold text-ink">{app.customerName || "Name unavailable"}</div>
-          <div className="mt-1 font-mono text-xs text-muted">{app.customerMobile || "Mobile unavailable"}</div>
+        <td className="staff-cell font-semibold text-ink" title={app.customerName || undefined}>
+          {app.customerName || "Name unavailable"}
         </td>
+        <td className="font-mono text-muted">{app.customerMobile || "—"}</td>
+        <td className="font-mono text-muted">{app.loanId != null ? `#${app.loanId}` : "—"}</td>
         <td>
-          <div className="font-semibold text-ink">
+          <span className="font-semibold text-ink">
             {app.amountRequestedPaise != null
               ? paiseToINR(app.amountRequestedPaise)
               : app.eligibleLimitPaise != null
                 ? paiseToINR(app.eligibleLimitPaise)
                 : "—"}
-          </div>
-          <div className="mt-1 text-xs text-muted">
-            {app.amountRequestedPaise != null ? "Requested" : "Eligible limit"}
-          </div>
-          {app.sanctionedAmountPaise != null && (
-            <div className="mt-1 text-xs text-muted">Sanctioned {paiseToINR(app.sanctionedAmountPaise)}</div>
-          )}
-        </td>
-        <td>
-          <span className="inline-flex rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">
-            {statusLabel(app.status)}
+          </span>{" "}
+          <span
+            className="text-xs text-muted"
+            title={app.amountRequestedPaise != null ? "Amount requested" : "Eligible limit"}
+          >
+            {app.amountRequestedPaise != null ? "req" : "elig"}
           </span>
-          {app.markedPendingAt && (
-            <div
-              className="mt-2 max-w-[14rem] rounded bg-warning-100 px-2 py-1 text-xs font-semibold text-warning-700"
-              title={app.pendingReason || "Pending review"}
-            >
-              Pending: {app.pendingReason || "Review required"}
-            </div>
+        </td>
+        {/* Due date sits beside the amount because that's how a collections officer reads a row:
+            how much, by when, and how late. An overdue loan also carries the extra days it has run
+            past that date — and a loan that is overdue with no due date on file still shows the
+            days, since "how late" is the only number that matters at that point. */}
+        <td className="whitespace-nowrap">
+          {app.loanDueDate ? (
+            <span className={dpd > 0 ? "font-semibold text-error-700" : "text-ink"}>
+              {formatDate(app.loanDueDate)}
+            </span>
+          ) : (
+            <span className="text-muted">—</span>
           )}
-          {dpd > 0 && <div className="mt-2 text-xs font-semibold text-error-700">Overdue · {dpd} DPD</div>}
+          {dpd > 0 && (
+            <span className="ml-1 text-xs font-semibold text-error-700" title="Days past due">
+              +{dpd}d
+            </span>
+          )}
+          {app.markedPendingAt && (
+            <span
+              className="ml-1 inline-flex rounded bg-warning-100 px-1.5 py-0.5 text-xs font-semibold text-warning-700"
+              title={`Marked pending — ${app.pendingReason || "review required"}`}
+            >
+              Pending
+            </span>
+          )}
         </td>
         <td>
           <CreditBadge
+            compact
             starRating={app.starRating}
             creditScore={app.creditScore}
             recommendation={app.recommendation}
           />
         </td>
-        <td className="text-xs text-muted">
-          <div>{app.assignedExecutiveId != null ? `Executive #${app.assignedExecutiveId}` : "Unassigned"}</div>
-          <div className="mt-1">{app.loanId != null ? `Loan #${app.loanId}` : "Loan not created"}</div>
-          {app.loanDueDate && <div className="mt-1">Due {formatDate(app.loanDueDate)}</div>}
-        </td>
         <td className="staff-sticky-actions">
-          <div className="flex min-w-max flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setShowDetail(true)}
@@ -100,10 +120,11 @@ export function AppRow({
             <button
               type="button"
               onClick={() => setShowJourney(true)}
-              className="btn btn-sm btn-outline"
+              className="btn btn-sm btn-outline btn-icon"
+              aria-label="View the full application journey"
               title="View the full application journey"
             >
-              <Route size={14} /> Journey
+              <Route size={14} />
             </button>
             {actions(app)}
           </div>
@@ -126,7 +147,7 @@ export function AppRow({
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={7} className="bg-grey-50">
+          <td colSpan={8} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

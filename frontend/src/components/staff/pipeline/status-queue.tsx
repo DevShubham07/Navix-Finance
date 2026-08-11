@@ -85,7 +85,7 @@ export function CreditQueuePanel() {
       isLoading={q.isLoading}
       error={q.error}
       onRefresh={() => q.refetch()}
-      actions={(app) => <AssignActions app={app} />}
+      actions={(app) => <AssignActions app={app} compact />}
       info="Submitted intakes awaiting a credit review. Assign each to an ACTIVE Credit Executive — their decision is the final one."
     />
   );
@@ -115,24 +115,28 @@ export function CreditWorkbench() {
   };
   const assigned = assignedQ.data ?? [];
   const myId = Number(me.data?.id);
+  // Keyed by staff id, never by name: two active executives can genuinely share a display name,
+  // and keying on the title made React collapse their panels into one ("two children with the
+  // same key") — one executive's queue silently disappeared.
   const groups = [
-    { title: "Unallocated", apps: unallocatedQ.data ?? [], actions: (app: ApplicationView) => <AssignActions app={app} /> },
-    { title: "Assigned to me", apps: assigned.filter((app) => app.assignedExecutiveId === myId), actions: (app: ApplicationView) => <CreditDecisionActions app={app} /> },
+    { key: "unallocated", title: "Unallocated", apps: unallocatedQ.data ?? [], actions: (app: ApplicationView) => <AssignActions app={app} compact /> },
+    { key: "mine", title: "Assigned to me", apps: assigned.filter((app) => app.assignedExecutiveId === myId), actions: (app: ApplicationView) => <CreditDecisionActions app={app} compact /> },
     ...(execQ.data ?? []).map((executive) => ({
+      key: `exec-${executive.id}`,
       title: executive.name,
       apps: assigned.filter((app) => app.assignedExecutiveId === executive.id),
-      actions: (app: ApplicationView) => <CreditDecisionActions app={app} />,
+      actions: (app: ApplicationView) => <CreditDecisionActions app={app} compact />,
     })),
   ];
   const knownIds = new Set([myId, ...(execQ.data ?? []).map((executive) => executive.id)]);
   const unknown = assigned.filter((app) => app.assignedExecutiveId == null || !knownIds.has(app.assignedExecutiveId));
-  if (unknown.length) groups.push({ title: "Other assignees", apps: unknown, actions: (app) => <CreditDecisionActions app={app} /> });
+  if (unknown.length) groups.push({ key: "other", title: "Other assignees", apps: unknown, actions: (app) => <CreditDecisionActions app={app} compact /> });
 
   return (
     <div className="space-y-5">
       {groups.map((group) => (
         <QueuePanel
-          key={group.title}
+          key={group.key}
           title={group.title}
           countBadge={group.title}
           apps={group.apps}
@@ -192,27 +196,49 @@ export function QueuePanel({
           Nothing in the <code className="text-xs">{countBadge}</code> queue.
         </p>
       ) : (
-        <div className="staff-table-scroll">
-          <table className="staff-data-table min-w-[1120px]">
-            <thead>
-              <tr>
-                <th className="staff-sticky-identity">Application</th>
-                <th>Customer</th>
-                <th>Amount</th>
-                <th>Status / pending</th>
-                <th>Credit</th>
-                <th>Assignment / loan</th>
-                <th className="staff-sticky-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {apps.map((app) => (
-                <AppRow key={app.id} app={app} actions={actions} withLoanHistory={withLoanHistory} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <QueueTable apps={apps} actions={actions} withLoanHistory={withLoanHistory} />
       )}
     </section>
+  );
+}
+
+/**
+ * The queue grid itself, shared by every panel that lists applications.
+ *
+ * Identifiers first (application, customer, mobile, loan), then the triage facts. It fits its panel
+ * at laptop widths because the *controls* moved into `ApplicationDetailDialog` rather than because
+ * information was dropped; see {@link AppRow}.
+ */
+export function QueueTable({
+  apps,
+  actions,
+  withLoanHistory,
+}: {
+  apps: ApplicationView[];
+  actions: (app: ApplicationView) => React.ReactNode;
+  withLoanHistory?: boolean;
+}) {
+  return (
+    <div className="staff-table-scroll">
+      <table className="staff-data-table">
+        <thead>
+          <tr>
+            <th className="staff-sticky-identity">Application</th>
+            <th>Customer</th>
+            <th>Mobile</th>
+            <th>Loan</th>
+            <th>Amount</th>
+            <th>Due</th>
+            <th>Credit</th>
+            <th className="staff-sticky-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {apps.map((app) => (
+            <AppRow key={app.id} app={app} actions={actions} withLoanHistory={withLoanHistory} />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

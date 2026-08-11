@@ -102,7 +102,7 @@ function DocRow({
     <li className="flex flex-wrap items-center gap-2 rounded border border-line px-3 py-2">
       <FileText size={15} className="flex-shrink-0 text-navy" />
       <span className="min-w-0 flex-1 truncate text-ink">{doc.fileName}</span>
-      <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[11px] font-semibold text-navy">{doc.docType}</span>
+      <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[8.8px] font-semibold text-navy">{doc.docType}</span>
       <button onClick={view} disabled={busy} className="btn btn-sm btn-outline disabled:opacity-50">
         {busy ? <Loader2 size={13} className="animate-spin" /> : <ExternalLink size={13} />} View
       </button>
@@ -233,7 +233,7 @@ export function RemarksTab({ customerId }: { customerId: number }) {
           {remarks.map((r) => (
             <li key={r.id} className="rounded border border-line p-2.5">
               <p className="whitespace-pre-wrap text-sm text-ink">{r.body}</p>
-              <p className="mt-1 text-[11px] text-muted">
+              <p className="mt-1 text-[8.8px] text-muted">
                 {r.author ?? "staff"}
                 {r.at ? ` · ${formatDateTime(r.at)}` : ""}
               </p>

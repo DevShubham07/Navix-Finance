@@ -32,7 +32,7 @@ export function useCollectionCases() {
   });
 }
 
-export function CollectionAssignActions({ app }: { app: ApplicationView }) {
+export function CollectionAssignActions({ app, compact }: { app: ApplicationView; compact?: boolean }) {
   const qc = useQueryClient();
   const role = useStaffMe().data?.role;
   const canManage = role != null && hasPermission(role, "collections:manage");
@@ -81,14 +81,36 @@ export function CollectionAssignActions({ app }: { app: ApplicationView }) {
   if (app.loanId == null || !canInteract) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex items-center gap-1.5">
       {kase?.assignedOfficerName && (
-        <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
-          Officer: {kase.assignedOfficerName}
+        <span
+          className="max-w-[9rem] truncate rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy"
+          title={`Assigned officer: ${kase.assignedOfficerName}`}
+        >
+          {kase.assignedOfficerName}
         </span>
       )}
 
-      {canManage && (
+      {!canManage && !kase && (
+        <button
+          onClick={() => start.mutate()}
+          disabled={start.isPending}
+          className="btn btn-sm btn-outline disabled:opacity-50"
+          title="Open a collection case for this loan"
+        >
+          {start.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Start collections
+        </button>
+      )}
+
+      {kase && (
+        <Link href={`/staff/collections/${kase.id}`} className="btn btn-sm btn-outline">
+          Case <ArrowRight size={14} />
+        </Link>
+      )}
+
+      {/* The officer picker is a full-width control, so it renders only on the detail dialog
+          (`compact` is the queue row). Assigning from the row would force the grid to scroll. */}
+      {canManage && !compact && (
         <>
           {officersQ.isLoading ? (
             <span className="text-xs text-muted">Loading officers…</span>
@@ -127,23 +149,6 @@ export function CollectionAssignActions({ app }: { app: ApplicationView }) {
             </>
           )}
         </>
-      )}
-
-      {!canManage && !kase && (
-        <button
-          onClick={() => start.mutate()}
-          disabled={start.isPending}
-          className="btn btn-sm btn-outline disabled:opacity-50"
-          title="Open a collection case for this loan"
-        >
-          {start.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Start collections
-        </button>
-      )}
-
-      {kase && (
-        <Link href={`/staff/collections/${kase.id}`} className="btn btn-sm btn-outline">
-          Case <ArrowRight size={14} />
-        </Link>
       )}
 
       {(assign.error || start.error) && (

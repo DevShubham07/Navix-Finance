@@ -14,22 +14,52 @@ function tone(rating: number | null | undefined): string {
  * Staff-only credit pill: the CIBIL/bureau score + 1–5★ rating, e.g. "CIBIL 778 · ★★★★☆ 4.0".
  * The score is always labelled "CIBIL" and shown at full contrast so it can't be missed.
  * Renders nothing when there's no rating or score (so it can be dropped into any row safely).
+ *
+ * `compact` drops the "CIBIL" word and the five star glyphs for a "778 · 4.0★" pill — the stars
+ * cost ~70px, which is the difference between a queue row fitting its panel and the whole grid
+ * scrolling sideways. The full reading still shows on hover via `title`.
  */
 export function CreditBadge({
   starRating,
   creditScore,
   recommendation,
+  compact,
   className,
 }: {
   starRating?: number | null;
   creditScore?: number | null;
   recommendation?: string | null;
+  compact?: boolean;
   className?: string;
 }) {
   if (starRating == null && creditScore == null) return null;
-  const title = [creditScore != null ? `CIBIL ${creditScore}` : null, recommendation]
+  const title = [
+    creditScore != null ? `CIBIL ${creditScore}` : null,
+    starRating != null ? `${starRating.toFixed(1)}★` : null,
+    recommendation,
+  ]
     .filter(Boolean)
     .join(" · ");
+  if (compact) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+          tone(starRating),
+          className,
+        )}
+        title={title || undefined}
+      >
+        {creditScore != null && <span className="font-bold">{creditScore}</span>}
+        {starRating != null && (
+          <>
+            {creditScore != null && <span aria-hidden className="opacity-50">·</span>}
+            <span>{starRating.toFixed(1)}★</span>
+          </>
+        )}
+      </span>
+    );
+  }
   return (
     <span
       className={cn(

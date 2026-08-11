@@ -2,12 +2,12 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|Bash",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "cat >/dev/null || true; git rev-parse --git-dir >/dev/null 2>&1 && code-review-graph update --skip-flows --repo \"C:/Users/KARTIK/Downloads/navix-final/Navix-Finance\" || true",
-            "timeout": 30
+            "command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:/Users/KARTIK/Downloads/navix-final/Navix-Finance/scripts/code-review-graph-hook.ps1\" update",
+            "timeout": 120
           }
         ]
       }
@@ -18,8 +18,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat >/dev/null || true; git rev-parse --git-dir >/dev/null 2>&1 && code-review-graph status --repo \"C:/Users/KARTIK/Downloads/navix-final/Navix-Finance\" || echo 'Not a git repo, skipping'",
-            "timeout": 10
+            "command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"C:/Users/KARTIK/Downloads/navix-final/Navix-Finance/scripts/code-review-graph-hook.ps1\" status",
+            "timeout": 30
           }
         ]
       }

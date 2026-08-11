@@ -471,7 +471,7 @@ function PreApprovedBanner({
           {ctaLabel} <ArrowRight size={16} />
         </Link>
 
-        <p className="mt-4 text-[11px] text-white/55">*T&amp;C Apply</p>
+        <p className="mt-4 text-[8.8px] text-white/55">*T&amp;C Apply</p>
       </div>
     </div>
   );

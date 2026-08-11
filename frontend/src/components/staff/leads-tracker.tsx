@@ -95,8 +95,8 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={sourceData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e8e4dc" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <XAxis dataKey="name" tick={{ fontSize: 8.8 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 8.8 }} />
                 <Tooltip />
                 <Bar dataKey="value" fill={NAVY} name="Leads" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -111,8 +111,8 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={trend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e8e4dc" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <XAxis dataKey="date" tick={{ fontSize: 8 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 8.8 }} />
                 <Tooltip />
                 <Legend />
                 <Line type="monotone" dataKey="created" stroke={NAVY} strokeWidth={2} name="Created" dot={false} />
@@ -126,8 +126,8 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={ratingData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e8e4dc" />
-              <XAxis dataKey="rating" tick={{ fontSize: 11 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <XAxis dataKey="rating" tick={{ fontSize: 8.8 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 8.8 }} />
               <Tooltip />
               <Bar dataKey="count" fill={GOLD} name="Leads" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -141,8 +141,8 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
             <ResponsiveContainer width="100%" height={Math.max(180, staffData.length * 36)}>
               <BarChart data={staffData} layout="vertical" margin={{ left: 24 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e8e4dc" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 8.8 }} />
+                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 8.8 }} />
                 <Tooltip />
                 <Bar dataKey="count" fill={NAVY} name="Leads" radius={[0, 4, 4, 0]} />
               </BarChart>

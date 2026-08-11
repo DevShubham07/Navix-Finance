@@ -168,7 +168,7 @@ function LoanDetails({ loanId }: { loanId: number }) {
           <div className="font-serif text-base font-semibold text-navy">
             {loan.dueDate ? formatDate(loan.dueDate) : "—"}
           </div>
-          <div className="text-[11px] text-muted">due on your salary day</div>
+          <div className="text-[8.8px] text-muted">due on your salary day</div>
         </div>
         <Stat label="Disbursed on" value={loan.disbursedOn ? formatDate(loan.disbursedOn) : "—"} />
         <Stat label="Loan #" value={`#${loan.id}`} />
@@ -177,7 +177,7 @@ function LoanDetails({ loanId }: { loanId: number }) {
           <Badge variant={statusVariant(loan.status as ApplicationStatus)}>{loan.status}</Badge>
         </div>
       </div>
-      <div className="mt-3 text-[11px] text-muted">
+      <div className="mt-3 text-[8.8px] text-muted">
         Upfront deductions: processing fee {paiseToINR(loan.processingFeePaise)} · GST {paiseToINR(loan.gstPaise)}
       </div>
     </div>

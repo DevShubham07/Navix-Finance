@@ -84,27 +84,27 @@ export default function AdminInvitesPage() {
       ) : q.error ? (
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : (
-        <div className="overflow-x-auto rounded border border-line bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+          <table className="staff-data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-2.5">Email</th>
-                <th className="px-4 py-2.5">Role</th>
-                <th className="px-4 py-2.5">Token</th>
-                <th className="px-4 py-2.5">Expires</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Token</th>
+                <th>Expires</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {(q.data ?? []).map((inv: InviteResponse) => (
                 <tr key={inv.id}>
-                  <td className="px-4 py-3 text-ink">{inv.email}</td>
-                  <td className="px-4 py-3 text-muted">{inv.role}</td>
-                  <td className="px-4 py-3"><TokenChip token={inv.token} /></td>
-                  <td className="px-4 py-3 text-muted">{inv.expiresAt ? formatDateTime(inv.expiresAt) : "—"}</td>
+                  <td className="text-ink">{inv.email}</td>
+                  <td className="text-muted">{inv.role}</td>
+                  <td><TokenChip token={inv.token} /></td>
+                  <td className="text-muted">{inv.expiresAt ? formatDateTime(inv.expiresAt) : "—"}</td>
                 </tr>
               ))}
               {(q.data ?? []).length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-6 text-center text-muted">No invites yet.</td></tr>
+                <tr><td colSpan={4} className="text-center text-muted">No invites yet.</td></tr>
               )}
             </tbody>
           </table>

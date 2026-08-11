@@ -75,15 +75,15 @@ export function ReferralCard() {
       <div className="mt-3 grid grid-cols-2 gap-2 text-center">
         <div className="rounded bg-grey-100 px-2 py-2">
           <div className="font-serif text-lg font-bold text-navy">{formatINR0(data.totalEarnedPaise / 100)}</div>
-          <div className="text-[11px] text-muted">Earned</div>
+          <div className="text-[8.8px] text-muted">Earned</div>
         </div>
         <div className="rounded bg-grey-100 px-2 py-2">
           <div className="font-serif text-lg font-bold text-navy">{data.referredQualifiedCount}</div>
-          <div className="text-[11px] text-muted">Friends joined</div>
+          <div className="text-[8.8px] text-muted">Friends joined</div>
         </div>
       </div>
       {data.pendingPaise > 0 ? (
-        <p className="mt-2 text-center text-[11px] text-muted">
+        <p className="mt-2 text-center text-[8.8px] text-muted">
           {formatINR0(data.pendingPaise / 100)} pending payout
         </p>
       ) : null}

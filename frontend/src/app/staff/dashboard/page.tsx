@@ -746,7 +746,7 @@ function TrendCard({
         <span className="font-serif text-lg font-bold text-navy">{total}</span>
       </div>
       <Sparkline values={values} color={color} />
-      <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
+      <div className="mt-1 flex items-center justify-between text-[8.8px] text-muted">
         <span>Last 30 days</span>
         <span className={delta > 0 ? "text-success-700" : delta < 0 ? "text-error-700" : ""}>
           {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)} vs last wk{pct != null ? ` (${delta >= 0 ? "+" : ""}${pct}%)` : ""}

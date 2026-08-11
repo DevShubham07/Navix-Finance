@@ -60,20 +60,20 @@ export default function AdminStaffPage() {
       ) : q.error ? (
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : (
-        <div className="overflow-x-auto rounded border border-line bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="border-b border-line bg-grey-50 text-left text-xs uppercase tracking-wide text-muted">
+        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+          <table className="staff-data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-2.5">Staff</th>
-                <th className="px-4 py-2.5">Role</th>
-                <th className="px-4 py-2.5">Status</th>
-                <th className="px-4 py-2.5 text-right">Actions</th>
+                <th>Staff</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {(q.data ?? []).map((s) => <StaffRow key={s.id} staff={s} />)}
               {(q.data ?? []).length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-6 text-center text-muted">No staff accounts.</td></tr>
+                <tr><td colSpan={4} className="text-center text-muted">No staff accounts.</td></tr>
               )}
             </tbody>
           </table>
@@ -172,19 +172,19 @@ function StaffRow({ staff }: { staff: StaffResponse }) {
 
   return (
     <tr>
-      <td className="px-4 py-3">
+      <td>
         <div className="font-semibold text-ink">{staff.name}</div>
         <div className="text-xs text-muted">{staff.email} · #{staff.id}</div>
       </td>
-      <td className="px-4 py-3">
+      <td>
         <Select className="!mb-0" value={role} onChange={(e) => setRole(e.target.value as StaffRoleName)}
           options={ROLES.map((r) => ({ value: r, label: r }))} />
       </td>
-      <td className="px-4 py-3">
+      <td>
         <Select className="!mb-0" value={status} onChange={(e) => setStatus(e.target.value as StaffStatus)}
           options={STATUSES.map((s) => ({ value: s, label: s }))} />
       </td>
-      <td className="px-4 py-3">
+      <td>
         <div className="flex items-center justify-end gap-2">
           {(save.error || disable.error) && (
             <span className="text-xs text-error-700">{errMessage(save.error || disable.error)}</span>

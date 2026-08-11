@@ -1,0 +1,19 @@
+# Generated dependencies and build output must never enter the source graph or
+# trigger the Windows watcher while compilers are replacing locked files.
+**/.git/**
+**/.code-review-graph/**
+**/node_modules/**
+**/target/**
+**/.next/**
+**/out/**
+**/build/**
+**/dist/**
+**/coverage/**
+**/tmp/**
+
+*.class
+*.jar
+*.war
+*.map
+*.tsbuildinfo
+*.log
