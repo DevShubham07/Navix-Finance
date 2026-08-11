@@ -17,13 +17,41 @@ import java.time.Instant;
 public interface EsignPort {
 
     /**
-     * Start a signing session for a document already stored at {@code documentUrl} (a presigned GET).
-     * {@code signerName} / {@code signerMobile} identify the signatory to the provider.
+     * {@link EsignResult#reason} value meaning the provider no longer knows this session — it lapsed
+     * without a signature. Distinct from an error: our sanctions outlive the provider's sessions, so the
+     * caller mints a fresh one rather than failing the borrower.
      */
-    EsignSession initiate(String documentUrl, String signerName, String signerMobile, String clientRef);
+    String CONTRACT_EXPIRED = "CONTRACT_EXPIRED";
+
+    /** Start a signing session for the document described by {@code request}. */
+    EsignSession initiate(EsignRequest request);
 
     /** Resolve a session. {@code completed=false} while the signer is still with the provider. */
     EsignResult fetch(String sessionId);
+
+    /**
+     * @param documentUrl        the document to sign, already stored (a presigned GET)
+     * @param signer             who is signing
+     * @param clientRef          our correlation id for the provider's audit trail
+     * @param successRedirectUrl where the provider returns the signer after a successful journey
+     * @param failureRedirectUrl where the provider returns the signer after a failed one
+     * @param contractName       human label for the document, shown in the provider's UI
+     * @param executerName       the entity initiating the signing (the lender)
+     */
+    record EsignRequest(String documentUrl, Signer signer, String clientRef,
+                        String successRedirectUrl, String failureRedirectUrl,
+                        String contractName, String executerName) {
+    }
+
+    /**
+     * The signatory. Everything past {@code mobile} comes from the borrower's Aadhaar and is
+     * <em>nullable</em>: DigiLocker is deliberately non-blocking, so a borrower can reach the signature
+     * without it. A provider that can match the signing identity against these should degrade to
+     * matching on {@code name} alone rather than refuse the signature.
+     */
+    record Signer(String name, String mobile, String gender, String yearOfBirth,
+                  String uidLastFourDigits) {
+    }
 
     /**
      * @param sessionId provider handle for this signing

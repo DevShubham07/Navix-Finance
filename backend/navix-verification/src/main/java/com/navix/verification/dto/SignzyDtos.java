@@ -242,4 +242,96 @@ public final class SignzyDtos {
             String xmlUrl
     ) {
     }
+
+    // ---- Contract eSign : /api/v3/contract/initiate + /pullData ----
+    // Aadhaar eSign (eMudhra) of the sanction letter. Entitled on the PRODUCTION account only —
+    // preproduction answers 403 "You cannot consume this service".
+    // The identity-match trio (nameMatchThreshold / allowSignerYOBMatch / allowSignerGenderMatch) is
+    // omitted wholesale when the borrower has no Aadhaar data: Signzy treats a present-but-null
+    // threshold as a validation error, and per Signzy's docs the two booleans are only honoured when
+    // the threshold is sent.
+    public record ContractInitiateRequest(
+            @JsonProperty("pdf") String pdf,
+            @JsonProperty("contractName") String contractName,
+            @JsonProperty("contractExecuterName") String contractExecuterName,
+            @JsonProperty("successRedirectUrl") String successRedirectUrl,
+            @JsonProperty("failureRedirectUrl") String failureRedirectUrl,
+            @JsonProperty("callbackUrl") String callbackUrl,
+            @JsonProperty("callbackUrlAuthorizationHeader")
+            @JsonInclude(JsonInclude.Include.NON_NULL) String callbackUrlAuthorizationHeader,
+            @JsonProperty("eSignProvider") String eSignProvider,
+            @JsonProperty("emudhraCustomization")
+            @JsonInclude(JsonInclude.Include.NON_NULL) EmudhraCustomization emudhraCustomization,
+            @JsonProperty("signerdetail") List<ContractSigner> signerdetail,
+            @JsonProperty("nameMatchThreshold")
+            @JsonInclude(JsonInclude.Include.NON_NULL) String nameMatchThreshold,
+            @JsonProperty("allowSignerYOBMatch")
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean allowSignerYobMatch,
+            @JsonProperty("allowSignerGenderMatch")
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean allowSignerGenderMatch) {
+    }
+
+    public record EmudhraCustomization(
+            @JsonProperty("logoURL") @JsonInclude(JsonInclude.Include.NON_NULL) String logoUrl,
+            @JsonProperty("headerColour") String headerColour,
+            @JsonProperty("buttonColour") String buttonColour) {
+    }
+
+    /** One signatory. The optional demographics are only sent when Aadhaar data is on file. */
+    public record ContractSigner(
+            @JsonProperty("signerName") String signerName,
+            @JsonProperty("signatureType") String signatureType,
+            @JsonProperty("signerGender")
+            @JsonInclude(JsonInclude.Include.NON_NULL) String signerGender,
+            @JsonProperty("signerYearOfBirth")
+            @JsonInclude(JsonInclude.Include.NON_NULL) String signerYearOfBirth,
+            @JsonProperty("uidLastFourDigits")
+            @JsonInclude(JsonInclude.Include.NON_NULL) String uidLastFourDigits,
+            @JsonProperty("signatures") List<ContractSignaturePlacement> signatures) {
+    }
+
+    public record ContractSignaturePlacement(
+            @JsonProperty("pageNo") List<String> pageNo,
+            @JsonProperty("signaturePosition") List<String> signaturePosition) {
+    }
+
+    /** Flat response — the contract endpoints have no {@code result} wrapper. */
+    public record ContractInitiateResponse(
+            String contractId,
+            String signerId,
+            String esignUrl,
+            String initialContractHash) {
+    }
+
+    public record ContractPullRequest(
+            @JsonProperty("contractId") String contractId) {
+    }
+
+    /**
+     * @param found            false when Signzy no longer knows this contract (404) — it lapsed, and
+     *                         nothing was signed against it
+     * @param nameMatchResult  Signzy's verdict on the signer name vs the Aadhaar name. Note the
+     *                         published docs call this {@code matchScoreResult} and type it as an
+     *                         object; the live API returns {@code nameMatchResult} as a string.
+     */
+    public record ContractPullResponse(
+            String contractId,
+            boolean found,
+            boolean completed,
+            String contractStatus,
+            Integer signedSignerCount,
+            String finalSignedContract,
+            String finalSignedContractHash,
+            String auditCertificateUrl,
+            String contractCompletionTime,
+            String signerStatus,
+            String signerErrorMessage,
+            String nameMatchResult) {
+
+        /** Signzy 404s an expired or unknown contract; the caller mints a fresh one. */
+        public static ContractPullResponse notFound(String contractId) {
+            return new ContractPullResponse(contractId, false, false, null, null, null, null, null,
+                    null, null, null, null);
+        }
+    }
 }

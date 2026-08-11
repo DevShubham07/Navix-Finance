@@ -48,6 +48,16 @@ public final class OfferDtos {
     public record SanctionLetterView(Long documentId, String url) {
     }
 
+    /**
+     * Screen 9, Aadhaar e-sign. The redirect URLs are built by the browser from its own origin (the same
+     * convention DigiLocker uses) and carry a per-attempt nonce, so the provider cannot re-serve a stale
+     * signing session.
+     */
+    public record EsignInitRequest(@NotBlank String successRedirectUrl,
+                                   @NotBlank String failureRedirectUrl) {
+    }
+
+    /** Screen 9, fallback: a signature the borrower drew in the app. */
     public record ManualEsignRequest(@NotBlank String signatureDataUrl,
                                      Double latitude, Double longitude, Double accuracyMeters) {
     }

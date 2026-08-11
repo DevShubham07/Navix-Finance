@@ -52,6 +52,9 @@ public class SecurityConfig {
                             "/api/auth/**",
                             "/api/contact",
                             "/api/storage/**",
+                            // Provider callbacks carry no user session; each one authenticates itself
+                            // against its own shared secret inside the handler.
+                            "/api/webhooks/**",
                             "/actuator/**",
                             "/swagger-ui/**", "/swagger-ui.html",
                             "/v3/api-docs/**", "/v3/api-docs").permitAll()

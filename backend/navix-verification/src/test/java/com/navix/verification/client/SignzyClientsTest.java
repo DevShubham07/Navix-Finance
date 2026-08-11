@@ -11,6 +11,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.verification.dto.SignzyDtos.AadhaarResponse;
 import com.navix.verification.dto.SignzyDtos.BankVerificationResponse;
+import com.navix.verification.dto.SignzyDtos.ContractInitiateRequest;
+import com.navix.verification.dto.SignzyDtos.ContractInitiateResponse;
+import com.navix.verification.dto.SignzyDtos.ContractPullResponse;
+import com.navix.verification.dto.SignzyDtos.ContractSignaturePlacement;
+import com.navix.verification.dto.SignzyDtos.ContractSigner;
 import com.navix.verification.dto.SignzyDtos.CrifResponse;
 import com.navix.verification.dto.SignzyDtos.DigiLockerSession;
 import com.navix.verification.dto.SignzyDtos.EmailV2Response;
@@ -20,6 +25,7 @@ import com.navix.verification.dto.SignzyDtos.LivenessSession;
 import com.navix.verification.dto.SignzyDtos.PanResponse;
 import com.navix.verification.exception.VerificationException;
 import java.util.Arrays;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -312,6 +318,96 @@ class SignzyClientsTest {
                 "provider=signzy-pan",
                 "requestPayload={\"panNumber\":\"ABCPE1234Z\",\"maskedName\":\"false\"}",
                 "responsePayload={\"error\":{\"message\":\"PAN ABCPE1234Z is not entitled\"}}");
+        b.server().verify();
+    }
+
+    // ---- Contract eSign ---------------------------------------------------------
+    // Envelopes below are trimmed copies of real production responses, not the published docs — the
+    // docs are wrong in two places (see contractPullReadsNameMatchResult).
+
+    private static ContractInitiateRequest contractRequest() {
+        return new ContractInitiateRequest("https://s3.test/kfs.pdf", "Agreement", "NAVIX Finance",
+                "https://app.test/ok", "https://app.test/no", "https://app.test/hook", null,
+                "EMUDHRA", null,
+                List.of(new ContractSigner("Ravi Kumar", "AADHAARESIGN-OTP", null, null, null,
+                        List.of(new ContractSignaturePlacement(List.of("All"), List.of("BottomLeft"))))),
+                null, null, null);
+    }
+
+    @Test
+    void contractInitiateMapsContractIdAndSignerEsignUrl() {
+        Bound b = bind();
+        stub(b.server(), "/api/v3/contract/initiate", """
+                {"contractId":"8160860a-32eb-4114-83ee-b0346c98c63f","contractStatus":"INITIATED",
+                "initialContractHash":"65c239140cbbd05d","pdf":"https://persist.signzy.tech/x.pdf",
+                "signerdetail":[{"signerId":"b54ef53b-9132-4ea5-86c2-b1f49a873114",
+                "signerName":"Ravi Kumar","status":"PENDING",
+                "esignUrl":"https://api.signzy.app/api/v3/contract/esign/b54ef53b-9132-4ea5-86c2-b1f49a873114"}]}
+                """);
+
+        ContractInitiateResponse r = new SignzyContractClient(b.restClient()).initiate(contractRequest());
+
+        assertThat(r.contractId()).isEqualTo("8160860a-32eb-4114-83ee-b0346c98c63f");
+        assertThat(r.signerId()).isEqualTo("b54ef53b-9132-4ea5-86c2-b1f49a873114");
+        assertThat(r.esignUrl()).endsWith("/contract/esign/b54ef53b-9132-4ea5-86c2-b1f49a873114");
+        assertThat(r.initialContractHash()).isEqualTo("65c239140cbbd05d");
+        b.server().verify();
+    }
+
+    @Test
+    void contractPullReadsSignedCopyWhenComplete() {
+        Bound b = bind();
+        stub(b.server(), "/api/v3/contract/pullData", """
+                {"contractId":"C-1","isCompleted":true,"contractStatus":"COMPLETED","signedSignerCount":1,
+                "finalSignedContract":"https://persist.signzy.tech/signed.pdf",
+                "finalSignedContractHash":"abc123","auditCertificateUrl":"https://persist.signzy.tech/audit.pdf",
+                "contractCompletionTime":"2026-08-11T12:30:00Z",
+                "signerdetail":[{"status":"SIGNED","errorMessage":"","nameMatchResult":"0.98"}]}
+                """);
+
+        ContractPullResponse r = new SignzyContractClient(b.restClient()).pullData("C-1");
+
+        assertThat(r.found()).isTrue();
+        assertThat(r.completed()).isTrue();
+        assertThat(r.signedSignerCount()).isEqualTo(1);
+        assertThat(r.finalSignedContract()).isEqualTo("https://persist.signzy.tech/signed.pdf");
+        assertThat(r.signerStatus()).isEqualTo("SIGNED");
+        b.server().verify();
+    }
+
+    @Test
+    void contractPullReadsNameMatchResult() {
+        // The published docs name this field matchScoreResult and type it as an object, and also list a
+        // noOfFailureAttempts that the live API never returns. Verified against production.
+        Bound b = bind();
+        stub(b.server(), "/api/v3/contract/pullData", """
+                {"contractId":"C-2","isCompleted":true,"signedSignerCount":0,
+                "signerdetail":[{"status":"FAILED","nameMatchResult":"0.42"}]}
+                """);
+
+        ContractPullResponse r = new SignzyContractClient(b.restClient()).pullData("C-2");
+
+        assertThat(r.nameMatchResult()).isEqualTo("0.42");
+        assertThat(r.signedSignerCount()).isZero();
+        b.server().verify();
+    }
+
+    @Test
+    void contractPullReturnsNotFoundOn404() {
+        // A lapsed contract is normal — our sanctions never expire but Signzy's contracts do — so the
+        // caller mints a fresh one rather than showing the borrower an error.
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/api/v3/contract/pullData"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .body("{\"name\":\"error\",\"message\":\"Contract Not Found\",\"statusCode\":404}")
+                        .contentType(MediaType.APPLICATION_JSON));
+
+        ContractPullResponse r = new SignzyContractClient(b.restClient()).pullData("C-gone");
+
+        assertThat(r.found()).isFalse();
+        assertThat(r.completed()).isFalse();
+        assertThat(r.contractId()).isEqualTo("C-gone");
         b.server().verify();
     }
 }

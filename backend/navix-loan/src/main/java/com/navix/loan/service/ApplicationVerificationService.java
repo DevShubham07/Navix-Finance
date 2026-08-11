@@ -1064,53 +1064,140 @@ public class ApplicationVerificationService {
     /**
      * eSign the sanction letter / Key Fact Statement (Phase 3, screen 9) — the per-loan legal act.
      *
-     * <p>Runs the {@link EsignPort} seam end to end (initiate → fetch) against the stored
-     * {@code SANCTION_LETTER}, then persists the outcome two ways: an {@code ESIGN} verification row
-     * carrying the provider's signature reference, and a {@code SIGNED_AGREEMENT} document so the
-     * signed copy sits with the borrower's other files. When the provider returns its own signed PDF
-     * that copy is stored; the mock does not, so the document points at the letter as rendered and the
-     * signature lives on the verification row.
+     * <p>Step 1 of two: mint a signing session against the stored {@code SANCTION_LETTER} and hand the
+     * borrower the provider's hosted URL to redirect to. The {@code ESIGN} row is parked at
+     * {@code PENDING} carrying the provider's handle, and {@link #esignStatus} resolves it — the same
+     * init/poll shape DigiLocker and the selfie liveness use, because a real Aadhaar eSign is a redirect
+     * journey that cannot complete inside this request.
+     *
+     * <p>The signer's Aadhaar demographics let the provider reject a signature made with somebody else's
+     * Aadhaar. They come from DigiLocker, which is deliberately non-blocking, so when they are absent we
+     * pass what we have and the provider degrades to matching the name alone — a borrower who skipped
+     * DigiLocker must still be able to sign.
+     *
+     * <p>A provider failure is <em>not</em> fatal: it returns a transient result flagged
+     * {@code fallback} and writes no row, so the borrower drops to the drawn-signature path
+     * ({@link #recordManualEsign}) rather than being stranded at the last step before disbursement.
      *
      * <p>Unlike the intake checks, this one is a real gate: {@code ApplicationFlowService.acceptOffer}
      * refuses to move an application to disbursement without a terminal ESIGN row.
      */
     @Transactional
-    public StepResult recordEsign(Long appId) {
+    public StepResult esignInit(Long appId, String successRedirectUrl, String failureRedirectUrl) {
         Optional<ApplicationVerification> existing = passed(appId, ESIGN);
         if (existing.isPresent()) {
             return view(existing.get());
         }
-        ApplicationDocument letter = documentRepo
-                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, SANCTION_LETTER)
-                .orElseThrow(() -> new BusinessException("SANCTION_LETTER_MISSING",
-                        "Open your sanction letter before signing it"));
+        ApplicationDocument letter = requireSanctionLetter(appId);
         CustomerProfile profile = profile(appId);
         String ref = ref(appId, ESIGN);
         String documentUrl = storage.presignDownload(letter.getS3ObjectKey());
 
-        EsignPort.EsignSession session =
-                esign.initiate(documentUrl, profile.getFullName(), profile.getMobile(), ref);
-        EsignPort.EsignResult result = esign.fetch(session.sessionId());
+        Map<String, Object> aadhaar = derivedFor(appId, AADHAAR);
+        String gender = text(aadhaar.get("gender"));
+        String yearOfBirth = yearOf(text(aadhaar.get("dob")), profile.getDob());
+        String uidLastFour = lastFourOf(text(aadhaar.get("maskedAadhaar")));
+        boolean strict = !isBlank(gender) && !isBlank(yearOfBirth);
+
+        EsignPort.EsignSession session;
+        try {
+            session = esign.initiate(new EsignPort.EsignRequest(
+                    documentUrl,
+                    new EsignPort.Signer(profile.getFullName(), resolveMobile(appId, profile),
+                            gender, yearOfBirth, uidLastFour),
+                    ref,
+                    successRedirectUrl,
+                    failureRedirectUrl,
+                    "DhanBoost Loan Agreement — application " + appId,
+                    null));
+        } catch (RuntimeException providerUnavailable) {
+            // No row: the drawn-signature fallback owns the ESIGN row if the borrower takes it.
+            Map<String, Object> soft = new LinkedHashMap<>();
+            soft.put("fallback", true);
+            return new StepResult(ESIGN, PENDING,
+                    "Aadhaar e-sign is unavailable — sign the agreement here instead", soft);
+        }
 
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("sessionId", session.sessionId());
-        derived.put("signatureRef", result.signatureRef());
-        derived.put("signedAt", result.signedAt() != null ? result.signedAt().toString() : null);
+        derived.put("url", session.signUrl());
+        derived.put("matchMode", strict ? "STRICT" : "NAME_ONLY");
         derived.put("sanctionLetterDocumentId", letter.getId());
+        return view(upsert(appId, ESIGN, PENDING, session.provider(), session.sessionId(), ref,
+                null, null, null, derived, "Aadhaar e-sign started"));
+    }
 
-        if (!result.completed() || !result.signed()) {
-            return view(upsert(appId, ESIGN, REVIEW, session.provider(), result.signatureRef(), ref,
-                    null, null, null, derived,
-                    result.reason() != null ? result.reason() : "Signature not completed"));
+    /**
+     * Step 2 of two: resolve the signing session. Our own row is authoritative — the provider's view is
+     * only consulted here and never trusted to have persisted anything on our behalf.
+     *
+     * <p>A lapsed contract is a normal state rather than an error: a sanction never expires
+     * (revamp.md decision 41) but the provider's contract does, so a borrower who returns days later gets
+     * a fresh one minted silently. That re-mint is deliberately narrow — only when the provider has lost
+     * the contract entirely <em>and</em> no signature was captured — because every mint is a billable,
+     * legally binding contract and a looser condition would let a poll loop mint them in a cycle.
+     */
+    @Transactional
+    public StepResult esignStatus(Long appId) {
+        Optional<ApplicationVerification> done = passed(appId, ESIGN);
+        if (done.isPresent()) {
+            return view(done.get());
+        }
+        ApplicationVerification row = verificationRepo.findByApplicationIdAndCheckType(appId, ESIGN)
+                .orElseThrow(() -> new BusinessException("ESIGN_NOT_STARTED",
+                        "Start signing your agreement first"));
+        String sessionId = row.getProviderTxnId();
+        if (isBlank(sessionId)) {
+            throw new BusinessException("ESIGN_NOT_STARTED", "Start signing your agreement first");
+        }
+        Map<String, Object> derived = fromJson(row.getDerived());
+        EsignPort.EsignResult result = esign.fetch(sessionId);
+
+        if (!result.completed()) {
+            if (EsignPort.CONTRACT_EXPIRED.equals(result.reason())) {
+                // The provider forgot the contract and nothing was signed against it — mint a new one.
+                verificationRepo.delete(row);
+                verificationRepo.flush();
+                return esignInit(appId, text(derived.get("successRedirectUrl")),
+                        text(derived.get("failureRedirectUrl")));
+            }
+            derived.put("completed", false);
+            return new StepResult(ESIGN, PENDING, "Waiting for your signature", derived);
         }
 
-        // The signed copy: the provider's own PDF when it returns one, else the letter as rendered.
+        derived.put("signatureRef", result.signatureRef());
+        if (!result.signed()) {
+            // Completed without a signature — a name/YOB/gender mismatch is the usual cause. REVIEW, not
+            // FAIL: a KYC approver decides, and the drawn-signature path is still open to the borrower.
+            row.setStatus(REVIEW);
+            row.setMessage(result.reason() != null ? result.reason() : "Signature not completed");
+            row.setDerived(toJson(derived));
+            verificationRepo.save(row);
+            return new StepResult(ESIGN, REVIEW, row.getMessage(), derived);
+        }
+        return finalizeSignature(appId, result.provider(), result.signatureRef(),
+                result.signedAt(), result.signedPdf(), derived, "Sanction letter signed");
+    }
+
+    /**
+     * Persist a captured signature: store the signed copy as the {@code SIGNED_AGREEMENT} document and
+     * flip the {@code ESIGN} row to {@code PASS}. Shared by the Aadhaar e-sign path and the drawn
+     * fallback, which differ only in who produced the PDF — a provider that returns its own signed copy
+     * (with the digital signature certificate embedded) has that copy stored; otherwise the document
+     * points at the letter as rendered and the signature evidence lives on the verification row.
+     */
+    private StepResult finalizeSignature(Long appId, String provider, String signatureRef,
+                                         Instant signedAt, byte[] signedPdf,
+                                         Map<String, Object> derived, String message) {
+        ApplicationDocument letter = requireSanctionLetter(appId);
+        CustomerProfile profile = profile(appId);
+
         String signedKey = letter.getS3ObjectKey();
         long size = letter.getSizeBytes() != null ? letter.getSizeBytes() : 0L;
-        if (result.signedPdf() != null && result.signedPdf().length > 0) {
+        if (signedPdf != null && signedPdf.length > 0) {
             signedKey = "applications/" + appId + "/signed_agreement/sanction-letter-signed.pdf";
-            storage.store(signedKey, result.signedPdf(), "application/pdf");
-            size = result.signedPdf().length;
+            storage.store(signedKey, signedPdf, "application/pdf");
+            size = signedPdf.length;
         }
         ApplicationDocument signed = documentRepo
                 .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, SIGNED_AGREEMENT)
@@ -1123,14 +1210,57 @@ public class ApplicationVerificationService {
         signed.setS3ObjectKey(signedKey);
         signed.setData(null);
         documentRepo.save(signed);
+
         derived.put("signedDocumentId", signed.getId());
+        derived.put("signedAt", (signedAt != null ? signedAt : Instant.now()).toString());
+        derived.put("sanctionLetterDocumentId", letter.getId());
 
         profile.setAgreementAccepted(Boolean.TRUE);
         profileRepo.save(profile);
-        return view(upsert(appId, ESIGN, PASS, session.provider(), result.signatureRef(), ref,
-                null, null, signedKey, derived, "Sanction letter signed"));
+        return view(upsert(appId, ESIGN, PASS, provider, signatureRef, ref(appId, ESIGN),
+                null, null, signedKey, derived, message));
     }
 
+    private ApplicationDocument requireSanctionLetter(Long appId) {
+        return documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, SANCTION_LETTER)
+                .orElseThrow(() -> new BusinessException("SANCTION_LETTER_MISSING",
+                        "Open your sanction letter before signing it"));
+    }
+
+    /** The {@code derived} map of one check, or empty when the check never ran. */
+    private Map<String, Object> derivedFor(Long appId, String checkType) {
+        return verificationRepo.findByApplicationIdAndCheckType(appId, checkType)
+                .map(row -> fromJson(row.getDerived()))
+                .orElseGet(LinkedHashMap::new);
+    }
+
+    /** Four-digit year for the provider's year-of-birth match, Aadhaar first then the stored DOB. */
+    private static String yearOf(String aadhaarDob, LocalDate profileDob) {
+        LocalDate parsed = parseDob(aadhaarDob);
+        LocalDate effective = parsed != null ? parsed : profileDob;
+        return effective != null ? String.valueOf(effective.getYear()) : null;
+    }
+
+    /** Last four Aadhaar digits out of a masked number — the only form we hold. */
+    private static String lastFourOf(String maskedAadhaar) {
+        if (maskedAadhaar == null) {
+            return null;
+        }
+        String digits = maskedAadhaar.replaceAll("\\D", "");
+        return digits.length() >= 4 ? digits.substring(digits.length() - 4) : null;
+    }
+
+    private static String text(Object value) {
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    /**
+     * Record a signature the borrower drew in the app — the fallback when Aadhaar e-sign is unavailable
+     * to them (the provider is down, or the OTP goes to an Aadhaar-registered mobile they no longer
+     * hold). It deliberately does <em>not</em> touch {@link EsignPort}: the whole point is a path that
+     * works when the provider does not, and with a real provider each call would mint a billable
+     * contract.
+     */
     @Transactional
     public StepResult recordManualEsign(Long appId, String signatureDataUrl,
                                         Double latitude, Double longitude, Double accuracyMeters) {
@@ -1151,21 +1281,24 @@ public class ApplicationVerificationService {
         if (signature.length == 0 || signature.length > 1_000_000) {
             throw new BusinessException("SIGNATURE_INVALID", "The signature image is invalid");
         }
-        StepResult result = recordEsign(appId);
-        ApplicationVerification row = verificationRepo.findByApplicationIdAndCheckType(appId, ESIGN)
-                .orElseThrow(() -> new BusinessException("ESIGN_FAILED", "Signature could not be recorded"));
+        Optional<ApplicationVerification> done = passed(appId, ESIGN);
+        if (done.isPresent()) {
+            return view(done.get());
+        }
         String key = "applications/" + appId + "/signed_agreement/signature.png";
         storage.store(key, signature, "image/png");
-        Map<String, Object> derived = fromJson(row.getDerived());
+
+        // Carry anything an abandoned Aadhaar attempt left behind, so staff can see it was tried.
+        Map<String, Object> derived = derivedFor(appId, ESIGN);
+        derived.remove("url");
         derived.put("signatureObjectKey", key);
-        derived.put("signedAt", Instant.now().toString());
         derived.put("latitude", latitude);
         derived.put("longitude", longitude);
         derived.put("accuracyMeters", accuracyMeters);
-        row.setDerived(toJson(derived));
-        row.setMessage("Sanction letter signed manually");
-        verificationRepo.save(row);
-        return new StepResult(row.getCheckType(), row.getStatus(), row.getMessage(), derived);
+        // The caller re-renders the letter with the drawn signature stamped in and overwrites the
+        // document; nothing to store here beyond the letter as it stands.
+        return finalizeSignature(appId, "MANUAL", key, Instant.now(), null, derived,
+                "Sanction letter signed manually");
     }
 
     /**

@@ -17,9 +17,15 @@ class ProductionConfigGuardTest {
     private static final String STRONG_SECRET = "S6nQ2wYd8kLpR4vT7xZa1cE3gJ5mB9oU";  // 32 chars
 
     private static ProductionConfigGuard guard(String env, String secret, boolean mock, boolean devEcho) {
+        return guard(env, secret, mock, devEcho, "signzy");
+    }
+
+    private static ProductionConfigGuard guard(String env, String secret, boolean mock, boolean devEcho,
+                                               String esignProvider) {
         ProductionConfigGuard g = new ProductionConfigGuard(sms(mock, devEcho));
         ReflectionTestUtils.setField(g, "env", env);
         ReflectionTestUtils.setField(g, "secret", secret);
+        ReflectionTestUtils.setField(g, "esignProvider", esignProvider);
         return g;
     }
 
@@ -61,6 +67,19 @@ class ProductionConfigGuardTest {
         assertThatThrownBy(() -> guard("prod", STRONG_SECRET, false, true).check())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("NAVIX_SMS_DEV_ECHO");
+    }
+
+    @Test
+    void prod_rejectsMockEsign_whichSignsNothing() {
+        assertThatThrownBy(() -> guard("prod", STRONG_SECRET, false, false, "mock").check())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NAVIX_ESIGN_PROVIDER");
+    }
+
+    @Test
+    void dev_bootsWithMockEsign_whichTheDemoSeedNeeds() {
+        assertThatCode(() -> guard("dev", DEFAULT_SECRET, true, true, "mock").check())
+                .doesNotThrowAnyException();
     }
 
     @Test

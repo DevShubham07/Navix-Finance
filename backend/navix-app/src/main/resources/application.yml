@@ -66,6 +66,26 @@ navix:
     # IP rather than 0.0.0.0 for consistency with the Digitap check below). aws.md §5.1's static NAT
     # egress IP — never changes.
     device-ip: ${NAVIX_STATIC_EGRESS_IP:3.109.169.131}
+  esign:
+    # Aadhaar eSign of the sanction letter, via Signzy's Contract API on the PRODUCTION account above
+    # (the preproduction account is not entitled — it answers 403). No separate credentials.
+    # `mock` signs inline without calling anyone: the demo seed script and the tests set it, because a
+    # real signature needs a human with an Aadhaar-linked handset. Never set it in a real environment.
+    provider: ${NAVIX_ESIGN_PROVIDER:signzy}
+    # Signzy requires a callback URL on every contract. Ours only accelerates the borrower's own poll
+    # (which stays the source of truth) for the case they close the tab before being redirected back;
+    # blank disables it. The secret is echoed back by Signzy and is how the endpoint authenticates.
+    callback-url: ${NAVIX_ESIGN_CALLBACK_URL:}
+    callback-secret: ${NAVIX_ESIGN_CALLBACK_SECRET:}
+    # How closely the Aadhaar name must match ours before Signzy accepts the signature ("0.01".."1.00").
+    # Only honoured together with the year-of-birth and gender flags, which we send when DigiLocker gave
+    # us those fields.
+    name-match-threshold: ${NAVIX_ESIGN_NAME_MATCH_THRESHOLD:0.90}
+    # DhanBoost branding on eMudhra's signing pages.
+    logo-url: ${NAVIX_ESIGN_LOGO_URL:}
+    header-colour: ${NAVIX_ESIGN_HEADER_COLOUR:#0C2540}
+    button-colour: ${NAVIX_ESIGN_BUTTON_COLOUR:#E9B53A}
+    executer-name: ${NAVIX_ESIGN_EXECUTER_NAME:NAVIX Finance Private Limited}
   digitap:
     # Two hosts: svc (KYC/Employment/Email), api (Credit/Location/Face-Match/OCR). Auth = Basic base64(id:secret).
     svc-base-url: ${DIGITAP_SVC_BASE_URL:https://svcdemo.digitap.work}

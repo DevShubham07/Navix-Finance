@@ -15,7 +15,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.VerificationPort;
+import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.LoanApplication;
@@ -603,5 +605,201 @@ class ApplicationVerificationServiceTest {
                 .containsEntry("pincode", "131001")
                 .containsEntry("dscSubject", "DS NATIONAL E-GOVERNANCE DIVISION 1");
         verify(storage).storeFromUrl("apps/42/aadhaar.pdf", "https://signzy.test/aadhaar.pdf", "application/pdf");
+    }
+
+    // ---- Aadhaar e-sign ---------------------------------------------------------
+
+    /** The stored sanction letter the signature is taken against. */
+    private ApplicationDocument sanctionLetter() {
+        ApplicationDocument letter = new ApplicationDocument();
+        letter.setId(7L);
+        letter.setApplicationId(APP);
+        letter.setDocType(ApplicationVerificationService.SANCTION_LETTER);
+        letter.setS3ObjectKey("apps/42/sanction-letter.pdf");
+        letter.setSizeBytes(2048L);
+        return letter;
+    }
+
+    private void givenSanctionLetter() {
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.SANCTION_LETTER))
+                .thenReturn(Optional.of(sanctionLetter()));
+        when(storage.presignDownload("apps/42/sanction-letter.pdf")).thenReturn("https://s3.test/kfs.pdf");
+    }
+
+    /** An AADHAAR row as digilockerComplete writes it — the only source of gender / YOB / last-4. */
+    private void givenAadhaarOnFile() {
+        ApplicationVerification aadhaar = new ApplicationVerification();
+        aadhaar.setApplicationId(APP);
+        aadhaar.setCheckType(ApplicationVerificationService.AADHAAR);
+        aadhaar.setStatus(ApplicationVerificationService.PASS);
+        aadhaar.setDerived("""
+                {"fullName":"SHUBHAM","dob":"2003-03-24","gender":"M","maskedAadhaar":"XXXXXXXX1234"}
+                """);
+        when(verificationRepo.findByApplicationIdAndCheckType(
+                APP, ApplicationVerificationService.AADHAAR)).thenReturn(Optional.of(aadhaar));
+    }
+
+    @Test
+    void esignInit_sendsAadhaarDemographicsWhenDigilockerRan() {
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        givenSanctionLetter();
+        givenAadhaarOnFile();
+        when(esign.initiate(any())).thenReturn(
+                new EsignPort.EsignSession("C-1|S-1", "https://signzy.test/esign/S-1", "SIGNZY"));
+
+        var result = service.esignInit(APP, "https://app.test/ok", "https://app.test/no");
+
+        ArgumentCaptor<EsignPort.EsignRequest> sent = ArgumentCaptor.forClass(EsignPort.EsignRequest.class);
+        verify(esign).initiate(sent.capture());
+        assertThat(sent.getValue().signer().gender()).isEqualTo("M");
+        assertThat(sent.getValue().signer().yearOfBirth()).isEqualTo("2003");
+        // Only the last four survive our storage — the raw UID is never persisted.
+        assertThat(sent.getValue().signer().uidLastFourDigits()).isEqualTo("1234");
+        assertThat(sent.getValue().documentUrl()).isEqualTo("https://s3.test/kfs.pdf");
+        assertThat(result.status()).isEqualTo("PENDING");
+        assertThat(result.derived())
+                .containsEntry("url", "https://signzy.test/esign/S-1")
+                .containsEntry("matchMode", "STRICT");
+    }
+
+    @Test
+    void esignInit_degradesToNameOnlyWhenAadhaarMissing() {
+        // DigiLocker is deliberately non-blocking, so a borrower can reach the signature without it.
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        givenSanctionLetter();
+        when(esign.initiate(any())).thenReturn(
+                new EsignPort.EsignSession("C-2|S-2", "https://signzy.test/esign/S-2", "SIGNZY"));
+
+        var result = service.esignInit(APP, "https://app.test/ok", "https://app.test/no");
+
+        ArgumentCaptor<EsignPort.EsignRequest> sent = ArgumentCaptor.forClass(EsignPort.EsignRequest.class);
+        verify(esign).initiate(sent.capture());
+        assertThat(sent.getValue().signer().gender()).isNull();
+        assertThat(sent.getValue().signer().yearOfBirth()).isNull();
+        assertThat(result.derived()).containsEntry("matchMode", "NAME_ONLY");
+    }
+
+    @Test
+    void esignInit_fallsBackToDrawnSignatureWhenProviderIsDown() {
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        givenSanctionLetter();
+        when(esign.initiate(any())).thenThrow(new IllegalStateException("provider down"));
+
+        var result = service.esignInit(APP, "https://app.test/ok", "https://app.test/no");
+
+        assertThat(result.status()).isEqualTo("PENDING");
+        assertThat(result.derived()).containsEntry("fallback", true);
+        // No row: the drawn-signature path owns the ESIGN row if the borrower takes it.
+        verify(verificationRepo, never()).save(any());
+    }
+
+    @Test
+    void esignInit_requiresTheSanctionLetterFirst() {
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.SANCTION_LETTER)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.esignInit(APP, "https://app.test/ok", "https://app.test/no"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("sanction letter");
+    }
+
+    @Test
+    void esignStatus_staysPendingWhileTheBorrowerIsStillSigning() {
+        ApplicationVerification row = pendingEsignRow();
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(row));
+        when(esign.fetch("C-1|S-1")).thenReturn(
+                new EsignPort.EsignResult(false, false, null, null, "C-1", "SIGNZY", null));
+
+        var result = service.esignStatus(APP);
+
+        assertThat(result.status()).isEqualTo("PENDING");
+        verify(storage, never()).store(anyString(), any(), anyString());
+    }
+
+    @Test
+    void esignStatus_storesTheProvidersSignedCopyOnSuccess() {
+        ApplicationVerification row = pendingEsignRow();
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(row));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.SANCTION_LETTER))
+                .thenReturn(Optional.of(sanctionLetter()));
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.SIGNED_AGREEMENT)).thenReturn(Optional.empty());
+        when(documentRepo.save(any())).thenAnswer(i -> i.getArgument(0));
+        byte[] signedPdf = "%PDF-signed".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        when(esign.fetch("C-1|S-1")).thenReturn(new EsignPort.EsignResult(
+                true, true, java.time.Instant.parse("2026-08-11T12:30:00Z"), signedPdf,
+                "C-1", "SIGNZY", null));
+
+        var result = service.esignStatus(APP);
+
+        assertThat(result.status()).isEqualTo("PASS");
+        // eMudhra's copy carries the digital signature certificate, so it replaces the rendered letter.
+        verify(storage).store("applications/42/signed_agreement/sanction-letter-signed.pdf",
+                signedPdf, "application/pdf");
+    }
+
+    @Test
+    void esignStatus_reviewsWhenTheContractCompletedWithoutASignature() {
+        // The usual cause is the Aadhaar name not matching ours. A human decides; the borrower can
+        // still fall back to drawing.
+        ApplicationVerification row = pendingEsignRow();
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(row));
+        when(esign.fetch("C-1|S-1")).thenReturn(new EsignPort.EsignResult(
+                true, false, null, null, "C-1", "SIGNZY", "Name match: 0.42"));
+
+        var result = service.esignStatus(APP);
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.message()).isEqualTo("Name match: 0.42");
+    }
+
+    @Test
+    void esignStatus_mintsAFreshContractWhenTheOldOneLapsed() {
+        // A sanction never expires but the provider's contract does, so a borrower returning days later
+        // must get a new one rather than an error.
+        ApplicationVerification row = pendingEsignRow();
+        // Read twice before the re-mint (the terminal-state guard, then the row itself), and gone
+        // afterwards — esignInit must not find a row it would short-circuit on.
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(row), Optional.of(row), Optional.empty());
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        givenSanctionLetter();
+        when(esign.fetch("C-1|S-1")).thenReturn(new EsignPort.EsignResult(
+                false, false, null, null, "C-1", "SIGNZY", EsignPort.CONTRACT_EXPIRED));
+        when(esign.initiate(any())).thenReturn(
+                new EsignPort.EsignSession("C-9|S-9", "https://signzy.test/esign/S-9", "SIGNZY"));
+
+        var result = service.esignStatus(APP);
+
+        verify(verificationRepo).delete(row);
+        verify(esign).initiate(any());
+        assertThat(result.derived()).containsEntry("url", "https://signzy.test/esign/S-9");
+    }
+
+    @Test
+    void esignStatus_refusesBeforeSigningHasStarted() {
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.esignStatus(APP))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Start signing");
+    }
+
+    private ApplicationVerification pendingEsignRow() {
+        ApplicationVerification row = new ApplicationVerification();
+        row.setApplicationId(APP);
+        row.setCheckType(ApplicationVerificationService.ESIGN);
+        row.setStatus(ApplicationVerificationService.PENDING);
+        row.setProvider("SIGNZY");
+        row.setProviderTxnId("C-1|S-1");
+        row.setDerived("{\"sessionId\":\"C-1|S-1\",\"matchMode\":\"STRICT\"}");
+        return row;
     }
 }

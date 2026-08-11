@@ -1011,7 +1011,20 @@ export const offerApi = {
   sanctionLetter: (id: number) =>
     bff<SanctionLetterView>(`${OFFER(id)}/sanction-letter`, "POST"),
 
-  /** Sign the letter. Without this the application cannot reach disbursement. */
+  /**
+   * Start Aadhaar e-sign. `derived.url` is the provider page to send the borrower to;
+   * `derived.fallback === true` means the provider is unavailable and they should draw instead.
+   */
+  esignInit: (id: number, payload: { successRedirectUrl: string; failureRedirectUrl: string }) =>
+    bff<StepResult>(`${OFFER(id)}/esign/init`, "POST", payload),
+
+  /** Poll the Aadhaar e-sign session once the provider redirects the borrower back. */
+  esignStatus: (id: number) => bff<StepResult>(`${OFFER(id)}/esign/status`, "GET"),
+
+  /**
+   * Fallback: record a drawn signature. Without a signature by one route or the other the
+   * application cannot reach disbursement.
+   */
   esign: (id: number, payload: { signatureDataUrl: string; latitude?: number; longitude?: number; accuracyMeters?: number }) =>
     bff<StepResult>(`${OFFER(id)}/esign`, "POST", payload),
 

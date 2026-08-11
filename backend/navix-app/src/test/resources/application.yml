@@ -2,6 +2,12 @@
 # - Replace the AWS SSM param-store config import with a no-op optional import.
 # - Provide static AWS creds + region so the S3 client/presigner beans construct
 #   without reaching the network (Testcontainers supplies the datasource).
+# - Sign inline instead of calling Signzy: a real Aadhaar eSign needs a human with an
+#   Aadhaar-linked handset, and every session is a billable, legally binding contract.
+navix:
+  esign:
+    provider: mock
+
 spring:
   config:
     import: "optional:configtree:/tmp/navix-test-config/"

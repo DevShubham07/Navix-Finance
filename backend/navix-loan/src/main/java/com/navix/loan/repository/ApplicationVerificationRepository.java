@@ -13,4 +13,12 @@ public interface ApplicationVerificationRepository extends JpaRepository<Applica
     Optional<ApplicationVerification> findByApplicationIdAndCheckType(Long applicationId, String checkType);
 
     List<ApplicationVerification> findByApplicationIdOrderByIdAsc(Long applicationId);
+
+    /**
+     * Reverse lookup from a provider's own handle back to the application — used by provider callbacks,
+     * which know their transaction and nothing else. A prefix match because a handle may pack more than
+     * one provider id (the eSign row stores {@code contractId|signerId}).
+     */
+    List<ApplicationVerification> findByCheckTypeAndProviderTxnIdStartingWith(
+            String checkType, String providerTxnIdPrefix);
 }

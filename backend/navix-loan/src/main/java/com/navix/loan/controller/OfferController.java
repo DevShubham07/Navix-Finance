@@ -7,6 +7,7 @@ import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.OfferDtos.ChooseAmountRequest;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountView;
+import com.navix.loan.dto.OfferDtos.EsignInitRequest;
 import com.navix.loan.dto.OfferDtos.OfferSummaryView;
 import com.navix.loan.dto.OfferDtos.ReferenceView;
 import com.navix.loan.dto.OfferDtos.ReferencesRequest;
@@ -73,6 +74,22 @@ public class OfferController {
         return ApiResponse.ok(offer.sanctionLetter(id));
     }
 
+    /** Start Aadhaar e-sign — {@code derived.url} is where to send the borrower. */
+    @PostMapping("/esign/init")
+    public ApiResponse<StepResult> esignInit(@PathVariable Long id,
+                                             @Valid @RequestBody EsignInitRequest req) {
+        authorize(id);
+        return ApiResponse.ok(offer.esignInit(id, req));
+    }
+
+    /** Poll the Aadhaar e-sign session after the provider redirects the borrower back. */
+    @GetMapping("/esign/status")
+    public ApiResponse<StepResult> esignStatus(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(offer.esignStatus(id));
+    }
+
+    /** Fallback: record a signature the borrower drew in the app. */
     @PostMapping("/esign")
     public ApiResponse<StepResult> esign(@PathVariable Long id, @RequestBody ManualEsignRequest req) {
         authorize(id);

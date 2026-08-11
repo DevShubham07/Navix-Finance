@@ -6,6 +6,7 @@ import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountView;
+import com.navix.loan.dto.OfferDtos.EsignInitRequest;
 import com.navix.loan.dto.OfferDtos.OfferSummaryView;
 import com.navix.loan.dto.OfferDtos.ManualEsignRequest;
 import com.navix.loan.dto.OfferDtos.ReferenceInput;
@@ -238,12 +239,28 @@ public class OfferService {
 
     // ---------------------------------------------------------------- 9. eSign
 
-    /** Sign the letter (screen 9). The verification service owns the port call and the audit rows. */
+    /**
+     * Start Aadhaar e-sign of the letter (screen 9) — returns the provider URL to redirect the borrower
+     * to in {@code derived.url}, or {@code derived.fallback=true} when the provider is unavailable and
+     * they should draw a signature instead. The verification service owns the port call and audit rows.
+     */
     @Transactional
-    public StepResult esign(Long appId) {
+    public StepResult esignInit(Long appId, EsignInitRequest req) {
         requireSanctioned(appId);
-        StepResult result = verification.recordEsign(appId);
-        journey.advance(appId, JourneyService.OfferStep.OFFER_SANCTIONED);
+        return verification.esignInit(appId, req.successRedirectUrl(), req.failureRedirectUrl());
+    }
+
+    /**
+     * Poll the signing session. The journey only advances once the signature is actually captured — a
+     * PENDING poll must not let the borrower past the one step that gates disbursement.
+     */
+    @Transactional
+    public StepResult esignStatus(Long appId) {
+        requireSanctioned(appId);
+        StepResult result = verification.esignStatus(appId);
+        if (ApplicationVerificationService.PASS.equals(result.status())) {
+            journey.advance(appId, JourneyService.OfferStep.OFFER_SANCTIONED);
+        }
         return result;
     }
 

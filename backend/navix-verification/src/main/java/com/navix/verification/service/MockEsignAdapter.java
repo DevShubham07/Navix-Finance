@@ -27,11 +27,13 @@ public class MockEsignAdapter implements EsignPort {
     private final Map<String, Instant> sessions = new ConcurrentHashMap<>();
 
     @Override
-    public EsignSession initiate(String documentUrl, String signerName, String signerMobile, String clientRef) {
+    public EsignSession initiate(EsignRequest request) {
+        String clientRef = request.clientRef();
         String sessionId = "mock-esign-" + (clientRef != null ? clientRef : Long.toHexString(System.nanoTime()));
         sessions.put(sessionId, Instant.now());
-        // Never log signerMobile / documentUrl — the URL is a presigned handle on the borrower's KFS.
-        log.info("Mock eSign session {} opened for {}", sessionId, signerName);
+        // Never log the signer's mobile / documentUrl — the URL is a presigned handle on the borrower's KFS.
+        log.info("Mock eSign session {} opened for {}", sessionId,
+                request.signer() != null ? request.signer().name() : "unknown signer");
         // signUrl null: the mock signs in place, so the UI shows its own "Sign now" affordance rather
         // than redirecting. A real provider returns a hosted URL here and the page redirects instead.
         return new EsignSession(sessionId, null, PROVIDER);

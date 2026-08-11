@@ -85,6 +85,9 @@ if (-not $NoBackend) {
     "`$env:NAVIX_SMS_MOCK='true';" +
     # Bundled bureau report -> real 1-5 star credit briefs with no vendor call.
     "`$env:NAVIX_BUREAU_FIXTURE='classpath:samplepan.json';" +
+    # Sign the agreement inline. A real Aadhaar e-sign needs a human with an Aadhaar-linked handset,
+    # and every session is a billable, legally binding contract -- neither works for a seeded demo.
+    "`$env:NAVIX_ESIGN_PROVIDER='mock';" +
     "`$env:NAVIX_EMAIL_PROVIDER='log'; `$env:NAVIX_SES_EVENTS_ENABLED='false';" +
     "`$env:AUTH_SECRET='dhanboost-demo-local-secret-6f4a2c8e91b7';" +
     # Postgres rejects the JVM's Asia/Calcutta alias. Quote the -D args: PowerShell's native

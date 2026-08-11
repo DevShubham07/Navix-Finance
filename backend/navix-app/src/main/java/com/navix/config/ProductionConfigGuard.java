@@ -19,6 +19,8 @@ import org.springframework.stereotype.Component;
  *   <li>{@code navix.sms.mock} — the fixed code verifies for ANY mobile with no stored OTP, which is
  *       a total authentication bypass, not merely a convenience;</li>
  *   <li>{@code navix.sms.dev-echo} — returns the OTP in the HTTP response, same class of bypass.</li>
+ *   <li>{@code navix.esign.provider=mock} — reports every loan agreement as signed without anyone
+ *       signing anything, so the file reaches disbursement on a signature that does not exist.</li>
  * </ul>
  *
  * <p>Thrown from {@code @PostConstruct}, so it fires during bean initialisation — before the web
@@ -48,6 +50,9 @@ public class ProductionConfigGuard {
     @Value("${navix.auth.secret:" + DEFAULT_SECRET + "}")
     private String secret;
 
+    @Value("${navix.esign.provider:signzy}")
+    private String esignProvider;
+
     @PostConstruct
     void check() {
         if (!"prod".equalsIgnoreCase(env)) {
@@ -68,6 +73,13 @@ public class ProductionConfigGuard {
         if (sms.devEcho()) {
             throw new IllegalStateException("NAVIX_ENV=prod with navix.sms.dev-echo=true — the OTP is "
                     + "returned in the HTTP response. Unset NAVIX_SMS_DEV_ECHO.");
+        }
+        if ("mock".equalsIgnoreCase(esignProvider)) {
+            // Worse than a bypass: the borrower's file reaches disbursement carrying a PASS on the one
+            // check that is a legal act, with no signature behind it and nothing to enforce later.
+            throw new IllegalStateException("NAVIX_ENV=prod with navix.esign.provider=mock — every loan "
+                    + "agreement would be recorded as signed without a real Aadhaar e-signature. "
+                    + "Unset NAVIX_ESIGN_PROVIDER.");
         }
     }
 }

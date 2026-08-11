@@ -738,7 +738,9 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   `123456` remains the local/demo path (it is **off** in prod as of 2026-07-30).
 - 🟡 Staff **emailed invites** + ADMIN-gated invite create; middleware **JWT-signature verify** (still a
   presence check). Rotate the seeded `Admin@12345` + set a strong `AUTH_SECRET` for prod.
-- 🔴 Real bank **payout** (NEFT/IMPS) at the accountant step; sanction-letter/agreement generation → S3.
+- 🔴 Real bank **payout** (NEFT/IMPS) at the accountant step. (Sanction-letter/agreement generation → S3
+  **shipped** — `SanctionLetterPdfRenderer` renders the Key Fact Statement via OpenPDF and `OfferService`
+  stores it as the `SANCTION_LETTER` document; **Aadhaar eSign of it shipped 2026-08-11**, see §14.)
 - 🔴 DB cleanup: **FK constraints**; drop the legacy `bytea` doc column (still on the live borrower
   document upload/read path — migrate that write path to S3 first); unify applicant identity
   (`applicant_profile` ↔ onboarding `Borrower`); PII-at-rest encryption.
@@ -770,6 +772,30 @@ a `CapabilityNotSupportedException` tells the router "skip to the next provider"
 | `digilocker*` | **Signzy only** (prod acct) | Signzy **v2** `/api/v3/digilocker-v2/createUrl` + `/geteAadhaar` (Digitap has no consent flow). Migrated 2026-07-29: v2 is entitled on the **production** account only — the preprod account is out of API credits and prod is not entitled for the retired v1 pair |
 | `verifyEmail` | **Signzy** → Digitap | Signzy `/api/v3/email/verificationV2` (prod acct; deliverability + person/company enrichment) → Digitap `/cv/email_verification/v1` |
 | `verifyAddress` | **Digitap only** | Digitap `/ent/v1/address-verification` (Signzy has no address API) |
+
+**Aadhaar eSign of the sanction letter** sits on its own seam — `EsignPort` (navix-common), *not*
+`VerificationPort`/the router, because it is one provider and a legal act rather than a check.
+`SignzyEsignAdapter` (`navix-verification`) drives Signzy's Contract API via `SignzyContractClient`:
+`POST /api/v3/contract/initiate` mints a contract + a hosted eMudhra `esignUrl`, `POST
+/api/v3/contract/pullData` resolves it. **Production account only** — preproduction answers `403 "You
+cannot consume this service"`. Selected by `navix.esign.provider` (`signzy` default; `mock` signs inline
+and is set only by the demo seed script and tests). Specs + verified corrections in
+`docs/signzy/initiatecontact.md` and `docs/signzy/pullcontact.md`; live-test with
+`docs/signzy/test-contract-esign.sh`.
+- **Flow** (offer-journey screen 8, `/loan/sanction-letter`): `esignInit` presigns the stored
+  `SANCTION_LETTER` and returns `derived.url` → the borrower is **redirected** (eMudhra refuses framing,
+  so this follows DigiLocker, not the liveness iframe) → returns to `/kyc/esign/callback`, which polls
+  `esignStatus` until terminal. **Our row is the source of truth**; the mandatory `callbackUrl`
+  (`POST /api/webhooks/signzy/contract`, shared-secret) only accelerates the closed-tab case.
+- **Identity match:** `nameMatchThreshold` + YOB + gender, taken from the `AADHAAR` verification row's
+  `derived` (gender and the Aadhaar last-4 live nowhere else). DigiLocker is non-blocking, so when that
+  data is absent we send the name threshold alone — `derived.matchMode` records which was used.
+- **Fallback:** if init fails, `derived.fallback=true` and the borrower draws a signature instead
+  (`recordManualEsign`, unchanged). That path deliberately never calls `EsignPort` — it must work when
+  the provider does not, and each call would otherwise mint a billable contract.
+- ⚠️ **Every initiate is a real, billable, legally binding contract; there is no sandbox.** The re-mint
+  on expiry is deliberately narrow (provider 404 **and** nothing signed) so a poll loop cannot cycle.
+  `contractTtl` is echoed but appears unhonoured (~7 days regardless).
 
 - **Auth & hosts (env-driven, PREPRODUCTION by default).** Signzy = raw opaque token in `Authorization`
   **plus** the account id in the `x-client-unique-id` header (`SIGNZY_TOKEN` + `SIGNZY_CLIENT_UNIQUE_ID`,
