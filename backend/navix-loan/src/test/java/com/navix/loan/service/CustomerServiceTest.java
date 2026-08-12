@@ -13,10 +13,12 @@ import static org.mockito.Mockito.when;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
+import com.navix.common.staff.StaffSummary;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.entity.CustomerOwner;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.common.risk.RiskPort;
 import com.navix.loan.repository.CustomerProfileRepository;
@@ -188,5 +190,84 @@ class CustomerServiceTest {
 
         assertThat(res.customerId()).isEqualTo(9000001L);
         assertThat(res.totalRows()).isGreaterThan(0);
+    }
+
+    @Test
+    void assignOwner_asTelecaller_acceptsAnotherTelecaller() {
+        givenAssignableCustomer("21", "Caller", "TELECALLER");
+        when(staffDirectory.findStaff(22L))
+                .thenReturn(Optional.of(new StaffSummary(22L, "Colleague", "TELECALLER", true)));
+
+        service.assignOwner(9000001L, 22L);
+
+        verify(ownerRepository).save(org.mockito.ArgumentMatchers.argThat(owner ->
+                owner.getCustomerId().equals(9000001L) && owner.getOwnerStaffId().equals(22L)));
+    }
+
+    @Test
+    void assignOwner_asTelecaller_acceptsSelf() {
+        givenAssignableCustomer("21", "Caller", "TELECALLER");
+        when(staffDirectory.findStaff(21L))
+                .thenReturn(Optional.of(new StaffSummary(21L, "Caller", "TELECALLER", true)));
+
+        service.assignOwner(9000001L, 21L);
+
+        verify(ownerRepository).save(any(CustomerOwner.class));
+    }
+
+    @Test
+    void assignOwner_asTelecaller_acceptsUnallocation() {
+        givenAssignableCustomer("21", "Caller", "TELECALLER");
+        CustomerOwner existing = new CustomerOwner();
+        existing.setCustomerId(9000001L);
+        existing.setOwnerStaffId(22L);
+        when(ownerRepository.findById(9000001L)).thenReturn(Optional.of(existing));
+
+        service.assignOwner(9000001L, null);
+
+        verify(ownerRepository).deleteById(9000001L);
+    }
+
+    @Test
+    void assignOwner_asTelecaller_rejectsCreditHeadTarget() {
+        givenAssignableCustomer("21", "Caller", "TELECALLER");
+        when(staffDirectory.findStaff(30L))
+                .thenReturn(Optional.of(new StaffSummary(30L, "Credit Head", "CREDIT_HEAD", true)));
+
+        assertThatThrownBy(() -> service.assignOwner(9000001L, 30L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("FORBIDDEN_ROLE");
+    }
+
+    @Test
+    void assignOwner_asCreditHead_keepsAllowingOtherActiveRoles() {
+        givenAssignableCustomer("31", "Credit Head", "CREDIT_HEAD");
+        when(staffDirectory.findStaff(30L))
+                .thenReturn(Optional.of(new StaffSummary(30L, "Another Head", "CREDIT_HEAD", true)));
+
+        service.assignOwner(9000001L, 30L);
+
+        verify(ownerRepository).save(any(CustomerOwner.class));
+    }
+
+    @Test
+    void assignOwner_asAdmin_keepsAllowingOtherActiveRoles() {
+        givenAssignableCustomer("1", "Admin", "ADMIN");
+        when(staffDirectory.findStaff(30L))
+                .thenReturn(Optional.of(new StaffSummary(30L, "Credit Head", "CREDIT_HEAD", true)));
+
+        service.assignOwner(9000001L, 30L);
+
+        verify(ownerRepository).save(any(CustomerOwner.class));
+    }
+
+    private void givenAssignableCustomer(String actorId, String actorName, String actorRole) {
+        ActorContext.set(new CurrentActor(actorId, actorName, actorRole));
+        LoanApplication application = app(1, 9000001L, ApplicationStatus.ACTIVE);
+        CustomerProfile customerProfile = profile(1, "Asha Rao", "ABCDE1234F");
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(application));
+        when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(customerProfile));
+        when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of());
     }
 }

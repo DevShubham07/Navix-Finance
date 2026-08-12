@@ -14,6 +14,8 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.risk.RiskPort;
+import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.VerificationPort;
@@ -29,6 +31,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.mockito.ArgumentCaptor;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -70,6 +73,11 @@ class ApplicationVerificationServiceTest {
         lenient().when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of());
     }
 
+    @AfterEach
+    void clearActor() {
+        ActorContext.clear();
+    }
+
     private CustomerProfile profile() {
         CustomerProfile p = new CustomerProfile();
         p.setApplicationId(APP);
@@ -77,6 +85,44 @@ class ApplicationVerificationServiceTest {
         p.setEmployer("Digitap.ai");
         p.setMobile("7206485966");
         return p;
+    }
+
+    @Test
+    void manualDecision_preservesPennyDropDerivedAndAddsOverrideAudit() {
+        ActorContext.set(new CurrentActor("17", "Credit Reviewer", "CREDIT_HEAD"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        ApplicationVerification existing = row("PENNY_DROP", "PASS");
+        existing.setDerived("{\"accountNumber\":\"4180000101597860\",\"bankRrn\":\"RRN-9\"}");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PENNY_DROP"))
+                .thenReturn(Optional.of(existing));
+
+        var result = service.manualDecision(APP, "PENNY_DROP", true, "confirmed");
+
+        assertThat(result.derived())
+                .containsEntry("accountNumber", "4180000101597860")
+                .containsEntry("bankRrn", "RRN-9")
+                .containsEntry("manualOverride", true)
+                .containsEntry("manualBy", "Credit Reviewer");
+        assertThat(result.derived().get("manualAt")).isInstanceOf(String.class);
+        assertThat(java.time.Instant.parse((String) result.derived().get("manualAt"))).isNotNull();
+    }
+
+    @Test
+    void manualDecision_stillClearsDerivedForNonPennyDropChecks() {
+        ActorContext.set(new CurrentActor("17", "Credit Reviewer", "CREDIT_HEAD"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        ApplicationVerification existing = row("PAN", "REVIEW");
+        existing.setDerived("{\"aadhaarLinked\":true}");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PAN"))
+                .thenReturn(Optional.of(existing));
+
+        var result = service.manualDecision(APP, "PAN", true, "confirmed");
+
+        assertThat(result.derived()).isEmpty();
     }
 
     @Test

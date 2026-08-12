@@ -255,6 +255,12 @@ public class CustomerService {
                 .filter(StaffSummary::active)
                 .orElseThrow(() -> new BusinessException("INVALID_ASSIGNEE",
                         "The assignee must be an active staff member"));
+        CurrentActor actor = ActorContext.get();
+        if (actor != null && "TELECALLER".equals(actor.role())
+                && !"TELECALLER".equals(assignee.role())) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "A TELECALLER may assign customers only to another TELECALLER");
+        }
 
         CustomerOwner row = existing != null ? existing : new CustomerOwner();
         row.setCustomerId(customerId);

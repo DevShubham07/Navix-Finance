@@ -1593,8 +1593,15 @@ public class ApplicationVerificationService {
         String trimmed = notes != null ? notes.trim() : "";
         String message = (pass ? "Manually approved" : "Manually rejected") + " by " + actor
                 + (trimmed.isEmpty() ? "" : " — " + trimmed);
+        Map<String, Object> derived = Map.of();
+        if (PENNY_DROP.equals(type)) {
+            derived = new LinkedHashMap<>(derivedFor(appId, type));
+            derived.put("manualOverride", true);
+            derived.put("manualBy", actor);
+            derived.put("manualAt", Instant.now().toString());
+        }
         return view(upsert(appId, type, pass ? PASS : FAIL, "MANUAL",
-                null, null, null, null, null, Map.of(), message));
+                null, null, null, null, null, derived, message));
     }
 
     /**
