@@ -28,6 +28,14 @@ public final class LoanDtos {
             LocalDate paidOn) {
     }
 
+    /**
+     * Reject a recorded payment. {@code reason} is required and must be one of the fixed picklist
+     * codes ({@code WRONG_REFERENCE}, {@code AMOUNT_MISMATCH}, {@code NOT_RECEIVED},
+     * {@code UNREADABLE_PROOF}, {@code OTHER}); {@code note} is optional free text.
+     */
+    public record RejectRepaymentRequest(@NotNull String reason, String note) {
+    }
+
     public record LoanView(
             Long id,
             Long customerId,
@@ -71,17 +79,22 @@ public final class LoanDtos {
             LocalDate paidOn,
             boolean partial,
             Long customerId,
-            String customerName) {
+            String customerName,
+            // Set only when status == REJECTED (item 5): a fixed picklist code + optional free text.
+            String rejectionReason,
+            String rejectionNote) {
 
         public static PaymentView of(Payment p) {
             return new PaymentView(p.getId(), p.getLoanId(), p.getAmount(), p.getMethod(), p.getStatus(),
-                    p.getTxnRef(), p.getProofUrl(), p.getPaidOn(), p.isPartial(), null, null);
+                    p.getTxnRef(), p.getProofUrl(), p.getPaidOn(), p.isPartial(), null, null,
+                    p.getRejectionReason(), p.getRejectionNote());
         }
 
         /** Staff queue variant: associates a repayment with the borrower without exposing it to borrower APIs. */
         public static PaymentView of(Payment p, Long customerId, String customerName) {
             return new PaymentView(p.getId(), p.getLoanId(), p.getAmount(), p.getMethod(), p.getStatus(),
-                    p.getTxnRef(), p.getProofUrl(), p.getPaidOn(), p.isPartial(), customerId, customerName);
+                    p.getTxnRef(), p.getProofUrl(), p.getPaidOn(), p.isPartial(), customerId, customerName,
+                    p.getRejectionReason(), p.getRejectionNote());
         }
     }
 

@@ -6,9 +6,9 @@ export const BRAND = {
   legalName: "NAVIX Finance Private Limited",
   shortName: "DhanBoost",
   tagline: "Lending Platform",
-  phone: "+91 97167 60246",
-  phoneHref: "tel:+919716760246",
-  email: "info@dhanboost.com",
+  phone: "+91 85100 28510",
+  phoneHref: "tel:+918510028510",
+  email: "support@dhanboost.com",
   grievanceEmail: "grievance@dhanboost.com",
   /** Grievance Redressal Officer under the Consumer Protection Act, 2019. */
   grievanceOfficer: {
@@ -17,7 +17,7 @@ export const BRAND = {
     phoneHref: "tel:+919716760246",
     email: "grievance@dhanboost.com",
   },
-  fraudEmail: "info@dhanboost.com",
+  fraudEmail: "support@dhanboost.com",
   hours: "Mon–Sat, 9:30 AM – 6:30 PM",
   cin: "U64990HR2026PTC144926",
   address: {

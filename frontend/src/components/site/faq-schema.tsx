@@ -6,6 +6,8 @@
  * machine-readable Q&A pairing of content that otherwise only lives in accordion DOM. Keep this in
  * sync with faq.ts if the questions change.
  */
+import { BRAND } from "@/lib/brand";
+
 const FAQ: { q: string; a: string }[] = [
   {
     q: "Is DhanBoost a lender?",
@@ -49,7 +51,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How do I spot a fake DhanBoost app or agent?",
-    a: "DhanBoost never asks for advance fees or upfront payments. We only use official channels (dhanboost.com and info@dhanboost.com). Report anything suspicious to info@dhanboost.com.",
+    a: `DhanBoost never asks for advance fees or upfront payments. We only use official channels (dhanboost.com and ${BRAND.email}). Report anything suspicious to ${BRAND.fraudEmail}.`,
   },
 ];
 

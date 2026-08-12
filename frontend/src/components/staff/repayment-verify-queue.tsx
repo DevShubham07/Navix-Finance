@@ -3,10 +3,23 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, AlertTriangle, Clock, UserRound, X } from "lucide-react";
-import { staffApi, paiseToINR, type PaymentView } from "@/lib/api/applications";
+import { Dialog } from "@/components/ui/dialog";
+import { Select } from "@/components/ui";
+import {
+  staffApi,
+  paiseToINR,
+  REJECTION_REASON_LABEL,
+  type PaymentView,
+  type RejectionReasonCode,
+} from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
+
+const REASON_OPTIONS = (Object.keys(REJECTION_REASON_LABEL) as RejectionReasonCode[]).map((v) => ({
+  value: v,
+  label: REJECTION_REASON_LABEL[v],
+}));
 
 /**
  * Accountant maker-checker queue for repayments. Borrowers record manual UPI/bank
@@ -16,6 +29,7 @@ import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog"
  */
 export function RepaymentVerifyQueue() {
   const [openCustomerId, setOpenCustomerId] = React.useState<number | null>(null);
+  const [rejectTarget, setRejectTarget] = React.useState<PaymentView | null>(null);
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["staff-pending-repayments"],
@@ -27,13 +41,20 @@ export function RepaymentVerifyQueue() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-pending-repayments"] }),
   });
   const reject = useMutation({
-    mutationFn: (p: PaymentView) => staffApi.rejectRepayment(p.loanId, p.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-pending-repayments"] }),
+    mutationFn: (vars: { p: PaymentView; reason: RejectionReasonCode; note: string }) =>
+      staffApi.rejectRepayment(vars.p.loanId, vars.p.id, {
+        reason: vars.reason,
+        note: vars.note.trim() || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-pending-repayments"] });
+      setRejectTarget(null);
+    },
   });
   const actionError = verify.error ?? reject.error;
   const busy = (p: PaymentView) =>
     (verify.isPending && verify.variables?.id === p.id) ||
-    (reject.isPending && reject.variables?.id === p.id);
+    (reject.isPending && reject.variables?.p.id === p.id);
 
   const rows = q.data ?? [];
 
@@ -110,12 +131,12 @@ export function RepaymentVerifyQueue() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => reject.mutate(p)}
+                        onClick={() => setRejectTarget(p)}
                         disabled={busy(p)}
                         className="btn btn-sm border-error-600 bg-error-600 text-white hover:bg-error-700 disabled:opacity-50"
                       >
                         <X size={15} />{" "}
-                        {reject.isPending && reject.variables?.id === p.id ? "Rejecting…" : "Reject"}
+                        {reject.isPending && reject.variables?.p.id === p.id ? "Rejecting…" : "Reject"}
                       </button>
                     </div>
                   </td>
@@ -131,6 +152,76 @@ export function RepaymentVerifyQueue() {
         closes the loan at zero. Reject if the proof doesn&apos;t match — the balance is left unchanged.
       </p>
       <CustomerDetailDialog customerId={openCustomerId} onClose={() => setOpenCustomerId(null)} />
+      <RejectDialog
+        payment={rejectTarget}
+        pending={reject.isPending}
+        onClose={() => setRejectTarget(null)}
+        onSubmit={(reason, note) => rejectTarget && reject.mutate({ p: rejectTarget, reason, note })}
+      />
     </section>
+  );
+}
+
+/** The reason picklist + optional note the accountant fills in before a reject goes through. */
+function RejectDialog({
+  payment,
+  pending,
+  onClose,
+  onSubmit,
+}: {
+  payment: PaymentView | null;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (reason: RejectionReasonCode, note: string) => void;
+}) {
+  const [reason, setReason] = React.useState<RejectionReasonCode | "">("");
+  const [note, setNote] = React.useState("");
+
+  React.useEffect(() => {
+    if (payment) {
+      setReason("");
+      setNote("");
+    }
+  }, [payment]);
+
+  return (
+    <Dialog open={payment != null} onClose={onClose} aria-label="Reject payment">
+      <h3 className="mb-1 font-serif text-lg text-navy">Reject this payment?</h3>
+      <p className="mb-4 text-sm text-muted">
+        {payment
+          ? `${paiseToINR(payment.amountPaise)} on loan #${payment.loanId}${payment.customerName ? ` · ${payment.customerName}` : ""}. The borrower's balance stays unchanged.`
+          : null}
+      </p>
+      <Select
+        label="Reason"
+        required
+        value={reason}
+        onChange={(e) => setReason(e.target.value as RejectionReasonCode | "")}
+        options={[{ value: "", label: "Select a reason…" }, ...REASON_OPTIONS]}
+      />
+      <label className="field">
+        <span>Note (optional)</span>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          placeholder="Any extra detail for the borrower/record…"
+          className="w-full rounded border border-line px-3 py-2 text-sm"
+        />
+      </label>
+      <div className="mt-4 flex justify-end gap-2">
+        <button type="button" onClick={onClose} className="btn btn-sm btn-outline" disabled={pending}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => reason && onSubmit(reason, note)}
+          disabled={!reason || pending}
+          className="btn btn-sm border-error-600 bg-error-600 text-white hover:bg-error-700 disabled:opacity-50"
+        >
+          {pending ? "Rejecting…" : "Reject payment"}
+        </button>
+      </div>
+    </Dialog>
   );
 }

@@ -31,6 +31,7 @@ import {
 } from "@/lib/borrower-next-milestone";
 import { ReferralCard } from "@/components/borrower/referral-card";
 import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
+import { PaymentHelp } from "@/components/borrower/payment-help";
 import { preferredApprovedAmountPaise } from "@/lib/borrower-flow";
 
 export default function DashboardPage() {
@@ -339,8 +340,8 @@ function NextMilestoneIcon({ icon }: { icon: BorrowerMilestoneIcon }) {
 function stageDescription(status: BorrowerStatus): string {
   const map: Partial<Record<BorrowerStatus, string>> = {
     NEW: "Continue your application where you left off.",
-    APPLIED: "Submitted — your application is in the queue.",
-    UNDER_REVIEW: "Our team is verifying your KYC and details.",
+    APPLIED: "Submitted — your application will be reviewed in 2–3 hours.",
+    UNDER_REVIEW: "Your application will be reviewed in 2–3 hours.",
     APPROVED: "Approved by our credit team — a few steps left to receive your money.",
     DOCS_SIGNED: "Documents signed — moving to disbursal.",
     DISBURSING: "Approved — your disbursal is being arranged.",
@@ -430,6 +431,8 @@ function LoanCard({
             View full breakdown
           </button>
         )}
+
+        <PaymentHelp variant="inline" compact className="mt-5 border-t border-grey-200 pt-4" />
       </div>
     </div>
   );

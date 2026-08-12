@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowRight } from "lucide-react";
+import { Loader2, RefreshCw, Search, ArrowRight, Info } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
-import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
+import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { ExportMenu } from "@/components/staff/export-menu";
 import type { ExportColumn } from "@/lib/export/exporters";
 import { hasPermission } from "@/lib/auth/rbac";
@@ -35,6 +36,8 @@ const EXPORT_COLUMNS: ExportColumn<AdminApplicationView>[] = [
   { header: "Employment", value: (a) => a.employmentStatus ?? "" },
   { header: "Monthly salary (₹)", value: (a) => rupees(a.monthlySalaryPaise) },
   { header: "Salary bank", value: (a) => a.salaryBank ?? "" },
+  { header: "Salary account", value: (a) => a.salaryAccountNumber ?? "" },
+  { header: "Salary IFSC", value: (a) => a.salaryIfsc ?? "" },
   { header: "Amount requested (₹)", value: (a) => rupees(a.amountRequestedPaise) },
   { header: "Eligible limit (₹)", value: (a) => rupees(a.eligibleLimitPaise) },
   { header: "Purpose", value: (a) => a.purpose ?? "" },
@@ -58,6 +61,7 @@ export default function AdminAllApplicationsPage() {
   const [search, setSearch] = React.useState("");
   const [filter, setFilter] = React.useState<CompletenessFilter>("ALL");
   const [openId, setOpenId] = React.useState<number | null>(null);
+  const [infoId, setInfoId] = React.useState<number | null>(null);
   const q = useQuery({ queryKey: ["admin-all-applications"], queryFn: staffApi.listAllApplications });
 
   if (myRole && !hasPermission(myRole, "staff:manage")) {
@@ -131,6 +135,8 @@ export default function AdminAllApplicationsPage() {
                   <th className="whitespace-nowrap">App</th>
                   <th>Customer</th>
                   <th className="whitespace-nowrap">PAN</th>
+                  <th className="whitespace-nowrap">Account</th>
+                  <th className="whitespace-nowrap">IFSC</th>
                   <th className="whitespace-nowrap">Mobile</th>
                   <th className="whitespace-nowrap">Status</th>
                   <th className="whitespace-nowrap">Completeness</th>
@@ -149,6 +155,8 @@ export default function AdminAllApplicationsPage() {
                       <span className="block text-xs text-muted">#{a.customerId}{a.email ? ` · ${a.email}` : ""}</span>
                     </td>
                     <td className="whitespace-nowrap font-mono text-ink">{a.pan || "—"}</td>
+                    <td className="whitespace-nowrap font-mono text-ink">{a.salaryAccountNumber || "—"}</td>
+                    <td className="whitespace-nowrap font-mono text-ink">{a.salaryIfsc || "—"}</td>
                     <td className="whitespace-nowrap font-mono text-muted">{a.mobile || "—"}</td>
                     <td className="whitespace-nowrap">
                       <span className="rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">{statusLabel(a.status)}</span>
@@ -172,14 +180,24 @@ export default function AdminAllApplicationsPage() {
                     </td>
                     <td className="whitespace-nowrap text-muted">{a.riskCategory || "—"}</td>
                     <td className="whitespace-nowrap text-right">
-                      <button onClick={() => setOpenId(a.customerId)} className="inline-flex items-center gap-1 text-navy hover:underline">
-                        Open <ArrowRight size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setInfoId(a.id)}
+                          className="btn btn-sm btn-outline btn-icon"
+                          aria-label="Quick summary"
+                          title="Quick summary"
+                        >
+                          <Info size={14} />
+                        </button>
+                        <button onClick={() => setOpenId(a.id)} className="inline-flex items-center gap-1 text-navy hover:underline">
+                          Open <ArrowRight size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={10} className="text-center text-muted">No applications match.</td></tr>
+                  <tr><td colSpan={12} className="text-center text-muted">No applications match.</td></tr>
                 )}
               </tbody>
             </table>
@@ -187,7 +205,8 @@ export default function AdminAllApplicationsPage() {
         </div>
       )}
 
-      <CustomerDetailDialog customerId={openId} onClose={() => setOpenId(null)} />
+      <ApplicationDetailDialog applicationId={openId} onClose={() => setOpenId(null)} />
+      <ApplicationInfoDialog applicationId={infoId} onClose={() => setInfoId(null)} />
     </div>
   );
 }

@@ -411,6 +411,11 @@ table.data td strong { color: var(--navy); }
    comfortable width, and only truncates past `max-width` — the point where one long value would
    otherwise push the whole grid sideways. Pair with `title=` so the full value stays reachable. */
 .navix-crm .staff-cell { min-width: 9rem; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; }
+/* PAN/Account/IFSC (item 2) added three full-value mono columns to every queue grid — at laptop
+   widths that no longer fits without crushing the existing columns, so give the table a floor and
+   let `.staff-table-scroll` do its job (the sticky identity/actions columns still pin correctly
+   against a scrolling middle, since they're independently `position: sticky`). */
+.staff-data-table { min-width: 72rem; }
 .staff-data-table th,
 .staff-data-table td { border-bottom: 1px solid var(--line); padding: 8px 14px; text-align: left; }
 .staff-data-table thead th { background: var(--navy); color: #fff; font-size: 0.576rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }

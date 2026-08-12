@@ -5,6 +5,8 @@
 // 1%/day interest; processing fee + GST netted from disbursal; no advance fee; 2%/day late fee capped
 // at 30 days; salary-linked single repayment). Have compliance sign off before treating as final.
 
+import { BRAND } from "@/lib/brand";
+
 export type BlogPost = {
   slug: string;
   title: string;
@@ -105,7 +107,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>2. They pressure you to act immediately</h2>
     <p>"Offer expires in 10 minutes." "Pay now or lose your approval." Urgency is a manipulation tactic designed to stop you thinking. A real lender gives you time to read your KFS and decide. If you feel rushed, that's the moment to slow down.</p>
     <h2>3. The app or link isn't official</h2>
-    <p>Scammers clone brand names and logos. Always check you're on the official domain — for us, that's <b>dhanboost.com</b> — and that emails come from <b>info@dhanboost.com</b>. Be wary of loan offers arriving by random WhatsApp, SMS or Telegram links, or apps downloaded from outside official stores.</p>
+    <p>Scammers clone brand names and logos. Always check you're on the official domain — for us, that's <b>dhanboost.com</b> — and that emails come from <b>${BRAND.email}</b>. Be wary of loan offers arriving by random WhatsApp, SMS or Telegram links, or apps downloaded from outside official stores.</p>
     <h2>4. There's no clear lender or registration</h2>
     <p>Every legitimate loan in India is made by an RBI-registered entity. If you can't tell who the actual lender is, or there's no Key Fact Statement, walk away. DhanBoost is a platform; the loan is sanctioned and disbursed by our RBI-registered NBFC partners, and that's stated clearly before you sign.</p>
     <h2>5. They ask for OTPs, full card numbers or remote access</h2>
@@ -116,7 +118,7 @@ export const POSTS: Record<string, BlogPost> = {
       <li>Verify the lender and read the KFS before signing.</li>
       <li>Use only official channels; check the domain and sender.</li>
       <li>Never share OTPs, full card details or device access.</li>
-      <li>Report anything suspicious in DhanBoost's name to <b>info@dhanboost.com</b>.</li>
+      <li>Report anything suspicious in DhanBoost's name to <b>${BRAND.fraudEmail}</b>.</li>
     </ul>
     <p>Fraud thrives on urgency and secrecy. Slow down, verify, and you take away its power.</p>`,
     }),
@@ -266,7 +268,7 @@ export const POSTS: Record<string, BlogPost> = {
     <h2>Repaying early saves you interest</h2>
     <p>DhanBoost charges 1% per day on the principal over the actual tenure, and there are <b>no pre-closure or prepayment charges</b>. That means clearing your loan early genuinely reduces what you pay — you're only charged interest for the days you actually held the loan. If salary lands early, paying early is a small, easy win.</p>
     <h2>If you might miss the date</h2>
-    <p>Life happens. If you think you'll be late, contact us early at <b>info@dhanboost.com</b>. A late payment attracts a fee of 2% per day on the overdue principal (capped at 30 days) and can affect your credit score, so it's always worth talking to us before the date rather than after.</p>
+    <p>Life happens. If you think you'll be late, contact us early at <b>${BRAND.email}</b>. A late payment attracts a fee of 2% per day on the overdue principal (capped at 30 days) and can affect your credit score, so it's always worth talking to us before the date rather than after.</p>
     <h2>After you repay</h2>
     <p>Once your payment is confirmed, your loan is marked closed and you're free to borrow again in future if you need to. Keep your payment confirmation for your records — and that's it. Simple by design.</p>`,
     }),

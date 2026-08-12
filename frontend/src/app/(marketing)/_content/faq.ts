@@ -1,6 +1,8 @@
 // AUTO-GENERATED from the DhanBoost design export — do not hand-edit.
 // Source section id: #faq. Regenerate via transform_html.py.
 /* eslint-disable */
+import { BRAND } from "@/lib/brand";
+
 export const html = `<section class="page active" id="faq">
   <div class="page-hero"><div class="wrap">
     <div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; FAQs</div>
@@ -33,7 +35,7 @@ export const html = `<section class="page active" id="faq">
     <div class="sec-head left" style="margin-bottom:24px"><span class="eyebrow">Security</span></div>
     <div class="faq">
       <div class="qa"><h3 class="qh"><button class="q" aria-expanded="false">Is my data safe with DhanBoost?<span class="qi">+</span></button></h3><div class="a"><p>Yes. We use 256-bit encryption and follow ISO-27001-aligned controls. We never sell your data and only share what's necessary with the partner NBFC to process your loan.</p></div></div>
-      <div class="qa"><h3 class="qh"><button class="q" aria-expanded="false">How do I spot a fake DhanBoost app or agent?<span class="qi">+</span></button></h3><div class="a"><p>DhanBoost never asks for advance fees or upfront payments. We only use official channels (dhanboost.com and info@dhanboost.com). Report anything suspicious to info@dhanboost.com.</p></div></div>
+      <div class="qa"><h3 class="qh"><button class="q" aria-expanded="false">How do I spot a fake DhanBoost app or agent?<span class="qi">+</span></button></h3><div class="a"><p>DhanBoost never asks for advance fees or upfront payments. We only use official channels (dhanboost.com and ${BRAND.email}). Report anything suspicious to ${BRAND.fraudEmail}.</p></div></div>
     </div>
   </div></div>
 </section>`;

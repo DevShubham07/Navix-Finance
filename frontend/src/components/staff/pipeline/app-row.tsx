@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, Route } from "lucide-react";
+import { ArrowRight, Route, Info } from "lucide-react";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { ApplicationJourney } from "@/components/staff/application-journey";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
+import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
 import { paiseToINR, type ApplicationView } from "@/lib/api/applications";
 import { daysBetween } from "@/lib/calc/loan-math";
@@ -37,7 +38,13 @@ export function AppRow({
 }) {
   const [showJourney, setShowJourney] = React.useState(false);
   const [showDetail, setShowDetail] = React.useState(false);
+  const [showInfo, setShowInfo] = React.useState(false);
   const dpd = dpdDays(app);
+  // Disbursal-then-salary fallback — the same rule DisbursementFocus uses. Full values, no
+  // masking: an explicit product decision (queues are screen-shared in practice; noted for
+  // security review).
+  const account = app.disbursalAccountNumber ?? app.salaryAccountNumber ?? null;
+  const ifsc = app.disbursalIfsc ?? app.salaryIfsc ?? null;
 
   return (
     <>
@@ -57,6 +64,9 @@ export function AppRow({
           {app.customerName || "Name unavailable"}
         </td>
         <td className="font-mono text-muted">{app.customerMobile || "—"}</td>
+        <td className="font-mono text-ink">{app.pan || "—"}</td>
+        <td className="font-mono text-ink">{account || "—"}</td>
+        <td className="font-mono text-ink">{ifsc || "—"}</td>
         <td className="font-mono text-muted">{app.loanId != null ? `#${app.loanId}` : "—"}</td>
         <td>
           <span className="font-semibold text-ink">
@@ -111,6 +121,15 @@ export function AppRow({
           <div className="flex items-center gap-1.5">
             <button
               type="button"
+              onClick={() => setShowInfo(true)}
+              className="btn btn-sm btn-outline btn-icon"
+              aria-label="Quick summary"
+              title="Quick summary"
+            >
+              <Info size={14} />
+            </button>
+            <button
+              type="button"
               onClick={() => setShowDetail(true)}
               className="btn btn-sm btn-outline"
               title="Open the full application detail"
@@ -143,11 +162,14 @@ export function AppRow({
           {showDetail && (
             <ApplicationDetailDialog applicationId={app.id} onClose={() => setShowDetail(false)} />
           )}
+          {showInfo && (
+            <ApplicationInfoDialog applicationId={app.id} onClose={() => setShowInfo(false)} />
+          )}
         </td>
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={8} className="bg-grey-50">
+          <td colSpan={11} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

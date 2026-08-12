@@ -36,4 +36,11 @@ public interface DocumentStoragePort {
 
     /** True if an object exists at {@code key}. */
     boolean exists(String key);
+
+    /**
+     * Server-side download of the bytes at {@code key} — used only where the app itself needs the
+     * content (e.g. attaching a signed PDF to an email), never for a browser-facing read (that stays
+     * on {@link #presignDownload}). Throws on a missing key or transport error.
+     */
+    byte[] fetch(String key);
 }

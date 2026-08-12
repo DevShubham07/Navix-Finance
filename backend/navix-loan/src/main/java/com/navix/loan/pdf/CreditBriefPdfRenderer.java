@@ -74,7 +74,10 @@ public class CreditBriefPdfRenderer {
     public byte[] render(long applicationId, Long customerId, String bureauSource,
                          BureauReportFacts f, Rating rating, LocalDate generatedOn,
                          String rawResponseJson) {
-        Document doc = new Document(PageSize.A4, 42, 42, 40, 40);
+        // Landscape A4 (842×595pt): the fact tables (3-up categories, 2-col provider report) were
+        // sized for the narrower 595pt portrait page and read as cramped; the wider page gives each
+        // column meaningfully more room without shrinking type.
+        Document doc = new Document(PageSize.A4.rotate(), 42, 42, 40, 40);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
             PdfWriter.getInstance(doc, out);
@@ -222,7 +225,9 @@ public class CreditBriefPdfRenderer {
     private PdfPTable headerTable() throws DocumentException {
         PdfPTable t = new PdfPTable(2);
         t.setWidthPercentage(100);
-        t.setWidths(new float[] {2f, 1f});
+        // Wider on the landscape page than the portrait 2:1 split — the wordmark side otherwise leaves
+        // a lot of dead space next to a right-aligned title on an 842pt-wide band.
+        t.setWidths(new float[] {3f, 1f});
         t.addCell(borderless(new Phrase("DhanBoost FINANCE", WORDMARK), Element.ALIGN_LEFT));
         t.addCell(borderless(new Phrase("CREDIT BRIEF", TITLE), Element.ALIGN_RIGHT));
         return t;
@@ -251,7 +256,10 @@ public class CreditBriefPdfRenderer {
     private PdfPTable categories(BureauReportFacts f) throws DocumentException {
         PdfPTable t = new PdfPTable(3);
         t.setWidthPercentage(100);
-        t.setWidths(new float[] {1.1f, 1f, 1.2f});
+        // Evened out from the portrait {1.1, 1, 1.2} split: on the wider landscape page each column
+        // has enough room that Exposure (the longest values — rupee amounts + percentages) no longer
+        // needs an outsized share to avoid wrapping.
+        t.setWidths(new float[] {1f, 1f, 1.05f});
         t.setSpacingBefore(10f);
         t.setSpacingAfter(4f);
 

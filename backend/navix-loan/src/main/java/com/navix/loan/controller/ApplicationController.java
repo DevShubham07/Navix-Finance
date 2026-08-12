@@ -145,6 +145,16 @@ public class ApplicationController {
         return ApiResponse.ok(adminApplications.listRejections(reason));
     }
 
+    /**
+     * TELECALLER/ADMIN — every pre-sanction application (work item 10), stale-first, enriched for a
+     * follow-up call. Deliberately separate from {@link #all()} (ADMIN-only by design): this route
+     * carries no financials and is scoped to statuses that haven't reached SANCTIONED.
+     */
+    @GetMapping("/telecalling")
+    public ApiResponse<List<com.navix.loan.dto.TelecallingDtos.TelecallingView>> telecalling() {
+        return ApiResponse.ok(adminApplications.listForTelecalling());
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<ApplicationView> get(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);

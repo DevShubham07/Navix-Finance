@@ -1,7 +1,9 @@
 package com.navix.notification.dispatch;
 
 import com.navix.common.notification.ContactInfo;
+import com.navix.notification.email.EmailAttachment;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -10,6 +12,7 @@ import java.util.UUID;
  * the event data but no transaction/ActorContext). Identifiers drive audience resolution + the saved
  * row's foreign keys; {@code model} carries the display-ready template values. {@code explicitStaffSubject}
  * lets staff/IAM events supply the recipient directly (an invited subject has no staff row yet).
+ * {@code attachments} is EMAIL-only (e.g. the signed sanction letter) — ignored by every other channel.
  */
 public record NotificationContext(
         Long customerId,
@@ -21,7 +24,8 @@ public record NotificationContext(
         ContactInfo explicitStaffSubject,
         String actorId,
         String actorRole,
-        Map<String, Object> model) {
+        Map<String, Object> model,
+        List<EmailAttachment> attachments) {
 
     public static Builder builder() {
         return new Builder();
@@ -39,6 +43,7 @@ public record NotificationContext(
         private String actorId;
         private String actorRole;
         private final Map<String, Object> model = new HashMap<>();
+        private List<EmailAttachment> attachments = List.of();
 
         public Builder customerId(Long v) { this.customerId = v; return this; }
         public Builder applicationId(Long v) { this.applicationId = v; return this; }
@@ -49,6 +54,7 @@ public record NotificationContext(
         public Builder explicitStaffSubject(ContactInfo v) { this.explicitStaffSubject = v; return this; }
         public Builder actorId(String v) { this.actorId = v; return this; }
         public Builder actorRole(String v) { this.actorRole = v; return this; }
+        public Builder attachments(List<EmailAttachment> v) { this.attachments = v == null ? List.of() : v; return this; }
 
         public Builder put(String key, Object value) {
             this.model.put(key, value);
@@ -57,7 +63,7 @@ public record NotificationContext(
 
         public NotificationContext build() {
             return new NotificationContext(customerId, applicationId, loanId, caseId, assignedExecutiveId,
-                    staffSubjectId, explicitStaffSubject, actorId, actorRole, model);
+                    staffSubjectId, explicitStaffSubject, actorId, actorRole, model, attachments);
         }
     }
 }

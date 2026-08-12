@@ -47,6 +47,8 @@ const CANCELLABLE: Set<ApplicationStatus> = new Set([
   "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING", "DISBURSEMENT_FAILED",
 ]);
 
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
 const CALL_TYPES = [
   { value: "OUTBOUND", label: "Outbound" },
   { value: "INBOUND", label: "Inbound" },
@@ -93,11 +95,9 @@ export function CustomerTabBody({
     case "credit":
       return <CreditTab c={detail} latestAppId={latestAppId} />;
     case "documents":
-      return latestAppId != null ? (
-        <DocumentsTab applicationId={latestAppId} />
-      ) : (
-        <p className="py-6 text-sm text-muted">No application to attach documents to.</p>
-      );
+      // Grouped mode: every application this customer ever filed, not just the newest — a
+      // reborrow's prior-application uploads must stay reachable (item 4).
+      return <DocumentsTab customerId={customerId} />;
     case "loans":
       return <LoansTab c={detail} onChanged={onChanged} />;
     case "calls":
@@ -143,6 +143,14 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
     string,
     unknown
   >;
+  // Item 3b: the itemized interest/penalty/paid breakdown only renders when `outstanding` is
+  // passed — without it LoanBreakdown falls back to the loan's stale cached totalRepayable.
+  const outQ = useQuery({
+    queryKey: ["staff-loan-out", currentLoan?.id, todayISO()],
+    queryFn: () => staffApi.outstanding(currentLoan!.id, todayISO()),
+    enabled: currentLoan != null,
+    retry: false,
+  });
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -210,7 +218,7 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
       <div className="md:col-span-2">
         <Section title="Loan cost calculation">
           {currentLoan ? (
-            <LoanBreakdown loan={currentLoan} />
+            <LoanBreakdown loan={currentLoan} outstanding={outQ.data} />
           ) : latestApp?.amountRequestedPaise != null ? (
             <ProjectedCostBreakdown app={latestApp} />
           ) : (
@@ -546,21 +554,7 @@ function LoansTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void 
         ) : (
           <div className="space-y-3">
             {c.loans.map((l) => (
-              <div key={l.id} className="rounded border border-line p-3">
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLoan(l)}
-                    className="font-semibold text-navy hover:underline"
-                  >
-                    Loan #{l.id} · {paiseToINR(l.principalPaise)}
-                  </button>
-                  <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">
-                    {l.status}
-                  </span>
-                </div>
-                <LoanBreakdown loan={l} />
-              </div>
+              <LoanCard key={l.id} loan={l} onSelect={() => setSelectedLoan(l)} />
             ))}
           </div>
         )}
@@ -593,6 +587,29 @@ function LoansTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void 
           onClose={() => setSelectedLoan(null)}
         />
       )}
+    </div>
+  );
+}
+
+/** One loan row on the Loan applications tab — fetches its own outstanding so LoanBreakdown can
+ *  itemize interest/penalty/paid instead of showing the stale cached total (item 3b). */
+function LoanCard({ loan, onSelect }: { loan: LoanView; onSelect: () => void }) {
+  const outQ = useQuery({
+    queryKey: ["staff-loan-out", loan.id, todayISO()],
+    queryFn: () => staffApi.outstanding(loan.id, todayISO()),
+    retry: false,
+  });
+  return (
+    <div className="rounded border border-line p-3">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <button type="button" onClick={onSelect} className="font-semibold text-navy hover:underline">
+          Loan #{loan.id} · {paiseToINR(loan.principalPaise)}
+        </button>
+        <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">
+          {loan.status}
+        </span>
+      </div>
+      <LoanBreakdown loan={loan} outstanding={outQ.data} />
     </div>
   );
 }

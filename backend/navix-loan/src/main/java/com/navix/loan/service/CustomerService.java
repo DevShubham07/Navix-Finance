@@ -7,9 +7,11 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
+import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
+import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
@@ -19,7 +21,9 @@ import com.navix.loan.dto.CustomerDtos.RemarkView;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
+import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
+import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.CustomerCallLog;
 import com.navix.loan.entity.CustomerOwner;
@@ -29,6 +33,7 @@ import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.Payment;
 import com.navix.loan.entity.ProfileChangeLog;
+import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.CustomerCallLogRepository;
 import com.navix.loan.repository.CustomerOwnerRepository;
@@ -83,6 +88,7 @@ public class CustomerService {
     private final RiskPort risk;
     private final JdbcTemplate jdbc;
     private final CreditBriefService creditBriefService;
+    private final ApplicationDocumentRepository documentRepository;
 
     /**
      * All customers (distinct customers), optionally filtered by {@code q} matching the name
@@ -196,12 +202,41 @@ public class CustomerService {
     }
 
     /**
-     * Assign (or clear) the staff owner of a customer. CREDIT_HEAD / COLLECTION_HEAD / ADMIN.
-     * {@code staffId} null → unallocate (delete the sparse row). Audited via {@code profile_change_log}.
+     * Every document across ALL of this customer's applications, grouped by application (newest
+     * application first) — work item 4. Every customer-first entry point elsewhere pins to the
+     * newest application ({@code applications[0]}), so on a reborrow the prior application's uploads
+     * became unreachable through those surfaces; this endpoint is the fix.
+     */
+    @Transactional(readOnly = true)
+    public List<ApplicationDocumentGroup> documents(Long customerId) {
+        List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
+        if (apps.isEmpty()) {
+            throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
+        }
+        List<Long> appIds = apps.stream().map(LoanApplication::getId).toList();
+        Map<Long, ApplicationStatus> statusByApp = apps.stream()
+                .collect(Collectors.toMap(LoanApplication::getId, LoanApplication::getStatus));
+        // Already ordered applicationId desc, id asc by the repository method.
+        Map<Long, List<ApplicationDocument>> byApp = new java.util.LinkedHashMap<>();
+        for (ApplicationDocument d : documentRepository
+                .findByApplicationIdInOrderByApplicationIdDescIdAsc(appIds)) {
+            byApp.computeIfAbsent(d.getApplicationId(), k -> new ArrayList<>()).add(d);
+        }
+        return apps.stream()
+                .sorted(Comparator.comparing(LoanApplication::getId).reversed())
+                .map(a -> new ApplicationDocumentGroup(a.getId(), statusByApp.get(a.getId()),
+                        byApp.getOrDefault(a.getId(), List.of()).stream().map(DocumentView::of).toList()))
+                .toList();
+    }
+
+    /**
+     * Assign (or clear) the staff owner of a customer. CREDIT_HEAD / COLLECTION_HEAD / TELECALLER /
+     * ADMIN — TELECALLER added for work item 10's "Assign to me" self-assignment on the telecalling
+     * queue. {@code staffId} null → unallocate (delete the sparse row). Audited via {@code profile_change_log}.
      */
     @Transactional
     public CustomerDetail assignOwner(Long customerId, Long staffId) {
-        requireRole("CREDIT_HEAD", "COLLECTION_HEAD");
+        requireRole("CREDIT_HEAD", "COLLECTION_HEAD", "TELECALLER");
         // Ensure the customer exists (404 otherwise).
         detail(customerId);
 

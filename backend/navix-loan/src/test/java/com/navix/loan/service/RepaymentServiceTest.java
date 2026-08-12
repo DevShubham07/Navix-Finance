@@ -174,12 +174,30 @@ class RepaymentServiceTest {
         when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
 
-        repaymentService.rejectPayment(99L);
+        repaymentService.rejectPayment(99L, "WRONG_REFERENCE", "UTR didn't match");
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REJECTED);
+        assertThat(payment.getRejectionReason()).isEqualTo("WRONG_REFERENCE");
+        assertThat(payment.getRejectionNote()).isEqualTo("UTR didn't match");
         // A rejected payment never affected the balance, so the loan is not recomputed/closed.
         verify(loanRepository, never()).save(any());
         verify(applicationFlowService, never()).closeForLoan(anyLong());
+    }
+
+    @Test
+    void rejectPaymentRequiresAReason() {
+        assertThatThrownBy(() -> repaymentService.rejectPayment(99L, null, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("required");
+        assertThatThrownBy(() -> repaymentService.rejectPayment(99L, "", null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("required");
+    }
+
+    @Test
+    void rejectPaymentValidatesTheReasonCode() {
+        assertThatThrownBy(() -> repaymentService.rejectPayment(99L, "NOT_A_REAL_REASON", null))
+                .isInstanceOf(BusinessException.class);
     }
 
     @Test
@@ -190,7 +208,7 @@ class RepaymentServiceTest {
         payment.setStatus(PaymentStatus.VERIFIED);
         when(paymentRepository.findById(99L)).thenReturn(Optional.of(payment));
 
-        assertThatThrownBy(() -> repaymentService.rejectPayment(99L))
+        assertThatThrownBy(() -> repaymentService.rejectPayment(99L, "OTHER", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("verified");
     }
@@ -281,6 +299,38 @@ class RepaymentServiceTest {
         when(settlementDirectory.approvedSettlementAmount(1L)).thenReturn(Optional.of(2_000_000L));
 
         assertThat(repaymentService.outstandingAsOf(1L, DUE)).isEqualTo(1_270_000L);
+    }
+
+    /**
+     * The phantom-penalty bug (work item 3a): without the {@code closedOn} clamp, a loan closed long
+     * ago keeps accruing 2%/day late penalty against {@code LocalDate.now()} — a loan closed 90 days
+     * ago would report ~60% of principal owed even though it's fully repaid. With the clamp, the
+     * working date never advances past the day it actually closed, so it reports zero.
+     */
+    @Test
+    void closedLoanReportsZeroOutstandingRegardlessOfHowLongAgoItClosed() {
+        // Disbursed 120 days ago, 27-day tenure (due 93 days ago), closed 90 days ago (3 days late:
+        // 28 interest days [tenure + 1 grace] + 2 penalty days [3 DPD − 1 grace]).
+        LocalDate disbursed = LocalDate.now().minusDays(120);
+        LocalDate due = disbursed.plusDays(27);
+        LocalDate closedOn = due.plusDays(3);
+        Loan loan = new Loan();
+        loan.setCustomerId(7L);
+        loan.setPrincipal(1_000_000L);
+        loan.setDisbursedOn(disbursed);
+        loan.setDueDate(due);
+        loan.setStatus(LoanStatus.CLOSED);
+        loan.setClosedOn(closedOn);
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        // Interest 1% × 1,000,000 × 28 = 280,000; penalty 2% × 1,000,000 × 2 days = 40,000; verified
+        // payments covered exactly principal + interest + penalty as of closedOn.
+        when(paymentRepository.sumAmountByLoanIdAndStatus(eq(1L), eq(PaymentStatus.VERIFIED)))
+                .thenReturn(1_320_000L);
+
+        // Without the clamp this would keep accruing 2%/day penalty against "today" (90 days of
+        // penalty, capped at 30) and report a large phantom balance instead of zero.
+        assertThat(repaymentService.outstandingAsOf(1L, null)).isZero();
+        assertThat(repaymentService.outstandingAsOf(1L, LocalDate.now())).isZero();
     }
 
     @Test

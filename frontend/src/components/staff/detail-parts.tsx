@@ -11,7 +11,7 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Check, Upload, Trash2, FileText, ExternalLink } from "lucide-react";
+import { Loader2, Check, Upload, Trash2, FileText, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { hasPermission } from "@/lib/auth/rbac";
 import { formatDateTime } from "@/lib/utils";
@@ -20,6 +20,7 @@ import {
   staffApi,
   openDocument,
   fileToBase64,
+  statusLabel,
   type DocumentView,
 } from "@/lib/api/applications";
 
@@ -27,7 +28,74 @@ import {
 // Documents (admin replace = delete-then-upload)
 // ---------------------------------------------------------------------------
 
-export function DocumentsTab({ applicationId }: { applicationId: number }) {
+/**
+ * Either `applicationId` (today's behaviour — one application's documents) or `customerId`
+ * (grouped mode: every application this customer ever filed, newest first, so uploads from a
+ * prior application survive a reborrow instead of becoming unreachable). Exactly one is expected.
+ */
+export function DocumentsTab({
+  applicationId,
+  customerId,
+}: {
+  applicationId?: number;
+  customerId?: number;
+}) {
+  if (customerId != null) return <GroupedDocumentsTab customerId={customerId} />;
+  if (applicationId != null) return <SingleApplicationDocuments applicationId={applicationId} />;
+  return <p className="py-6 text-sm text-muted">No application to attach documents to.</p>;
+}
+
+/** Grouped mode: one collapsible section per application, newest expanded by default. */
+function GroupedDocumentsTab({ customerId }: { customerId: number }) {
+  const groupsQ = useQuery({
+    queryKey: ["customer-documents", customerId],
+    queryFn: () => customersApi.documents(customerId),
+  });
+  const [openIds, setOpenIds] = React.useState<Set<number> | null>(null);
+  const groups = groupsQ.data ?? [];
+
+  // Expand the newest application by default, once data arrives.
+  const effectiveOpen = openIds ?? new Set(groups.length ? [groups[0].applicationId] : []);
+  const toggle = (appId: number) => {
+    const next = new Set(effectiveOpen);
+    if (next.has(appId)) next.delete(appId);
+    else next.add(appId);
+    setOpenIds(next);
+  };
+
+  if (groupsQ.isLoading) return <p className="text-sm text-muted">Loading…</p>;
+  if (groups.length === 0) return <p className="text-sm text-muted">No documents uploaded.</p>;
+
+  return (
+    <div className="space-y-2">
+      {groups.map((g) => (
+        <div key={g.applicationId} className="rounded border border-line">
+          <button
+            type="button"
+            onClick={() => toggle(g.applicationId)}
+            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+          >
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+              {effectiveOpen.has(g.applicationId) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              Application #{g.applicationId}
+              <span className="font-normal text-muted"> · {statusLabel(g.applicationStatus)}</span>
+            </span>
+            <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[8.8px] font-semibold text-navy">
+              {g.documents.length}
+            </span>
+          </button>
+          {effectiveOpen.has(g.applicationId) && (
+            <div className="border-t border-line p-3">
+              <SingleApplicationDocuments applicationId={g.applicationId} />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SingleApplicationDocuments({ applicationId }: { applicationId: number }) {
   const qc = useQueryClient();
   const role = useStaffSession().session?.role;
   const isAdmin = role != null && hasPermission(role, "customer:manage");

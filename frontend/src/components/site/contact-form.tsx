@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { config } from "@/lib/config";
+import { BRAND } from "@/lib/brand";
 
 const TOPICS = ["General enquiry", "Application help", "Repayment", "Grievance", "Report fraud"];
 
@@ -60,7 +61,7 @@ export function ContactSection() {
                 </span>
                 <div>
                   <b>Phone</b>
-                  <small>+91 97167 60246 · Mon–Sat, 9:30 AM–6:30 PM</small>
+                  <small>{BRAND.phone} · {BRAND.hours}</small>
                 </div>
               </div>
               <div className="ci-card">
@@ -72,7 +73,7 @@ export function ContactSection() {
                 </span>
                 <div>
                   <b>Email</b>
-                  <small>info@dhanboost.com</small>
+                  <small>{BRAND.email}</small>
                 </div>
               </div>
               <div className="ci-card">
@@ -83,7 +84,7 @@ export function ContactSection() {
                 </span>
                 <div>
                   <b>Report fraud</b>
-                  <small>info@dhanboost.com — we never ask for advance fees.</small>
+                  <small>{BRAND.fraudEmail} — we never ask for advance fees.</small>
                 </div>
               </div>
             </div>

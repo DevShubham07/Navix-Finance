@@ -21,6 +21,13 @@ public class LogEmailClient implements EmailClient {
     @Override
     public EmailResult send(EmailMessage message) {
         log.info("EMAIL [log] to={} subject=\"{}\"", Masking.maskEmail(message.to()), message.subject());
+        if (message.attachments() != null) {
+            for (EmailAttachment a : message.attachments()) {
+                // Never log the bytes — only what identifies the attachment.
+                log.info("EMAIL [log] attachment filename={} bytes={}", a.filename(),
+                        a.content() != null ? a.content().length : 0);
+            }
+        }
         return EmailResult.ok("log-" + UUID.randomUUID());
     }
 }

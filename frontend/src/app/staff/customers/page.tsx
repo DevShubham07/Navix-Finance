@@ -4,13 +4,14 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowRight, Contact } from "lucide-react";
+import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info } from "lucide-react";
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
+import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
 import {
   SEGMENTS,
@@ -45,6 +46,7 @@ function CustomersPageInner() {
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
   const [openId, setOpenId] = React.useState<number | null>(null);
+  const [infoCustomerId, setInfoCustomerId] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300);
@@ -217,9 +219,19 @@ function CustomersPageInner() {
                       ) : "—"}
                     </td>
                     <td className="text-right">
-                      <button onClick={() => setOpenId(c.customerId)} className="inline-flex items-center gap-1 text-navy hover:underline">
-                        Open <ArrowRight size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setInfoCustomerId(c.customerId)}
+                          className="btn btn-sm btn-outline btn-icon"
+                          aria-label="Quick summary"
+                          title="Quick summary"
+                        >
+                          <Info size={14} />
+                        </button>
+                        <button onClick={() => setOpenId(c.customerId)} className="inline-flex items-center gap-1 text-navy hover:underline">
+                          Open <ArrowRight size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -230,6 +242,7 @@ function CustomersPageInner() {
       </PermissionGate>
 
       <CustomerDetailDialog customerId={openId} onClose={() => setOpenId(null)} />
+      <ApplicationInfoDialog customerId={infoCustomerId} onClose={() => setInfoCustomerId(null)} />
     </div>
   );
 }
