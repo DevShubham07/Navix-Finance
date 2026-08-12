@@ -96,13 +96,27 @@ public class RepaymentService {
         return payment;
     }
 
+    /** The fixed rejection-reason picklist — kept here (not a DB enum/check) to match how
+     *  {@link PaymentMethod}/{@link PaymentStatus} are already enforced above the DB in this schema. */
+    private static final java.util.Set<String> REJECTION_REASONS = java.util.Set.of(
+            "WRONG_REFERENCE", "AMOUNT_MISMATCH", "NOT_RECEIVED", "UNREADABLE_PROOF", "OTHER");
+
     /**
      * Reject a recorded payment (the accountant couldn't match the proof / transfer). Terminal —
      * a rejected payment never counts toward the outstanding (only VERIFIED payments are summed),
-     * so no balance recompute is needed. A VERIFIED payment cannot be rejected. Notifies the borrower.
+     * so no balance recompute is needed. A VERIFIED payment cannot be rejected. {@code reason} is
+     * required and must be one of {@link #REJECTION_REASONS}; {@code note} is optional free text.
+     * Notifies the borrower (IN_APP/EMAIL carry the reason; the SMS body is DLT-locked and unchanged).
      */
     @Transactional
-    public Payment rejectPayment(Long paymentId) {
+    public Payment rejectPayment(Long paymentId, String reason, String note) {
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("REJECTION_REASON_REQUIRED", "A rejection reason is required");
+        }
+        if (!REJECTION_REASONS.contains(reason)) {
+            throw new BusinessException("INVALID_REJECTION_REASON",
+                    "reason must be one of " + REJECTION_REASONS);
+        }
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment", String.valueOf(paymentId)));
         if (payment.getStatus() == PaymentStatus.VERIFIED) {
@@ -110,11 +124,14 @@ public class RepaymentService {
         }
         if (payment.getStatus() != PaymentStatus.REJECTED) {
             payment.setStatus(PaymentStatus.REJECTED);
+            payment.setRejectionReason(reason);
+            payment.setRejectionNote(note);
             paymentRepository.save(payment);
         }
         Loan loan = requireLoan(payment.getLoanId());
         eventPublisher.publishEvent(new RepaymentRejectedEvent(
-                loan.getId(), loan.getCustomerId(), payment.getId(), payment.getAmount(), Instant.now()));
+                loan.getId(), loan.getCustomerId(), payment.getId(), payment.getAmount(),
+                reason, note, Instant.now()));
         return payment;
     }
 
@@ -169,6 +186,11 @@ public class RepaymentService {
     public OutstandingBreakdown outstandingBreakdownAsOf(Long loanId, LocalDate asOf) {
         Loan loan = requireLoan(loanId);
         LocalDate at = asOf != null ? asOf : LocalDate.now();
+        // A closed loan's balance is frozen at the day it closed — otherwise a loan closed months ago
+        // keeps accruing late penalty against "today" and reports a phantom balance.
+        if (loan.getClosedOn() != null && at.isAfter(loan.getClosedOn())) {
+            at = loan.getClosedOn();
+        }
         int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
         int daysToAsOf = (int) Math.max(0L, ChronoUnit.DAYS.between(loan.getDisbursedOn(), at));
         int interestDays = Math.min(daysToAsOf, tenureDays + LoanMath.SALARY_GRACE_DAYS);
@@ -205,6 +227,16 @@ public class RepaymentService {
         loan.setOutstanding(owed);
         if (owed == 0L) {
             loan.setStatus(LoanStatus.CLOSED);
+            // Freeze the balance as of the day it actually closed: the latest VERIFIED payment's
+            // paidOn (falling back to today, though a verified payment should always exist here since
+            // owed just hit zero) — so outstandingBreakdownAsOf never keeps accruing penalty past this
+            // date for a long-closed loan.
+            LocalDate closingDate = paymentRepository.findByLoanId(loanId).stream()
+                    .filter(p -> p.getStatus() == PaymentStatus.VERIFIED && p.getPaidOn() != null)
+                    .map(Payment::getPaidOn)
+                    .max(LocalDate::compareTo)
+                    .orElse(LocalDate.now());
+            loan.setClosedOn(closingDate);
         }
         loanRepository.save(loan);
         // Mirror full repayment onto the application aggregate (ACTIVE/OVERDUE → CLOSED).

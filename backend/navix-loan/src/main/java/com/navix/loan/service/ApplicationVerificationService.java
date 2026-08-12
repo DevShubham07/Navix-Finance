@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.KycReminderEvent;
+import com.navix.common.notification.event.SanctionLetterSignedEvent;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
@@ -1217,6 +1218,11 @@ public class ApplicationVerificationService {
 
         profile.setAgreementAccepted(Boolean.TRUE);
         profileRepo.save(profile);
+        String finalSignedKey = signedKey;
+        applicationRepo.findById(appId).ifPresentOrElse(
+                app -> eventPublisher.publishEvent(new SanctionLetterSignedEvent(
+                        app.getCustomerId(), appId, signed.getId(), finalSignedKey, Instant.now())),
+                () -> log.warn("Skipping SanctionLetterSignedEvent: application {} not found", appId));
         return view(upsert(appId, ESIGN, PASS, provider, signatureRef, ref(appId, ESIGN),
                 null, null, signedKey, derived, message));
     }
@@ -1560,6 +1566,21 @@ public class ApplicationVerificationService {
         }
     }
 
+    /**
+     * As {@link #requireCreditTeam(String)}, plus any {@code extraRoles} the caller wants let through
+     * (used by {@link #sendKycReminder} to also allow TELECALLER — work item 10 — without loosening
+     * the manual verification override, which stays credit-team/admin only).
+     */
+    private void requireCreditTeamOr(String what, String... extraRoles) {
+        String role = ActorContext.get().role();
+        boolean core = "CREDIT_EXECUTIVE".equals(role) || "CREDIT_HEAD".equals(role) || "ADMIN".equals(role);
+        boolean extra = extraRoles != null && java.util.Arrays.asList(extraRoles).contains(role);
+        if (!core && !extra) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    what + " requires CREDIT_EXECUTIVE or CREDIT_HEAD");
+        }
+    }
+
     @Transactional
     public StepResult manualDecision(Long appId, String checkType, boolean pass, String notes) {
         requireCreditTeam("Manual verification override");
@@ -1583,7 +1604,7 @@ public class ApplicationVerificationService {
      */
     @Transactional
     public ReminderResult sendKycReminder(Long appId) {
-        requireCreditTeam("Sending a reminder");
+        requireCreditTeamOr("Sending a reminder", "TELECALLER");
         LoanApplication app = requireApplication(appId);
         Map<String, String> byType = verificationRepo.findByApplicationIdOrderByIdAsc(appId).stream()
                 .collect(Collectors.toMap(ApplicationVerification::getCheckType,

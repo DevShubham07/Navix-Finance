@@ -4,6 +4,7 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.LoanDtos.PaymentView;
+import com.navix.loan.dto.LoanDtos.RejectRepaymentRequest;
 import com.navix.loan.dto.LoanDtos.RepaymentRequest;
 import com.navix.loan.service.RepaymentService;
 import jakarta.validation.Valid;
@@ -61,11 +62,16 @@ public class RepaymentController {
         return ApiResponse.ok(PaymentView.of(repaymentService.verifyPayment(paymentId)));
     }
 
-    /** Reject a recorded payment (proof didn't match the transfer). Accountant/Admin only. */
+    /**
+     * Reject a recorded payment (proof didn't match the transfer) — Accountant/Admin only. A reason
+     * is required (fixed picklist), with an optional free-text note.
+     */
     @PostMapping("/{paymentId}/reject")
-    public ApiResponse<PaymentView> reject(@PathVariable Long loanId, @PathVariable Long paymentId) {
+    public ApiResponse<PaymentView> reject(@PathVariable Long loanId, @PathVariable Long paymentId,
+                                           @Valid @RequestBody RejectRepaymentRequest request) {
         requireRole("ACCOUNTANT", "ADMIN");
-        return ApiResponse.ok(PaymentView.of(repaymentService.rejectPayment(paymentId)));
+        return ApiResponse.ok(PaymentView.of(
+                repaymentService.rejectPayment(paymentId, request.reason(), request.note())));
     }
 
     private void requireRole(String... allowed) {

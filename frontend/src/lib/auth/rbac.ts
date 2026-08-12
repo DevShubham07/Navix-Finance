@@ -88,8 +88,9 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "loan:pipeline",
   ],
   COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline"],
-  // Telecaller: view customers, enter DSA-style leads, disposition calls. No lifecycle permission.
-  TELECALLER: ["customer:view", "leads:manage"],
+  // Telecaller: view customers, enter DSA-style leads, disposition calls, self-assign chase-up
+  // work off the telecalling queue. No lifecycle permission.
+  TELECALLER: ["customer:view", "leads:manage", "customer:assign"],
   DEVELOPER: ["customer:view", "loan:pipeline"],
   ADMIN: [
     "kyc:approve",

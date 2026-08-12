@@ -81,6 +81,16 @@ public class Loan extends BaseAuditEntity {
     private String disbursalTxnRef;
 
     /**
+     * The day the loan actually reached CLOSED/REPAID (the paid-on date of the closing verified
+     * payment, or {@code dueDate} when no verified payment is on record). Null while the loan is
+     * still open. {@link com.navix.loan.service.RepaymentService#outstandingBreakdownAsOf} clamps its
+     * working date to this so a long-closed loan doesn't keep accruing phantom late penalty against
+     * {@code LocalDate.now()}.
+     */
+    @Column(name = "closed_on")
+    private LocalDate closedOn;
+
+    /**
      * Effective status on read: an ACTIVE loan past its due date reads as OVERDUE. This is computed,
      * not persisted (the stored column stays ACTIVE until a collection case flips it to
      * IN_COLLECTIONS) — collectible queries already include both ACTIVE and OVERDUE.

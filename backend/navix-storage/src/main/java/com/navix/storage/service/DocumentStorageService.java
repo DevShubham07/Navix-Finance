@@ -143,6 +143,22 @@ public class DocumentStorageService {
         }
     }
 
+    /**
+     * Server-side download of the bytes at {@code key} — used only where the app itself needs the
+     * content (e.g. attaching a signed PDF to an email). Throws {@link IllegalStateException} on a
+     * missing key or transport error.
+     */
+    public byte[] fetch(String key) {
+        try {
+            return s3Client.getObjectAsBytes(GetObjectRequest.builder()
+                    .bucket(props.bucket())
+                    .key(key)
+                    .build()).asByteArray();
+        } catch (NoSuchKeyException e) {
+            throw new IllegalStateException("object not found: " + key, e);
+        }
+    }
+
     /** Delete an object. */
     public void delete(String key) {
         s3Client.deleteObject(DeleteObjectRequest.builder()

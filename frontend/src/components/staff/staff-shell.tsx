@@ -147,6 +147,7 @@ const NAV: NavGroup[] = [
       // No `perm`: every staffer may read their own decision history (the server scopes it).
       { label: "My decisions", href: "/staff/my-decisions", Icon: History },
       { label: "Leads", href: "/staff/leads", Icon: Phone, perm: "leads:manage" },
+      { label: "Telecalling", href: "/staff/telecalling", Icon: Phone, perm: "leads:manage" },
       { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },
     ],
   },

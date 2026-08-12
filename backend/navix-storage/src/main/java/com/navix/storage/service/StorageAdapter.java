@@ -44,4 +44,9 @@ public class StorageAdapter implements DocumentStoragePort {
     public boolean exists(String key) {
         return storage.exists(key);
     }
+
+    @Override
+    public byte[] fetch(String key) {
+        return storage.fetch(key);
+    }
 }

@@ -26,8 +26,9 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { X, Loader2, Zap, Banknote, ShieldCheck, PhoneCall, Gauge, Check } from "lucide-react";
+import { X, Loader2, Zap, Banknote, ShieldCheck, PhoneCall, Gauge, Check, ExternalLink } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { CreditBadge } from "@/components/staff/credit-badge";
@@ -43,6 +44,7 @@ import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
 import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
 import { dpdBucket, daysBetween } from "@/lib/calc/loan-math";
 import { formatDate } from "@/lib/utils";
+import { customerPageHref } from "@/lib/customers/customer-page";
 import {
   staffApi,
   customersApi,
@@ -236,6 +238,14 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                 )}
               </div>
             </div>
+            {app?.customerId != null && (
+              <Link
+                href={customerPageHref(app.customerId)}
+                className="inline-flex shrink-0 items-center gap-1 rounded border border-line px-2 py-1 text-xs font-semibold text-navy hover:bg-grey-100"
+              >
+                Full customer page <ExternalLink size={13} />
+              </Link>
+            )}
             {/* Close stays pinned to the top-right corner regardless of how tall the action
                 cluster below grows — it used to sit inline with the actions, which floated it to
                 the vertical middle of the dialog once the assignment picker appeared. */}
@@ -285,7 +295,9 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
 
               {tab === "documents" &&
                 (canReview ? (
-                  <DocumentsTab applicationId={id} />
+                  // Grouped mode: documents from every application this customer ever filed, not
+                  // just this one — a reborrow's prior-application uploads stay reachable (item 4).
+                  <DocumentsTab customerId={app.customerId} />
                 ) : (
                   <NoAccessNotice message="Documents aren't available to your role." />
                 ))}
@@ -572,7 +584,7 @@ function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | 
         <KV k="Transaction ref" v={loan?.disbursalTxnRef} mono />
         <KV k="Disbursed on" v={loan?.disbursedOn ? formatDate(loan.disbursedOn) : null} />
         <KV k="Repayment due" v={loan?.dueDate ? formatDate(loan.dueDate) : null} />
-        <KV k="Total repayable" v={loan ? paiseToINR(loan.totalRepayablePaise) : null} />
+        <KV k="Contracted repayable (on-time)" v={loan ? paiseToINR(loan.totalRepayablePaise) : null} />
       </dl>
       {!dropVerified && (
         <p className="mt-3 rounded border border-warning-100 bg-warning-50 px-3 py-2 text-xs text-warning-800">
@@ -693,7 +705,7 @@ function CollectionsFocus({ app }: { app: ApplicationView }) {
         <KV k="Loan status" v={loan.status} />
         <KV k="Disbursed on" v={loan.disbursedOn ? formatDate(loan.disbursedOn) : null} />
         <KV k="Net disbursed" v={paiseToINR(loan.netDisbursedPaise)} mono />
-        <KV k="Total repayable (no penalty)" v={paiseToINR(loan.totalRepayablePaise)} mono />
+        <KV k="Contracted repayable (on-time)" v={paiseToINR(loan.totalRepayablePaise)} mono />
       </dl>
 
       {out?.settledAmountPaise != null && (

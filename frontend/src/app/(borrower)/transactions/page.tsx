@@ -3,10 +3,17 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery, useQueries } from "@tanstack/react-query";
-import { ArrowRight, ArrowLeftRight, Loader2 } from "lucide-react";
-import { borrowerApi, paiseToINR, type PaymentStatusName } from "@/lib/api/applications";
+import { ArrowRight, ArrowLeftRight, Loader2, AlertTriangle } from "lucide-react";
+import {
+  borrowerApi,
+  paiseToINR,
+  REJECTION_REASON_LABEL,
+  type PaymentStatusName,
+  type RejectionReasonCode,
+} from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
 import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
+import { PaymentHelp } from "@/components/borrower/payment-help";
 
 type LedgerRow = {
   id: string;
@@ -15,6 +22,8 @@ type LedgerRow = {
   amountPaise: number;
   date: string | null;
   status: PaymentStatusName | null;
+  rejectionReason?: RejectionReasonCode | null;
+  rejectionNote?: string | null;
 };
 
 /** Status pill styling mirrors the repay page (PaymentStatusName). */
@@ -64,6 +73,8 @@ export default function TransactionsPage() {
         amountPaise: p.amountPaise,
         date: p.paidOn,
         status: p.status,
+        rejectionReason: p.rejectionReason,
+        rejectionNote: p.rejectionNote,
       });
     });
   });
@@ -106,34 +117,52 @@ export default function TransactionsPage() {
                 </thead>
                 <tbody className="divide-y divide-line">
                   {rows.map((r) => (
-                    <tr
-                      key={r.id}
-                      onClick={() => setDetailsLoanId(r.loanId)}
-                      className="cursor-pointer hover:bg-grey-100"
-                    >
-                      <td className="px-4 py-3">
-                        <span className="font-semibold text-ink">
-                          {r.type === "DISBURSAL" ? "Disbursal" : "Repayment"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted">#{r.loanId}</td>
-                      <td className="px-4 py-3 text-muted">{r.date ? formatDate(r.date) : "—"}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={r.type === "DISBURSAL" ? "font-semibold text-success-700" : "font-semibold text-ink"}>
-                          {r.type === "DISBURSAL" ? "+ " : "− "}
-                          {paiseToINR(r.amountPaise)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {r.status ? (
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PAY_STATUS[r.status].cls}`}>
-                            {PAY_STATUS[r.status].label}
+                    <React.Fragment key={r.id}>
+                      <tr
+                        onClick={() => setDetailsLoanId(r.loanId)}
+                        className="cursor-pointer hover:bg-grey-100"
+                      >
+                        <td className="px-4 py-3">
+                          <span className="font-semibold text-ink">
+                            {r.type === "DISBURSAL" ? "Disbursal" : "Repayment"}
                           </span>
-                        ) : (
-                          <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">Completed</span>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="px-4 py-3 text-muted">#{r.loanId}</td>
+                        <td className="px-4 py-3 text-muted">{r.date ? formatDate(r.date) : "—"}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={r.type === "DISBURSAL" ? "font-semibold text-success-700" : "font-semibold text-ink"}>
+                            {r.type === "DISBURSAL" ? "+ " : "− "}
+                            {paiseToINR(r.amountPaise)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {r.status ? (
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PAY_STATUS[r.status].cls}`}>
+                              {PAY_STATUS[r.status].label}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">Completed</span>
+                          )}
+                        </td>
+                      </tr>
+                      {r.status === "REJECTED" && (
+                        <tr className="cursor-default">
+                          <td colSpan={5} className="px-4 pb-3">
+                            <div className="rounded border border-error-100 bg-error-50 p-3 text-xs text-error-700">
+                              <p className="flex items-start gap-1.5">
+                                <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
+                                <span>
+                                  Payment rejected —{" "}
+                                  {r.rejectionReason ? REJECTION_REASON_LABEL[r.rejectionReason] : "See support for details"}.
+                                  {r.rejectionNote ? ` ${r.rejectionNote}` : ""}
+                                </span>
+                              </p>
+                              <PaymentHelp variant="inline" compact className="mt-2" />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>

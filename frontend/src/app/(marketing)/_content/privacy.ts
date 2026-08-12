@@ -1,6 +1,8 @@
 // AUTO-GENERATED from the DhanBoost design export — do not hand-edit.
 // Source section id: #privacy. Regenerate via transform_html.py.
 /* eslint-disable */
+import { BRAND } from "@/lib/brand";
+
 export const html = `<section class="page active" id="privacy">
   <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Privacy Policy</div><h1>Privacy Policy</h1><p>How we collect, use and protect your information. Last updated: June 2026.</p></div></div>
   <div class="sec"><div class="wrap"><div class="prose">
@@ -25,7 +27,7 @@ export const html = `<section class="page active" id="privacy">
     <h2>5. Security</h2>
     <p>We use 256-bit encryption in transit, access controls and ISO-27001-aligned practices. While no system is perfectly secure, we work hard to protect your data.</p>
     <h2>6. Your rights</h2>
-    <p>You may access, correct or request deletion of your data, and withdraw consent, subject to legal and regulatory retention requirements. Contact info@dhanboost.com.</p>
+    <p>You may access, correct or request deletion of your data, and withdraw consent, subject to legal and regulatory retention requirements. Contact ${BRAND.email}.</p>
     <h2>7. Data retention &amp; consent</h2>
     <p>We retain data only as long as necessary for the purposes above and as required by RBI and applicable law. By using DhanBoost you consent to this policy.</p>
   </div></div></div>

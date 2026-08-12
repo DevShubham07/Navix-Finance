@@ -1,8 +1,10 @@
 package com.navix.loan.dto;
 
+import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
+import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.entity.CustomerCallLog;
 import com.navix.loan.entity.CustomerRemark;
@@ -23,6 +25,17 @@ import java.util.List;
 public final class CustomerDtos {
 
     private CustomerDtos() {
+    }
+
+    /**
+     * One application's worth of documents, for the grouped customer-documents view (work item 4:
+     * documents survive a reborrow — every customer-first entry point used to pin to the newest
+     * application only, so a prior application's uploads became unreachable).
+     */
+    public record ApplicationDocumentGroup(
+            Long applicationId,
+            ApplicationStatus applicationStatus,
+            List<DocumentView> documents) {
     }
 
     /**

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import {
-  Sparkles, XCircle, ArrowRight, Loader2, RefreshCw, Phone, ShieldCheck, FileClock,
+  Sparkles, XCircle, ArrowRight, CheckCircle2, RefreshCw, Phone, ShieldCheck, FileClock,
 } from "lucide-react";
 import { LoanStatusTracker } from "@/components/borrower/loan-status-tracker";
 import {
@@ -104,13 +104,13 @@ export default function LoanStatusPage() {
 
           {processing && (
             <div className="rounded border border-line bg-white p-6 text-center shadow-sm">
-              <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-navy-tint text-navy">
-                <Loader2 size={26} className="animate-spin" />
+              <span className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-success-50 text-success-600">
+                <CheckCircle2 size={26} />
               </span>
               <h3 className="font-serif text-lg text-navy">Under review</h3>
               <p className="text-sm text-muted">
-                Our team is processing your application. This page updates automatically — currently{" "}
-                <strong className="text-ink">{app && statusLabel(app.status)}</strong>.
+                Your application will be reviewed in 2–3 hours. This page updates automatically —
+                currently <strong className="text-ink">{app && statusLabel(app.status)}</strong>.
               </p>
             </div>
           )}

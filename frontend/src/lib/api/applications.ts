@@ -99,6 +99,10 @@ export interface ApplicationView {
   disbursalAccountChanged?: boolean | null;
   /** True only when this exact account-number/IFSC pair has a reusable successful verification. */
   disbursalAccountVerified?: boolean | null;
+  /** Staff-enriched identity/bank fields (populated on staff reads; always null on the borrower `/mine` route). */
+  pan?: string | null;
+  salaryAccountNumber?: string | null;
+  salaryIfsc?: string | null;
 }
 
 /** One staffer's action off the application-event trail (backs /staff/my-decisions). */
@@ -147,6 +151,9 @@ export interface AdminApplicationView {
   employmentStatus: string | null;
   monthlySalaryPaise: number | null;
   salaryBank: string | null;
+  /** Staff/admin-only bank identifiers, full value (no masking — product decision). */
+  salaryAccountNumber?: string | null;
+  salaryIfsc?: string | null;
   creditScore: number | null;
   starRating: number | null;
   recommendation: string | null;
@@ -158,6 +165,25 @@ export interface AdminApplicationView {
   /** True once every required step is cleared and the agreement accepted. */
   complete: boolean;
   kycCapturedAt: string | null;
+}
+
+/**
+ * One row of the telecaller queue (pre-`SANCTIONED` applications, mirrors backend
+ * `TelecallingView`). `staleDays` is computed from the latest `application_event.at`
+ * (falling back to `created_at`) — default sort is stale-first.
+ */
+export interface TelecallingView {
+  id: number;
+  customerId: number;
+  status: ApplicationStatus;
+  customerName: string | null;
+  mobile: string | null;
+  email: string | null;
+  pan: string | null;
+  stepsCompleted: number;
+  stepsRequired: number;
+  ownerStaffId: number | null;
+  staleDays: number;
 }
 
 export interface EventView {
@@ -226,7 +252,27 @@ export interface PaymentView {
   /** Staff-only context populated by the accountant's pending-verification queue. */
   customerId?: number | null;
   customerName?: string | null;
+  /** Set when `status === "REJECTED"` — a fixed reason code + optional free-text note. */
+  rejectionReason?: RejectionReasonCode | null;
+  rejectionNote?: string | null;
 }
+
+/** Fixed picklist of repayment-rejection reasons (mirrors the backend validation set). */
+export type RejectionReasonCode =
+  | "WRONG_REFERENCE"
+  | "AMOUNT_MISMATCH"
+  | "NOT_RECEIVED"
+  | "UNREADABLE_PROOF"
+  | "OTHER";
+
+/** Human labels for {@link RejectionReasonCode}, shown in the staff reject dialog and borrower banner. */
+export const REJECTION_REASON_LABEL: Record<RejectionReasonCode, string> = {
+  WRONG_REFERENCE: "Wrong payment reference",
+  AMOUNT_MISMATCH: "Amount doesn't match",
+  NOT_RECEIVED: "Payment not received",
+  UNREADABLE_PROOF: "Proof unreadable",
+  OTHER: "Other",
+};
 
 export type TransactionType = "DISBURSAL" | "REPAYMENT";
 export type TransactionDirection = "OUTGOING" | "INCOMING";
@@ -396,6 +442,13 @@ export interface DocumentUrlView {
   fileName: string | null;
   contentType: string | null;
   url: string;
+}
+
+/** One application's documents, grouped for the customer-wide documents view (mirrors backend). */
+export interface ApplicationDocumentGroup {
+  applicationId: number;
+  applicationStatus: ApplicationStatus;
+  documents: DocumentView[];
 }
 
 /** A document with its bytes as base64, for view/download. */
@@ -1073,6 +1126,9 @@ export const staffApi = {
   /** ADMIN-only: every application (complete + incomplete) with full KYC detail + completeness. */
   listAllApplications: () => bff<AdminApplicationView[]>(`${STAFF_BASE}/all`, "GET"),
 
+  /** TELECALLER/ADMIN: every pre-SANCTIONED application, enriched with completeness + staleness. */
+  telecalling: () => bff<TelecallingView[]>(`${STAFF_BASE}/telecalling`, "GET"),
+
   /** ADMIN — the rejection register, optionally filtered by reason code. */
   rejections: (reason?: string) =>
     bff<RejectionView[]>(`${STAFF_BASE}/rejections${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, "GET"),
@@ -1152,9 +1208,9 @@ export const staffApi = {
   verifyRepayment: (loanId: number, paymentId: number) =>
     bff<PaymentView>(`${STAFF_LOAN_BASE}/${loanId}/repayments/${paymentId}/verify`, "POST"),
 
-  /** Reject a payment (proof didn't match the transfer); the balance is unchanged. */
-  rejectRepayment: (loanId: number, paymentId: number) =>
-    bff<PaymentView>(`${STAFF_LOAN_BASE}/${loanId}/repayments/${paymentId}/reject`, "POST"),
+  /** Reject a payment (proof didn't match the transfer); the balance is unchanged. Reason is required. */
+  rejectRepayment: (loanId: number, paymentId: number, body: { reason: RejectionReasonCode; note?: string }) =>
+    bff<PaymentView>(`${STAFF_LOAN_BASE}/${loanId}/repayments/${paymentId}/reject`, "POST", body),
 
   // --- customer review (any reviewing role) ---
   /** The customer's KYC details (PAN masked). */
@@ -1263,6 +1319,10 @@ export const customersApi = {
   /** ADMIN — permanently delete a customer and ALL their data (irreversible cascade). */
   remove: (customerId: number) =>
     bff<CustomerDeletionResult>(`${CUSTOMERS_BASE}/${customerId}`, "DELETE"),
+
+  /** Documents across every one of this customer's applications, newest application first. */
+  documents: (customerId: number) =>
+    bff<ApplicationDocumentGroup[]>(`${CUSTOMERS_BASE}/${customerId}/documents`, "GET"),
 };
 
 // ---------------------------------------------------------------------------

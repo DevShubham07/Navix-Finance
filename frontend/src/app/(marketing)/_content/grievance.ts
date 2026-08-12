@@ -1,13 +1,15 @@
 // AUTO-GENERATED from the DhanBoost design export — do not hand-edit.
 // Source section id: #grievance. Regenerate via transform_html.py.
 /* eslint-disable */
+import { BRAND } from "@/lib/brand";
+
 export const html = `<section class="page active" id="grievance">
   <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Grievance Redressal</div><h1>Grievance Redressal</h1><p>Not happy with something? Here's exactly how to raise it — and how we'll resolve it.</p></div></div>
   <div class="sec"><div class="wrap"><div class="prose">
     <h2>How to raise a complaint</h2>
     <p>We aim to resolve every concern quickly and fairly. Please reach out through any of the channels below.</p>
     <div class="callout">
-      <p style="margin-bottom:8px"><b>Level 1 — Customer Support</b><br>Email <b>info@dhanboost.com</b> or call +91 97167 60246 (Mon–Sat, 9:30 AM–6:30 PM). Typical response within 1 business day.</p>
+      <p style="margin-bottom:8px"><b>Level 1 — Customer Support</b><br>Email <b>${BRAND.email}</b> or call ${BRAND.phone} (${BRAND.hours}). Typical response within 1 business day.</p>
       <p style="margin-bottom:8px"><b>Level 2 — Grievance Officer</b><br>If unresolved within 7 days, write to our Grievance Redressal Officer <b>Lalit Kumar</b> at <b>grievance@dhanboost.com</b> or call +91 97167 60246.</p>
       <p style="margin:0"><b>Level 3 — Partner NBFC &amp; RBI</b><br>You may escalate to the partner NBFC's Nodal Officer (details in your KFS) and, if needed, to the RBI under the Reserve Bank – Integrated Ombudsman Scheme.</p>
     </div>

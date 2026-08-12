@@ -52,7 +52,8 @@ public class EmailSender implements ChannelSender {
         }
         try {
             String html = htmlRenderer.render(message.subject(), message.body());
-            EmailResult result = client.send(new EmailMessage(to, message.subject(), message.body(), html));
+            EmailResult result = client.send(new EmailMessage(
+                    to, message.subject(), message.body(), html, message.attachments()));
             return result.ok()
                     ? DeliveryOutcome.sent(result.providerRef())
                     : DeliveryOutcome.failed(result.error());

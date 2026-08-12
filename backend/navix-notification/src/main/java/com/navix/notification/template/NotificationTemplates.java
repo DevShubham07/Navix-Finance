@@ -139,6 +139,13 @@ public class NotificationTemplates {
                         + "repayable is {totalRepayable}, due on {dueDate}. You can pay early to save on "
                         + "interest.\n\n— DhanBoost");
 
+        inApp(NotificationType.SANCTION_LETTER_SIGNED, "Sanction letter signed",
+                "Your signed sanction letter for application #{applicationId} is ready — a copy is "
+                        + "attached to the email we just sent you.");
+        email(NotificationType.SANCTION_LETTER_SIGNED, "Your signed DhanBoost sanction letter",
+                "Hi {name},\n\nThanks for e-signing your sanction letter for application #{applicationId}. "
+                        + "A copy is attached to this email for your records.\n\n— DhanBoost");
+
         // ---------------- REPAYMENT ----------------
         inApp(NotificationType.REPAYMENT_RECORDED, "Payment recorded",
                 "Repayment of {amount} for loan #{loanId} is pending verification.");
@@ -149,12 +156,18 @@ public class NotificationTemplates {
                 "Your payment of {amount} to DhanBoost is confirmed. Outstanding balance is "
                         + "{outstanding}. View details at https://dhanboost.com/login. - DhanBoost");
 
+        // {reason} is the human-readable rejection reason (WRONG_REFERENCE etc., mapped by the
+        // listener) — the SMS body below stays char-for-char DLT-locked and does NOT carry it.
         inApp(NotificationType.REPAYMENT_REJECTED, "Payment not verified",
-                "Your payment of {amount} for loan #{loanId} couldn't be verified. Please check the "
-                        + "reference and record it again.");
+                "Your payment of {amount} for loan #{loanId} couldn't be verified: {reason}. Please "
+                        + "check the reference and record it again.");
         sms(NotificationType.REPAYMENT_REJECTED,
                 "Your payment of {amount} could not be verified by DhanBoost. Log in at "
                         + "https://dhanboost.com/login to check and record it again. - DhanBoost");
+        email(NotificationType.REPAYMENT_REJECTED, "Your DhanBoost payment could not be verified",
+                "Hi {name},\n\nYour payment of {amount} for loan #{loanId} could not be verified: "
+                        + "{reason}.\n\nPlease check the reference and record it again — or reach out if "
+                        + "you think this is a mistake.\n\n— DhanBoost");
 
         inApp(NotificationType.PAYMENT_DUE_SOON, "Payment due soon",
                 "Your payment of {amount} is due in {daysToDue} day(s) (by {dueDate}). Pay on your salary "

@@ -9,8 +9,10 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.notification.event.RepaymentRejectedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
+import com.navix.common.notification.event.SanctionLetterSignedEvent;
 import com.navix.common.notification.event.SettlementRejectedEvent;
 import com.navix.common.notification.event.StaffAccountEvent;
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.notification.catalog.NotificationType;
 import com.navix.notification.dispatch.NotificationContext;
 import com.navix.notification.dispatch.NotificationDispatcher;
@@ -30,11 +32,14 @@ class NotificationEventListenerTest {
     @Mock
     private NotificationDispatcher dispatcher;
 
+    @Mock
+    private DocumentStoragePort storage;
+
     private NotificationEventListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new NotificationEventListener(dispatcher, "http://localhost:3000");
+        listener = new NotificationEventListener(dispatcher, "http://localhost:3000", storage);
     }
 
     private static ApplicationTransitionedEvent transition(String action, String toStatus) {
@@ -123,8 +128,9 @@ class NotificationEventListenerTest {
     }
 
     @Test
-    void rejectedRepaymentNotifiesBorrowerWithAmount() {
-        listener.onRepaymentRejected(new RepaymentRejectedEvent(2L, 5L, 88L, 50_000L, Instant.now()));
+    void rejectedRepaymentNotifiesBorrowerWithAmountAndReason() {
+        listener.onRepaymentRejected(new RepaymentRejectedEvent(
+                2L, 5L, 88L, 50_000L, "WRONG_REFERENCE", "typo in UTR", Instant.now()));
 
         ArgumentCaptor<NotificationType> type = ArgumentCaptor.forClass(NotificationType.class);
         ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
@@ -132,6 +138,38 @@ class NotificationEventListenerTest {
         assertThat(type.getValue()).isEqualTo(NotificationType.REPAYMENT_REJECTED);
         assertThat(ctx.getValue().customerId()).isEqualTo(5L);
         assertThat(ctx.getValue().model()).containsEntry("amount", "₹500");
+        assertThat(ctx.getValue().model().get("reason").toString()).contains("reference").contains("typo in UTR");
+    }
+
+    @Test
+    void sanctionLetterSignedFetchesAttachmentFromStorage() {
+        byte[] pdf = "pdf-bytes".getBytes();
+        org.mockito.Mockito.when(storage.fetch("applications/2/signed_agreement/x.pdf")).thenReturn(pdf);
+
+        listener.onSanctionLetterSigned(new SanctionLetterSignedEvent(
+                5L, 2L, 99L, "applications/2/signed_agreement/x.pdf", Instant.now()));
+
+        ArgumentCaptor<NotificationType> type = ArgumentCaptor.forClass(NotificationType.class);
+        ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
+        verify(dispatcher).dispatch(type.capture(), ctx.capture());
+        assertThat(type.getValue()).isEqualTo(NotificationType.SANCTION_LETTER_SIGNED);
+        assertThat(ctx.getValue().attachments()).hasSize(1);
+        assertThat(ctx.getValue().attachments().get(0).filename()).isEqualTo("sanction-letter-signed.pdf");
+    }
+
+    @Test
+    void sanctionLetterSignedSendsWithoutAttachmentWhenFetchFails() {
+        org.mockito.Mockito.when(storage.fetch(org.mockito.ArgumentMatchers.anyString()))
+                .thenThrow(new IllegalStateException("not found"));
+
+        listener.onSanctionLetterSigned(new SanctionLetterSignedEvent(
+                5L, 2L, 99L, "missing-key", Instant.now()));
+
+        ArgumentCaptor<NotificationType> type = ArgumentCaptor.forClass(NotificationType.class);
+        ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
+        verify(dispatcher).dispatch(type.capture(), ctx.capture());
+        assertThat(type.getValue()).isEqualTo(NotificationType.SANCTION_LETTER_SIGNED);
+        assertThat(ctx.getValue().attachments()).isEmpty();
     }
 
     @Test

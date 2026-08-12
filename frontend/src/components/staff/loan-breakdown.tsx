@@ -31,7 +31,12 @@ export function LoanBreakdown({
       <Row label="Processing fee" value={paiseToINR(loan.processingFeePaise)} />
       <Row label="GST" value={paiseToINR(loan.gstPaise)} />
       <Row label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
-      <Row label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
+      {/* When `outstanding` is present, relabel to make the distinction explicit: this figure is
+          the contracted on-time total (no penalty), not what's owed today (item 3b). */}
+      <Row
+        label={out ? "Contracted repayable (on-time)" : "Total repayable"}
+        value={paiseToINR(loan.totalRepayablePaise)}
+      />
       {/* Day counts come from the backend breakdown (they're what the amount was actually charged
           over — interest includes the one-day grace, then stops; penalty starts after grace and is capped at 30). Older
           backends omit them, so the label degrades to the bare figure. */}
@@ -49,7 +54,7 @@ export function LoanBreakdown({
       )}
       {out && <Row label="Paid (verified)" value={paiseToINR(out.verifiedPaise ?? 0)} />}
       <Row
-        label="Outstanding"
+        label={out ? "Amount due today" : "Outstanding"}
         value={paiseToINR(out ? out.outstandingPaise : loan.outstandingPaise)}
         strong
       />

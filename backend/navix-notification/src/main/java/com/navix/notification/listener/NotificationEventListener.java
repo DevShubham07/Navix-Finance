@@ -13,14 +13,20 @@ import com.navix.common.notification.event.ReferralRewardCreditedEvent;
 import com.navix.common.notification.event.RepaymentRecordedEvent;
 import com.navix.common.notification.event.RepaymentRejectedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
+import com.navix.common.notification.event.SanctionLetterSignedEvent;
 import com.navix.common.notification.event.SettlementApprovedEvent;
 import com.navix.common.notification.event.SettlementProposedEvent;
 import com.navix.common.notification.event.SettlementRejectedEvent;
 import com.navix.common.notification.event.StaffAccountEvent;
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.notification.catalog.NotificationType;
 import com.navix.notification.dispatch.NotificationContext;
 import com.navix.notification.dispatch.NotificationDispatcher;
+import com.navix.notification.email.EmailAttachment;
 import com.navix.notification.template.NotificationFormat;
+import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
@@ -37,15 +43,21 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class NotificationEventListener {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationEventListener.class);
+
     private final NotificationDispatcher dispatcher;
     /** Base URL the staff-invite activation link is built from (same property as the reset links). */
     private final String frontendBaseUrl;
+    /** Fetches the signed sanction-letter PDF bytes for the SANCTION_LETTER_SIGNED email attachment. */
+    private final DocumentStoragePort storage;
 
     public NotificationEventListener(NotificationDispatcher dispatcher,
-            @Value("${navix.app.frontend-base-url:http://localhost:3000}") String frontendBaseUrl) {
+            @Value("${navix.app.frontend-base-url:http://localhost:3000}") String frontendBaseUrl,
+            DocumentStoragePort storage) {
         this.dispatcher = dispatcher;
         this.frontendBaseUrl = frontendBaseUrl.endsWith("/")
                 ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1) : frontendBaseUrl;
+        this.storage = storage;
     }
 
     /** The application state-machine: one event per transition, mapped by {@code action} (§5). */
@@ -107,6 +119,46 @@ public class NotificationEventListener {
                 .customerId(e.customerId())
                 .loanId(e.loanId())
                 .put("amount", NotificationFormat.inr(e.amountPaise()))
+                .put("reason", humanizeRejectionReason(e.reason(), e.note()))
+                .build());
+    }
+
+    /** The fixed rejection-reason codes, worded for a borrower-facing IN_APP/EMAIL body. */
+    private static String humanizeRejectionReason(String reason, String note) {
+        String base = switch (reason == null ? "" : reason) {
+            case "WRONG_REFERENCE" -> "the reference number didn't match our records";
+            case "AMOUNT_MISMATCH" -> "the amount didn't match what was recorded";
+            case "NOT_RECEIVED" -> "we haven't received this payment yet";
+            case "UNREADABLE_PROOF" -> "the proof you shared wasn't readable";
+            case "OTHER" -> "it couldn't be matched to a transfer";
+            default -> "it couldn't be verified";
+        };
+        return note != null && !note.isBlank() ? base + " (" + note + ")" : base;
+    }
+
+    /**
+     * The signed sanction letter, emailed as an attachment. If the PDF can't be fetched from storage
+     * (transient S3 issue, missing key), the email still goes out — just without the attachment;
+     * notifications must never block or fail business logic (CLAUDE.md §12).
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onSanctionLetterSigned(SanctionLetterSignedEvent e) {
+        List<EmailAttachment> attachments = List.of();
+        if (e.s3ObjectKey() != null && !e.s3ObjectKey().isBlank()) {
+            try {
+                byte[] bytes = storage.fetch(e.s3ObjectKey());
+                attachments = List.of(new EmailAttachment(
+                        "sanction-letter-signed.pdf", "application/pdf", bytes));
+            } catch (RuntimeException ex) {
+                log.warn("Could not fetch signed sanction letter {} for application {} (sending email "
+                        + "without the attachment): {}", e.s3ObjectKey(), e.applicationId(), ex.getMessage());
+            }
+        }
+        dispatcher.dispatch(NotificationType.SANCTION_LETTER_SIGNED, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .attachments(attachments)
                 .build());
     }
 

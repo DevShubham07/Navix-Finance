@@ -3,6 +3,7 @@ package com.navix.notification.email;
 import com.navix.notification.config.EmailProperties;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
@@ -28,8 +29,11 @@ public class SmtpEmailClient implements EmailClient {
     public EmailResult send(EmailMessage message) {
         try {
             boolean hasHtml = message.html() != null && !message.html().isBlank();
+            boolean hasAttachments = message.attachments() != null && !message.attachments().isEmpty();
             MimeMessage mime = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mime, hasHtml, "UTF-8");
+            // A multipart-mixed structure is required as soon as there's an attachment, regardless of
+            // whether there's also an HTML alternative — MimeMessageHelper's "multipart" flag covers both.
+            MimeMessageHelper helper = new MimeMessageHelper(mime, hasHtml || hasAttachments, "UTF-8");
             helper.setFrom(props.from());
             helper.setTo(message.to());
             helper.setSubject(message.subject() == null ? "DhanBoost" : message.subject());
@@ -38,6 +42,11 @@ public class SmtpEmailClient implements EmailClient {
                 helper.setText(text, message.html());
             } else {
                 helper.setText(text, false);
+            }
+            if (hasAttachments) {
+                for (EmailAttachment a : message.attachments()) {
+                    helper.addAttachment(a.filename(), new ByteArrayResource(a.content()), a.contentType());
+                }
             }
             mailSender.send(mime);
             return EmailResult.ok("smtp");

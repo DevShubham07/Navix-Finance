@@ -62,11 +62,16 @@ public enum NotificationType {
     DISBURSEMENT_FAILED(DISBURSEMENT, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS)),
     DISBURSEMENT_REJECTED(DISBURSEMENT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
     LOAN_DISBURSED(DISBURSEMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    // The signed sanction letter, emailed as an attachment (IN_APP + EMAIL only — no SMS, so no new
+    // DLT registration is needed for this one).
+    SANCTION_LETTER_SIGNED(DISBURSEMENT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
 
     // ---- REPAYMENT ----
     REPAYMENT_RECORDED(REPAYMENT, Set.of(IN_APP), Set.of(TO_ACCOUNTANTS, TO_BORROWER)),
     REPAYMENT_VERIFIED(REPAYMENT, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
-    REPAYMENT_REJECTED(REPAYMENT, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+    // EMAIL added so the rejection reason (SMS body is DLT-locked, can't carry it) reaches the
+    // borrower somewhere other than the in-app inbox.
+    REPAYMENT_REJECTED(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     // Time-driven reminders from the daily PaymentReminderScheduler.
     PAYMENT_DUE_SOON(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     PAYMENT_OVERDUE(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),

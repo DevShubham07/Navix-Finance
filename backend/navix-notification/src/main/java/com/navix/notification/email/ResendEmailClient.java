@@ -43,6 +43,12 @@ public class ResendEmailClient implements EmailClient {
         if (props.resendApiKey() == null) {
             return EmailResult.fail("RESEND_API_KEY not configured");
         }
+        if (message.attachments() != null && !message.attachments().isEmpty()) {
+            // Attachments aren't wired for Resend yet (interim provider while SES is sandbox-limited).
+            log.warn("EMAIL [resend] {} attachment(s) requested but not supported by this client — "
+                            + "sending without them (to={})",
+                    message.attachments().size(), Masking.maskEmail(message.to()));
+        }
         try {
             Map<String, Object> body = new HashMap<>();
             body.put("from", props.from());

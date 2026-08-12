@@ -66,6 +66,11 @@ public final class ApplicationDtos {
             String recommendation,
             String customerName,
             String customerMobile,
+            // Staff-only identifiers (populated only via the of(a, p, loan) overload; never leaked to
+            // the borrower-facing of(a) overload used by /mine).
+            String pan,
+            String salaryAccountNumber,
+            String salaryIfsc,
             String loanStatus,
             LocalDate loanDueDate,
             // The credit sanction (V45). Null until a Credit Executive accepts the lead.
@@ -126,6 +131,9 @@ public final class ApplicationDtos {
                     p != null ? p.getCreditRecommendation() : null,
                     p != null ? p.getFullName() : null,
                     p != null ? p.getMobile() : null,
+                    p != null ? p.getPan() : null,
+                    p != null ? p.getSalaryAccountNumber() : null,
+                    p != null ? p.getSalaryIfsc() : null,
                     loan != null ? loan.effectiveStatus(LocalDate.now()).name() : null,
                     loan != null ? loan.getDueDate() : null,
                     a.getSanctionedAmountPaise(), a.getApprovedRepaymentDate(), a.getSanctionTenureDays(),

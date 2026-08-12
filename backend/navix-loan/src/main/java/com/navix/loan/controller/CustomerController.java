@@ -6,6 +6,7 @@ import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
+import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.AssignOwnerRequest;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
@@ -61,6 +62,14 @@ public class CustomerController {
                                                   @RequestBody UpdateCustomerRequest req) {
         requireStaff();
         return ApiResponse.ok(customerService.updateProfile(customerId, req));
+    }
+
+    /** Every document across ALL of this customer's applications, grouped by application (newest
+     *  first) — so a reborrow's prior-application uploads stay reachable (work item 4). */
+    @GetMapping("/{customerId}/documents")
+    public ApiResponse<List<ApplicationDocumentGroup>> documents(@PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(customerService.documents(customerId));
     }
 
     /** One customer's audited profile/salary change history (previous→new, who, when). */

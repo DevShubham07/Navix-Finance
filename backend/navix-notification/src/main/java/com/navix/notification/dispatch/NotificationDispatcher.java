@@ -87,7 +87,7 @@ public class NotificationDispatcher {
                     recordSkippedOptOut(saved, channel, recipient);
                     continue;
                 }
-                deliver(saved, channel, type, recipient, model);
+                deliver(saved, channel, type, recipient, model, ctx);
             }
         }
     }
@@ -127,7 +127,7 @@ public class NotificationDispatcher {
     }
 
     private void deliver(Notification notification, NotificationChannel channel, NotificationType type,
-                         ContactInfo recipient, Map<String, Object> model) {
+                         ContactInfo recipient, Map<String, Object> model, NotificationContext ctx) {
         NotificationDelivery d = new NotificationDelivery();
         d.setNotificationId(notification.getId());
         d.setChannel(channel);
@@ -135,6 +135,13 @@ public class NotificationDispatcher {
         d.setAttempts(0);
         try {
             RenderedMessage message = renderer.render(type, channel, model);
+            // EMAIL-only: attach whatever the listener supplied on the context (e.g. the signed
+            // sanction letter). Every other channel ignores NotificationContext.attachments().
+            if (message != null && channel == NotificationChannel.EMAIL
+                    && ctx.attachments() != null && !ctx.attachments().isEmpty()) {
+                message = new RenderedMessage(message.channel(), message.subject(), message.body(),
+                        message.smsTemplateKey(), ctx.attachments());
+            }
             ChannelSender sender = senders.get(channel);
             if (message == null) {
                 d.setStatus(DeliveryStatus.SKIPPED);

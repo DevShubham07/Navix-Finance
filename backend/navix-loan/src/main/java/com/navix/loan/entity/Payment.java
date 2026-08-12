@@ -63,4 +63,13 @@ public class Payment extends BaseAuditEntity {
     /** True if this is a partial payment (balance remains outstanding). */
     @Column(name = "partial", nullable = false)
     private boolean partial;
+
+    /** Fixed-picklist reason code (WRONG_REFERENCE / AMOUNT_MISMATCH / NOT_RECEIVED /
+     *  UNREADABLE_PROOF / OTHER) — set only when {@code status == REJECTED}. */
+    @Column(name = "rejection_reason", length = 64)
+    private String rejectionReason;
+
+    /** Optional free-text elaboration alongside {@link #rejectionReason}. */
+    @Column(name = "rejection_note")
+    private String rejectionNote;
 }

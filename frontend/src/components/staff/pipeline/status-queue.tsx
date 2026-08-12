@@ -226,6 +226,9 @@ export function QueueTable({
             <th className="staff-sticky-identity">Application</th>
             <th>Customer</th>
             <th>Mobile</th>
+            <th>PAN</th>
+            <th>Account</th>
+            <th>IFSC</th>
             <th>Loan</th>
             <th>Amount</th>
             <th>Due</th>

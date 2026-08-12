@@ -7,6 +7,7 @@ import { Wallet, Smartphone, Landmark, CheckCircle2, ArrowRight, AlertTriangle, 
 import { Input } from "@/components/ui";
 import { ZoomableImage } from "@/components/ui/image-lightbox";
 import { InfoRow } from "@/components/borrower/summary";
+import { PaymentHelp } from "@/components/borrower/payment-help";
 import { useMounted } from "@/hooks/use-mounted";
 import { useLiveApplication } from "@/lib/api/live-journey";
 import {
@@ -14,6 +15,7 @@ import {
   paymentSettingsApi,
   paiseToINR,
   rupeesToPaise,
+  REJECTION_REASON_LABEL,
   type PaymentMethodName,
   type PaymentView,
 } from "@/lib/api/applications";
@@ -407,6 +409,8 @@ export default function RepayPage() {
           </p>
         </div>
       </div>
+
+      <PaymentHelp className="mt-6" />
     </div>
   );
 }
@@ -442,16 +446,35 @@ function PaymentRow({ p }: { p: PaymentView }) {
   };
   const s = map[p.status];
   return (
-    <li className="flex items-center justify-between gap-3 text-sm">
-      <span className="flex items-center gap-2">
-        <span className="font-semibold text-ink">{paiseToINR(p.amountPaise)}</span>
-        <span className="text-xs text-muted">
-          {p.method === "UPI" ? "UPI" : "Bank"}
-          {p.txnRef ? ` · ${p.txnRef}` : ""}
-          {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
+    <li>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="flex items-center gap-2">
+          <span className="font-semibold text-ink">{paiseToINR(p.amountPaise)}</span>
+          <span className="text-xs text-muted">
+            {p.method === "UPI" ? "UPI" : "Bank"}
+            {p.txnRef ? ` · ${p.txnRef}` : ""}
+            {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
+          </span>
         </span>
-      </span>
-      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}>{s.label}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}>{s.label}</span>
+      </div>
+      {p.status === "REJECTED" && <RejectionBanner p={p} />}
     </li>
+  );
+}
+
+/** Why a rejected payment didn't go through, plus the call/email escape hatch (item 5 + 7). */
+function RejectionBanner({ p }: { p: PaymentView }) {
+  const reason = p.rejectionReason ? REJECTION_REASON_LABEL[p.rejectionReason] : "See support for details";
+  return (
+    <div className="mt-2 rounded border border-error-100 bg-error-50 p-3 text-xs text-error-700">
+      <p className="flex items-start gap-1.5">
+        <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
+        <span>
+          Payment rejected — {reason}.{p.rejectionNote ? ` ${p.rejectionNote}` : ""}
+        </span>
+      </p>
+      <PaymentHelp variant="inline" compact className="mt-2" />
+    </div>
   );
 }

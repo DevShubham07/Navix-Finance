@@ -16,4 +16,8 @@ public interface ApplicationEventRepository extends JpaRepository<ApplicationEve
 
     /** One staffer's actions, newest first — backs the decision history (/staff/my-decisions). */
     List<ApplicationEvent> findByActorIdOrderByAtDesc(String actorId);
+
+    /** Batched "latest activity" lookup for a set of applications (telecalling staleness), newest
+     *  event first per row so the first hit per {@code applicationId} in iteration order is the latest. */
+    List<ApplicationEvent> findByApplicationIdInOrderByAtDesc(List<Long> applicationIds);
 }
