@@ -54,19 +54,23 @@ export AWS_PROFILE=navix-dev AWS_REGION=ap-south-1
 |---|---|
 | Cluster | `navix-cluster` |
 | Service | `navix-backend` (Fargate, desired **1**, **`assignPublicIp=DISABLED`** — private subnets, see §5.1) |
-| Task family | `navix-finance` — **current revision 3** |
+| Task family | `navix-finance` — **current revision 12** (image `navix-finance:94d9c58`) |
 | Task size | cpu **1024** / mem **2048** |
 | Container port | **8080** (name `navix-backend-8080-tcp`, http) |
 | Exec + task role | `navix-finance-task-role` (same role for both) |
 | Subnets | **private**: `subnet-04debb2364f89a58f` (1a), `subnet-0e88775cc900d5a94` (1b), `subnet-0ec4c5696d5c2069f` (1c) — see §5.1 |
 | Security group | `sg-040c4365f3a355186` (**shared with the ALB** — see §5) |
-| Task env vars | `NAVIX_ENV=dev`, `AWS_REGION=ap-south-1`, `NAVIX_SMS_MOCK=true` |
+| Task env vars | `NAVIX_ENV=dev`, `AWS_REGION=ap-south-1` (verified on rev 11/12 — **that is the whole list**; no `secrets` block) |
 | Logs | CloudWatch log group **`/ecs/navix-finance`**, stream `ecs/navix-backend/<taskId>` |
 
 - `NAVIX_ENV=dev` → the app reads SSM under `/navix/dev/*` (§7). The Docker image's baked
   `NAVIX_ENV=prod` is **overridden** by the task-def env.
-- `NAVIX_SMS_MOCK=true` → OTP is the fixed mock code **`123456`** (no real SMS; DLT-blocked).
-  Added in **rev 3**; rev 2 (the previous live task) did not have it.
+- ⚠️ **`NAVIX_SMS_MOCK` is NOT set on the live task** (checked 2026-08-12 on rev 11 and 12). Earlier
+  revisions carried it; it has since been dropped. Everything else the app needs comes from SSM.
+- ⚠️ **There is no `NAVIX_SMS_OTP_TEMPLATE` pin any more**, on the task-def or in SSM (there is no
+  `/navix/dev/navix/sms/otp-template` parameter). CLAUDE.md §13's instruction that "any redeploy must
+  be built from rev 4" to preserve the approved OTP wording is **obsolete** — the live OTP text now
+  comes from `application.yml`'s default.
 
 ---
 
@@ -196,44 +200,78 @@ broader than needed — tighten to the one bucket before real prod.)
 
 ## 8. Redeploy the backend (the fast local-JAR recipe)
 
-This is the recipe used on 2026-06-27. Needs Docker running, Java 21
-(`JAVA_HOME=~/.sdkman/candidates/java/21.0.11-tem`), and `AWS_PROFILE=navix-dev`.
+> 🛑 **The task definition pins a git-SHA image tag, NOT `:latest`.** Rev 11 ran
+> `navix-finance:4a43c18`; ECR history is all short SHAs (`4a43c18`, `d080b99`, `e452e53`, …).
+> Pushing `:latest` and running `update-service --force-new-deployment` **re-pulls the same old
+> SHA-tagged image**: the rollout reports `COMPLETED` and *nothing changes*. This happened on
+> 2026-08-12 — the deploy "succeeded" while Flyway logged `validated 49 migrations / up to date`
+> because the two new migrations were never in the running image. **Always tag with the commit SHA
+> and register a new task-def revision** (steps 3–5 below).
+
+Verified end-to-end on **2026-08-12** (produced rev 12). Needs Docker running, Java 21, and
+`AWS_PROFILE=navix-dev`. On Windows use **Git Bash** with `MSYS_NO_PATHCONV=1` — PowerShell's pipe
+re-encodes the ECR password and `docker login` fails with `400 Bad Request`, and Git Bash rewrites
+`/navix/...` SSM paths unless `MSYS_NO_PATHCONV=1` is set.
 
 ```bash
-cd /Users/shubham.1/Navix-Finance
-export AWS_PROFILE=navix-dev AWS_REGION=ap-south-1
+cd <repo root>
+export AWS_PROFILE=navix-dev AWS_REGION=ap-south-1 MSYS_NO_PATHCONV=1
 ECR=382188661325.dkr.ecr.ap-south-1.amazonaws.com
+SHA=$(git rev-parse --short HEAD)     # commit FIRST — the tag must map to a commit
 
 # 1. Build the bootable JAR locally (deps cached in ~/.m2 → ~1 min)
-( cd backend && JAVA_HOME=~/.sdkman/candidates/java/21.0.11-tem \
+( cd backend && JAVA_HOME=/c/Program\ Files/Java/jdk-21 \
     ./mvnw -pl navix-app -am package -DskipTests )
 
 # 2. Build a linux/amd64 image (Fargate) WITHOUT buildx attestation, from the host JAR
 docker build --platform linux/amd64 --provenance=false --sbom=false \
   -f Dockerfile.backend.runtime -t navix-backend:latest .
 
-# 3. Push to ECR
+# 3. Push under the COMMIT SHA tag (":latest" is pushed by convention but referenced by nothing)
 aws ecr get-login-password | docker login --username AWS --password-stdin "$ECR"
-docker tag navix-backend:latest "$ECR/navix-finance:latest"
-docker push "$ECR/navix-finance:latest"
+docker tag navix-backend:latest "$ECR/navix-finance:$SHA"
+docker push "$ECR/navix-finance:$SHA"
 
-# 4. Roll the service (image tag is :latest, so force a new deployment)
+# 4. Register a new task-def revision that points at the new tag (clone the live one, change
+#    ONLY containerDefinitions[0].image — env is just NAVIX_ENV/AWS_REGION, keep it intact)
+aws ecs describe-task-definition --task-definition navix-finance --query taskDefinition > td.json
+python -c "
+import json; td=json.load(open('td.json'))
+for k in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy','deregisteredAt']: td.pop(k,None)
+td['containerDefinitions'][0]['image']='$ECR/navix-finance:$SHA'
+json.dump(td,open('td-new.json','w'),indent=2)"
+REV=$(aws ecs register-task-definition --cli-input-json file://td-new.json \
+        --query "taskDefinition.revision" --output text)
+
+# 5. Roll the service onto the new revision
 aws ecs update-service --cluster navix-cluster --service navix-backend \
-  --force-new-deployment
+  --task-definition navix-finance:$REV
 
-# 5. Watch rollout (app boots ~40s; target is 'unhealthy' until boot finishes — NOT a failure)
+# 6. Watch rollout (app boots ~40-50s; target reads 'unhealthy' until boot finishes — NOT a failure)
 aws ecs describe-services --cluster navix-cluster --services navix-backend \
   --query "services[0].deployments[].{td:taskDefinition,state:rolloutState,run:runningCount}"
 ```
 
-**Changing task env / size** → register a new task-def revision, then
-`update-service --task-definition navix-finance:<rev>`. Recipe (adds an env var):
+**Prove the deploy actually took** (a `COMPLETED` rollout does not prove it):
 ```bash
-aws ecs describe-task-definition --task-definition navix-finance --query taskDefinition > td.json
-# strip taskDefinitionArn/revision/status/requiresAttributes/compatibilities/registeredAt/registeredBy,
-# add the env var, then:
-aws ecs register-task-definition --cli-input-json file://td-new.json
+# a) running digest must equal the digest you pushed
+TASK=$(aws ecs list-tasks --cluster navix-cluster --service-name navix-backend --query "taskArns[0]" --output text)
+aws ecs describe-tasks --cluster navix-cluster --tasks "$TASK" \
+  --query "tasks[0].{img:containers[0].image,digest:containers[0].imageDigest}"
+aws ecr describe-images --repository-name navix-finance --image-ids imageTag=$SHA \
+  --query "imageDetails[0].imageDigest"
+
+# b) the new task's boot log must show migrations applied, not "up to date"
+ST=$(aws logs describe-log-streams --log-group-name /ecs/navix-finance \
+      --order-by LastEventTime --descending --query "logStreams[0].logStreamName" --output text)
+aws logs get-log-events --log-group-name /ecs/navix-finance --log-stream-name "$ST" \
+  --start-from-head --query "events[].message" --output json \
+  | grep -iE "validated [0-9]+ migrations|Successfully applied|Started NavixApplication"
 ```
+
+**Changing task env / size** → same step 4, but edit the env/cpu/memory fields instead of (or as
+well as) the image. Always diff the env list before and after — a stripped revision can go live
+silently.
 
 **Gotchas (all hit at least once):**
 - Build **`--platform linux/amd64`** — a Mac is arm64; an arm image → Fargate `exec format error`.
