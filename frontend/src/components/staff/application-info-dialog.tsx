@@ -81,14 +81,27 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
     enabled: open && hasLoan,
     retry: false,
   });
+  const verificationQ = useQuery({
+    queryKey: ["customer-verifications", id],
+    queryFn: () => staffApi.verifications(id),
+    enabled: open && idReady,
+  });
+  const kycAssigneesQ = useQuery({
+    queryKey: ["staff-picker", "KYC_APPROVER"],
+    queryFn: () => staffApi.creditExecutives("KYC_APPROVER"),
+    enabled: open && idReady && app?.amountRequestedPaise == null,
+    staleTime: 60_000,
+  });
 
   const p = profileQ.data;
+  const pennyDerived = ((verificationQ.data ?? []).find((row) => row.checkType === "PENNY_DROP")?.derived ?? {}) as Record<string, unknown>;
+  const assignedName = kycAssigneesQ.data?.find((staff) => staff.id === app?.assignedExecutiveId)?.name;
   const loading = (applicationId == null && resolveQ.isLoading) || (idReady && appQ.isLoading);
 
   const displayName = p?.fullName ?? app?.customerName ?? (app ? `Customer #${app.customerId}` : "Application");
 
   return (
-    <Dialog open={open} onClose={onClose} className="!max-w-3xl !w-full" aria-label="Quick summary">
+    <Dialog open={open} onClose={onClose} className="!max-w-[96vw] !w-[96vw]" aria-label="Quick summary">
       <div className="border-b border-line pb-3">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
@@ -123,7 +136,7 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
         </div>
       </div>
 
-      <div className="mt-3 max-h-[75vh] space-y-4 overflow-y-auto pr-1 text-[10.4px]">
+      <div className="mt-3 grid h-[92vh] grid-cols-2 grid-rows-2 gap-3 overflow-hidden text-[10px]">
         {loading ? (
           <p className="flex items-center gap-2 py-8 text-sm text-muted">
             <Loader2 size={15} className="animate-spin" /> Loading…
@@ -170,10 +183,14 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
 
             <InfoSection icon={Landmark} title="Bank account">
               <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-                <KV k="Disbursal account" v={app.disbursalAccountNumber ?? p?.salaryAccountNumber} mono />
-                <KV k="Disbursal IFSC" v={app.disbursalIfsc ?? p?.salaryIfsc} mono />
+                <KV k="Account" v={app.disbursalAccountNumber ?? app.salaryAccountNumber ?? p?.salaryAccountNumber} mono />
+                <KV k="Account source" v={app.disbursalAccountNumber ? "Confirmed disbursal account" : app.salaryAccountNumber ? "Application salary account" : "KYC profile salary account"} />
+                <KV k="IFSC" v={app.disbursalIfsc ?? app.salaryIfsc ?? p?.salaryIfsc} mono />
+                <KV k="IFSC source" v={app.disbursalIfsc ? "Confirmed disbursal account" : app.salaryIfsc ? "Application salary account" : "KYC profile salary account"} />
                 <KV k="Account holder" v={app.disbursalHolderName ?? p?.fullName} />
                 <KV k="Bank" v={app.disbursalBank ?? p?.salaryBank} />
+                <KV k="Beneficiary name" v={pennyDerived.beneficiaryName != null ? String(pennyDerived.beneficiaryName) : null} />
+                <KV k="Bank RRN" v={pennyDerived.bankRrn != null ? String(pennyDerived.bankRrn) : null} mono />
                 <KV
                   k="Penny drop"
                   v={
@@ -196,6 +213,14 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
                 ) : (
                   <p className="text-sm text-error-700">Could not load the loan.</p>
                 )
+              ) : app.amountRequestedPaise == null ? (
+                <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                  <KV k="Eligible limit" v={app.eligibleLimitPaise != null ? paiseToINR(app.eligibleLimitPaise) : null} mono />
+                  <KV
+                    k="KYC assignment"
+                    v={`Assigned to ${assignedName ?? (app.assignedExecutiveId != null ? `staff #${app.assignedExecutiveId}` : "no one")} for KYC`}
+                  />
+                </dl>
               ) : (
                 <ExpectedDisbursement app={app} />
               )}
@@ -217,11 +242,11 @@ function InfoSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded border border-line bg-white p-4">
+    <div className="flex min-h-0 flex-col rounded border border-line bg-white p-4">
       <h4 className="mb-3 flex items-center gap-2 font-serif text-sm font-semibold text-navy">
         <Icon size={15} aria-hidden /> {title}
       </h4>
-      {children}
+      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
     </div>
   );
 }
@@ -254,9 +279,11 @@ function ExpectedDisbursement({ app }: { app: ApplicationView }) {
   }
 
   let tenureDays = 30;
+  let dueDate: Date | null = null;
   if (app.salaryCreditDay != null) {
     const today = new Date();
     const due = dueDateFromSalary({ disbursedOn: today, salaryDay: app.salaryCreditDay });
+    dueDate = due;
     const d = daysBetween(today, due);
     if (d > 0) tenureDays = d;
   }
@@ -270,6 +297,7 @@ function ExpectedDisbursement({ app }: { app: ApplicationView }) {
         <KV k="GST" v={paiseToINR(b.gstOnFee)} mono />
         <KV k="Net disbursed (expected)" v={paiseToINR(b.netDisbursed)} mono />
         <KV k={`Interest (${tenureDays}d, estimated)`} v={paiseToINR(b.interest)} mono />
+        <KV k="Repayment due (estimated)" v={dueDate ? formatDate(dueDate.toISOString().slice(0, 10)) : null} />
         <KV k="Contracted repayable (expected)" v={paiseToINR(b.totalRepayable)} mono />
       </dl>
       <p className="mt-2 text-xs text-muted">

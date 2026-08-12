@@ -2,6 +2,7 @@
 // Source section id: #privacy. Regenerate via transform_html.py.
 /* eslint-disable */
 import { BRAND } from "@/lib/brand";
+import { COMMUNICATION_PRIVACY_TEXT } from "@/lib/communication-consent";
 
 export const html = `<section class="page active" id="privacy">
   <div class="page-hero"><div class="wrap"><div class="crumb"><a href="/" data-link="">Home</a> &nbsp;/&nbsp; Privacy Policy</div><h1>Privacy Policy</h1><p>How we collect, use and protect your information. Last updated: June 2026.</p></div></div>
@@ -21,6 +22,9 @@ export const html = `<section class="page active" id="privacy">
       <li>To assess eligibility and facilitate your loan with the partner NBFC.</li>
       <li>To verify identity, prevent fraud and comply with legal obligations.</li>
       <li>To provide support and communicate about your application and account.</li>
+      <!-- hand-added: compliance copy, keep on regeneration -->
+      <li>${COMMUNICATION_PRIVACY_TEXT}</li>
+      <!-- /hand-added: compliance copy, keep on regeneration -->
     </ul>
     <h2>4. Sharing</h2>
     <p>We share your information with the relevant RBI-registered NBFC lending partner to process your loan, and with service providers bound by confidentiality. We do not sell your personal data.</p>

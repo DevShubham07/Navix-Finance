@@ -1,6 +1,10 @@
 import { Mail, Phone, ShieldAlert, ChevronDown } from "lucide-react";
 import { BRAND } from "@/lib/brand";
 import { PaymentSafetyTicker } from "@/components/site/payment-safety-ticker";
+import {
+  COMMUNICATION_CONSENT_TEXT,
+  COMMUNICATION_PRIVACY_TEXT,
+} from "@/lib/communication-consent";
 
 /**
  * Borrower support + Help & FAQ. Serves both the "Support" and "Help & FAQ"
@@ -81,6 +85,11 @@ export default function SupportPage() {
           </div>
         </a>
       </div>
+
+      <p className="mt-4 rounded border border-line bg-white p-4 text-sm leading-relaxed text-muted">
+        {COMMUNICATION_CONSENT_TEXT}<br />
+        {COMMUNICATION_PRIVACY_TEXT}
+      </p>
 
       <PaymentSafetyTicker className="mt-6 rounded" />
 

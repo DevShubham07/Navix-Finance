@@ -6,8 +6,11 @@ import { Loader2, RefreshCw, Bell, UserPlus, Send } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
+import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { hasPermission } from "@/lib/auth/rbac";
 import { customersApi, staffApi, statusLabel, type TelecallingView } from "@/lib/api/applications";
+
+const TELECALLER_ONLY = ["TELECALLER"] as const;
 
 /**
  * Telecaller queue — every pre-`SANCTIONED` application, split into Unallocated (no
@@ -193,6 +196,8 @@ function TelecallingSection({
                     aria-label="Select all"
                   />
                 </th>
+                <th>Application</th>
+                <th>Customer ID</th>
                 <th>Customer</th>
                 <th>Mobile</th>
                 <th>Email</th>
@@ -214,11 +219,16 @@ function TelecallingSection({
                       aria-label={`Select application #${r.id}`}
                     />
                   </td>
+                  <td>
+                    <button type="button" onClick={() => onOpen(r.id)} className="font-semibold text-navy hover:underline">
+                      #{r.id}
+                    </button>
+                  </td>
+                  <td className="font-mono text-muted">#{r.customerId}</td>
                   <td className="staff-cell">
                     <button type="button" onClick={() => onOpen(r.id)} className="text-left font-semibold text-navy hover:underline">
                       {r.customerName || `Customer #${r.customerId}`}
                     </button>
-                    <div className="text-xs text-muted">App #{r.id} · Cust #{r.customerId}</div>
                   </td>
                   <td className="font-mono text-muted">{r.mobile || "—"}</td>
                   <td className="text-muted">
@@ -254,6 +264,12 @@ function TelecallingSection({
                           Assign to me
                         </button>
                       )}
+                      <CustomerOwnerPicker
+                        customerId={r.customerId}
+                        ownerStaffId={r.ownerStaffId}
+                        allowedRoles={TELECALLER_ONLY}
+                        compact
+                      />
                       <button
                         type="button"
                         onClick={() => onRemind(r.id)}

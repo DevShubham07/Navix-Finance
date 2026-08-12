@@ -17,6 +17,7 @@ import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import { Section, KV, Bool, DocumentsTab, RemarksTab } from "@/components/staff/detail-parts";
+import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import {
   customersApi,
   staffApi,
@@ -27,7 +28,6 @@ import {
   type ActivityEntry,
   type LoanView,
   type ApplicationStatus,
-  type StaffSummary,
 } from "@/lib/api/applications";
 
 export const CUSTOMER_TABS: TabDef[] = [
@@ -75,19 +75,21 @@ export function CustomerTabBody({
   tab,
   detail,
   customerId,
+  applicationId,
   onChanged,
 }: {
   tab: string;
   detail: CustomerDetail;
   customerId: number;
+  applicationId?: number;
   /** Fired after cancel / owner assign so parents can refetch. */
   onChanged?: () => void;
 }) {
-  const latestAppId = detail.applications[0]?.id ?? null;
+  const latestAppId = applicationId ?? detail.applications[0]?.id ?? null;
 
   switch (tab) {
     case "personal":
-      return <PersonalTab c={detail} onChanged={onChanged} />;
+      return <PersonalTab c={detail} applicationId={latestAppId} onChanged={onChanged} />;
     case "employment":
       return <EmploymentTab c={detail} />;
     case "bank":
@@ -97,7 +99,11 @@ export function CustomerTabBody({
     case "documents":
       // Grouped mode: every application this customer ever filed, not just the newest — a
       // reborrow's prior-application uploads must stay reachable (item 4).
-      return <DocumentsTab customerId={customerId} />;
+      return applicationId != null ? (
+        <DocumentsTab applicationId={applicationId} />
+      ) : (
+        <DocumentsTab customerId={customerId} />
+      );
     case "loans":
       return <LoansTab c={detail} onChanged={onChanged} />;
     case "calls":
@@ -120,7 +126,7 @@ export function CustomerTabBody({
 // Personal + Owner
 // ---------------------------------------------------------------------------
 
-function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void }) {
+function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; applicationId: number | null; onChanged?: () => void }) {
   const p = c.profile;
   const currentLoan =
     c.loans.find((l) =>
@@ -128,7 +134,7 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
     ) ??
     c.loans[0] ??
     null;
-  const latestApp = c.applications[0] ?? null;
+  const latestApp = c.applications.find((app) => app.id === applicationId) ?? c.applications[0] ?? null;
 
   const verQ = useQuery({
     queryKey: ["customer-verifications-personal", latestApp?.id],
@@ -213,7 +219,12 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
         <KV k="Relation" v={p?.emergencyContactRelation} />
       </Section>
 
-      <OwnerCard c={c} onChanged={onChanged} />
+      <CustomerOwnerPicker
+        customerId={c.customerId}
+        ownerStaffId={c.ownerStaffId}
+        ownerName={c.ownerName}
+        onChanged={onChanged}
+      />
 
       <div className="md:col-span-2">
         <Section title="Loan cost calculation">
@@ -233,85 +244,6 @@ function PersonalTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => vo
 function str(v: unknown): string | null {
   if (v == null || v === "") return null;
   return String(v);
-}
-
-function OwnerCard({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void }) {
-  const qc = useQueryClient();
-  const [staffId, setStaffId] = React.useState<string>(
-    c.ownerStaffId != null ? String(c.ownerStaffId) : "",
-  );
-
-  React.useEffect(() => {
-    setStaffId(c.ownerStaffId != null ? String(c.ownerStaffId) : "");
-  }, [c.ownerStaffId, c.customerId]);
-
-  const execs = useQuery({
-    queryKey: ["staff-picker", "CREDIT_EXECUTIVE"],
-    queryFn: () => staffApi.creditExecutives("CREDIT_EXECUTIVE"),
-  });
-  const collectors = useQuery({
-    queryKey: ["staff-picker", "COLLECTION_EXECUTIVE"],
-    queryFn: () => staffApi.creditExecutives("COLLECTION_EXECUTIVE"),
-  });
-  const telecallers = useQuery({
-    queryKey: ["staff-picker", "TELECALLER"],
-    queryFn: () => staffApi.creditExecutives("TELECALLER"),
-  });
-
-  const options = React.useMemo(() => {
-    const map = new Map<number, StaffSummary>();
-    for (const s of [...(execs.data ?? []), ...(collectors.data ?? []), ...(telecallers.data ?? [])]) {
-      map.set(s.id, s);
-    }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [execs.data, collectors.data, telecallers.data]);
-
-  const assign = useMutation({
-    mutationFn: () =>
-      customersApi.assignOwner(c.customerId, staffId ? Number(staffId) : null),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["customer", c.customerId] });
-      qc.invalidateQueries({ queryKey: ["customer-detail", c.customerId] });
-      qc.invalidateQueries({ queryKey: ["customers"] });
-      qc.invalidateQueries({ queryKey: ["customer-activity", c.customerId] });
-      onChanged?.();
-    },
-  });
-
-  return (
-    <Section title="Owner">
-      <KV k="Current owner" v={c.ownerName ?? "Unallocated"} />
-      <PermissionGate permission="customer:assign">
-        <div className="mt-2 space-y-2">
-          <Select
-            label="Assign to"
-            value={staffId}
-            onChange={(e) => setStaffId(e.target.value)}
-            options={[
-              { value: "", label: "Unallocated" },
-              ...options.map((s) => ({
-                value: String(s.id),
-                label: `${s.name} (${s.role})`,
-              })),
-            ]}
-            className="!mb-0"
-          />
-          <button
-            type="button"
-            onClick={() => assign.mutate()}
-            disabled={assign.isPending}
-            className="btn btn-sm btn-navy disabled:opacity-50"
-          >
-            {assign.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            Save owner
-          </button>
-          {assign.error && (
-            <p className="text-xs text-error-700">{errMessage(assign.error)}</p>
-          )}
-        </div>
-      </PermissionGate>
-    </Section>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +299,26 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
   });
   const penny = (pennyQ.data ?? []).find((s) => s.checkType === "PENNY_DROP");
   const derived = (penny?.derived ?? {}) as Record<string, unknown>;
+  const providerKeys = [
+    "accountNumber", "account", "ifsc", "bank", "nameMatch", "nameMatched",
+    "providerNameMatch", "beneficiaryName", "name", "bankRrn", "accountExists",
+  ];
+  const hasProviderData = providerKeys.some((key) => derived[key] != null && derived[key] !== "");
+  const manualNotice = derived.manualOverride
+    ? `Manually overridden by ${String(derived.manualBy ?? "staff")} on ${String(derived.manualAt ?? "an unknown date")}`
+    : null;
+  let emptyPennyCopy: string | null = null;
+  if (!hasProviderData) {
+    if (manualNotice) {
+      emptyPennyCopy = `${manualNotice} — no automated provider data on record.`;
+    } else if (!penny) {
+      emptyPennyCopy = "No penny-drop on this application — verification was carried over from a previous application.";
+    } else if (derived.providerError) {
+      emptyPennyCopy = String(derived.reason ?? "The provider could not complete penny-drop verification.");
+    } else {
+      emptyPennyCopy = "Not run — the borrower kept their salary account.";
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -375,23 +327,32 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
         the latest penny-drop verification, and disbursal transaction refs on loans.
       </p>
       <Section title="Salary bank">
-        <KV k="Bank" v={p?.salaryBank} />
-        <KV k="Penny drop verified" v={<Bool on={p?.pennyDropVerified} />} />
+        <StaffFieldTable rows={[
+          ["Bank", p?.salaryBank, "KYC profile"],
+          ["Account", p?.salaryAccountNumber, "KYC profile"],
+          ["IFSC", p?.salaryIfsc, "KYC profile"],
+          ["Penny drop verified", <Bool key="penny" on={p?.pennyDropVerified} />, "KYC profile"],
+        ]} />
       </Section>
       <Section title="Penny-drop derived">
         {pennyQ.isLoading ? (
           <p className="text-sm text-muted">Loading…</p>
+        ) : emptyPennyCopy ? (
+          <p className="text-sm text-muted">{emptyPennyCopy}</p>
         ) : (
           <>
-            <KV k="Account" v={derived.accountNumber != null ? String(derived.accountNumber) : (derived.account != null ? String(derived.account) : null)} mono />
-            <KV k="IFSC" v={derived.ifsc != null ? String(derived.ifsc) : null} mono />
-            <KV k="Bank" v={derived.bank != null ? String(derived.bank) : null} />
-            <KV k="Name match" v={derived.nameMatch != null ? String(derived.nameMatch) : (derived.nameMatched != null ? String(derived.nameMatched) : null)} />
-            <KV k="Provider name match" v={derived.providerNameMatch != null ? String(derived.providerNameMatch) : null} />
-            <KV k="Beneficiary name" v={derived.beneficiaryName != null ? String(derived.beneficiaryName) : (derived.name != null ? String(derived.name) : null)} />
-            <KV k="Bank RRN" v={derived.bankRrn != null ? String(derived.bankRrn) : null} mono />
-            <KV k="Reason" v={derived.reason != null ? String(derived.reason) : null} />
-            <KV k="Account exists" v={derived.accountExists != null ? String(derived.accountExists) : null} />
+            {manualNotice && <p className="mb-2 text-xs text-muted">{manualNotice}.</p>}
+            <StaffFieldTable rows={[
+              ["Account", str(derived.accountNumber ?? derived.account), "Penny-drop provider"],
+              ["IFSC", str(derived.ifsc), "Penny-drop provider"],
+              ["Bank", str(derived.bank), "Penny-drop provider"],
+              ["Name match", str(derived.nameMatch ?? derived.nameMatched), "Penny-drop provider"],
+              ["Provider name match", str(derived.providerNameMatch), "Penny-drop provider"],
+              ["Beneficiary name", str(derived.beneficiaryName ?? derived.name), "Penny-drop provider"],
+              ["Bank RRN", str(derived.bankRrn), "Penny-drop provider"],
+              ["Reason", str(derived.reason), "Penny-drop provider"],
+              ["Account exists", str(derived.accountExists), "Penny-drop provider"],
+            ]} />
           </>
         )}
       </Section>
@@ -399,14 +360,14 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
         {c.loans.length === 0 ? (
           <p className="text-sm text-muted">No loans.</p>
         ) : (
-          <ul className="divide-y divide-line text-sm">
-            {c.loans.map((l) => (
-              <li key={l.id} className="flex justify-between gap-2 py-1.5">
-                <span>Loan #{l.id}</span>
-                <span className="font-mono text-muted">{l.disbursalTxnRef ?? "—"}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead><tr><th>Loan ID</th><th>Transaction reference</th></tr></thead>
+              <tbody>{c.loans.map((loan) => (
+                <tr key={loan.id}><td>#{loan.id}</td><td className="font-mono">{loan.disbursalTxnRef ?? "—"}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
         )}
       </Section>
     </div>
@@ -439,39 +400,58 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
       </div>
       {latestAppId != null && <CreditProfileCard applicationId={latestAppId} />}
       <Section title="Credit headline">
-        <KV k="Bureau score" v={p?.creditScore != null ? String(p.creditScore) : null} mono />
-        <KV k="Star rating" v={p?.starRating != null ? `${p.starRating.toFixed(1)}★` : null} />
-        <KV k="Recommendation" v={p?.recommendation} />
-        <KV k="Risk category" v={p?.riskCategory} />
-        <KV k="Bureau" v={p?.bureauSource} />
-        <KV k="Credit brief summary" v={p?.creditBriefSummary} />
-        <KV
-          k="Credit brief generated"
-          v={p?.creditBriefGeneratedAt ? formatDateTime(p.creditBriefGeneratedAt) : null}
-        />
+        <StaffFieldTable rows={[
+          ["Bureau score", p?.creditScore != null ? String(p.creditScore) : null, "Customer profile"],
+          ["Star rating", p?.starRating != null ? `${p.starRating.toFixed(1)}★` : null, "Customer profile"],
+          ["Recommendation", p?.recommendation, "Customer profile"],
+          ["Risk category", p?.riskCategory, "Customer profile"],
+          ["Bureau", p?.bureauSource, "Customer profile"],
+          ["Credit brief summary", p?.creditBriefSummary, "Credit brief"],
+          ["Credit brief generated", p?.creditBriefGeneratedAt ? formatDateTime(p.creditBriefGeneratedAt) : null, "Credit brief"],
+        ]} />
       </Section>
       {latestAppId != null && (
         <Section title="Bureau pull (derived)">
-          <KV k="Source" v={bd.source != null ? String(bd.source) : null} />
-          <KV k="No record" v={bd.noRecord != null ? String(bd.noRecord) : null} />
-          <KV k="Active accounts" v={bd.activeAccounts != null ? String(bd.activeAccounts) : null} />
-          <KV k="Overdue / defaults" v={bd.overdueAccounts != null ? String(bd.overdueAccounts) : null} />
-          <KV k="Total balance" v={bd.totalBalance != null ? String(bd.totalBalance) : null} />
+          <StaffFieldTable rows={[
+            ["Source", str(bd.source), "Bureau provider"],
+            ["No record", str(bd.noRecord), "Bureau provider"],
+            ["Active accounts", str(bd.activeAccounts), "Bureau provider"],
+            ["Overdue / defaults", str(bd.overdueAccounts), "Bureau provider"],
+            ["Total balance", str(bd.totalBalance), "Bureau provider"],
+          ]} />
         </Section>
       )}
       {c.creditBrief?.facts && (
         <Section title="Credit facts (customer record)">
-          <KV k="Total accounts" v={String(c.creditBrief.facts.totalAccounts ?? "—")} />
-          <KV k="Active accounts" v={String(c.creditBrief.facts.activeAccounts ?? "—")} />
-          <KV k="Closed accounts" v={String(c.creditBrief.facts.closedAccounts ?? "—")} />
-          <KV k="Defaults" v={String(c.creditBrief.facts.defaults ?? "—")} />
-          <KV
-            k="Total balance"
-            v={c.creditBrief.facts.totalBalance != null ? `₹${c.creditBrief.facts.totalBalance.toLocaleString("en-IN")}` : "—"}
-          />
-          <KV k="Inquiries (30d)" v={String(c.creditBrief.facts.recentInquiries30d ?? "—")} />
+          <StaffFieldTable rows={[
+            ["Total accounts", String(c.creditBrief.facts.totalAccounts ?? "—"), "Credit brief"],
+            ["Active accounts", String(c.creditBrief.facts.activeAccounts ?? "—"), "Credit brief"],
+            ["Closed accounts", String(c.creditBrief.facts.closedAccounts ?? "—"), "Credit brief"],
+            ["Defaults", String(c.creditBrief.facts.defaults ?? "—"), "Credit brief"],
+            ["Total balance", c.creditBrief.facts.totalBalance != null ? `₹${c.creditBrief.facts.totalBalance.toLocaleString("en-IN")}` : "—", "Credit brief"],
+            ["Inquiries (30d)", String(c.creditBrief.facts.recentInquiries30d ?? "—"), "Credit brief"],
+          ]} />
         </Section>
       )}
+    </div>
+  );
+}
+
+function StaffFieldTable({ rows }: { rows: Array<[string, React.ReactNode, string]> }) {
+  return (
+    <div className="staff-table-scroll">
+      <table className="staff-data-table">
+        <thead><tr><th>Field</th><th>Value</th><th>Source</th></tr></thead>
+        <tbody>
+          {rows.map(([field, value, source]) => (
+            <tr key={field}>
+              <td className="font-semibold text-ink">{field}</td>
+              <td>{value || "—"}</td>
+              <td className="text-muted">{source}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -326,6 +326,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                     tab={tab.slice(2)}
                     detail={customerQ.data}
                     customerId={app.customerId}
+                    applicationId={id}
                     onChanged={() => customerQ.refetch()}
                   />
                 ) : null)}

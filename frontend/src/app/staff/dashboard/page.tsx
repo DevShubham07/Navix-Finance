@@ -16,9 +16,8 @@ import {
 } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { InfoTooltip } from "@/components/ui";
-import { ApplicationJourney } from "@/components/staff/application-journey";
-import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { PipelineBar } from "@/components/staff/pipeline-bar";
+import { QueueTable } from "@/components/staff/pipeline/status-queue";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import {
@@ -29,7 +28,6 @@ import {
   customersApi,
   dashboardApi,
   paiseToINR,
-  statusLabel,
   type ApplicationStatus,
   type ApplicationView,
   type TransactionView,
@@ -243,11 +241,6 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
   return base;
 }
 
-/** Requested amount, or the "amount pending" placeholder for pre-amount applications. */
-function amountText(a: ApplicationView): string {
-  return a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "amount pending";
-}
-
 export default function StaffDashboardPage() {
   const mounted = useMounted();
   const { session } = useStaffSession();
@@ -291,10 +284,6 @@ export default function StaffDashboardPage() {
     enabled: mounted && isAdmin,
     refetchInterval: REFRESH_MS,
   });
-
-  // One shared Journey drawer for the whole page, driven by the open application id.
-  const [openJourneyId, setOpenJourneyId] = React.useState<number | null>(null);
-  const [openDetailId, setOpenDetailId] = React.useState<number | null>(null);
 
   if (!mounted || !session || !role) {
     return <div className="h-64 rounded border border-line bg-white" />;
@@ -348,7 +337,6 @@ export default function StaffDashboardPage() {
           extras={activeExtras}
           loading={queueQuery.isLoading}
           actingHref={actingHref}
-          onJourney={setOpenJourneyId}
         />
       )}
 
@@ -374,19 +362,16 @@ export default function StaffDashboardPage() {
               {queueQuery.isLoading ? (
                 <div className="h-40 animate-pulse rounded border border-line bg-white" />
               ) : headlineCount ? (
-                <ul className="divide-y divide-grey-200 rounded border border-line bg-white">
-                  {myApps.map((a) => (
-                    <PendingActionRow
-                      key={a.id}
-                      app={a}
-                      actingHref={actingHref}
-                      onJourney={setOpenJourneyId}
-                    />
-                  ))}
-                  {activeExtras.map((e) => (
-                    <ExtraActionRow key={e.key} extra={e} />
-                  ))}
-                </ul>
+                <div className="space-y-3">
+                  {myApps.length > 0 && (
+                    <QueueTable apps={myApps} actions={() => null} showJourney={false} />
+                  )}
+                  {activeExtras.length > 0 && (
+                    <ul className="divide-y divide-grey-200 rounded border border-line bg-white">
+                      {activeExtras.map((extra) => <ExtraActionRow key={extra.key} extra={extra} />)}
+                    </ul>
+                  )}
+                </div>
               ) : (
                 <div className="rounded border border-line bg-white p-8 text-center text-sm text-muted">
                   You&apos;re all caught up — nothing in your queue.
@@ -444,23 +429,6 @@ export default function StaffDashboardPage() {
         </details>
       )}
 
-      {/* Shared Journey drawer (Layer 1/2 rows open it; unmount restores focus to the trigger). */}
-      {openJourneyId != null && (
-        <ApplicationJourney
-          applicationId={openJourneyId}
-          open
-          onClose={() => setOpenJourneyId(null)}
-          onOpenDetail={() => {
-            const id = openJourneyId;
-            setOpenJourneyId(null);
-            setOpenDetailId(id);
-          }}
-        />
-      )}
-
-      {openDetailId != null && (
-        <ApplicationDetailDialog applicationId={openDetailId} onClose={() => setOpenDetailId(null)} />
-      )}
     </div>
   );
 }
@@ -473,7 +441,6 @@ function WorkHero({
   extras,
   loading,
   actingHref,
-  onJourney,
 }: {
   queue: { label: string; info: string };
   count: number;
@@ -481,7 +448,6 @@ function WorkHero({
   extras: QueueExtra[];
   loading: boolean;
   actingHref?: string;
-  onJourney: (id: number) => void;
 }) {
   // Oldest-waiting proxy: the lowest application id. The loan_application aggregate
   // has no created_at column, so id-ascending stands in for arrival order (§10 risk).
@@ -518,36 +484,11 @@ function WorkHero({
       {loading ? (
         <div className="mt-5 h-16 animate-pulse rounded border border-line bg-grey-50" />
       ) : oldest ? (
-        <div className="mt-5 flex flex-wrap items-center gap-3 rounded border border-line bg-grey-50 p-4">
+        <div className="mt-5 space-y-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-tint px-2.5 py-1 text-xs font-semibold text-navy">
             <Clock size={12} /> Oldest waiting
           </span>
-          <span className="min-w-0 text-sm">
-            <span className="font-semibold text-ink">App #{oldest.id}</span>
-            <span className="text-muted">
-              {" "}
-              · {oldest.customerName ?? `Customer #${oldest.customerId}`}
-              {oldest.customerMobile ? ` · ${oldest.customerMobile}` : ""} · {amountText(oldest)}
-            </span>
-          </span>
-          <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-ink shadow-sm">
-            {statusLabel(oldest.status)}
-          </span>
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onJourney(oldest.id)}
-              className="btn btn-sm btn-outline"
-              aria-label={`Application #${oldest.id}, ${oldest.customerName ?? `customer #${oldest.customerId}`}, ${amountText(oldest)}, ${statusLabel(oldest.status)} — view journey`}
-            >
-              <Route size={14} /> Journey
-            </button>
-            {actingHref && (
-              <Link href={actingHref} className="btn btn-sm btn-ghost">
-                Open queue <ArrowRight size={14} />
-              </Link>
-            )}
-          </div>
+          <QueueTable apps={[oldest]} actions={() => null} showJourney={false} />
         </div>
       ) : count > 0 ? (
         // No applications, but non-application work is waiting (repayments / payouts / settlements / cases).
@@ -609,52 +550,6 @@ function SegmentBar({
         </div>
       )}
     </section>
-  );
-}
-
-/** Layer 2 row — the whole row opens the Journey drawer; a slim link deep-links to the acting page. */
-function PendingActionRow({
-  app,
-  actingHref,
-  onJourney,
-}: {
-  app: ApplicationView;
-  actingHref?: string;
-  onJourney: (id: number) => void;
-}) {
-  return (
-    <li className="flex items-center gap-2 pr-3 transition hover:bg-grey-100">
-      <button
-        type="button"
-        onClick={() => onJourney(app.id)}
-        aria-label={`Application #${app.id}, ${app.customerName ?? `customer #${app.customerId}`}, ${amountText(app)}, ${statusLabel(app.status)} — view journey`}
-        className="flex min-w-0 flex-1 items-center gap-4 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-inset"
-      >
-        <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-full bg-navy-tint font-serif text-sm font-bold text-navy">
-          #{app.id}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-ink">
-            {app.customerName ?? `Customer #${app.customerId}`}
-          </span>
-          <span className="block text-xs text-muted">
-            App #{app.id}{app.customerMobile ? ` · ${app.customerMobile}` : ""} · {amountText(app)}
-          </span>
-        </span>
-        <span className="flex-shrink-0 rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">
-          {statusLabel(app.status)}
-        </span>
-      </button>
-      {actingHref && (
-        <Link
-          href={actingHref}
-          aria-label={`Open queue for application #${app.id}`}
-          className="flex flex-shrink-0 items-center gap-1 rounded px-2 py-1 text-xs font-semibold text-navy hover:bg-navy-tint"
-        >
-          Open queue <ArrowRight size={13} />
-        </Link>
-      )}
-    </li>
   );
 }
 

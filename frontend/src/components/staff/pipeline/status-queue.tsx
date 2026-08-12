@@ -213,10 +213,12 @@ export function QueueTable({
   apps,
   actions,
   withLoanHistory,
+  showJourney = true,
 }: {
   apps: ApplicationView[];
   actions: (app: ApplicationView) => React.ReactNode;
   withLoanHistory?: boolean;
+  showJourney?: boolean;
 }) {
   return (
     <div className="staff-table-scroll">
@@ -224,6 +226,7 @@ export function QueueTable({
         <thead>
           <tr>
             <th className="staff-sticky-identity">Application</th>
+            <th>Customer ID</th>
             <th>Customer</th>
             <th>Mobile</th>
             <th>PAN</th>
@@ -238,7 +241,13 @@ export function QueueTable({
         </thead>
         <tbody>
           {apps.map((app) => (
-            <AppRow key={app.id} app={app} actions={actions} withLoanHistory={withLoanHistory} />
+            <AppRow
+              key={app.id}
+              app={app}
+              actions={actions}
+              withLoanHistory={withLoanHistory}
+              showJourney={showJourney}
+            />
           ))}
         </tbody>
       </table>

@@ -31,12 +31,14 @@ export function AppRow({
   app,
   actions,
   withLoanHistory,
+  showJourney = true,
 }: {
   app: ApplicationView;
   actions: (app: ApplicationView) => React.ReactNode;
   withLoanHistory?: boolean;
+  showJourney?: boolean;
 }) {
-  const [showJourney, setShowJourney] = React.useState(false);
+  const [journeyOpen, setJourneyOpen] = React.useState(false);
   const [showDetail, setShowDetail] = React.useState(false);
   const [showInfo, setShowInfo] = React.useState(false);
   const dpd = dpdDays(app);
@@ -58,8 +60,8 @@ export function AppRow({
           >
             #{app.id}
           </button>
-          <div className="text-xs text-muted">Cust #{app.customerId}</div>
         </td>
+        <td className="font-mono text-muted">#{app.customerId}</td>
         <td className="staff-cell font-semibold text-ink" title={app.customerName || undefined}>
           {app.customerName || "Name unavailable"}
         </td>
@@ -136,25 +138,27 @@ export function AppRow({
             >
               Open <ArrowRight size={14} />
             </button>
-            <button
-              type="button"
-              onClick={() => setShowJourney(true)}
-              className="btn btn-sm btn-outline btn-icon"
-              aria-label="View the full application journey"
-              title="View the full application journey"
-            >
-              <Route size={14} />
-            </button>
+            {showJourney && (
+              <button
+                type="button"
+                onClick={() => setJourneyOpen(true)}
+                className="btn btn-sm btn-outline btn-icon"
+                aria-label="View the full application journey"
+                title="View the full application journey"
+              >
+                <Route size={14} />
+              </button>
+            )}
             {actions(app)}
           </div>
 
-          {showJourney && (
+          {journeyOpen && (
             <ApplicationJourney
               applicationId={app.id}
-              open={showJourney}
-              onClose={() => setShowJourney(false)}
+              open={journeyOpen}
+              onClose={() => setJourneyOpen(false)}
               onOpenDetail={() => {
-                setShowJourney(false);
+                setJourneyOpen(false);
                 setShowDetail(true);
               }}
             />
@@ -169,7 +173,7 @@ export function AppRow({
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={11} className="bg-grey-50">
+          <td colSpan={12} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

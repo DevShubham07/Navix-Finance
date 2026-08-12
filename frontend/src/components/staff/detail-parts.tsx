@@ -24,6 +24,16 @@ import {
   type DocumentView,
 } from "@/lib/api/applications";
 
+export const CUSTOMER_LEVEL_DOC_TYPES = new Set([
+  "AADHAAR",
+  "AADHAAR_PHOTO",
+  "SELFIE",
+  "PAN",
+  "ADDRESS",
+  "SALARY",
+  "PAYSLIP",
+]);
+
 // ---------------------------------------------------------------------------
 // Documents (admin replace = delete-then-upload)
 // ---------------------------------------------------------------------------
@@ -45,14 +55,37 @@ export function DocumentsTab({
   return <p className="py-6 text-sm text-muted">No application to attach documents to.</p>;
 }
 
-/** Grouped mode: one collapsible section per application, newest expanded by default. */
+/** Customer identity proofs are grouped by type; loan-specific documents stay under applications. */
 function GroupedDocumentsTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const role = useStaffSession().session?.role;
+  const isAdmin = role != null && hasPermission(role, "customer:manage");
   const groupsQ = useQuery({
     queryKey: ["customer-documents", customerId],
     queryFn: () => customersApi.documents(customerId),
   });
   const [openIds, setOpenIds] = React.useState<Set<number> | null>(null);
   const groups = groupsQ.data ?? [];
+  const customerDocuments = groups.flatMap((group) =>
+    group.documents
+      .filter((doc) => CUSTOMER_LEVEL_DOC_TYPES.has(doc.docType.toUpperCase()))
+      .map((doc) => ({ applicationId: group.applicationId, doc })),
+  );
+  const customerByType = customerDocuments.reduce((byType, entry) => {
+    const docType = entry.doc.docType.toUpperCase();
+    const current = byType.get(docType) ?? [];
+    current.push(entry);
+    byType.set(docType, current);
+    return byType;
+  }, new Map<string, typeof customerDocuments>());
+  const applicationGroups = groups.map((group) => ({
+    ...group,
+    documents: group.documents.filter((doc) => !CUSTOMER_LEVEL_DOC_TYPES.has(doc.docType.toUpperCase())),
+  }));
+  const del = useMutation({
+    mutationFn: ({ appId, docId }: { appId: number; docId: number }) => staffApi.deleteDocument(appId, docId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["customer-documents", customerId] }),
+  });
 
   // Expand the newest application by default, once data arrives.
   const effectiveOpen = openIds ?? new Set(groups.length ? [groups[0].applicationId] : []);
@@ -68,7 +101,33 @@ function GroupedDocumentsTab({ customerId }: { customerId: number }) {
 
   return (
     <div className="space-y-2">
-      {groups.map((g) => (
+      {customerDocuments.length > 0 && (
+        <Section title="Customer documents">
+          <div className="space-y-4">
+            {Array.from(customerByType.entries()).map(([docType, documents]) => (
+              <div key={docType}>
+                <h4 className="mb-1.5 text-xs font-semibold text-navy">{docType}</h4>
+                <ul className="space-y-1.5">
+                  {documents.map(({ applicationId, doc }) => (
+                    <DocRow
+                      key={`${applicationId}-${doc.id}`}
+                      appId={applicationId}
+                      doc={doc}
+                      sourceMeta={`Application #${applicationId} · uploaded ${formatDateTime(doc.uploadedAt)}`}
+                      canDelete={isAdmin}
+                      onDelete={() => del.mutate({ appId: applicationId, docId: doc.id })}
+                      deleting={del.isPending && del.variables?.appId === applicationId && del.variables.docId === doc.id}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Application documents</div>
+      {applicationGroups.map((g) => (
         <div key={g.applicationId} className="rounded border border-line">
           <button
             type="button"
@@ -86,7 +145,12 @@ function GroupedDocumentsTab({ customerId }: { customerId: number }) {
           </button>
           {effectiveOpen.has(g.applicationId) && (
             <div className="border-t border-line p-3">
-              <SingleApplicationDocuments applicationId={g.applicationId} />
+              <SingleApplicationDocuments
+                applicationId={g.applicationId}
+                customerId={customerId}
+                documents={g.documents}
+                existingCategories={groups.find((group) => group.applicationId === g.applicationId)?.documents.map((doc) => doc.docType)}
+              />
             </div>
           )}
         </div>
@@ -95,25 +159,39 @@ function GroupedDocumentsTab({ customerId }: { customerId: number }) {
   );
 }
 
-function SingleApplicationDocuments({ applicationId }: { applicationId: number }) {
+function SingleApplicationDocuments({
+  applicationId,
+  customerId,
+  documents,
+  existingCategories,
+}: {
+  applicationId: number;
+  customerId?: number;
+  documents?: DocumentView[];
+  existingCategories?: string[];
+}) {
   const qc = useQueryClient();
   const role = useStaffSession().session?.role;
   const isAdmin = role != null && hasPermission(role, "customer:manage");
   const docsQ = useQuery({
     queryKey: ["staff-docs", applicationId],
     queryFn: () => staffApi.documents(applicationId),
+    enabled: documents == null,
   });
   const del = useMutation({
     mutationFn: (docId: number) => staffApi.deleteDocument(applicationId, docId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-docs", applicationId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-docs", applicationId] });
+      if (customerId != null) qc.invalidateQueries({ queryKey: ["customer-documents", customerId] });
+    },
   });
 
-  const docs = docsQ.data ?? [];
-  const categories = Array.from(new Set(docs.map((d) => d.docType)));
+  const docs = docsQ.data ?? documents ?? [];
+  const categories = Array.from(new Set(existingCategories ?? docs.map((d) => d.docType)));
 
   return (
     <div className="space-y-3">
-      {docsQ.isLoading ? (
+      {documents == null && docsQ.isLoading ? (
         <p className="text-sm text-muted">Loading…</p>
       ) : docs.length === 0 ? (
         <p className="text-sm text-muted">No documents uploaded.</p>
@@ -133,7 +211,7 @@ function SingleApplicationDocuments({ applicationId }: { applicationId: number }
       )}
       {del.error && <p className="text-xs text-error-700">Could not delete the document.</p>}
 
-      {isAdmin && <AdminUpload applicationId={applicationId} existingCategories={categories} />}
+      {isAdmin && <AdminUpload applicationId={applicationId} customerId={customerId} existingCategories={categories} />}
       {!isAdmin && <p className="text-xs text-muted">Only administrators can replace documents.</p>}
     </div>
   );
@@ -145,12 +223,14 @@ function DocRow({
   canDelete,
   onDelete,
   deleting,
+  sourceMeta,
 }: {
   appId: number;
   doc: DocumentView;
   canDelete: boolean;
   onDelete: () => void;
   deleting: boolean;
+  sourceMeta?: string;
 }) {
   const [busy, setBusy] = React.useState(false);
   const view = async () => {
@@ -169,7 +249,10 @@ function DocRow({
   return (
     <li className="flex flex-wrap items-center gap-2 rounded border border-line px-3 py-2">
       <FileText size={15} className="flex-shrink-0 text-navy" />
-      <span className="min-w-0 flex-1 truncate text-ink">{doc.fileName}</span>
+      <span className="min-w-0 flex-1 text-ink">
+        <span className="block">{doc.fileName}</span>
+        {sourceMeta && <span className="block text-xs text-muted">{sourceMeta}</span>}
+      </span>
       <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[8.8px] font-semibold text-navy">{doc.docType}</span>
       <button onClick={view} disabled={busy} className="btn btn-sm btn-outline disabled:opacity-50">
         {busy ? <Loader2 size={13} className="animate-spin" /> : <ExternalLink size={13} />} View
@@ -195,9 +278,11 @@ function DocRow({
  */
 function AdminUpload({
   applicationId,
+  customerId,
   existingCategories,
 }: {
   applicationId: number;
+  customerId?: number;
   existingCategories: string[];
 }) {
   const qc = useQueryClient();
@@ -218,6 +303,7 @@ function AdminUpload({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff-docs", applicationId] });
+      if (customerId != null) qc.invalidateQueries({ queryKey: ["customer-documents", customerId] });
       setFile(null);
       setDocType("");
     },

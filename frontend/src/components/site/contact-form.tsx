@@ -3,6 +3,10 @@
 import * as React from "react";
 import { config } from "@/lib/config";
 import { BRAND } from "@/lib/brand";
+import {
+  COMMUNICATION_CONSENT_TEXT,
+  COMMUNICATION_PRIVACY_TEXT,
+} from "@/lib/communication-consent";
 
 const TOPICS = ["General enquiry", "Application help", "Repayment", "Grievance", "Report fraud"];
 
@@ -102,12 +106,18 @@ function ContactForm() {
   const [email, setEmail] = React.useState("");
   const [topic, setTopic] = React.useState(TOPICS[0]);
   const [message, setMessage] = React.useState("");
+  const [communicationConsent, setCommunicationConsent] = React.useState(false);
   const [status, setStatus] = React.useState<Status>("idle");
   const [error, setError] = React.useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (status === "sending") return;
+    if (!communicationConsent) {
+      setError("Your consent is required to continue.");
+      setStatus("error");
+      return;
+    }
     setStatus("sending");
     setError(null);
     try {
@@ -139,6 +149,7 @@ function ContactForm() {
     setEmail("");
     setTopic(TOPICS[0]);
     setMessage("");
+    setCommunicationConsent(false);
     setError(null);
     setStatus("idle");
   }
@@ -241,6 +252,19 @@ function ContactForm() {
             disabled={sending}
           />
         </div>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 6, fontSize: ".72rem", lineHeight: 1.5 }}>
+          <input
+            type="checkbox"
+            checked={communicationConsent}
+            onChange={(event) => setCommunicationConsent(event.target.checked)}
+            disabled={sending}
+            style={{ width: 16, height: 16, marginTop: 2, flex: "0 0 auto" }}
+          />
+          <span>{COMMUNICATION_CONSENT_TEXT}</span>
+        </label>
+        <p style={{ fontSize: ".68rem", lineHeight: 1.5, margin: "0 0 14px", opacity: 0.78 }}>
+          {COMMUNICATION_PRIVACY_TEXT}
+        </p>
         {error && (
           <p
             role="alert"
