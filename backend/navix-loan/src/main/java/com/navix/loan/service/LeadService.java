@@ -23,9 +23,13 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,15 +84,40 @@ public class LeadService {
         requireLeadWriter();
         Instant fromInst = from == null ? null : from.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant toInst = to == null ? null : to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        List<Lead> rows = leadRepository.search(
-                blankToNull(q),
-                blankToNull(callStatus),
-                blankToNull(source),
-                createdBy,
-                fromInst,
-                toInst,
-                minRating,
-                maxRating);
+        String query = blankToNull(q);
+        String status = blankToNull(callStatus);
+        String leadSource = blankToNull(source);
+        Specification<Lead> spec = (root, ignored, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (query != null) {
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), "%" + query.toLowerCase(Locale.ROOT) + "%"),
+                        cb.like(root.get("mobile"), "%" + query + "%")));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("callStatus"), status));
+            }
+            if (leadSource != null) {
+                predicates.add(cb.equal(root.get("source"), leadSource));
+            }
+            if (createdBy != null) {
+                predicates.add(cb.equal(root.get("createdByStaffId"), createdBy));
+            }
+            if (fromInst != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromInst));
+            }
+            if (toInst != null) {
+                predicates.add(cb.lessThan(root.get("createdAt"), toInst));
+            }
+            if (minRating != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("qualityRating"), minRating));
+            }
+            if (maxRating != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("qualityRating"), maxRating));
+            }
+            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(Predicate[]::new));
+        };
+        List<Lead> rows = leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "id"));
         Map<Long, String> names = new HashMap<>();
         return rows.stream().map(l -> toView(l, names)).toList();
     }

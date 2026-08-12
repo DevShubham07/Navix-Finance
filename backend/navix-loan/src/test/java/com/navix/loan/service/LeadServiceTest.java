@@ -3,6 +3,8 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,7 +18,16 @@ import com.navix.loan.dto.LeadDtos.DispositionRequest;
 import com.navix.loan.dto.LeadDtos.LeadView;
 import com.navix.loan.entity.Lead;
 import com.navix.loan.repository.LeadRepository;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Path;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +35,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @ExtendWith(MockitoExtension.class)
@@ -121,5 +134,115 @@ class LeadServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getCode())
                 .isEqualTo("FORBIDDEN_ROLE");
+    }
+
+    @Test
+    void list_withoutFilters_usesAnIdDescendingSpecificationQuery() {
+        ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
+        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
+        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+
+        assertThat(service.list(null, null, null, null, null, null, null, null)).isEmpty();
+
+        verify(leadRepository).findAll(any(Specification.class), eq(Sort.by(Sort.Direction.DESC, "id")));
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Predicate matchAll = mock(Predicate.class);
+        when(cb.conjunction()).thenReturn(matchAll);
+        assertThat(spec.getValue().toPredicate(mock(Root.class), mock(CriteriaQuery.class), cb))
+                .isSameAs(matchAll);
+    }
+
+    @Test
+    void list_withFromAndToOnly_buildsExclusiveUtcDateRange() {
+        ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
+        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
+        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+
+        service.list(null, null, null, null,
+                LocalDate.of(2026, 7, 13), LocalDate.of(2026, 8, 12), null, null);
+
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Root<Lead> root = mock(Root.class);
+        Path<Instant> createdAt = mock(Path.class);
+        when(root.<Instant>get("createdAt")).thenReturn(createdAt);
+        Predicate lower = mock(Predicate.class);
+        Predicate upper = mock(Predicate.class);
+        Predicate combined = mock(Predicate.class);
+        when(cb.greaterThanOrEqualTo(createdAt, Instant.parse("2026-07-13T00:00:00Z"))).thenReturn(lower);
+        when(cb.lessThan(createdAt, Instant.parse("2026-08-13T00:00:00Z"))).thenReturn(upper);
+        when(cb.and(any(Predicate[].class))).thenReturn(combined);
+
+        assertThat(spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb)).isSameAs(combined);
+        verify(cb).greaterThanOrEqualTo(createdAt, Instant.parse("2026-07-13T00:00:00Z"));
+        verify(cb).lessThan(createdAt, Instant.parse("2026-08-13T00:00:00Z"));
+    }
+
+    @Test
+    void list_withQOnly_normalisesWhitespaceIntoOneCaseInsensitiveTerm() {
+        ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
+        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
+        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+
+        service.list("  Ravi  ", null, null, null, null, null, null, null);
+
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Root<Lead> root = mock(Root.class);
+        Path<String> name = mock(Path.class);
+        Path<String> mobile = mock(Path.class);
+        Expression<String> lowerName = mock(Expression.class);
+        when(root.<String>get("name")).thenReturn(name);
+        when(root.<String>get("mobile")).thenReturn(mobile);
+        when(cb.lower(name)).thenReturn(lowerName);
+        Predicate byName = mock(Predicate.class);
+        Predicate byMobile = mock(Predicate.class);
+        Predicate either = mock(Predicate.class);
+        when(cb.like(lowerName, "%ravi%")).thenReturn(byName);
+        when(cb.like(mobile, "%Ravi%")).thenReturn(byMobile);
+        when(cb.or(byName, byMobile)).thenReturn(either);
+        when(cb.and(either)).thenReturn(mock(Predicate.class));
+
+        spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
+
+        verify(cb).like(lowerName, "%ravi%");
+        verify(cb).like(mobile, "%Ravi%");
+    }
+
+    @Test
+    void list_withCombinedFilters_includesEverySuppliedConstraint() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
+        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+
+        service.list(null, " CALLBACK ", " DSA ", 42L, null, null, 2, 4);
+
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Root<Lead> root = mock(Root.class);
+        Path<String> callStatus = mock(Path.class);
+        Path<String> source = mock(Path.class);
+        Path<Long> createdBy = mock(Path.class);
+        Path<Integer> rating = mock(Path.class);
+        when(root.<String>get("callStatus")).thenReturn(callStatus);
+        when(root.<String>get("source")).thenReturn(source);
+        when(root.<Long>get("createdByStaffId")).thenReturn(createdBy);
+        when(root.<Integer>get("qualityRating")).thenReturn(rating);
+        when(cb.equal(callStatus, "CALLBACK")).thenReturn(mock(Predicate.class));
+        when(cb.equal(source, "DSA")).thenReturn(mock(Predicate.class));
+        when(cb.equal(createdBy, 42L)).thenReturn(mock(Predicate.class));
+        when(cb.greaterThanOrEqualTo(rating, 2)).thenReturn(mock(Predicate.class));
+        when(cb.lessThanOrEqualTo(rating, 4)).thenReturn(mock(Predicate.class));
+        when(cb.and(any(Predicate[].class))).thenReturn(mock(Predicate.class));
+
+        spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
+
+        verify(cb).equal(callStatus, "CALLBACK");
+        verify(cb).equal(source, "DSA");
+        verify(cb).equal(createdBy, 42L);
+        verify(cb).greaterThanOrEqualTo(rating, 2);
+        verify(cb).lessThanOrEqualTo(rating, 4);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static ArgumentCaptor<Specification<Lead>> specificationCaptor() {
+        return (ArgumentCaptor) ArgumentCaptor.forClass(Specification.class);
     }
 }
