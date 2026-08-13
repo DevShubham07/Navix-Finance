@@ -60,6 +60,7 @@ yarn-error.log*
 docs/product-gaps-shots/
 # Added by code-review-graph
 .code-review-graph/
+.worktrees/
 
 # ---- Local AI tooling (machine-specific, not project state) ----
 .serena/
