@@ -18,7 +18,7 @@ export const html = `<section class="page active" id="grievance">
       <li><b>Name:</b> Lalit Kumar — Grievance Redressal Officer, NAVIX Finance Private Limited</li>
       <li><b>Email:</b> grievance@dhanboost.com</li>
       <li><b>Phone:</b> +91 97167 60246</li>
-      <li><b>Address:</b> Dev Nagar, Gurugram – 122102</li>
+      <li><b>Address:</b> Plot No 268, 1st Floor, Sector 33, Subhash Chowk, Islampur, Gurgaon, Haryana – 122001</li>
     </ul>
     <h2>Our service commitment</h2>
     <ul>

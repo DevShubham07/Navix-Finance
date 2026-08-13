@@ -51,9 +51,11 @@ export function MarketingFooter() {
                 <circle cx="12" cy="10" r="3" />
               </svg>
               <span>
-                Dev Nagar,
+                Plot No 268, 1st Floor, Sector 33,
                 <br />
-                Gurugram – 122102
+                Subhash Chowk, Islampur,
+                <br />
+                Gurgaon, Haryana – 122001
               </span>
             </div>
             <div>

@@ -41,7 +41,8 @@
   legalName: "NAVIX Finance Private Limited"   shortName: "DhanBoost"
   phone: "+91 97167 60246"   email: "info@dhanboost.com"
   cin: "U64990HR2026PTC144926"
-  address: { line1: "Dev Nagar", city: "Gurugram", pin: "122102" }  // country IN
+  address: { line1: "Plot No 268, 1st Floor, Sector 33, Subhash Chowk, Islampur",
+             city: "Gurgaon", pin: "122001" }  // country IN
   logo asset: /navix-mark.png  (in frontend/public/)
   ```
 - **Existing SEO-positive facts** (don't "fix"): `<html lang="en-IN">`; favicon/apple-icon via

@@ -21,10 +21,10 @@ export const BRAND = {
   hours: "Mon–Sat, 9:30 AM – 6:30 PM",
   cin: "U64990HR2026PTC144926",
   address: {
-    line1: "Dev Nagar",
-    line2: "Gurugram",
-    city: "Gurugram",
-    pin: "122102",
+    line1: "Plot No 268, 1st Floor, Sector 33, Subhash Chowk, Islampur",
+    line2: "Gurgaon, Haryana",
+    city: "Gurgaon",
+    pin: "122001",
   },
   maxLoanLakh: "10",
 } as const;

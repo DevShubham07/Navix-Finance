@@ -54,7 +54,9 @@ export function ContactSection() {
                 </span>
                 <div>
                   <b>Registered office</b>
-                  <small>Dev Nagar, Gurugram – 122102</small>
+                  <small>
+                    Plot No 268, 1st Floor, Sector 33, Subhash Chowk, Islampur, Gurgaon, Haryana – 122001
+                  </small>
                 </div>
               </div>
               <div className="ci-card">
