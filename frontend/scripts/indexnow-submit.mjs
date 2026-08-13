@@ -64,6 +64,28 @@ if (postbuild && process.env.VERCEL_ENV !== "production") {
   process.exit(0);
 }
 
+/**
+ * Remediation hints keyed by IndexNow's `errorCode`. These are deliberately specific: the
+ * generic "check the key file" advice sent us chasing a key file that was already live and
+ * correct (200, text/plain, allowed by robots.txt) — the real cause was account-side.
+ */
+function remediation(errorCode) {
+  switch (errorCode) {
+    case "UserForbiddedToAccessSite":
+      return [
+        `${HOST} is not verified in Bing Webmaster Tools, so IndexNow rejects the key.`,
+        "Fix: add + verify the site at https://www.bing.com/webmasters using the XML file",
+        "method (BingSiteAuth.xml in frontend/public/). Verifying by importing from Google",
+        "Search Console is known NOT to satisfy IndexNow.",
+      ].join("\n           ");
+    case "KeyNotFound":
+    case "InvalidKey":
+      return `the key file must be live at ${KEY_LOCATION} and contain exactly ${KEY}.`;
+    default:
+      return `check the key file at ${KEY_LOCATION} and that ${HOST} is verified in Bing Webmaster Tools.`;
+  }
+}
+
 try {
   const res = await fetch(ENDPOINT, {
     method: "POST",
@@ -73,7 +95,16 @@ try {
   // IndexNow returns 200 or 202 on success; 4xx indicates a key/host problem.
   console.log(`[indexnow] ${res.status} ${res.statusText} for ${urlList.length} URLs`);
   if (!res.ok) {
-    console.error("[indexnow] submission failed — check the key file is live at", KEY_LOCATION);
+    // The body carries the real reason ({errorCode, message}); without it the log is a dead end.
+    const body = await res.text().catch(() => "");
+    let errorCode = "";
+    try {
+      errorCode = JSON.parse(body)?.errorCode ?? "";
+    } catch {
+      // non-JSON body — fall through to the generic hint
+    }
+    if (body) console.error("[indexnow] response:", body.trim());
+    console.error(`[indexnow] submission failed — ${remediation(errorCode)}`);
     if (!postbuild) process.exit(1); // manual run surfaces the failure; postbuild stays soft
   }
 } catch (err) {

@@ -316,8 +316,23 @@ project settings and redeploy.
 > `api.vercel.com` gets "socket hang up", leaving deployments stuck `UNKNOWN`. Use
 > **`vercel --prod --yes --archive=tgz`** (one tarball upload, far more resilient), or deploy from a
 > non-proxied network. The build itself runs server-side; if the CLI drops after upload, check
-> `vercel ls` and `vercel promote <url>` once the deployment is `Ready`. (Git auto-deploys from `main`
-> currently fail — the project Root Directory isn't set to `frontend`; the app lives in `frontend/`.)
+> `vercel ls` and `vercel promote <url>` once the deployment is `Ready`.
+
+> ⚠️ **There is no Git auto-deploy — every production release is a manual `vercel --prod` from
+> `frontend/`.** Merging to `main` shifts nothing on `dhanboost.com`. Two things are missing, and
+> **both need someone we are not** (verified 2026-08-13):
+> 1. **No Git repository is connected to the project at all** (`vercel project inspect dhanboost`
+>    shows no Git section). `vercel git connect` fails with *"Failed to connect
+>    DevShubham07/Navix-Finance"* because installing the Vercel GitHub App on that repo needs
+>    **admin** on it — `kartikjindal` has `push` but `admin:false`; only **DevShubham07** can grant it.
+>    A GitHub Actions deploy job is *not* a workaround: adding the `VERCEL_TOKEN` repo secret also
+>    needs admin.
+> 2. **Root Directory is `.`, not `frontend`** — so even once Git is connected, a push-triggered
+>    build would run at the monorepo root and fail. Change it in Project Settings → General.
+>
+> Do them in that order, and **only together**: setting Root Directory to `frontend` on its own
+> breaks the manual path above (the CLI would then look for `frontend/frontend`), which is today's
+> *only* working release route. After the switch, deploy from the repo root instead.
 
 > **Legacy / not live:** `deploy/deploy-backend.sh` + `deploy/backend.env.example` describe a
 > single-EC2 box running the container via `docker run` (not ECS). It still works as an alternative
