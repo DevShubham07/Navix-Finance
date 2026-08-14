@@ -1,5 +1,6 @@
 package com.navix.verification.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.navix.common.verification.BureauReportFacts;
 
@@ -99,6 +100,50 @@ public final class DigitapDtos {
             Boolean isGenericEmail,
             String matchedEstablishment,
             Double individualScore
+    ) {
+    }
+
+    // ---- UAN Advanced Employment V3 : /cv/v3/uan_advanced/sync (svc host) ----
+
+    /**
+     * Lookup is driven by whichever identifiers are present, so unset ones must be OMITTED rather than
+     * sent as JSON nulls — hence {@link JsonInclude}. {@code client_ref_num} is the only always-required
+     * field; {@code employer_name} is accepted only alongside {@code employee_name}.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record UanAdvancedRequest(
+            @JsonProperty("client_ref_num") String clientRefNum,
+            @JsonProperty("pan") String pan,
+            @JsonProperty("mobile") String mobile,
+            @JsonProperty("dob") String dob,
+            @JsonProperty("employee_name") String employeeName,
+            @JsonProperty("employer_name") String employerName) {
+    }
+
+    /**
+     * {@code resultCode}: 101 = record resolved, 103 = no record found, 104 = more than five UANs matched
+     * (nothing resolved). All three arrive as HTTP 200, so the code — not the status — is the outcome.
+     */
+    public record UanAdvancedResponse(
+            String txnId,
+            Integer resultCode,
+            String message,
+            Boolean isEmployed,
+            String uan,
+            Integer uanCount,
+            String employerName,
+            String establishmentId,
+            String memberId,
+            String dateOfJoining,
+            String dateOfExit,
+            Boolean employeeNameMatch,
+            Boolean employerNameMatch,
+            Double employerConfidenceScore,
+            Boolean isRecent,
+            Boolean hasPfFilings,
+            String nameOnRecord,
+            String dobOnRecord,
+            String genderOnRecord
     ) {
     }
 

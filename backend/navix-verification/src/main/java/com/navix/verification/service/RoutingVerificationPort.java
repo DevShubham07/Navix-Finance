@@ -25,8 +25,9 @@ import org.springframework.stereotype.Component;
  * If every provider in the chain is unsupported or fails, the last error is rethrown.
  *
  * <p>Net effect of the matrix: penny-drop + DigiLocker + the interactive liveness journey are Signzy-only;
- * the synchronous face-match ({@code faceLiveness}) is Digitap-only (the selfie step's fallback);
- * PAN, email, address and bureau try Signzy then fall back to Digitap.
+ * the synchronous face-match ({@code faceLiveness}) and the UAN/EPFO employment lookup
+ * ({@code verifyEmployment}) are Digitap-only; PAN, email, address and bureau try Signzy then fall back
+ * to Digitap.
  */
 @Component
 @Primary
@@ -118,6 +119,13 @@ public class RoutingVerificationPort implements VerificationPort {
     @Override
     public FaceLivenessCheck faceLiveness(String imageUrl, String referenceImageUrl, String clientRef) {
         return route("face-match", p -> p.faceLiveness(imageUrl, referenceImageUrl, clientRef));
+    }
+
+    @Override
+    public EmploymentCheck verifyEmployment(String pan, String mobile, String dob, String employeeName,
+                                            String employerName, String clientRef) {
+        return route("employment",
+                p -> p.verifyEmployment(pan, mobile, dob, employeeName, employerName, clientRef));
     }
 
     @Override

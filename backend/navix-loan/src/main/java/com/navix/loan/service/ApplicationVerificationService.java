@@ -25,6 +25,7 @@ import java.util.Base64;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -68,6 +69,12 @@ public class ApplicationVerificationService {
     public static final String AADHAAR_PHOTO = "AADHAAR_PHOTO";
     public static final String BUREAU = "BUREAU";
     public static final String SALARY = "SALARY";
+    /**
+     * EPFO/UAN employment verification — the independent corroboration of the self-declared
+     * {@link #SALARY} step's employer. Deliberately absent from {@link #REQUIRED}: a first job, a cash
+     * employer or a non-PF establishment all legitimately have no EPFO record.
+     */
+    public static final String EMPLOYMENT = "EMPLOYMENT";
     public static final String PENNY_DROP = "PENNY_DROP";
     public static final String SELFIE = "SELFIE";
     public static final String AGREEMENT = "AGREEMENT";
@@ -111,13 +118,15 @@ public class ApplicationVerificationService {
      * on every advance (revamp.md decision 45), so inheriting the previous signature would report a
      * file as fully verified before the borrower had signed anything for the money about to be
      * released. PENNY_DROP is absent because it is never counted anywhere (revamp.md decision 9).
+     * EMPLOYMENT is absent for the opposite reason to the others: it is precisely the fact most likely
+     * to have changed since the last advance, so it must be re-asked rather than carried over.
      */
     private static final Set<String> INHERITABLE_CHECKS =
             Set.of(PAN, EMAIL, BUREAU, SALARY, AADHAAR, SELFIE, ADDRESS);
 
     /** Every recognised check type — guards the staff manual-override target. */
     static final Set<String> KNOWN_CHECKS = Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU,
-            SALARY, PENNY_DROP, SELFIE, AGREEMENT, ESIGN);
+            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN);
 
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
@@ -628,7 +637,7 @@ public class ApplicationVerificationService {
         String type = checkType == null ? "" : checkType.trim().toUpperCase();
         Map<String, Object> values = input == null ? Map.of() : input;
         CustomerProfile p = profile(appId);
-        if (!Set.of(PAN, EMAIL, ADDRESS, BUREAU, PENNY_DROP, SELFIE).contains(type)) {
+        if (!Set.of(PAN, EMAIL, ADDRESS, BUREAU, EMPLOYMENT, PENNY_DROP, SELFIE).contains(type)) {
             throw new BusinessException("RETRY_NOT_SUPPORTED", "This verification requires a borrower session and cannot be retried here");
         }
         verificationRepo.findByApplicationIdAndCheckType(appId, type).ifPresent(row -> {
@@ -641,6 +650,8 @@ public class ApplicationVerificationService {
             case EMAIL -> verifyEmail(appId, value(values, "email", p.getOfficialEmail() != null ? p.getOfficialEmail() : p.getEmail()));
             case ADDRESS -> verifyAddress(appId, number(values, "latitude"), number(values, "longitude"));
             case BUREAU -> pullBureau(appId, value(values, "otp", null));
+            // Every input comes off the stored profile, so this one needs no borrower session at all.
+            case EMPLOYMENT -> verifyEmployment(appId);
             case PENNY_DROP -> verifyPennyDrop(appId, value(values, "accountNumber", p.getSalaryAccountNumber()), value(values, "ifsc", p.getSalaryIfsc()), true);
             case SELFIE -> verifySelfie(appId, value(values, "selfieObjectKey", null));
             default -> throw new BusinessException("RETRY_NOT_SUPPORTED", "Unsupported verification retry");
@@ -813,6 +824,129 @@ public class ApplicationVerificationService {
         derived.put("eligibleLimitPaise", eligible);
         return view(upsert(appId, SALARY, PASS, "DhanBoost", null, ref(appId, SALARY),
                 null, null, primaryKey, derived, "Declared salary recorded"));
+    }
+
+    /**
+     * EPFO/UAN employment verification — the independent corroboration of what {@link #verifySalary}
+     * takes on trust. Salary is self-declared plus payslips; this asks the EPFO who actually employs the
+     * borrower, since when, and whether the PF filings are still live.
+     *
+     * <p>Reads its inputs from what earlier steps already established — PAN and the name/DOB the PAN step
+     * wrote onto the profile, plus the employer the borrower named at intake — so it can run any time
+     * after PAN, alongside the bureau pull, without waiting for payslips.
+     *
+     * <p><b>Never blocks.</b> It is absent from {@link #REQUIRED} by design: a first job, a cash employer
+     * or a non-PF establishment all legitimately have no EPFO record, and no-record must not be
+     * indistinguishable from fraud. A resolved-but-contradictory record lands in REVIEW for the credit
+     * team; a provider outage lands in REVIEW too (same contract as PAN/email).
+     */
+    @Transactional
+    public StepResult verifyEmployment(Long appId) {
+        Optional<ApplicationVerification> existing = passed(appId, EMPLOYMENT);
+        if (existing.isPresent()) {
+            return view(existing.get());
+        }
+        requireApplication(appId);
+        CustomerProfile profile = profile(appId);
+        String ref = ref(appId, EMPLOYMENT);
+
+        String pan = profile.getPan();
+        String mobile = profile.getMobile();
+        if (isBlank(pan) && isBlank(mobile)) {
+            // Lookup needs at least one identifier; without either there is nothing to ask.
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("found", false);
+            derived.put("reason", "NO_IDENTIFIER");
+            return view(upsert(appId, EMPLOYMENT, REVIEW, null, null, ref, null, null, null, derived,
+                    "Employment not checked — no PAN or mobile on file"));
+        }
+
+        VerificationPort.EmploymentCheck r;
+        try {
+            r = verification.verifyEmployment(pan, mobile, isoDob(profile.getDob()),
+                    nz(profile.getFullName()), nz(profile.getEmployer()), ref);
+        } catch (RuntimeException providerFailure) {
+            return providerUnavailable(appId, EMPLOYMENT,
+                    "Employment check unavailable — pending manual review");
+        }
+
+        Integer tenureMonths = tenureMonths(r.dateOfJoining(), r.dateOfExit());
+
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("found", r.found());
+        derived.put("employed", r.employed());
+        derived.put("employerName", r.employerName());
+        derived.put("declaredEmployer", nz(profile.getEmployer()));
+        derived.put("dateOfJoining", r.dateOfJoining());
+        derived.put("dateOfExit", r.dateOfExit());
+        derived.put("tenureMonths", tenureMonths);
+        derived.put("employeeNameMatch", r.employeeNameMatch());
+        derived.put("employerNameMatch", r.employerNameMatch());
+        derived.put("employerConfidenceScore", r.employerConfidenceScore());
+        derived.put("recentPfFiling", r.recentPfFiling());
+        derived.put("hasPfFilings", r.hasPfFilings());
+        derived.put("uanCount", r.uanCount());
+        derived.put("establishmentId", r.establishmentId());
+        // The UAN itself is an employment identifier, not an identity document, but it is still the
+        // borrower's — store it masked to the last 4 so staff can correlate without it being readable.
+        derived.put("uanMasked", maskUan(r.uan()));
+        derived.put("tooManyRecords", r.tooManyRecords());
+
+        String status;
+        String message;
+        if (r.tooManyRecords()) {
+            status = REVIEW;
+            message = "Multiple UANs matched — manual review";
+        } else if (!r.found()) {
+            // Legitimately common. Say so plainly rather than implying wrongdoing.
+            status = REVIEW;
+            message = "No EPFO employment record found — manual review";
+        } else if (r.employed() && !Boolean.FALSE.equals(r.employerNameMatch())) {
+            status = PASS;
+            message = r.employerName() == null
+                    ? "Employment confirmed with EPFO"
+                    : "Employment confirmed — " + r.employerName();
+        } else if (!r.employed()) {
+            status = REVIEW;
+            message = r.dateOfExit() != null
+                    ? "EPFO shows an exit on " + r.dateOfExit() + " — manual review"
+                    : "EPFO record found but employment not current — manual review";
+        } else {
+            status = REVIEW;
+            message = "Employer does not match the declared employer — manual review";
+        }
+
+        // NOTE: tenureMonths is exactly the employment-continuity signal RiskPort.grade takes as its
+        // `employmentMonths` argument, which today is only ever a client-supplied value on IncomeProfile.
+        // Feeding this verified figure into the grade is a deliberate follow-up, not part of this change:
+        // it would alter risk categories for in-flight applications.
+        return view(upsert(appId, EMPLOYMENT, status, r.provider(), r.txnId(), ref,
+                null, null, null, derived, message));
+    }
+
+    /** Whole months between joining and exit (or today, when still employed). Null when unparseable. */
+    private static Integer tenureMonths(String dateOfJoining, String dateOfExit) {
+        LocalDate start = parseDob(dateOfJoining);
+        if (start == null) {
+            return null;
+        }
+        LocalDate end = dateOfExit == null ? LocalDate.now() : parseDob(dateOfExit);
+        if (end == null || end.isBefore(start)) {
+            return null;
+        }
+        return (int) ChronoUnit.MONTHS.between(start, end);
+    }
+
+    /** Last 4 digits only — enough to correlate a UAN across surfaces, not enough to reuse it. */
+    private static String maskUan(String uan) {
+        if (uan == null || uan.length() < 4) {
+            return null;
+        }
+        return "*".repeat(uan.length() - 4) + uan.substring(uan.length() - 4);
+    }
+
+    private static String isoDob(LocalDate dob) {
+        return dob == null ? null : dob.toString();
     }
 
     /** Penny-drop bank verify + name-at-bank match (payout gate). */

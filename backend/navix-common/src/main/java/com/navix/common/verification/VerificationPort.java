@@ -35,6 +35,22 @@ public interface VerificationPort {
     PennyDropCheck pennyDrop(String accountNumber, String ifsc, String clientRef);
 
     /**
+     * EPFO/UAN employment verification — Digitap {@code uan_advanced} only (Signzy has no UAN lookup).
+     *
+     * <p>Independently corroborates what the borrower declared about their job: which employer the EPFO
+     * has them at, since when, and whether the PF filings still look live. Lookup needs at least one of
+     * {@code pan} / {@code mobile}; supplying {@code dob} + {@code employeeName} widens the search, and
+     * {@code employerName} is what makes {@code employerNameMatch} (and therefore a meaningful
+     * {@code employed}) computable at all — the provider rejects it unless {@code employeeName} is sent
+     * too, so the adapter drops it when the name is missing.
+     *
+     * <p>This carries <b>no salary figure</b>: the whole EPFO employment family reports employment, not
+     * pay. Wage data needs the separate passbook/TDS APIs.
+     */
+    EmploymentCheck verifyEmployment(String pan, String mobile, String dob, String employeeName,
+                                     String employerName, String clientRef);
+
+    /**
      * Selfie face check — Digitap Face Match. Matches the uploaded selfie ({@code imageUrl}) against a
      * reference photo ({@code referenceImageUrl}, typically the DigiLocker Aadhaar face). When
      * {@code referenceImageUrl} is null the call degrades to a single-image quality/face-detection check.
@@ -103,6 +119,27 @@ public interface VerificationPort {
 
     record PennyDropCheck(String txnId, String provider, boolean accountExists, String fullName,
                           String bank, String ifsc, String bankRrn, String reason, String providerNameMatch) {
+    }
+
+    /**
+     * EPFO/UAN employment record.
+     *
+     * <p>{@code found} distinguishes "the EPFO has no record for this identity" (a legitimate outcome for
+     * a first job, a cash employer, or a non-PF establishment) from a provider failure, which throws.
+     * {@code employed} is the provider's own verdict and is only as strong as its inputs: the name-match
+     * booleans are {@code null} when the corresponding names were not supplied, so a {@code true} here
+     * off a PAN-only lookup means "PF filings are recent and no exit is marked", not "employer confirmed".
+     *
+     * <p>{@code tooManyRecords} flags the provider's {@code result_code 104} — the identity maps to more
+     * than five UANs, so nothing was resolved and the file needs a human.
+     */
+    record EmploymentCheck(String txnId, String provider, boolean found, boolean tooManyRecords,
+                           String message, boolean employed, String uan, Integer uanCount,
+                           String employerName, String establishmentId, String memberId,
+                           String dateOfJoining, String dateOfExit,
+                           Boolean employeeNameMatch, Boolean employerNameMatch,
+                           Double employerConfidenceScore, Boolean recentPfFiling, Boolean hasPfFilings,
+                           String nameOnRecord, String dobOnRecord, String genderOnRecord) {
     }
 
     record FaceLivenessCheck(String txnId, String provider, boolean live, Double confidence,

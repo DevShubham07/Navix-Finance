@@ -254,36 +254,88 @@ function EmploymentTab({ c }: { c: CustomerDetail }) {
   const p = c.profile;
   const latestApp = c.applications[0] ?? null;
   return (
-    <Section title="Employment & salary">
-      <KV k="Employer" v={p?.employer} />
-      <KV k="Employment status" v={p?.employmentStatus} />
-      <KV k="Salary bank" v={p?.salaryBank} />
-      <KV
-        k="Monthly salary"
-        v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null}
-      />
-      <KV
-        k="Annual salary"
-        v={p?.annualSalaryPaise != null ? paiseToINR(p.annualSalaryPaise) : null}
-      />
-      <KV
-        k="Salary %"
-        v={p?.salaryPercentage != null ? `${p.salaryPercentage}%` : null}
-      />
-      <KV
-        k="Increment %"
-        v={p?.incrementPercentage != null ? `${p.incrementPercentage}%` : null}
-      />
-      <KV
-        k="Eligible limit"
-        v={
-          latestApp?.eligibleLimitPaise != null
-            ? paiseToINR(latestApp.eligibleLimitPaise)
-            : null
-        }
-      />
+    <div className="grid gap-4 md:grid-cols-2">
+      <Section title="Employment & salary (declared)">
+        <KV k="Employer" v={p?.employer} />
+        <KV k="Employment status" v={p?.employmentStatus} />
+        <KV k="Salary bank" v={p?.salaryBank} />
+        <KV
+          k="Monthly salary"
+          v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null}
+        />
+        <KV
+          k="Annual salary"
+          v={p?.annualSalaryPaise != null ? paiseToINR(p.annualSalaryPaise) : null}
+        />
+        <KV
+          k="Salary %"
+          v={p?.salaryPercentage != null ? `${p.salaryPercentage}%` : null}
+        />
+        <KV
+          k="Increment %"
+          v={p?.incrementPercentage != null ? `${p.incrementPercentage}%` : null}
+        />
+        <KV
+          k="Eligible limit"
+          v={
+            latestApp?.eligibleLimitPaise != null
+              ? paiseToINR(latestApp.eligibleLimitPaise)
+              : null
+          }
+        />
+      </Section>
+      {latestApp != null && <EpfoEmploymentCard applicationId={latestApp.id} />}
+    </div>
+  );
+}
+
+/**
+ * The EPFO/UAN counterpart to the declared block above — what Digitap's UAN Advanced lookup found,
+ * so a reviewer can put the borrower's claim and the provident-fund record side by side.
+ *
+ * <p>Reads the EMPLOYMENT verification row's `derived` fields. The match booleans are deliberately
+ * tri-state: the provider returns null when the corresponding name was never sent, and rendering that
+ * as "No" would read as a contradiction that was never actually checked.
+ */
+function EpfoEmploymentCard({ applicationId }: { applicationId: number }) {
+  const q = useQuery({
+    queryKey: ["customer-verifications-employment", applicationId],
+    queryFn: () => staffApi.verifications(applicationId),
+    enabled: applicationId != null,
+  });
+  const step = (q.data ?? []).find((s) => s.checkType === "EMPLOYMENT");
+  const d = (step?.derived ?? {}) as Record<string, unknown>;
+
+  if (!step) {
+    return (
+      <Section title="Employment (EPFO)">
+        <p className="text-sm text-muted">No EPFO employment check has been run for this application.</p>
+      </Section>
+    );
+  }
+
+  const tenure = d.tenureMonths;
+  return (
+    <Section title="Employment (EPFO)">
+      <KV k="Status" v={`${step.status}${step.message ? ` — ${step.message}` : ""}`} />
+      <KV k="Employer on record" v={str(d.employerName)} />
+      <KV k="Currently employed" v={triState(d.employed)} />
+      <KV k="Date of joining" v={str(d.dateOfJoining)} />
+      <KV k="Date of exit" v={str(d.dateOfExit)} />
+      <KV k="Tenure" v={typeof tenure === "number" ? `${tenure} month${tenure === 1 ? "" : "s"}` : null} />
+      <KV k="Employer name match" v={triState(d.employerNameMatch)} />
+      <KV k="Employee name match" v={triState(d.employeeNameMatch)} />
+      <KV k="Recent PF filing" v={triState(d.recentPfFiling)} />
+      <KV k="UAN" v={str(d.uanMasked)} mono />
     </Section>
   );
+}
+
+/** true → "Yes", false → "No", null/undefined → null (KV renders its own placeholder). */
+function triState(v: unknown): string | null {
+  if (v === true) return "Yes";
+  if (v === false) return "No";
+  return null;
 }
 
 // ---------------------------------------------------------------------------

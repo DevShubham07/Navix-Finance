@@ -7,6 +7,7 @@ import com.navix.verification.client.DigitapCreditClient;
 import com.navix.verification.client.DigitapEmailClient;
 import com.navix.verification.client.DigitapFaceMatchClient;
 import com.navix.verification.client.DigitapPanClient;
+import com.navix.verification.client.DigitapUanAdvancedClient;
 import com.navix.verification.dto.DigitapDtos;
 import com.navix.verification.exception.CapabilityNotSupportedException;
 import java.util.List;
@@ -29,11 +30,17 @@ public class DigitapVerificationAdapter implements VerificationPort {
     /** Below this face-match confidence the selfie is treated as not-live. */
     private static final double FACE_CONFIDENCE_THRESHOLD = 0.60;
 
+    /** UAN Advanced {@code result_code}: record resolved. */
+    private static final int UAN_RESULT_OK = 101;
+    /** UAN Advanced {@code result_code}: identity maps to more than five UANs — nothing resolved. */
+    private static final int UAN_RESULT_TOO_MANY = 104;
+
     private final DigitapPanClient panClient;
     private final DigitapEmailClient emailClient;
     private final DigitapAddressClient addressClient;
     private final DigitapCreditClient creditClient;
     private final DigitapFaceMatchClient faceMatchClient;
+    private final DigitapUanAdvancedClient uanAdvancedClient;
 
     @Override
     public PanCheck verifyPan(String pan, String clientRef) {
@@ -75,6 +82,22 @@ public class DigitapVerificationAdapter implements VerificationPort {
     @Override
     public PennyDropCheck pennyDrop(String accountNumber, String ifsc, String clientRef) {
         throw new CapabilityNotSupportedException("Digitap has no bank penny-drop API in this package");
+    }
+
+    @Override
+    public EmploymentCheck verifyEmployment(String pan, String mobile, String dob, String employeeName,
+                                            String employerName, String clientRef) {
+        DigitapDtos.UanAdvancedResponse r =
+                uanAdvancedClient.verify(pan, mobile, dob, employeeName, employerName, clientRef);
+        boolean found = r.resultCode() != null && r.resultCode() == UAN_RESULT_OK;
+        boolean tooMany = r.resultCode() != null && r.resultCode() == UAN_RESULT_TOO_MANY;
+        return new EmploymentCheck(r.txnId(), "DIGITAP", found, tooMany, r.message(),
+                found && Boolean.TRUE.equals(r.isEmployed()),
+                r.uan(), r.uanCount(), trim(r.employerName()), r.establishmentId(), r.memberId(),
+                r.dateOfJoining(), r.dateOfExit(),
+                r.employeeNameMatch(), r.employerNameMatch(), r.employerConfidenceScore(),
+                r.isRecent(), r.hasPfFilings(),
+                trim(r.nameOnRecord()), r.dobOnRecord(), r.genderOnRecord());
     }
 
     @Override

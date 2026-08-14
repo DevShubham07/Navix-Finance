@@ -120,6 +120,12 @@ public class SignzyVerificationAdapter implements VerificationPort {
     }
 
     @Override
+    public EmploymentCheck verifyEmployment(String pan, String mobile, String dob, String employeeName,
+                                            String employerName, String clientRef) {
+        throw new CapabilityNotSupportedException("Signzy has no UAN/EPFO employment lookup");
+    }
+
+    @Override
     public LivenessSession livenessInit(String matchImageUrl, String clientRef) {
         // Interactive video journey (production account). matchImageUrl = the Aadhaar face for 1:1 match.
         SignzyDtos.LivenessSession s = livenessClient.createUrl(matchImageUrl);

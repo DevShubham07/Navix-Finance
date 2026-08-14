@@ -96,6 +96,16 @@ public class ApplicationVerificationController {
         return ApiResponse.ok(verification.verifySalary(id, req.monthlySalaryPaise(), req.slipObjectKeys(), req.salaryCreditDay()));
     }
 
+    /**
+     * EPFO/UAN employment verification. Takes no body — every input (PAN, mobile, name, DOB, declared
+     * employer) is already on the stored profile from the PAN and intake steps.
+     */
+    @PostMapping("/employment")
+    public ApiResponse<StepResult> employment(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.verifyEmployment(id));
+    }
+
     @PostMapping("/penny-drop")
     public ApiResponse<StepResult> pennyDrop(@PathVariable Long id, @Valid @RequestBody PennyDropVerifyRequest req) {
         authorize(id);
