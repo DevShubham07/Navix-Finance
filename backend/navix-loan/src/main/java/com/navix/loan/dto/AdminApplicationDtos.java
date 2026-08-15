@@ -72,9 +72,10 @@ public final class AdminApplicationDtos {
             int stepsRequired,
             boolean agreementAccepted,
             boolean complete,
-            Instant kycCapturedAt) {
+            Instant kycCapturedAt,
+            BureauState bureauState) {
 
-        public static AdminApplicationView of(LoanApplication a, CustomerProfile p,
+        public static AdminApplicationView of(LoanApplication a, CustomerProfile p, BureauState bureauState,
                 int stepsCompleted, int stepsRequired, boolean agreementAccepted, boolean complete) {
             return new AdminApplicationView(
                     a.getId(), a.getCustomerId(), a.getStatus(),
@@ -98,7 +99,7 @@ public final class AdminApplicationDtos {
                     p != null ? p.getCreditRecommendation() : null,
                     p != null ? p.getRiskCategory() : null,
                     stepsCompleted, stepsRequired, agreementAccepted, complete,
-                    p != null ? p.getCreatedAt() : null);
+                    p != null ? p.getCreatedAt() : null, bureauState);
         }
     }
 }

@@ -38,12 +38,14 @@ class CreditBriefServiceTest {
     @Mock private CustomerProfileRepository profileRepo;
     @Mock private LoanApplicationRepository applicationRepo;
     @Mock private ApplicationVerificationRepository verificationRepo;
+    @Mock private BureauStateService bureauStateService;
 
     @Test
     void generatedDocumentContainsTheCompleteProviderResponseAppendix() throws Exception {
         CreditBriefService service = new CreditBriefService(
                 new CreditRatingCalculator(), new CreditBriefPdfRenderer(), storage,
-                documentRepo, profileRepo, applicationRepo, verificationRepo, new ObjectMapper());
+                documentRepo, profileRepo, applicationRepo, verificationRepo, new ObjectMapper(),
+                bureauStateService);
         CustomerProfile profile = new CustomerProfile();
         profile.setApplicationId(123L);
         profile.setBureauSource("DIGITAP_EXPERIAN");
@@ -84,7 +86,8 @@ class CreditBriefServiceTest {
         ObjectMapper json = new ObjectMapper();
         CreditBriefService service = new CreditBriefService(
                 new CreditRatingCalculator(), new CreditBriefPdfRenderer(), storage,
-                documentRepo, profileRepo, applicationRepo, verificationRepo, json);
+                documentRepo, profileRepo, applicationRepo, verificationRepo, json,
+                bureauStateService);
         BureauReportFacts facts = new BureauReportFacts(
                 "TEST BORROWER", "ABCDE1234F", "9000000000", "1990-01-01", "Testville", "100001",
                 778, 11, 9, 2, 0, 805314L, 717556L, 87758L, 0, "TEST-REPORT-1");

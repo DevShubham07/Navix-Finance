@@ -17,6 +17,8 @@
 import * as React from "react";
 import { StarRating } from "@/components/ui/star-rating";
 import { cn } from "@/lib/utils";
+import { bureauStateLabel } from "@/components/staff/bureau-state";
+import type { BureauState } from "@/lib/api/applications";
 
 const MIN_SCORE = 300;
 const MAX_SCORE = 900;
@@ -101,6 +103,7 @@ export function CreditScoreGauge({
   score,
   starRating,
   recommendation,
+  state,
   size = "md",
   className,
 }: {
@@ -110,6 +113,9 @@ export function CreditScoreGauge({
   starRating?: number | null;
   /** Underwriter verdict text, shown as a pill under the dial. */
   recommendation?: string | null;
+  /** Distinguishes the empty-dial caption between "never fetched" and "no record found". Omit to
+   *  keep the pre-existing "NO BUREAU PULL YET" caption unchanged. */
+  state?: BureauState;
   size?: keyof typeof SIZES;
   className?: string;
 }) {
@@ -165,9 +171,12 @@ export function CreditScoreGauge({
   }, [target, has]);
 
   const needleAngle = armed ? angleFor(target) : 0;
+  const emptyCaption = state === "NO_RECORD" ? bureauStateLabel("NO_RECORD", "caption") : "NO BUREAU PULL YET";
   const ariaLabel = has
     ? `Credit score ${target} out of ${MAX_SCORE} — ${band?.label ?? ""}`
-    : "Credit score not available — no bureau pull yet";
+    : state === "NO_RECORD"
+      ? "Credit score not available — no bureau record found"
+      : "Credit score not available — no bureau pull yet";
 
   return (
     <div className={cn("flex flex-col items-center", className)}>
@@ -286,7 +295,7 @@ export function CreditScoreGauge({
           fill="#8593A6"
           aria-hidden
         >
-          {has ? "CREDIT SCORE" : "NO BUREAU PULL YET"}
+          {has ? "CREDIT SCORE" : emptyCaption}
         </text>
       </svg>
 

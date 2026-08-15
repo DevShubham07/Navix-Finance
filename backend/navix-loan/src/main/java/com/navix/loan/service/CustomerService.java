@@ -9,6 +9,7 @@ import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
+import com.navix.loan.dto.BureauState;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
@@ -89,6 +90,7 @@ public class CustomerService {
     private final JdbcTemplate jdbc;
     private final CreditBriefService creditBriefService;
     private final ApplicationDocumentRepository documentRepository;
+    private final BureauStateService bureauStateService;
 
     /**
      * All customers (distinct customers), optionally filtered by {@code q} matching the name
@@ -106,12 +108,31 @@ public class CustomerService {
                 .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
         Map<Long, String> staffNames = new HashMap<>();
 
+        // Pass 1: resolve each customer's profile + the application id whose bureau pull should be
+        // reflected (the profile's own application when present, else the newest application — so a
+        // no-record pull that preceded profile creation isn't dropped to NOT_FETCHED), then batch the
+        // BUREAU-state lookup in one query instead of one per customer.
+        Map<Long, CustomerProfile> profileByCustomer = new HashMap<>();
+        Map<Long, Long> bureauAppIdByCustomer = new HashMap<>();
+        for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
+            List<LoanApplication> apps = e.getValue();
+            CustomerProfile profile = latestProfile(apps);
+            profileByCustomer.put(e.getKey(), profile);
+            Long bureauAppId = profile != null ? profile.getApplicationId()
+                    : apps.stream().max(Comparator.comparing(LoanApplication::getId))
+                            .map(LoanApplication::getId).orElse(null);
+            if (bureauAppId != null) {
+                bureauAppIdByCustomer.put(e.getKey(), bureauAppId);
+            }
+        }
+        Map<Long, BureauState> bureauStates = bureauStateService.states(bureauAppIdByCustomer.values());
+
         LocalDate today = LocalDate.now();
         List<CustomerSummary> out = new ArrayList<>();
         for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
             Long customerId = e.getKey();
             List<LoanApplication> apps = e.getValue();
-            CustomerProfile profile = latestProfile(apps);
+            CustomerProfile profile = profileByCustomer.get(customerId);
             List<Loan> loans = loanRepository.findByCustomerId(customerId);
             long totalOutstanding = loans.stream()
                     .mapToLong(l -> repaymentService.outstandingAsOf(l.getId(), null))
@@ -127,6 +148,10 @@ public class CustomerService {
             CustomerOwner owner = owners.get(customerId);
             Long ownerStaffId = owner != null ? owner.getOwnerStaffId() : null;
             String ownerName = ownerStaffId != null ? staffName(ownerStaffId, staffNames) : null;
+            Long bureauAppId = bureauAppIdByCustomer.get(customerId);
+            BureauState bureauState = bureauAppId != null
+                    ? bureauStates.getOrDefault(bureauAppId, BureauState.NOT_FETCHED)
+                    : BureauState.NOT_FETCHED;
             CustomerSummary cs = new CustomerSummary(
                     customerId,
                     profile != null ? profile.getFullName() : null,
@@ -142,7 +167,8 @@ public class CustomerService {
                             ? profile.getCreditStarRating().doubleValue() : null,
                     loanStatus,
                     ownerStaffId,
-                    ownerName);
+                    ownerName,
+                    bureauState);
             if (matches(cs, needle)) {
                 out.add(cs);
             }

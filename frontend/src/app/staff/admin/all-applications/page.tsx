@@ -9,6 +9,7 @@ import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { ExportMenu } from "@/components/staff/export-menu";
+import { bureauStateLabel } from "@/components/staff/bureau-state";
 import type { ExportColumn } from "@/lib/export/exporters";
 import { hasPermission } from "@/lib/auth/rbac";
 import { staffApi, paiseToINR, statusLabel, type AdminApplicationView } from "@/lib/api/applications";
@@ -175,7 +176,13 @@ export default function AdminAllApplicationsPage() {
                       {a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "—"}
                     </td>
                     <td className="whitespace-nowrap text-muted">
-                      {a.creditScore != null ? a.creditScore : "—"}
+                      {a.creditScore != null ? (
+                        a.creditScore
+                      ) : a.bureauState === "NO_RECORD" ? (
+                        <span title={bureauStateLabel("NO_RECORD", "long")}>{bureauStateLabel("NO_RECORD", "short")}</span>
+                      ) : (
+                        <span title={bureauStateLabel("NOT_FETCHED", "long")}>{bureauStateLabel("NOT_FETCHED", "short")}</span>
+                      )}
                       {a.starRating != null ? <span className="text-gold-dark"> · {a.starRating.toFixed(1)}★</span> : null}
                     </td>
                     <td className="whitespace-nowrap text-muted">{a.riskCategory || "—"}</td>

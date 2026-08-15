@@ -1,6 +1,7 @@
 package com.navix.loan.repository;
 
 import com.navix.loan.entity.ApplicationVerification;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -21,4 +22,14 @@ public interface ApplicationVerificationRepository extends JpaRepository<Applica
      */
     List<ApplicationVerification> findByCheckTypeAndProviderTxnIdStartingWith(
             String checkType, String providerTxnIdPrefix);
+
+    /** Narrow projection for bulk state checks (e.g. {@code BureauStateService}) — avoids loading the
+     *  (large) raw_response column just to read status/derived. */
+    interface BureauStateRow {
+        Long getApplicationId();
+        String getStatus();
+        String getDerived();
+    }
+
+    List<BureauStateRow> findByCheckTypeAndApplicationIdIn(String checkType, Collection<Long> applicationIds);
 }

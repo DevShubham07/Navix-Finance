@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.BureauReportFacts;
+import com.navix.loan.dto.BureauState;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
@@ -50,6 +51,7 @@ public class CreditBriefService {
     private final LoanApplicationRepository applicationRepo;
     private final ApplicationVerificationRepository verificationRepo;
     private final ObjectMapper objectMapper;
+    private final BureauStateService bureauStateService;
 
     /**
      * Generate (or regenerate) the brief for an application from freshly-parsed bureau facts. Mutates
@@ -130,9 +132,10 @@ public class CreditBriefService {
     public CreditBriefView view(Long appId) {
         CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
         JsonNode providerResponse = providerResponse(appId);
+        BureauState bureauState = bureauStateService.state(appId);
         if (profile == null || profile.getCreditStarRating() == null) {
             return new CreditBriefView(appId, providerResponse != null, null, null, null, null,
-                    null, null, null, providerResponse);
+                    null, null, null, providerResponse, bureauState);
         }
         ensureBrief(appId, profile);
         // The identity shown on the brief must be the borrower's REAL KYC — the same profile the staff
@@ -153,7 +156,7 @@ public class CreditBriefService {
                 profile.getCreditRecommendation(),
                 profile.getCreditBriefSummary(),
                 profile.getCreditBriefGeneratedAt(),
-                docId, facts, providerResponse);
+                docId, facts, providerResponse, bureauState);
     }
 
     private JsonNode providerResponse(Long appId) {

@@ -165,6 +165,7 @@ export interface AdminApplicationView {
   /** True once every required step is cleared and the agreement accepted. */
   complete: boolean;
   kycCapturedAt: string | null;
+  bureauState: BureauState;
 }
 
 /**
@@ -477,6 +478,7 @@ export interface CustomerSummary {
   loanStatus?: string | null;
   ownerStaffId?: number | null;
   ownerName?: string | null;
+  bureauState?: BureauState | null;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -513,9 +515,14 @@ export interface CreditBriefFacts {
   recentInquiries30d: number | null;
 }
 
+/** Whether the bureau pull ran for an application, and what it found (mirrors backend BureauState). */
+export type BureauState = "NOT_FETCHED" | "NO_RECORD" | "FOUND";
+
 /** Staff credit brief for an application: 1–5★ rating headline + facts + the CREDIT_BRIEF PDF doc id. */
 export interface CreditBriefView {
   applicationId: number;
+  /** Legacy: true whenever a provider response was stored, which today includes the NO_RECORD case
+   *  too — do not gate empty-state rendering on this; switch on bureauState instead. */
   available: boolean;
   creditScore: number | null;
   starRating: number | null;
@@ -527,6 +534,7 @@ export interface CreditBriefView {
   facts: CreditBriefFacts | null;
   /** Exact staff-only provider response, including every nested bureau field and tradeline. */
   providerResponse: JsonValue | null;
+  bureauState: BureauState;
 }
 
 /** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */

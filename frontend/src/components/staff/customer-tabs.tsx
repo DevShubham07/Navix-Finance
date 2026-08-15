@@ -448,6 +448,7 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
           score={p?.creditScore ?? c.creditBrief?.creditScore ?? null}
           starRating={p?.starRating ?? c.creditBrief?.starRating ?? null}
           recommendation={p?.recommendation ?? c.creditBrief?.recommendation ?? null}
+          state={c.creditBrief?.bureauState ?? "NOT_FETCHED"}
           size="md"
         />
       </div>

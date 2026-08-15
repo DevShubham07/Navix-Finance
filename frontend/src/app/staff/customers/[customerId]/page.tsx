@@ -71,6 +71,7 @@ export default function CustomerDetailPage() {
                   score={c.profile?.creditScore ?? c.creditBrief?.creditScore ?? null}
                   starRating={c.profile?.starRating ?? c.creditBrief?.starRating ?? null}
                   recommendation={c.profile?.recommendation ?? c.creditBrief?.recommendation ?? null}
+                  state={c.creditBrief?.bureauState ?? "NOT_FETCHED"}
                   size="sm"
                 />
               </Card>

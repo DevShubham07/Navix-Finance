@@ -56,7 +56,8 @@ public final class CustomerDtos {
             /** Newest loan's {@code effectiveStatus(today)} — outranks {@code latestStatus} for segments. */
             String loanStatus,
             Long ownerStaffId,
-            String ownerName) {
+            String ownerName,
+            BureauState bureauState) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */

@@ -8,6 +8,7 @@ import { StarRating } from "@/components/ui/star-rating";
 import { PdfPreviewDialog } from "@/components/staff/pdf-preview-dialog";
 import { staffApi, type CreditBriefFacts } from "@/lib/api/applications";
 import { flattenProviderReport, type JsonValue } from "@/lib/credit/provider-report";
+import { bureauStateLabel } from "@/components/staff/bureau-state";
 
 const inr = (rupees: number | null | undefined): string =>
   rupees == null
@@ -142,9 +143,24 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
         <div className="flex items-center gap-2 text-sm text-muted">
           <Loader2 size={14} className="animate-spin" /> Loading…
         </div>
-      ) : !brief || !brief.available ? (
+      ) : briefQ.isError ? (
+        <div className="text-sm text-error-700">Couldn&apos;t load bureau data.</div>
+      ) : !brief || brief.bureauState === "NOT_FETCHED" ? (
         <div className="text-sm text-muted">
-          No credit brief yet — it is generated automatically when the bureau report is pulled.
+          {bureauStateLabel("NOT_FETCHED", "long")} — the credit brief is generated automatically
+          once the bureau report is pulled.
+        </div>
+      ) : brief.bureauState === "NO_RECORD" ? (
+        <>
+          <div className="text-sm text-muted">
+            {bureauStateLabel("NO_RECORD", "long")} — the bureau reported no credit history for
+            this customer.
+          </div>
+          {brief.providerResponse != null && <CompleteProviderReport report={brief.providerResponse} />}
+        </>
+      ) : brief.creditScore == null && brief.starRating == null ? (
+        <div className="text-sm text-muted">
+          The bureau pull completed but returned no usable rating (thin file).
         </div>
       ) : (
         <>

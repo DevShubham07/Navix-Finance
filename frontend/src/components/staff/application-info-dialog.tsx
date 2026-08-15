@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X, Loader2, User, Landmark, Banknote, Gauge } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { CreditBadge } from "@/components/staff/credit-badge";
+import { bureauStateLabel } from "@/components/staff/bureau-state";
 import { KV } from "@/components/staff/detail-parts";
 import { formatDate } from "@/lib/utils";
 import { buildCostBreakdown, dueDateFromSalary, daysBetween } from "@/lib/calc/loan-math";
@@ -69,10 +70,13 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
     retry: false,
   });
   const app = appQ.data;
+  // Not gated on app.status !== "DRAFT": bureau pulls happen while the application is still
+  // nominally DRAFT (before submit-kyc), so a DRAFT-only gate would leave this section stuck on
+  // "Loading…" forever for exactly the applications most likely to have a completed pull.
   const briefQ = useQuery({
     queryKey: ["credit-brief", id],
     queryFn: () => staffApi.creditBrief(id),
-    enabled: open && idReady && app != null && app.status !== "DRAFT",
+    enabled: open && idReady,
   });
   const hasLoan = app?.loanId != null;
   const loanQ = useQuery({
@@ -162,9 +166,11 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
             </InfoSection>
 
             <InfoSection icon={Gauge} title="CIBIL / bureau">
-              {briefQ.isLoading ? (
+              {briefQ.isPending && briefQ.fetchStatus !== "idle" ? (
                 <p className="text-sm text-muted">Loading…</p>
-              ) : briefQ.data?.available ? (
+              ) : briefQ.data?.bureauState === "NO_RECORD" ? (
+                <p className="text-sm text-muted">{bureauStateLabel("NO_RECORD", "long")}.</p>
+              ) : briefQ.data?.bureauState === "FOUND" ? (
                 <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
                   <KV k="CIBIL score" v={briefQ.data.creditScore != null ? String(briefQ.data.creditScore) : null} mono />
                   <KV k="Star rating" v={briefQ.data.starRating != null ? `${briefQ.data.starRating.toFixed(1)}★` : null} />
@@ -178,7 +184,7 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
                   )}
                 </dl>
               ) : (
-                <p className="text-sm text-muted">No bureau pull yet.</p>
+                <p className="text-sm text-muted">{bureauStateLabel("NOT_FETCHED", "long")}.</p>
               )}
             </InfoSection>
 

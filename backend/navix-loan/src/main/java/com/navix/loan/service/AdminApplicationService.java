@@ -5,6 +5,7 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationView;
+import com.navix.loan.dto.BureauState;
 import com.navix.loan.dto.AdminApplicationDtos.RejectionView;
 import com.navix.loan.dto.TelecallingDtos.TelecallingView;
 import com.navix.loan.entity.ApplicationEvent;
@@ -48,6 +49,7 @@ public class AdminApplicationService {
     private final ApplicationRejectionRepository rejectionRepository;
     private final ApplicationEventRepository eventRepository;
     private final CustomerOwnerRepository ownerRepository;
+    private final BureauStateService bureauStateService;
 
     /** Statuses that mean the application has reached (or passed) SANCTIONED — everything else is
      *  "still pre-sanction" and belongs in the telecalling queue (work item 10). */
@@ -65,19 +67,22 @@ public class AdminApplicationService {
         if (apps.isEmpty()) {
             return List.of();
         }
+        List<Long> appIds = apps.stream().map(LoanApplication::getId).toList();
         Map<Long, CustomerProfile> byApp = profileRepository
-                .findByApplicationIdIn(apps.stream().map(LoanApplication::getId).toList()).stream()
+                .findByApplicationIdIn(appIds).stream()
                 .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
+        Map<Long, BureauState> bureauStates = bureauStateService.states(appIds);
         int required = ApplicationVerificationService.requiredCount();
         return apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> {
                     CustomerProfile p = byApp.get(a.getId());
+                    BureauState bureauState = bureauStates.getOrDefault(a.getId(), BureauState.NOT_FETCHED);
                     int completed = verification.requiredPassedCount(a.getId());
                     // The retired AGREEMENT step is now the screen-1 T&C acceptance (revamp.md decision 25).
                     boolean agreement = p != null && p.getTermsAcceptedAt() != null;
                     boolean complete = completed >= required && agreement;
-                    return AdminApplicationView.of(a, p, completed, required, agreement, complete);
+                    return AdminApplicationView.of(a, p, bureauState, completed, required, agreement, complete);
                 })
                 .toList();
     }

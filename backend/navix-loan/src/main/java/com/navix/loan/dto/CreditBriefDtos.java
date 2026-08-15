@@ -15,6 +15,9 @@ public final class CreditBriefDtos {
 
     public record CreditBriefView(
             Long applicationId,
+            /** Legacy: true whenever a provider response was stored, which today includes the
+             *  NO_RECORD case too — do not gate empty-state rendering on this; switch on
+             *  {@code bureauState} instead. */
             boolean available,
             Integer creditScore,
             Double starRating,
@@ -23,7 +26,8 @@ public final class CreditBriefDtos {
             Instant generatedAt,
             Long documentId,
             Facts facts,
-            JsonNode providerResponse) {
+            JsonNode providerResponse,
+            BureauState bureauState) {
 
         /** Categorized facts for the card. Full PAN/mobile (staff-only); amounts in rupees (the bureau's unit). */
         public record Facts(

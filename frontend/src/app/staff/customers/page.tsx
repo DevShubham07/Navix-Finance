@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { CreditBadge } from "@/components/staff/credit-badge";
+import { bureauStateLabel } from "@/components/staff/bureau-state";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
@@ -207,8 +208,10 @@ function CustomersPageInner() {
                     <td>
                       {c.starRating != null || c.creditScore != null ? (
                         <CreditBadge starRating={c.starRating} creditScore={c.creditScore} />
+                      ) : c.bureauState === "NO_RECORD" ? (
+                        <span className="text-xs text-muted">{bureauStateLabel("NO_RECORD", "long")}</span>
                       ) : (
-                        <span className="text-xs text-muted">—</span>
+                        <span className="text-xs text-muted">{bureauStateLabel("NOT_FETCHED", "short")}</span>
                       )}
                     </td>
                     <td>
