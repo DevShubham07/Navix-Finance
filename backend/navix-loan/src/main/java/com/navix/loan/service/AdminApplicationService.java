@@ -50,6 +50,7 @@ public class AdminApplicationService {
     private final ApplicationEventRepository eventRepository;
     private final CustomerOwnerRepository ownerRepository;
     private final BureauStateService bureauStateService;
+    private final com.navix.common.staff.StaffDirectory staffDirectory;
 
     /** Statuses that mean the application has reached (or passed) SANCTIONED — everything else is
      *  "still pre-sanction" and belongs in the telecalling queue (work item 10). */
@@ -73,6 +74,18 @@ public class AdminApplicationService {
                 .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
         Map<Long, BureauState> bureauStates = bureauStateService.states(appIds);
         int required = ApplicationVerificationService.requiredCount();
+        // Batched — one lookup per distinct assignee, one event-table query for the whole register —
+        // mirrors ApplicationController#enrich / CustomerService#detail.
+        Map<Long, String> executiveNameById = new java.util.LinkedHashMap<>();
+        for (Long executiveId : apps.stream().map(LoanApplication::getAssignedExecutiveId)
+                .filter(Objects::nonNull).distinct().toList()) {
+            executiveNameById.put(executiveId,
+                    staffDirectory.findStaff(executiveId).map(com.navix.common.staff.StaffSummary::name).orElse(null));
+        }
+        Map<Long, java.time.Instant> stageEnteredAtByAppId = new java.util.LinkedHashMap<>();
+        for (ApplicationEvent event : eventRepository.findByApplicationIdInOrderByAtDesc(appIds)) {
+            stageEnteredAtByAppId.putIfAbsent(event.getApplicationId(), event.getAt());
+        }
         return apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> {
@@ -82,7 +95,9 @@ public class AdminApplicationService {
                     // The retired AGREEMENT step is now the screen-1 T&C acceptance (revamp.md decision 25).
                     boolean agreement = p != null && p.getTermsAcceptedAt() != null;
                     boolean complete = completed >= required && agreement;
-                    return AdminApplicationView.of(a, p, bureauState, completed, required, agreement, complete);
+                    return AdminApplicationView.of(a, p, bureauState, completed, required, agreement, complete)
+                            .withAssignment(executiveNameById.get(a.getAssignedExecutiveId()),
+                                    stageEnteredAtByAppId.get(a.getId()));
                 })
                 .toList();
     }

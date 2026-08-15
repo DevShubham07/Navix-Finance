@@ -34,6 +34,7 @@ import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { EventTimeline } from "@/components/staff/event-timeline";
 import { JourneyStepper } from "@/components/staff/journey-stepper";
+import { JourneyAssignee } from "@/components/staff/journey-assignee";
 import { StageDetailDialog } from "@/components/staff/stage-detail-dialog";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
@@ -123,6 +124,7 @@ function actionFor(app: ApplicationView): React.ReactNode {
 const CUSTOMER_TAB_DEFS: TabDef[] = [
   { key: "c:personal", label: "Personal" },
   { key: "c:employment", label: "Employment" },
+  { key: "c:salary", label: "Salary" },
   { key: "c:bank", label: "Bank" },
   { key: "c:credit", label: "Credit report" },
   { key: "c:loans", label: "Loan applications" },
@@ -871,6 +873,7 @@ function JourneyTab({
             <Zap size={12} /> Fast-track
           </span>
         )}
+        <JourneyAssignee app={app} />
         {journey ? (
           <JourneyStepper stages={journey.stages} activeIndex={activeIndex} onStageClick={onStageClick} />
         ) : (

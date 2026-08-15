@@ -90,16 +90,11 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
     queryFn: () => staffApi.verifications(id),
     enabled: open && idReady,
   });
-  const kycAssigneesQ = useQuery({
-    queryKey: ["staff-picker", "KYC_APPROVER"],
-    queryFn: () => staffApi.creditExecutives("KYC_APPROVER"),
-    enabled: open && idReady && app?.amountRequestedPaise == null,
-    staleTime: 60_000,
-  });
-
   const p = profileQ.data;
   const pennyDerived = ((verificationQ.data ?? []).find((row) => row.checkType === "PENNY_DROP")?.derived ?? {}) as Record<string, unknown>;
-  const assignedName = kycAssigneesQ.data?.find((staff) => staff.id === app?.assignedExecutiveId)?.name;
+  // Real, server-resolved assignee name (ApplicationView.assignedExecutiveName) — replaces the former
+  // client-side join against a KYC_APPROVER staff-picker list (that role no longer exists).
+  const assignedName = app?.assignedExecutiveName;
   const loading = (applicationId == null && resolveQ.isLoading) || (idReady && appQ.isLoading);
 
   const displayName = p?.fullName ?? app?.customerName ?? (app ? `Customer #${app.customerId}` : "Application");

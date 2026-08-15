@@ -20,7 +20,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Bell, ShieldCheck, RotateCcw } from "lucide-react";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
-import { staffApi, type StepResult, type CheckStatus } from "@/lib/api/applications";
+import { staffApi, paiseToINR, type StepResult, type CheckStatus } from "@/lib/api/applications";
 import { humanizeCheck } from "@/lib/utils";
 import { errMessage } from "@/components/staff/pipeline/hooks";
 import { PermissionGate } from "@/components/staff/pipeline/actions";
@@ -33,12 +33,18 @@ const CHECK_PILL: Record<CheckStatus, string> = {
   PENDING: "bg-grey-100 text-muted",
 };
 
-/** "monthlySalaryPaise" -> "Monthly salary paise". */
+/** "monthlySalaryPaise" -> "Monthly salary" (the trailing "Paise" is stripped — see {@link isPaiseKey}). */
 function humanizeKey(key: string): string {
   return key
+    .replace(/Paise$/, "")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_\s]+/g, " ")
     .replace(/^./, (c) => c.toUpperCase());
+}
+
+/** Keys ending in "Paise" (e.g. monthlySalaryPaise, eligibleLimitPaise) carry raw integer paise. */
+function isPaiseKey(key: string): boolean {
+  return /Paise$/.test(key);
 }
 
 function stringifyDerived(value: unknown): string {
@@ -134,7 +140,11 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                     {entries.map(([k, v]) => (
                       <div key={k} className="flex items-start justify-between gap-3">
                         <dt className="text-muted">{humanizeKey(k)}</dt>
-                        <dd className="break-all text-right text-ink">{stringifyDerived(v)}</dd>
+                        <dd className="break-all text-right text-ink">
+                          {isPaiseKey(k) && typeof v === "number" && Number.isFinite(v)
+                            ? paiseToINR(v)
+                            : stringifyDerived(v)}
+                        </dd>
                       </div>
                     ))}
                   </dl>

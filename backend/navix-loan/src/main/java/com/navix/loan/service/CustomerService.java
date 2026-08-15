@@ -193,9 +193,25 @@ public class CustomerService {
         // snapshot (e.g. a reborrow) falls back to the customer's latest profile — keeping the per-row
         // credit headline consistent with the Profile card.
         CustomerProfile profile = latestProfile(apps);
+        // Batched (one lookup per distinct assignee, one event-table query for the whole page) —
+        // same pattern as ApplicationController#enrich, feeds the "Loan applications" tab's real
+        // assignee name + current-stage-entered timestamp.
+        Map<Long, String> executiveNameById = new java.util.LinkedHashMap<>();
+        for (Long executiveId : apps.stream().map(LoanApplication::getAssignedExecutiveId)
+                .filter(Objects::nonNull).distinct().toList()) {
+            executiveNameById.put(executiveId,
+                    staffDirectory.findStaff(executiveId).map(StaffSummary::name).orElse(null));
+        }
+        List<Long> appIds = apps.stream().map(LoanApplication::getId).toList();
+        Map<Long, Instant> stageEnteredAtByAppId = new java.util.LinkedHashMap<>();
+        for (ApplicationEvent event : applicationEventRepository.findByApplicationIdInOrderByAtDesc(appIds)) {
+            stageEnteredAtByAppId.putIfAbsent(event.getApplicationId(), event.getAt());
+        }
         List<ApplicationView> appViews = apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
-                .map(a -> ApplicationView.of(a, profByApp.getOrDefault(a.getId(), profile)))
+                .map(a -> ApplicationView.of(a, profByApp.getOrDefault(a.getId(), profile))
+                        .withAssignment(executiveNameById.get(a.getAssignedExecutiveId()),
+                                stageEnteredAtByAppId.get(a.getId())))
                 .toList();
 
         LocalDate today = LocalDate.now();

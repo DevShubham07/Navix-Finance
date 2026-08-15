@@ -15,6 +15,7 @@ import com.navix.loan.dto.VerificationDtos.PennyDropVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.PresignUploadRequest;
 import com.navix.loan.dto.VerificationDtos.SalaryVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.SelfieVerifyRequest;
+import com.navix.loan.dto.VerificationDtos.UploadedDocumentsRequest;
 import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService;
 import com.navix.loan.service.ApplicationVerificationService.PresignedUpload;
@@ -165,6 +166,17 @@ public class ApplicationVerificationController {
                                                       @Valid @RequestBody PresignUploadRequest req) {
         authorize(id);
         return ApiResponse.ok(verification.presignUpload(id, req.docType(), req.fileName(), req.contentType()));
+    }
+
+    /** Persist already-uploaded S3 keys as documents under an allow-listed docType (e.g. the 6-month
+     *  bank-statement upload on the bank-details page). Generic counterpart to {@code /salary}'s
+     *  hardcoded SALARY_SLIP persistence — no verification step is recorded. */
+    @PostMapping("/documents")
+    public ApiResponse<Void> uploadedDocuments(@PathVariable Long id,
+                                               @Valid @RequestBody UploadedDocumentsRequest req) {
+        authorize(id);
+        verification.saveUploadedDocuments(id, req.docType(), req.objectKeys());
+        return ApiResponse.ok(null);
     }
 
     /** Borrower-only + ownership: a BORROWER may act only on their own application; ADMIN on any. */

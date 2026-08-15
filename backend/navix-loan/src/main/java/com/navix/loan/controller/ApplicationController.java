@@ -28,6 +28,7 @@ import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.service.AdminApplicationService;
 import com.navix.loan.service.CustomerReviewService;
@@ -73,6 +74,7 @@ public class ApplicationController {
     private final OfferService offer;
     private final StaffDirectory staffDirectory;
     private final LoanRepository loanRepository;
+    private final ApplicationEventRepository eventRepository;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
@@ -158,7 +160,15 @@ public class ApplicationController {
     @GetMapping("/{id}")
     public ApiResponse<ApplicationView> get(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
-        return ApiResponse.ok(ApplicationView.of(flow.get(id)));
+        LoanApplication app = flow.get(id);
+        ApplicationView view = ApplicationView.of(app);
+        if (!"BORROWER".equals(ActorContext.get().role())) {
+            // Staff-only: resolve the real assignee name + current-stage-entered timestamp (never
+            // leaked to the borrower-facing read, mirrors /mine).
+            view = view.withAssignment(resolveExecutiveName(app.getAssignedExecutiveId()),
+                    latestEventAt(id));
+        }
+        return ApiResponse.ok(view);
     }
 
     @GetMapping("/{id}/events")
@@ -432,10 +442,50 @@ public class ApplicationController {
                 ? Map.of()
                 : StreamSupport.stream(loanRepository.findAllById(loanIds).spliterator(), false)
                         .collect(Collectors.toMap(Loan::getId, l -> l));
+        Map<Long, String> nameByExecutiveId = resolveExecutiveNames(apps);
+        Map<Long, java.time.Instant> stageEnteredAtByAppId = latestEventAtByAppId(
+                apps.stream().map(LoanApplication::getId).toList());
         return apps.stream()
                 .map(a -> ApplicationView.of(a, byApp.get(a.getId()),
-                        a.getLoanId() != null ? byLoan.get(a.getLoanId()) : null))
+                        a.getLoanId() != null ? byLoan.get(a.getLoanId()) : null)
+                        .withAssignment(nameByExecutiveId.get(a.getAssignedExecutiveId()),
+                                stageEnteredAtByAppId.get(a.getId())))
                 .toList();
+    }
+
+    private String resolveExecutiveName(Long executiveId) {
+        if (executiveId == null) {
+            return null;
+        }
+        return staffDirectory.findStaff(executiveId).map(StaffSummary::name).orElse(null);
+    }
+
+    /** Batched name resolution for a page of applications — one lookup per distinct assignee, not per row.
+     *  Built with a plain loop (not {@code Collectors.toMap}, which NPEs on a null value) since a stale
+     *  assignee id that no longer resolves to a staff member is expected, not exceptional. */
+    private Map<Long, String> resolveExecutiveNames(List<LoanApplication> apps) {
+        Map<Long, String> result = new java.util.LinkedHashMap<>();
+        for (Long executiveId : apps.stream().map(LoanApplication::getAssignedExecutiveId)
+                .filter(Objects::nonNull).distinct().toList()) {
+            result.put(executiveId, resolveExecutiveName(executiveId));
+        }
+        return result;
+    }
+
+    private java.time.Instant latestEventAt(Long applicationId) {
+        return latestEventAtByAppId(List.of(applicationId)).get(applicationId);
+    }
+
+    /** Newest-first per row, so the first hit per applicationId in iteration order is that row's latest event. */
+    private Map<Long, java.time.Instant> latestEventAtByAppId(List<Long> applicationIds) {
+        if (applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, java.time.Instant> result = new java.util.LinkedHashMap<>();
+        for (var event : eventRepository.findByApplicationIdInOrderByAtDesc(applicationIds)) {
+            result.putIfAbsent(event.getApplicationId(), event.getAt());
+        }
+        return result;
     }
 
     /** Credit score / rating are staff-only — reject borrower / anonymous callers on these reads. */

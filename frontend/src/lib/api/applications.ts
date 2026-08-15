@@ -103,6 +103,14 @@ export interface ApplicationView {
   pan?: string | null;
   salaryAccountNumber?: string | null;
   salaryIfsc?: string | null;
+  /**
+   * The REAL, server-resolved assignee name for `assignedExecutiveId` (staff reads only — always null
+   * on the borrower `/mine` route). Distinct from any implied/displayed Credit Head label shown in the
+   * journey view when this is still null — that is a frontend-only convention, never persisted here.
+   */
+  assignedExecutiveName?: string | null;
+  /** When this application entered its CURRENT `status` (latest `application_event.at`). Staff-only. */
+  currentStageEnteredAt?: string | null;
 }
 
 /** One staffer's action off the application-event trail (backs /staff/my-decisions). */
@@ -166,6 +174,10 @@ export interface AdminApplicationView {
   complete: boolean;
   kycCapturedAt: string | null;
   bureauState: BureauState;
+  /** Real, server-resolved assignee name for `assignedExecutiveId` (ADMIN-only register). */
+  assignedExecutiveName?: string | null;
+  /** When this application entered its CURRENT `status` (latest `application_event.at`). */
+  currentStageEnteredAt?: string | null;
 }
 
 /**
@@ -989,6 +1001,14 @@ export const verificationApi = {
 
   /** PUT raw bytes (File or Blob) straight to the presigned S3 URL — never through the BFF. */
   putToPresignedUrl,
+
+  /**
+   * Persist already-uploaded S3 keys as `ApplicationDocument` rows under an arbitrary docType — the
+   * generic counterpart to `salary(...)`'s hardcoded SALARY_SLIP persistence. Used for the 6-month
+   * bank-statement upload on the bank-details page (docType "BANK_STATEMENT").
+   */
+  uploadedDocuments: (id: number, body: { docType: string; objectKeys: string[] }) =>
+    bff<void>(`${BORROWER_BASE}/${id}/verify/documents`, "POST", body),
 };
 
 // ---------------------------------------------------------------------------

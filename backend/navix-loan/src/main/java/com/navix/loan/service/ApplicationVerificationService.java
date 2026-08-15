@@ -376,6 +376,39 @@ public class ApplicationVerificationService {
         }
     }
 
+    /** docTypes a borrower may persist via {@link #saveUploadedDocuments}. SALARY_SLIP is deliberately
+     *  excluded — that persistence stays inside {@link #verifySalary}, which also records the declared
+     *  monthly salary; this generic path is for documents with no accompanying verification step. */
+    private static final java.util.Set<String> UPLOADABLE_DOC_TYPES = java.util.Set.of("BANK_STATEMENT");
+
+    /**
+     * Persist already-uploaded S3 keys as {@link ApplicationDocument} rows under an arbitrary
+     * (allow-listed) docType — the generic counterpart to {@link #verifySalary}'s hardcoded
+     * SALARY_SLIP persistence loop. No verification row is written: a bank statement is a document,
+     * not a check, so {@link #REQUIRED} / submit-kyc completeness gating is unaffected.
+     */
+    @Transactional
+    public void saveUploadedDocuments(Long appId, String docType, List<String> objectKeys) {
+        requireApplication(appId);
+        String type = docType == null ? "" : docType.trim().toUpperCase();
+        if (!UPLOADABLE_DOC_TYPES.contains(type)) {
+            throw new BusinessException("UNSUPPORTED_DOC_TYPE", "Unsupported document type: " + docType);
+        }
+        if (objectKeys == null || objectKeys.isEmpty()) {
+            throw new BusinessException("INVALID_INPUT", "At least one uploaded file is required");
+        }
+        int seq = 0;
+        for (String key : objectKeys) {
+            if (key == null || key.isBlank()) continue;
+            ApplicationDocument doc = new ApplicationDocument();
+            doc.setApplicationId(appId);
+            doc.setDocType(type);
+            doc.setFileName(type.toLowerCase().replace('_', '-') + "-" + (++seq));
+            doc.setS3ObjectKey(key);
+            documentRepo.save(doc);
+        }
+    }
+
     /** Presigned PUT target (key the caller echoes back on the verify/* call; url the browser PUTs to). */
     public record PresignedUpload(String key, String url) {
     }

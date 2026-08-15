@@ -22,6 +22,7 @@ import {
   fileToBase64,
   statusLabel,
   type DocumentView,
+  type ApplicationDocumentGroup,
 } from "@/lib/api/applications";
 
 export const CUSTOMER_LEVEL_DOC_TYPES = new Set([
@@ -31,8 +32,22 @@ export const CUSTOMER_LEVEL_DOC_TYPES = new Set([
   "PAN",
   "ADDRESS",
   "SALARY",
-  "PAYSLIP",
+  // The real persisted value is SALARY_SLIP (see ApplicationVerificationService#verifySalary) — the
+  // former "PAYSLIP" entry here never matched any real document and fell through to the per-application
+  // section. BANK_STATEMENT is the new 6-month bank-statement upload (bank-details page).
+  "SALARY_SLIP",
+  "BANK_STATEMENT",
 ]);
+
+/** Friendly labels for docTypes shown to staff; unlisted types fall back to the raw string. */
+export const DOC_TYPE_LABELS: Record<string, string> = {
+  SALARY_SLIP: "Salary slip",
+  BANK_STATEMENT: "Bank statement",
+};
+
+export function docTypeLabel(docType: string): string {
+  return DOC_TYPE_LABELS[docType.toUpperCase()] ?? docType;
+}
 
 // ---------------------------------------------------------------------------
 // Documents (admin replace = delete-then-upload)
@@ -106,7 +121,7 @@ function GroupedDocumentsTab({ customerId }: { customerId: number }) {
           <div className="space-y-4">
             {Array.from(customerByType.entries()).map(([docType, documents]) => (
               <div key={docType}>
-                <h4 className="mb-1.5 text-xs font-semibold text-navy">{docType}</h4>
+                <h4 className="mb-1.5 text-xs font-semibold text-navy">{docTypeLabel(docType)}</h4>
                 <ul className="space-y-1.5">
                   {documents.map(({ applicationId, doc }) => (
                     <DocRow
@@ -217,7 +232,7 @@ function SingleApplicationDocuments({
   );
 }
 
-function DocRow({
+export function DocRow({
   appId,
   doc,
   canDelete,
@@ -253,7 +268,7 @@ function DocRow({
         <span className="block">{doc.fileName}</span>
         {sourceMeta && <span className="block text-xs text-muted">{sourceMeta}</span>}
       </span>
-      <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[8.8px] font-semibold text-navy">{doc.docType}</span>
+      <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[8.8px] font-semibold text-navy">{docTypeLabel(doc.docType)}</span>
       <button onClick={view} disabled={busy} className="btn btn-sm btn-outline disabled:opacity-50">
         {busy ? <Loader2 size={13} className="animate-spin" /> : <ExternalLink size={13} />} View
       </button>
@@ -268,6 +283,51 @@ function DocRow({
         </button>
       )}
     </li>
+  );
+}
+
+/**
+ * Reusable "every document of these docTypes, across all this customer's applications" list — used by
+ * the customer-tabs.tsx Salary tab (SALARY_SLIP) and Bank Accounts tab (BANK_STATEMENT). Shares the
+ * "customer-documents" query key with the Documents tab so it costs nothing extra once either has loaded.
+ */
+export function CustomerDocsByType({
+  customerId,
+  docTypes,
+  emptyCopy,
+}: {
+  customerId: number;
+  docTypes: Set<string>;
+  emptyCopy: string;
+}) {
+  const groupsQ = useQuery({
+    queryKey: ["customer-documents", customerId],
+    queryFn: () => customersApi.documents(customerId),
+  });
+  const groups: ApplicationDocumentGroup[] = groupsQ.data ?? [];
+  const rows = groups.flatMap((group) =>
+    group.documents
+      .filter((doc) => docTypes.has(doc.docType.toUpperCase()))
+      .map((doc) => ({ applicationId: group.applicationId, doc })),
+  );
+
+  if (groupsQ.isLoading) return <p className="text-sm text-muted">Loading…</p>;
+  if (rows.length === 0) return <p className="text-sm text-muted">{emptyCopy}</p>;
+
+  return (
+    <ul className="space-y-1.5">
+      {rows.map(({ applicationId, doc }) => (
+        <DocRow
+          key={`${applicationId}-${doc.id}`}
+          appId={applicationId}
+          doc={doc}
+          sourceMeta={`Application #${applicationId} · uploaded ${formatDateTime(doc.uploadedAt)}`}
+          canDelete={false}
+          onDelete={() => {}}
+          deleting={false}
+        />
+      ))}
+    </ul>
   );
 }
 

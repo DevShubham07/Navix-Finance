@@ -30,6 +30,7 @@ public class ProviderApiWorkbenchService {
     private final DigitapAddressClient digitapAddress;
     private final DigitapCreditClient digitapCredit;
     private final DigitapFaceMatchClient digitapFace;
+    private final DigitapUanAdvancedClient digitapUan;
 
     public record Field(String key, String label, String type, boolean required) {}
     public record CatalogItem(String operation, List<String> providers, List<Field> fields) {}
@@ -43,7 +44,8 @@ public class ProviderApiWorkbenchService {
             item("ADDRESS", List.of("SIGNZY", "DIGITAP"), f("latitude", "Latitude", "number", true), f("longitude", "Longitude", "number", true)),
             item("BUREAU", List.of("SIGNZY_EXPERIAN", "SIGNZY_CRIF", "DIGITAP"), f("pan", "PAN", "text", true), f("name", "Full name", "text", true), f("mobile", "Mobile", "text", true), f("dob", "Date of birth", "date", true), f("otp", "Consent OTP", "text", false)),
             item("PENNY_DROP", List.of("SIGNZY"), f("accountNumber", "Account number", "text", true), f("ifsc", "IFSC", "text", true), f("beneficiaryName", "Beneficiary name", "text", true)),
-            item("FACE_MATCH", List.of("DIGITAP"), f("personImage", "Selfie image URL/base64", "text", true), f("cardImage", "Document image URL/base64", "text", false)));
+            item("FACE_MATCH", List.of("DIGITAP"), f("personImage", "Selfie image URL/base64", "text", true), f("cardImage", "Document image URL/base64", "text", false)),
+            item("UAN", List.of("DIGITAP"), f("pan", "PAN", "text", false), f("mobile", "Mobile", "text", false), f("dob", "Date of birth", "date", false), f("employeeName", "Employee name", "text", false), f("employerName", "Employer name", "text", false)));
     }
     private static CatalogItem item(String op, List<String> providers, Field... fields) { return new CatalogItem(op, providers, List.of(fields)); }
     private static Field f(String key, String label, String type, boolean required) { return new Field(key,label,type,required); }
@@ -84,6 +86,7 @@ public class ProviderApiWorkbenchService {
             case "BUREAU:DIGITAP" -> digitapCredit.pull(s(in,"pan"),s(in,"name"),s(in,"mobile"),s(in,"dob"),s(in,"otp"),"admin-workbench");
             case "PENNY_DROP:SIGNZY" -> signzyBank.verify(s(in,"accountNumber"),s(in,"ifsc"),s(in,"beneficiaryName"));
             case "FACE_MATCH:DIGITAP" -> digitapFace.match(s(in,"personImage"),s(in,"cardImage"),"admin-workbench");
+            case "UAN:DIGITAP" -> digitapUan.verify(s(in,"pan"),s(in,"mobile"),s(in,"dob"),s(in,"employeeName"),s(in,"employerName"),"admin-workbench");
             default -> throw new BusinessException("UNSUPPORTED_PROVIDER", "Unsupported provider operation");
         });
     }

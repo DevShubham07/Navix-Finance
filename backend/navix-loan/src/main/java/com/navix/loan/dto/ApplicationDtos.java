@@ -91,7 +91,12 @@ public final class ApplicationDtos {
             /** The borrower typed a different account, so a penny drop ran. */
             Boolean disbursalAccountChanged,
             /** False on the unchanged-salary-account path, which never runs a penny drop. */
-            Boolean disbursalAccountVerified) {
+            Boolean disbursalAccountVerified,
+            // Staff-only, server-resolved from assignedExecutiveId / the audit trail. Populated only
+            // by withAssignment(...) on batched staff read paths (list/detail/customer/admin views) —
+            // never on the borrower-facing /mine route, so these stay null there by construction.
+            String assignedExecutiveName,
+            Instant currentStageEnteredAt) {
 
         public static ApplicationView of(LoanApplication a) {
             return of(a, null, null);
@@ -141,7 +146,24 @@ public final class ApplicationDtos {
                     a.getMarkedPendingAt(), a.getPendingReason(),
                     a.getDisbursalAccountNumber(), a.getDisbursalIfsc(), a.getDisbursalHolderName(),
                     a.getDisbursalBank(), a.getDisbursalAccountChanged(),
-                    a.getDisbursalAccountVerified());
+                    a.getDisbursalAccountVerified(), null, null);
+        }
+
+        /**
+         * Wither for the two server-resolved staff fields (real assignee name, current-stage-entered
+         * timestamp). Kept separate from {@code of(...)} because those factories are called from ~20
+         * sites, most on borrower/mutation paths where resolving a name + an event-table lookup per
+         * application would be pure waste; only the batched staff read paths call this.
+         */
+        public ApplicationView withAssignment(String assignedExecutiveName, Instant currentStageEnteredAt) {
+            return new ApplicationView(id, customerId, status, amountRequestedPaise, eligibleLimitPaise,
+                    purpose, assignedExecutiveId, loanId, salaryCreditDay, fastTrack, creditScore,
+                    starRating, recommendation, customerName, customerMobile, pan, salaryAccountNumber,
+                    salaryIfsc, loanStatus, loanDueDate, sanctionedAmountPaise, approvedRepaymentDate,
+                    sanctionTenureDays, sanctionRemarks, sanctionedAt, markedPendingAt, pendingReason,
+                    disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
+                    disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
+                    currentStageEnteredAt);
         }
     }
 

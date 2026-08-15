@@ -16,7 +16,7 @@ import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
-import { Section, KV, Bool, DocumentsTab, RemarksTab } from "@/components/staff/detail-parts";
+import { Section, KV, Bool, DocumentsTab, RemarksTab, CustomerDocsByType } from "@/components/staff/detail-parts";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import {
   customersApi,
@@ -33,6 +33,7 @@ import {
 export const CUSTOMER_TABS: TabDef[] = [
   { key: "personal", label: "Personal Details" },
   { key: "employment", label: "Employment" },
+  { key: "salary", label: "Salary" },
   { key: "bank", label: "Bank Accounts" },
   { key: "credit", label: "Credit Report" },
   { key: "documents", label: "Documents" },
@@ -92,6 +93,8 @@ export function CustomerTabBody({
       return <PersonalTab c={detail} applicationId={latestAppId} onChanged={onChanged} />;
     case "employment":
       return <EmploymentTab c={detail} />;
+    case "salary":
+      return <SalaryTab c={detail} customerId={customerId} />;
     case "bank":
       return <BankTab c={detail} latestAppId={latestAppId} />;
     case "credit":
@@ -290,6 +293,38 @@ function EmploymentTab({ c }: { c: CustomerDetail }) {
   );
 }
 
+/** Declared income + the borrower's uploaded salary slips (SALARY_SLIP docs), separate from the
+ *  Employment tab's EPFO corroboration and from the Bank Accounts tab's bank statements. */
+function SalaryTab({ c, customerId }: { c: CustomerDetail; customerId: number }) {
+  const p = c.profile;
+  const latestApp = c.applications[0] ?? null;
+  return (
+    <div className="space-y-4">
+      <Section title="Declared income">
+        <KV
+          k="Monthly salary"
+          v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null}
+        />
+        <KV
+          k="Annual salary"
+          v={p?.annualSalaryPaise != null ? paiseToINR(p.annualSalaryPaise) : null}
+        />
+        <KV
+          k="Eligible limit"
+          v={latestApp?.eligibleLimitPaise != null ? paiseToINR(latestApp.eligibleLimitPaise) : null}
+        />
+      </Section>
+      <Section title="Salary slips">
+        <CustomerDocsByType
+          customerId={customerId}
+          docTypes={new Set(["SALARY_SLIP"])}
+          emptyCopy="No salary slips uploaded."
+        />
+      </Section>
+    </div>
+  );
+}
+
 /**
  * The EPFO/UAN counterpart to the declared block above — what Digitap's UAN Advanced lookup found,
  * so a reviewer can put the borrower's claim and the provident-fund record side by side.
@@ -386,6 +421,13 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
           ["IFSC", p?.salaryIfsc, "KYC profile"],
           ["Penny drop verified", <Bool key="penny" on={p?.pennyDropVerified} />, "KYC profile"],
         ]} />
+      </Section>
+      <Section title="Bank statements">
+        <CustomerDocsByType
+          customerId={c.customerId}
+          docTypes={new Set(["BANK_STATEMENT"])}
+          emptyCopy="No bank statements uploaded."
+        />
       </Section>
       <Section title="Penny-drop derived">
         {pennyQ.isLoading ? (
@@ -565,6 +607,11 @@ function LoansTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void 
                 <span className="text-ink">
                   #{a.id} · {statusLabel(a.status)}
                   {a.purpose ? <span className="text-muted"> · {a.purpose}</span> : null}
+                  {/* Real assignee only — no implied Credit Head fallback outside the journey view. */}
+                  <span className="block text-xs text-muted">
+                    Assigned to {a.assignedExecutiveName ?? "—"}
+                    {a.currentStageEnteredAt ? ` · in stage since ${formatDateTime(a.currentStageEnteredAt)}` : ""}
+                  </span>
                 </span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-muted">

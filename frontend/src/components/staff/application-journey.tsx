@@ -35,6 +35,7 @@ import { staffApi, statusLabel, paiseToINR } from "@/lib/api/applications";
 import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
 import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import { JourneyStepper } from "@/components/staff/journey-stepper";
+import { JourneyAssignee } from "@/components/staff/journey-assignee";
 import { StageDetailDialog } from "@/components/staff/stage-detail-dialog";
 
 export interface ApplicationJourneyProps {
@@ -129,11 +130,14 @@ export function ApplicationJourney({ applicationId, open, onClose, onOpenDetail 
           ) : !app || !journey ? (
             <p className="text-sm text-muted">Application #{applicationId} not found.</p>
           ) : (
-            <JourneyStepper
-              stages={journey.stages}
-              activeIndex={activeIndex}
-              onStageClick={setOpenStage}
-            />
+            <>
+              <JourneyAssignee app={app} />
+              <JourneyStepper
+                stages={journey.stages}
+                activeIndex={activeIndex}
+                onStageClick={setOpenStage}
+              />
+            </>
           )}
         </DrawerBody>
 

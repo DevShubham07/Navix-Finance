@@ -1,6 +1,7 @@
 package com.navix.loan.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Positive;
 import java.util.List;
 
@@ -60,5 +61,13 @@ public final class VerificationDtos {
 
     /** App-scoped presigned-upload request (salary slip, selfie). */
     public record PresignUploadRequest(@NotBlank String docType, String fileName, @NotBlank String contentType) {
+    }
+
+    /**
+     * Persist already-uploaded S3 keys as {@code ApplicationDocument} rows under an arbitrary (allow-
+     * listed) docType — the generic counterpart to {@code salary(...)}'s hardcoded SALARY_SLIP
+     * persistence. Used for the 6-month bank-statement upload on the bank-details page.
+     */
+    public record UploadedDocumentsRequest(@NotBlank String docType, @NotEmpty List<String> objectKeys) {
     }
 }
