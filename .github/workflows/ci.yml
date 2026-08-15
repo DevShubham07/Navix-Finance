@@ -135,7 +135,11 @@ jobs:
       (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
       (github.event_name == 'workflow_dispatch' && inputs.deploy_tag != '')
     runs-on: ubuntu-latest
-    environment: production
+    # Must match the configured environment's exact case ("Production") — GitHub Actions'
+    # environment: job key is case-sensitive at runtime even though the REST API for managing
+    # environments/secrets is case-insensitive, so a lowercase mismatch here silently resolves to
+    # no environment at all (secrets configured under "Production" never get injected).
+    environment: Production
     concurrency:
       group: ecs-production
       cancel-in-progress: false
