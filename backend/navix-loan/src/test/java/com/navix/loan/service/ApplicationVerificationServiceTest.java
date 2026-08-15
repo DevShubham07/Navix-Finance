@@ -54,6 +54,7 @@ class ApplicationVerificationServiceTest {
     @Mock private CreditBriefService creditBriefService;
     @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock private ProfileChangeLogger changeLogger;
+    @Mock private ApplicationFlowService flow;
 
     private ApplicationVerificationService service;
 
@@ -63,7 +64,7 @@ class ApplicationVerificationServiceTest {
     void setUp() {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
                 documentRepo, verification, esign, otpVerifier, storage, risk, new ObjectMapper(),
-                creditBriefService, eventPublisher, changeLogger);
+                creditBriefService, eventPublisher, changeLogger, flow);
         // save() echoes its argument
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(profileRepo.save(any())).thenAnswer(i -> i.getArgument(0));
