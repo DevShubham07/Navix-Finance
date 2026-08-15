@@ -14,6 +14,7 @@ import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
+import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.CustomerProfileRepository;
@@ -144,6 +145,10 @@ public class ApplicationVerificationService {
     private final CreditBriefService creditBriefService;
     private final ApplicationEventPublisher eventPublisher;
     private final ProfileChangeLogger changeLogger;
+    // Engine auto-reject on a sub-threshold bureau score (see pullBureau below). Safe to depend on
+    // directly: ApplicationFlowService deliberately does NOT depend back on this class (it reads
+    // ApplicationVerificationRepository instead) to keep this edge one-directional.
+    private final ApplicationFlowService flow;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     public record StepResult(String checkType, String status, String message, Map<String, Object> derived) {
@@ -764,6 +769,18 @@ public class ApplicationVerificationService {
         ApplicationVerification row = upsert(appId, BUREAU, PASS, r.source(), r.txnId(), ref,
                 null, bureauScore != null ? bureauScore.longValue() : null, null, derived,
                 r.noRecord() ? "Thin-file (no bureau record)" : "Bureau pulled", r.rawResponseJson());
+
+        // Engine auto-reject (revamp.md-style intake rule, same shape as self-employed/past-delinquency):
+        // a real, numeric sub-600 score rejects the application outright. A null/missing score (provider
+        // failure, thin-file) never triggers this — that keeps today's soft-degrade-to-REVIEW behavior,
+        // deliberately. The bureau check itself still reports PASS (the pull succeeded); it's the
+        // application that gets rejected as a side effect.
+        if (bureauScore != null && bureauScore < 600) {
+            flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
+                    "Rejected because credit score is under 600",
+                    ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS);
+        }
+
         return new StepResult(BUREAU, PASS, row.getMessage(), Map.of());
     }
 

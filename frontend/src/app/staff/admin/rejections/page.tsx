@@ -15,12 +15,14 @@ const REASONS = [
   { value: "", label: "All reasons" },
   { value: "SELF_EMPLOYED", label: "Self-employed" },
   { value: "PAST_DELINQUENCY", label: "Past delinquency" },
+  { value: "LOW_BUREAU_SCORE", label: "Low credit score" },
   { value: "MANUAL", label: "Rejected by credit" },
 ] as const;
 
 const REASON_LABEL: Record<string, string> = {
   SELF_EMPLOYED: "Self-employed",
   PAST_DELINQUENCY: "Past delinquency",
+  LOW_BUREAU_SCORE: "Low credit score",
   MANUAL: "Rejected by credit",
 };
 
@@ -41,7 +43,8 @@ const EXPORT_COLUMNS: ExportColumn<RejectionView>[] = [
 
 /**
  * Admin · rejections — every rejection in one register: the self-employed auto-reject and its
- * 90-day cooling-off window, the past-delinquency engine rule, and manual credit rejections.
+ * 90-day cooling-off window, the past-delinquency engine rule, the sub-600 bureau-score auto-reject
+ * (also a 90-day cooling-off), and manual credit rejections.
  * The borrower is never shown any of this; they always see the same neutral message.
  */
 export default function AdminRejectionsPage() {

@@ -111,6 +111,9 @@ public class ApplicationFlowService {
     /** Cooling-off window after a self-employed auto-reject (revamp.md decision 20). */
     public static final int SELF_EMPLOYED_BLOCK_DAYS = 90;
 
+    /** Cooling-off window after a sub-600 bureau-score auto-reject. */
+    public static final int LOW_BUREAU_SCORE_BLOCK_DAYS = 90;
+
     /**
      * How many days past a due date a returning borrower may have settled and still be welcome back
      * (revamp.md decision 47). Counted from the due date itself, not from the one-day salary grace.

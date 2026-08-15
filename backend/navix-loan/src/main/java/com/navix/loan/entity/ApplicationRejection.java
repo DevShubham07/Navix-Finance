@@ -23,6 +23,7 @@ public class ApplicationRejection extends BaseAuditEntity {
 
     public static final String SELF_EMPLOYED = "SELF_EMPLOYED";
     public static final String PAST_DELINQUENCY = "PAST_DELINQUENCY";
+    public static final String LOW_BUREAU_SCORE = "LOW_BUREAU_SCORE";
     public static final String MANUAL = "MANUAL";
 
     @Column(name = "application_id")
