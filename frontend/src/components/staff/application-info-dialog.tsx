@@ -153,6 +153,7 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
                 <KV k="Mobile" v={p?.mobile ?? app.customerMobile} mono />
                 <KV k="PAN" v={p?.pan ?? app.pan} mono />
                 <KV k="Email" v={p?.email} />
+                <KV k="Official (work) email" v={p?.officialEmail} />
                 <KV k="DOB" v={p?.dob} />
                 <KV k="Address" v={p?.address} />
                 <KV k="Employer" v={p?.employer} />

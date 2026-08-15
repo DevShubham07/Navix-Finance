@@ -165,6 +165,7 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
         <KV k="PAN" v={p?.pan} mono />
         <KV k="Mobile" v={p?.mobile} mono />
         <KV k="Email" v={p?.email} />
+        <KV k="Official (work) email" v={p?.officialEmail} />
         <KV k="Date of birth" v={p?.dob} />
         <KV k="Address" v={p?.address} />
       </Section>

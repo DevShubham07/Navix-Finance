@@ -88,6 +88,7 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
           />
           <Row label="Mobile" value={p.mobile} mono />
           <Row label="Email" value={p.email} />
+          <Row label="Official (work) email" value={p.officialEmail} />
           <Row label="Date of birth" value={p.dob} />
           <Row label="Address" value={p.address} />
           <Row label="Employer" value={p.employer} />
