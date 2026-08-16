@@ -80,6 +80,19 @@ export function formatDateTime(date: Date | string): string {
   }).format(d);
 }
 
+/**
+ * Annual salary for display: stored `annualSalaryPaise` when set, else monthly × 12.
+ * Display-only — does not persist a computed value back to the profile.
+ */
+export function displayAnnualSalaryPaise(p: {
+  monthlySalaryPaise?: number | null;
+  annualSalaryPaise?: number | null;
+}): number | null {
+  if (p.annualSalaryPaise != null) return p.annualSalaryPaise;
+  if (p.monthlySalaryPaise != null) return p.monthlySalaryPaise * 12;
+  return null;
+}
+
 /** Humanize a verification check type: "PENNY_DROP" → "Penny drop". */
 export function humanizeCheck(checkType: string): string {
   return checkType

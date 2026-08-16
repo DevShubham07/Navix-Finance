@@ -188,9 +188,27 @@ The backend imports `aws-parameterstore:/navix/dev/` (path = `/navix/${NAVIX_ENV
 | `/navix/dev/navix/digilocker/client-id` · `client-secret` | **SecureString** | `navix.digilocker.*` |
 | `/navix/dev/navix/sms/user` · `password` | **SecureString** | `navix.sms.*` |
 | `/navix/dev/navix/sms/channel` | String | `navix.sms.channel` |
+| `/navix/dev/navix/app/frontend-base-url` | String | `navix.app.frontend-base-url` (env `NAVIX_APP_BASE_URL`) |
 
 List them (names only): `aws ssm get-parameters-by-path --path /navix/dev/ --recursive --query 'Parameters[].Name'`
 Set one: `aws ssm put-parameter --name /navix/dev/... --type SecureString --value '...' --overwrite`
+
+**▶ Invite / password-reset links** — staff invite emails and forgot-password emails build activation/reset
+URLs from `navix.app.frontend-base-url` (`NAVIX_APP_BASE_URL`). If this still points at `https://navixfinance.com`
+(or any dead host), invite links land on the wrong site. Set it to the **live DhanBoost frontend**:
+
+```bash
+# Dev (adjust path for prod: /navix/prod/…)
+aws ssm put-parameter \
+  --name /navix/dev/navix/app/frontend-base-url \
+  --type String \
+  --value 'https://dhanboost.com' \
+  --overwrite
+```
+
+Use `https://frontend-ruby-two-78.vercel.app` until `dhanboost.com` is the canonical host. After updating SSM,
+**restart/redeploy the ECS task** so the backend picks up the new value, then smoke-test: create a staff invite
+from `/staff/admin/invites` and confirm the email link is `https://dhanboost.com/staff/activate?token=…`.
 
 **IAM** — `navix-finance-task-role` has: `AmazonECSTaskExecutionRolePolicy`, `AmazonSSMReadOnlyAccess`,
 `AWSKeyManagementServicePowerUser`, `AmazonS3FullAccess`, + an inline `kms` policy. (S3FullAccess is
@@ -359,6 +377,10 @@ TOK=$(curl -s -X POST "$ALB/api/auth/staff/login" -H 'Content-Type: application/
 # admin creates a staff account that can then log in (ADMIN-only; non-admin → 422 FORBIDDEN_ROLE)
 curl -s -X POST "$ALB/api/staff" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
   -d '{"email":"new.staff@navix.test","name":"New Staff","role":"KYC_APPROVER","password":"pass1234"}'
+
+# staff invite link host — after POST /api/staff/invites, check the STAFF_INVITED email (or backend log
+# when NAVIX_EMAIL_PROVIDER=log): inviteLink must use the DhanBoost frontend URL from NAVIX_APP_BASE_URL
+# (SSM §7), not navixfinance.com
 ```
 
 **Primary admin (Flyway V19):** **`navixfinance@gmail.com`** / **`demo`** (ADMIN). This is the real

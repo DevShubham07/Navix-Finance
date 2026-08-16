@@ -4,9 +4,9 @@
  * Journey-view-only "who is this with" label (staff-only).
  *
  * READ-ONLY / DISPLAY-ONLY: this component never writes anything. It shows the real, server-resolved
- * `assignedExecutiveName` when one exists; otherwise, for an application sitting in `KYC_PENDING` with
- * no real assignee yet, it shows an IMPLIED "Currently with: {the sole active Credit Head}" label so a
- * reviewer knows whose desk the file conventionally sits on before anyone has formally picked it up.
+ * `assignedExecutiveName` when one exists; otherwise, for an application sitting in `KYC_PENDING` or
+ * `KYC_APPROVED` with no real assignee yet, it shows an IMPLIED "Currently with: {Credit Head}" label
+ * so a reviewer knows whose desk the file conventionally sits on before anyone has formally picked it up.
  *
  * This label is computed purely at render time from `GET /api/applications/credit-executives?role=
  * CREDIT_HEAD` (the existing assignee-picker endpoint, already readable by any staff role) — no new
@@ -20,25 +20,45 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { staffApi, type ApplicationView } from "@/lib/api/applications";
+import { staffApi, type ApplicationView, type StaffSummary } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
+/** Statuses where an unassigned intake conventionally sits on the Credit Head's desk (V45). */
+const IMPLICIT_HEAD_STATUSES = new Set<ApplicationView["status"]>(["KYC_PENDING", "KYC_APPROVED"]);
+
+function needsImpliedCreditHead(app: ApplicationView): boolean {
+  return (
+    app.assignedExecutiveName == null &&
+    app.assignedExecutiveId == null &&
+    IMPLICIT_HEAD_STATUSES.has(app.status)
+  );
+}
+
+/** Pick the first active Credit Head from the picker list (falls back to the first row). */
+function pickCreditHead(heads: StaffSummary[] | undefined): StaffSummary | null {
+  if (!heads?.length) return null;
+  return heads.find((h) => h.role === "CREDIT_HEAD") ?? heads[0];
+}
+
 export function JourneyAssignee({ app }: { app: ApplicationView }) {
+  const implied = needsImpliedCreditHead(app);
   const headQ = useQuery({
     queryKey: ["staff-picker", "CREDIT_HEAD"],
     queryFn: () => staffApi.creditExecutives("CREDIT_HEAD"),
     staleTime: 60_000,
-    // Only relevant while there's no real assignee yet — skip the fetch once one exists.
-    enabled: app.assignedExecutiveName == null && app.assignedExecutiveId == null,
+    enabled: implied,
   });
 
   let label: string;
   if (app.assignedExecutiveName) {
     label = `Currently assigned to: ${app.assignedExecutiveName}`;
-  } else if (app.assignedExecutiveId == null && app.status === "KYC_PENDING" && (headQ.data?.length ?? 0) === 1) {
-    // Exactly one active Credit Head — the user's stated premise. Degrade to "Unassigned" rather than
-    // guessing if that stops being true (0 or >1 active heads).
-    label = `Currently with: ${headQ.data![0].name} (Credit Head) — not yet formally assigned`;
+  } else if (implied && headQ.isLoading) {
+    label = "Checking assignee…";
+  } else if (implied) {
+    const head = pickCreditHead(headQ.data);
+    label = head
+      ? `Currently with: ${head.name} (Credit Head) — not yet formally assigned`
+      : "Unassigned";
   } else {
     label = "Unassigned";
   }

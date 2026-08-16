@@ -10,7 +10,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Check, XCircle } from "lucide-react";
 import { Select } from "@/components/ui";
 import { type TabDef } from "@/components/ui/tabs";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { displayAnnualSalaryPaise, formatDate, formatDateTime } from "@/lib/utils";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
@@ -258,6 +258,7 @@ function str(v: unknown): string | null {
 function EmploymentTab({ c }: { c: CustomerDetail }) {
   const p = c.profile;
   const latestApp = c.applications[0] ?? null;
+  const annualPaise = p ? displayAnnualSalaryPaise(p) : null;
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Section title="Employment & salary (declared)">
@@ -270,7 +271,7 @@ function EmploymentTab({ c }: { c: CustomerDetail }) {
         />
         <KV
           k="Annual salary"
-          v={p?.annualSalaryPaise != null ? paiseToINR(p.annualSalaryPaise) : null}
+          v={annualPaise != null ? paiseToINR(annualPaise) : null}
         />
         <KV
           k="Salary %"
@@ -299,6 +300,7 @@ function EmploymentTab({ c }: { c: CustomerDetail }) {
 function SalaryTab({ c, customerId }: { c: CustomerDetail; customerId: number }) {
   const p = c.profile;
   const latestApp = c.applications[0] ?? null;
+  const annualPaise = p ? displayAnnualSalaryPaise(p) : null;
   return (
     <div className="space-y-4">
       <Section title="Declared income">
@@ -308,7 +310,7 @@ function SalaryTab({ c, customerId }: { c: CustomerDetail; customerId: number })
         />
         <KV
           k="Annual salary"
-          v={p?.annualSalaryPaise != null ? paiseToINR(p.annualSalaryPaise) : null}
+          v={annualPaise != null ? paiseToINR(annualPaise) : null}
         />
         <KV
           k="Eligible limit"
