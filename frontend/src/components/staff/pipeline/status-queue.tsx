@@ -18,6 +18,7 @@ import { errMessage } from "@/components/staff/pipeline/hooks";
 import { AppRow } from "@/components/staff/pipeline/app-row";
 import { AssignActions, CreditDecisionActions } from "@/components/staff/pipeline/actions";
 import { useStaffMe } from "@/components/staff/pipeline/hooks";
+import { useQueueRange } from "@/components/staff/pipeline/queue-date-filter";
 
 export function StatusQueue({
   title,
@@ -45,9 +46,10 @@ export function StatusQueue({
    */
   hideWhenEmpty?: boolean;
 }) {
+  const range = useQueueRange();
   const q = useQuery({
-    queryKey: ["staff-queue", status],
-    queryFn: () => staffApi.listByStatus(status),
+    queryKey: ["staff-queue", status, range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.listByStatus(status, range),
     refetchInterval: 8000,
   });
 
@@ -227,6 +229,7 @@ export function QueueTable({
           <tr>
             <th className="staff-sticky-identity">Application</th>
             <th>Customer ID</th>
+            <th>Date</th>
             <th>Customer</th>
             <th>Mobile</th>
             <th>PAN</th>

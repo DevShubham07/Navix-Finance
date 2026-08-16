@@ -50,6 +50,11 @@ public final class VerificationDtos {
     public record BureauConsentRequest(@NotBlank String otp, @NotBlank String consentText) {
     }
 
+    /** The code emailed to the borrower's PERSONAL address. The address itself is never accepted
+     *  from the client — it is resolved from the stored profile. */
+    public record EmailOtpVerifyRequest(@NotBlank String otp) {
+    }
+
     /**
      * The bureau-consent OTP the borrower already verified (see {@link BureauConsentRequest}), forwarded
      * so it can be threaded into Digitap's Credit Analytics payload. Optional/nullable: a staff-triggered

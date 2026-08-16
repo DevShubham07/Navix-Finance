@@ -193,7 +193,9 @@ public class SettlementService {
     /** All settlements (pending + approved), for the collections settlements worklist. */
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {
-        return settlementRepository.findAll().stream().map(this::toView).toList();
+        return settlementRepository.findAll(org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "createdAt"))
+                .stream().map(this::toView).toList();
     }
 
     private SettlementView toView(Settlement s) {

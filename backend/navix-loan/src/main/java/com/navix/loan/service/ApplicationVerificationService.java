@@ -9,7 +9,9 @@ import com.navix.common.notification.event.SanctionLetterSignedEvent;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.common.util.Masking;
 import com.navix.common.verification.EsignPort;
+import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.CustomerProfile;
@@ -90,6 +92,14 @@ public class ApplicationVerificationService {
      * nor in {@link #KNOWN_CHECKS} (staff must not be able to manually assert a borrower's consent).
      */
     public static final String BUREAU_CONSENT = "BUREAU_CONSENT";
+    /**
+     * The borrower's OTP-proven ownership of their PERSONAL email. Deliberately NOT in
+     * {@link #REQUIRED} (non-blocking — additive to the existing intake) nor in {@link #KNOWN_CHECKS}
+     * (staff must not be able to manually assert that a borrower controls an inbox). Distinct from
+     * {@link #EMAIL}, which is the Signzy/Digitap deliverability + employer-match check on the
+     * OFFICIAL email — untouched by this.
+     */
+    public static final String EMAIL_OTP = "EMAIL_OTP";
 
     // ---- statuses ----
     public static final String PASS = "PASS";
@@ -139,6 +149,7 @@ public class ApplicationVerificationService {
     private final VerificationPort verification;
     private final EsignPort esign;
     private final OtpVerifierPort otpVerifier;
+    private final EmailOtpPort emailOtp;
     private final DocumentStoragePort storage;
     private final RiskPort risk;
     private final ObjectMapper objectMapper;
@@ -495,37 +506,10 @@ public class ApplicationVerificationService {
     public StepResult digilockerStatus(Long appId) {
         CustomerProfile profile = profile(appId);
         String clientId = profile.getDigilockerClientId();
-        // TEMP (revert later): DigiLocker is best-effort — force the status to always resolve PASS so
-        // onboarding never stalls, whether the provider stalled at "client_initiated" OR no consent
-        // session was ever created (provider-degraded init records DIGILOCKER as REVIEW with no
-        // clientId). Reporting completed here lets even an older frontend that polls status advance;
-        // the Aadhaar falls to staff manual review at submit-kyc. Removing both branches restores the
-        // real provider-driven status logic below.
-        if (clientId == null) {
-            // No consent session (provider-degraded init). Don't 500 with DIGILOCKER_NOT_STARTED —
-            // treat the best-effort step as completed so the wizard advances.
-            Map<String, Object> forced = new LinkedHashMap<>();
-            forced.put("status", "completed");
-            forced.put("completed", true);
-            forced.put("failed", false);
-            forced.put("finalized", true);
-            forced.put("providerError", true);
-            return new StepResult(DIGILOCKER, PASS, "DigiLocker completed", forced);
-        }
-        if (clientId != null) {
-            Map<String, Object> forced = new LinkedHashMap<>();
-            forced.put("status", "completed");
-            forced.put("completed", true);
-            forced.put("failed", false);
-            forced.put("finalized", true);
-            return new StepResult(DIGILOCKER, PASS, "DigiLocker completed", forced);
-        }
         // Our own finalized state is authoritative. Once the Aadhaar has actually been fetched
         // (by either tab — see digilockerComplete) the step is done, regardless of the provider's
-        // status flag. The Fintrix/Surepass status endpoint is unreliable here: it routinely stalls
-        // at "client_initiated" and never reports completed=true, so trusting that flag leaves the
-        // poll spinning forever. Short-circuit on the finalized AADHAAR row and skip the provider
-        // call entirely (also avoids a stale-session error after the session has been consumed).
+        // status flag. Checked BEFORE the clientId branches below: digilockerComplete nulls out
+        // digilockerClientId on completion, so a completed DigiLocker must still resolve PASS here.
         if (passed(appId, AADHAAR).isPresent()) {
             Map<String, Object> derived = new LinkedHashMap<>();
             derived.put("status", "completed");
@@ -534,7 +518,33 @@ public class ApplicationVerificationService {
             derived.put("finalized", true);
             return new StepResult(DIGILOCKER, PASS, "DigiLocker completed", derived);
         }
-        VerificationPort.DigiLockerStatus s = verification.digilockerStatus(clientId);
+        if (clientId == null) {
+            // No consent session yet — either init hasn't run, or a provider-degraded init recorded
+            // DIGILOCKER as REVIEW with no clientId. Neither is success and neither is an error:
+            // report PENDING rather than the old DIGILOCKER_NOT_STARTED 422 (which broke the poll
+            // before the borrower had even opened the popup) or a forced PASS (which lied to staff).
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("status", "not_started");
+            derived.put("completed", false);
+            derived.put("failed", false);
+            derived.put("finalized", false);
+            return new StepResult(DIGILOCKER, PENDING, "DigiLocker not started", derived);
+        }
+        // The Fintrix/Surepass status endpoint is unreliable here: it routinely stalls at
+        // "client_initiated" and never reports completed=true, and a provider blip must not 500 the
+        // poll — degrade to PENDING and let the borrower keep waiting or retry, same as everywhere
+        // else on this best-effort step.
+        VerificationPort.DigiLockerStatus s;
+        try {
+            s = verification.digilockerStatus(clientId);
+        } catch (RuntimeException providerFailure) {
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("status", "unavailable");
+            derived.put("completed", false);
+            derived.put("failed", false);
+            derived.put("providerError", true);
+            return new StepResult(DIGILOCKER, PENDING, "DigiLocker status unavailable", derived);
+        }
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("status", s.status());
         derived.put("completed", s.completed());
@@ -1555,6 +1565,43 @@ public class ApplicationVerificationService {
                 null, null, null, derived, "Bureau consent given (OTP verified)"));
     }
 
+    /**
+     * Send the OTP proving the borrower controls their PERSONAL email — additive to (and separate
+     * from) the existing {@link #verifyEmail} deliverability/employer-match check on the OFFICIAL
+     * email. The address is resolved server-side from the saved profile, never from the request, so
+     * a caller can't verify a code sent to an inbox they don't control.
+     */
+    @Transactional(readOnly = true)
+    public OtpVerifierPort.OtpRequestResult requestPersonalEmailOtp(Long appId) {
+        CustomerProfile profile = profile(appId);
+        String email = profile.getEmail();
+        if (email == null || email.isBlank()) {
+            throw new BusinessException("EMAIL_MISSING",
+                    "No personal email on file — save your email first");
+        }
+        return emailOtp.request(email, EmailOtpPort.PERSONAL_EMAIL);
+    }
+
+    /** Confirm the personal-email OTP and flag the profile as OTP-verified. */
+    @Transactional
+    public StepResult verifyPersonalEmailOtp(Long appId, String otp) {
+        CustomerProfile profile = profile(appId);
+        String email = profile.getEmail();
+        if (email == null || email.isBlank()) {
+            throw new BusinessException("EMAIL_MISSING", "No personal email on file");
+        }
+        if (!emailOtp.verify(email, otp, EmailOtpPort.PERSONAL_EMAIL)) {
+            throw new BusinessException("INVALID_OTP", "Invalid or expired code");
+        }
+        profile.setPersonalEmailVerified(Boolean.TRUE);
+        profileRepo.save(profile);
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("channel", "OTP");
+        derived.put("email", Masking.maskEmail(email)); // never store the raw address in derived
+        return view(upsert(appId, EMAIL_OTP, PASS, "DhanBoost", null, ref(appId, EMAIL_OTP),
+                null, null, null, derived, "Personal email verified (OTP)"));
+    }
+
     // ---------------------------------------------------------------- gating + summary
 
     /**
@@ -1661,13 +1708,6 @@ public class ApplicationVerificationService {
         boolean aadhaarSettled = PASS.equals(aadhaarStatus) || REVIEW.equals(aadhaarStatus);
         return rows.stream()
                 .map(row -> {
-                    // TEMP (revert later): force the DigiLocker step to always display PASS,
-                    // irrespective of the provider/Aadhaar outcome. Restore the reconciliation
-                    // block below (and drop this branch) to return to real status.
-                    if (DIGILOCKER.equals(row.getCheckType())) {
-                        return new StepResult(DIGILOCKER, PASS, "DigiLocker completed",
-                                fromJson(row.getDerived()));
-                    }
                     if (DIGILOCKER.equals(row.getCheckType()) && aadhaarSettled
                             && !PASS.equals(row.getStatus()) && !REVIEW.equals(row.getStatus())) {
                         return new StepResult(DIGILOCKER, aadhaarStatus,

@@ -131,6 +131,7 @@ public class ApplicationFlowService {
         assertCanStartNewApplication(customerId);
         LoanApplication app = new LoanApplication();
         app.setCustomerId(customerId);
+        app.setCreatedAt(Instant.now());
         app.setStatus(ApplicationStatus.DRAFT);
         LoanApplication saved = applicationRepository.save(app);
         logEvent(saved, null, ApplicationStatus.DRAFT, "CREATE", null);
@@ -644,14 +645,45 @@ public class ApplicationFlowService {
         return app;
     }
 
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+
     @Transactional(readOnly = true)
     public List<LoanApplication> byStatus(ApplicationStatus status) {
-        if ("CREDIT_EXECUTIVE".equals(ActorContext.get().role())) {
-            Long actorId = actorIdOrNull();
-            return actorId == null ? List.of()
-                    : applicationRepository.findByAssignedExecutiveIdAndStatusOrderByIdAsc(actorId, status);
+        return byStatus(status, null, null);
+    }
+
+    /**
+     * Stage queue, newest first, optionally narrowed to applications CREATED in the inclusive
+     * {@code [from, to]} window (V53's {@code created_at}). Dates are interpreted in IST — the
+     * product's only operating timezone — so "Today" means today in Delhi, not UTC.
+     */
+    @Transactional(readOnly = true)
+    public List<LoanApplication> byStatus(ApplicationStatus status, LocalDate from, LocalDate to) {
+        boolean isExecutive = "CREDIT_EXECUTIVE".equals(ActorContext.get().role());
+        Long execId = isExecutive ? actorIdOrNull() : null;
+        if (isExecutive && execId == null) {
+            return List.of();
         }
-        return applicationRepository.findByStatusOrderByIdAsc(status);
+        Instant fromInst = from == null ? null : from.atStartOfDay(IST).toInstant();
+        Instant toInst = to == null ? null : to.plusDays(1).atStartOfDay(IST).toInstant();
+        org.springframework.data.jpa.domain.Specification<LoanApplication> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            predicates.add(cb.equal(root.get("status"), status));
+            if (execId != null) {
+                predicates.add(cb.equal(root.get("assignedExecutiveId"), execId));
+            }
+            if (fromInst != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromInst));
+            }
+            if (toInst != null) {
+                predicates.add(cb.lessThan(root.get("createdAt"), toInst));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        org.springframework.data.domain.Sort sort = org.springframework.data.domain.Sort
+                .by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt")
+                .and(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "id"));
+        return applicationRepository.findAll(spec, sort);
     }
 
     /**
@@ -663,9 +695,10 @@ public class ApplicationFlowService {
     public List<LoanApplication> creditHeadQueue() {
         requireRole("CREDIT_HEAD");
         return java.util.stream.Stream.concat(
-                        applicationRepository.findByStatusOrderByIdAsc(ApplicationStatus.KYC_PENDING).stream(),
-                        applicationRepository.findByStatusOrderByIdAsc(ApplicationStatus.KYC_APPROVED).stream())
-                .sorted(Comparator.comparing(LoanApplication::getId))
+                        applicationRepository.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.KYC_PENDING).stream(),
+                        applicationRepository.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.KYC_APPROVED).stream())
+                .sorted(Comparator.comparing(LoanApplication::getCreatedAt)
+                        .thenComparing(LoanApplication::getId).reversed())
                 .toList();
     }
 

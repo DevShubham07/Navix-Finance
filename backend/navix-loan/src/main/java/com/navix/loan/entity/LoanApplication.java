@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -34,6 +35,15 @@ public class LoanApplication {
     /** Customer / borrower reference (FK to IAM user). */
     @Column(name = "customer_id", nullable = false)
     private Long customerId;
+
+    /**
+     * When the borrower started this application (V53) — the true creation date, distinct from
+     * {@code application_event}'s per-transition timestamps, which reset on every status change.
+     * Set explicitly in {@code ApplicationFlowService.createDraft}; the {@link #defaultCreatedAt()}
+     * guard below is a belt-and-braces backstop for any construction path that forgets to.
+     */
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 
     /** Amount the customer requested, in paise. Null until the borrower applies. */
     @Column(name = "amount_requested")
@@ -153,4 +163,11 @@ public class LoanApplication {
      */
     @Column(name = "reapplied_from")
     private Long reappliedFrom;
+
+    @PrePersist
+    void defaultCreatedAt() {
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
+    }
 }

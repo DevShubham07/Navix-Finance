@@ -91,11 +91,20 @@ public class ApplicationController {
     }
 
     /** Stage queue, e.g. ?status=KYC_PENDING / DISBURSEMENT_PENDING / ACCOUNTANT_PENDING. Staff-only:
-     *  rows are enriched with the customer's credit score + 1–5★ rating (never exposed to borrowers). */
+     *  rows are enriched with the customer's credit score + 1–5★ rating (never exposed to borrowers).
+     *  Optional {@code from}/{@code to} narrow to applications CREATED in that inclusive window
+     *  (V53's {@code created_at}), for the live-applications Today/Yesterday/Custom filter. */
     @GetMapping
-    public ApiResponse<List<ApplicationView>> queue(@RequestParam ApplicationStatus status) {
+    public ApiResponse<List<ApplicationView>> queue(
+            @RequestParam ApplicationStatus status,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to) {
         requireStaff();
-        return ApiResponse.ok(enrich(flow.byStatus(status)));
+        return ApiResponse.ok(enrich(flow.byStatus(status, from, to)));
     }
 
     /** Credit Head queue: KYC-approved applications the borrower has applied on (credit-enriched). */

@@ -33,21 +33,36 @@ export async function fetchStaffSession(): Promise<StaffSession | null> {
   }
 }
 
+/** Thrown by {@link loginStaff} — preserves the backend's error `code` (e.g. `SESSION_CONFLICT`)
+ *  alongside the formatted message, so the caller can react to specific failures. */
+export class StaffLoginError extends Error {
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "StaffLoginError";
+    this.code = code;
+  }
+}
+
 /**
  * Sign in with email + password (the real staff login). Authenticates against the
  * backend via the BFF and stores the JWT in the httpOnly `navix_staff` cookie.
- * Returns the sanitized session (no token); throws with the backend's message
- * (e.g. "Invalid email or password") on failure so the form can surface it.
+ * Returns the sanitized session (no token); throws a {@link StaffLoginError} on failure
+ * (e.g. "Invalid email or password", or `SESSION_CONFLICT` when a session is already live)
+ * so the form can surface it. `force` = "sign me in here and end the other session" — pass
+ * `true` only after the caller has shown the SESSION_CONFLICT choice and the user picked
+ * "Continue here".
  */
-export async function loginStaff(email: string, password: string): Promise<StaffSession> {
+export async function loginStaff(email: string, password: string, force = false): Promise<StaffSession> {
   const res = await fetch("/api/auth/staff/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, force }),
   });
   if (!res.ok) {
-    throw new Error(formatEnvelopeError(await readEnvelopeError(res, "Sign-in failed. Please try again.")));
+    const env = await readEnvelopeError(res, "Sign-in failed. Please try again.");
+    throw new StaffLoginError(formatEnvelopeError(env), env.code);
   }
   const session = (await res.json()) as StaffSession;
   if (typeof window !== "undefined") window.dispatchEvent(new Event(STAFF_SESSION_EVENT));

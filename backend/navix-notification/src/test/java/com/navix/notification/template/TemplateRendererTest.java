@@ -43,8 +43,16 @@ class TemplateRendererTest {
 
     @Test
     void renderReturnsNullWhenNoTemplateForChannel() {
-        // KYC_SUBMITTED only defines an IN_APP template — SMS is undefined → null (channel skipped).
+        // KYC_SUBMITTED only defines IN_APP + EMAIL templates — SMS is undefined → null (channel skipped).
         assertThat(renderer.render(NotificationType.KYC_SUBMITTED, NotificationChannel.SMS, Map.of())).isNull();
+    }
+
+    @Test
+    void kycSubmittedHasAnEmailTemplate() {
+        RenderedMessage m = renderer.render(NotificationType.KYC_SUBMITTED, NotificationChannel.EMAIL,
+                Map.of("applicationId", 42L, "name", "Priya"));
+        assertThat(m).isNotNull();
+        assertThat(m.subject()).contains("42");
     }
 
     @Test

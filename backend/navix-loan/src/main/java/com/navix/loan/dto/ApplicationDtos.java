@@ -96,7 +96,10 @@ public final class ApplicationDtos {
             // by withAssignment(...) on batched staff read paths (list/detail/customer/admin views) —
             // never on the borrower-facing /mine route, so these stay null there by construction.
             String assignedExecutiveName,
-            Instant currentStageEnteredAt) {
+            Instant currentStageEnteredAt,
+            /** When the borrower started this application (V53) — the true creation date, distinct
+             *  from {@code currentStageEnteredAt}, which resets on every status transition. */
+            Instant createdAt) {
 
         public static ApplicationView of(LoanApplication a) {
             return of(a, null, null);
@@ -146,7 +149,7 @@ public final class ApplicationDtos {
                     a.getMarkedPendingAt(), a.getPendingReason(),
                     a.getDisbursalAccountNumber(), a.getDisbursalIfsc(), a.getDisbursalHolderName(),
                     a.getDisbursalBank(), a.getDisbursalAccountChanged(),
-                    a.getDisbursalAccountVerified(), null, null);
+                    a.getDisbursalAccountVerified(), null, null, a.getCreatedAt());
         }
 
         /**
@@ -163,7 +166,7 @@ public final class ApplicationDtos {
                     sanctionTenureDays, sanctionRemarks, sanctionedAt, markedPendingAt, pendingReason,
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
-                    currentStageEnteredAt);
+                    currentStageEnteredAt, createdAt);
         }
     }
 

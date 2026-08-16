@@ -9,6 +9,7 @@ import com.navix.loan.dto.VerificationDtos.AgreementRequest;
 import com.navix.loan.dto.VerificationDtos.BureauConsentRequest;
 import com.navix.loan.dto.VerificationDtos.BureauPullRequest;
 import com.navix.loan.dto.VerificationDtos.DigilockerInitRequest;
+import com.navix.loan.dto.VerificationDtos.EmailOtpVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.EmailVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.PanVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.PennyDropVerifyRequest;
@@ -54,6 +55,21 @@ public class ApplicationVerificationController {
     public ApiResponse<StepResult> email(@PathVariable Long id, @Valid @RequestBody EmailVerifyRequest req) {
         authorize(id);
         return ApiResponse.ok(verification.verifyEmail(id, req.officialEmail()));
+    }
+
+    /** Sends the personal-email OTP — additive to (and separate from) the official-email check above. */
+    @PostMapping("/email/otp")
+    public ApiResponse<OtpVerifierPort.OtpRequestResult> requestPersonalEmailOtp(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.requestPersonalEmailOtp(id));
+    }
+
+    /** OTP-verified ownership of the borrower's personal email. */
+    @PostMapping("/email/otp/confirm")
+    public ApiResponse<StepResult> confirmPersonalEmailOtp(
+            @PathVariable Long id, @Valid @RequestBody EmailOtpVerifyRequest req) {
+        authorize(id);
+        return ApiResponse.ok(verification.verifyPersonalEmailOtp(id, req.otp()));
     }
 
     @PostMapping("/address")

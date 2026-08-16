@@ -157,6 +157,12 @@ public class CustomerProfile extends BaseAuditEntity {
     @Column(name = "email_verified")
     private Boolean emailVerified;
 
+    /** The borrower proved control of {@code email} (the PERSONAL address) with an emailed OTP.
+     *  Distinct from {@link #emailVerified}, which is the provider deliverability + employer match
+     *  on {@code officialEmail}. */
+    @Column(name = "personal_email_verified")
+    private Boolean personalEmailVerified;
+
     @Column(name = "address_verified")
     private Boolean addressVerified;
 

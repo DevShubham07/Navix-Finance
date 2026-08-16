@@ -129,6 +129,7 @@ public class CustomerService {
 
         LocalDate today = LocalDate.now();
         List<CustomerSummary> out = new ArrayList<>();
+        Map<Long, Long> latestAppIdByCustomer = new HashMap<>();
         for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
             Long customerId = e.getKey();
             List<LoanApplication> apps = e.getValue();
@@ -171,9 +172,15 @@ public class CustomerService {
                     bureauState);
             if (matches(cs, needle)) {
                 out.add(cs);
+                // customerId is mobile-derived (§10), not a signup-order sequence, so it carries no
+                // recency signal — the customer's most recent application id (auto-increment, hence
+                // chronological) is what actually orders "newest first".
+                latestAppIdByCustomer.put(customerId,
+                        apps.stream().mapToLong(LoanApplication::getId).max().orElse(0));
             }
         }
-        out.sort(Comparator.comparing(CustomerSummary::customerId));
+        out.sort(Comparator.comparing((CustomerSummary c) -> latestAppIdByCustomer.get(c.customerId()))
+                .reversed());
         return out;
     }
 

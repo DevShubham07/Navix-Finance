@@ -28,10 +28,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    private final JwtService jwtService;
+    /** Request attribute carrying the verified staff token's {@code sid} claim, so {@code /staff/logout}
+     *  can confirm it's clearing the CALLER's own session, not one that superseded it. */
+    public static final String STAFF_SESSION_ID_ATTR = "navix.staffSessionId";
 
-    public JwtAuthFilter(JwtService jwtService) {
+    private final JwtService jwtService;
+    private final StaffSessionRegistry staffSessionRegistry;
+
+    public JwtAuthFilter(JwtService jwtService, StaffSessionRegistry staffSessionRegistry) {
         this.jwtService = jwtService;
+        this.staffSessionRegistry = staffSessionRegistry;
     }
 
     @Override
@@ -42,8 +48,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             principal = jwtService.tryVerify(header.substring(7).trim());
         }
+        // Staff single-session: a token whose session id has been superseded is treated as no
+        // token at all, so the request fails closed on any protected route (401) and the
+        // superseded tab is kicked out on its very next call. Borrower tokens carry no sid and are
+        // unaffected (see JwtService.Principal / StaffSessionRegistry).
+        if (principal != null && JwtService.AUDIENCE_STAFF.equals(principal.audience())
+                && !staffSessionRegistry.isCurrent(principal.id(), principal.sessionId())) {
+            principal = null;
+        }
         try {
             if (principal != null && principal.id() != null) {
+                if (JwtService.AUDIENCE_STAFF.equals(principal.audience())) {
+                    request.setAttribute(STAFF_SESSION_ID_ATTR, principal.sessionId());
+                }
                 ActorContext.set(new CurrentActor(principal.id(), principal.name(), principal.role()));
                 // Enrich the log MDC so every line for this request is attributable (id/role only —
                 // never the token or name). RequestLoggingFilter (outermost) clears the MDC.

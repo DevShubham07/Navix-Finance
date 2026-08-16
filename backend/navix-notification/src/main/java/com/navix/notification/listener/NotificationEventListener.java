@@ -322,8 +322,12 @@ public class NotificationEventListener {
             case "SANCTION" -> NotificationType.LOAN_SANCTIONED;
             case "ACCEPT_OFFER" -> NotificationType.LOAN_APPLIED_FAST_TRACK;
             // DISB_ACCEPT / VALIDATE_FAIL were the accountant hop, retired in V48 — no live action
-            // emits them. RETRY is deliberately silent: it returns the file to the Disbursement
-            // Head, who is the person who just clicked retry.
+            // emits them.
+            // RETRY is the third route into DISBURSEMENT_PENDING (alongside APPLY_FAST_TRACK and
+            // ACCEPT_OFFER, above) — now notifies too, since the audience includes ADMIN, who didn't
+            // click anything (product decision; it used to be silent on the grounds that it only
+            // returns the file to the Head who just clicked retry).
+            case "RETRY" -> NotificationType.LOAN_APPLIED_FAST_TRACK;
             case "DISB_REJECT" -> NotificationType.DISBURSEMENT_REJECTED;
             case "ACTIVATE" -> NotificationType.LOAN_DISBURSED;
             case "REPAID" -> NotificationType.LOAN_CLOSED;

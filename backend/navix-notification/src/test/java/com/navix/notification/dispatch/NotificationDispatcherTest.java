@@ -104,14 +104,15 @@ class NotificationDispatcherTest {
     void persistsOneNotificationAndDeliveryPerRecipientForSingleChannelType() {
         when(audienceResolver.resolve(any(), any())).thenReturn(List.of(staff(1), staff(2)));
 
-        // KYC_SUBMITTED has IN_APP only → one notification + one delivery per recipient.
-        dispatcher.dispatch(NotificationType.KYC_SUBMITTED, NotificationContext.builder().applicationId(10L).build());
+        // LOAN_APPLIED has IN_APP only → one notification + one delivery per recipient. (KYC_SUBMITTED
+        // gained an EMAIL template alongside ADMIN in its audience — no longer single-channel.)
+        dispatcher.dispatch(NotificationType.LOAN_APPLIED, NotificationContext.builder().applicationId(10L).build());
 
         ArgumentCaptor<Notification> notif = ArgumentCaptor.forClass(Notification.class);
         verify(notificationRepo, times(2)).save(notif.capture());
         assertThat(notif.getAllValues()).allSatisfy(n -> {
-            assertThat(n.getType()).isEqualTo(NotificationType.KYC_SUBMITTED);
-            assertThat(n.getTitle()).isEqualTo("New KYC to review");
+            assertThat(n.getType()).isEqualTo(NotificationType.LOAN_APPLIED);
+            assertThat(n.getTitle()).isEqualTo("New application to review");
             assertThat(n.isInApp()).isTrue();
             assertThat(n.getApplicationId()).isEqualTo(10L);
         });

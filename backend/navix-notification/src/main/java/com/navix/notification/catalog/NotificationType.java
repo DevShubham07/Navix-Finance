@@ -11,6 +11,7 @@ import static com.navix.common.notification.NotificationChannel.EMAIL;
 import static com.navix.common.notification.NotificationChannel.IN_APP;
 import static com.navix.common.notification.NotificationChannel.SMS;
 import static com.navix.notification.catalog.RecipientPolicy.TO_ACCOUNTANTS;
+import static com.navix.notification.catalog.RecipientPolicy.TO_ADMINS;
 import static com.navix.notification.catalog.RecipientPolicy.TO_ASSIGNED_EXECUTIVE;
 import static com.navix.notification.catalog.RecipientPolicy.TO_BORROWER;
 import static com.navix.notification.catalog.RecipientPolicy.TO_COLLECTION_EXECUTIVES;
@@ -34,7 +35,9 @@ import java.util.Set;
 public enum NotificationType {
 
     // ---- KYC ----
-    KYC_SUBMITTED(KYC, Set.of(IN_APP), Set.of(TO_CREDIT_TEAM)),
+    // ADMIN + Credit Heads only (product decision) — a submitted KYC is a queue-owner's signal, not
+    // something every Credit Executive needs in their inbox. EMAIL added so it lands outside the app.
+    KYC_SUBMITTED(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_CREDIT_HEADS, TO_ADMINS)),
     KYC_APPROVED(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     KYC_REJECTED(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     KYC_REMINDER(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
@@ -49,13 +52,20 @@ public enum NotificationType {
     LOAN_APPLIED(CREDIT, Set.of(IN_APP), Set.of(TO_CREDIT_HEADS)),
     CREDIT_ASSIGNED(CREDIT, Set.of(IN_APP), Set.of(TO_ASSIGNED_EXECUTIVE)),
     CREDIT_RECOMMENDED(CREDIT, Set.of(IN_APP), Set.of(TO_CREDIT_HEADS)),
-    CREDIT_APPROVED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER, TO_DISBURSEMENT_HEADS)),
+    // HEAD_APPROVE is off the live path since V45 (the credit maker-checker was retired) — this type
+    // now only fires on a replayed historical event. TO_ADMINS added for audit-replay parity with the
+    // live DISBURSEMENT_PENDING notification below (LOAN_APPLIED_FAST_TRACK).
+    CREDIT_APPROVED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER, TO_DISBURSEMENT_HEADS, TO_ADMINS)),
     CREDIT_REJECTED(CREDIT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     /** The Credit Executive's final sanction (V45) — the borrower's offer is ready to accept. */
     LOAN_SANCTIONED(CREDIT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
 
     // ---- DISBURSEMENT ----
-    LOAN_APPLIED_FAST_TRACK(DISBURSEMENT, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS, TO_BORROWER)),
+    // Every route into DISBURSEMENT_PENDING (fast-track reborrow, offer acceptance, and a retry after
+    // a failed transfer) — fires this one type for both the borrower and the disbursement desk +
+    // admin, so the copy must read generically enough for all three audiences and all three triggers.
+    LOAN_APPLIED_FAST_TRACK(DISBURSEMENT, Set.of(IN_APP, EMAIL),
+            Set.of(TO_DISBURSEMENT_HEADS, TO_ADMINS, TO_BORROWER)),
     /** @deprecated The accountant disbursement hop was retired in V48; historical rows only. */
     @Deprecated
     DISBURSEMENT_PENDING_ACCOUNTANT(DISBURSEMENT, Set.of(IN_APP), Set.of(TO_ACCOUNTANTS)),

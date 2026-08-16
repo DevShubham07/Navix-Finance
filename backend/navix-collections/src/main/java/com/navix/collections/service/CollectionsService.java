@@ -95,7 +95,8 @@ public class CollectionsService {
      */
     @Transactional(readOnly = true)
     public List<CaseView> listCaseViews() {
-        return caseRepository.findAll().stream()
+        return caseRepository.findAll(org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "createdAt")).stream()
                 .map(this::toListView)
                 .filter(v -> v.loanStatus() == null || !TERMINAL_LOAN_STATUSES.contains(v.loanStatus()))
                 .toList();

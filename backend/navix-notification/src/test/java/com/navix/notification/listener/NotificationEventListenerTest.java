@@ -72,8 +72,17 @@ class NotificationEventListenerTest {
     @Test
     void retiredDisbursementActionsNotifyNobody() {
         listener.onApplicationTransitioned(transition("DISB_ACCEPT", "ACCOUNTANT_PENDING"));
-        listener.onApplicationTransitioned(transition("RETRY", "DISBURSEMENT_PENDING"));
         verifyNoInteractions(dispatcher);
+    }
+
+    /**
+     * RETRY is the third route into DISBURSEMENT_PENDING (alongside APPLY_FAST_TRACK and
+     * ACCEPT_OFFER) — it now notifies, since the audience includes ADMIN, who didn't click retry.
+     */
+    @Test
+    void mapsRetryToTheDisbursementSignal() {
+        listener.onApplicationTransitioned(transition("RETRY", "DISBURSEMENT_PENDING"));
+        assertThat(dispatched()).isEqualTo(NotificationType.LOAN_APPLIED_FAST_TRACK);
     }
 
     @Test

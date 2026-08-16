@@ -41,8 +41,13 @@ public class JwtService {
         this.borrowerTtlSeconds = borrowerTtlSeconds;
     }
 
-    /** A verified token's identity. {@code id} is the actor id (staffId / customerId). */
-    public record Principal(String id, String name, String role, String audience) {
+    /**
+     * A verified token's identity. {@code id} is the actor id (staffId / customerId).
+     * {@code sessionId} is the staff single-session key (the {@code sid} claim) — null for borrower
+     * tokens, which are explicitly allowed on multiple devices, and for tokens minted before this
+     * feature shipped (grandfathered, see {@code StaffSessionRegistry}).
+     */
+    public record Principal(String id, String name, String role, String audience, String sessionId) {
     }
 
     /**
@@ -51,17 +56,28 @@ public class JwtService {
      * the shorter {@code ttl-seconds}.
      */
     public String issue(String subjectId, String name, String role, String audience) {
+        return issue(subjectId, name, role, audience, null);
+    }
+
+    /**
+     * Issue a signed token carrying a {@code sid} claim — the staff single-session key (see
+     * {@code AuthController.staffLogin} / {@code StaffSessionRegistry}). Pass {@code null} for
+     * audiences that don't use session enforcement (borrower).
+     */
+    public String issue(String subjectId, String name, String role, String audience, String sessionId) {
         long now = System.currentTimeMillis();
         long ttl = AUDIENCE_BORROWER.equals(audience) ? borrowerTtlSeconds : ttlSeconds;
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(subjectId)
                 .claim("name", name)
                 .claim("role", role)
                 .audience().add(audience).and()
                 .issuedAt(new Date(now))
-                .expiration(new Date(now + ttl * 1000))
-                .signWith(key)
-                .compact();
+                .expiration(new Date(now + ttl * 1000));
+        if (sessionId != null) {
+            builder.claim("sid", sessionId);
+        }
+        return builder.signWith(key).compact();
     }
 
     /** Verify a token's signature/expiry and return its {@link Principal}; throws on any failure. */
@@ -70,7 +86,8 @@ public class JwtService {
         Claims c = jws.getPayload();
         String audience = c.getAudience() != null && !c.getAudience().isEmpty()
                 ? c.getAudience().iterator().next() : null;
-        return new Principal(c.getSubject(), c.get("name", String.class), c.get("role", String.class), audience);
+        return new Principal(c.getSubject(), c.get("name", String.class), c.get("role", String.class), audience,
+                c.get("sid", String.class));
     }
 
     /** Verify, swallowing failures into an {@link java.util.Optional}-style null. */

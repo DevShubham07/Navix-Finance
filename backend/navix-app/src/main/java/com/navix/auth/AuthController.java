@@ -62,6 +62,7 @@ public class AuthController {
     private final InviteService inviteService;
     private final BorrowerMobileRepository mobileRepository;
     private final AttemptLimiter limiter;
+    private final com.navix.config.StaffSessionRegistry staffSessionRegistry;
 
     /**
      * Sign-in attempts allowed per identifier per {@link #LOGIN_WINDOW} (either audience).
@@ -112,10 +113,60 @@ public class AuthController {
         }
         // Right password: the three strikes are three WRONG ones, so wipe the slate.
         limiter.clear(limitKey);
+
+        // One live console session per staffer, ALL roles including ADMIN. A second sign-in while a
+        // session is live is refused with a code the UI can distinguish (SESSION_CONFLICT), so the
+        // operator gets an explicit "continue there / continue here" choice instead of silently
+        // kicking their other tab. `force` is that choice, sent only after the UI has shown it.
+        boolean force = Boolean.TRUE.equals(req.force());
+        if (staff.getActiveSessionId() != null && !force) {
+            log.warn("staff login blocked reason=SESSION_CONFLICT staffId={} email={}", staff.getId(), maskedEmail);
+            throw new BusinessException("SESSION_CONFLICT",
+                    "You're already signed in on another device or browser.");
+        }
+        String sessionId = java.util.UUID.randomUUID().toString();
+        staff.setActiveSessionId(sessionId);
+        staff.setActiveSessionAt(java.time.Instant.now());
+        staffRepository.save(staff);
+        staffSessionRegistry.invalidate(staff.getId());
+
         String id = String.valueOf(staff.getId());
-        String token = jwtService.issue(id, staff.getName(), staff.getRole().name(), JwtService.AUDIENCE_STAFF);
-        log.info("staff login ok staffId={} role={}", id, staff.getRole());
+        String token = jwtService.issue(id, staff.getName(), staff.getRole().name(),
+                JwtService.AUDIENCE_STAFF, sessionId);
+        log.info("staff login ok staffId={} role={} forced={}", id, staff.getRole(), force);
         return ApiResponse.ok(new AuthResponse(token, id, staff.getName(), staff.getRole().name(), null));
+    }
+
+    /**
+     * Clear the caller's own live session so a clean sign-out doesn't force the NEXT login to pass
+     * {@code force}. Only clears when the token's OWN {@code sid} matches the stored one — otherwise
+     * a superseded session's stale logout (fired after being replaced) would wipe the session that
+     * replaced it. Public route ({@code /api/auth/**}), but idempotent/no-op without a valid staff
+     * bearer, so it never needs to be treated as a protected endpoint.
+     */
+    @PostMapping("/staff/logout")
+    public ApiResponse<MessageResponse> staffLogout(jakarta.servlet.http.HttpServletRequest request) {
+        String actorId = com.navix.common.security.ActorContext.get().id();
+        String actorRole = com.navix.common.security.ActorContext.get().role();
+        if (actorId == null || "BORROWER".equals(actorRole)) {
+            return ApiResponse.ok(new MessageResponse("Signed out."));
+        }
+        String tokenSessionId = (String) request.getAttribute(
+                com.navix.config.JwtAuthFilter.STAFF_SESSION_ID_ATTR);
+        try {
+            Long id = Long.valueOf(actorId);
+            staffRepository.findById(id).ifPresent(s -> {
+                if (tokenSessionId != null && tokenSessionId.equals(s.getActiveSessionId())) {
+                    s.setActiveSessionId(null);
+                    s.setActiveSessionAt(null);
+                    staffRepository.save(s);
+                    staffSessionRegistry.invalidate(id);
+                }
+            });
+        } catch (NumberFormatException ignored) {
+            // Non-numeric actor id — nothing to clear.
+        }
+        return ApiResponse.ok(new MessageResponse("Signed out."));
     }
 
     /**
@@ -129,7 +180,17 @@ public class AuthController {
         String passwordHash = passwordEncoder.encode(req.password());
         StaffResponse staff = inviteService.acceptInvite(req.token(), req.name().trim(), passwordHash, req.mobile());
         String id = String.valueOf(staff.id());
-        String token = jwtService.issue(id, staff.name(), staff.role().name(), JwtService.AUDIENCE_STAFF);
+        // Mint a session here too — otherwise a freshly-activated staffer holds a sid-less token,
+        // which the single-session filter grandfathers as "always current" (see StaffSessionRegistry),
+        // exempting the very first session from the enforcement everyone else gets.
+        String sessionId = java.util.UUID.randomUUID().toString();
+        staffRepository.findById(staff.id()).ifPresent(s -> {
+            s.setActiveSessionId(sessionId);
+            s.setActiveSessionAt(java.time.Instant.now());
+            staffRepository.save(s);
+        });
+        String token = jwtService.issue(id, staff.name(), staff.role().name(),
+                JwtService.AUDIENCE_STAFF, sessionId);
         log.info("staff invite accepted staffId={} role={}", id, staff.role());
         return ApiResponse.ok(new AuthResponse(token, id, staff.name(), staff.role().name(), null));
     }

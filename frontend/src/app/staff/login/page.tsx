@@ -6,33 +6,46 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, Lock, Mail } from "lucide-react";
 import { Brand } from "@/components/site/brand";
-import { Input } from "@/components/ui";
-import { loginStaff } from "@/lib/auth/staff-session";
+import { Input, Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui";
+import { loginStaff, StaffLoginError } from "@/lib/auth/staff-session";
 
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
   const redirect = params.get("redirect") || "/staff/dashboard";
+  const superseded = params.get("reason") === "superseded";
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
+  // Only one console session is allowed per account (all roles). A second sign-in while one is
+  // live is refused with SESSION_CONFLICT; this dialog is the "continue there / continue here" choice.
+  const [conflict, setConflict] = React.useState(false);
 
   const canSubmit = email.trim().length > 0 && password.length > 0 && !busy;
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canSubmit) return;
+  const doLogin = async (force: boolean) => {
     setBusy(true);
     setError(undefined);
     try {
       // Authenticates against the backend; the JWT lands in the httpOnly navix_staff cookie.
-      await loginStaff(email.trim(), password);
+      await loginStaff(email.trim(), password, force);
       router.push(redirect);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
-      setBusy(false);
+      if (err instanceof StaffLoginError && err.code === "SESSION_CONFLICT") {
+        setConflict(true);
+        setBusy(false);
+      } else {
+        setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
+        setBusy(false);
+      }
     }
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    void doLogin(false);
   };
 
   return (
@@ -48,6 +61,11 @@ function LoginInner() {
           <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-navy">
             <ShieldCheck size={16} /> Staff sign in
           </div>
+          {superseded ? (
+            <p className="mb-4 rounded border border-warning-100 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+              You were signed out because this account signed in on another device or browser.
+            </p>
+          ) : null}
           <Input
             label="Email"
             type="email"
@@ -83,6 +101,29 @@ function LoginInner() {
           <Lock size={13} /> Separation of duties is enforced on every decision.
         </p>
       </div>
+
+      <Dialog open={conflict} onClose={() => setConflict(false)} aria-labelledby="session-conflict-title">
+        <DialogHeader>
+          <DialogTitle id="session-conflict-title">You&apos;re signed in elsewhere</DialogTitle>
+          <p className="text-sm text-muted">
+            Only one DhanBoost console session is allowed per account. Choose where you want to stay
+            signed in.
+          </p>
+        </DialogHeader>
+        <DialogFooter>
+          <button type="button" className="btn btn-outline" onClick={() => setConflict(false)} disabled={busy}>
+            Continue there
+          </button>
+          <button
+            type="button"
+            className="btn btn-navy"
+            onClick={() => { setConflict(false); void doLogin(true); }}
+            disabled={busy}
+          >
+            {busy ? "Signing in…" : "Continue here"}
+          </button>
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }

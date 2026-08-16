@@ -25,6 +25,14 @@ import {
   CollectionPaymentValidationQueue,
 } from "@/components/staff/collection-payments";
 import { CollectionAssignActions } from "@/components/staff/pipeline/collection-actions";
+import {
+  QueueDateFilter,
+  QueueRangeProvider,
+  rangeFor,
+  useQueueRange,
+  type QueuePeriod,
+  type QueueRange,
+} from "@/components/staff/pipeline/queue-date-filter";
 import { InfoTooltip } from "@/components/ui";
 
 /** Roles that don't drive the credit/disbursement pipeline but do need the repayment/closed
@@ -33,6 +41,11 @@ const BACK_OFFICE_ROLES: StaffRole[] = ["DEVELOPER", "COLLECTION_HEAD", "COLLECT
 
 export default function StaffApplicationsPage() {
   const me = useStaffMe();
+  // One global Today/Yesterday/Custom/All-time filter, page-wide (not per-panel) — a decided
+  // product requirement (see the queue-date-filter module doc).
+  const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
+  const [custom, setCustom] = React.useState<QueueRange>({});
+  const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
 
   if (me.isLoading) {
     return <div className="h-64 rounded border border-line bg-white" />;
@@ -57,6 +70,9 @@ export default function StaffApplicationsPage() {
         subtitle="Every queue your role can act on, in one place. Real backend state machine — walk loans through to ACTIVE."
       >
         <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>
+        {isPipeline && (
+          <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
+        )}
         <RefreshButton
           queryKeys={[["staff-queue"], ["staff-dashboard-stats"], ["staff-dashboard-queue"], ["staff-pending-repayments"]]}
         />
@@ -77,7 +93,9 @@ export default function StaffApplicationsPage() {
         <ReviewLookup />
 
         {isPipeline ? (
-          <RoleQueues role={role} />
+          <QueueRangeProvider value={range}>
+            <RoleQueues role={role} />
+          </QueueRangeProvider>
         ) : (
           <div className="flex items-start gap-2 rounded border border-line bg-grey-50 p-4 text-sm text-muted">
             <Lock size={16} className="mt-0.5 flex-shrink-0" />
@@ -185,14 +203,15 @@ function RoleQueues({ role }: { role: StaffRole }) {
  * loans" list to create a case first.
  */
 function AwaitingRepaymentPanel() {
+  const range = useQueueRange();
   const activeQ = useQuery({
-    queryKey: ["staff-queue", "ACTIVE"],
-    queryFn: () => staffApi.listByStatus("ACTIVE"),
+    queryKey: ["staff-queue", "ACTIVE", range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.listByStatus("ACTIVE", range),
     refetchInterval: 8000,
   });
   const overdueQ = useQuery({
-    queryKey: ["staff-queue", "OVERDUE"],
-    queryFn: () => staffApi.listByStatus("OVERDUE"),
+    queryKey: ["staff-queue", "OVERDUE", range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.listByStatus("OVERDUE", range),
     refetchInterval: 8000,
   });
 
@@ -202,11 +221,12 @@ function AwaitingRepaymentPanel() {
   // the "active" bucket and left "overdue" permanently empty. Both queues are still fetched: an
   // application CAN legitimately sit in the OVERDUE status, it just usually doesn't.
   const all = [...(overdueQ.data ?? []), ...(activeQ.data ?? [])];
-  // Overdue first within each column, then by application id ascending — this codebase's
-  // established "oldest waiting" proxy (the aggregate has no created_at; see WorkHero).
-  const byId = (a: ApplicationView, b: ApplicationView) => a.id - b.id;
-  const overdueApps = all.filter((a) => isLoanOverdue(a)).sort(byId);
-  const activeApps = all.filter((a) => !isLoanOverdue(a)).sort(byId);
+  // Newest application first within each column, using the real created_at (V53) — falls back to
+  // id when createdAt is somehow absent, since id is still monotonic.
+  const byNewest = (a: ApplicationView, b: ApplicationView) =>
+    (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id - a.id;
+  const overdueApps = all.filter((a) => isLoanOverdue(a)).sort(byNewest);
+  const activeApps = all.filter((a) => !isLoanOverdue(a)).sort(byNewest);
   const isLoading = activeQ.isLoading || overdueQ.isLoading;
 
   return (
@@ -308,9 +328,10 @@ function RepaymentColumn({
  */
 function ClosedPanel() {
   const [open, setOpen] = React.useState(false);
+  const range = useQueueRange();
   const q = useQuery({
-    queryKey: ["staff-queue", "CLOSED"],
-    queryFn: () => staffApi.listByStatus("CLOSED"),
+    queryKey: ["staff-queue", "CLOSED", range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.listByStatus("CLOSED", range),
     refetchInterval: open ? 8000 : false,
     enabled: open,
   });

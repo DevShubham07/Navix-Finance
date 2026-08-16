@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,6 +18,7 @@ import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.ApplicationDocument;
@@ -33,7 +35,6 @@ import java.util.Optional;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -49,6 +50,7 @@ class ApplicationVerificationServiceTest {
     @Mock private VerificationPort verification;
     @Mock private com.navix.common.verification.EsignPort esign;
     @Mock private com.navix.common.verification.OtpVerifierPort otpVerifier;
+    @Mock private com.navix.common.verification.EmailOtpPort emailOtp;
     @Mock private DocumentStoragePort storage;
     @Mock private RiskPort risk;
     @Mock private CreditBriefService creditBriefService;
@@ -63,7 +65,7 @@ class ApplicationVerificationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
-                documentRepo, verification, esign, otpVerifier, storage, risk, new ObjectMapper(),
+                documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk, new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger, flow);
         // save() echoes its argument
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -422,6 +424,69 @@ class ApplicationVerificationServiceTest {
         verify(verificationRepo, never()).save(any());
     }
 
+    // ---- Personal-email OTP -------------------------------------------------------
+
+    @Test
+    void requestPersonalEmailOtp_rejectsWhenNoEmailOnFile() {
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+
+        assertThatThrownBy(() -> service.requestPersonalEmailOtp(APP))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("No personal email on file");
+        verifyNoInteractions(emailOtp);
+    }
+
+    @Test
+    void requestPersonalEmailOtp_sendsToTheSavedAddress() {
+        CustomerProfile p = profile();
+        p.setEmail("borrower@example.com");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        var expected = new com.navix.common.verification.OtpVerifierPort.OtpRequestResult(true, null, 600);
+        when(emailOtp.request("borrower@example.com", EmailOtpPort.PERSONAL_EMAIL)).thenReturn(expected);
+
+        var result = service.requestPersonalEmailOtp(APP);
+
+        assertThat(result.sent()).isTrue();
+        verify(emailOtp).request("borrower@example.com", EmailOtpPort.PERSONAL_EMAIL);
+    }
+
+    @Test
+    void personalEmailOtp_passesAndFlagsProfile_whenOtpVerifies() {
+        CustomerProfile p = profile();
+        p.setEmail("borrower@example.com");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(emailOtp.verify("borrower@example.com", "123456", EmailOtpPort.PERSONAL_EMAIL)).thenReturn(true);
+
+        var result = service.verifyPersonalEmailOtp(APP, "123456");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(p.getPersonalEmailVerified()).isTrue();
+        // The raw address must never land in the audit-visible derived map.
+        assertThat(result.derived()).doesNotContainEntry("email", "borrower@example.com");
+    }
+
+    @Test
+    void personalEmailOtp_wrongCodeThrowsInvalidOtp() {
+        CustomerProfile p = profile();
+        p.setEmail("borrower@example.com");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(emailOtp.verify(anyString(), anyString(), anyString())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.verifyPersonalEmailOtp(APP, "000000"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Invalid or expired code");
+        verify(verificationRepo, never()).save(any());
+    }
+
+    @Test
+    void emailOtp_isNotAmongTheRequiredIntakeChecks() {
+        // Additive/non-blocking by design — must not wedge an application that never uses it.
+        assertThat(ApplicationVerificationService.REQUIRED)
+                .doesNotContain(ApplicationVerificationService.EMAIL_OTP);
+        assertThat(ApplicationVerificationService.KNOWN_CHECKS)
+                .doesNotContain(ApplicationVerificationService.EMAIL_OTP);
+    }
+
     @Test
     void allRequiredPassed_gatesOnAttemptedNotPassed() {
         // Nothing run yet.
@@ -476,12 +541,6 @@ class ApplicationVerificationServiceTest {
         assertThat(digilocker.status()).isEqualTo("PASS"); // reflects the Aadhaar PASS, not the stale PENDING
     }
 
-    @Disabled("""
-            Suspended by the "TEMP (revert later)" branch in ApplicationVerificationService.summary(), \
-            which force-PASSes every DIGILOCKER row so onboarding never stalls. This test asserts the \
-            REAL reconciliation (DigiLocker mirrors the Aadhaar outcome) and is kept, not deleted, so \
-            that dropping that TEMP branch re-arms the check instead of silently shipping the hack. \
-            Re-enable together with removing the branch.""")
     @Test
     void summary_digilockerReflectsAadhaarReview_andStaysPendingWithoutAadhaar() {
         // Aadhaar under manual review (name mismatch) → DigiLocker shows REVIEW, not a retry prompt.
@@ -652,6 +711,73 @@ class ApplicationVerificationServiceTest {
                 .containsEntry("pincode", "131001")
                 .containsEntry("dscSubject", "DS NATIONAL E-GOVERNANCE DIVISION 1");
         verify(storage).storeFromUrl("apps/42/aadhaar.pdf", "https://signzy.test/aadhaar.pdf", "application/pdf");
+    }
+
+    // ---- DigiLocker status poll --------------------------------------------------
+
+    @Test
+    void digilockerStatus_isPendingWithNoSession() {
+        // Neither the popup has been opened nor did init leave a session — must not report success,
+        // and must not throw DIGILOCKER_NOT_STARTED either (the old pre-fix behavior).
+        CustomerProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.AADHAAR))
+                .thenReturn(Optional.empty());
+
+        var result = service.digilockerStatus(APP);
+
+        assertThat(result.status()).isEqualTo("PENDING");
+        verify(verification, never()).digilockerStatus(any());
+    }
+
+    @Test
+    void digilockerStatus_isPassOnceAadhaarIsFinalized_evenWithoutAClientId() {
+        // digilockerComplete nulls out digilockerClientId on completion — the AADHAAR check must be
+        // consulted BEFORE the null-clientId branch, or a completed DigiLocker reports PENDING forever.
+        CustomerProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        ApplicationVerification aadhaarRow = new ApplicationVerification();
+        aadhaarRow.setApplicationId(APP);
+        aadhaarRow.setCheckType(ApplicationVerificationService.AADHAAR);
+        aadhaarRow.setStatus("PASS");
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.AADHAAR))
+                .thenReturn(Optional.of(aadhaarRow));
+
+        var result = service.digilockerStatus(APP);
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(verification, never()).digilockerStatus(any());
+    }
+
+    @Test
+    void digilockerStatus_degradesToPendingWhenTheProviderThrows() {
+        CustomerProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.AADHAAR))
+                .thenReturn(Optional.empty());
+        when(verification.digilockerStatus("CL1")).thenThrow(new RuntimeException("boom"));
+
+        var result = service.digilockerStatus(APP);
+
+        assertThat(result.status()).isEqualTo("PENDING");
+        assertThat(result.derived()).containsEntry("providerError", true);
+    }
+
+    @Test
+    void digilockerStatus_reportsPendingWhileTheProviderStallsAtClientInitiated() {
+        // The actual reported bug: opening the popup must not read as success.
+        CustomerProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.AADHAAR))
+                .thenReturn(Optional.empty());
+        when(verification.digilockerStatus("CL1")).thenReturn(
+                new VerificationPort.DigiLockerStatus("CL1", "client_initiated", false, false, false));
+
+        var result = service.digilockerStatus(APP);
+
+        assertThat(result.status()).isEqualTo("PENDING");
     }
 
     // ---- Aadhaar e-sign ---------------------------------------------------------

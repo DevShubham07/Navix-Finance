@@ -28,6 +28,9 @@ public class NotificationTemplates {
         // ---------------- KYC ----------------
         inApp(NotificationType.KYC_SUBMITTED, "New KYC to review",
                 "A borrower submitted KYC for application #{applicationId}. Review it in your queue.");
+        email(NotificationType.KYC_SUBMITTED, "New DhanBoost KYC to review — application #{applicationId}",
+                "Hi {name},\n\nA borrower has submitted KYC for application #{applicationId}. It's "
+                        + "waiting in the credit queue.\n\n— DhanBoost");
 
         inApp(NotificationType.KYC_APPROVED, "KYC approved — instant loan ready",
                 "Your KYC is verified. You're eligible for an instant loan up to ₹10,00,000 — log in to "
@@ -116,6 +119,10 @@ public class NotificationTemplates {
         // ---------------- DISBURSEMENT ----------------
         inApp(NotificationType.LOAN_APPLIED_FAST_TRACK, "Fast-track disbursal",
                 "Pre-approved application #{applicationId} is ready for disbursement (fast-track).");
+        // Audience spans borrower + Disbursement Head + Admin, across three different triggers
+        // (fast-track reborrow, offer acceptance, retry-after-failure) — kept neutral on purpose.
+        email(NotificationType.LOAN_APPLIED_FAST_TRACK, "DhanBoost — application #{applicationId} is ready for disbursement",
+                "Hi {name},\n\nApplication #{applicationId} is ready for disbursement.\n\n— DhanBoost");
 
         inApp(NotificationType.DISBURSEMENT_PENDING_ACCOUNTANT, "Transfer to validate",
                 "Application #{applicationId} is awaiting your transfer validation.");

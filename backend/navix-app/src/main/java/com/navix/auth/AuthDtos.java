@@ -8,7 +8,13 @@ public final class AuthDtos {
     private AuthDtos() {
     }
 
-    public record StaffLoginRequest(@NotBlank String email, @NotBlank String password) {
+    /**
+     * {@code force} = "sign me in here and end the other session" — sent only after the caller has
+     * seen a {@code SESSION_CONFLICT} and the user picked "Continue here". A boxed {@code Boolean}
+     * (not primitive) so an older client that omits the field is treated as {@code false}, not a
+     * bind error.
+     */
+    public record StaffLoginRequest(@NotBlank String email, @NotBlank String password, Boolean force) {
     }
 
     /**

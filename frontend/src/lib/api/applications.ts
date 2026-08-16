@@ -111,6 +111,9 @@ export interface ApplicationView {
   assignedExecutiveName?: string | null;
   /** When this application entered its CURRENT `status` (latest `application_event.at`). Staff-only. */
   currentStageEnteredAt?: string | null;
+  /** When the borrower started this application (V53) — the true creation date, distinct from
+   *  `currentStageEnteredAt`, which resets on every status transition. */
+  createdAt?: string | null;
 }
 
 /** One staffer's action off the application-event trail (backs /staff/my-decisions). */
@@ -341,6 +344,9 @@ export interface ProfileView {
   /** Aadhaar verified via DigiLocker (consent done + Aadhaar fetched + document ingested). */
   aadhaarVerified?: boolean | null;
   emailVerified?: boolean | null;
+  /** OTP-proven ownership of the PERSONAL email — distinct from `emailVerified` (the official-email
+   *  deliverability/employer-match check). */
+  personalEmailVerified?: boolean | null;
   addressVerified?: boolean | null;
   pennyDropVerified?: boolean | null;
   nameMatchScore?: number | null;
@@ -701,6 +707,13 @@ async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> 
     parsed = undefined;
   }
 
+  // A staff bearer that's been superseded by a login elsewhere now 401s on its very next request
+  // (single-session enforcement, V54) — the console has no other signal that this happened, so
+  // redirect straight to sign-in rather than leaving every open queue showing a raw error.
+  if (res.status === 401 && path.startsWith("/api/staff") && typeof window !== "undefined") {
+    window.location.href = "/staff/login?reason=superseded";
+  }
+
   // Envelope-level failure (the backend returns success:false with an error).
   if (parsed && parsed.success === false) {
     const code = parsed.error?.code ?? `HTTP_${res.status}`;
@@ -912,6 +925,18 @@ export const verificationApi = {
   /** Official/work email → employer match. */
   email: (id: number, officialEmail: string) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/email`, "POST", { officialEmail }),
+
+  /**
+   * Send the OTP proving the borrower controls their PERSONAL email — additive to (and separate
+   * from) the official-email deliverability check above. The address is resolved server-side from
+   * the saved profile, never passed by the client.
+   */
+  requestPersonalEmailOtp: (id: number) =>
+    bff<OtpRequestResult>(`${BORROWER_BASE}/${id}/verify/email/otp`, "POST"),
+
+  /** Confirm the personal-email OTP. */
+  confirmPersonalEmailOtp: (id: number, otp: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/email/otp/confirm`, "POST", { otp }),
 
   /** Address: either live geolocation (lat/long) or a typed manual address. */
   address: (
@@ -1130,9 +1155,17 @@ const STAFF_BASE = "/api/staff/applications";
 const STAFF_LOAN_BASE = "/api/staff/loan";
 
 export const staffApi = {
-  /** List applications by status, e.g. KYC_PENDING. */
-  listByStatus: (status: ApplicationStatus) =>
-    bff<ApplicationView[]>(`${STAFF_BASE}?status=${encodeURIComponent(status)}`, "GET"),
+  /**
+   * List applications by status, e.g. KYC_PENDING. Optional `range.from`/`range.to` (yyyy-mm-dd)
+   * narrow to applications CREATED in that inclusive window — the live-applications
+   * Today/Yesterday/Custom filter.
+   */
+  listByStatus: (status: ApplicationStatus, range?: { from?: string; to?: string }) => {
+    const qs = new URLSearchParams({ status });
+    if (range?.from) qs.set("from", range.from);
+    if (range?.to) qs.set("to", range.to);
+    return bff<ApplicationView[]>(`${STAFF_BASE}?${qs.toString()}`, "GET");
+  },
 
   /** The credit head's assignment queue (KYC_APPROVED + applied). */
   creditQueue: () => bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue`, "GET"),

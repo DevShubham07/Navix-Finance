@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2 } from "lucide-react";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { WizardActions } from "@/components/borrower/wizard-actions";
@@ -22,6 +23,7 @@ const MAX_RESENDS = 3;
 
 export default function SignupOtpPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { mounted, draft, setAppId } = useOnboarding();
   const [otp, setOtp] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -69,6 +71,11 @@ export default function SignupOtpPage() {
     try {
       const session = await ensureBorrowerSession(mobile, code);
       if (!session) throw new ApplicationApiError("Incorrect code — please try again.", "INVALID_OTP", 0);
+      // AppHeader lives in the persistent (borrower) layout and never remounts across client-side
+      // nav, so its cached logged-out `borrower-me` query would otherwise keep showing "Sign in /
+      // Apply" after this point — mirrors /login's verify()/passwordLogin(), which clear for the
+      // same reason. Must run after the cookie is set and before createOrResumeDraft populates caches.
+      queryClient.clear();
 
       let app: ApplicationView;
       try {

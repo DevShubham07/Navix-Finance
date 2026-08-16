@@ -9,7 +9,7 @@ import { ApplicationInfoDialog } from "@/components/staff/application-info-dialo
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
 import { paiseToINR, type ApplicationView } from "@/lib/api/applications";
 import { daysBetween } from "@/lib/calc/loan-math";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 function dpdDays(app: ApplicationView): number {
   if (!app.loanDueDate) return 0;
@@ -62,6 +62,9 @@ export function AppRow({
           </button>
         </td>
         <td className="font-mono text-muted">#{app.customerId}</td>
+        <td className="whitespace-nowrap text-muted">
+          {app.createdAt ? formatDateTime(app.createdAt) : "—"}
+        </td>
         <td className="staff-cell font-semibold text-ink" title={app.customerName || undefined}>
           {app.customerName || "Name unavailable"}
         </td>
@@ -173,7 +176,7 @@ export function AppRow({
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={12} className="bg-grey-50">
+          <td colSpan={13} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

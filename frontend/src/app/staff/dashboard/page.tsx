@@ -449,10 +449,14 @@ function WorkHero({
   loading: boolean;
   actingHref?: string;
 }) {
-  // Oldest-waiting proxy: the lowest application id. The loan_application aggregate
-  // has no created_at column, so id-ascending stands in for arrival order (§10 risk).
-  // Operates on applications only — non-application sources (extras) have no id order.
-  const oldest = items.length ? [...items].sort((a, b) => a.id - b.id)[0] : null;
+  // Oldest-waiting: the application with the earliest created_at (V53) — falls back to id when
+  // createdAt is somehow absent, since id is still monotonic. Deliberately ascending (oldest
+  // first), unlike the staff queue tables, which sort newest-first — this hero exists specifically
+  // to surface the file that's been waiting longest. Operates on applications only —
+  // non-application sources (extras) have no created_at.
+  const oldest = items.length
+    ? [...items].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.id - b.id)[0]
+    : null;
 
   return (
     <section className="mb-8 rounded-lg border border-gold-soft bg-white p-6 shadow-sm">

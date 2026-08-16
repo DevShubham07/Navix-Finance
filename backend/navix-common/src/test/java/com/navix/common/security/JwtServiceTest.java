@@ -43,6 +43,27 @@ class JwtServiceTest {
     }
 
     @Test
+    void issueWithSessionId_roundTripsTheSidClaim() {
+        JwtService jwt = new JwtService(SECRET_A, 3600, 3600);
+
+        String token = jwt.issue("42", "Meera Krishnan", "ADMIN", JwtService.AUDIENCE_STAFF, "sess-123");
+        JwtService.Principal p = jwt.verify(token);
+
+        assertThat(p.sessionId()).isEqualTo("sess-123");
+    }
+
+    @Test
+    void issueWithoutSessionId_leavesSidNull() {
+        JwtService jwt = new JwtService(SECRET_A, 3600, 3600);
+
+        // The 4-arg overload (borrower login, invite-accept before this feature) emits no sid.
+        String token = jwt.issue("42", "Meera Krishnan", "ADMIN", JwtService.AUDIENCE_STAFF);
+        JwtService.Principal p = jwt.verify(token);
+
+        assertThat(p.sessionId()).isNull();
+    }
+
+    @Test
     void tokenSignedByOneSecret_failsVerificationUnderAnother() {
         JwtService signer = new JwtService(SECRET_A, 3600, 3600);
         JwtService other = new JwtService(SECRET_B, 3600, 3600);

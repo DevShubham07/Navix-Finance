@@ -354,14 +354,41 @@ class ApplicationFlowServiceTest {
         somebodyElses.setStatus(ApplicationStatus.CREDIT_EXEC_PENDING);
         somebodyElses.setAssignedExecutiveId(56L);
         when(applicationRepository.findById(2L)).thenReturn(Optional.of(somebodyElses));
-        when(applicationRepository.findByAssignedExecutiveIdAndStatusOrderByIdAsc(
-                55L, ApplicationStatus.CREDIT_EXEC_PENDING)).thenReturn(List.of(mine));
+        // byStatus is spec-based (V53's date filter), so the executive-scoping filter is applied
+        // inside the Specification rather than via a named finder — stub the generic findAll.
+        when(applicationRepository.findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(mine));
         actor("55", "CREDIT_EXECUTIVE");
 
         assertThat(flow.byStatus(ApplicationStatus.CREDIT_EXEC_PENDING)).containsExactly(mine);
         assertThatThrownBy(() -> flow.markPending(2L, "not mine"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("assigned");
+    }
+
+    @Test
+    void createDraft_stampsCreatedAt() {
+        actor("7", "BORROWER");
+        LoanApplication saved = flow.createDraft(7L);
+        assertThat(saved.getCreatedAt()).isNotNull().isBeforeOrEqualTo(Instant.now());
+    }
+
+    @Test
+    void byStatus_sortsNewestFirst() {
+        actor("1", "ADMIN");
+        ArgumentCaptor<org.springframework.data.domain.Sort> sortCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.domain.Sort.class);
+        when(applicationRepository.findAll(
+                any(org.springframework.data.jpa.domain.Specification.class), sortCaptor.capture()))
+                .thenReturn(List.of());
+
+        flow.byStatus(ApplicationStatus.KYC_PENDING);
+
+        org.springframework.data.domain.Sort.Order order = sortCaptor.getValue().iterator().next();
+        assertThat(order.getProperty()).isEqualTo("createdAt");
+        assertThat(order.getDirection()).isEqualTo(org.springframework.data.domain.Sort.Direction.DESC);
     }
 
     @Test

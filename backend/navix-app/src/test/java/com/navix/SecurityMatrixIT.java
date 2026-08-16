@@ -11,6 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.security.JwtService;
+import com.navix.iam.domain.StaffRole;
+import com.navix.iam.domain.StaffStatus;
+import com.navix.iam.entity.StaffUser;
+import com.navix.iam.repository.StaffUserRepository;
 import com.navix.loan.service.ApplicationVerificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -51,6 +55,8 @@ class SecurityMatrixIT {
     private ObjectMapper om;
     @Autowired
     private JwtService jwt;
+    @Autowired
+    private StaffUserRepository staffUserRepository;
 
     @MockBean
     private ApplicationVerificationService verificationService;
@@ -123,6 +129,34 @@ class SecurityMatrixIT {
         mvc.perform(get("/api/staff/me").header("Authorization", bearer("1", "ADMIN")))
                 .andExpect(result -> assertThat(result.getResponse().getStatus())
                         .isNotIn(401, 403));
+    }
+
+    /**
+     * Single-session enforcement (V54): a staff token whose {@code sid} no longer matches
+     * {@code staff_user.active_session_id} is treated as no token at all — this is what actually
+     * kicks a superseded session out, on its very next request.
+     */
+    @Test
+    void supersededStaffToken_isRejectedWith401() throws Exception {
+        StaffUser staff = new StaffUser();
+        staff.setEmail("supersession-it@navix.example");
+        staff.setName("Session Test");
+        staff.setRole(StaffRole.ADMIN);
+        staff.setStatus(StaffStatus.ACTIVE);
+        staff.setActiveSessionId("the-current-session");
+        staff = staffUserRepository.save(staff);
+
+        String staleToken = jwt.issue(String.valueOf(staff.getId()), staff.getName(), "ADMIN",
+                JwtService.AUDIENCE_STAFF, "an-older-superseded-session");
+
+        mvc.perform(get("/api/staff/me").header("Authorization", "Bearer " + staleToken))
+                .andExpect(status().isUnauthorized());
+
+        // The CURRENT session id still authenticates fine.
+        String currentToken = jwt.issue(String.valueOf(staff.getId()), staff.getName(), "ADMIN",
+                JwtService.AUDIENCE_STAFF, "the-current-session");
+        mvc.perform(get("/api/staff/me").header("Authorization", "Bearer " + currentToken))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
     }
 
     // ---- helpers -------------------------------------------------------------------

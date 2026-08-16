@@ -66,6 +66,17 @@ class AudienceResolverTest {
     }
 
     @Test
+    void toAdmins_resolvesActiveAdminsOnly() {
+        when(staff.contactsByRole("ADMIN"))
+                .thenReturn(List.of(staffContact(3, "ADMIN"), staffContact(4, "ADMIN")));
+        NotificationContext ctx = NotificationContext.builder().applicationId(10L).build();
+
+        List<ContactInfo> out = resolver().resolve(Set.of(RecipientPolicy.TO_ADMINS), ctx);
+
+        assertThat(out).extracting(ContactInfo::id).containsExactlyInAnyOrder(3L, 4L);
+    }
+
+    @Test
     void dedupesRecipientNamedByTwoPolicies() {
         ContactInfo head = staffContact(5, "COLLECTION_HEAD");
         when(staff.contactsByRole("COLLECTION_HEAD")).thenReturn(List.of(head));

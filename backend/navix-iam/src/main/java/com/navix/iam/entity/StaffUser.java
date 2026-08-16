@@ -51,4 +51,16 @@ public class StaffUser extends BaseAuditEntity {
     /** Contact mobile — the second factor for the email+mobile forgot-password gate (V34). */
     @Column(name = "mobile", length = 20)
     private String mobile;
+
+    /**
+     * The one live console session allowed per staffer (V54, all roles including ADMIN). The staff
+     * JWT's {@code sid} claim must match this value to be treated as current — see
+     * {@code AuthController.staffLogin} (mints it) and {@code StaffSessionRegistry} (checks it on
+     * every request). Null = no live session (never logged in, or cleanly logged out).
+     */
+    @Column(name = "active_session_id", length = 64)
+    private String activeSessionId;
+
+    @Column(name = "active_session_at")
+    private java.time.Instant activeSessionAt;
 }
