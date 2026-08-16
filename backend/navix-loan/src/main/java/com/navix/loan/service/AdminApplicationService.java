@@ -113,8 +113,13 @@ public class AdminApplicationService {
                 .filter(Objects::nonNull).toList();
         Map<Long, CustomerProfile> byApp = profileRepository.findByApplicationIdIn(rejectedAppIds).stream()
                 .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
-        Map<Long, Long> amountByApp = applicationRepository.findAllById(rejectedAppIds).stream()
-                .collect(Collectors.toMap(LoanApplication::getId, LoanApplication::getAmountRequested, (a, b) -> a));
+        // Not Collectors.toMap: amountRequested is null for a rejection recorded before the borrower
+        // named an amount (e.g. a MANUAL credit reject on a KYC-stage lead), and toMap NPEs on a null
+        // value even though the map is meant to hold one.
+        Map<Long, Long> amountByApp = new java.util.HashMap<>();
+        for (LoanApplication a : applicationRepository.findAllById(rejectedAppIds)) {
+            amountByApp.put(a.getId(), a.getAmountRequested());
+        }
         return rows.stream()
                 .map(r -> RejectionView.of(r, r.getApplicationId() == null ? null : byApp.get(r.getApplicationId()),
                         r.getApplicationId() == null ? null : amountByApp.get(r.getApplicationId())))
