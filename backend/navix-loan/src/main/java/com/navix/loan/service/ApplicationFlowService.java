@@ -693,10 +693,24 @@ public class ApplicationFlowService {
      */
     @Transactional(readOnly = true)
     public List<LoanApplication> creditHeadQueue() {
+        return creditHeadQueue(null, null);
+    }
+
+    /**
+     * Same as {@link #creditHeadQueue()}, optionally narrowed to applications CREATED in the
+     * inclusive {@code [from, to]} window (IST) — so the live-applications Today/Yesterday/Custom
+     * filter applies here too, not just to the plain {@code byStatus} panels.
+     */
+    @Transactional(readOnly = true)
+    public List<LoanApplication> creditHeadQueue(LocalDate from, LocalDate to) {
         requireRole("CREDIT_HEAD");
+        Instant fromInst = from == null ? null : from.atStartOfDay(IST).toInstant();
+        Instant toInst = to == null ? null : to.plusDays(1).atStartOfDay(IST).toInstant();
         return java.util.stream.Stream.concat(
                         applicationRepository.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.KYC_PENDING).stream(),
                         applicationRepository.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.KYC_APPROVED).stream())
+                .filter(a -> fromInst == null || !a.getCreatedAt().isBefore(fromInst))
+                .filter(a -> toInst == null || a.getCreatedAt().isBefore(toInst))
                 .sorted(Comparator.comparing(LoanApplication::getCreatedAt)
                         .thenComparing(LoanApplication::getId).reversed())
                 .toList();

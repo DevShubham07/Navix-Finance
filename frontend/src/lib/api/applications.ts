@@ -413,6 +413,12 @@ export interface RejectionView {
   customerId: number;
   borrowerName: string | null;
   mobile: string | null;
+  pan: string | null;
+  salaryAccountNumber: string | null;
+  salaryIfsc: string | null;
+  amountRequestedPaise: number | null;
+  creditScore: number | null;
+  starRating: number | null;
   reasonCode: string;
   reasonDetail: string | null;
   auto: boolean;
@@ -497,6 +503,9 @@ export interface CustomerSummary {
   ownerStaffId?: number | null;
   ownerName?: string | null;
   bureauState?: BureauState | null;
+  /** The customer's most recent application's created_at — same timestamp as the live-applications
+   *  "Date" column. */
+  createdAt?: string | null;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -1167,8 +1176,16 @@ export const staffApi = {
     return bff<ApplicationView[]>(`${STAFF_BASE}?${qs.toString()}`, "GET");
   },
 
-  /** The credit head's assignment queue (KYC_APPROVED + applied). */
-  creditQueue: () => bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue`, "GET"),
+  /** The credit head's assignment queue (KYC_APPROVED + applied). Optional `range.from`/`range.to`
+   *  narrows to applications CREATED in that inclusive window (the live-applications Today/Yesterday/
+   *  Custom filter). */
+  creditQueue: (range?: { from?: string; to?: string }) => {
+    const qs = new URLSearchParams();
+    if (range?.from) qs.set("from", range.from);
+    if (range?.to) qs.set("to", range.to);
+    const suffix = qs.toString();
+    return bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue${suffix ? `?${suffix}` : ""}`, "GET");
+  },
 
   /**
    * ACTIVE staff holding {@code role} for assignee pickers (default CREDIT_EXECUTIVE). Any staff

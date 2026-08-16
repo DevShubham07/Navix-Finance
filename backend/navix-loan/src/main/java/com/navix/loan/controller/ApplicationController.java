@@ -107,11 +107,20 @@ public class ApplicationController {
         return ApiResponse.ok(enrich(flow.byStatus(status, from, to)));
     }
 
-    /** Credit Head queue: KYC-approved applications the borrower has applied on (credit-enriched). */
+    /** Credit Head queue: KYC-approved applications the borrower has applied on (credit-enriched).
+     *  Optional {@code from}/{@code to} narrow to applications CREATED in that inclusive window
+     *  (V53's {@code created_at}), same as {@link #queue}, so the live-applications Today/Yesterday/
+     *  Custom filter applies to this tab too. */
     @GetMapping("/credit-queue")
-    public ApiResponse<List<ApplicationView>> creditQueue() {
+    public ApiResponse<List<ApplicationView>> creditQueue(
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to) {
         requireStaff();
-        return ApiResponse.ok(enrich(flow.creditHeadQueue()));
+        return ApiResponse.ok(enrich(flow.creditHeadQueue(from, to)));
     }
 
     /**

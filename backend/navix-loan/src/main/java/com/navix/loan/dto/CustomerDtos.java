@@ -57,7 +57,10 @@ public final class CustomerDtos {
             String loanStatus,
             Long ownerStaffId,
             String ownerName,
-            BureauState bureauState) {
+            BureauState bureauState,
+            /** The customer's most recent application's {@code created_at} (V53) — the same timestamp
+             *  shown as the "Date" column on the live-applications queues, surfaced here too. */
+            Instant createdAt) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */

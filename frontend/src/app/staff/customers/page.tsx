@@ -14,6 +14,7 @@ import { bureauStateLabel } from "@/components/staff/bureau-state";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
+import { formatDateTime } from "@/lib/utils";
 import {
   SEGMENTS,
   SEGMENT_LABEL,
@@ -91,6 +92,7 @@ function CustomersPageInner() {
           fileBase="dhanboost-customers"
           columns={[
             { header: "Customer ID", value: (c: CustomerSummary) => c.customerId },
+            { header: "Date", value: (c) => (c.createdAt ? formatDateTime(c.createdAt) : "") },
             { header: "Name", value: (c) => c.name ?? "" },
             { header: "PAN", value: (c) => c.pan ?? "" },
             { header: "Mobile", value: (c) => c.mobile ?? "" },
@@ -165,6 +167,7 @@ function CustomersPageInner() {
               <thead>
                 <tr>
                   <th>Customer</th>
+                  <th>Date</th>
                   <th>Mobile</th>
                   <th>Owner</th>
                   <th>Loans</th>
@@ -200,6 +203,9 @@ function CustomersPageInner() {
                           </span>
                         </span>
                       </button>
+                    </td>
+                    <td className="whitespace-nowrap text-muted">
+                      {c.createdAt ? formatDateTime(c.createdAt) : "—"}
                     </td>
                     <td className="font-mono text-muted">{c.mobile ?? "—"}</td>
                     <td className="staff-cell text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>

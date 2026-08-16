@@ -16,23 +16,39 @@ public final class AdminApplicationDtos {
     private AdminApplicationDtos() {
     }
 
-    /** One row of the rejection register (V44). {@code applicationId} is null for a blocked re-attempt. */
+    /** One row of the rejection register (V44). {@code applicationId} is null for a blocked re-attempt.
+     *  Carries the same identity/credit fields as the live-applications queue rows (PAN, salary
+     *  account/IFSC, requested amount, credit score/★ rating) so the register reads as a full record,
+     *  not just a name + reason. */
     public record RejectionView(
             Long id,
             Long applicationId,
             Long customerId,
             String borrowerName,
             String mobile,
+            String pan,
+            String salaryAccountNumber,
+            String salaryIfsc,
+            Long amountRequestedPaise,
+            Integer creditScore,
+            Double starRating,
             String reasonCode,
             String reasonDetail,
             boolean auto,
             Instant blockedUntil,
             Instant createdAt) {
 
-        public static RejectionView of(com.navix.loan.entity.ApplicationRejection r, CustomerProfile p) {
+        public static RejectionView of(com.navix.loan.entity.ApplicationRejection r, CustomerProfile p,
+                Long amountRequestedPaise) {
             return new RejectionView(r.getId(), r.getApplicationId(), r.getCustomerId(),
                     p == null ? null : p.getFullName(),
                     r.getMobile() != null ? r.getMobile() : (p == null ? null : p.getMobile()),
+                    p == null ? null : p.getPan(),
+                    p == null ? null : p.getSalaryAccountNumber(),
+                    p == null ? null : p.getSalaryIfsc(),
+                    amountRequestedPaise,
+                    p != null && p.getBureauScore() != null ? p.getBureauScore().intValue() : null,
+                    p != null && p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
                     r.getReasonCode(), r.getReasonDetail(), Boolean.TRUE.equals(r.getAuto()),
                     r.getBlockedUntil(), r.getCreatedAt());
         }

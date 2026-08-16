@@ -95,14 +95,15 @@ export function CreditQueuePanel() {
 
 export function CreditWorkbench() {
   const me = useStaffMe();
+  const range = useQueueRange();
   const unallocatedQ = useQuery({
-    queryKey: ["staff-queue", "credit-queue"],
-    queryFn: () => staffApi.creditQueue(),
+    queryKey: ["staff-queue", "credit-queue", range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.creditQueue(range),
     refetchInterval: 8000,
   });
   const assignedQ = useQuery({
-    queryKey: ["staff-queue", "CREDIT_EXEC_PENDING"],
-    queryFn: () => staffApi.listByStatus("CREDIT_EXEC_PENDING"),
+    queryKey: ["staff-queue", "CREDIT_EXEC_PENDING", range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.listByStatus("CREDIT_EXEC_PENDING", range),
     refetchInterval: 8000,
   });
   const execQ = useQuery({

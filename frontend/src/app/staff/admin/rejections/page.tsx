@@ -9,7 +9,8 @@ import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-
 import { ExportMenu } from "@/components/staff/export-menu";
 import type { ExportColumn } from "@/lib/export/exporters";
 import { hasPermission } from "@/lib/auth/rbac";
-import { staffApi, type RejectionView } from "@/lib/api/applications";
+import { staffApi, paiseToINR, type RejectionView } from "@/lib/api/applications";
+import { CreditBadge } from "@/components/staff/credit-badge";
 
 const REASONS = [
   { value: "", label: "All reasons" },
@@ -34,6 +35,12 @@ const EXPORT_COLUMNS: ExportColumn<RejectionView>[] = [
   { header: "Customer ID", value: (r) => r.customerId },
   { header: "Name", value: (r) => r.borrowerName ?? "" },
   { header: "Mobile", value: (r) => r.mobile ?? "" },
+  { header: "PAN", value: (r) => r.pan ?? "" },
+  { header: "Account", value: (r) => r.salaryAccountNumber ?? "" },
+  { header: "IFSC", value: (r) => r.salaryIfsc ?? "" },
+  { header: "Amount", value: (r) => (r.amountRequestedPaise != null ? (r.amountRequestedPaise / 100).toFixed(2) : "") },
+  { header: "Credit score", value: (r) => r.creditScore ?? "" },
+  { header: "Credit rating", value: (r) => (r.starRating != null ? r.starRating.toFixed(1) : "") },
   { header: "Reason", value: (r) => REASON_LABEL[r.reasonCode] ?? r.reasonCode },
   { header: "Detail", value: (r) => r.reasonDetail ?? "" },
   { header: "Source", value: (r) => (r.auto ? "automatic" : "manual") },
@@ -109,6 +116,11 @@ export default function AdminRejectionsPage() {
               <thead>
                 <tr>
                   <th>Borrower</th>
+                  <th>PAN</th>
+                  <th>Account</th>
+                  <th>IFSC</th>
+                  <th>Amount</th>
+                  <th>Credit</th>
                   <th>Reason</th>
                   <th>Detail</th>
                   <th>Source</th>
@@ -128,6 +140,19 @@ export default function AdminRejectionsPage() {
                           {r.mobile ? ` · ${r.mobile}` : ""}
                           {r.applicationId ? ` · app ${r.applicationId}` : ""}
                         </div>
+                      </td>
+                      <td className="font-mono text-muted">{r.pan ?? "—"}</td>
+                      <td className="font-mono text-muted">{r.salaryAccountNumber ?? "—"}</td>
+                      <td className="font-mono text-muted">{r.salaryIfsc ?? "—"}</td>
+                      <td className="text-ink">
+                        {r.amountRequestedPaise != null ? paiseToINR(r.amountRequestedPaise) : "—"}
+                      </td>
+                      <td>
+                        {r.creditScore != null || r.starRating != null ? (
+                          <CreditBadge starRating={r.starRating} creditScore={r.creditScore} compact />
+                        ) : (
+                          <span className="text-xs text-muted">—</span>
+                        )}
                       </td>
                       <td>
                         <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">

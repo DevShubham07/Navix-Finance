@@ -153,6 +153,10 @@ public class CustomerService {
             BureauState bureauState = bureauAppId != null
                     ? bureauStates.getOrDefault(bureauAppId, BureauState.NOT_FETCHED)
                     : BureauState.NOT_FETCHED;
+            Instant latestCreatedAt = apps.stream()
+                    .max(Comparator.comparing(LoanApplication::getId))
+                    .map(LoanApplication::getCreatedAt)
+                    .orElse(null);
             CustomerSummary cs = new CustomerSummary(
                     customerId,
                     profile != null ? profile.getFullName() : null,
@@ -169,7 +173,8 @@ public class CustomerService {
                     loanStatus,
                     ownerStaffId,
                     ownerName,
-                    bureauState);
+                    bureauState,
+                    latestCreatedAt);
             if (matches(cs, needle)) {
                 out.add(cs);
                 // customerId is mobile-derived (§10), not a signup-order sequence, so it carries no

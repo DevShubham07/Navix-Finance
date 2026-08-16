@@ -109,12 +109,15 @@ public class AdminApplicationService {
         List<ApplicationRejection> rows = reasonCode == null || reasonCode.isBlank()
                 ? rejectionRepository.findAllByOrderByIdDesc()
                 : rejectionRepository.findByReasonCodeOrderByIdDesc(reasonCode);
-        Map<Long, CustomerProfile> byApp = profileRepository.findByApplicationIdIn(
-                        rows.stream().map(ApplicationRejection::getApplicationId).filter(Objects::nonNull).toList())
-                .stream()
+        List<Long> rejectedAppIds = rows.stream().map(ApplicationRejection::getApplicationId)
+                .filter(Objects::nonNull).toList();
+        Map<Long, CustomerProfile> byApp = profileRepository.findByApplicationIdIn(rejectedAppIds).stream()
                 .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
+        Map<Long, Long> amountByApp = applicationRepository.findAllById(rejectedAppIds).stream()
+                .collect(Collectors.toMap(LoanApplication::getId, LoanApplication::getAmountRequested, (a, b) -> a));
         return rows.stream()
-                .map(r -> RejectionView.of(r, r.getApplicationId() == null ? null : byApp.get(r.getApplicationId())))
+                .map(r -> RejectionView.of(r, r.getApplicationId() == null ? null : byApp.get(r.getApplicationId()),
+                        r.getApplicationId() == null ? null : amountByApp.get(r.getApplicationId())))
                 .toList();
     }
 
