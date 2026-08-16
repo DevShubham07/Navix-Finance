@@ -1296,9 +1296,26 @@ public class ApplicationVerificationService {
                     "DhanBoost Loan Agreement — application " + appId,
                     null));
         } catch (RuntimeException providerUnavailable) {
+            // A silent catch here is why every eSign failure looked identical from the outside — the
+            // borrower saw the drawn-signature fallback and CloudWatch saw nothing at all, so a provider
+            // 400/401 was indistinguishable from a genuine outage. Log the failure *category* before
+            // falling back.
+            //
+            // PII discipline (same rule as the bureau catch above): the only strings that can reach
+            // getMessage() on this path are ones we construct — ProviderJson's "HTTP <status> from <uri>" /
+            // "Empty response body from <uri>" / "Provider reported error for <uri>", or the adapter's
+            // "Signzy returned no contract id / esign URL". Provider response bodies never enter the
+            // message; ProviderJson diverts them into the exception's redacted safeDetail, which this
+            // module deliberately cannot see. The signer's name and the presigned KFS URL stay out.
+            String providerErrorCode = providerErrorCode(providerUnavailable);
+            log.warn("eSign initiate failed application={} ref={} errorCode={} exception={}: {}",
+                    appId, ref, providerErrorCode, providerUnavailable.getClass().getSimpleName(),
+                    providerUnavailable.toString());
+
             // No row: the drawn-signature fallback owns the ESIGN row if the borrower takes it.
             Map<String, Object> soft = new LinkedHashMap<>();
             soft.put("fallback", true);
+            soft.put("providerErrorCode", providerErrorCode);
             return new StepResult(ESIGN, PENDING,
                     "Aadhaar e-sign is unavailable — sign the agreement here instead", soft);
         }

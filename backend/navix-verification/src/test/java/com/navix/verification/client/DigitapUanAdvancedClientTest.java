@@ -14,16 +14,17 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 /**
- * Offline tests for {@link DigitapUanAdvancedClient} — the UAN Advanced V3 employment lookup.
+ * Offline tests for {@link DigitapUanAdvancedClient} — the UAN Advanced V4 employment lookup.
  *
- * <p>The envelopes below are taken from the vendor's UAN-Advanced-V3 spec (§10.3.2). The cases that
- * matter are the non-101 ones: 103 and 104 arrive as HTTP <b>200</b>, so treating the HTTP status as
- * the outcome would silently report "no EPFO record" as a successful employment confirmation.
+ * <p>The envelopes below are taken from the vendor's UAN-Advanced-V4 sample in
+ * {@code docs/digitap/digitap-apis.json}. The cases that matter are the non-101 ones: 103 and 104
+ * arrive as HTTP <b>200</b>, so treating the HTTP status as the outcome would silently report
+ * "no EPFO record" as a successful employment confirmation.
  */
 class DigitapUanAdvancedClientTest {
 
     private static final String BASE = "https://digitap.test";
-    private static final String ENDPOINT = "/cv/v3/uan_advanced/sync";
+    private static final String ENDPOINT = "/cv/v4/uan_advanced/sync";
 
     private record Bound(MockRestServiceServer server, RestClient restClient) {
     }
@@ -161,6 +162,50 @@ class DigitapUanAdvancedClientTest {
 
         assertThat(r.uan()).isEqualTo("100548426123");
         assertThat(r.nameOnRecord()).isEqualTo("SUBHASHISH NAYAK");
+        b.server().verify();
+    }
+
+    @Test
+    void v4EmploymentHistoryAndPartialOutputAreIgnoredWithoutDisturbingTheV3Mapping() {
+        // Verbatim-shaped V4 envelope (docs/digitap/digitap-apis.json, uan-advanced-v4 200 sample):
+        // employment_history[], partial_output, epfo_details and uan_source are V4-only and
+        // deliberately unmapped — they must not shift or break any field the EMPLOYMENT step already
+        // reads.
+        Bound b = bind();
+        stub(b.server(), """
+                {"http_response_code":200,"client_ref_num":"ref-6","request_id":"REQ-UAN-6",
+                "result_code":101,"partial_output":false,"uan_source":["input"],"result":{
+                  "uan":["102028758928"],
+                  "summary":{
+                    "recent_employer_data":{
+                      "member_id":"MH/BAN/1234567/000/1234567","establishment_id":"MHBAN1234567000",
+                      "date_of_exit":"","date_of_joining":"2023-08-07",
+                      "establishment_name":"NAMRA FINANCE LIMITED",
+                      "employer_confidence_score":1.0,"matching_uan":"102028758928",
+                      "epfo":{"is_recent":true,"is_name_unique":true,"has_pf_filings_details":true}},
+                    "is_employed":true,"employee_name_match":true,"employer_name_match":true,
+                    "uan_count":1,"date_of_exit_marked":false},
+                  "uan_details":{"102028758928":{
+                    "basic_details":{"gender":"MALE","date_of_birth":"1995-01-01","name":"VIKASH",
+                      "mobile":"","aadhaar_verification_status":1},
+                    "employment_details":{"establishment_name":"NAMRA FINANCE LIMITED"},
+                    "additional_details":{"bank_account":"","relative_name":""},
+                    "employment_history":[{"establishment_name":"NAMRA FINANCE LIMITED",
+                      "date_of_joining":"2023-08-07","date_of_exit":"","employment_period_in_months":18,
+                      "is_recent":true,"is_employed":true,"matched_name":"VIKASH","is_name_exact":true}]}},
+                  "epfo_details":{"matches":[],"pf_filing_details":[],"establishment_info":{}}}}
+                """);
+
+        UanAdvancedResponse r = new DigitapUanAdvancedClient(b.restClient())
+                .verify("BXFPJ0767C", "9999999999", "1995-01-01", "Vikash", "Namra Finance", "ref-6");
+
+        assertThat(r.employerName()).isEqualTo("NAMRA FINANCE LIMITED");
+        assertThat(r.uan()).isEqualTo("102028758928");
+        assertThat(r.dateOfExit()).isNull();
+        assertThat(r.hasPfFilings()).isTrue();
+        assertThat(r.employerConfidenceScore()).isEqualTo(1.0);
+        assertThat(r.nameOnRecord()).isEqualTo("VIKASH");
+        assertThat(r.genderOnRecord()).isEqualTo("MALE");
         b.server().verify();
     }
 }

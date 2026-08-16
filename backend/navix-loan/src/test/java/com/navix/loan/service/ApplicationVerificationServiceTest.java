@@ -728,7 +728,9 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
-    void esignInit_fallsBackToDrawnSignatureWhenProviderIsDown() {
+    @ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    void esignInit_fallsBackToDrawnSignatureWhenProviderIsDown(
+            org.springframework.boot.test.system.CapturedOutput output) {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
         givenSanctionLetter();
         when(esign.initiate(any())).thenThrow(new IllegalStateException("provider down"));
@@ -736,9 +738,34 @@ class ApplicationVerificationServiceTest {
         var result = service.esignInit(APP, "https://app.test/ok", "https://app.test/no");
 
         assertThat(result.status()).isEqualTo("PENDING");
-        assertThat(result.derived()).containsEntry("fallback", true);
+        assertThat(result.derived())
+                .containsEntry("fallback", true)
+                .containsEntry("providerErrorCode", "UNEXPECTED_PROVIDER_FAILURE");
+        assertThat(output).contains("eSign initiate failed application=42");
         // No row: the drawn-signature path owns the ESIGN row if the borrower takes it.
         verify(verificationRepo, never()).save(any());
+    }
+
+    @Test
+    @ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    void esignInit_surfacesTheProviderHttpStatusSoAMisconfigurationIsNotSilent(
+            org.springframework.boot.test.system.CapturedOutput output) {
+        // A blank NAVIX_ESIGN_CALLBACK_URL ships "callbackUrl":"" and Signzy 400s; a missing
+        // SIGNZY_PROD_TOKEN 401s. Both used to look identical (a bare drawn-signature fallback).
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        givenSanctionLetter();
+        when(esign.initiate(any())).thenThrow(
+                new IllegalStateException("HTTP 400 from /api/v3/contract/initiate"));
+
+        var result = service.esignInit(APP, "https://app.test/ok", "https://app.test/no");
+
+        assertThat(result.status()).isEqualTo("PENDING");
+        assertThat(result.derived()).containsEntry("providerErrorCode", "HTTP_400");
+        assertThat(output).contains("eSign initiate failed application=42")
+                .contains("errorCode=HTTP_400")
+                .contains("/api/v3/contract/initiate");
+        // The signer's identity and the presigned KFS URL must never reach the log.
+        assertThat(output).doesNotContain("SHUBHAM").doesNotContain("s3.test/kfs.pdf");
     }
 
     @Test

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 /**
- * Digitap UAN Advanced Employment V3 — {@code POST /cv/v3/uan_advanced/sync} (svc host). Maps an identity
+ * Digitap UAN Advanced Employment V4 — {@code POST /cv/v4/uan_advanced/sync} (svc host). Maps an identity
  * (PAN / mobile / DOB+name) to its EPFO UAN, reads the most recent employment attached to it, then
  * cross-checks that against the establishment's PF filings — which is what catches an employer that has
  * gone quiet or a borrower who left without an exit being marked.
@@ -27,14 +27,20 @@ import org.springframework.web.client.RestClient;
  * more than five UANs matched. All three come back 200, and only 101 is billable, so this maps 103/104 to
  * a non-found response rather than an exception — "the EPFO has nothing on you" is an answer, not a fault.
  *
- * <p>Field/sample source of truth: the vendor's UAN-Advanced-V3 spec (§10) and
- * {@code docs/digitap/digitap-apis.json}. Note the {@code /cv} prefix: the spec writes the path as
- * {@code <base_url>/v3/uan_advanced/sync} but the real route carries it.
+ * <p>Field/sample source of truth: the vendor's UAN-Advanced-V4 entry in
+ * {@code docs/digitap/digitap-apis.json} (and {@code docs/digitap/DigitapGuide.md} §29). V4 is the
+ * vendor-recommended highest-coverage variant. Its response is a strict superset of V3 — every field
+ * mapped below is unchanged — so the version bump is behaviour-preserving. The V4-only additions
+ * ({@code employment_history[]} per UAN, {@code partial_output}, {@code epfo_details}) are deliberately
+ * left unmapped: {@link com.navix.common.verification.VerificationPort.EmploymentCheck} is a flat
+ * per-employment record with no Signzy-side equivalent for a stint list, so surfacing them is a follow-up
+ * that starts in {@code navix-common}, not here. Note the {@code /cv} prefix: the spec writes the path as
+ * {@code <base_url>/v4/uan_advanced/sync} but the real route carries it.
  */
 @Component
 public class DigitapUanAdvancedClient {
 
-    private static final String ENDPOINT = "/cv/v3/uan_advanced/sync";
+    private static final String ENDPOINT = "/cv/v4/uan_advanced/sync";
 
     /** Record resolved. */
     private static final int RESULT_OK = 101;
