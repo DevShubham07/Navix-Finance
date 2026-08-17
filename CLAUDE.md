@@ -44,6 +44,21 @@ hand-edit the graph database or commit generated graph artifacts.
 
 ---
 
+## Working Agreements
+
+### Asking vs. Assuming
+Before implementing any multi-file or multi-step feature, ask clarifying questions about scope,
+target branch, and acceptance criteria. Do NOT assume requirements. If a request is ambiguous
+(product names, repo names, account names), confirm before researching or coding.
+
+### Shell Environment
+This is a Windows machine using Git Bash and PowerShell. Never emit Windows `^` line continuations
+in bash commands (use `\`). For curl with file payloads use `MSYS_NO_PATHCONV=1` only on path args,
+and prefer `--data-binary @file` over inline bodies to avoid arg-length limits. Avoid PowerShell
+here-strings in git commit messages — use `git commit -F <file>` instead.
+
+---
+
 ## 1. What NAVIX is
 
 **NAVIX Finance** is a salary-linked, single-repayment lending platform. A salaried borrower
@@ -262,6 +277,15 @@ produce (overdue backdating, DEFAULTED/WRITTEN_OFF, trend spreading, ADMIN notif
 
 ---
 
+## Verification Rules
+
+Never report tests or builds as passing based on grepped output — always check the actual exit
+code (`echo $?` or `set -o pipefail`). Run typecheck + lint before every commit. Never claim a
+deploy succeeded until you have verified the running image/commit SHA matches what was just
+pushed.
+
+---
+
 ## 5. The end-to-end product workflow (the spine)
 
 Everything is **one aggregate** — a single `loan_application` row with one `status` field that
@@ -393,17 +417,29 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 | `ACCOUNTANT` | validate bank transfer → `DISBURSED`→`ACTIVE` (mints loan) / `DISBURSEMENT_FAILED`; **verify or reject borrower repayments**; **view the transactions ledger** |
 | `COLLECTION_HEAD` | collections management + settlements (**approve / reject**) |
 | `COLLECTION_EXECUTIVE` | borrower collections interactions |
+| `DSA` | **external commission agent** (V55). Enters leads and earns **3.5% of net disbursed** on their lead's *first* loan, payable only once that loan is fully repaid. Holds **no** lifecycle authority and is **firewalled from all customer data** — see the note below |
 | `ADMIN` | oversight — **bypasses role checks**; also exempt from the credit SoD + active-executive `assign`, so may walk a loan KYC→ACTIVE **solo, per-step** (credit queue shows an **"Assign to me"** button); edits salary/profile data; manages company expenses + blocklist |
 | `DEVELOPER` | internal read-only (health/logs/DB); `customer:view` only |
 
 > Role names are `COLLECTION_HEAD` / `COLLECTION_EXECUTIVE` (not the old
 > COLLECTIONS_HEAD / COLLECTION_OFFICER), plus `DEVELOPER`. Reconciled in Flyway **V8**.
+> `TELECALLER` was added in **V42**, `DSA` in **V55**.
+
+> **⚠ `DSA` is the one staff role that is an authz *exclusion*, not just an absence of permissions.**
+> Every other staff role holds the broad `customer:view`, and several controllers gate with a
+> **deny-list** (`requireStaff()` rejects only BORROWER/ANONYMOUS) rather than an allowlist — so a new
+> role is open-by-default there. `DSA` is therefore explicitly rejected in
+> `CustomerController.requireStaff`, `ApplicationController.{requireStaff, requireBorrowerOwnsOrStaff}`,
+> `DecisionHistoryController.requireStaff` and `CustomerService.{list, detail}`. **If you add another
+> staff-open surface, add the DSA rejection too** — `hasRole("STAFF")` in `SecurityConfig` is
+> audience-level and a DSA token satisfies it.
 
 **Permission tokens** (`frontend/src/lib/auth/rbac.ts`, mirrored by service-level guards): `kyc:approve`,
 `loan:review`, `loan:approve`, `loan:disburse`, `loan:activate`, `collections:manage`,
 `collections:interact`, `staff:manage`, `customer:view` (granted to **all** roles incl. DEVELOPER —
 every staff member can view the Customers pane incl. PII), `customer:manage` (ADMIN — correct KYC,
-cancel, blocklist), `referral:payout` (DISBURSEMENT_HEAD + ADMIN).
+cancel, blocklist), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER + ADMIN),
+`dsa:portal` (**DSA only** — and it is the *only* token a DSA holds), `dsa:manage` (ADMIN).
 
 All staff pages are now **live and role-aware**. The shared machinery lives in
 `components/staff/live-pipeline.tsx` (status-backed queues + the per-stage maker-checker action
@@ -437,6 +473,9 @@ knows what each section does.
   marketing-theme.css). Don't reintroduce the retired "Classic Corporate" theme (navy #1B3A6B / Source
   Serif). ⚠️ Running `npm run build` while `npm run dev` is up corrupts the dev server's `.next`
   (`Cannot find module './638.js'`) — kill dev, `rm -rf .next`, restart.
+- **CSS scope:** never apply global scaling like `html { font-size: X% }` or global rem overrides.
+  Font-size and spacing changes must be scoped to specific utilities/components so the staff
+  sidebar and dense tables are not broken.
 - **BFF (Backend-for-Frontend):** all backend calls go through Next.js route handlers under
   `src/app/api/*`, never browser→Spring directly. Handlers are **optional catch-alls
   `[[...path]]`** (required `[...path]` does **not** match the bare base path — that was a bug,
@@ -533,6 +572,8 @@ navix-common). Applied on every boot:
 | `V32__email_suppression.sql` | `email_suppression` (bounced/complained addresses, unique on `lower(email)`) — fed by the SES SNS→SQS listener; the email sender skips suppressed addresses (§14) |
 | `V33__rename_applicant_to_customer.sql` | **rename `applicant` → `customer` across the schema**: `applicant_id → customer_id` (9 tables), `applicant_profile → customer_profile`, all embedded-name indexes/constraints. The id **value** is unchanged (still mobile-derived); only names change. The guarantor `co_applicant` is deliberately **untouched**. |
 | `V34__auth_passwords_and_reset.sql` | password auth: `borrower_credential` (first durable per-customer row, keyed by `customer_id`), `staff_user.mobile` (+ demo backfill `9000000000` for the email+mobile reset gate), `password_reset_token` (one-time, SHA-256-hashed, single-use, 30-min) |
+| `V35`–`V54` | *(not yet catalogued here — read the migration directory; notable ones are **V42** `TELECALLER` role, **V43** `lead`, **V45** drops `KYC_APPROVER` + the Phase-2 credit workbench, **V50** `loan.closed_on`, **V53** `loan_application.created_at`, **V54** staff session registry)* |
+| `V55__dsa_role_and_commission.sql` | **DSA** role (+ CHECK constraints + demo persona) · `lead.{owner_dsa_id, pan}` with a PAN-format CHECK and a **partial unique index on `pan` where `owner_dsa_id is not null`** (the cross-DSA duplicate guard) · `dsa_commission` (unique on `lead_id` → one commission per lead, i.e. first loan only) · `dsa_commission_event` (ADMIN override audit) · `dsa_lead_rejection` (PAN-enumeration audit) · `lead_outreach` (SMS/email send audit) |
 
 **The aggregate** `loan_application`: `id`, `customer_id` (was `applicant_id`, renamed in V33), `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
@@ -614,6 +655,31 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 | `POST /{id}/repayments/{pid}/verify` · `POST …/{pid}/reject` | ACCOUNTANT | confirm proof → reduce outstanding, close at zero · **reject** a pending payment (no recompute; can't reject a VERIFIED one) |
 | `GET /pending-repayments` | ACCOUNTANT | repayments awaiting verification (company-wide queue) |
 | `GET /transactions?q=&direction=&from=&to=` | ACCOUNTANT/ADMIN | company-wide ledger (OUTGOING disbursals + INCOMING repayments), searchable + server-side date range |
+
+### DSA portal (`/api/dsa`) and DSA administration (`/api/admin/dsa`)
+
+`/api/dsa/**` is gated to the **`DSA` role only** (ADMIN oversight goes through `/api/admin/dsa`, so
+the portal's "owner comes from the JWT" rule has no exception). Ownership is **always** resolved from
+`ActorContext`, never from a request parameter, and a foreign lead id returns `LEAD_NOT_FOUND` rather
+than `FORBIDDEN` so the endpoint is not an existence oracle. Attribution is by **PAN**.
+
+| Method + path | Purpose |
+|---|---|
+| `POST /api/dsa/leads` | add a lead (PAN + name + mobile required). A PAN already held by another DSA **or** by an existing customer → a single generic `LEAD_ALREADY_KNOWN` (the two cases are indistinguishable); the attempt is logged to `dsa_lead_rejection` |
+| `GET /api/dsa/leads` · `GET /{id}` · `PUT /{id}` | only the caller's own leads. The view echoes back what the DSA typed + a **coarse** conversion status (`NOT_APPLIED/APPLIED/IN_PROGRESS/DISBURSED/REPAID/DECLINED`) + net disbursed + commission — nothing read out of KYC, and **never a second loan** |
+| `POST /api/dsa/leads/{id}/outreach` | SMS (fixed DLT template) or email (DSA-authored subject/body); rate-limited, every send audited to `lead_outreach` |
+| `GET /api/dsa/commissions` · `GET /api/dsa/earnings` | own commission rows · totals |
+| `GET /api/admin/dsa` (+ `/leads`, `/commissions`, `/outreach`) | ADMIN registers and roll-ups |
+| `POST /api/admin/dsa/commissions/{id}/{pay,void,reassign}` · `POST /commissions` | ADMIN settles (txn id), voids, reassigns on dispute, or creates one manually — all appended to `dsa_commission_event` |
+
+**Commission lifecycle:** `ACCRUED` at disbursal (`ApplicationFlowService.finalizeDisbursal`, beside
+the referral hook) → `PAYABLE` when the loan fully repays (`RepaymentService.recomputeOutstanding`) →
+`PAID` by ADMIN. It goes **`VOID`** instead on an approved settlement (a
+`@TransactionalEventListener` on the existing `SettlementApprovedEvent`), a default, or a write-off.
+Rate is `DSA_COMMISSION_RATE_BPS = 350`, **snapshotted per row** so changing it never rewrites history.
+
+> ⚠️ **SMS outreach does not deliver yet.** No `DHANBOOST_DSA_LEAD_INVITE_V1` DLT template is
+> registered, so live sends fail `006 Invalid template text` and are recorded `FAILED`. Email works.
 
 ### Collections (`/api/collections`) and IAM/Admin (`/api/staff`, `/api/admin`)
 
@@ -704,6 +770,15 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
   `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs).
+
+---
+
+## Git & Deploy Defaults
+
+Commit and push directly to `main` unless told otherwise — do not create side branches. Confirm
+which GitHub account is active (`gh auth status`) before pushing; this repo is pushed under
+multiple accounts (kartikjindal, meetzy-india). If push fails on OAuth scope, run
+`gh auth refresh -s workflow`.
 
 ---
 
