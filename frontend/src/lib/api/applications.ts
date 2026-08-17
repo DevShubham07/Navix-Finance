@@ -1534,6 +1534,262 @@ export const leadsApi = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// DSA (Direct Selling Agent) portal — routes under /api/staff/dsa/* -> backend /api/dsa
+// ---------------------------------------------------------------------------
+
+/** Live conversion status of a DSA's lead. Deliberately coarse — DECLINED never says why. */
+export type DsaLeadStatus = "NOT_APPLIED" | "APPLIED" | "IN_PROGRESS" | "DISBURSED" | "REPAID" | "DECLINED";
+
+export type DsaCommissionStatus = "ACCRUED" | "PAYABLE" | "PAID" | "VOID";
+
+/** Everything a DSA may see about their own lead — the fields they typed, a coarse conversion
+ *  status, and (once disbursed) the net disbursed amount + their commission. Nothing KYC-sourced. */
+export interface DsaLeadView {
+  id: number;
+  pan: string;
+  name: string;
+  mobile: string;
+  email: string | null;
+  city: string | null;
+  employer: string | null;
+  monthlySalaryPaise: number | null;
+  loanAmountInterestedPaise: number | null;
+  notes: string | null;
+  status: DsaLeadStatus;
+  netDisbursedPaise: number | null;
+  commissionPaise: number | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface CreateDsaLeadInput {
+  pan: string;
+  name: string;
+  mobile: string;
+  email?: string;
+  city?: string;
+  employer?: string;
+  monthlySalaryPaise?: number;
+  loanAmountInterestedPaise?: number;
+  notes?: string;
+}
+
+export interface UpdateDsaLeadInput {
+  name?: string;
+  mobile?: string;
+  email?: string;
+  city?: string;
+  employer?: string;
+  monthlySalaryPaise?: number;
+  loanAmountInterestedPaise?: number;
+  notes?: string;
+}
+
+export type OutreachChannel = "SMS" | "EMAIL";
+
+export interface OutreachInput {
+  channel: OutreachChannel;
+  subject?: string;
+  body?: string;
+}
+
+export interface OutreachResultView {
+  channel: string;
+  status: string;
+  error: string | null;
+}
+
+export interface DsaCommissionView {
+  id: number;
+  leadId: number;
+  pan: string | null;
+  name: string | null;
+  mobile: string | null;
+  netDisbursedPaise: number;
+  rateBps: number;
+  amountPaise: number;
+  status: DsaCommissionStatus;
+  accruedAt: string | null;
+  payableAt: string | null;
+  paidAt: string | null;
+}
+
+export interface DsaEarningsSummary {
+  leadsAdded: number;
+  leadsConverted: number;
+  accruedPaise: number;
+  payablePaise: number;
+  paidPaise: number;
+}
+
+export interface DsaLeadListParams {
+  q?: string;
+  status?: DsaLeadStatus;
+}
+
+const DSA_BASE = "/api/staff/dsa";
+
+function dsaLeadsQuery(params?: DsaLeadListParams): string {
+  if (!params) return "";
+  const sp = new URLSearchParams();
+  if (params.q) sp.set("q", params.q);
+  if (params.status) sp.set("status", params.status);
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+/** DSA self-service portal — own leads, outreach, own commissions/earnings. Firewalled: the backend
+ *  resolves the caller from the JWT, never a client-supplied id, so this never reads another DSA's
+ *  data (or any KYC/customer field). */
+export const dsaApi = {
+  listLeads: (params?: DsaLeadListParams) =>
+    bff<DsaLeadView[]>(`${DSA_BASE}/leads${dsaLeadsQuery(params)}`, "GET"),
+
+  getLead: (id: number) => bff<DsaLeadView>(`${DSA_BASE}/leads/${id}`, "GET"),
+
+  createLead: (body: CreateDsaLeadInput) => bff<DsaLeadView>(`${DSA_BASE}/leads`, "POST", body),
+
+  updateLead: (id: number, body: UpdateDsaLeadInput) =>
+    bff<DsaLeadView>(`${DSA_BASE}/leads/${id}`, "PUT", body),
+
+  outreach: (id: number, body: OutreachInput) =>
+    bff<OutreachResultView>(`${DSA_BASE}/leads/${id}/outreach`, "POST", body),
+
+  commissions: () => bff<DsaCommissionView[]>(`${DSA_BASE}/commissions`, "GET"),
+
+  earnings: () => bff<DsaEarningsSummary>(`${DSA_BASE}/earnings`, "GET"),
+};
+
+// ---------------------------------------------------------------------------
+// Admin DSA administration — routes under /api/admin/dsa/* -> backend /api/admin/dsa
+// ---------------------------------------------------------------------------
+
+export interface AdminDsaRosterView {
+  dsaStaffId: number;
+  name: string | null;
+  active: boolean;
+  leadsAdded: number;
+  leadsConverted: number;
+  accruedPaise: number;
+  payablePaise: number;
+  paidPaise: number;
+}
+
+/** Full detail — ADMIN sees everything, plus PAN + ownership. */
+export interface AdminDsaLeadView {
+  id: number;
+  pan: string;
+  name: string;
+  mobile: string;
+  email: string | null;
+  city: string | null;
+  employer: string | null;
+  monthlySalaryPaise: number | null;
+  loanAmountInterestedPaise: number | null;
+  notes: string | null;
+  ownerDsaId: number | null;
+  ownerDsaName: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface AdminDsaCommissionView {
+  id: number;
+  dsaStaffId: number;
+  dsaName: string | null;
+  leadId: number;
+  pan: string | null;
+  customerId: number;
+  applicationId: number;
+  loanId: number;
+  netDisbursedPaise: number;
+  rateBps: number;
+  amountPaise: number;
+  status: DsaCommissionStatus;
+  accruedAt: string | null;
+  payableAt: string | null;
+  paidAt: string | null;
+  txnRef: string | null;
+  paidBy: string | null;
+  voidReason: string | null;
+  voidedAt: string | null;
+}
+
+export interface AdminOutreachView {
+  id: number;
+  leadId: number;
+  dsaStaffId: number;
+  channel: string;
+  address: string;
+  subject: string | null;
+  body: string | null;
+  status: string;
+  providerRef: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface AdminDsaLeadListParams {
+  dsaId?: number;
+  from?: string;
+  to?: string;
+  q?: string;
+}
+
+const ADMIN_DSA_BASE = "/api/admin/dsa";
+
+function adminDsaLeadsQuery(params?: AdminDsaLeadListParams): string {
+  if (!params) return "";
+  const sp = new URLSearchParams();
+  if (params.dsaId != null) sp.set("dsaId", String(params.dsaId));
+  if (params.from) sp.set("from", params.from);
+  if (params.to) sp.set("to", params.to);
+  if (params.q) sp.set("q", params.q);
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+/** ADMIN administration of the DSA program: roster, company-wide lead register, commission ledger
+ *  overrides (pay/void/reassign/manual create), and the outreach audit log. */
+export const adminDsaApi = {
+  roster: () => bff<AdminDsaRosterView[]>(ADMIN_DSA_BASE, "GET"),
+
+  leads: (params?: AdminDsaLeadListParams) =>
+    bff<AdminDsaLeadView[]>(`${ADMIN_DSA_BASE}/leads${adminDsaLeadsQuery(params)}`, "GET"),
+
+  correctLead: (id: number, body: { pan?: string; ownerDsaId?: number; name?: string; mobile?: string; email?: string }) =>
+    bff<AdminDsaLeadView>(`${ADMIN_DSA_BASE}/leads/${id}`, "PUT", body),
+
+  commissions: (params?: { status?: DsaCommissionStatus; dsaId?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set("status", params.status);
+    if (params?.dsaId != null) sp.set("dsaId", String(params.dsaId));
+    const s = sp.toString();
+    return bff<AdminDsaCommissionView[]>(`${ADMIN_DSA_BASE}/commissions${s ? `?${s}` : ""}`, "GET");
+  },
+
+  pay: (id: number, txnRef: string) =>
+    bff<AdminDsaCommissionView>(`${ADMIN_DSA_BASE}/commissions/${id}/pay`, "POST", { txnRef }),
+
+  void: (id: number, reason: string) =>
+    bff<AdminDsaCommissionView>(`${ADMIN_DSA_BASE}/commissions/${id}/void`, "POST", { reason }),
+
+  reassign: (id: number, toDsaStaffId: number, reason: string) =>
+    bff<AdminDsaCommissionView>(`${ADMIN_DSA_BASE}/commissions/${id}/reassign`, "POST", { toDsaStaffId, reason }),
+
+  createManual: (dsaId: number, leadId: number) =>
+    bff<AdminDsaCommissionView>(`${ADMIN_DSA_BASE}/commissions`, "POST", { dsaId, leadId }),
+
+  outreach: (params?: { dsaId?: number; leadId?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.dsaId != null) sp.set("dsaId", String(params.dsaId));
+    if (params?.leadId != null) sp.set("leadId", String(params.leadId));
+    const s = sp.toString();
+    return bff<AdminOutreachView[]>(`${ADMIN_DSA_BASE}/outreach${s ? `?${s}` : ""}`, "GET");
+  },
+};
+
 /** Summary returned by a cascade customer delete. */
 export interface CustomerDeletionResult {
   customerId: number;
@@ -1583,6 +1839,7 @@ export type StaffRoleName =
   | "COLLECTION_HEAD"
   | "COLLECTION_EXECUTIVE"
   | "TELECALLER"
+  | "DSA"
   | "ADMIN"
   | "DEVELOPER";
 

@@ -38,13 +38,15 @@ class RepaymentServiceTest {
     private ApplicationFlowService applicationFlowService;
     @Mock
     private SettlementDirectory settlementDirectory;
+    @Mock
+    private DsaCommissionService dsaCommissionService;
 
     private RepaymentService repaymentService;
 
     @BeforeEach
     void setUp() {
         repaymentService = new RepaymentService(paymentRepository, loanRepository, new LoanMath(),
-                applicationFlowService, settlementDirectory, event -> {});
+                applicationFlowService, settlementDirectory, event -> {}, dsaCommissionService);
     }
 
     /**

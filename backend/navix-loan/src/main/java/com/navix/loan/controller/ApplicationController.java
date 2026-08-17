@@ -512,6 +512,19 @@ public class ApplicationController {
         if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
         }
+        rejectDsa(role);
+    }
+
+    /**
+     * A DSA is staff, but an external commission agent must never reach an application — it carries
+     * the KYC profile, documents, bureau data and the audit trail. Their own view of a lead is
+     * limited to the coarse conversion status served by {@code /api/dsa/leads}, which is built from
+     * the attributed application without ever exposing it.
+     */
+    private static void rejectDsa(String role) {
+        if ("DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view applications");
+        }
     }
 
     /**
@@ -523,6 +536,7 @@ public class ApplicationController {
      */
     private void requireBorrowerOwnsOrStaff(Long id) {
         var actor = ActorContext.get();
+        rejectDsa(actor.role());
         if ("BORROWER".equals(actor.role())) {
             Long owner = flow.get(id).getCustomerId();
             if (owner == null || !owner.toString().equals(actor.id())) {

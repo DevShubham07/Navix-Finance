@@ -89,6 +89,8 @@ const ROLE_FOCUS: Record<StaffRole, Array<"disbursement" | "collections" | "cred
   CREDIT_EXECUTIVE: ["kyc", "credit"],
   // Telecaller has no lifecycle stage — no focus card.
   TELECALLER: [],
+  // DSA has no lifecycle stage and never opens this dialog — no focus card.
+  DSA: [],
   // Oversight roles see everything.
   ADMIN: ["kyc", "credit", "disbursement", "collections"],
   DEVELOPER: ["kyc", "credit", "disbursement", "collections"],

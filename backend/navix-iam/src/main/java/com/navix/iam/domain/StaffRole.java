@@ -22,6 +22,14 @@ public enum StaffRole {
      * writes call logs + remarks, so it never participates in maker-checker or SoD.
      */
     TELECALLER,
+    /**
+     * DSA (Direct Selling Agent) — an external commission agent who brings leads via their own
+     * portal (PAN-attributed) and earns a flat commission on the lead's first disbursed loan once
+     * fully repaid. Firewalled from the platform: no customer data, no pipeline, no other agent's
+     * leads. Deliberately holds NO lifecycle authority (no KYC/credit/disbursement/collections
+     * step), so — like TELECALLER — it never participates in maker-checker or SoD.
+     */
+    DSA,
     ADMIN,
     /** Internal read-only operations role (health, logs, read-only DB). */
     DEVELOPER

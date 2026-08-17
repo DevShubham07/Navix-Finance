@@ -13,7 +13,7 @@ import { formatDateTime } from "@/lib/utils";
 
 const ROLES: StaffRoleName[] = [
   "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
-  "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN", "DEVELOPER",
+  "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "TELECALLER", "DSA", "ADMIN", "DEVELOPER",
 ];
 
 /** Admin · invites — issue an invite (returns a one-time token) and list invites. ADMIN only. */

@@ -145,11 +145,38 @@ class LeadServiceTest {
         assertThat(service.list(null, null, null, null, null, null, null, null)).isEmpty();
 
         verify(leadRepository).findAll(any(Specification.class), eq(Sort.by(Sort.Direction.DESC, "id")));
+        // Even with no explicit filters, the "exclude DSA-owned leads" predicate is always present —
+        // so the built query is never a bare conjunction any more.
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
-        Predicate matchAll = mock(Predicate.class);
-        when(cb.conjunction()).thenReturn(matchAll);
-        assertThat(spec.getValue().toPredicate(mock(Root.class), mock(CriteriaQuery.class), cb))
-                .isSameAs(matchAll);
+        Root<Lead> root = mock(Root.class);
+        Path<Long> ownerDsaId = mock(Path.class);
+        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
+        Predicate ownerIsNull = mock(Predicate.class);
+        Predicate combined = mock(Predicate.class);
+        when(cb.isNull(ownerDsaId)).thenReturn(ownerIsNull);
+        when(cb.and(any(Predicate[].class))).thenReturn(combined);
+        assertThat(spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb)).isSameAs(combined);
+        verify(cb).isNull(ownerDsaId);
+    }
+
+    @Test
+    void list_excludesDsaOwnedLeads_regardlessOfOtherFilters() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
+        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+
+        service.list(null, null, null, null, null, null, null, null);
+
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Root<Lead> root = mock(Root.class);
+        Path<Long> ownerDsaId = mock(Path.class);
+        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
+        when(cb.isNull(ownerDsaId)).thenReturn(mock(Predicate.class));
+        when(cb.and(any(Predicate[].class))).thenReturn(mock(Predicate.class));
+
+        spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
+
+        verify(cb).isNull(ownerDsaId);
     }
 
     @Test
@@ -164,12 +191,15 @@ class LeadServiceTest {
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);
         Path<Instant> createdAt = mock(Path.class);
+        Path<Long> ownerDsaId = mock(Path.class);
         when(root.<Instant>get("createdAt")).thenReturn(createdAt);
+        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
         Predicate lower = mock(Predicate.class);
         Predicate upper = mock(Predicate.class);
         Predicate combined = mock(Predicate.class);
         when(cb.greaterThanOrEqualTo(createdAt, Instant.parse("2026-07-13T00:00:00Z"))).thenReturn(lower);
         when(cb.lessThan(createdAt, Instant.parse("2026-08-13T00:00:00Z"))).thenReturn(upper);
+        when(cb.isNull(ownerDsaId)).thenReturn(mock(Predicate.class));
         when(cb.and(any(Predicate[].class))).thenReturn(combined);
 
         assertThat(spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb)).isSameAs(combined);
@@ -189,17 +219,20 @@ class LeadServiceTest {
         Root<Lead> root = mock(Root.class);
         Path<String> name = mock(Path.class);
         Path<String> mobile = mock(Path.class);
+        Path<Long> ownerDsaId = mock(Path.class);
         Expression<String> lowerName = mock(Expression.class);
         when(root.<String>get("name")).thenReturn(name);
         when(root.<String>get("mobile")).thenReturn(mobile);
+        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
         when(cb.lower(name)).thenReturn(lowerName);
+        when(cb.isNull(ownerDsaId)).thenReturn(mock(Predicate.class));
         Predicate byName = mock(Predicate.class);
         Predicate byMobile = mock(Predicate.class);
         Predicate either = mock(Predicate.class);
         when(cb.like(lowerName, "%ravi%")).thenReturn(byName);
         when(cb.like(mobile, "%Ravi%")).thenReturn(byMobile);
         when(cb.or(byName, byMobile)).thenReturn(either);
-        when(cb.and(either)).thenReturn(mock(Predicate.class));
+        when(cb.and(any(Predicate[].class))).thenReturn(mock(Predicate.class));
 
         spec.getValue().toPredicate(root, mock(CriteriaQuery.class), cb);
 
@@ -221,10 +254,13 @@ class LeadServiceTest {
         Path<String> source = mock(Path.class);
         Path<Long> createdBy = mock(Path.class);
         Path<Integer> rating = mock(Path.class);
+        Path<Long> ownerDsaId = mock(Path.class);
         when(root.<String>get("callStatus")).thenReturn(callStatus);
         when(root.<String>get("source")).thenReturn(source);
         when(root.<Long>get("createdByStaffId")).thenReturn(createdBy);
         when(root.<Integer>get("qualityRating")).thenReturn(rating);
+        when(root.<Long>get("ownerDsaId")).thenReturn(ownerDsaId);
+        when(cb.isNull(ownerDsaId)).thenReturn(mock(Predicate.class));
         when(cb.equal(callStatus, "CALLBACK")).thenReturn(mock(Predicate.class));
         when(cb.equal(source, "DSA")).thenReturn(mock(Predicate.class));
         when(cb.equal(createdBy, 42L)).thenReturn(mock(Predicate.class));

@@ -16,6 +16,9 @@ public interface LoanRepository extends JpaRepository<Loan, Long> {
 
     List<Loan> findByCustomerId(Long customerId);
 
+    /** How many loans this customer has ever taken — the DSA-commission "first loan only" guard. */
+    long countByCustomerId(Long customerId);
+
     /** Live loans in any of the given statuses (the daily payment-reminder sweep). */
     List<Loan> findByStatusIn(Collection<LoanStatus> statuses);
 

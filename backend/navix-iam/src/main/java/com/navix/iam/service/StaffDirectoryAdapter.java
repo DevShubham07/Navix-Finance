@@ -54,6 +54,17 @@ public class StaffDirectoryAdapter implements StaffDirectory {
                 .stream().map(StaffDirectoryAdapter::toSummary).toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<StaffSummary> listAll(String role) {
+        StaffRole parsed = parseRole(role);
+        if (parsed == null) {
+            return List.of();
+        }
+        return staffUserRepository.findByRole(parsed)
+                .stream().map(StaffDirectoryAdapter::toSummary).toList();
+    }
+
     /** Lenient role parse — an unknown name yields {@code null} (→ empty result). */
     private static StaffRole parseRole(String role) {
         if (role == null) {

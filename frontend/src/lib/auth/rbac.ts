@@ -16,6 +16,7 @@ export const STAFF_ROLES = [
   "COLLECTION_HEAD",
   "COLLECTION_EXECUTIVE",
   "TELECALLER",
+  "DSA",
   "ADMIN",
   "DEVELOPER",
 ] as const;
@@ -31,6 +32,7 @@ export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   COLLECTION_HEAD: "Collection Head",
   COLLECTION_EXECUTIVE: "Collection Executive",
   TELECALLER: "Telecaller",
+  DSA: "DSA",
   ADMIN: "Administrator",
   DEVELOPER: "Developer",
 };
@@ -62,7 +64,14 @@ export type Permission =
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
   // referral-expense dashboard; ADMIN has oversight.
   | "referral:payout"
-  | "verification:retry";
+  | "verification:retry"
+  // The DSA self-service portal (own leads, outreach, own commissions/earnings). DSA gets this and
+  // NOTHING else — explicitly not customer:view, not leads:manage, not loan:pipeline: a DSA must
+  // never see another agent's leads, telecaller leads, or any KYC/customer data.
+  | "dsa:portal"
+  // ADMIN administration of the DSA program (roster, company-wide lead register, commission ledger
+  // pay/void/reassign, outreach audit).
+  | "dsa:manage";
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
@@ -91,6 +100,9 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   // Telecaller: view customers, enter DSA-style leads, disposition calls, self-assign chase-up
   // work off the telecalling queue. No lifecycle permission.
   TELECALLER: ["customer:view", "leads:manage", "customer:assign"],
+  // External commission agent, firewalled from the platform: own leads + own commissions/earnings
+  // only. Deliberately NOT customer:view, NOT leads:manage, NOT loan:pipeline.
+  DSA: ["dsa:portal"],
   DEVELOPER: ["customer:view", "loan:pipeline"],
   ADMIN: [
     "kyc:approve",
@@ -108,6 +120,8 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "leads:manage",
     "referral:payout",
     "verification:retry",
+    "dsa:portal",
+    "dsa:manage",
   ],
 };
 

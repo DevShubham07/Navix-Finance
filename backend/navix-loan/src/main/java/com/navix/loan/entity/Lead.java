@@ -66,4 +66,20 @@ public class Lead extends BaseAuditEntity {
 
     @Column(name = "created_by_staff_id", nullable = false)
     private Long createdByStaffId;
+
+    /**
+     * The DSA who owns this lead (real {@code staff_user.id}), set only when the creator is a
+     * DSA (V55). Null for telecaller/walk-in/etc. leads. This is the hard ownership boundary a
+     * DSA reads/writes against — never a client-supplied id.
+     */
+    @Column(name = "owner_dsa_id")
+    private Long ownerDsaId;
+
+    /**
+     * Mandatory for DSA leads (the attribution key — matched against
+     * {@code customer_profile.pan}, uppercase/trimmed), null for telecaller leads. A PAN may be
+     * owned by at most one DSA lead ({@code uq_lead_dsa_pan}, V55).
+     */
+    @Column(length = 10)
+    private String pan;
 }

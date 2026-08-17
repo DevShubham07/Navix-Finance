@@ -3,7 +3,7 @@ import { type BrowserContext, type Page } from "@playwright/test";
 /** Staff roles (mirrors lib/auth/rbac.ts). */
 export const STAFF_ROLES = [
   "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD", "ACCOUNTANT",
-  "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "ADMIN", "DEVELOPER",
+  "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "DSA", "ADMIN", "DEVELOPER",
 ] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
@@ -15,6 +15,7 @@ export const STAFF_PERSONA_NAMES: Record<StaffRole, string> = {
   ACCOUNTANT: "Deepa Iyer",
   COLLECTION_HEAD: "Arjun Patel",
   COLLECTION_EXECUTIVE: "Sana Khan",
+  DSA: "Arjun Rao",
   ADMIN: "Meera Krishnan",
   DEVELOPER: "Dev Ops",
 };
@@ -27,6 +28,7 @@ export const STAFF_PERSONA_EMAILS: Record<StaffRole, string> = {
   ACCOUNTANT: "deepa.iyer@navix.example",
   COLLECTION_HEAD: "arjun.patel@navix.example",
   COLLECTION_EXECUTIVE: "sana.khan@navix.example",
+  DSA: "arjun.rao@navix.example",
   ADMIN: "meera.krishnan@navix.example",
   DEVELOPER: "dev.ops@navix.example",
 };

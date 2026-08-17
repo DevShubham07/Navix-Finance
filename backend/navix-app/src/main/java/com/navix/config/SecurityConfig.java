@@ -64,7 +64,7 @@ public class SecurityConfig {
                     // needs no edit here. Both path forms are listed on purpose: the bare path is a
                     // runtime-only footgun otherwise. Services keep their own requireRole/SoD checks;
                     // this is the namespace boundary those checks assumed but nothing enforced.
-                    .requestMatchers("/api/staff", "/api/staff/**", "/api/admin/**").hasRole("STAFF")
+                    .requestMatchers("/api/staff", "/api/staff/**", "/api/admin/**", "/api/dsa/**").hasRole("STAFF")
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))

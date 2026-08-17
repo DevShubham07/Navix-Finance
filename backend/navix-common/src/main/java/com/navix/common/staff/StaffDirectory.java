@@ -28,4 +28,11 @@ public interface StaffDirectory {
      * pickers (activation gating). An unknown role name yields an empty list.
      */
     List<StaffSummary> listActive(String role);
+
+    /**
+     * Every staff member holding {@code role} regardless of status — for an ADMIN roster (e.g.
+     * the DSA roster) that must show inactive agents too, unlike the activation-gated
+     * {@link #listActive(String)}. An unknown role name yields an empty list.
+     */
+    List<StaffSummary> listAll(String role);
 }

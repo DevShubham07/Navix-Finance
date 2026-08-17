@@ -43,5 +43,10 @@ public class DecisionHistoryController {
         if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "Staff only");
         }
+        // A DSA takes no lifecycle decisions and must not see anyone else's, so the whole
+        // decision-history surface is closed to them.
+        if ("DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view decision history");
+        }
     }
 }

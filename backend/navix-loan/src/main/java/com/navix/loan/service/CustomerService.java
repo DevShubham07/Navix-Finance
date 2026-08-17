@@ -98,6 +98,7 @@ public class CustomerService {
      */
     @Transactional(readOnly = true)
     public List<CustomerSummary> list(String q) {
+        rejectDsa();
         // ponytail: whole-table rollup + client-side segmenting. Move to a paged indexed query when the
         // list stops fitting one response — same change as adding server-side segment filters.
         String needle = q != null ? q.trim().toLowerCase() : "";
@@ -192,6 +193,7 @@ public class CustomerService {
     /** A single customer's full history (newest first), or 404 if the customer has nothing on file. */
     @Transactional(readOnly = true)
     public CustomerDetail detail(Long customerId) {
+        rejectDsa();
         List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
         List<Loan> loans = loanRepository.findByCustomerId(customerId);
         if (apps.isEmpty() && loans.isEmpty()) {
@@ -623,6 +625,18 @@ public class CustomerService {
             return true;
         }
         return String.valueOf(cs.customerId()).contains(needle);
+    }
+
+    /**
+     * DSAs are firewalled from all customer data (spec: "no customer data, no pipeline") even though
+     * every other staff role holds the broad {@code customer:view} permission — so this is a
+     * deliberate exclusion, not a role allowlist. Called at the top of the customer-PII read paths.
+     */
+    private static void rejectDsa() {
+        CurrentActor actor = ActorContext.get();
+        if (actor != null && "DSA".equals(actor.role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view customer data");
+        }
     }
 
     private static void requireAdmin() {

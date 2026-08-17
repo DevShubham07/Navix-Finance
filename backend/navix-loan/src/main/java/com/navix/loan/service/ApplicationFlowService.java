@@ -84,6 +84,7 @@ public class ApplicationFlowService {
     // Refer-a-friend: at the referred borrower's first disbursal this grants both parties their reward
     // (in-band, atomic with the loan mint). A no-op when the program is off or there's no referral.
     private final ReferralService referralService;
+    private final DsaCommissionService dsaCommissionService;
 
     /** Loan statuses that mean money is still owed past the due date — never fully repaid. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -573,6 +574,10 @@ public class ApplicationFlowService {
         // Refer-a-friend reward: if this borrower was referred and this is their first disbursal, grant
         // both parties their ₹reward (creates the pending payouts) — atomic with the loan mint.
         referralService.onLoanDisbursed(app.getCustomerId(), loan.getId());
+        // DSA commission: if this borrower's PAN matches a DSA lead entered before this
+        // application and this is their first loan, accrue the 3.5% commission — atomic with the
+        // loan mint. Never throws (see DsaCommissionService.onLoanDisbursed javadoc).
+        dsaCommissionService.onLoanDisbursed(app, loan);
         transition(app, ApplicationStatus.ACTIVE, "ACTIVATE", "loanId=" + loan.getId());
     }
 

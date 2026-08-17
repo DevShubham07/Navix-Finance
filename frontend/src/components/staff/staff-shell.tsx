@@ -23,10 +23,12 @@ import {
   Phone,
   LogOut,
   ChevronRight,
+  Briefcase,
+  Banknote,
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { NotificationBell } from "@/components/notifications/notification-bell";
-import { hasPermission, STAFF_ROLE_LABELS, type Permission } from "@/lib/auth/rbac";
+import { hasPermission, STAFF_ROLE_LABELS, type Permission, type StaffRole } from "@/lib/auth/rbac";
 import { collectionsApi, featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { cn } from "@/lib/utils";
@@ -110,15 +112,20 @@ type NavItem = {
   /** Optional segment children (Customers). href for a child = `${parent.href}?seg=${seg}`. */
   sub?: { label: string; seg: CustomerSegment }[];
   collectionBuckets?: boolean;
+  /** Roles that never see this item even if it has no `perm` (e.g. perm-less items that would
+   *  otherwise leak to a firewalled role like DSA). */
+  hideFor?: StaffRole[];
 };
 type NavGroup = { heading: string; items: NavItem[] };
 
-/** A nav item shows when its RBAC perm passes AND its feature flag (if any) is not explicitly off. */
+/** A nav item shows when its RBAC perm passes, its feature flag (if any) is not explicitly off,
+ *  and the role isn't explicitly excluded via `hideFor`. */
 function navVisible(
   it: NavItem,
   role: Parameters<typeof hasPermission>[0],
   flags?: FeatureFlags,
 ): boolean {
+  if (it.hideFor?.includes(role)) return false;
   if (it.perm && !hasPermission(role, it.perm)) return false;
   if (it.flag && flags?.[it.flag] === false) return false;
   return true;
@@ -128,7 +135,7 @@ const NAV: NavGroup[] = [
   {
     heading: "Operations",
     items: [
-      { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard },
+      { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard, hideFor: ["DSA"] },
       { label: "Live applications", href: "/staff/applications", Icon: Workflow, perm: "loan:pipeline" },
       {
         label: "Customers",
@@ -145,7 +152,7 @@ const NAV: NavGroup[] = [
       },
       { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
       // No `perm`: every staffer may read their own decision history (the server scopes it).
-      { label: "My decisions", href: "/staff/my-decisions", Icon: History },
+      { label: "My decisions", href: "/staff/my-decisions", Icon: History, hideFor: ["DSA"] },
       { label: "Leads", href: "/staff/leads", Icon: Phone, perm: "leads:manage" },
       { label: "Telecalling", href: "/staff/telecalling", Icon: Phone, perm: "leads:manage" },
       { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },
@@ -160,9 +167,17 @@ const NAV: NavGroup[] = [
     ],
   },
   {
+    heading: "DSA",
+    items: [
+      { label: "My leads", href: "/staff/dsa/leads", Icon: Briefcase, perm: "dsa:portal" },
+      { label: "My earnings", href: "/staff/dsa/earnings", Icon: Banknote, perm: "dsa:portal" },
+    ],
+  },
+  {
     heading: "Administration",
     items: [
       { label: "Staff", href: "/staff/admin/staff", Icon: Users, perm: "staff:manage" },
+      { label: "DSA", href: "/staff/admin/dsa", Icon: Briefcase, perm: "staff:manage" },
       { label: "Invites", href: "/staff/admin/invites", Icon: Mail, perm: "staff:manage" },
       { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
       { label: "Payment settings", href: "/staff/admin/payment-settings", Icon: CreditCard, perm: "staff:manage" },

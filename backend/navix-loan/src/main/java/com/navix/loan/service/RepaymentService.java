@@ -40,6 +40,7 @@ public class RepaymentService {
     private final ApplicationFlowService applicationFlowService;
     private final SettlementDirectory settlementDirectory;
     private final ApplicationEventPublisher eventPublisher;
+    private final DsaCommissionService dsaCommissionService;
 
     /** Record a (possibly partial) repayment. Idempotent on {@code txnRef} per loan. */
     @Transactional
@@ -242,6 +243,9 @@ public class RepaymentService {
         // Mirror full repayment onto the application aggregate (ACTIVE/OVERDUE → CLOSED).
         if (owed == 0L) {
             applicationFlowService.closeForLoan(loanId);
+            // DSA commission maturity: flip ACCRUED -> PAYABLE (or VOID on an approved settlement /
+            // default / write-off). A no-op when this loan has no DSA commission.
+            dsaCommissionService.onLoanClosed(loanId);
         }
     }
 

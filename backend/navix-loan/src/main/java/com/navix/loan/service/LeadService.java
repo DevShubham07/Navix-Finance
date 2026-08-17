@@ -89,6 +89,9 @@ public class LeadService {
         String leadSource = blankToNull(source);
         Specification<Lead> spec = (root, ignored, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+            // DSA-owned leads never appear to a telecaller/ADMIN here — they stay out of the
+            // telecalling queue entirely; ADMIN reaches them only through /api/admin/dsa/**.
+            predicates.add(cb.isNull(root.get("ownerDsaId")));
             if (query != null) {
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("name")), "%" + query.toLowerCase(Locale.ROOT) + "%"),
@@ -179,7 +182,9 @@ public class LeadService {
                 ? LocalDate.now(ZoneOffset.UTC).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
                 : to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 
-        String staffClause = createdBy == null ? "" : " AND created_by_staff_id = ?";
+        // DSA-owned leads are excluded from every tracker bucket, same as list() — ADMIN sees them
+        // only via /api/admin/dsa/**.
+        String staffClause = " AND owner_dsa_id IS NULL" + (createdBy == null ? "" : " AND created_by_staff_id = ?");
         List<Object> baseArgs = new ArrayList<>();
         baseArgs.add(java.sql.Timestamp.from(fromInst));
         baseArgs.add(java.sql.Timestamp.from(toInst));
@@ -253,7 +258,7 @@ public class LeadService {
             return List.of();
         }
 
-        String staffClause = createdBy == null ? "" : " AND created_by_staff_id = ?";
+        String staffClause = " AND owner_dsa_id IS NULL" + (createdBy == null ? "" : " AND created_by_staff_id = ?");
         List<Object> createdArgs = new ArrayList<>();
         createdArgs.add(java.sql.Timestamp.from(fromInst));
         createdArgs.add(java.sql.Timestamp.from(toInst));

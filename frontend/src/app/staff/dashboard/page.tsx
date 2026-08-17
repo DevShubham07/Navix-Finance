@@ -15,6 +15,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
+import { NoAccessNotice } from "@/components/staff/live-pipeline";
 import { InfoTooltip } from "@/components/ui";
 import { PipelineBar } from "@/components/staff/pipeline-bar";
 import { QueueTable } from "@/components/staff/pipeline/status-queue";
@@ -287,6 +288,12 @@ export default function StaffDashboardPage() {
 
   if (!mounted || !session || !role) {
     return <div className="h-64 rounded border border-line bg-white" />;
+  }
+
+  // DSA is a firewalled portal role with no dashboard permission at all (see lib/auth/rbac.ts) — the
+  // backend is the real guard, but bail out early so the page doesn't half-render empty queue panels.
+  if (role === "DSA") {
+    return <NoAccessNotice message="DSAs use the leads and earnings pages — see the DSA menu." />;
   }
 
   const queue = QUEUE[role];

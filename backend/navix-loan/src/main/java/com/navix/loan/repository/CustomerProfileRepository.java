@@ -48,4 +48,25 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "where p.applicationId = a.id and a.customerId = :customerId "
             + "and p.mobile is not null and p.mobile <> '' order by p.applicationId desc")
     List<String> findMobilesForCustomer(@Param("customerId") Long customerId);
+
+    /**
+     * Whether {@code pan} already belongs to ANY existing customer — unlike
+     * {@link #existsPanForOtherCustomer}, which is scoped to "other than this customer id" and so
+     * can't answer "is this PAN known to us at all". Backs the DSA lead-creation entry-time
+     * rejection (spec: a PAN belonging to an existing customer is rejected the same as a PAN
+     * already held by another DSA's lead).
+     */
+    boolean existsByPan(String pan);
+
+    /**
+     * The single earliest {@link com.navix.loan.entity.LoanApplication} created strictly after
+     * {@code after} for a customer whose profile carries {@code pan} — the DSA attribution query.
+     * Pinning to the earliest post-lead application (not the latest, and never a pre-existing
+     * in-flight one) is what keeps a customer's repeat borrowing invisible to the DSA.
+     */
+    @Query("select a from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and p.pan = :pan and a.createdAt > :after "
+            + "order by a.createdAt asc, a.id asc")
+    List<com.navix.loan.entity.LoanApplication> findApplicationsAfterByPan(
+            @Param("pan") String pan, @Param("after") java.time.Instant after);
 }

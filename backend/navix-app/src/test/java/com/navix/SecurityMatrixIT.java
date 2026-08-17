@@ -159,6 +159,54 @@ class SecurityMatrixIT {
                 .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
     }
 
+    // ---- DSA isolation (V55) --------------------------------------------------------
+    // A DSA is firewalled from the platform: no customer data, no pipeline, no telecalling queue,
+    // no application actions. Each of these is FORBIDDEN_ROLE (422) — the DSA bearer authenticates
+    // fine (it is staff), but every one of these services rejects the role explicitly.
+
+    @Test
+    void dsaBearer_onStaffOnlyLeadsEndpoint_isForbiddenRole() throws Exception {
+        mvc.perform(post("/api/leads")
+                        .header("Authorization", bearer("50", "DSA"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"X\",\"mobile\":\"9876543210\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN_ROLE"));
+    }
+
+    @Test
+    void dsaBearer_onCustomersEndpoint_isForbiddenRole() throws Exception {
+        mvc.perform(get("/api/customers").header("Authorization", bearer("50", "DSA")))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN_ROLE"));
+    }
+
+    @Test
+    void dsaBearer_onApplicationsCreate_isForbiddenRole() throws Exception {
+        // /api/applications POST requires BORROWER; a DSA staff bearer is rejected the same as any
+        // other non-borrower actor.
+        mvc.perform(post("/api/applications")
+                        .header("Authorization", bearer("50", "DSA"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"customerId\":50}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN_ROLE"));
+    }
+
+    /** Positive control: the DSA's own namespace is not itself closed to the DSA role. */
+    @Test
+    void dsaBearer_onDsaNamespace_isNotRejected() throws Exception {
+        mvc.perform(get("/api/dsa/leads").header("Authorization", bearer("50", "DSA")))
+                .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotIn(401, 403));
+    }
+
+    /** The DSA namespace is closed to borrower tokens at the URL, same as /api/staff/**. */
+    @Test
+    void borrowerBearer_onDsaNamespace_isRejected() throws Exception {
+        mvc.perform(get("/api/dsa/leads").header("Authorization", bearer("21", "BORROWER")))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ---- helpers -------------------------------------------------------------------
 
     private String bearer(String id, String role) {

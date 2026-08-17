@@ -132,4 +132,23 @@ test.describe("RBAC", () => {
     await page.goto("/staff/applications");
     await expect(page.getByText("Collections · DPD buckets")).toHaveCount(0);
   });
+
+  /**
+   * DSA is a firewalled external-agent role (V55): no customer data, no pipeline, no other agent's
+   * leads. Landing at `/staff` sends it straight to its own leads queue (it has no dashboard
+   * permission at all), and the sidebar shows only the two DSA items — none of the ordinary
+   * perm-less items ("Dashboard", "My decisions") that every other role sees.
+   */
+  test("DSA lands on its own leads queue and the sidebar shows only the DSA items", async ({ page }) => {
+    await loginStaff(page, "DSA");
+    await page.goto("/staff");
+    await expect(page).toHaveURL(/\/staff\/dsa\/leads$/);
+
+    await expect(page.getByRole("link", { name: "My leads" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "My earnings" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Dashboard" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "My decisions" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Live applications" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Customers", exact: true })).toHaveCount(0);
+  });
 });

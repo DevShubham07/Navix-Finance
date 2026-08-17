@@ -129,11 +129,22 @@ public class CustomerController {
         return ApiResponse.ok(customerService.deleteCustomer(customerId));
     }
 
-    /** Reject borrower / anonymous callers — this controller is staff-only. */
+    /**
+     * Reject borrower / anonymous callers — this controller is staff-only.
+     *
+     * <p>DSAs are excluded too: they are staff, but the whole point of the role is that an external
+     * commission agent never sees customer data. Every endpoint here funnels through this method, so
+     * this is the one place that has to hold (the read paths in {@code CustomerService} repeat the
+     * check as defence in depth). It is a deliberate exclusion rather than a role allowlist, because
+     * every other staff role legitimately holds the broad {@code customer:view} permission.
+     */
     private void requireStaff() {
         String role = ActorContext.get().role();
         if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+        if ("DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view customer data");
         }
     }
 }
