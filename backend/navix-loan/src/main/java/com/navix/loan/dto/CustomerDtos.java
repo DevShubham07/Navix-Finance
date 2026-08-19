@@ -60,7 +60,26 @@ public final class CustomerDtos {
             BureauState bureauState,
             /** The customer's most recent application's {@code created_at} (V53) — the same timestamp
              *  shown as the "Date" column on the live-applications queues, surfaced here too. */
-            Instant createdAt) {
+            Instant createdAt,
+            // --- Parity with the live-applications queue -------------------------------------
+            // A customer may hold several applications, so every field below is read off their
+            // LATEST application/loan — the same one that produces `latestStatus` and `createdAt`,
+            // so the whole row describes one consistent file rather than a mix of several.
+            Long latestApplicationId,
+            /** Where THIS advance is paid — the disbursal account, falling back to the salary
+             *  account when the borrower has not reached the disbursal-account step yet. */
+            String accountNumber,
+            String ifsc,
+            Long latestLoanId,
+            /** Requested amount when the borrower has drawn one, else their eligible limit. */
+            Long amountPaise,
+            /** True when {@code amountPaise} is a real request, false when it is the limit — drives
+             *  the "req"/"elig" tag, mirroring the live-applications Amount cell. */
+            boolean amountIsRequested,
+            /** Newest loan's due date. DPD is deliberately NOT sent — it is derived from this
+             *  date on the client everywhere in the codebase, and a second source would drift. */
+            LocalDate loanDueDate,
+            Instant markedPendingAt) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */

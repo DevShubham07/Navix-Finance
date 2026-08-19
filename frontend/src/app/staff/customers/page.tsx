@@ -14,7 +14,15 @@ import { bureauStateLabel } from "@/components/staff/bureau-state";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
-import { formatDateTime } from "@/lib/utils";
+import { AmountCell, DueCell, dpdFor } from "@/components/staff/pipeline/cells";
+import {
+  QueueDateFilter,
+  rangeFor,
+  type QueuePeriod,
+  type QueueRange,
+} from "@/components/staff/pipeline/queue-date-filter";
+import { hasPermission } from "@/lib/auth/rbac";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import {
   SEGMENTS,
   SEGMENT_LABEL,
@@ -49,6 +57,14 @@ function CustomersPageInner() {
   const [debounced, setDebounced] = React.useState("");
   const [openId, setOpenId] = React.useState<number | null>(null);
   const [infoCustomerId, setInfoCustomerId] = React.useState<number | null>(null);
+  const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
+  const [custom, setCustom] = React.useState<QueueRange>({});
+  const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
+
+  // Heads + ADMIN see the whole book; everyone else is scoped server-side by CustomerService to
+  // customers assigned to them or that they've decided on. This only drives the notice below —
+  // the enforcement is the backend's.
+  const fullView = me?.role ? hasPermission(me.role, "customer:view:all") : true;
 
   React.useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300);
@@ -56,8 +72,10 @@ function CustomersPageInner() {
   }, [search]);
 
   const q = useQuery({
-    queryKey: ["customers", debounced],
-    queryFn: () => customersApi.list(debounced || undefined),
+    // The range MUST be in the key — without it React Query serves the previous window's rows
+    // when the filter changes. Normalised to "" because undefined is not a stable key boundary.
+    queryKey: ["customers", debounced, range.from ?? "", range.to ?? ""],
+    queryFn: () => customersApi.list(debounced || undefined, range),
   });
 
   const rows = React.useMemo(() => q.data ?? [], [q.data]);
@@ -96,6 +114,13 @@ function CustomersPageInner() {
             { header: "Name", value: (c) => c.name ?? "" },
             { header: "PAN", value: (c) => c.pan ?? "" },
             { header: "Mobile", value: (c) => c.mobile ?? "" },
+            { header: "Account", value: (c) => c.accountNumber ?? "" },
+            { header: "IFSC", value: (c) => c.ifsc ?? "" },
+            { header: "Loan", value: (c) => c.latestLoanId ?? "" },
+            { header: "Amount (₹)", value: (c) => (c.amountPaise != null ? (c.amountPaise / 100).toFixed(2) : "") },
+            { header: "Amount type", value: (c) => (c.amountPaise == null ? "" : c.amountIsRequested ? "requested" : "eligible limit") },
+            { header: "Due date", value: (c) => (c.loanDueDate ? formatDate(c.loanDueDate) : "") },
+            { header: "DPD", value: (c) => (dpdFor(c.loanDueDate) || "") },
             { header: "Owner", value: (c) => c.ownerName ?? "Unallocated" },
             { header: "Applications", value: (c) => c.applicationCount },
             { header: "Loans", value: (c) => c.loanCount },
@@ -136,7 +161,7 @@ function CustomersPageInner() {
           ))}
         </div>
 
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <Input
             aria-label="Search customers"
             value={search}
@@ -146,12 +171,20 @@ function CustomersPageInner() {
             className="!mb-0"
             inputClassName="w-72"
           />
+          <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
           {mine && (
             <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
               My customers
             </span>
           )}
         </div>
+
+        {!fullView && (
+          // Without this a scoped staffer reads a short list as a bug and raises a ticket.
+          <p className="mb-3 rounded border border-line bg-grey-50 px-3 py-2 text-xs text-muted">
+            Showing only customers assigned to you or that you have recorded a decision on.
+          </p>
+        )}
 
         <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
           {q.isLoading ? (
@@ -160,27 +193,38 @@ function CustomersPageInner() {
             <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
           ) : filtered.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted">
-              No customers{debounced ? ` for “${debounced}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}.
+              No customers{debounced ? ` for “${debounced}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
+              {period !== "ALL" ? " in the selected date range" : ""}.
             </p>
           ) : (
             <table className="staff-data-table">
               <thead>
+                {/* Column set deliberately mirrors the live-applications queue (identity, date,
+                    contact, PAN, bank, loan, amount, due, credit) so a staffer reads the same row
+                    shape on both screens. Account/IFSC/amount/due describe the customer's LATEST
+                    application; the roll-up columns (Owner/Loans/Outstanding) are customer-only. */}
                 <tr>
-                  <th>Customer</th>
+                  <th className="staff-sticky-identity">Customer</th>
                   <th>Date</th>
                   <th>Mobile</th>
+                  <th>PAN</th>
+                  <th>Account</th>
+                  <th>IFSC</th>
+                  <th>Loan</th>
+                  <th>Amount</th>
+                  <th>Due</th>
                   <th>Owner</th>
                   <th>Loans</th>
                   <th>Outstanding</th>
                   <th>CIBIL</th>
                   <th>Latest status</th>
-                  <th className="text-right">Open</th>
+                  <th className="staff-sticky-actions text-right">Open</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((c) => (
                   <tr key={c.customerId} className="hover:bg-grey-50">
-                    <td className="staff-cell">
+                    <td className="staff-cell staff-sticky-identity">
                       <button
                         onClick={() => setOpenId(c.customerId)}
                         className="flex max-w-full items-center gap-2 text-left"
@@ -199,7 +243,6 @@ function CustomersPageInner() {
                             >
                               #{c.customerId}
                             </Link>
-                            {" · "}{c.pan ?? "no PAN"}
                           </span>
                         </span>
                       </button>
@@ -208,6 +251,18 @@ function CustomersPageInner() {
                       {c.createdAt ? formatDateTime(c.createdAt) : "—"}
                     </td>
                     <td className="font-mono text-muted">{c.mobile ?? "—"}</td>
+                    <td className="font-mono text-ink">{c.pan || "—"}</td>
+                    <td className="font-mono text-ink">{c.accountNumber || "—"}</td>
+                    <td className="font-mono text-ink">{c.ifsc || "—"}</td>
+                    <td className="font-mono text-muted">{c.latestLoanId != null ? `#${c.latestLoanId}` : "—"}</td>
+                    <td>
+                      <span className="font-semibold text-ink">
+                        <AmountCell amountPaise={c.amountPaise} isRequested={c.amountIsRequested === true} />
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <DueCell dueDate={c.loanDueDate} markedPendingAt={c.markedPendingAt} />
+                    </td>
                     <td className="staff-cell text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>
                     <td className="text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
                     <td className="font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
@@ -227,7 +282,7 @@ function CustomersPageInner() {
                         </span>
                       ) : "—"}
                     </td>
-                    <td className="text-right">
+                    <td className="staff-sticky-actions text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => setInfoCustomerId(c.customerId)}

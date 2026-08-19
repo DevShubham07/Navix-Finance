@@ -6,12 +6,18 @@ import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
+import com.navix.loan.repository.LoanApplicationRepository;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,9 +32,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class DecisionHistoryService {
 
-    /** Actions that count as a decision — the rest of the trail is routing/audit noise. */
-    private static final Set<String> DECISION_ACTIONS = Set.of(
-            "KYC_APPROVE", "KYC_REJECT", "ASSIGN", "SANCTION", "REJECT_LEAD", "MARK_PENDING",
+    /**
+     * Actions that count as a decision — the rest of the trail is routing/audit noise.
+     *
+     * <p>Public because {@code CustomerService} scopes an executive's customer list by "applications
+     * I decided on" and must use the SAME definition of a decision; duplicating the set there would
+     * let the two surfaces drift apart silently.
+     */
+    public static final Set<String> DECISION_ACTIONS = Set.of(
+            "KYC_APPROVE", "KYC_REJECT", "ASSIGN", "REASSIGN", "SANCTION", "REJECT_LEAD", "MARK_PENDING",
             "EXEC_APPROVE", "EXEC_REJECT", "HEAD_APPROVE", "HEAD_REJECT",
             "DISB_ACCEPT", "DISB_REJECT", "VALIDATE_SUCCESS", "VALIDATE_FAIL", "RETRY", "CANCEL");
 
@@ -39,10 +51,19 @@ public class DecisionHistoryService {
 
     private final ApplicationEventRepository eventRepository;
     private final CustomerProfileRepository profileRepository;
+    private final LoanApplicationRepository applicationRepository;
     private final StaffDirectory staffDirectory;
 
-    public record DecisionView(Long applicationId, String customerName, String action, String fromStatus,
-                               String toStatus, String notes, Instant at) {
+    /**
+     * One decision, with {@code application_event.notes} already parsed into typed columns by
+     * {@link DecisionNotes}. The raw {@code notes} stays on the wire as the audit source of truth —
+     * the UI renders it only as a hover title, never as a visible column.
+     */
+    public record DecisionView(Long applicationId, Long customerId, String customerName, String pan,
+                               String action, String fromStatus, String toStatus, Instant at,
+                               Long amountPaise, Integer salaryCreditDay, LocalDate repaymentDate,
+                               Long assigneeId, String assigneeName, String txnRef, String remark,
+                               String notes) {
     }
 
     /** {@code staffId} null → the caller's own history. */
@@ -53,9 +74,27 @@ public class DecisionHistoryService {
         if (!target.equals(callerId)) {
             requireCanInspect(staffId);
         }
-        return eventRepository.findByActorIdOrderByAtDesc(target).stream()
+        List<ApplicationEvent> events = eventRepository.findByActorIdOrderByAtDesc(target).stream()
                 .filter(e -> DECISION_ACTIONS.contains(e.getAction()))
-                .map(this::view)
+                .toList();
+        if (events.isEmpty()) {
+            return List.of();
+        }
+
+        // Batch every join up front. Resolving the customer/profile per row was an N+1 that grew
+        // with a staffer's career; this is a fixed 2 queries regardless of how many decisions they
+        // have made.
+        List<Long> appIds = events.stream().map(ApplicationEvent::getApplicationId).distinct().toList();
+        Map<Long, CustomerProfile> profileByApp = profileRepository.findByApplicationIdIn(appIds).stream()
+                .collect(Collectors.toMap(CustomerProfile::getApplicationId, Function.identity(), (a, b) -> a));
+        Map<Long, Long> customerIdByApp = applicationRepository.findAllById(appIds).stream()
+                .collect(Collectors.toMap(LoanApplication::getId, LoanApplication::getCustomerId, (a, b) -> a));
+
+        // Assignee names are memoised over DISTINCT ids — bounded by the number of executives, not
+        // the number of rows. StaffDirectory has no batch lookup, so never call it per row.
+        Map<Long, String> assigneeNames = new HashMap<>();
+        return events.stream()
+                .map(e -> view(e, profileByApp, customerIdByApp, assigneeNames))
                 .toList();
     }
 
@@ -87,12 +126,29 @@ public class DecisionHistoryService {
         }
     }
 
-    private DecisionView view(ApplicationEvent e) {
-        String name = profileRepository.findByApplicationId(e.getApplicationId())
-                .map(CustomerProfile::getFullName)
-                .orElse(null);
-        return new DecisionView(e.getApplicationId(), name, e.getAction(),
+    private DecisionView view(ApplicationEvent e, Map<Long, CustomerProfile> profileByApp,
+                             Map<Long, Long> customerIdByApp, Map<Long, String> assigneeNames) {
+        CustomerProfile profile = profileByApp.get(e.getApplicationId());
+        DecisionNotes.Parsed parsed = DecisionNotes.parse(e.getNotes());
+        String assigneeName = parsed.assigneeId() == null ? null
+                : assigneeNames.computeIfAbsent(parsed.assigneeId(),
+                        id -> staffDirectory.findStaff(id).map(StaffSummary::name).orElse(null));
+        return new DecisionView(
+                e.getApplicationId(),
+                customerIdByApp.get(e.getApplicationId()),
+                profile != null ? profile.getFullName() : null,
+                profile != null ? profile.getPan() : null,
+                e.getAction(),
                 e.getFromStatus() != null ? e.getFromStatus().name() : null,
-                e.getToStatus().name(), e.getNotes(), e.getAt());
+                e.getToStatus().name(),
+                e.getAt(),
+                parsed.amountPaise(),
+                parsed.salaryCreditDay(),
+                parsed.repaymentDate(),
+                parsed.assigneeId(),
+                assigneeName,
+                parsed.txnRef(),
+                parsed.remark(),
+                e.getNotes());
     }
 }

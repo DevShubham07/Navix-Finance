@@ -116,15 +116,33 @@ export interface ApplicationView {
   createdAt?: string | null;
 }
 
-/** One staffer's action off the application-event trail (backs /staff/my-decisions). */
+/**
+ * One staffer's action off the application-event trail (backs /staff/my-decisions).
+ *
+ * The machine payload the backend used to store in `notes` (`amountPaise=… executiveId=…`) is
+ * parsed server-side into the typed fields below. `notes` is still carried as the raw audit record
+ * but must NOT be rendered as a column — it is a tooltip at most.
+ */
 export interface DecisionView {
   applicationId: number;
+  customerId: number | null;
   customerName: string | null;
+  pan: string | null;
   action: string;
   fromStatus: string | null;
   toStatus: string;
-  notes: string | null;
   at: string;
+  amountPaise: number | null;
+  salaryCreditDay: number | null;
+  /** yyyy-mm-dd */
+  repaymentDate: string | null;
+  assigneeId: number | null;
+  assigneeName: string | null;
+  txnRef: string | null;
+  /** Whatever a human actually typed, plus any payload that could not be parsed. */
+  remark: string | null;
+  /** Raw `application_event.notes` — audit source of truth, not for display. */
+  notes: string | null;
 }
 
 /**
@@ -506,6 +524,20 @@ export interface CustomerSummary {
   /** The customer's most recent application's created_at — same timestamp as the live-applications
    *  "Date" column. */
   createdAt?: string | null;
+  // --- Parity with the live-applications queue ---------------------------------------------
+  // All read off the customer's LATEST application/loan, so the whole row describes one file.
+  latestApplicationId?: number | null;
+  /** Disbursal account, falling back to the salary account before that step is reached. */
+  accountNumber?: string | null;
+  ifsc?: string | null;
+  latestLoanId?: number | null;
+  /** Requested amount when one has been drawn, else the eligible limit. */
+  amountPaise?: number | null;
+  /** True when amountPaise is a real request, false when it is the limit ("req" vs "elig" tag). */
+  amountIsRequested?: boolean;
+  /** yyyy-mm-dd. DPD is derived from this on the client, never sent. */
+  loanDueDate?: string | null;
+  markedPendingAt?: string | null;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -1355,9 +1387,19 @@ export const staffApi = {
 const CUSTOMERS_BASE = "/api/staff/customers";
 
 export const customersApi = {
-  /** All customers, optionally filtered by name / customer id. */
-  list: (q?: string) =>
-    bff<CustomerSummary[]>(`${CUSTOMERS_BASE}${q ? `?q=${encodeURIComponent(q)}` : ""}`, "GET"),
+  /**
+   * All customers, optionally filtered by name / PAN / mobile / customer id and by an inclusive
+   * `range.from`/`range.to` (yyyy-mm-dd) window over the customer's latest application date.
+   * The window is resolved in IST server-side, matching the live-applications queues.
+   */
+  list: (q?: string, range?: { from?: string; to?: string }) => {
+    const qs = new URLSearchParams();
+    if (q) qs.set("q", q);
+    if (range?.from) qs.set("from", range.from);
+    if (range?.to) qs.set("to", range.to);
+    const search = qs.toString();
+    return bff<CustomerSummary[]>(`${CUSTOMERS_BASE}${search ? `?${search}` : ""}`, "GET");
+  },
 
   /** One customer's full history (profile + applications + loans + payments). */
   get: (customerId: number) => bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}`, "GET"),

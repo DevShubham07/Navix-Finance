@@ -53,10 +53,15 @@ export type Permission =
   // The loan pipeline workbench ("Live applications"). Held by every role that has a stage in the
   // lifecycle — i.e. everyone except TELECALLER, whose job stops at calling and logging.
   | "loan:pipeline"
-  // Customers pane: every staff role may view the borrower-centric roll-up (product decision —
-  // all staff see customer details incl. PII); only ADMIN may edit it / take lifecycle actions.
-  // customer:assign is Heads (+ ADMIN) — allocate book of business without granting KYC-edit/delete.
+  // Customers pane. customer:view grants the tab; what it CONTAINS depends on customer:view:all —
+  // department Heads + ADMIN see the whole book, everyone else is scoped server-side to customers
+  // assigned to them or that they've recorded a decision on. This token mirrors the backend
+  // CustomerService.FULL_CUSTOMER_VIEW_ROLES set; the real enforcement is there, not here (the UI
+  // check only drives copy — never trust it for access).
+  // Only ADMIN may edit / take lifecycle actions. customer:assign is Heads + TELECALLER (+ ADMIN) —
+  // allocate book of business without granting KYC-edit/delete.
   | "customer:view"
+  | "customer:view:all"
   | "customer:manage"
   | "customer:assign"
   // Telecaller lead intake + disposition; ADMIN shares write + owns the tracker dashboard.
@@ -84,15 +89,23 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "loan:review",
     "loan:approve",
     "customer:view",
+    "customer:view:all",
     "customer:assign",
     "loan:pipeline",
   ],
-  DISBURSEMENT_HEAD: ["loan:disburse", "customer:view", "referral:payout", "loan:pipeline"],
+  DISBURSEMENT_HEAD: [
+    "loan:disburse",
+    "customer:view",
+    "customer:view:all",
+    "referral:payout",
+    "loan:pipeline",
+  ],
   ACCOUNTANT: ["loan:activate", "customer:view", "loan:pipeline"],
   COLLECTION_HEAD: [
     "collections:manage",
     "collections:interact",
     "customer:view",
+    "customer:view:all",
     "customer:assign",
     "loan:pipeline",
   ],
@@ -115,12 +128,17 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "collections:interact",
     "staff:manage",
     "customer:view",
+    "customer:view:all",
     "customer:manage",
     "customer:assign",
     "leads:manage",
     "referral:payout",
     "verification:retry",
-    "dsa:portal",
+    // NOT dsa:portal — that is the DSA's own self-service portal, gated backend-side by
+    // DsaService.requireDsaId() with a strict role equality and no ADMIN bypass (the portal is
+    // scoped by JWT identity, and an ADMIN owns no lead/commission rows). Granting it here put
+    // "My leads"/"My earnings" in the ADMIN nav, where every call failed FORBIDDEN_ROLE
+    // "DSA required". ADMIN oversight goes through dsa:manage → /staff/admin/dsa.
     "dsa:manage",
   ],
 };

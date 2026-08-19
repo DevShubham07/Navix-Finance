@@ -17,6 +17,7 @@ import com.navix.common.staff.StaffSummary;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
+import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.CustomerOwner;
 import com.navix.loan.entity.LoanApplication;
@@ -91,6 +92,8 @@ class CustomerServiceTest {
 
     @Test
     void listGroupsByCustomerPicksLatestProfileAndShowsFullPan() {
+        // A Head sees the whole book (FULL_CUSTOMER_VIEW_ROLES); scoping is covered separately.
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
         // Customer 9000001 has two applications; the newer (id 2) carries the current name.
         when(applicationRepository.findAll()).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.CLOSED),
@@ -112,6 +115,8 @@ class CustomerServiceTest {
 
     @Test
     void listFiltersByNamePanMobileOrCustomerId() {
+        // A Head sees the whole book (FULL_CUSTOMER_VIEW_ROLES); scoping is covered separately.
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
         when(applicationRepository.findAll()).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.ACTIVE),
                 app(2, 9000002L, ApplicationStatus.ACTIVE)));
@@ -261,6 +266,165 @@ class CustomerServiceTest {
         service.assignOwner(9000001L, 30L);
 
         verify(ownerRepository).save(any(CustomerOwner.class));
+    }
+
+
+    // --- Customers-list scoping -------------------------------------------------------------
+    // Heads + ADMIN see the whole book; everyone else is scoped to customers they own work on.
+    // The list filter alone is not enough — detail() must refuse out-of-scope ids too, or the
+    // scope is bypassable by typing a URL.
+
+    private ApplicationEvent decision(long applicationId, String actorId, String action) {
+        ApplicationEvent e = new ApplicationEvent();
+        e.setApplicationId(applicationId);
+        e.setActorId(actorId);
+        e.setAction(action);
+        e.setToStatus(ApplicationStatus.SANCTIONED);
+        return e;
+    }
+
+    /** Two customers on file; the executive is assigned 9000001 and has decided nothing. */
+    private void givenTwoCustomers() {
+        when(applicationRepository.findAll()).thenReturn(List.of(
+                app(1, 9000001L, ApplicationStatus.ACTIVE),
+                app(2, 9000002L, ApplicationStatus.ACTIVE)));
+        lenient().when(profileRepository.findByApplicationId(1L))
+                .thenReturn(Optional.of(profile(1, "Asha Rao", "AAAAA1111A")));
+        lenient().when(profileRepository.findByApplicationId(2L))
+                .thenReturn(Optional.of(profile(2, "Bhavya Reddy", "BBBBB2222B")));
+        lenient().when(loanRepository.findByCustomerId(any())).thenReturn(List.of());
+    }
+
+    @Test
+    void list_asCreditExecutive_showsOnlyAssignedAndDecidedCustomers() {
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L))
+                .thenReturn(java.util.Set.of(9000001L));
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("12")).thenReturn(List.of());
+
+        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+                .containsExactly(9000001L);
+    }
+
+    @Test
+    void list_asCreditExecutive_includesCustomersTheyDecidedOn() {
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("12"))
+                .thenReturn(List.of(decision(2L, "12", "SANCTION")));
+        when(applicationRepository.findCustomerIdsByIdIn(List.of(2L))).thenReturn(java.util.Set.of(9000002L));
+
+        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+                .containsExactly(9000002L);
+    }
+
+    @Test
+    void list_ignoresNonDecisionEventsWhenScoping() {
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L)).thenReturn(java.util.Set.of());
+        // Merely creating/submitting an application is routing noise, not a decision.
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("12"))
+                .thenReturn(List.of(decision(2L, "12", "CREATE")));
+
+        assertThat(service.list(null)).isEmpty();
+    }
+
+    @Test
+    void list_asCreditHead_showsEveryCustomer() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        givenTwoCustomers();
+
+        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+                .containsExactlyInAnyOrder(9000001L, 9000002L);
+    }
+
+    @Test
+    void list_asTelecaller_alsoSeesUnallocatedCustomers() {
+        ActorContext.set(new CurrentActor("21", "Caller", "TELECALLER"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(21L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("21")).thenReturn(List.of());
+        // 9000002 is claimed by someone else; 9000001 has NO owner row at all, which is what
+        // "unallocated" looks like in practice — so it must still be visible to a telecaller.
+        CustomerOwner claimed = new CustomerOwner();
+        claimed.setCustomerId(9000002L);
+        claimed.setOwnerStaffId(99L);
+        when(ownerRepository.findAll()).thenReturn(List.of(claimed));
+        lenient().when(staffDirectory.findStaff(99L))
+                .thenReturn(Optional.of(new StaffSummary(99L, "Other", "TELECALLER", true)));
+
+        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+                .containsExactly(9000001L);
+    }
+
+    @Test
+    void list_asTelecaller_keepsCustomersTheyHaveClaimed() {
+        // Claiming a lead allocates it — and the unallocated rule is an inversion, so without an
+        // explicit carve-out a telecaller would lose sight of a customer the moment they took it.
+        ActorContext.set(new CurrentActor("21", "Caller", "TELECALLER"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(21L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("21")).thenReturn(List.of());
+        CustomerOwner mine = new CustomerOwner();
+        mine.setCustomerId(9000001L);
+        mine.setOwnerStaffId(21L);
+        CustomerOwner theirs = new CustomerOwner();
+        theirs.setCustomerId(9000002L);
+        theirs.setOwnerStaffId(99L);
+        when(ownerRepository.findAll()).thenReturn(List.of(mine, theirs));
+        lenient().when(staffDirectory.findStaff(any()))
+                .thenReturn(Optional.of(new StaffSummary(21L, "Caller", "TELECALLER", true)));
+
+        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+                .containsExactly(9000001L);
+    }
+
+    @Test
+    void detail_outOfScope_is404NotForbidden() {
+        // 404 rather than 403 on purpose: a 403 would confirm the customer exists, turning the
+        // endpoint into an enumeration oracle over PII.
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("12")).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.detail(9000002L))
+                .isInstanceOf(com.navix.common.exception.ResourceNotFoundException.class);
+    }
+
+    @Test
+    void remarks_outOfScope_areRefused() {
+        // The sibling per-customer reads are reachable by id through the same proxy, so scoping the
+        // list alone would be cosmetic.
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("12")).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.remarks(9000002L))
+                .isInstanceOf(com.navix.common.exception.ResourceNotFoundException.class);
+    }
+
+    // --- Date window ------------------------------------------------------------------------
+
+    @Test
+    void list_dateWindowIsResolvedInIst() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        LoanApplication late = app(1, 9000001L, ApplicationStatus.ACTIVE);
+        // 23:30 IST on 2026-08-19 — still 18:00 UTC the same day. Resolving the window in UTC
+        // would push this row into the 20th and drop it from a "Today = 19th" filter.
+        late.setCreatedAt(java.time.LocalDateTime.of(2026, 8, 19, 23, 30)
+                .atZone(java.time.ZoneId.of("Asia/Kolkata")).toInstant());
+        when(applicationRepository.findAll()).thenReturn(List.of(late));
+        lenient().when(profileRepository.findByApplicationId(1L))
+                .thenReturn(Optional.of(profile(1, "Asha Rao", "AAAAA1111A")));
+        lenient().when(loanRepository.findByCustomerId(any())).thenReturn(List.of());
+
+        java.time.LocalDate d19 = java.time.LocalDate.of(2026, 8, 19);
+        java.time.LocalDate d20 = java.time.LocalDate.of(2026, 8, 20);
+        assertThat(service.list(null, d19, d19)).hasSize(1);
+        assertThat(service.list(null, d20, d20)).isEmpty();
     }
 
     private void givenAssignableCustomer(String actorId, String actorName, String actorRole) {

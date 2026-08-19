@@ -51,13 +51,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -93,16 +97,139 @@ public class CustomerService {
     private final BureauStateService bureauStateService;
 
     /**
-     * All customers (distinct customers), optionally filtered by {@code q} matching the name
-     * (case-insensitive contains), PAN, mobile, or the customer id. Ordered by customer id.
+     * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
+     * scoped to customers they own work on (see {@link #scope()}).
+     *
+     * <p>Mirrored by the {@code customer:view:all} permission in the frontend {@code rbac.ts}. The
+     * frontend copy only drives wording — this set is the enforcement.
      */
+    private static final Set<String> FULL_CUSTOMER_VIEW_ROLES =
+            Set.of("ADMIN", "CREDIT_HEAD", "COLLECTION_HEAD", "DISBURSEMENT_HEAD");
+
+    /** IST, matching {@code ApplicationFlowService} — day boundaries are an Indian business day. */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /**
+     * What one scoped staffer is allowed to see. {@code null} from {@link #scope()} means "everything".
+     *
+     * <p>Membership is a predicate rather than a plain id set because "unallocated" cannot be
+     * enumerated: a customer nobody has claimed usually has <b>no</b> {@code customer_owner} row at
+     * all, so the set is defined by inversion against the customers who ARE allocated.
+     */
+    private record CustomerScope(Set<Long> ownedIds, Set<Long> allocatedIds) {
+
+        /** @param allocatedIds non-null only for callers who may also see unallocated customers. */
+        boolean permits(Long customerId) {
+            return ownedIds.contains(customerId)
+                    || (allocatedIds != null && !allocatedIds.contains(customerId));
+        }
+    }
+
+    /**
+     * The caller's customer scope, or {@code null} when they may see the entire book.
+     *
+     * <p>A scoped staffer sees a customer when they have an application <b>assigned</b> to them or
+     * have <b>recorded a decision</b> on one. Roles that allocate the book (TELECALLER, via
+     * {@code customer:assign}) additionally see <b>unallocated</b> customers — without that carve-out
+     * a telecaller sees zero rows on {@code ?seg=unallocated} and can never claim anyone, which is
+     * their entire job.
+     *
+     * <p>At most three queries, all constant in the number of customers — never per-customer work.
+     */
+    private CustomerScope scope() {
+        CurrentActor actor = ActorContext.get();
+        String role = actor != null ? actor.role() : null;
+        if (role != null && FULL_CUSTOMER_VIEW_ROLES.contains(role)) {
+            return null;
+        }
+        Long staffId = null;
+        try {
+            if (actor != null && actor.id() != null) {
+                staffId = Long.valueOf(actor.id());
+            }
+        } catch (NumberFormatException e) {
+            staffId = null;
+        }
+        if (staffId == null) {
+            // Fail closed: an actor we cannot identify sees nothing.
+            return new CustomerScope(Set.of(), null);
+        }
+
+        Set<Long> owned = new HashSet<>(
+                nullSafe(applicationRepository.findCustomerIdsByAssignedExecutiveId(staffId)));
+
+        List<Long> decidedAppIds = nullSafe(
+                applicationEventRepository.findByActorIdOrderByAtDesc(String.valueOf(staffId))).stream()
+                .filter(e -> DecisionHistoryService.DECISION_ACTIONS.contains(e.getAction()))
+                .map(ApplicationEvent::getApplicationId)
+                .distinct()
+                .toList();
+        if (!decidedAppIds.isEmpty()) {
+            owned.addAll(nullSafe(applicationRepository.findCustomerIdsByIdIn(decidedAppIds)));
+        }
+
+        Set<Long> allocated = null;
+        if ("TELECALLER".equals(role)) {
+            allocated = new HashSet<>();
+            for (CustomerOwner o : nullSafe(ownerRepository.findAll())) {
+                if (o.getOwnerStaffId() == null) {
+                    continue;
+                }
+                allocated.add(o.getCustomerId());
+                // Customers THIS caller owns stay visible: they are allocated (so the inversion in
+                // CustomerScope.permits would hide them) but claiming a lead must not make it
+                // vanish from the claimer's own list.
+                if (o.getOwnerStaffId().equals(staffId)) {
+                    owned.add(o.getCustomerId());
+                }
+            }
+        }
+        return new CustomerScope(owned, allocated);
+    }
+
+    private static <T> Collection<T> nullSafe(Collection<T> c) {
+        return c == null ? List.of() : c;
+    }
+
+    private static <T> List<T> nullSafe(List<T> c) {
+        return c == null ? List.of() : c;
+    }
+
+    /** Throws 404 (never 403 — that would confirm the customer exists) when out of the caller's scope. */
+    private void requireVisible(Long customerId) {
+        CustomerScope scope = scope();
+        if (scope != null && !scope.permits(customerId)) {
+            throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
+        }
+    }
+
+    /** Back-compat overload — no date window. */
     @Transactional(readOnly = true)
     public List<CustomerSummary> list(String q) {
+        return list(q, null, null);
+    }
+
+    /**
+     * All customers (distinct customers), optionally filtered by {@code q} matching the name
+     * (case-insensitive contains), PAN, mobile, or the customer id, and by an inclusive
+     * {@code [from, to]} window over the customer's latest application date. Ordered by customer id.
+     *
+     * <p>The window is resolved in IST server-side rather than in the browser, so a staffer on a
+     * UTC laptop sees the same "Today" as the live-applications queues.
+     */
+    @Transactional(readOnly = true)
+    public List<CustomerSummary> list(String q, LocalDate from, LocalDate to) {
         rejectDsa();
+        CustomerScope scope = scope();
+        Instant fromInstant = from == null ? null : from.atStartOfDay(IST).toInstant();
+        Instant toInstant = to == null ? null : to.plusDays(1).atStartOfDay(IST).toInstant();
         // ponytail: whole-table rollup + client-side segmenting. Move to a paged indexed query when the
         // list stops fitting one response — same change as adding server-side segment filters.
         String needle = q != null ? q.trim().toLowerCase() : "";
+        // Filter BEFORE grouping so no per-customer work (loans, outstanding, bureau state) is done
+        // for a customer the caller will never be shown.
         Map<Long, List<LoanApplication>> byCustomer = applicationRepository.findAll().stream()
+                .filter(a -> scope == null || scope.permits(a.getCustomerId()))
                 .collect(Collectors.groupingBy(LoanApplication::getCustomerId));
 
         Map<Long, CustomerOwner> owners = ownerRepository.findAll().stream()
@@ -139,14 +266,14 @@ public class CustomerService {
             long totalOutstanding = loans.stream()
                     .mapToLong(l -> repaymentService.outstandingAsOf(l.getId(), null))
                     .sum();
-            String latestStatus = apps.stream()
-                    .max(Comparator.comparing(LoanApplication::getId))
-                    .map(a -> a.getStatus().name())
-                    .orElse(null);
-            String loanStatus = loans.stream()
-                    .max(Comparator.comparing(Loan::getId))
-                    .map(l -> l.effectiveStatus(today).name())
-                    .orElse(null);
+            // One latest application + one latest loan for the whole row, so every column below
+            // describes the SAME file rather than a mix of several.
+            LoanApplication latestApp = apps.stream()
+                    .max(Comparator.comparing(LoanApplication::getId)).orElse(null);
+            Loan latestLoan = loans.stream()
+                    .max(Comparator.comparing(Loan::getId)).orElse(null);
+            String latestStatus = latestApp != null ? latestApp.getStatus().name() : null;
+            String loanStatus = latestLoan != null ? latestLoan.effectiveStatus(today).name() : null;
             CustomerOwner owner = owners.get(customerId);
             Long ownerStaffId = owner != null ? owner.getOwnerStaffId() : null;
             String ownerName = ownerStaffId != null ? staffName(ownerStaffId, staffNames) : null;
@@ -154,10 +281,21 @@ public class CustomerService {
             BureauState bureauState = bureauAppId != null
                     ? bureauStates.getOrDefault(bureauAppId, BureauState.NOT_FETCHED)
                     : BureauState.NOT_FETCHED;
-            Instant latestCreatedAt = apps.stream()
-                    .max(Comparator.comparing(LoanApplication::getId))
-                    .map(LoanApplication::getCreatedAt)
-                    .orElse(null);
+            Instant latestCreatedAt = latestApp != null ? latestApp.getCreatedAt() : null;
+            if (!inWindow(latestCreatedAt, fromInstant, toInstant)) {
+                continue;
+            }
+            // Where THIS advance is paid, falling back to the salary account until the borrower
+            // reaches the disbursal-account step.
+            String accountNumber = latestApp != null && latestApp.getDisbursalAccountNumber() != null
+                    ? latestApp.getDisbursalAccountNumber()
+                    : (profile != null ? profile.getSalaryAccountNumber() : null);
+            String ifsc = latestApp != null && latestApp.getDisbursalIfsc() != null
+                    ? latestApp.getDisbursalIfsc()
+                    : (profile != null ? profile.getSalaryIfsc() : null);
+            boolean amountIsRequested = latestApp != null && latestApp.getAmountRequested() != null;
+            Long amountPaise = latestApp == null ? null
+                    : (amountIsRequested ? latestApp.getAmountRequested() : latestApp.getEligibleLimit());
             CustomerSummary cs = new CustomerSummary(
                     customerId,
                     profile != null ? profile.getFullName() : null,
@@ -175,14 +313,21 @@ public class CustomerService {
                     ownerStaffId,
                     ownerName,
                     bureauState,
-                    latestCreatedAt);
+                    latestCreatedAt,
+                    latestApp != null ? latestApp.getId() : null,
+                    accountNumber,
+                    ifsc,
+                    latestLoan != null ? latestLoan.getId() : null,
+                    amountPaise,
+                    amountIsRequested,
+                    latestLoan != null ? latestLoan.getDueDate() : null,
+                    latestApp != null ? latestApp.getMarkedPendingAt() : null);
             if (matches(cs, needle)) {
                 out.add(cs);
                 // customerId is mobile-derived (§10), not a signup-order sequence, so it carries no
                 // recency signal — the customer's most recent application id (auto-increment, hence
                 // chronological) is what actually orders "newest first".
-                latestAppIdByCustomer.put(customerId,
-                        apps.stream().mapToLong(LoanApplication::getId).max().orElse(0));
+                latestAppIdByCustomer.put(customerId, latestApp != null ? latestApp.getId() : 0L);
             }
         }
         out.sort(Comparator.comparing((CustomerSummary c) -> latestAppIdByCustomer.get(c.customerId()))
@@ -190,10 +335,26 @@ public class CustomerService {
         return out;
     }
 
+    /**
+     * Inclusive {@code [from, to)} membership. A customer with no application has no date, so they
+     * are excluded when a window is set and included when it is not.
+     */
+    private static boolean inWindow(Instant at, Instant fromInstant, Instant toInstant) {
+        if (fromInstant == null && toInstant == null) {
+            return true;
+        }
+        if (at == null) {
+            return false;
+        }
+        return !(fromInstant != null && at.isBefore(fromInstant))
+                && !(toInstant != null && !at.isBefore(toInstant));
+    }
+
     /** A single customer's full history (newest first), or 404 if the customer has nothing on file. */
     @Transactional(readOnly = true)
     public CustomerDetail detail(Long customerId) {
         rejectDsa();
+        requireVisible(customerId);
         List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
         List<Loan> loans = loanRepository.findByCustomerId(customerId);
         if (apps.isEmpty() && loans.isEmpty()) {
@@ -265,6 +426,8 @@ public class CustomerService {
      */
     @Transactional(readOnly = true)
     public List<ApplicationDocumentGroup> documents(Long customerId) {
+        rejectDsa();
+        requireVisible(customerId);
         List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
         if (apps.isEmpty()) {
             throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
@@ -456,6 +619,8 @@ public class CustomerService {
      */
     @Transactional(readOnly = true)
     public List<ActivityEntry> activity(Long customerId) {
+        rejectDsa();
+        requireVisible(customerId);
         List<ActivityEntry> out = new ArrayList<>();
 
         // 1. Lifecycle + re-verify events across every application this customer owns.
@@ -511,6 +676,8 @@ public class CustomerService {
     /** One customer's staff remarks (newest first). */
     @Transactional(readOnly = true)
     public List<RemarkView> remarks(Long customerId) {
+        rejectDsa();
+        requireVisible(customerId);
         return remarkRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
                 .map(RemarkView::of)
                 .toList();
@@ -519,6 +686,8 @@ public class CustomerService {
     /** Add a staff remark to a customer (author + timestamp captured by JPA auditing). */
     @Transactional
     public RemarkView addRemark(Long customerId, String body) {
+        rejectDsa();
+        requireVisible(customerId);
         CustomerRemark r = new CustomerRemark();
         r.setCustomerId(customerId);
         r.setBody(body.trim());
@@ -528,6 +697,8 @@ public class CustomerService {
     /** One customer's call logs (newest first). */
     @Transactional(readOnly = true)
     public List<CallLogView> callLogs(Long customerId) {
+        rejectDsa();
+        requireVisible(customerId);
         return callLogRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
                 .map(CallLogView::of)
                 .toList();
@@ -536,6 +707,8 @@ public class CustomerService {
     /** Add a staff call log to a customer (author + timestamp captured by JPA auditing). */
     @Transactional
     public CallLogView addCallLog(Long customerId, AddCallLogRequest req) {
+        rejectDsa();
+        requireVisible(customerId);
         CustomerCallLog c = new CustomerCallLog();
         c.setCustomerId(customerId);
         c.setCallType(req.callType().trim());

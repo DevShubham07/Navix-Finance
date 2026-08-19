@@ -7,14 +7,9 @@ import { ApplicationJourney } from "@/components/staff/application-journey";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
-import { paiseToINR, type ApplicationView } from "@/lib/api/applications";
-import { daysBetween } from "@/lib/calc/loan-math";
-import { formatDate, formatDateTime } from "@/lib/utils";
-
-function dpdDays(app: ApplicationView): number {
-  if (!app.loanDueDate) return 0;
-  return Math.max(0, daysBetween(new Date(`${app.loanDueDate}T00:00:00`), new Date()));
-}
+import { type ApplicationView } from "@/lib/api/applications";
+import { formatDateTime } from "@/lib/utils";
+import { AmountCell, DueCell } from "./cells";
 
 /**
  * One queue row, deliberately one line tall.
@@ -41,7 +36,6 @@ export function AppRow({
   const [journeyOpen, setJourneyOpen] = React.useState(false);
   const [showDetail, setShowDetail] = React.useState(false);
   const [showInfo, setShowInfo] = React.useState(false);
-  const dpd = dpdDays(app);
   // Disbursal-then-salary fallback — the same rule DisbursementFocus uses. Full values, no
   // masking: an explicit product decision (queues are screen-shared in practice; noted for
   // security review).
@@ -75,44 +69,20 @@ export function AppRow({
         <td className="font-mono text-muted">{app.loanId != null ? `#${app.loanId}` : "—"}</td>
         <td>
           <span className="font-semibold text-ink">
-            {app.amountRequestedPaise != null
-              ? paiseToINR(app.amountRequestedPaise)
-              : app.eligibleLimitPaise != null
-                ? paiseToINR(app.eligibleLimitPaise)
-                : "—"}
-          </span>{" "}
-          <span
-            className="text-xs text-muted"
-            title={app.amountRequestedPaise != null ? "Amount requested" : "Eligible limit"}
-          >
-            {app.amountRequestedPaise != null ? "req" : "elig"}
+            <AmountCell
+              amountPaise={app.amountRequestedPaise ?? app.eligibleLimitPaise}
+              isRequested={app.amountRequestedPaise != null}
+            />
           </span>
         </td>
         {/* Due date sits beside the amount because that's how a collections officer reads a row:
-            how much, by when, and how late. An overdue loan also carries the extra days it has run
-            past that date — and a loan that is overdue with no due date on file still shows the
-            days, since "how late" is the only number that matters at that point. */}
+            how much, by when, and how late. */}
         <td className="whitespace-nowrap">
-          {app.loanDueDate ? (
-            <span className={dpd > 0 ? "font-semibold text-error-700" : "text-ink"}>
-              {formatDate(app.loanDueDate)}
-            </span>
-          ) : (
-            <span className="text-muted">—</span>
-          )}
-          {dpd > 0 && (
-            <span className="ml-1 text-xs font-semibold text-error-700" title="Days past due">
-              +{dpd}d
-            </span>
-          )}
-          {app.markedPendingAt && (
-            <span
-              className="ml-1 inline-flex rounded bg-warning-100 px-1.5 py-0.5 text-xs font-semibold text-warning-700"
-              title={`Marked pending — ${app.pendingReason || "review required"}`}
-            >
-              Pending
-            </span>
-          )}
+          <DueCell
+            dueDate={app.loanDueDate}
+            markedPendingAt={app.markedPendingAt}
+            pendingReason={app.pendingReason}
+          />
         </td>
         <td>
           <CreditBadge

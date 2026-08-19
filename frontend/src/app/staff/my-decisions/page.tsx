@@ -13,8 +13,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { Select } from "@/components/ui";
-import { staffApi, statusLabel, type ApplicationStatus } from "@/lib/api/applications";
+import Link from "next/link";
+import { staffApi, statusLabel, paiseToINR, type ApplicationStatus } from "@/lib/api/applications";
 import { useStaffMe, errMessage } from "@/components/staff/pipeline/hooks";
+import { customerPageHref } from "@/lib/customers/customer-page";
 import { formatDate } from "@/lib/utils";
 
 /** Verb per audited action, so the log reads as a sentence rather than an enum dump. */
@@ -36,6 +38,7 @@ const ACTION_LABEL: Record<string, string> = {
   VALIDATE_FAIL: "Marked transfer failed",
   RETRY: "Retried disbursement",
   CANCEL: "Cancelled",
+  REASSIGN: "Reassigned to another executive",
 };
 
 export default function MyDecisionsPage() {
@@ -92,25 +95,58 @@ export default function MyDecisionsPage() {
         ) : (
           <table className="staff-data-table">
             <thead>
+              {/* What was decided, broken out of the raw event payload. The backend used to hand
+                  this page strings like "amountPaise=500000 salaryCreditDay=1" and they were
+                  rendered verbatim; DecisionNotes now parses them, so each value gets a real
+                  column and "Remark" carries only what a human actually typed. */}
               <tr>
                 <th>When</th>
                 <th>Application</th>
+                <th>Customer ID</th>
                 <th>Customer</th>
+                <th>PAN</th>
                 <th>Decision</th>
                 <th>Outcome</th>
-                <th>Notes</th>
+                <th className="text-right">Amount</th>
+                <th>Repayment date</th>
+                <th>Assignee</th>
+                <th>Txn ref</th>
+                <th>Remark</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={`${r.applicationId}-${r.at}-${i}`}>
-                  <td className="text-muted">{formatDate(r.at)}</td>
+                  <td className="whitespace-nowrap text-muted">{formatDate(r.at)}</td>
                   <td className="font-mono">#{r.applicationId}</td>
-                  <td className="staff-cell">{r.customerName ?? "—"}</td>
+                  <td className="font-mono text-muted">
+                    {r.customerId != null ? `#${r.customerId}` : "—"}
+                  </td>
+                  <td className="staff-cell">
+                    {r.customerId != null && r.customerName ? (
+                      <Link href={customerPageHref(r.customerId)} className="font-semibold text-navy hover:underline">
+                        {r.customerName}
+                      </Link>
+                    ) : (
+                      (r.customerName ?? "—")
+                    )}
+                  </td>
+                  <td className="font-mono text-ink">{r.pan || "—"}</td>
                   <td className="font-semibold text-navy">{ACTION_LABEL[r.action] ?? r.action}</td>
                   <td>{statusLabel(r.toStatus as ApplicationStatus)}</td>
+                  <td className="whitespace-nowrap text-right font-mono text-ink">
+                    {r.amountPaise != null ? paiseToINR(r.amountPaise) : "—"}
+                  </td>
+                  <td className="whitespace-nowrap">
+                    {r.repaymentDate ? formatDate(r.repaymentDate) : "—"}
+                  </td>
+                  <td className="staff-cell">
+                    {r.assigneeName ?? (r.assigneeId != null ? `#${r.assigneeId}` : "—")}
+                  </td>
+                  <td className="font-mono text-muted">{r.txnRef || "—"}</td>
+                  {/* The raw event payload stays as the tooltip — audit trail, not a column. */}
                   <td className="staff-cell text-muted" title={r.notes ?? undefined}>
-                    {r.notes ?? "—"}
+                    {r.remark ?? "—"}
                   </td>
                 </tr>
               ))}

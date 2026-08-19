@@ -42,11 +42,22 @@ public class CustomerController {
 
     private final CustomerService customerService;
 
-    /** All customers, optionally filtered by {@code q} (name contains / customer id). */
+    /**
+     * All customers, optionally filtered by {@code q} (name / PAN / mobile / customer id) and an
+     * inclusive {@code [from, to]} date window over the customer's latest application. The window is
+     * resolved in IST by the service, matching the live-applications queues.
+     */
     @GetMapping
-    public ApiResponse<List<CustomerSummary>> list(@RequestParam(required = false) String q) {
+    public ApiResponse<List<CustomerSummary>> list(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to) {
         requireStaff();
-        return ApiResponse.ok(customerService.list(q));
+        return ApiResponse.ok(customerService.list(q, from, to));
     }
 
     /** One customer's full history: profile + applications + loans + payments. */
