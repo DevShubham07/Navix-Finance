@@ -8,7 +8,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.loan.BorrowerContactDirectory;
 import com.navix.common.loan.LoanDirectory;
+import com.navix.common.loan.LoanSummary;
 import com.navix.common.notification.ContactInfo;
 import com.navix.common.notification.NotificationChannel;
 import com.navix.common.notification.RecipientType;
@@ -27,6 +29,7 @@ import com.navix.notification.template.TemplateRenderer;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,6 +55,8 @@ class NotificationDispatcherTest {
     private LoanDirectory loanDirectory;
     @Mock
     private com.navix.common.loan.BorrowerPreferenceDirectory borrowerPreferences;
+    @Mock
+    private BorrowerContactDirectory borrowerContacts;
 
     private NotificationDispatcher dispatcher;
 
@@ -75,8 +80,12 @@ class NotificationDispatcherTest {
         TemplateRenderer renderer = new TemplateRenderer(new NotificationTemplates());
         lenient().when(borrowerPreferences.optedOutChannels(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(java.util.Set.of());
+        // Defensive default: most tests never reach the customerId fallback (either no loan-money model
+        // is in play, or the loan lookup already supplied customerName) — this just prevents an
+        // unstubbed-mock NPE for the ones that do reach it without caring about the resolved value.
+        lenient().when(borrowerContacts.borrowerContact(any())).thenReturn(Optional.empty());
         dispatcher = new NotificationDispatcher(renderer, audienceResolver, notificationRepo, deliveryRepo,
-                loanDirectory, borrowerPreferences,
+                loanDirectory, borrowerPreferences, borrowerContacts,
                 List.of(okSender(NotificationChannel.IN_APP),
                         throwingSender(NotificationChannel.SMS),
                         okSender(NotificationChannel.EMAIL)));
@@ -172,5 +181,63 @@ class NotificationDispatcherTest {
         });
         // IN_APP + EMAIL still went out.
         assertThat(deliveries).filteredOn(d -> d.getStatus() == DeliveryStatus.SENT).hasSize(2);
+    }
+
+    /** An EMAIL sender that captures the rendered message instead of just acking it, for body assertions. */
+    private static ChannelSender capturingEmailSender(AtomicReference<RenderedMessage> sink) {
+        return new ChannelSender() {
+            @Override public NotificationChannel channel() { return NotificationChannel.EMAIL; }
+            @Override public DeliveryOutcome send(RenderedMessage m, ContactInfo r) {
+                sink.set(m);
+                return DeliveryOutcome.sent("ref-email");
+            }
+        };
+    }
+
+    @Test
+    void loanScopedContextWithNoApplicationIdPicksItUpFromLoanSummary() {
+        when(audienceResolver.resolve(any(), any())).thenReturn(List.of(borrower(7)));
+        LoanSummary loan = new LoanSummary(2L, 7L, 55L, "ACTIVE", 1_000_000L, 882_000L, 1_270_000L,
+                1_270_000L, null, null, "Priya Singh", "ABCDE1234F", null, null, null, null);
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loan));
+
+        AtomicReference<RenderedMessage> captured = new AtomicReference<>();
+        NotificationDispatcher localDispatcher = new NotificationDispatcher(
+                new TemplateRenderer(new NotificationTemplates()), audienceResolver, notificationRepo,
+                deliveryRepo, loanDirectory, borrowerPreferences, borrowerContacts,
+                List.of(okSender(NotificationChannel.IN_APP), okSender(NotificationChannel.SMS),
+                        capturingEmailSender(captured)));
+
+        // The context itself carries no applicationId — LOAN_DISBURSED's email body has "#{applicationId}"
+        // only because baseModel backfills it from the LoanSummary found via ctx.loanId().
+        localDispatcher.dispatch(NotificationType.LOAN_DISBURSED,
+                NotificationContext.builder().customerId(7L).loanId(2L).build());
+
+        assertThat(captured.get()).isNotNull();
+        assertThat(captured.get().body()).contains("#55");
+    }
+
+    @Test
+    void customerNameIsPopulatedForAStaffRecipientWhileNameStaysTheStaffMembersName() {
+        // KYC_SUBMITTED is application-scoped (no loan yet) — customerName can only come from the
+        // ctx.customerId() fallback via BorrowerContactDirectory, not from a LoanSummary.
+        when(audienceResolver.resolve(any(), any())).thenReturn(List.of(staff(3)));
+        when(borrowerContacts.borrowerContact(7L)).thenReturn(Optional.of(
+                new ContactInfo(RecipientType.BORROWER, 7L, "Priya Singh", "priya@x.test", "9876500000", "BORROWER")));
+
+        AtomicReference<RenderedMessage> captured = new AtomicReference<>();
+        NotificationDispatcher localDispatcher = new NotificationDispatcher(
+                new TemplateRenderer(new NotificationTemplates()), audienceResolver, notificationRepo,
+                deliveryRepo, loanDirectory, borrowerPreferences, borrowerContacts,
+                List.of(okSender(NotificationChannel.IN_APP), okSender(NotificationChannel.SMS),
+                        capturingEmailSender(captured)));
+
+        localDispatcher.dispatch(NotificationType.KYC_SUBMITTED,
+                NotificationContext.builder().applicationId(42L).customerId(7L).build());
+
+        verify(borrowerContacts).borrowerContact(7L);
+        assertThat(captured.get()).isNotNull();
+        // {name} is the STAFF recipient (staff(3) -> "Staff 3"), {customerName} is the resolved borrower.
+        assertThat(captured.get().body()).contains("Hi Staff 3,").contains("Priya Singh has submitted");
     }
 }

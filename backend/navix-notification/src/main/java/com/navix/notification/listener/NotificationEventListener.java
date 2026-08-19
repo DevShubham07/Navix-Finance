@@ -307,6 +307,13 @@ public class NotificationEventListener {
 
     /** Map the transition {@code action} (+ {@code toStatus} for the REBORROW fork) to a type, or null. */
     private static NotificationType mapAction(ApplicationTransitionedEvent e) {
+        // The engine's action carries the rule that fired ("AUTO_REJECT_LOW_BUREAU_SCORE"), so it can
+        // never match a case label — these fell through to `default` and notified nobody. It deliberately
+        // maps to the SAME reasonless notification a manual credit rejection sends: revamp.md decision 31,
+        // the borrower is never told which rule fired.
+        if (e.action() != null && e.action().startsWith("AUTO_REJECT_")) {
+            return NotificationType.CREDIT_REJECTED;
+        }
         return switch (e.action()) {
             case "SUBMIT_KYC" -> NotificationType.KYC_SUBMITTED;
             case "KYC_APPROVE" -> NotificationType.KYC_APPROVED;

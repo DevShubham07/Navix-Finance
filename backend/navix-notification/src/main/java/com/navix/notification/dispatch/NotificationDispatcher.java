@@ -1,5 +1,6 @@
 package com.navix.notification.dispatch;
 
+import com.navix.common.loan.BorrowerContactDirectory;
 import com.navix.common.loan.BorrowerPreferenceDirectory;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.notification.ContactInfo;
@@ -44,12 +45,14 @@ public class NotificationDispatcher {
     private final NotificationDeliveryRepository deliveryRepo;
     private final LoanDirectory loanDirectory;
     private final BorrowerPreferenceDirectory borrowerPreferences;
+    private final BorrowerContactDirectory borrowerContacts;
     private final Map<NotificationChannel, ChannelSender> senders = new EnumMap<>(NotificationChannel.class);
 
     public NotificationDispatcher(TemplateRenderer renderer, AudienceResolver audienceResolver,
                                   NotificationRepository notificationRepo,
                                   NotificationDeliveryRepository deliveryRepo,
                                   LoanDirectory loanDirectory, BorrowerPreferenceDirectory borrowerPreferences,
+                                  BorrowerContactDirectory borrowerContacts,
                                   List<ChannelSender> channelSenders) {
         this.renderer = renderer;
         this.audienceResolver = audienceResolver;
@@ -57,6 +60,7 @@ public class NotificationDispatcher {
         this.deliveryRepo = deliveryRepo;
         this.loanDirectory = loanDirectory;
         this.borrowerPreferences = borrowerPreferences;
+        this.borrowerContacts = borrowerContacts;
         for (ChannelSender sender : channelSenders) {
             senders.put(sender.channel(), sender);
         }
@@ -193,11 +197,21 @@ public class NotificationDispatcher {
         if (ctx.loanId() != null) {
             model.putIfAbsent("loanId", ctx.loanId());
             loanDirectory.findLoan(ctx.loanId()).ifPresent(loan -> {
+                model.putIfAbsent("applicationId", loan.applicationId());
+                model.putIfAbsent("customerName", loan.borrowerName());
                 model.put("netDisbursed", NotificationFormat.inr(loan.netDisbursedPaise()));
                 model.put("totalRepayable", NotificationFormat.inr(loan.totalRepayablePaise()));
                 model.put("outstanding", NotificationFormat.inr(loan.outstandingPaise()));
                 model.put("dueDate", NotificationFormat.date(loan.dueDate()));
             });
+        }
+        // {name} is per-RECIPIENT (in a staff email it is the staff member), so the borrower's name needs
+        // its own key or staff mail can never identify the customer. Resolved only when something actually
+        // needs it and the loan lookup above didn't already supply it.
+        if (!model.containsKey("customerName") && ctx.customerId() != null) {
+            borrowerContacts.borrowerContact(ctx.customerId())
+                    .map(ContactInfo::name)
+                    .ifPresent(n -> model.put("customerName", n));
         }
         return model;
     }

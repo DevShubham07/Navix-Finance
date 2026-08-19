@@ -88,6 +88,106 @@ class TemplateRendererTest {
     }
 
     @Test
+    void kycApprovedEmailCarriesTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.KYC_APPROVED, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("#42");
+    }
+
+    @Test
+    void kycRejectedEmailCarriesTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.KYC_REJECTED, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("#42");
+    }
+
+    @Test
+    void kycReminderEmailCarriesTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.KYC_REMINDER, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L, "pendingSteps", "PAN, selfie"));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("#42");
+    }
+
+    @Test
+    void loanDisbursedEmailCarriesTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.LOAN_DISBURSED, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L, "netDisbursed", "₹8,820",
+                        "totalRepayable", "₹12,700", "dueDate", "30 Jun 2026"));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("#42");
+    }
+
+    @Test
+    void repaymentRejectedEmailCarriesTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.REPAYMENT_REJECTED, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L, "loanId", 2L, "amount", "₹500",
+                        "reason", "the reference number didn't match our records"));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("#42");
+    }
+
+    @Test
+    void paymentDueSoonEmailCarriesTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.PAYMENT_DUE_SOON, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L, "amount", "₹500", "daysToDue", 3,
+                        "dueDate", "30 Jun 2026"));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("#42");
+    }
+
+    @Test
+    void paymentOverdueEmailCarriesTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.PAYMENT_OVERDUE, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L, "amount", "₹500", "daysOverdue", 3));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("#42");
+    }
+
+    @Test
+    void loanClosedEmailCarriesTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.LOAN_CLOSED, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("#42");
+    }
+
+    @Test
+    void creditRejectedEmailOpensWithTheSoftenedPhrasing() {
+        RenderedMessage m = renderer.render(NotificationType.CREDIT_REJECTED, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("After assessing loan application #42").contains("Asha");
+    }
+
+    @Test
+    void kycSubmittedEmailCarriesTheCustomerNameForTheStaffReader() {
+        // KYC_SUBMITTED is staff-only: {name} is the staff reader, {customerName} is the borrower.
+        RenderedMessage m = renderer.render(NotificationType.KYC_SUBMITTED, NotificationChannel.EMAIL,
+                Map.of("name", "Staff Bob", "applicationId", 42L, "customerName", "Priya Singh"));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Hi Staff Bob,").contains("Priya Singh").contains("#42");
+    }
+
+    @Test
+    void creditApprovedEmailCarriesTheCustomerNameAlongsideTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.CREDIT_APPROVED, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L, "customerName", "Priya Singh"));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("Priya Singh").contains("#42");
+    }
+
+    @Test
+    void loanAppliedFastTrackEmailCarriesTheCustomerNameAlongsideTheApplicationId() {
+        RenderedMessage m = renderer.render(NotificationType.LOAN_APPLIED_FAST_TRACK, NotificationChannel.EMAIL,
+                Map.of("name", "Asha", "applicationId", 42L, "customerName", "Priya Singh"));
+        assertThat(m).isNotNull();
+        assertThat(m.body()).contains("Asha").contains("Priya Singh").contains("#42");
+    }
+
+    @Test
     void formatHelpers() {
         assertThat(NotificationFormat.inr(882_000L)).isEqualTo("₹8,820");
         assertThat(NotificationFormat.inr(null)).isEqualTo("—");

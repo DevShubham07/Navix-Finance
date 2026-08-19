@@ -59,6 +59,36 @@ class NotificationEventListenerTest {
     }
 
     @Test
+    void mapsKycReject() {
+        listener.onApplicationTransitioned(transition("KYC_REJECT", "KYC_REJECTED"));
+        assertThat(dispatched()).isEqualTo(NotificationType.KYC_REJECTED);
+    }
+
+    /**
+     * The engine's auto-reject actions carry the rule that fired as a suffix ("AUTO_REJECT_
+     * LOW_BUREAU_SCORE"), so they can never match a switch case label — this used to fall through to
+     * `default -> null` and notify nobody. They route to the same reasonless CREDIT_REJECTED a manual
+     * credit rejection sends.
+     */
+    @Test
+    void autoRejectSelfEmployedMapsToCreditRejected() {
+        listener.onApplicationTransitioned(transition("AUTO_REJECT_SELF_EMPLOYED", "REJECTED"));
+        assertThat(dispatched()).isEqualTo(NotificationType.CREDIT_REJECTED);
+    }
+
+    @Test
+    void autoRejectLowBureauScoreMapsToCreditRejected() {
+        listener.onApplicationTransitioned(transition("AUTO_REJECT_LOW_BUREAU_SCORE", "REJECTED"));
+        assertThat(dispatched()).isEqualTo(NotificationType.CREDIT_REJECTED);
+    }
+
+    @Test
+    void autoRejectUnknownSuffixAlsoMapsProvingItsPrefixBasedNotAHardcodedList() {
+        listener.onApplicationTransitioned(transition("AUTO_REJECT_SOMETHING_NEW", "REJECTED"));
+        assertThat(dispatched()).isEqualTo(NotificationType.CREDIT_REJECTED);
+    }
+
+    @Test
     void mapsHeadApproveToCreditApproved() {
         listener.onApplicationTransitioned(transition("HEAD_APPROVE", "CREDIT_HEAD_APPROVED"));
         assertThat(dispatched()).isEqualTo(NotificationType.CREDIT_APPROVED);
