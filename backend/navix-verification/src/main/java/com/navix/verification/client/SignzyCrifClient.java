@@ -25,7 +25,7 @@ public class SignzyCrifClient {
 
     private final RestClient signzy;
 
-    public SignzyCrifClient(@Qualifier(VerificationClientConfig.SIGNZY_CLIENT) RestClient signzy) {
+    public SignzyCrifClient(@Qualifier(VerificationClientConfig.SIGNZY_BUREAU_CLIENT) RestClient signzy) {
         this.signzy = signzy;
     }
 

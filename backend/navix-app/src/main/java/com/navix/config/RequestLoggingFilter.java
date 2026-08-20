@@ -9,6 +9,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import com.navix.verification.support.ProviderCallContext;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -30,12 +31,15 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger("com.navix.access");
     private static final String HEALTH_PATH = "/actuator/health";
+    private static final String APPLICATIONS_PREFIX = "/api/applications/";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         MDC.put("requestId", resolveRequestId(request));
         response.setHeader("X-Request-Id", MDC.get("requestId"));
+        // Attribute any provider API call made while serving this request to its application.
+        ProviderCallContext.setApplicationId(applicationIdIn(request.getRequestURI()));
         long startNanos = System.nanoTime();
         try {
             filterChain.doFilter(request, response);
@@ -49,6 +53,27 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             }
             // Outermost filter — clear the whole MDC so nothing leaks onto a reused worker thread.
             MDC.clear();
+            ProviderCallContext.clear();
+        }
+    }
+
+    /**
+     * Pull {@code {id}} out of {@code /api/applications/{id}/...}. Every borrower verification step
+     * and every staff retry goes through that shape, so one parse here attributes provider calls for
+     * all of them without touching the ~14 verification methods.
+     */
+    private static Long applicationIdIn(String path) {
+        if (path == null || !path.startsWith(APPLICATIONS_PREFIX)) {
+            return null;
+        }
+        int start = APPLICATIONS_PREFIX.length();
+        int end = path.indexOf('/', start);
+        String candidate = end < 0 ? path.substring(start) : path.substring(start, end);
+        try {
+            return candidate.isEmpty() ? null : Long.valueOf(candidate);
+        } catch (NumberFormatException notAnId) {
+            // e.g. /api/applications/credit-queue — a named route, not an application.
+            return null;
         }
     }
 

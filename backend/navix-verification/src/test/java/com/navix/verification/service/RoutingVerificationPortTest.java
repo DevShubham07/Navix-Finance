@@ -36,7 +36,7 @@ class RoutingVerificationPortTest {
         signzy = Mockito.mock(SignzyVerificationAdapter.class);
         digitap = Mockito.mock(DigitapVerificationAdapter.class);
         router = new RoutingVerificationPort(signzy, digitap,
-                new VerificationChainProperties(List.of("signzy", "digitap")));
+                new VerificationChainProperties(List.of("signzy", "digitap"), null, null, null, null));
     }
 
     private static PanCheck pan(String txn) {

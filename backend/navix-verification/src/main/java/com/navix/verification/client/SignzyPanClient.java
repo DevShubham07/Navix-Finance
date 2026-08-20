@@ -1,7 +1,7 @@
 package com.navix.verification.client;
 
 import static com.navix.verification.support.ProviderJson.bool;
-import static com.navix.verification.support.ProviderJson.postWithRawDiagnostics;
+import static com.navix.verification.support.ProviderJson.post;
 import static com.navix.verification.support.ProviderJson.text;
 import static com.navix.verification.support.ProviderJson.trimmed;
 
@@ -33,7 +33,7 @@ public class SignzyPanClient {
     public PanResponse verify(String pan) {
         // maskedName=false → Signzy adds the full name in `unMaskedName` (the account must be entitled).
         PanRequest request = new PanRequest(pan, "false");
-        JsonNode root = postWithRawDiagnostics(signzy, ENDPOINT, request, "signzy-pan");
+        JsonNode root = post(signzy, ENDPOINT, request);
         return new PanResponse(
                 text(root.path("number")),
                 text(root.path("number")),

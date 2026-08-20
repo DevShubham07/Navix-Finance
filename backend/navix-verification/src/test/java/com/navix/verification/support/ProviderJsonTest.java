@@ -20,7 +20,7 @@ class ProviderJsonTest {
 
     @Test
     @ExtendWith(OutputCaptureExtension.class)
-    void panDiagnosticLogsRawHttp200ProviderErrorEnvelope(CapturedOutput output) {
+    void everyCallLogsItsRawHttp200ProviderErrorEnvelope(CapturedOutput output) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("/pan"))
@@ -28,12 +28,10 @@ class ProviderJsonTest {
                         "{\"result_code\":102,\"message\":\"PAN ABCDE1234F could not be verified\"}",
                         MediaType.APPLICATION_JSON));
 
-        ProviderJson.postWithRawDiagnostics(
-                builder.build(), "/pan", Map.of("pan", "ABCDE1234F"), "digitap-pan");
+        ProviderJson.post(builder.build(), "/pan", Map.of("pan", "ABCDE1234F"));
 
         assertThat(output).contains(
-                "TEMP_PII_DEBUG",
-                "provider=digitap-pan",
+                "PROVIDER_CALL",
                 "responsePayload={\"result_code\":102,\"message\":\"PAN ABCDE1234F could not be verified\"}");
         server.verify();
     }

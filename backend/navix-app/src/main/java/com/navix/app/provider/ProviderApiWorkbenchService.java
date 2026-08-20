@@ -3,13 +3,18 @@ package com.navix.app.provider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
+import com.navix.verification.support.ProviderCallContext;
 import com.navix.verification.client.*;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +22,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ProviderApiWorkbenchService {
     private static final Duration HISTORY = Duration.ofDays(90);
+    private static final int MAX_PAGE_SIZE = 100;
     private final ProviderApiExecutionRepository repository;
     private final ObjectMapper objectMapper;
     private final SignzyPanClient signzyPan;
@@ -35,7 +41,17 @@ public class ProviderApiWorkbenchService {
     public record Field(String key, String label, String type, boolean required) {}
     public record CatalogItem(String operation, List<String> providers, List<Field> fields) {}
     public record ExecutionView(Long id, String operation, String provider, String status, long durationMs,
-                                Map<String, Object> request, Object response, String error, Instant createdAt) {}
+                                Map<String, Object> request, Object response, String error, Instant createdAt,
+                                String source, String endpoint, Integer httpStatus, String checkType,
+                                Long applicationId, String requestId) {}
+    /** History row without payloads — see {@code ProviderApiExecutionRepository.search}. */
+    public record ExecutionSummary(Long id, String operation, String provider, String status, Integer httpStatus,
+                                   long durationMs, String source, String endpoint, String checkType,
+                                   Long applicationId, String requestId, String error, Instant createdAt) {}
+    public record HistoryPage(List<ExecutionSummary> rows, int page, int size, long total) {}
+    /** Every field optional; a null one is not filtered on. */
+    public record HistoryQuery(String provider, String operation, String status, String source,
+                               Long applicationId, Instant from, Instant to) {}
 
     public List<CatalogItem> catalog() {
         return List.of(
@@ -60,21 +76,46 @@ public class ProviderApiWorkbenchService {
         for (Field field : item.fields()) if (field.required() && blank(safeInput.get(field.key())))
             throw new BusinessException("MISSING_PROVIDER_INPUT", field.label() + " is required");
         long started = System.nanoTime(); Object response = null; String status = "SUCCESS"; String error = null;
-        try { response = call(op, p, safeInput, timeout); }
+        AtomicReference<Long> executionId = new AtomicReference<>();
+        try { response = call(op, p, safeInput, timeout, applicationId, executionId); }
         catch (RuntimeException ex) { status = "FAILED"; error = ex.getMessage(); }
         long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-        ProviderApiExecution row = new ProviderApiExecution(); row.setOperation(op); row.setProvider(p);
-        row.setRequestJson(json(safeInput)); row.setResponseJson(response == null ? null : json(response)); row.setStatus(status);
-        row.setErrorMessage(error); row.setDurationMs(duration); row.setApplicationId(applicationId); row.setExpiresAt(Instant.now().plus(HISTORY));
-        row = repository.save(row);
+        // The transport layer already wrote the audit row, with the REAL wire payload rather than this
+        // form input — so read that back instead of saving a second, less accurate one. It is missing
+        // only when the call never reached the provider (bad input, timeout before dispatch).
+        ProviderApiExecution row = executionId.get() == null ? null : repository.findById(executionId.get()).orElse(null);
+        if (row == null) {
+            row = new ProviderApiExecution(); row.setOperation(op); row.setProvider(p);
+            row.setRequestJson(json(safeInput)); row.setResponseJson(response == null ? null : json(response)); row.setStatus(status);
+            row.setErrorMessage(error); row.setDurationMs(duration); row.setApplicationId(applicationId);
+            row.setSource(ProviderCallContext.MANUAL); row.setExpiresAt(Instant.now().plus(HISTORY));
+            row = repository.save(row);
+        }
         if (!"SUCCESS".equals(status)) throw new BusinessException("PROVIDER_API_FAILED", error == null ? "Provider API failed" : error);
         return view(row, safeInput, response);
     }
-    public List<ExecutionView> history() { requireAdmin(); return repository.findTop100ByOrderByCreatedAtDesc().stream().map(this::view).toList(); }
+    public HistoryPage history(HistoryQuery query, int page, int size) {
+        requireAdmin();
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        Page<ProviderApiExecutionSummary> found = repository.search(
+                blankToNull(query.provider()), blankToNull(query.operation()), blankToNull(query.status()),
+                blankToNull(query.source()), query.applicationId(), query.from(), query.to(),
+                PageRequest.of(Math.max(page, 0), safeSize));
+        return new HistoryPage(found.getContent().stream().map(ProviderApiWorkbenchService::summary).toList(),
+                found.getNumber(), found.getSize(), found.getTotalElements());
+    }
+
+    /** One row WITH its raw request/response — the expanded view. */
+    public ExecutionView detail(Long id) {
+        requireAdmin();
+        return repository.findById(id).map(this::view)
+                .orElseThrow(() -> new BusinessException("PROVIDER_API_EXECUTION_NOT_FOUND", "No such provider call"));
+    }
     @Scheduled(cron = "0 15 2 * * *") public void purgeExpiredHistory() { repository.deleteByExpiresAtBefore(Instant.now()); }
 
-    private Object call(String op, String p, Map<String,Object> in, Duration timeout) {
-        return within(timeout, () -> switch (op + ":" + p) {
+    private Object call(String op, String p, Map<String,Object> in, Duration timeout,
+                        Long applicationId, AtomicReference<Long> executionId) {
+        return within(timeout, ActorContext.get(), applicationId, executionId, () -> switch (op + ":" + p) {
             case "PAN:SIGNZY" -> signzyPan.verify(s(in,"pan"));
             case "PAN:DIGITAP" -> digitapPan.verify(s(in,"pan"), "admin-workbench");
             case "EMAIL:SIGNZY" -> signzyEmail.verify(s(in,"email"));
@@ -90,9 +131,28 @@ public class ProviderApiWorkbenchService {
             default -> throw new BusinessException("UNSUPPORTED_PROVIDER", "Unsupported provider operation");
         });
     }
-    private static <T> T within(Duration timeout, Supplier<T> work) { try { return CompletableFuture.supplyAsync(work).get(timeout.toMillis(), TimeUnit.MILLISECONDS); } catch (TimeoutException e) { throw new BusinessException("PROVIDER_TIMEOUT", "Provider call timed out after " + timeout.toSeconds() + " seconds"); } catch (Exception e) { throw new BusinessException("PROVIDER_API_FAILED", e.getCause() == null ? e.getMessage() : e.getCause().getMessage()); } }
-    private ExecutionView view(ProviderApiExecution row) { return new ExecutionView(row.getId(),row.getOperation(),row.getProvider(),row.getStatus(),row.getDurationMs(),read(row.getRequestJson()),readAny(row.getResponseJson()),row.getErrorMessage(),row.getCreatedAt()); }
-    private ExecutionView view(ProviderApiExecution row, Map<String,Object> request, Object response) { return new ExecutionView(row.getId(),row.getOperation(),row.getProvider(),row.getStatus(),row.getDurationMs(),request,response,row.getErrorMessage(),row.getCreatedAt()); }
+    /**
+     * The work runs on a ForkJoinPool thread, so every ThreadLocal the request set up — the actor AND
+     * the provider-call context — has to be re-established there by hand, and torn down after. Without
+     * this the audit row would be attributed to SYSTEM and labelled LIVE instead of MANUAL.
+     */
+    private static <T> T within(Duration timeout, CurrentActor actor, Long applicationId,
+                                AtomicReference<Long> executionId, Supplier<T> work) {
+        Supplier<T> scoped = () -> {
+            ActorContext.set(actor);
+            ProviderCallContext.setSource(ProviderCallContext.MANUAL);
+            ProviderCallContext.setApplicationId(applicationId);
+            try { return work.get(); }
+            finally { executionId.set(ProviderCallContext.lastExecutionId()); ProviderCallContext.clear(); ActorContext.clear(); }
+        };
+        try { return CompletableFuture.supplyAsync(scoped).get(timeout.toMillis(), TimeUnit.MILLISECONDS); }
+        catch (TimeoutException e) { throw new BusinessException("PROVIDER_TIMEOUT", "Provider call timed out after " + timeout.toSeconds() + " seconds"); }
+        catch (Exception e) { throw new BusinessException("PROVIDER_API_FAILED", e.getCause() == null ? e.getMessage() : e.getCause().getMessage()); }
+    }
+    private ExecutionView view(ProviderApiExecution row) { return view(row, read(row.getRequestJson()), readAny(row.getResponseJson())); }
+    private ExecutionView view(ProviderApiExecution row, Map<String,Object> request, Object response) { return new ExecutionView(row.getId(),row.getOperation(),row.getProvider(),row.getStatus(),row.getDurationMs(),request,response,row.getErrorMessage(),row.getCreatedAt(),row.getSource(),row.getEndpoint(),row.getHttpStatus(),row.getCheckType(),row.getApplicationId(),row.getRequestId()); }
+    private static ExecutionSummary summary(ProviderApiExecutionSummary r) { return new ExecutionSummary(r.getId(),r.getOperation(),r.getProvider(),r.getStatus(),r.getHttpStatus(),r.getDurationMs() == null ? 0L : r.getDurationMs(),r.getSource(),r.getEndpoint(),r.getCheckType(),r.getApplicationId(),r.getRequestId(),r.getErrorMessage(),r.getCreatedAt()); }
+    private static String blankToNull(String v) { return v == null || v.isBlank() ? null : v.trim().toUpperCase(); }
     private String json(Object o) { try { return objectMapper.writeValueAsString(o); } catch (Exception e) { throw new IllegalStateException(e); } }
     @SuppressWarnings("unchecked") private Map<String,Object> read(String s) { try { return s == null ? Map.of() : objectMapper.readValue(s, Map.class); } catch(Exception e) { return Map.of(); } }
     private Object readAny(String s) { try { return s == null ? null : objectMapper.readValue(s, Object.class); } catch(Exception e) { return null; } }

@@ -218,8 +218,9 @@ class DigitapClientsTest {
                 .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "log-ref");
 
         assertThat(output).contains(
-                "TEMP_PII_DEBUG",
-                "provider=digitap-credit",
+                "PROVIDER_CALL",
+                "provider=DIGITAP",
+                "operation=BUREAU",
                 "responsePayload={\"http_response_code\":200",
                 "\"CAIS_Account_DETAILS\":[{\"Account_Number\":\"XXXX4321\"}]");
         b.server().verify();
@@ -289,8 +290,9 @@ class DigitapClientsTest {
                 .isInstanceOf(VerificationException.class);
 
         assertThat(output).contains(
-                "TEMP_PII_DEBUG",
-                "provider=digitap-credit",
+                "PROVIDER_CALL",
+                "provider=DIGITAP",
+                "operation=BUREAU",
                 "endpoint=/credit_analytics/request",
                 "requestPayload={\"client_ref_num\":\"credit-ref\"",
                 "\"mobile_no\":\"9876543210\"",
@@ -318,8 +320,9 @@ class DigitapClientsTest {
         assertThatThrownBy(() -> client.verify("ABCPE1234Z", "ref-1"))
                 .isInstanceOf(VerificationException.class);
         assertThat(output).contains(
-                "TEMP_PII_DEBUG",
-                "provider=digitap-pan",
+                "PROVIDER_CALL",
+                "provider=DIGITAP",
+                "operation=PAN",
                 "requestPayload={\"client_ref_num\":\"ref-1\",\"pan\":\"ABCPE1234Z\"}",
                 "responsePayload={\"result_code\":400,\"message\":\"PAN ABCPE1234Z rejected for ref-1\"}");
         b.server().verify();

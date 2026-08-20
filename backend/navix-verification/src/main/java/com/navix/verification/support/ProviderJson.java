@@ -6,6 +6,7 @@ import com.navix.verification.exception.VerificationException;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -19,13 +20,18 @@ import org.springframework.web.client.RestClientResponseException;
  *       JSON strings.</li>
  * </ul>
  *
- * <p>Provider-neutral (formerly {@code FintrixJson}) and PII-safe by default. The explicitly named
- * temporary raw diagnostic method is the sole pre-go-live exception.
+ * <p>Provider-neutral (formerly {@code FintrixJson}). Exceptions thrown from here stay redacted, but
+ * the call itself is NOT PII-free: {@link ProviderCallLog} records the exact request and response of
+ * every call to the admin Provider API dashboard and to the application log. That is deliberate — see
+ * {@link ProviderCall}.
  */
 public final class ProviderJson {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderJson.class);
     private static final ObjectMapper JSON = new ObjectMapper();
+    /** Sentinel for "no status is tolerated" — every non-2xx is a failure. */
+    private static final int NO_TOLERATED_STATUS = -1;
+
     private static final List<String> CODE_FIELDS = List.of(
             "error_code", "errorCode", "result_code", "resultCode", "code");
     private static final List<String> DETAIL_FIELDS = List.of(
@@ -38,61 +44,82 @@ public final class ProviderJson {
      * POST {@code body} (JSON) to {@code uri} on {@code client}, parse the response as a
      * {@link JsonNode}, and fail closed as a {@link VerificationException} on any error
      * (non-2xx, null body, or an envelope whose {@code status} is {@code "error"}).
+     *
+     * <p>Every call — whatever its outcome — is handed to {@link ProviderCallLog}, which records the
+     * exact request and response to the admin Provider API dashboard and logs them.
      */
     public static JsonNode post(RestClient client, String uri, Object body) {
-        return post(client, uri, body, null);
+        return post(client, uri, body, NO_TOLERATED_STATUS);
     }
 
     /**
-     * Temporary pre-go-live diagnostic transport for explicitly selected verification providers.
-     * This deliberately logs the complete raw JSON request and provider error response, including
-     * PII, but never logs HTTP headers or credentials. Remove every {@code TEMP_PII_DEBUG} call
-     * before production go-live.
+     * As {@link #post}, but treats {@code toleratedStatus} as a normal outcome and returns
+     * {@code null} instead of throwing. Signzy uses a 404 to mean "the borrower has not finished the
+     * liveness journey yet" and "that contract has lapsed" — in-progress/terminal states, not errors.
+     *
+     * <p>Exists so those two flows can still go through the recorded transport rather than calling
+     * {@link RestClient} directly and vanishing from the audit trail.
      */
-    public static JsonNode postWithRawDiagnostics(
-            RestClient client, String uri, Object body, String provider) {
-        return post(client, uri, body, provider);
+    public static JsonNode postTolerating(
+            RestClient client, String uri, Object body, int toleratedStatus) {
+        return post(client, uri, body, toleratedStatus);
     }
 
-    private static JsonNode post(RestClient client, String uri, Object body, String rawProvider) {
-        if (rawProvider != null) {
-            log.warn("TEMP_PII_DEBUG provider={} endpoint={} requestPayload={}",
-                    rawProvider, uri, rawJson(body));
-        }
+    private static JsonNode post(RestClient client, String uri, Object body, int toleratedStatus) {
+        String requestJson = rawJson(body);
+        ProviderCallLog.logRequest(uri, requestJson);
+        long started = System.nanoTime();
         JsonNode node;
+        int httpStatus;
         try {
-            node = client.post().uri(uri).body(body).retrieve().body(JsonNode.class);
+            ResponseEntity<JsonNode> entity =
+                    client.post().uri(uri).body(body).retrieve().toEntity(JsonNode.class);
+            node = entity.getBody();
+            httpStatus = entity.getStatusCode().value();
         } catch (RestClientResponseException e) {
-            if (rawProvider != null) {
-                log.error("TEMP_PII_DEBUG provider={} endpoint={} httpStatus={} responsePayload={}",
-                        rawProvider, uri, e.getStatusCode().value(), e.getResponseBodyAsString());
+            int status = e.getStatusCode().value();
+            if (status == toleratedStatus) {
+                // An expected state, not a failure — still recorded, so the dashboard shows the poll.
+                record(uri, requestJson, e.getResponseBodyAsString(), status, started, null);
+                return null;
             }
-            // Keep the exception metadata safe/redacted even when temporary raw logging is enabled.
+            record(uri, requestJson, e.getResponseBodyAsString(), status, started,
+                    "HTTP " + status + " from " + uri);
+            // Keep the exception metadata safe/redacted; the unredacted copy lives in the audit row.
             SafeDiagnostic diagnostic = safeDiagnostic(e.getResponseBodyAsString());
             throw new VerificationException(
                     "HTTP " + e.getStatusCode().value() + " from " + uri, e,
                     e.getStatusCode().value(), uri, diagnostic.code(), diagnostic.detail());
+        } catch (RuntimeException transportFailure) {
+            // Read/connect timeouts and connection resets never reach the branch above — they used to
+            // leave no trace at all beyond a bare RestClientException in the stack.
+            record(uri, requestJson, null, null, started, transportFailure.toString());
+            throw transportFailure;
         }
         if (node == null) {
-            if (rawProvider != null) {
-                log.error("TEMP_PII_DEBUG provider={} endpoint={} responsePayload=<empty>",
-                        rawProvider, uri);
-            }
+            record(uri, requestJson, null, httpStatus, started, "Empty response body from " + uri);
             throw new VerificationException("Empty response body from " + uri);
         }
-        if (rawProvider != null) {
-            if (isProviderErrorEnvelope(node)) {
-                log.error("TEMP_PII_DEBUG provider={} endpoint={} responsePayload={}",
-                        rawProvider, uri, node);
-            } else {
-                log.warn("TEMP_PII_DEBUG provider={} endpoint={} responsePayload={}",
-                        rawProvider, uri, node);
-            }
-        }
+        // A 2xx carrying an error envelope is still a failed call as far as the audit trail cares.
+        record(uri, requestJson, node.toString(), httpStatus, started,
+                isProviderErrorEnvelope(node) ? "Provider reported an error envelope" : null);
         if ("error".equalsIgnoreCase(node.path("status").asText(""))) {
             throw new VerificationException("Provider reported error for " + uri);
         }
         return node;
+    }
+
+    /**
+     * Hand one finished call to the audit trail. {@code error} is {@code null} on success.
+     * Recording is best-effort inside {@link ProviderCallLog} and never throws.
+     */
+    private static void record(String uri, String requestJson, String responseJson,
+                               Integer httpStatus, long startedNanos, String error) {
+        long durationMs = (System.nanoTime() - startedNanos) / 1_000_000L;
+        ProviderCallLog.record(new ProviderCall(
+                ProviderCallCatalog.providerFor(uri), ProviderCallCatalog.operationFor(uri), uri,
+                requestJson, responseJson, httpStatus, durationMs,
+                error == null ? ProviderCall.SUCCESS : ProviderCall.FAILED, error));
     }
 
     private static boolean isProviderErrorEnvelope(JsonNode node) {

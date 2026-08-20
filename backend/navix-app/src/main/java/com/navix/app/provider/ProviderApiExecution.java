@@ -24,4 +24,11 @@ public class ProviderApiExecution extends BaseAuditEntity {
     @Column(name = "duration_ms", nullable = false) private Long durationMs;
     @Column(name = "application_id") private Long applicationId;
     @Column(name = "expires_at", nullable = false) private Instant expiresAt;
+    /** MANUAL = an admin workbench run; LIVE = a real borrower/staff verification call. */
+    @Column(nullable = false, length = 10) private String source;
+    @Column(length = 200) private String endpoint;
+    @Column(name = "http_status") private Integer httpStatus;
+    @Column(name = "check_type", length = 40) private String checkType;
+    /** The MDC requestId of the inbound request — joins this row to its CloudWatch access line. */
+    @Column(name = "request_id", length = 36) private String requestId;
 }

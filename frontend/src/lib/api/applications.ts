@@ -2439,10 +2439,23 @@ export const staffNotificationsApi = makeNotificationsApi("/api/staff/notificati
 
 export type ProviderApiField = { key: string; label: string; type: string; required: boolean };
 export type ProviderApiCatalogItem = { operation: string; providers: string[]; fields: ProviderApiField[] };
-export type ProviderApiExecution = { id: number; operation: string; provider: string; status: string; durationMs: number; request: Record<string, unknown>; response: unknown; error?: string | null; createdAt: string };
+export type ProviderApiExecution = { id: number; operation: string; provider: string; status: string; durationMs: number; request: Record<string, unknown>; response: unknown; error?: string | null; createdAt: string; source?: string | null; endpoint?: string | null; httpStatus?: number | null; checkType?: string | null; applicationId?: number | null; requestId?: string | null };
+/** A history row WITHOUT payloads — those come from `providerApi.detail` when a row is expanded. */
+export type ProviderApiExecutionSummary = { id: number; operation: string; provider: string; status: string; httpStatus?: number | null; durationMs: number; source?: string | null; endpoint?: string | null; checkType?: string | null; applicationId?: number | null; requestId?: string | null; error?: string | null; createdAt: string };
+export type ProviderApiHistoryPage = { rows: ProviderApiExecutionSummary[]; page: number; size: number; total: number };
+export type ProviderApiHistoryFilters = { provider?: string; operation?: string; status?: string; source?: string; applicationId?: string; from?: string; to?: string; page?: number; size?: number };
 export const providerApi = {
   catalog: () => bff<ProviderApiCatalogItem[]>("/api/staff/provider-apis/catalog", "GET"),
-  history: () => bff<ProviderApiExecution[]>("/api/staff/provider-apis/history", "GET"),
+  history: (filters: ProviderApiHistoryFilters = {}) => {
+    const query = new URLSearchParams();
+    // A blank filter must not be sent at all — the backend treats a present-but-empty value as a filter.
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") query.set(key, String(value));
+    });
+    const suffix = query.toString();
+    return bff<ProviderApiHistoryPage>(`/api/staff/provider-apis/history${suffix ? `?${suffix}` : ""}`, "GET");
+  },
+  detail: (id: number) => bff<ProviderApiExecution>(`/api/staff/provider-apis/history/${id}`, "GET"),
   execute: (operation: string, provider: string, input: Record<string, unknown>) =>
     bff<ProviderApiExecution>("/api/staff/provider-apis/execute", "POST", { operation, provider, input }),
 };

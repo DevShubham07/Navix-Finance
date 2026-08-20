@@ -3,6 +3,7 @@ package com.navix.verification.client;
 import static com.navix.verification.support.ProviderJson.bool;
 import static com.navix.verification.support.ProviderJson.dbl;
 import static com.navix.verification.support.ProviderJson.post;
+import static com.navix.verification.support.ProviderJson.postTolerating;
 import static com.navix.verification.support.ProviderJson.text;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -11,12 +12,10 @@ import com.navix.verification.dto.SignzyDtos.LivenessCreateUrlRequest;
 import com.navix.verification.dto.SignzyDtos.LivenessGetDataRequest;
 import com.navix.verification.dto.SignzyDtos.LivenessResult;
 import com.navix.verification.dto.SignzyDtos.LivenessSession;
-import com.navix.verification.exception.VerificationException;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Signzy Liveness Secure — a two-step async passive-liveness (+ optional face-match) flow:
@@ -54,18 +53,9 @@ public class SignzyLivenessClient {
      * normal in-progress state, so it maps to {@link LivenessResult#pending} rather than an error.
      */
     public LivenessResult getData(String token) {
-        JsonNode root;
-        try {
-            root = signzy.post().uri(GET_DATA).body(new LivenessGetDataRequest(token))
-                    .retrieve().body(JsonNode.class);
-        } catch (RestClientResponseException e) {
-            if (e.getStatusCode().value() == 404) {
-                return LivenessResult.pending(token);
-            }
-            throw new VerificationException("HTTP " + e.getStatusCode().value() + " from " + GET_DATA, e);
-        }
+        JsonNode root = postTolerating(signzy, GET_DATA, new LivenessGetDataRequest(token), 404);
         if (root == null) {
-            throw new VerificationException("Empty response body from " + GET_DATA);
+            return LivenessResult.pending(token);
         }
         JsonNode result = root.path("result");
         return new LivenessResult(

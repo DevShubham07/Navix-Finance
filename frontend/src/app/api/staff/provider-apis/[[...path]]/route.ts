@@ -12,3 +12,9 @@ async function handle(req: NextRequest, ctx: Ctx) {
 }
 export const GET = handle;
 export const POST = handle;
+
+/**
+ * Verification calls fan out to Signzy/Digitap; the bureau step alone chains three provider calls and
+ * can legitimately run past 100s. This is a ceiling, not a delay — fast routes are unaffected.
+ */
+export const maxDuration = 120;

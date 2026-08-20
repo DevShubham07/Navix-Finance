@@ -3,7 +3,7 @@ package com.navix.verification.client;
 import static com.navix.verification.support.ProviderJson.bool;
 import static com.navix.verification.support.ProviderJson.dbl;
 import static com.navix.verification.support.ProviderJson.integer;
-import static com.navix.verification.support.ProviderJson.postWithRawDiagnostics;
+import static com.navix.verification.support.ProviderJson.post;
 import static com.navix.verification.support.ProviderJson.ref;
 import static com.navix.verification.support.ProviderJson.text;
 import static com.navix.verification.support.ProviderJson.trimmed;
@@ -63,7 +63,7 @@ public class DigitapUanAdvancedClient {
                 ref(clientRef), blankToNull(pan), blankToNull(mobile), blankToNull(dob),
                 blankToNull(employeeName), employer);
 
-        JsonNode root = postWithRawDiagnostics(digitapSvc, ENDPOINT, request, "digitap-uan-advanced");
+        JsonNode root = post(digitapSvc, ENDPOINT, request);
         Integer resultCode = integer(root.path("result_code"));
         String txnId = text(root.path("request_id"));
 

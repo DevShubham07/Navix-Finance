@@ -314,8 +314,9 @@ class SignzyClientsTest {
         assertThatThrownBy(() -> client.verify("ABCPE1234Z"))
                 .isInstanceOf(VerificationException.class);
         assertThat(output).contains(
-                "TEMP_PII_DEBUG",
-                "provider=signzy-pan",
+                "PROVIDER_CALL",
+                "provider=SIGNZY",
+                "operation=PAN",
                 "requestPayload={\"panNumber\":\"ABCPE1234Z\",\"maskedName\":\"false\"}",
                 "responsePayload={\"error\":{\"message\":\"PAN ABCPE1234Z is not entitled\"}}");
         b.server().verify();

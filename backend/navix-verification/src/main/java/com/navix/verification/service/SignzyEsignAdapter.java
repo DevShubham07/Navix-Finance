@@ -10,6 +10,8 @@ import com.navix.verification.dto.SignzyDtos.ContractSignaturePlacement;
 import com.navix.verification.dto.SignzyDtos.ContractSigner;
 import com.navix.verification.dto.SignzyDtos.EmudhraCustomization;
 import com.navix.verification.exception.VerificationException;
+import com.navix.verification.support.ProviderCall;
+import com.navix.verification.support.ProviderCallLog;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -45,6 +47,8 @@ public class SignzyEsignAdapter implements EsignPort {
     /** Aadhaar eSign with an OTP to the Aadhaar-registered mobile. */
     private static final String SIGNATURE_TYPE = "AADHAARESIGN-OTP";
     private static final String ESIGN_PROVIDER = "EMUDHRA";
+    /** Synthetic endpoint label for the signed-copy fetch, which has no fixed provider path. */
+    private static final String SIGNED_CONTRACT_DOWNLOAD = "/signzy/contract/signed-copy";
 
     private final SignzyContractClient client;
     private final EsignProperties props;
@@ -151,6 +155,9 @@ public class SignzyEsignAdapter implements EsignPort {
      * rather than stored as a link.
      */
     private static byte[] download(String url) {
+        // Audited like every other provider call, but by METADATA only: the response is a PDF, and a
+        // megabyte of base64 in the audit table would cost a lot and diagnose nothing.
+        long started = System.nanoTime();
         try {
             HttpResponse<byte[]> response = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(5))
@@ -161,17 +168,33 @@ public class SignzyEsignAdapter implements EsignPort {
                                     .GET()
                                     .build(),
                             HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() / 100 != 2) {
-                throw new VerificationException(
-                        "Signed contract fetch failed: HTTP " + response.statusCode());
+            int status = response.statusCode();
+            byte[] body = response.body();
+            if (status / 100 != 2) {
+                recordDownload(started, status, body == null ? 0 : body.length,
+                        "Signed contract fetch failed: HTTP " + status);
+                throw new VerificationException("Signed contract fetch failed: HTTP " + status);
             }
-            return response.body();
+            recordDownload(started, status, body == null ? 0 : body.length, null);
+            return body;
         } catch (IOException e) {
+            recordDownload(started, null, 0, e.toString());
             throw new VerificationException("Signed contract fetch failed", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            recordDownload(started, null, 0, e.toString());
             throw new VerificationException("Signed contract fetch interrupted", e);
         }
+    }
+
+    /** The persist URL is single-use and short-lived, so it is not worth storing — only the outcome is. */
+    private static void recordDownload(long startedNanos, Integer httpStatus, int bytes, String error) {
+        ProviderCallLog.record(new ProviderCall(
+                "SIGNZY", "ESIGN", SIGNED_CONTRACT_DOWNLOAD,
+                "{\"note\":\"signed contract download\"}",
+                "{\"bytes\":" + bytes + "}", httpStatus,
+                (System.nanoTime() - startedNanos) / 1_000_000L,
+                error == null ? ProviderCall.SUCCESS : ProviderCall.FAILED, error));
     }
 
     /**

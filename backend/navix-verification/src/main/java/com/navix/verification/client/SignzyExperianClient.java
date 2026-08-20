@@ -42,7 +42,7 @@ public class SignzyExperianClient {
     private final String fixturePath;
     private final String deviceIp;
 
-    public SignzyExperianClient(@Qualifier(VerificationClientConfig.SIGNZY_CLIENT) RestClient signzy,
+    public SignzyExperianClient(@Qualifier(VerificationClientConfig.SIGNZY_BUREAU_CLIENT) RestClient signzy,
                                 ObjectMapper objectMapper,
                                 @Value("${navix.bureau.fixture:}") String fixturePath,
                                 @Value("${navix.signzy.device-ip:3.109.169.131}") String deviceIp) {

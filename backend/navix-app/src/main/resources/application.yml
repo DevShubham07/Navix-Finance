@@ -99,6 +99,13 @@ navix:
   verification:
     # Ordered provider chain the router tries per capability (skips unsupported, falls back on failure).
     chain: ${NAVIX_VERIFICATION_CHAIN:signzy,digitap}
+    # Outbound provider HTTP timeouts (seconds). These must stay under the ALB idle timeout in front
+    # of the service: the bureau step chains Signzy Experian -> Signzy CRIF -> Digitap, so the worst
+    # case is signzy-bureau + signzy-bureau + bureau = 12 + 12 + 90 = 114s against a 120s ALB.
+    connect-timeout-seconds: ${NAVIX_VERIFICATION_CONNECT_TIMEOUT:5}
+    read-timeout-seconds: ${NAVIX_VERIFICATION_READ_TIMEOUT:30}
+    bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_BUREAU_READ_TIMEOUT:90}
+    signzy-bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_SIGNZY_BUREAU_READ_TIMEOUT:12}
   storage:
     # S3 bucket for documents/images (KYC, loan docs, payment & collections proofs).
     bucket: ${NAVIX_S3_BUCKET:navix-finance-documents-dev}

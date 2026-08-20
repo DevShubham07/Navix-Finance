@@ -3,6 +3,7 @@ package com.navix.verification.client;
 import static com.navix.verification.support.ProviderJson.bool;
 import static com.navix.verification.support.ProviderJson.integer;
 import static com.navix.verification.support.ProviderJson.post;
+import static com.navix.verification.support.ProviderJson.postTolerating;
 import static com.navix.verification.support.ProviderJson.text;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -11,11 +12,9 @@ import com.navix.verification.dto.SignzyDtos.ContractInitiateRequest;
 import com.navix.verification.dto.SignzyDtos.ContractInitiateResponse;
 import com.navix.verification.dto.SignzyDtos.ContractPullRequest;
 import com.navix.verification.dto.SignzyDtos.ContractPullResponse;
-import com.navix.verification.exception.VerificationException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Signzy Contract eSign — Aadhaar eSign (eMudhra) of the sanction letter, a two-step redirect flow:
@@ -62,18 +61,9 @@ public class SignzyContractClient {
      * so it maps to {@link ContractPullResponse#notFound} rather than an error.
      */
     public ContractPullResponse pullData(String contractId) {
-        JsonNode root;
-        try {
-            root = signzy.post().uri(PULL_DATA).body(new ContractPullRequest(contractId))
-                    .retrieve().body(JsonNode.class);
-        } catch (RestClientResponseException e) {
-            if (e.getStatusCode().value() == 404) {
-                return ContractPullResponse.notFound(contractId);
-            }
-            throw new VerificationException("HTTP " + e.getStatusCode().value() + " from " + PULL_DATA, e);
-        }
+        JsonNode root = postTolerating(signzy, PULL_DATA, new ContractPullRequest(contractId), 404);
         if (root == null) {
-            throw new VerificationException("Empty response body from " + PULL_DATA);
+            return ContractPullResponse.notFound(contractId);
         }
         JsonNode signer = root.path("signerdetail").path(0);
         return new ContractPullResponse(
