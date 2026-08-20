@@ -537,7 +537,7 @@ export function RemarksTab({ customerId }: { customerId: number }) {
 // Small presentational primitives
 // ---------------------------------------------------------------------------
 
-export function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded border border-line bg-white p-3">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{title}</div>

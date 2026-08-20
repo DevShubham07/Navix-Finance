@@ -5,6 +5,7 @@ import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.common.util.Masking;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
@@ -60,6 +61,8 @@ public class CustomerReviewService {
     private final VerificationInvalidationService verificationInvalidation;
     private final EligibilityService eligibilityService;
     private final ProfileChangeLogRepository changeLogRepository;
+    /** Changed-only writer — used for the onboarding-wizard slices (see {@link #saveProfile}). */
+    private final ProfileChangeLogger changeLogger;
 
     @Transactional
     public CustomerProfile saveProfile(Long appId, ProfileRequest req) {
@@ -91,34 +94,93 @@ public class CustomerReviewService {
         // the salary step, bank on the penny-drop step, …). Only overwrite a field when this request
         // actually provides it, so a later slice never wipes an earlier one — otherwise the profile
         // ends up holding only the last slice's fields (e.g. name/salary null on re-login).
+        //
+        // Each slice also LOGS the value it lands, but only when it actually changes
+        // (ProfileChangeLogger.logIfChanged). That one rule covers both cases we want on the staff
+        // activity timeline: null → value is the borrower's INITIAL data entry ("Entered PAN"), and
+        // value → other value is a mid-onboarding correction ("Updated PAN"), while a re-save of the
+        // same slice logs nothing — so the repeated partial saves never spam the timeline.
+        // PII: sensitive identifiers (PAN, salary account number, mobiles) are logged MASKED — the
+        // timeline is staff-visible and is not masked at render time.
         String fullName = trimToNull(req.fullName());
-        if (fullName != null) p.setFullName(fullName);
-        if (pan != null) p.setPan(pan);
-        if (mobile != null) p.setMobile(mobile);
-        if (req.dob() != null) p.setDob(req.dob());
+        if (fullName != null) {
+            log(customerId, appId, "fullName", p.getFullName(), fullName);
+            p.setFullName(fullName);
+        }
+        if (pan != null) {
+            log(customerId, appId, "pan", Masking.maskPan(p.getPan()), Masking.maskPan(pan));
+            p.setPan(pan);
+        }
+        if (mobile != null) {
+            log(customerId, appId, "mobile", Masking.maskPhone(p.getMobile()), Masking.maskPhone(mobile));
+            p.setMobile(mobile);
+        }
+        if (req.dob() != null) {
+            log(customerId, appId, "dob", str(p.getDob()), req.dob().toString());
+            p.setDob(req.dob());
+        }
         String address = trimToNull(req.address());
-        if (address != null) p.setAddress(address);
+        if (address != null) {
+            log(customerId, appId, "address", p.getAddress(), address);
+            p.setAddress(address);
+        }
         String employer = trimToNull(req.employer());
-        if (employer != null) p.setEmployer(employer);
+        if (employer != null) {
+            log(customerId, appId, "employer", p.getEmployer(), employer);
+            p.setEmployer(employer);
+        }
         String employmentStatus = trimToNull(req.employmentStatus());
-        if (employmentStatus != null) p.setEmploymentStatus(employmentStatus);
-        if (req.monthlySalaryPaise() != null) p.setMonthlySalaryPaise(req.monthlySalaryPaise());
+        if (employmentStatus != null) {
+            log(customerId, appId, "employmentStatus", p.getEmploymentStatus(), employmentStatus);
+            p.setEmploymentStatus(employmentStatus);
+        }
+        if (req.monthlySalaryPaise() != null) {
+            log(customerId, appId, "monthlySalaryPaise", str(p.getMonthlySalaryPaise()),
+                    req.monthlySalaryPaise().toString());
+            p.setMonthlySalaryPaise(req.monthlySalaryPaise());
+        }
         String salaryBank = trimToNull(req.salaryBank());
-        if (salaryBank != null) p.setSalaryBank(salaryBank);
+        if (salaryBank != null) {
+            log(customerId, appId, "salaryBank", p.getSalaryBank(), salaryBank);
+            p.setSalaryBank(salaryBank);
+        }
         String email = trimToNull(req.email());
-        if (email != null) p.setEmail(email);
+        if (email != null) {
+            log(customerId, appId, "email", p.getEmail(), email);
+            p.setEmail(email);
+        }
 
         // --- Phase 1 intake slices (V44) ---
         String officialEmail = trimToNull(req.officialEmail());
-        if (officialEmail != null) p.setOfficialEmail(officialEmail);
+        if (officialEmail != null) {
+            log(customerId, appId, "officialEmail", p.getOfficialEmail(), officialEmail);
+            p.setOfficialEmail(officialEmail);
+        }
         String accountNumber = trimToNull(req.salaryAccountNumber());
-        if (accountNumber != null) p.setSalaryAccountNumber(accountNumber);
+        if (accountNumber != null) {
+            log(customerId, appId, "salaryAccountNumber",
+                    Masking.maskAccount(p.getSalaryAccountNumber()), Masking.maskAccount(accountNumber));
+            p.setSalaryAccountNumber(accountNumber);
+        }
         String ifsc = trimToNull(req.salaryIfsc());
-        if (ifsc != null) p.setSalaryIfsc(ifsc.toUpperCase());
+        if (ifsc != null) {
+            log(customerId, appId, "salaryIfsc", p.getSalaryIfsc(), ifsc.toUpperCase());
+            p.setSalaryIfsc(ifsc.toUpperCase());
+        }
         String accountMobile = normalizeMobile(req.salaryAccountMobile());
-        if (accountMobile != null) p.setSalaryAccountMobile(accountMobile);
-        if (req.annualSalaryPaise() != null) p.setAnnualSalaryPaise(req.annualSalaryPaise());
+        if (accountMobile != null) {
+            log(customerId, appId, "salaryAccountMobile",
+                    Masking.maskPhone(p.getSalaryAccountMobile()), Masking.maskPhone(accountMobile));
+            p.setSalaryAccountMobile(accountMobile);
+        }
+        if (req.annualSalaryPaise() != null) {
+            log(customerId, appId, "annualSalaryPaise", str(p.getAnnualSalaryPaise()),
+                    req.annualSalaryPaise().toString());
+            p.setAnnualSalaryPaise(req.annualSalaryPaise());
+        }
         if (req.previousSalaryDate() != null) {
+            log(customerId, appId, "previousSalaryDate", str(p.getPreviousSalaryDate()),
+                    req.previousSalaryDate().toString());
             p.setPreviousSalaryDate(req.previousSalaryDate());
             // The recurring salary day drives the salary-linked due date; the borrower gives us the
             // date they were last paid, so derive it here rather than asking twice.
@@ -128,13 +190,31 @@ public class CustomerReviewService {
         // Consent timestamps are stamped server-side — the client sends only the version / the tick.
         String termsVersion = trimToNull(req.termsVersion());
         if (termsVersion != null) {
+            log(customerId, appId, "termsVersion", p.getTermsVersion(), termsVersion);
             p.setTermsVersion(termsVersion);
             p.setTermsAcceptedAt(Instant.now());
         }
         if (Boolean.TRUE.equals(req.pepDeclared())) {
+            log(customerId, appId, "pepDeclared",
+                    p.getPepDeclaredAt() != null ? "true" : null, "true");
             p.setPepDeclaredAt(Instant.now());
         }
         return profileRepository.save(p);
+    }
+
+    /**
+     * Log an onboarding-wizard slice value to the audited change log, ONLY when it differs from what
+     * the profile already holds. Field names are stable camelCase and intentionally match what
+     * {@link #editOwnProfile} logs, so the same field reads consistently on the activity timeline
+     * regardless of which path wrote it.
+     */
+    private void log(Long customerId, Long appId, String field, String oldVal, String newVal) {
+        changeLogger.logIfChanged(customerId, appId, field, oldVal, newVal);
+    }
+
+    /** {@code toString()} or null — for logging non-String slice values (dates, paise amounts). */
+    private static String str(Object v) {
+        return v == null ? null : v.toString();
     }
 
     /**

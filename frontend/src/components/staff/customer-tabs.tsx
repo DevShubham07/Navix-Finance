@@ -13,6 +13,7 @@ import { type TabDef } from "@/components/ui/tabs";
 import { displayAnnualSalaryPaise, formatDate, formatDateTime } from "@/lib/utils";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
+import { formatRupees } from "@/components/staff/credit/tradeline-table";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
@@ -27,6 +28,7 @@ import {
 } from "@/components/staff/detail-parts";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
+import { stageOf, STAGE_LABELS } from "@/lib/domain/journey";
 import {
   customersApi,
   staffApi,
@@ -78,6 +80,9 @@ const TYPE_STYLE: Record<string, string> = {
   LIFECYCLE: "bg-navy-tint text-navy",
   PROFILE: "bg-gold-50 text-gold-dark",
   REVERIFY: "bg-warning-100 text-warning-800",
+  VERIFICATION: "bg-info-50 text-info-700",
+  REFERENCE: "bg-neutral-100 text-neutral-700",
+  UPLOAD: "bg-grey-200 text-navy",
   REMARK: "bg-grey-100 text-muted",
   CALL: "bg-success-50 text-success-700",
 };
@@ -139,7 +144,7 @@ export function CustomerTabBody({
           </div>
         );
       case "audit":
-        return <AuditLogsTab customerId={customerId} />;
+        return <AuditLogsTab customerId={customerId} apps={detail.applications} />;
       default:
         return null;
     }
@@ -532,6 +537,7 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
   });
   const bureau = (bureauQ.data ?? []).find((s) => s.checkType === "BUREAU");
   const bd = (bureau?.derived ?? {}) as Record<string, unknown>;
+  const totalBalance = typeof bd.totalBalance === "number" ? bd.totalBalance : null;
 
   return (
     <div className="space-y-4">
@@ -544,38 +550,29 @@ function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number 
           size="md"
         />
       </div>
+      {/* CreditProfileCard already carries the score/star/recommendation headline, the A/B/C facts
+          (incl. total/secured/unsecured balance), the tradeline + enquiry tables and the raw provider
+          dump — so the two tables that used to sit below it here just repeated those same numbers a
+          second and third time. What's left below is only what neither the gauge nor the card show:
+          risk category (a staff-only underwriting field, not part of the bureau brief), which bureau
+          answered, when the brief was generated, and the raw pre-brief verification-row diagnostics
+          (a different, earlier snapshot than the parsed `facts` — useful when the two disagree). */}
       {latestAppId != null && <CreditProfileCard applicationId={latestAppId} />}
-      <Section title="Credit headline">
+      <Section title="Underwriting & brief metadata">
         <StaffFieldTable rows={[
-          ["Bureau score", p?.creditScore != null ? String(p.creditScore) : null, "Customer profile"],
-          ["Star rating", p?.starRating != null ? `${p.starRating.toFixed(1)}★` : null, "Customer profile"],
-          ["Recommendation", p?.recommendation, "Customer profile"],
           ["Risk category", p?.riskCategory, "Customer profile"],
           ["Bureau", p?.bureauSource, "Customer profile"],
-          ["Credit brief summary", p?.creditBriefSummary, "Credit brief"],
           ["Credit brief generated", p?.creditBriefGeneratedAt ? formatDateTime(p.creditBriefGeneratedAt) : null, "Credit brief"],
         ]} />
       </Section>
       {latestAppId != null && (
-        <Section title="Bureau pull (derived)">
+        <Section title="Bureau pull (raw verification diagnostics)">
           <StaffFieldTable rows={[
             ["Source", str(bd.source), "Bureau provider"],
             ["No record", str(bd.noRecord), "Bureau provider"],
             ["Active accounts", str(bd.activeAccounts), "Bureau provider"],
             ["Overdue / defaults", str(bd.overdueAccounts), "Bureau provider"],
-            ["Total balance", str(bd.totalBalance), "Bureau provider"],
-          ]} />
-        </Section>
-      )}
-      {c.creditBrief?.facts && (
-        <Section title="Credit facts (customer record)">
-          <StaffFieldTable rows={[
-            ["Total accounts", String(c.creditBrief.facts.totalAccounts ?? "—"), "Credit brief"],
-            ["Active accounts", String(c.creditBrief.facts.activeAccounts ?? "—"), "Credit brief"],
-            ["Closed accounts", String(c.creditBrief.facts.closedAccounts ?? "—"), "Credit brief"],
-            ["Defaults", String(c.creditBrief.facts.defaults ?? "—"), "Credit brief"],
-            ["Total balance", c.creditBrief.facts.totalBalance != null ? `₹${c.creditBrief.facts.totalBalance.toLocaleString("en-IN")}` : "—", "Credit brief"],
-            ["Inquiries (30d)", String(c.creditBrief.facts.recentInquiries30d ?? "—"), "Credit brief"],
+            ["Total balance", formatRupees(totalBalance), "Bureau provider"],
           ]} />
         </Section>
       )}
@@ -869,7 +866,30 @@ function CallLogsTab({ customerId }: { customerId: number }) {
 // Audit logs
 // ---------------------------------------------------------------------------
 
-function AuditLogsTab({ customerId }: { customerId: number }) {
+interface ActivityGroup {
+  app: ApplicationView | null;
+  entries: ActivityEntry[];
+}
+
+/**
+ * Group the flat activity feed by loan application — one group per entry in `apps` (its existing
+ * newest-first order preserved), plus a trailing group for entries with no `applicationId`
+ * (remarks / calls / unattached profile edits). `items` already arrives newest-first from the
+ * backend, and filtering preserves that order within each group.
+ */
+function groupActivity(items: ActivityEntry[], apps: ApplicationView[]): ActivityGroup[] {
+  const groups: ActivityGroup[] = apps.map((app) => ({
+    app,
+    entries: items.filter((e) => e.applicationId === app.id),
+  }));
+  const unattached = items.filter((e) => e.applicationId == null);
+  if (unattached.length > 0) {
+    groups.push({ app: null, entries: unattached });
+  }
+  return groups;
+}
+
+function AuditLogsTab({ customerId, apps }: { customerId: number; apps: ApplicationView[] }) {
   const q = useQuery({
     queryKey: ["customer-activity", customerId],
     queryFn: () => customersApi.activity(customerId),
@@ -877,30 +897,71 @@ function AuditLogsTab({ customerId }: { customerId: number }) {
   if (q.isLoading) return <p className="text-sm text-muted">Loading…</p>;
   const items = q.data ?? [];
   if (items.length === 0) return <p className="text-sm text-muted">No activity recorded yet.</p>;
+  const groups = groupActivity(items, apps);
   return (
-    <ul className="space-y-2">
-      {items.map((e: ActivityEntry, i) => (
-        <li key={i} className="flex gap-3 border-b border-line pb-2 last:border-0">
-          <span
-            className={`mt-0.5 h-fit rounded-full px-1.5 py-0.5 text-[8px] font-semibold ${TYPE_STYLE[e.type] ?? "bg-grey-100 text-muted"}`}
-          >
-            {e.type}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="font-semibold text-ink">
-                {e.title}
-                {e.applicationId != null ? (
-                  <span className="font-normal text-muted"> · app #{e.applicationId}</span>
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <Section
+          key={group.app?.id ?? "unattached"}
+          title={
+            group.app ? (
+              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 normal-case tracking-normal">
+                <span className="font-semibold text-ink">
+                  #{group.app.id}
+                  {group.app.amountRequestedPaise != null
+                    ? ` · ${paiseToINR(group.app.amountRequestedPaise)}`
+                    : ""}
+                </span>
+                <span className="rounded-full bg-grey-100 px-2 py-0.5 text-[10px] font-semibold text-muted">
+                  {statusLabel(group.app.status)}
+                </span>
+                {group.app.status !== "REJECTED" && group.app.status !== "CANCELLED" ? (
+                  <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[10px] font-semibold text-navy">
+                    {STAGE_LABELS[stageOf(group.app.status).stage]}
+                  </span>
                 ) : null}
+                <span className="text-[10px] font-normal normal-case text-muted">
+                  Assigned to {group.app.assignedExecutiveName ?? "—"}
+                  {group.app.currentStageEnteredAt
+                    ? ` · in stage since ${formatDateTime(group.app.currentStageEnteredAt)}`
+                    : ""}
+                </span>
               </span>
-              <span className="text-[8.8px] text-muted">{e.at ? formatDateTime(e.at) : ""}</span>
-            </div>
-            {e.detail && <p className="break-words text-xs text-muted">{e.detail}</p>}
-            {e.actor && <p className="text-[8.8px] text-muted">by {e.actor}</p>}
-          </div>
-        </li>
+            ) : (
+              "Not tied to an application"
+            )
+          }
+        >
+          {group.entries.length === 0 ? (
+            <p className="text-sm text-muted">No activity recorded for this application yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {group.entries.map((e: ActivityEntry, i) => (
+                <li key={i} className="flex gap-3 border-b border-line pb-2 last:border-0">
+                  <span
+                    className={`mt-0.5 h-fit rounded-full px-1.5 py-0.5 text-[8px] font-semibold ${TYPE_STYLE[e.type] ?? "bg-grey-100 text-muted"}`}
+                  >
+                    {e.type}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="font-semibold text-ink">
+                        {e.title}
+                        {group.app == null && e.applicationId != null ? (
+                          <span className="font-normal text-muted"> · app #{e.applicationId}</span>
+                        ) : null}
+                      </span>
+                      <span className="text-[8.8px] text-muted">{e.at ? formatDateTime(e.at) : ""}</span>
+                    </div>
+                    {e.detail && <p className="break-words text-xs text-muted">{e.detail}</p>}
+                    {e.actor && <p className="text-[8.8px] text-muted">by {e.actor}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
       ))}
-    </ul>
+    </div>
   );
 }

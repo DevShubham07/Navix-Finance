@@ -55,6 +55,8 @@ class CustomerServiceTest {
     @Mock private CreditBriefService creditBriefService;
     @Mock private com.navix.loan.repository.ApplicationDocumentRepository documentRepository;
     @Mock private BureauStateService bureauStateService;
+    @Mock private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
+    @Mock private com.navix.loan.repository.ApplicationReferenceRepository referenceRepository;
 
     private CustomerService service;
 
@@ -63,7 +65,8 @@ class CustomerServiceTest {
         service = new CustomerService(applicationRepository, loanRepository, profileRepository,
                 paymentRepository, repaymentService, changeLogRepository,
                 applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
-                staffDirectory, risk, jdbc, creditBriefService, documentRepository, bureauStateService);
+                staffDirectory, risk, jdbc, creditBriefService, documentRepository, bureauStateService,
+                verificationRepository, referenceRepository);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
     }
 

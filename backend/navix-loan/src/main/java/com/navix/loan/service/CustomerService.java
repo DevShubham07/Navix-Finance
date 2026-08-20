@@ -26,6 +26,8 @@ import com.navix.loan.dto.ReviewDtos.DocumentView;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationEvent;
+import com.navix.loan.entity.ApplicationReference;
+import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.CustomerCallLog;
 import com.navix.loan.entity.CustomerOwner;
 import com.navix.loan.entity.CustomerProfile;
@@ -36,6 +38,8 @@ import com.navix.loan.entity.Payment;
 import com.navix.loan.entity.ProfileChangeLog;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
+import com.navix.loan.repository.ApplicationReferenceRepository;
+import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.CustomerCallLogRepository;
 import com.navix.loan.repository.CustomerOwnerRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
@@ -95,6 +99,8 @@ public class CustomerService {
     private final CreditBriefService creditBriefService;
     private final ApplicationDocumentRepository documentRepository;
     private final BureauStateService bureauStateService;
+    private final ApplicationVerificationRepository verificationRepository;
+    private final ApplicationReferenceRepository referenceRepository;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -614,7 +620,8 @@ public class CustomerService {
     /**
      * Unified customer activity timeline (newest first): every lifecycle transition + KYC re-verify
      * (from {@code application_event} across the customer's applications), every profile/salary edit
-     * (from {@code profile_change_log}), every staff remark, and every call log — merged and sorted
+     * (from {@code profile_change_log}), every uploaded document (from {@code application_document},
+     * metadata only), every staff remark, and every call log — merged and sorted
      * by timestamp. Backs the "Audit Logs" tab of the customer detail.
      */
     @Transactional(readOnly = true)
@@ -623,8 +630,10 @@ public class CustomerService {
         requireVisible(customerId);
         List<ActivityEntry> out = new ArrayList<>();
 
-        // 1. Lifecycle + re-verify events across every application this customer owns.
-        for (LoanApplication a : applicationRepository.findByCustomerId(customerId)) {
+        // 1. Lifecycle + re-verify events, verification steps, and reference contacts across every
+        //    application this customer owns.
+        List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
+        for (LoanApplication a : apps) {
             for (ApplicationEvent e : applicationEventRepository.findByApplicationIdOrderByAtAsc(a.getId())) {
                 boolean reverify = "REVERIFY".equals(e.getAction());
                 String from = e.getFromStatus() != null ? e.getFromStatus().name() : null;
@@ -641,16 +650,85 @@ public class CustomerService {
                         e.getActorRole(),
                         e.getAt()));
             }
+
+            // 1a. Verification steps (PAN/EMAIL/ADDRESS/DIGILOCKER/AADHAAR/BUREAU/SALARY/PENNY_DROP/
+            //     SELFIE/AGREEMENT) — no checkType allowlist, every row falls out via humanize().
+            for (ApplicationVerification v : verificationRepository.findByApplicationIdOrderByIdAsc(a.getId())) {
+                List<String> parts = new ArrayList<>();
+                if (v.getStatus() != null) {
+                    parts.add(v.getStatus());
+                }
+                if (v.getProvider() != null) {
+                    parts.add(v.getProvider());
+                }
+                if (v.getNameMatch() != null) {
+                    parts.add("name match " + Math.round(v.getNameMatch() * 100) + "%");
+                }
+                if (v.getScore() != null) {
+                    parts.add("score " + v.getScore());
+                }
+                if (v.getMessage() != null && !v.getMessage().isBlank()) {
+                    parts.add(v.getMessage());
+                }
+                out.add(new ActivityEntry(
+                        "VERIFICATION",
+                        a.getId(),
+                        humanize(v.getCheckType()) + " check",
+                        parts.isEmpty() ? null : String.join(" · ", parts),
+                        v.getCreatedBy(),
+                        v.getUpdatedAt() != null ? v.getUpdatedAt() : v.getCreatedAt()));
+            }
+
+            // 1b. The two reference contacts named on the Phase-3 references screen.
+            for (ApplicationReference r : referenceRepository.findByApplicationIdOrderBySlotAsc(a.getId())) {
+                out.add(new ActivityEntry(
+                        "REFERENCE",
+                        a.getId(),
+                        "Reference " + r.getSlot(),
+                        r.getFullName() + " · " + r.getMobile() + " · " + humanize(r.getRelation()),
+                        r.getCreatedBy(),
+                        r.getUpdatedAt() != null ? r.getUpdatedAt() : r.getCreatedAt()));
+            }
         }
 
-        // 2. Profile / salary edits (carry the new value + who + when).
+        // 1c. Document uploads across every application — one batch query (same aggregation the
+        //     Documents tab uses), never a per-application loop. Deliberately metadata only: the S3
+        //     object key, any presigned URL and the borrower's file password are sensitive and must
+        //     not leak into this staff-visible read-only feed.
+        if (!apps.isEmpty()) {
+            List<Long> appIds = apps.stream().map(LoanApplication::getId).toList();
+            for (ApplicationDocument d : documentRepository
+                    .findByApplicationIdInOrderByApplicationIdDescIdAsc(appIds)) {
+                List<String> parts = new ArrayList<>();
+                if (d.getFileName() != null && !d.getFileName().isBlank()) {
+                    parts.add(d.getFileName());
+                }
+                if (d.getContentType() != null && !d.getContentType().isBlank()) {
+                    parts.add(d.getContentType());
+                }
+                if (d.getSizeBytes() != null) {
+                    parts.add(d.getSizeBytes() + " bytes");
+                }
+                out.add(new ActivityEntry(
+                        "UPLOAD",
+                        d.getApplicationId(),
+                        humanize(d.getDocType()) + " uploaded",
+                        parts.isEmpty() ? null : String.join(" · ", parts),
+                        d.getCreatedBy(),
+                        d.getUpdatedAt() != null ? d.getUpdatedAt() : d.getCreatedAt()));
+            }
+        }
+
+        // 2. Profile / salary edits (carry the new value + who + when). A null old value is an
+        //    initial entry (the borrower first typing the field in onboarding), not an edit.
         for (ProfileChangeLog c : changeLogRepository.findByCustomerIdOrderByIdDesc(customerId)) {
+            boolean initial = c.getOldValue() == null;
+            String newVal = c.getNewValue() != null ? c.getNewValue() : "—";
             out.add(new ActivityEntry(
                     "PROFILE",
                     c.getApplicationId(),
-                    "Updated " + humanize(c.getField()),
-                    (c.getOldValue() != null ? c.getOldValue() : "—") + " → "
-                            + (c.getNewValue() != null ? c.getNewValue() : "—"),
+                    (initial ? "Entered " : "Updated ") + humanize(c.getField()),
+                    initial ? newVal : c.getOldValue() + " → " + newVal,
                     c.getCreatedBy(),
                     c.getCreatedAt()));
         }

@@ -58,13 +58,15 @@ class CustomerReviewServiceTest {
     private EligibilityService eligibilityService;
     @Mock
     private com.navix.loan.repository.ProfileChangeLogRepository changeLogRepository;
+    @Mock
+    private ProfileChangeLogger changeLogger;
 
     private CustomerReviewService service;
 
     @BeforeEach
     void setUp() {
         service = new CustomerReviewService(applicationRepository, profileRepository, documentRepository,
-                storage, verificationInvalidation, eligibilityService, changeLogRepository);
+                storage, verificationInvalidation, eligibilityService, changeLogRepository, changeLogger);
         ActorContext.set(BORROWER);
     }
 

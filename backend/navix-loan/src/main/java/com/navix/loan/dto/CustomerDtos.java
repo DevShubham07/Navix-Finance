@@ -132,10 +132,12 @@ public final class CustomerDtos {
     /**
      * One entry in the unified customer activity timeline — merges lifecycle transitions
      * ({@code application_event}), profile/salary edits ({@code profile_change_log}), KYC re-verify
-     * events, staff remarks, and call logs into a single chronological feed (newest first).
+     * events, verification steps ({@code application_verification}), reference contacts
+     * ({@code application_reference}), staff remarks, and call logs into a single chronological
+     * feed (newest first).
      */
     public record ActivityEntry(
-            String type,          // LIFECYCLE | PROFILE | REVERIFY | REMARK | CALL
+            String type,          // LIFECYCLE | PROFILE | REVERIFY | VERIFICATION | REFERENCE | REMARK | CALL
             Long applicationId,
             String title,         // human-readable headline
             String detail,        // secondary line (old→new, notes, from→to)

@@ -562,6 +562,88 @@ export interface CustomerDetail {
   creditBrief?: CreditBriefView | null;
 }
 
+/**
+ * One bureau tradeline (a single reported credit account/loan). All amounts are RUPEES (the bureau's
+ * native unit) — do NOT run them through `paiseToINR`, format like the existing rupee fields on
+ * {@link CreditBriefFacts} (`totalBalance`/`securedBalance`). `currentBalanceRupees` may legitimately
+ * be negative (a handful of real tradelines report this) — never clamp it to 0.
+ */
+export interface Tradeline {
+  lender: string | null;
+  accountNumberMasked: string | null;
+  accountTypeCode: string | null;
+  portfolioTypeCode: string | null;
+  accountStatusCode: string | null;
+  /** YYYY-MM-DD, may be null. */
+  openedOn: string | null;
+  /** YYYY-MM-DD, may be null. */
+  closedOn: string | null;
+  currentBalanceRupees: number | null;
+  amountPastDueRupees: number | null;
+  creditLimitRupees: number | null;
+  settlementAmountRupees: number | null;
+  /**
+   * Either exactly 36 characters (one per month, newest first) or the single character `"N"` meaning
+   * the bureau reported no payment-history string at all for this account. A 36-char string is NOT a
+   * "no data" signal — only the bare `"N"` is. See `credit/payment-history-strip.tsx` for the decode.
+   */
+  paymentHistory: string | null;
+  writtenOffSettledStatus: string | null;
+  /**
+   * Worst DPD ever recorded for this account. Real long-default reads run 900-999 (900 occurs 981
+   * times in production) — this is NOT a sentinel/placeholder to be hidden, it means "in default
+   * 900+ days". Render distinctly, never as a bare huge number.
+   */
+  worstDpdMonths: number | null;
+}
+
+/** One bureau enquiry (a lender's credit-report pull). Amounts are rupees. */
+export interface Enquiry {
+  /** YYYY-MM-DD, may be null. */
+  requestedOn: string | null;
+  subscriber: string | null;
+  reasonCode: string | null;
+  amountFinancedRupees: number | null;
+  durationMonths: number | null;
+}
+
+/** Delinquency aggregates parsed from the full report. Every field is `number|null` — null means the
+ *  bureau data could not tell us, and must NEVER be rendered as 0 (that reads as "clean"). */
+export interface DelinquencySummary {
+  worstDpd12m: number | null;
+  worstDpd24m: number | null;
+  worstDpd36m: number | null;
+  accountsEver30Plus: number | null;
+  accountsCurrentlyPastDue: number | null;
+  accountsWrittenOffOrSettled: number | null;
+  /** YYYY-MM-DD, may be null. */
+  oldestAccountOpenedOn: string | null;
+}
+
+/** How many enquiries landed in each trailing window. Every field is `number|null` (absent ≠ 0). */
+export interface EnquiryVelocity {
+  last7: number | null;
+  last30: number | null;
+  last90: number | null;
+  last180: number | null;
+}
+
+/**
+ * The full parsed report detail — tradelines, enquiries, and derived aggregates — behind the twelve
+ * curated {@link CreditBriefFacts} scalars. `null` on any brief generated before this was parsed
+ * (no backfill ran); callers must render exactly what they rendered pre-`detail`, no empty tables.
+ */
+export interface CreditBriefDetail {
+  /** Capped at 1000 rows for display; may be fewer than the true report count — see `tradelineCount`. */
+  tradelines: Tradeline[];
+  /** The TRUE tradeline count in the report. May exceed `tradelines.length` when the report is huge
+   *  (files run 15 → 543+); a table showing fewer than this MUST say "showing X of N". */
+  tradelineCount: number | null;
+  enquiries: Enquiry[];
+  delinquency: DelinquencySummary | null;
+  enquiryVelocity: EnquiryVelocity | null;
+}
+
 /** Parsed bureau facts behind the credit brief (Categories A/B/C). Amounts are rupees (bureau unit). */
 export interface CreditBriefFacts {
   name: string | null;
@@ -579,6 +661,8 @@ export interface CreditBriefFacts {
   securedBalance: number | null;
   unsecuredBalance: number | null;
   recentInquiries30d: number | null;
+  /** Tradelines/enquiries/aggregates behind the twelve scalars above. Null on older, un-backfilled briefs. */
+  detail?: CreditBriefDetail | null;
 }
 
 /** Whether the bureau pull ran for an application, and what it found (mirrors backend BureauState). */
@@ -628,7 +712,15 @@ export interface ProfileChangeView {
 }
 
 /** One entry in the unified customer activity timeline — mirrors backend ActivityEntry. */
-export type ActivityType = "LIFECYCLE" | "PROFILE" | "REVERIFY" | "REMARK" | "CALL";
+export type ActivityType =
+  | "LIFECYCLE"
+  | "PROFILE"
+  | "REVERIFY"
+  | "VERIFICATION"
+  | "REFERENCE"
+  | "UPLOAD"
+  | "REMARK"
+  | "CALL";
 export interface ActivityEntry {
   type: ActivityType;
   applicationId: number | null;
@@ -1324,6 +1416,10 @@ export const staffApi = {
 
   disbursementDecision: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/disbursement-decision`, "POST", { decision, txnRef, notes }),
+
+  /** ADMIN-only: force a SANCTIONED application straight to DISBURSEMENT_PENDING. Requires a signed agreement + a reason note. */
+  forceDisbursementPending: (id: number, notes: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/force-disbursement-pending`, "POST", { notes }),
 
   /** Cancel a pre-disbursement application (staff/admin). Backend rejects once past disbursement. */
   cancel: (id: number, notes?: string) =>
