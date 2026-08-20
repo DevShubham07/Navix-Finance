@@ -363,6 +363,12 @@ public class ApplicationController {
                 flow.disbursementDecision(id, req.decision(), req.txnRef(), req.notes())));
     }
 
+    /** ADMIN-only: force a SANCTIONED application straight to DISBURSEMENT_PENDING (see javadoc on the service method). */
+    @PostMapping("/{id}/force-disbursement-pending")
+    public ApiResponse<ApplicationView> forceDisbursementPending(@PathVariable Long id, @RequestBody DecisionRequest req) {
+        return ApiResponse.ok(ApplicationView.of(flow.adminForceDisbursementPending(id, req.notes())));
+    }
+
     // No accountant-validate endpoint: the Disbursement Head's transaction id IS the validation
     // (V48). The Accountant's remaining money work is repayment verification and collections
     // payments, both under /api/loan and /api/collections.

@@ -4,11 +4,11 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice, errMessage, AdminForceDisbursementAction } from "@/components/staff/live-pipeline";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import {
@@ -36,6 +36,7 @@ export default function CustomerDetailPage() {
 
   const c = q.data;
   const currentLoan = c?.loans.find((l) => OPEN_LOAN.has(l.status)) ?? null;
+  const sanctionedApp = c?.applications.find((a) => a.status === "SANCTIONED") ?? null;
 
   return (
     <div>
@@ -76,6 +77,11 @@ export default function CustomerDetailPage() {
                 />
               </Card>
               <PermissionGate permission="customer:manage">
+                {sanctionedApp && (
+                  <Card title="Force to disbursement (admin)" icon={<Send size={16} />}>
+                    <AdminForceDisbursementAction app={sanctionedApp} />
+                  </Card>
+                )}
                 <AdminEditCard detail={c} onSaved={invalidate} />
                 <BlocklistCard customerId={id} />
                 <DeleteCustomerCard

@@ -65,6 +65,7 @@ import {
   AssignActions,
   CreditDecisionActions,
   DisbursementActions,
+  AdminForceDisbursementAction,
   NoAccessNotice,
 } from "@/components/staff/live-pipeline";
 
@@ -107,6 +108,10 @@ function actionFor(app: ApplicationView): React.ReactNode {
       return <AssignActions app={app} />;
     case "CREDIT_EXEC_PENDING":
       return <CreditDecisionActions app={app} />;
+    case "SANCTIONED":
+      // ADMIN-only escape hatch — normally this stage waits on the borrower's own offer
+      // journey (accept-offer), so every other role sees "Not your step" here.
+      return <AdminForceDisbursementAction app={app} />;
     case "DISBURSEMENT_PENDING":
     case "DISBURSEMENT_FAILED":
       return <DisbursementActions app={app} />;

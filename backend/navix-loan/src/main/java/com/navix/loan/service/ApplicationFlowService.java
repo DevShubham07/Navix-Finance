@@ -593,6 +593,50 @@ public class ApplicationFlowService {
         return applicationRepository.save(app);
     }
 
+    /**
+     * ADMIN-only escape hatch: force a SANCTIONED application straight to DISBURSEMENT_PENDING
+     * without waiting on the borrower's own offer-acceptance journey — for a borrower who has
+     * already signed their agreement but is stuck elsewhere in that journey. Gated on a
+     * <b>terminal PASS</b> {@code ESIGN} row (stricter than {@link #acceptOffer}'s presence check,
+     * since this bypasses the borrower's own confirmation) and a mandatory audit note.
+     *
+     * @throws BusinessException {@code FORBIDDEN_ROLE} for a non-ADMIN actor, {@code NOT_APPLICABLE}
+     *     when the application isn't SANCTIONED, {@code AGREEMENT_NOT_SIGNED} when the ESIGN row
+     *     isn't PASS, {@code NOTE_REQUIRED} when no reason is supplied
+     */
+    @Transactional
+    public LoanApplication adminForceDisbursementPending(Long appId, String notes) {
+        requireAdminOnly("Forcing an application to disbursement");
+        LoanApplication app = require(appId);
+        if (app.getStatus() != ApplicationStatus.SANCTIONED) {
+            throw new BusinessException("NOT_APPLICABLE", "This application isn't sanctioned");
+        }
+        boolean signed = verificationRepository
+                .findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
+                .isPresent();
+        if (!signed) {
+            throw new BusinessException("AGREEMENT_NOT_SIGNED", "The borrower hasn't signed their agreement yet");
+        }
+        if (notes == null || notes.isBlank()) {
+            throw new BusinessException("NOTE_REQUIRED", "A reason is required to force this transition");
+        }
+        transition(app, ApplicationStatus.DISBURSEMENT_PENDING, "ADMIN_FORCE_DISBURSE",
+                "Forced by " + ActorContext.get().name() + " — " + notes.trim());
+        return applicationRepository.save(app);
+    }
+
+    /**
+     * Who may force a SANCTIONED file to disbursement: ADMIN only — unlike {@link #requireRole} /
+     * {@link #requireAnyRole}, ADMIN is not an addition to another named role here, it is the only
+     * one allowed.
+     */
+    private void requireAdminOnly(String action) {
+        if (!"ADMIN".equals(ActorContext.get().role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", action + " requires the ADMIN role");
+        }
+    }
+
     // ---- disbursement (W3) ---------------------------------------------------------
 
     /**

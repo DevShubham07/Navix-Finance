@@ -12,7 +12,7 @@
 
 import * as React from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Check, X, Loader2 } from "lucide-react";
+import { Check, X, Loader2, Zap } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { hasPermission, type Permission } from "@/lib/auth/rbac";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
@@ -428,6 +428,94 @@ export function DisbursementActions({ app, compact }: { app: ApplicationView; co
       onApprove={(proof) => m.mutate({ decision: true, txnRef: proof || undefined, notes: proof ? `Txn/ref: ${proof}` : undefined })}
       onReject={(proof) => m.mutate({ decision: false, notes: proof })}
     />
+  );
+}
+
+/**
+ * ADMIN-only escape hatch on a SANCTIONED file: force it straight to Disbursement Pending
+ * without waiting on the borrower's own offer-acceptance journey (amount → eSign → disbursal
+ * account). Meant for a borrower who has already signed their agreement but is stuck elsewhere
+ * in that journey — the backend re-enforces the same PASS-ESIGN gate this button reads, so this
+ * is a convenience, not the real authority check.
+ *
+ * The button stays disabled (with an explanatory tooltip) until the ESIGN verification row
+ * reads PASS — read off the same `staff-verifications` query the KYC focus card uses, never a
+ * boolean invented client-side. Confirming requires a non-empty reason, which the backend also
+ * requires and folds into the `application_event` audit note.
+ */
+export function AdminForceDisbursementAction({ app }: { app: ApplicationView }) {
+  const refresh = useRefreshAfterAction();
+  const checksQ = useQuery({
+    queryKey: ["staff-verifications", app.id],
+    queryFn: () => staffApi.verifications(app.id),
+  });
+  const signed = (checksQ.data ?? []).some((s) => s.checkType === "ESIGN" && s.status === "PASS");
+
+  const [open, setOpen] = React.useState(false);
+  const [notes, setNotes] = React.useState("");
+
+  const m = useMutation({
+    mutationFn: () => staffApi.forceDisbursementPending(app.id, notes.trim()),
+    onSuccess: () => {
+      refresh(app.id);
+      setOpen(false);
+      setNotes("");
+    },
+  });
+
+  return (
+    <ActionGate permission="customer:manage">
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-muted">
+          Skips the borrower&apos;s offer-acceptance step — only enabled once the agreement is signed.
+        </p>
+        {!open ? (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            disabled={!signed}
+            title={
+              signed
+                ? "Force this application straight to Disbursement Pending"
+                : "The borrower hasn't signed their agreement (e-sign) yet — this action is only available once it's signed."
+            }
+            className="btn btn-sm btn-gold disabled:opacity-50"
+          >
+            <Zap size={14} /> Force to disbursement
+          </button>
+        ) : (
+          <div className="max-w-md space-y-2 rounded border border-line bg-grey-50 p-3">
+            <p className="text-xs text-muted">
+              Force this application directly to Disbursement Pending, skipping the borrower&apos;s
+              normal offer-acceptance step. Use only when the borrower has already signed their
+              agreement but is stuck elsewhere in the journey. This action is logged.
+            </p>
+            <textarea
+              aria-label="Reason for forcing this transition"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Why you're forcing this (required, goes in the audit trail)"
+              rows={2}
+              className="w-full rounded border border-line px-2 py-1.5 text-sm"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => m.mutate()}
+                disabled={m.isPending || !notes.trim()}
+                className="btn btn-sm btn-navy disabled:opacity-50"
+              >
+                {m.isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Confirm
+              </button>
+              <button type="button" onClick={() => setOpen(false)} disabled={m.isPending} className="btn btn-sm btn-outline">
+                Cancel
+              </button>
+            </div>
+            <ActionError error={m.error} />
+          </div>
+        )}
+      </div>
+    </ActionGate>
   );
 }
 
