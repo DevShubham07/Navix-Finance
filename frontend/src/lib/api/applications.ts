@@ -1361,12 +1361,19 @@ export const staffApi = {
   /** Staff manual override of a verification step (KYC approver / admin): PASS or FAIL with a note. */
   manualVerificationDecision: (id: number, checkType: string, decision: boolean, notes?: string) =>
     bff<StepResult>(`${STAFF_BASE}/${id}/verifications/${checkType}/decision`, "POST", { decision, notes }),
+  /**
+   * A retry has to outlast the check it is re-running. A BUREAU retry is a CHAIN of provider calls
+   * (Signzy Experian -> Signzy CRIF -> Digitap Credit) whose server-side budget is 12 + 12 + 90 =
+   * 114s. This race only stops the UI waiting — it does not abort the request — so a 30s limit did
+   * not save any work, it just reported "timed out" on calls that were still running and would go on
+   * to succeed. 120s sits above the server budget and matches the maxDuration on the staff BFF route.
+   */
   retryVerification: async (id: number, checkType: string, input: Record<string, unknown>) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
         bff<StepResult>(`${STAFF_BASE}/${id}/verifications/${checkType}/retry`, "POST", input),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Verification retry timed out after 30 seconds.")), 30_000); }),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Verification retry timed out after 120 seconds.")), 120_000); }),
       ]);
     } finally { if (timer) clearTimeout(timer); }
   },

@@ -194,7 +194,7 @@ function RetryDialog({ applicationId, step, onClose }: { applicationId: number; 
   });
   return <Dialog open onClose={onClose} className="!max-w-md" aria-labelledby="retry-api-title">
     <h3 id="retry-api-title" className="font-serif text-lg text-navy">Retry {humanizeCheck(step.checkType)}</h3>
-    <p className="mt-1 text-sm text-muted">Saved customer details are used where available. Add only the fields required for this retry. Timeout: 30 seconds.</p>
+    <p className="mt-1 text-sm text-muted">Saved customer details are used where available. Add only the fields required for this retry. Timeout: 120 seconds.</p>
     <div className="mt-4 space-y-3">
       {fields.length === 0 ? <p className="text-sm text-muted">No extra information is needed.</p> : fields.map((field) => (
         <label key={field.key} className="block text-xs font-semibold text-navy">
