@@ -43,6 +43,18 @@ describe("segmentOf", () => {
   it("SANCTIONED → approved, not the pending fallback", () => {
     expect(segmentOf({ loanStatus: null, latestStatus: "SANCTIONED" })).toBe("approved");
   });
+
+  // DISBURSEMENT_PENDING gets its own segment, distinct from "approved" — sanctioned but money not
+  // yet released is a different staff action than a still-undecided or already-active customer.
+  it("DISBURSEMENT_PENDING → disbursementPending, not approved", () => {
+    expect(segmentOf({ loanStatus: null, latestStatus: "DISBURSEMENT_PENDING" })).toBe("disbursementPending");
+  });
+
+  // ACCOUNTANT_PENDING is @Deprecated (retired V48, historical rows only) but represents the same
+  // "waiting for money to move out" stage as DISBURSEMENT_PENDING — grouped with it, not "approved".
+  it("ACCOUNTANT_PENDING (historical) → disbursementPending, same stage as its successor", () => {
+    expect(segmentOf({ loanStatus: null, latestStatus: "ACCOUNTANT_PENDING" })).toBe("disbursementPending");
+  });
 });
 
 describe("inSegment / segmentCounts", () => {

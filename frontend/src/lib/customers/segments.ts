@@ -16,6 +16,7 @@ export type CustomerSegment =
   | "pending"
   | "review"
   | "approved"
+  | "disbursementPending"
   | "active"
   | "overdue"
   | "hold"
@@ -30,6 +31,7 @@ export const SEGMENT_LABEL: Record<CustomerSegment, string> = {
   pending: "Pending",
   review: "Review",
   approved: "Approved",
+  disbursementPending: "Disbursement Pending",
   active: "Active",
   overdue: "Overdue",
   hold: "Hold",
@@ -44,6 +46,7 @@ export const SEGMENTS: CustomerSegment[] = [
   "pending",
   "review",
   "approved",
+  "disbursementPending",
   "active",
   "overdue",
   "hold",
@@ -67,9 +70,11 @@ const APPROVED_APP = new Set([
   // The credit team has decided; the borrower is walking the post-approval journey (V45). Without
   // this the row falls through segmentOf's default and shows as "pending" — decided but invisible.
   "SANCTIONED",
-  "DISBURSEMENT_PENDING",
-  "ACCOUNTANT_PENDING",
 ]);
+// Sanctioned, money not yet released. ACCOUNTANT_PENDING is @Deprecated (retired V48, historical
+// rows only) but represents the same "waiting for money to move out" stage — kept together rather
+// than split across segments.
+const DISBURSEMENT_PENDING_APP = new Set(["DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING"]);
 const REJECTED_APP = new Set(["KYC_REJECTED", "REJECTED"]);
 const CLOSED_APP = new Set(["CLOSED", "WRITTEN_OFF", "CANCELLED"]);
 
@@ -88,6 +93,7 @@ export function segmentOf(
 
   if (app && REVIEW_APP.has(app)) return "review";
   if (app && APPROVED_APP.has(app)) return "approved";
+  if (app && DISBURSEMENT_PENDING_APP.has(app)) return "disbursementPending";
   if (app === "DISBURSEMENT_FAILED") return "hold";
   if (app === "DRAFT") return "incomplete";
   if (app && REJECTED_APP.has(app)) return "rejected";
@@ -113,6 +119,7 @@ export function segmentCounts(rows: SegmentableCustomer[]): SegmentCounts {
     pending: 0,
     review: 0,
     approved: 0,
+    disbursementPending: 0,
     active: 0,
     overdue: 0,
     hold: 0,
