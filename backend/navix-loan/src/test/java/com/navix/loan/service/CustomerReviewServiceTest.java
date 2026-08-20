@@ -12,13 +12,16 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
+import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import java.util.Base64;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +37,12 @@ class CustomerReviewServiceTest {
     private static final long CUSTOMER_ID = 7L;
     private static final CurrentActor BORROWER =
             new CurrentActor("9001001", "Asha Verma", "BORROWER");
+    private static final CurrentActor CREDIT_EXECUTIVE =
+            new CurrentActor("41", "Ravi Nair", "CREDIT_EXECUTIVE");
+    private static final CurrentActor CREDIT_HEAD =
+            new CurrentActor("42", "Neha Rao", "CREDIT_HEAD");
+    private static final CurrentActor ACCOUNTANT =
+            new CurrentActor("43", "Iqbal Shah", "ACCOUNTANT");
 
     @Mock
     private LoanApplicationRepository applicationRepository;
@@ -135,5 +144,46 @@ class CustomerReviewServiceTest {
         assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
         assertThat(saved.getPan()).isEqualTo("ABCDE1234F");
         assertThat(saved.getMobile()).isEqualTo("9876543210");
+    }
+
+    // ---- document upload gate -------------------------------------------------------
+    //
+    // Uploading is wider than the rest of the review writes: the borrower plus the two credit
+    // roles (and ADMIN by bypass). Every other staff role stays out, and deleting is untouched.
+
+    private static DocumentRequest payslip() {
+        return new DocumentRequest("PAYSLIP", "july.pdf", "application/pdf",
+                Base64.getEncoder().encodeToString("payslip-bytes".getBytes()), null);
+    }
+
+    @Test
+    void creditRolesMayUploadADocument() {
+        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
+        when(documentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        for (CurrentActor actor : new CurrentActor[] {CREDIT_EXECUTIVE, CREDIT_HEAD, BORROWER}) {
+            ActorContext.set(actor);
+            ApplicationDocument saved = service.addDocument(APP_ID, payslip());
+            assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
+            assertThat(saved.getDocType()).isEqualTo("PAYSLIP");
+        }
+    }
+
+    @Test
+    void otherStaffRolesMayNotUploadADocument() {
+        ActorContext.set(ACCOUNTANT);
+
+        assertThatThrownBy(() -> service.addDocument(APP_ID, payslip()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("CREDIT_EXECUTIVE");
+    }
+
+    @Test
+    void creditRolesMayNotDeleteADocument() {
+        ActorContext.set(CREDIT_HEAD);
+
+        assertThatThrownBy(() -> service.deleteDocument(APP_ID, 9L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ADMIN");
     }
 }

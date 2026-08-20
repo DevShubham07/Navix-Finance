@@ -1385,7 +1385,8 @@ export const staffApi = {
   /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
   creditBrief: (id: number) => bff<CreditBriefView>(`${STAFF_BASE}/${id}/credit-brief`, "GET"),
 
-  /** ADMIN uploads a document for an application (base64 body, matching the borrower upload path). */
+  /** ADMIN or a credit role uploads a document for an application (base64 body, matching the
+   *  borrower upload path). Gated by the `document:upload` permission. */
   uploadDocument: (
     id: number,
     doc: { docType: string; fileName: string; contentType?: string; dataBase64: string },

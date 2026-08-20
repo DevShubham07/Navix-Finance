@@ -41,6 +41,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -160,6 +161,9 @@ public class ApplicationVerificationService {
     // directly: ApplicationFlowService deliberately does NOT depend back on this class (it reads
     // ApplicationVerificationRepository instead) to keep this edge one-directional.
     private final ApplicationFlowService flow;
+    // The 3-strikes/12-hour penny-drop lock. Injected so a manual PASS override can lift it —
+    // see manualDecision. Safe edge: PennyDropGuard depends only on its two repositories.
+    private final PennyDropGuard pennyDropGuard;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     public record StepResult(String checkType, String status, String message, Map<String, Object> derived) {
@@ -1047,8 +1051,19 @@ public class ApplicationVerificationService {
      * penny drop. Phase 3's disbursal-account screen needs that: the stored PASS belongs to whatever
      * account was checked before, and the borrower is now naming a <em>different</em> one — replaying
      * the old result would wave through an account nobody verified.
+     *
+     * <p><b>{@code REQUIRES_NEW}, for the same reason {@link PennyDropGuard#record} is.</b> The caller
+     * that matters here is {@code OfferService.confirmDisbursalAccount}, which <b>throws</b>
+     * {@code ACCOUNT_INVALID} when this check does not PASS. Joining that transaction meant the
+     * verification row and the {@code pennyDropVerified} flag written below were rolled back by the
+     * very rejection they were recording — so a failed penny drop left no trace anywhere except the
+     * guard's attempt log, and every staff surface reported the check as "never run". (Live proof
+     * before this fix: 8 failed attempts in production, 0 surviving non-PASS rows.) The outcome has
+     * to outlive the rejection that caused it, and self-invocation would not have gone through the
+     * proxy — so the two internal callers below deliberately reach the 4-arg form directly, where
+     * joining is correct because neither rolls back on a non-PASS.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public StepResult verifyPennyDrop(Long appId, String accountNumber, String ifsc, boolean force) {
         if (!force) {
             Optional<ApplicationVerification> existing = passed(appId, PENNY_DROP);
@@ -1868,8 +1883,68 @@ public class ApplicationVerificationService {
             derived.put("manualBy", actor);
             derived.put("manualAt", Instant.now().toString());
         }
-        return view(upsert(appId, type, pass ? PASS : FAIL, "MANUAL",
+        StepResult result = view(upsert(appId, type, pass ? PASS : FAIL, "MANUAL",
                 null, null, null, null, null, derived, message));
+        if (PENNY_DROP.equals(type) && pass) {
+            acceptDisbursalAccountManually(appId, derived);
+        }
+        return result;
+    }
+
+    /**
+     * Make a manual PENNY_DROP pass actually mean something.
+     *
+     * <p>{@code OfferService.confirmDisbursalAccount} decides whether to re-run the check by reading
+     * {@code loan_application.disbursal_account_verified} — <b>not</b> the verification row. So before
+     * this, a reviewer could mark the check PASSed and the borrower would still be penny-dropped
+     * again on their next attempt, fail again, and burn another strike; with three strikes already
+     * spent they were simply stuck. Writing the flag (plus the account the check was run against, so
+     * the {@code matches} guard there recognises it) and lifting the lock is what turns the override
+     * into an escape hatch.
+     *
+     * <p>Scoped deliberately: this accepts <em>the account that was actually checked</em>, taken from
+     * the verification row's {@code derived}. If we can't tell which account that was, the flag is
+     * left alone rather than blessing an unknown destination — the reviewer's override still stands
+     * as a record, and the borrower re-runs the check.
+     */
+    private void acceptDisbursalAccountManually(Long appId, Map<String, Object> derived) {
+        String account = digits(str(derived.get("accountNumber")));
+        String ifsc = trimUpper(str(derived.get("ifsc")));
+        if (account.isBlank() || ifsc.isBlank()) {
+            // Fall back to the salary account on file — the only other account we have any basis to
+            // treat as checked. Still nothing? Leave it: never mark an unknown destination verified.
+            CustomerProfile p = profileRepo.findByApplicationId(appId).orElse(null);
+            account = p == null ? "" : digits(p.getSalaryAccountNumber());
+            ifsc = p == null ? "" : trimUpper(p.getSalaryIfsc());
+            if (account.isBlank() || ifsc.isBlank()) {
+                return;
+            }
+        }
+        final String acct = account;
+        final String code = ifsc;
+        applicationRepo.findById(appId).ifPresent(app -> {
+            app.setDisbursalAccountNumber(acct);
+            app.setDisbursalIfsc(code);
+            app.setDisbursalAccountVerified(Boolean.TRUE);
+            applicationRepo.save(app);
+            pennyDropGuard.clearLock(app.getCustomerId());
+        });
+        profileRepo.findByApplicationId(appId).ifPresent(p -> {
+            p.setPennyDropVerified(Boolean.TRUE);
+            profileRepo.save(p);
+        });
+    }
+
+    private static String str(Object o) {
+        return o == null ? "" : o.toString();
+    }
+
+    private static String digits(String s) {
+        return s == null ? "" : s.replaceAll("[^0-9]", "");
+    }
+
+    private static String trimUpper(String s) {
+        return s == null ? "" : s.trim().toUpperCase();
     }
 
     /**
@@ -2167,17 +2242,65 @@ public class ApplicationVerificationService {
     }
 
     /** Normalised-token Jaccard similarity (0..1). Permissive by design. */
+    /**
+     * How well two names agree, 0..1, order-insensitive. Compared against
+     * {@link #NAME_MATCH_THRESHOLD}.
+     *
+     * <p>This was a plain Jaccard ratio (|intersection| / |union|), which <b>could not pass a bank
+     * holding an abbreviated name however well it matched</b> — a structural failure, not a tuning
+     * problem. "FACKEER MOHAMED ABDUL JALEEL" against a bank record of "ABDUL JALEEL" scores 2/4 =
+     * 0.50 and is rejected even though every token the bank holds matched perfectly; any name of
+     * three or more parts against a shortened or initialised form was an automatic reject. Two real
+     * borrowers hit exactly this, burned all three penny-drop attempts and locked themselves out.
+     *
+     * <p>So: match the shorter name <em>into</em> the longer one and score by containment, with a
+     * single-letter token matching a full token that starts with the same letter ("R SHARMA" ≡
+     * "RAHUL SHARMA"). The leniency is bounded — containment only applies when the shorter side has
+     * at least two tokens, because a lone token proves too little ("JOHN" would otherwise fully
+     * match "JOHN SMITH"); a one-token name keeps the strict Jaccard measure. Below the threshold is
+     * still REVIEW rather than a hard fail, so an approver has the last word either way.
+     */
     static double nameSimilarity(String a, String b) {
         Set<String> ta = tokens(a);
         Set<String> tb = tokens(b);
         if (ta.isEmpty() || tb.isEmpty()) {
             return 0;
         }
-        Set<String> inter = new HashSet<>(ta);
-        inter.retainAll(tb);
-        Set<String> union = new HashSet<>(ta);
-        union.addAll(tb);
-        return (double) inter.size() / union.size();
+        Set<String> shorter = ta.size() <= tb.size() ? ta : tb;
+        Set<String> longer = shorter == ta ? tb : ta;
+        if (shorter.size() < 2) {
+            Set<String> inter = new HashSet<>(ta);
+            inter.retainAll(tb);
+            Set<String> union = new HashSet<>(ta);
+            union.addAll(tb);
+            return (double) inter.size() / union.size();
+        }
+        Set<String> unused = new HashSet<>(longer);
+        int matched = 0;
+        // Exact tokens first, so a real word is never consumed by an initial that also fits.
+        List<String> pending = new ArrayList<>();
+        for (String t : shorter) {
+            if (unused.remove(t)) {
+                matched++;
+            } else {
+                pending.add(t);
+            }
+        }
+        // Then initials, in EITHER direction — the abbreviated side is whichever one the bank holds,
+        // and it is not always the shorter set ("ELANGO SAIPRASATH" vs "SAIPRASATH E" are both two).
+        for (String t : pending) {
+            String hit = unused.stream().filter(u -> initialMatches(t, u)).findFirst().orElse(null);
+            if (hit != null) {
+                unused.remove(hit);
+                matched++;
+            }
+        }
+        return (double) matched / shorter.size();
+    }
+
+    /** One token is a single letter and the other begins with it: "r" ≡ "rahul". */
+    private static boolean initialMatches(String x, String y) {
+        return (x.length() == 1 && y.startsWith(x)) || (y.length() == 1 && x.startsWith(y));
     }
 
     private static Set<String> tokens(String s) {

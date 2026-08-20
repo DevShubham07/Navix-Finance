@@ -64,6 +64,12 @@ export type Permission =
   | "customer:view:all"
   | "customer:manage"
   | "customer:assign"
+  // Attach a document to an application. Held by ADMIN and the two credit roles: a reviewer often
+  // has to upload a payslip or bank statement the borrower sent in out-of-band, and routing that
+  // through an ADMIN stalled files. Strictly ADD — deleting/replacing a borrower-submitted document
+  // remains customer:manage (ADMIN). Mirrored backend-side by
+  // CustomerReviewService.DOCUMENT_UPLOAD_ROLES; the real enforcement is there, not here.
+  | "document:upload"
   // Telecaller lead intake + disposition; ADMIN shares write + owns the tracker dashboard.
   | "leads:manage"
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
@@ -83,7 +89,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   // The credit roles absorbed the deleted KYC_APPROVER (V45). The Executive holds kyc:approve
   // because the sanction IS the credit decision — there is no Head counter-approval; the Head's
   // loan:approve now gates assignment (handing work out), not a second sign-off.
-  CREDIT_EXECUTIVE: ["kyc:approve", "loan:review", "customer:view", "loan:pipeline"],
+  CREDIT_EXECUTIVE: ["kyc:approve", "loan:review", "customer:view", "loan:pipeline", "document:upload"],
   CREDIT_HEAD: [
     "kyc:approve",
     "loan:review",
@@ -92,6 +98,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:view:all",
     "customer:assign",
     "loan:pipeline",
+    "document:upload",
   ],
   DISBURSEMENT_HEAD: [
     "loan:disburse",
@@ -131,6 +138,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:view:all",
     "customer:manage",
     "customer:assign",
+    "document:upload",
     "leads:manage",
     "referral:payout",
     "verification:retry",

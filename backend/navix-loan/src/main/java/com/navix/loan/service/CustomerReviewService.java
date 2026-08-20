@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,7 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Owns the customer-review data attached to an application: the KYC profile and uploaded
- * documents. Writes are borrower-only (ADMIN may act for the borrower); reads are open to any
+ * documents. Profile writes are borrower-only (ADMIN may act for the borrower) and document
+ * uploads additionally allow the two credit roles; reads are open to any
  * authenticated actor so every reviewing staff role can view them. Document bytes are base64 in /
  * base64 out, kept inline ({@code bytea}) for the demo.
  */
@@ -42,6 +44,14 @@ public class CustomerReviewService {
 
     /** Inline document cap — keeps base64-over-JSON sane for the demo. */
     static final int MAX_DOC_BYTES = 5 * 1024 * 1024;
+
+    /**
+     * Who may attach a document to an application. The borrower uploads their own; the two credit
+     * roles upload on their behalf while reviewing the file (ADMIN bypasses the gate entirely).
+     * Mirrored in the UI by the {@code document:upload} permission.
+     */
+    static final Set<String> DOCUMENT_UPLOAD_ROLES =
+            Set.of("BORROWER", "CREDIT_EXECUTIVE", "CREDIT_HEAD");
 
     private final LoanApplicationRepository applicationRepository;
     private final CustomerProfileRepository profileRepository;
@@ -282,9 +292,17 @@ public class CustomerReviewService {
                 .findFirst();
     }
 
+    /**
+     * Upload a supporting document for an application. The borrower's own onboarding uploads land
+     * here, and so do the credit roles': a reviewer routinely has to attach a payslip or bank
+     * statement the borrower mailed in or handed over on a call, and having to escalate to an ADMIN
+     * for that stalled files. Deleting is deliberately NOT widened — a credit user may add evidence
+     * to a category that has none, but replacing borrower-submitted evidence stays with ADMIN
+     * ({@link #deleteDocument}).
+     */
     @Transactional
     public ApplicationDocument addDocument(Long appId, DocumentRequest req) {
-        requireRole("BORROWER");
+        requireAnyRole(DOCUMENT_UPLOAD_ROLES);
         requireApplication(appId);
         byte[] bytes;
         try {
@@ -354,6 +372,15 @@ public class CustomerReviewService {
     private void requireApplication(Long appId) {
         if (!applicationRepository.existsById(appId)) {
             throw new ResourceNotFoundException("LoanApplication", String.valueOf(appId));
+        }
+    }
+
+    /** Role gate for a set of allowed roles (ADMIN bypasses, as everywhere else). */
+    private void requireAnyRole(Set<String> roles) {
+        CurrentActor actor = ActorContext.get();
+        if (!roles.contains(actor.role()) && !"ADMIN".equals(actor.role())) {
+            throw new BusinessException("FORBIDDEN_ROLE",
+                    "This action requires one of " + String.join(", ", roles));
         }
     }
 

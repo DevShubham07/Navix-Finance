@@ -188,6 +188,10 @@ function SingleApplicationDocuments({
   const qc = useQueryClient();
   const role = useStaffSession().session?.role;
   const isAdmin = role != null && hasPermission(role, "customer:manage");
+  // Uploading is wider than deleting: ADMIN plus the two credit roles may attach a document
+  // (a payslip or statement the borrower sent in out-of-band), but replacing borrower-submitted
+  // evidence still means deleting it first, which stays ADMIN-only.
+  const canUpload = role != null && hasPermission(role, "document:upload");
   const docsQ = useQuery({
     queryKey: ["staff-docs", applicationId],
     queryFn: () => staffApi.documents(applicationId),
@@ -226,8 +230,15 @@ function SingleApplicationDocuments({
       )}
       {del.error && <p className="text-xs text-error-700">Could not delete the document.</p>}
 
-      {isAdmin && <AdminUpload applicationId={applicationId} customerId={customerId} existingCategories={categories} />}
-      {!isAdmin && <p className="text-xs text-muted">Only administrators can replace documents.</p>}
+      {canUpload && (
+        <DocumentUpload
+          applicationId={applicationId}
+          customerId={customerId}
+          existingCategories={categories}
+          canDelete={isAdmin}
+        />
+      )}
+      {!canUpload && <p className="text-xs text-muted">Your role cannot upload or replace documents.</p>}
     </div>
   );
 }
@@ -347,18 +358,21 @@ export function CustomerDocsByType({
 }
 
 /**
- * Admin upload control. The replace rule: a document of a category can only be uploaded once the
- * existing document of that category has been deleted — so if the chosen category still has a doc,
- * upload is blocked with a hint to delete it first.
+ * Staff upload control (ADMIN + the credit roles). The replace rule: a document of a category can
+ * only be uploaded once the existing document of that category has been deleted — so if the chosen
+ * category still has a doc, upload is blocked. Deleting is ADMIN-only, so the hint differs by role:
+ * an admin is told to delete it above, a credit user is told to ask an administrator.
  */
-function AdminUpload({
+function DocumentUpload({
   applicationId,
   customerId,
   existingCategories,
+  canDelete,
 }: {
   applicationId: number;
   customerId?: number;
   existingCategories: string[];
+  canDelete: boolean;
 }) {
   const qc = useQueryClient();
   const [docType, setDocType] = React.useState("");
@@ -405,7 +419,10 @@ function AdminUpload({
       </div>
       {blocked && (
         <p className="mt-1.5 text-xs text-error-700">
-          A “{docType.trim()}” document already exists — delete it above before uploading a replacement.
+          A “{docType.trim()}” document already exists —{" "}
+          {canDelete
+            ? "delete it above before uploading a replacement."
+            : "ask an administrator to delete it before a replacement can be uploaded."}
         </p>
       )}
       {up.error && !blocked && <p className="mt-1.5 text-xs text-error-700">Upload failed. Check the file and try again.</p>}

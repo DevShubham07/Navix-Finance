@@ -57,6 +57,7 @@ class ApplicationVerificationServiceTest {
     @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock private ProfileChangeLogger changeLogger;
     @Mock private ApplicationFlowService flow;
+    @Mock private PennyDropGuard pennyDropGuard;
 
     private ApplicationVerificationService service;
 
@@ -66,7 +67,7 @@ class ApplicationVerificationServiceTest {
     void setUp() {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk, new ObjectMapper(),
-                creditBriefService, eventPublisher, changeLogger, flow);
+                creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard);
         // save() echoes its argument
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(profileRepo.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -529,6 +530,83 @@ class ApplicationVerificationServiceTest {
                 .isGreaterThan(0.5);
     }
 
+    /**
+     * The two production penny-drop lockouts: a bank holding a shortened or initialised form of a
+     * long name. Under the old Jaccard ratio both scored below the 0.60 threshold however well the
+     * tokens actually agreed, so the borrower could never pass.
+     */
+    @Test
+    void nameSimilarity_passesAnAbbreviatedBankName() {
+        double threshold = ApplicationVerificationService.NAME_MATCH_THRESHOLD;
+        // customer 7783414 — every token the bank holds matched; old score was 2/4 = 0.50.
+        assertThat(ApplicationVerificationService.nameSimilarity(
+                "FACKEER MOHAMED ABDUL JALEEL", "ABDUL JALEEL")).isGreaterThanOrEqualTo(threshold);
+        // customer 43802 — an initial standing in for the first name.
+        assertThat(ApplicationVerificationService.nameSimilarity(
+                "ELANGO SAIPRASATH", "SAIPRASATH E")).isGreaterThanOrEqualTo(threshold);
+        assertThat(ApplicationVerificationService.nameSimilarity(
+                "R SHARMA", "RAHUL SHARMA")).isGreaterThanOrEqualTo(threshold);
+    }
+
+    /** …without becoming a rubber stamp: a different person must still land below the threshold. */
+    @Test
+    void nameSimilarity_stillRejectsADifferentPerson() {
+        double threshold = ApplicationVerificationService.NAME_MATCH_THRESHOLD;
+        assertThat(ApplicationVerificationService.nameSimilarity(
+                "RAHUL KUMAR SHARMA", "AMIT KUMAR VERMA")).isLessThan(threshold);
+        assertThat(ApplicationVerificationService.nameSimilarity(
+                "RAHUL SHARMA", "RAHUL VERMA")).isLessThan(threshold);
+        // A lone token proves too little for containment — it keeps the strict Jaccard measure.
+        assertThat(ApplicationVerificationService.nameSimilarity(
+                "JOHN", "JOHN SMITH")).isLessThan(threshold);
+    }
+
+    /**
+     * A manual PENNY_DROP pass has to unblock the borrower, not just annotate the file:
+     * OfferService.confirmDisbursalAccount reads the application flag, never the verification row.
+     */
+    @Test
+    void manualPennyDropPass_marksTheCheckedAccountVerifiedAndLiftsTheLock() {
+        ActorContext.set(new CurrentActor("31", "Neha Rao", "CREDIT_HEAD"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setCustomerId(43802L);
+        CustomerProfile profile = new CustomerProfile();
+        profile.setApplicationId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PENNY_DROP"))
+                .thenReturn(Optional.of(rowWithDerived("PENNY_DROP", "REVIEW",
+                        "{\"accountNumber\":\"50100123454205\",\"ifsc\":\"HDFC0001875\"}")));
+
+        service.manualDecision(APP, "PENNY_DROP", true, "Confirmed against payslip");
+
+        assertThat(app.getDisbursalAccountVerified()).isTrue();
+        assertThat(app.getDisbursalAccountNumber()).isEqualTo("50100123454205");
+        assertThat(app.getDisbursalIfsc()).isEqualTo("HDFC0001875");
+        assertThat(profile.getPennyDropVerified()).isTrue();
+        verify(pennyDropGuard).clearLock(43802L);
+    }
+
+    /** Never bless a destination we cannot identify — the override records, but does not verify. */
+    @Test
+    void manualPennyDropPass_leavesTheFlagAloneWhenNoAccountIsKnown() {
+        ActorContext.set(new CurrentActor("31", "Neha Rao", "CREDIT_HEAD"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setCustomerId(43802L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.empty());
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PENNY_DROP"))
+                .thenReturn(Optional.empty());
+
+        service.manualDecision(APP, "PENNY_DROP", true, null);
+
+        // The column defaults to false, so "untouched" is "not true" rather than null.
+        assertThat(app.getDisbursalAccountVerified()).isNotEqualTo(Boolean.TRUE);
+        verify(pennyDropGuard, never()).clearLock(any());
+    }
+
     @Test
     void summary_reconcilesDigilockerRowFromAadhaarOutcome() {
         // DigiLocker row is stale PENDING (never re-persisted); Aadhaar carries the real outcome.
@@ -555,6 +633,12 @@ class ApplicationVerificationServiceTest {
         assertThat(service.summary(APP).stream()
                 .filter(s -> "DIGILOCKER".equals(s.checkType())).findFirst().orElseThrow().status())
                 .isEqualTo("PENDING");
+    }
+
+    private static ApplicationVerification rowWithDerived(String type, String status, String derivedJson) {
+        ApplicationVerification v = row(type, status);
+        v.setDerived(derivedJson);
+        return v;
     }
 
     private static ApplicationVerification row(String type, String status) {

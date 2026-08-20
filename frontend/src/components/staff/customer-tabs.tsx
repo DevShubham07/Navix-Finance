@@ -18,6 +18,7 @@ import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import { Section, KV, Bool, DocumentsTab, RemarksTab, CustomerDocsByType } from "@/components/staff/detail-parts";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
+import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import {
   customersApi,
   staffApi,
@@ -35,6 +36,7 @@ export const CUSTOMER_TABS: TabDef[] = [
   { key: "employment", label: "Employment" },
   { key: "salary", label: "Salary" },
   { key: "bank", label: "Bank Accounts" },
+  { key: "verifications", label: "Verifications" },
   { key: "credit", label: "Credit Report" },
   { key: "documents", label: "Documents" },
   { key: "loans", label: "Loan Applications" },
@@ -97,6 +99,15 @@ export function CustomerTabBody({
       return <SalaryTab c={detail} customerId={customerId} />;
     case "bank":
       return <BankTab c={detail} latestAppId={latestAppId} />;
+    case "verifications":
+      // Every check on the file, penny drop included, with the same per-check detail and manual
+      // override the application dialog offers — reachable from the customer without having to
+      // find the right application first.
+      return latestAppId != null ? (
+        <VerificationChecksPanel applicationId={latestAppId} />
+      ) : (
+        <p className="text-sm text-muted">No application to show verifications for.</p>
+      );
     case "credit":
       return <CreditTab c={detail} latestAppId={latestAppId} />;
     case "documents":

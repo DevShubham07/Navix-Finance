@@ -81,6 +81,17 @@ public class PennyDropGuard {
         }
     }
 
+    /**
+     * Drop the lock outright. Used by the staff manual override on PENNY_DROP: a reviewer who has
+     * satisfied themselves the account is genuine (the usual cause is a bank holding an abbreviated
+     * name) must be able to let the borrower through, and leaving the 12-hour lock standing would
+     * mean the override changed nothing until it expired.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void clearLock(Long customerId) {
+        lockRepo.findByCustomerId(customerId).ifPresent(lockRepo::delete);
+    }
+
     private int failuresSinceReset(Long customerId) {
         Instant lockedAt = lockRepo.findByCustomerId(customerId)
                 .map(CustomerPennyDropLock::getLockedUntil)
