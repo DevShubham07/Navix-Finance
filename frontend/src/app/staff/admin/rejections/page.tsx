@@ -11,6 +11,7 @@ import type { ExportColumn } from "@/lib/export/exporters";
 import { hasPermission } from "@/lib/auth/rbac";
 import { staffApi, paiseToINR, type RejectionView } from "@/lib/api/applications";
 import { CreditBadge } from "@/components/staff/credit-badge";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const REASONS = [
   { value: "", label: "All reasons" },
@@ -62,12 +63,13 @@ export default function AdminRejectionsPage() {
     queryFn: () => staffApi.rejections(reason || undefined),
   });
 
+  const rows = q.data ?? [];
+  const now = Date.now();
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
   if (myRole && !hasPermission(myRole, "staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
-
-  const rows = q.data ?? [];
-  const now = Date.now();
 
   return (
     <div>
@@ -115,6 +117,7 @@ export default function AdminRejectionsPage() {
             <table className="staff-data-table">
               <thead>
                 <tr>
+                  <th>S.No.</th>
                   <th>Borrower</th>
                   <th>PAN</th>
                   <th>Account</th>
@@ -129,10 +132,11 @@ export default function AdminRejectionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {rows.map((r) => {
+                {pageRows.map((r, i) => {
                   const blocked = r.blockedUntil != null && Date.parse(r.blockedUntil) > now;
                   return (
                     <tr key={r.id} className="hover:bg-grey-50">
+                      <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                       <td>
                         <div className="font-semibold text-navy">{r.borrowerName ?? "Name unavailable"}</div>
                         <div className="text-xs text-muted">
@@ -178,6 +182,14 @@ export default function AdminRejectionsPage() {
               </tbody>
             </table>
           </div>
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={total}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-
 import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, storageApi, paiseToINR, rupeesToPaise, type ExpenseResponse } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 /** Today as ISO yyyy-mm-dd (local), for the date field default. */
 function todayIso(): string {
@@ -80,12 +81,13 @@ export default function AdminExpensesPage() {
     onSuccess: invalidate,
   });
 
+  const rows = q.data ?? [];
+  const total = rows.reduce((sum, e) => sum + e.amountPaise, 0);
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total: rowsTotal } = usePagination(rows);
+
   if (myRole && !hasPermission(myRole, "staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
-
-  const rows = q.data ?? [];
-  const total = rows.reduce((sum, e) => sum + e.amountPaise, 0);
 
   return (
     <div>
@@ -149,6 +151,7 @@ export default function AdminExpensesPage() {
             <table className="staff-data-table">
               <thead>
                 <tr>
+                  <th>S.No.</th>
                   <th className="whitespace-nowrap">Date</th>
                   <th>Description</th>
                   <th>Paid to</th>
@@ -160,8 +163,9 @@ export default function AdminExpensesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
-                {rows.map((e: ExpenseResponse) => (
+                {pageRows.map((e: ExpenseResponse, i: number) => (
                   <tr key={e.id} className="hover:bg-grey-50">
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                     <td className="whitespace-nowrap text-muted">{e.expenseDate}</td>
                     <td>
                       <span className="block max-w-[18rem] truncate font-medium text-ink" title={e.description}>{e.description}</span>
@@ -196,13 +200,13 @@ export default function AdminExpensesPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={8} className="text-center text-muted">No expenses recorded yet.</td></tr>
+                  <tr><td colSpan={9} className="text-center text-muted">No expenses recorded yet.</td></tr>
                 )}
               </tbody>
               {rows.length > 0 && (
                 <tfoot className="border-t border-line bg-grey-50">
                   <tr>
-                    <td className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted" colSpan={3}>
+                    <td className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted" colSpan={4}>
                       Total · {rows.length} {rows.length === 1 ? "expense" : "expenses"}
                     </td>
                     <td className="whitespace-nowrap text-right font-bold text-navy">{paiseToINR(total)}</td>
@@ -212,6 +216,14 @@ export default function AdminExpensesPage() {
               )}
             </table>
           </div>
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={rowsTotal}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
       )}
     </div>

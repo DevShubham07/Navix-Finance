@@ -19,6 +19,7 @@ import {
   type CreateDsaLeadInput,
   type OutreachChannel,
 } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
@@ -48,11 +49,12 @@ export default function DsaLeadsPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["dsa-leads"] });
 
+  const rows = list.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
   if (myRole && !hasPermission(myRole, "dsa:portal")) {
     return <NoAccessNotice message="DSA access required." />;
   }
-
-  const rows = list.data ?? [];
 
   return (
     <div>
@@ -102,6 +104,7 @@ export default function DsaLeadsPage() {
         <table className="staff-data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Name</th>
               <th>PAN</th>
               <th>Mobile</th>
@@ -114,13 +117,14 @@ export default function DsaLeadsPage() {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-navy/40">
+                <td colSpan={8} className="py-8 text-center text-navy/40">
                   {list.isLoading ? "Loading…" : "No leads yet — add one above."}
                 </td>
               </tr>
             )}
-            {rows.map((row) => (
+            {pageRows.map((row, i) => (
               <tr key={row.id}>
+                <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
                 <td className="staff-cell font-medium text-navy">{row.name}</td>
                 <td className="font-mono text-xs">{row.pan}</td>
                 <td className="font-mono text-xs">{row.mobile}</td>
@@ -142,6 +146,14 @@ export default function DsaLeadsPage() {
             ))}
           </tbody>
         </table>
+        <PaginationBar
+          page={page}
+          pageCount={pageCount}
+          setPage={setPage}
+          total={total}
+          pageSize={pageSize}
+          setPageSize={setPageSize}
+        />
       </div>
 
       {outreachLead && (

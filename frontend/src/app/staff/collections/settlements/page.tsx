@@ -8,6 +8,7 @@ import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { collectionsApi, paiseToINR, type SettlementView, type SettlementStatusName } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const STATUS_LABEL: Record<SettlementStatusName, string> = {
   PROPOSED: "Pending",
@@ -39,6 +40,8 @@ export default function CollectionsSettlementsPage() {
   });
   const actionError = approve.error ?? reject.error;
   const busy = approve.isPending || reject.isPending;
+  const rows = q.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   return (
     <div>
@@ -78,6 +81,7 @@ export default function CollectionsSettlementsPage() {
           <table className="staff-data-table">
             <thead>
               <tr>
+                <th>S.No.</th>
                 <th>Settlement</th>
                 <th>Amount</th>
                 <th>Status</th>
@@ -85,9 +89,10 @@ export default function CollectionsSettlementsPage() {
               </tr>
             </thead>
             <tbody>
-              {(q.data ?? []).map((s: SettlementView) => {
+              {pageRows.map((s: SettlementView, i: number) => {
                 return (
                   <tr key={s.id}>
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                     <td className="staff-cell">
                       <div className="truncate">
                         <span className="font-mono text-xs text-ink">{s.id.slice(0, 8)}…</span>{" "}
@@ -138,11 +143,19 @@ export default function CollectionsSettlementsPage() {
                   </tr>
                 );
               })}
-              {(q.data ?? []).length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-6 text-center text-muted">No settlements proposed.</td></tr>
+              {rows.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-6 text-center text-muted">No settlements proposed.</td></tr>
               )}
             </tbody>
           </table>
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={total}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
       )}
     </div>

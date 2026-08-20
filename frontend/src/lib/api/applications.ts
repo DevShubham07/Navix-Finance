@@ -1289,6 +1289,10 @@ export const staffApi = {
   /** The two contacts the borrower named in the Phase-3 offer journey (V46). */
   references: (id: number) => bff<ReferenceView[]>(`${STAFF_BASE}/${id}/references`, "GET"),
 
+  /** ADMIN-only in the UI (backend also permits it): correct a reference contact's name/mobile/relation. */
+  saveReferences: (id: number, references: ReferenceInput[]) =>
+    bff<ReferenceView[]>(`${STAFF_BASE}/${id}/offer/references`, "POST", { references }),
+
   // --- maker-checker actions ---
   kycDecision: (id: number, decision: boolean, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/kyc-decision`, "POST", { decision, notes }),

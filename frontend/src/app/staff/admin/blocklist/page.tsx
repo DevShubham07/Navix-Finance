@@ -9,6 +9,7 @@ import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-
 import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type BlocklistType, type BlocklistResponse } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const TYPES: { value: BlocklistType; label: string }[] = [
   { value: "PAN", label: "PAN" },
@@ -37,6 +38,9 @@ export default function AdminBlocklistPage() {
     onSuccess: invalidate,
   });
 
+  const rows = q.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
   if (myRole && !hasPermission(myRole, "staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
@@ -53,7 +57,7 @@ export default function AdminBlocklistPage() {
             { header: "Reason", value: (b) => b.reason ?? "" },
             { header: "Active", value: (b) => (b.active ? "yes" : "no") },
           ]}
-          rows={q.data ?? []}
+          rows={rows}
         />
         <button
           onClick={() => q.refetch()}
@@ -81,35 +85,40 @@ export default function AdminBlocklistPage() {
       ) : q.error ? (
         <p className="text-sm text-error-700">{errMessage(q.error)}</p>
       ) : (
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          <table className="staff-data-table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Value</th>
-                <th>Reason</th>
-                <th className="text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {(q.data ?? []).map((b: BlocklistResponse) => (
-                <tr key={b.id}>
-                  <td><span className="rounded-full bg-navy-tint text-xs font-semibold text-navy">{b.type}</span></td>
-                  <td className="font-mono text-ink">{b.value}</td>
-                  <td className="text-muted">{b.reason || "—"}</td>
-                  <td className="text-right">
-                    <button onClick={() => remove.mutate(b.id)} disabled={remove.isPending}
-                      className="btn btn-sm btn-outline disabled:opacity-50">
-                      <Trash2 size={13} /> Remove
-                    </button>
-                  </td>
+        <div className="rounded border border-line bg-white shadow-sm">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
+                <tr>
+                  <th>S.No.</th>
+                  <th>Type</th>
+                  <th>Value</th>
+                  <th>Reason</th>
+                  <th className="text-right">Action</th>
                 </tr>
-              ))}
-              {(q.data ?? []).length === 0 && (
-                <tr><td colSpan={4} className="text-center text-muted">No active blocklist entries.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pageRows.map((b: BlocklistResponse, i) => (
+                  <tr key={b.id}>
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
+                    <td><span className="rounded-full bg-navy-tint text-xs font-semibold text-navy">{b.type}</span></td>
+                    <td className="font-mono text-ink">{b.value}</td>
+                    <td className="text-muted">{b.reason || "—"}</td>
+                    <td className="text-right">
+                      <button onClick={() => remove.mutate(b.id)} disabled={remove.isPending}
+                        className="btn btn-sm btn-outline disabled:opacity-50">
+                        <Trash2 size={13} /> Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr><td colSpan={5} className="text-center text-muted">No active blocklist entries.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       )}
     </div>

@@ -10,6 +10,7 @@ import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type StaffRoleName, type InviteResponse } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const ROLES: StaffRoleName[] = [
   "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
@@ -31,6 +32,9 @@ export default function AdminInvitesPage() {
       qc.invalidateQueries({ queryKey: ["admin-invites"] });
     },
   });
+
+  const rows = q.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   if (myRole && !hasPermission(myRole, "staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -88,6 +92,7 @@ export default function AdminInvitesPage() {
           <table className="staff-data-table">
             <thead>
               <tr>
+                <th>S.No.</th>
                 <th>Email</th>
                 <th>Role</th>
                 <th>Token</th>
@@ -95,19 +100,28 @@ export default function AdminInvitesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {(q.data ?? []).map((inv: InviteResponse) => (
+              {pageRows.map((inv: InviteResponse, i) => (
                 <tr key={inv.id}>
+                  <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                   <td className="text-ink">{inv.email}</td>
                   <td className="text-muted">{inv.role}</td>
                   <td><TokenChip token={inv.token} /></td>
                   <td className="text-muted">{inv.expiresAt ? formatDateTime(inv.expiresAt) : "—"}</td>
                 </tr>
               ))}
-              {(q.data ?? []).length === 0 && (
-                <tr><td colSpan={4} className="text-center text-muted">No invites yet.</td></tr>
+              {rows.length === 0 && (
+                <tr><td colSpan={5} className="text-center text-muted">No invites yet.</td></tr>
               )}
             </tbody>
           </table>
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={total}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
       )}
     </div>

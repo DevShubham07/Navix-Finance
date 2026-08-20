@@ -13,6 +13,7 @@ import { bureauStateLabel } from "@/components/staff/bureau-state";
 import type { ExportColumn } from "@/lib/export/exporters";
 import { hasPermission } from "@/lib/auth/rbac";
 import { staffApi, paiseToINR, statusLabel, type AdminApplicationView } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 type CompletenessFilter = "ALL" | "COMPLETE" | "INCOMPLETE";
 
@@ -66,10 +67,6 @@ export default function AdminAllApplicationsPage() {
   const [infoId, setInfoId] = React.useState<number | null>(null);
   const q = useQuery({ queryKey: ["admin-all-applications"], queryFn: staffApi.listAllApplications });
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
-    return <NoAccessNotice message="Admin access only." />;
-  }
-
   const all = q.data ?? [];
   const needle = search.trim().toLowerCase();
   const rows = all.filter((a) => {
@@ -81,6 +78,11 @@ export default function AdminAllApplicationsPage() {
       .map((v) => String(v).toLowerCase())
       .some((s) => s.includes(needle));
   });
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
+  if (myRole && !hasPermission(myRole, "staff:manage")) {
+    return <NoAccessNotice message="Admin access only." />;
+  }
 
   return (
     <div>
@@ -134,6 +136,7 @@ export default function AdminAllApplicationsPage() {
             <table className="staff-data-table">
               <thead>
                 <tr>
+                  <th>S.No.</th>
                   <th className="whitespace-nowrap">App</th>
                   <th>Customer</th>
                   <th className="whitespace-nowrap">PAN</th>
@@ -149,8 +152,9 @@ export default function AdminAllApplicationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
-                {rows.map((a) => (
+                {pageRows.map((a, i) => (
                   <tr key={a.id} className="hover:bg-grey-50">
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                     <td className="whitespace-nowrap font-mono text-muted">#{a.id}</td>
                     <td>
                       <span className="block max-w-[14rem] truncate font-semibold text-ink" title={a.fullName ?? ""}>{a.fullName || "—"}</span>
@@ -205,11 +209,12 @@ export default function AdminAllApplicationsPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={12} className="text-center text-muted">No applications match.</td></tr>
+                  <tr><td colSpan={13} className="text-center text-muted">No applications match.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       )}
 

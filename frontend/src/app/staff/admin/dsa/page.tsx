@@ -18,6 +18,7 @@ import {
   type AdminOutreachView,
   type DsaCommissionStatus,
 } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 type Tab = "ROSTER" | "LEADS" | "COMMISSIONS" | "OUTREACH";
 
@@ -110,49 +111,55 @@ function RosterTab({
   loading: boolean;
   error: unknown;
 }) {
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
   return (
     <div>
       {error ? (
         <p className="text-sm text-error-700">{errMessage(error)}</p>
       ) : (
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          <table className="staff-data-table">
-            <thead>
-              <tr>
-                <th>DSA</th>
-                <th>Status</th>
-                <th className="text-right">Leads</th>
-                <th className="text-right">Converted</th>
-                <th className="text-right">Accrued</th>
-                <th className="text-right">Payable</th>
-                <th className="text-right">Paid</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {rows.map((r) => (
-                <tr key={r.dsaStaffId}>
-                  <td className="font-semibold text-ink">{r.name ?? `#${r.dsaStaffId}`}</td>
-                  <td>
-                    <span className={`inline-block rounded px-2 py-0.5 text-[8px] font-semibold uppercase ${r.active ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>
-                      {r.active ? "Active" : "Disabled"}
-                    </span>
-                  </td>
-                  <td className="text-right">{r.leadsAdded}</td>
-                  <td className="text-right">{r.leadsConverted}</td>
-                  <td className="text-right">{paiseToINR(r.accruedPaise)}</td>
-                  <td className="text-right">{paiseToINR(r.payablePaise)}</td>
-                  <td className="text-right font-semibold text-ink">{paiseToINR(r.paidPaise)}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
+        <div className="rounded border border-line bg-white shadow-sm">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <td colSpan={7} className="text-center text-muted">
-                    {loading ? "Loading…" : "No DSAs yet."}
-                  </td>
+                  <th>S.No.</th>
+                  <th>DSA</th>
+                  <th>Status</th>
+                  <th className="text-right">Leads</th>
+                  <th className="text-right">Converted</th>
+                  <th className="text-right">Accrued</th>
+                  <th className="text-right">Payable</th>
+                  <th className="text-right">Paid</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pageRows.map((r, i) => (
+                  <tr key={r.dsaStaffId}>
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
+                    <td className="font-semibold text-ink">{r.name ?? `#${r.dsaStaffId}`}</td>
+                    <td>
+                      <span className={`inline-block rounded px-2 py-0.5 text-[8px] font-semibold uppercase ${r.active ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>
+                        {r.active ? "Active" : "Disabled"}
+                      </span>
+                    </td>
+                    <td className="text-right">{r.leadsAdded}</td>
+                    <td className="text-right">{r.leadsConverted}</td>
+                    <td className="text-right">{paiseToINR(r.accruedPaise)}</td>
+                    <td className="text-right">{paiseToINR(r.payablePaise)}</td>
+                    <td className="text-right font-semibold text-ink">{paiseToINR(r.paidPaise)}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="text-center text-muted">
+                      {loading ? "Loading…" : "No DSAs yet."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       )}
     </div>
@@ -177,6 +184,7 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
   });
 
   const rows = leads.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   return (
     <div>
@@ -214,40 +222,45 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
       ) : leads.error ? (
         <p className="text-sm text-error-700">{errMessage(leads.error)}</p>
       ) : (
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          <table className="staff-data-table">
-            <thead>
-              <tr>
-                <th>DSA</th>
-                <th>PAN</th>
-                <th>Name</th>
-                <th>Mobile</th>
-                <th>Email</th>
-                <th>City</th>
-                <th>Employer</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {rows.map((l) => (
-                <tr key={l.id}>
-                  <td className="text-ink">{l.ownerDsaName ?? `#${l.ownerDsaId}`}</td>
-                  <td className="font-mono text-xs">{l.pan}</td>
-                  <td className="text-ink">{l.name}</td>
-                  <td className="font-mono text-xs">{l.mobile}</td>
-                  <td className="text-muted">{l.email ?? "—"}</td>
-                  <td className="text-muted">{l.city ?? "—"}</td>
-                  <td className="text-muted">{l.employer ?? "—"}</td>
-                  <td className="whitespace-nowrap text-muted">{formatDateTime(l.createdAt)}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
+        <div className="rounded border border-line bg-white shadow-sm">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <td colSpan={8} className="text-center text-muted">No leads match these filters.</td>
+                  <th>S.No.</th>
+                  <th>DSA</th>
+                  <th>PAN</th>
+                  <th>Name</th>
+                  <th>Mobile</th>
+                  <th>Email</th>
+                  <th>City</th>
+                  <th>Employer</th>
+                  <th>Created</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {pageRows.map((l, i) => (
+                  <tr key={l.id}>
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
+                    <td className="text-ink">{l.ownerDsaName ?? `#${l.ownerDsaId}`}</td>
+                    <td className="font-mono text-xs">{l.pan}</td>
+                    <td className="text-ink">{l.name}</td>
+                    <td className="font-mono text-xs">{l.mobile}</td>
+                    <td className="text-muted">{l.email ?? "—"}</td>
+                    <td className="text-muted">{l.city ?? "—"}</td>
+                    <td className="text-muted">{l.employer ?? "—"}</td>
+                    <td className="whitespace-nowrap text-muted">{formatDateTime(l.createdAt)}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="text-center text-muted">No leads match these filters.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       )}
     </div>
@@ -295,6 +308,7 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
   });
 
   const rows = commissions.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   return (
     <div>
@@ -334,21 +348,24 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
       ) : commissions.error ? (
         <p className="text-sm text-error-700">{errMessage(commissions.error)}</p>
       ) : (
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          <table className="staff-data-table">
-            <thead>
-              <tr>
-                <th>DSA</th>
-                <th>PAN</th>
-                <th className="text-right">Net disbursed</th>
-                <th className="text-right">Commission</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line align-top">
-              {rows.map((c) => (
-                <tr key={c.id}>
+        <div className="rounded border border-line bg-white shadow-sm">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
+                <tr>
+                  <th>S.No.</th>
+                  <th>DSA</th>
+                  <th>PAN</th>
+                  <th className="text-right">Net disbursed</th>
+                  <th className="text-right">Commission</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line align-top">
+                {pageRows.map((c, i) => (
+                  <tr key={c.id}>
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                   <td className="text-ink">{c.dsaName ?? `#${c.dsaStaffId}`}</td>
                   <td className="font-mono text-xs">{c.pan ?? "—"}</td>
                   <td className="text-right">{paiseToINR(c.netDisbursedPaise)}</td>
@@ -446,11 +463,13 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center text-muted">No commissions match these filters.</td>
+                  <td colSpan={7} className="text-center text-muted">No commissions match these filters.</td>
                 </tr>
               )}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       )}
       {(pay.error || voidMut.error || reassign.error) && (
@@ -469,6 +488,7 @@ function OutreachTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
   });
 
   const rows: AdminOutreachView[] = outreach.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   return (
     <div>
@@ -486,44 +506,49 @@ function OutreachTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
       ) : outreach.error ? (
         <p className="text-sm text-error-700">{errMessage(outreach.error)}</p>
       ) : (
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          <table className="staff-data-table">
-            <thead>
-              <tr>
-                <th>Lead #</th>
-                <th>Channel</th>
-                <th>To</th>
-                <th>Subject / body</th>
-                <th>Status</th>
-                <th>Sent</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line align-top">
-              {rows.map((o) => (
-                <tr key={o.id}>
-                  <td className="text-ink">#{o.leadId}</td>
-                  <td className="text-muted">{o.channel}</td>
-                  <td className="font-mono text-xs">{o.address}</td>
-                  <td className="max-w-xs text-muted">
-                    {o.subject && <div className="font-semibold text-ink">{o.subject}</div>}
-                    <div className="truncate">{o.body ?? "—"}</div>
-                    {o.error && <div className="text-error-700">{o.error}</div>}
-                  </td>
-                  <td>
-                    <span className={`inline-block rounded px-2 py-0.5 text-[8px] font-semibold uppercase ${o.status === "SENT" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>
-                      {o.status}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap text-muted">{formatDateTime(o.createdAt)}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
+        <div className="rounded border border-line bg-white shadow-sm">
+          <div className="staff-table-scroll">
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <td colSpan={6} className="text-center text-muted">No outreach sent yet.</td>
+                  <th>S.No.</th>
+                  <th>Lead #</th>
+                  <th>Channel</th>
+                  <th>To</th>
+                  <th>Subject / body</th>
+                  <th>Status</th>
+                  <th>Sent</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-line align-top">
+                {pageRows.map((o, i) => (
+                  <tr key={o.id}>
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
+                    <td className="text-ink">#{o.leadId}</td>
+                    <td className="text-muted">{o.channel}</td>
+                    <td className="font-mono text-xs">{o.address}</td>
+                    <td className="max-w-xs text-muted">
+                      {o.subject && <div className="font-semibold text-ink">{o.subject}</div>}
+                      <div className="truncate">{o.body ?? "—"}</div>
+                      {o.error && <div className="text-error-700">{o.error}</div>}
+                    </td>
+                    <td>
+                      <span className={`inline-block rounded px-2 py-0.5 text-[8px] font-semibold uppercase ${o.status === "SENT" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>
+                        {o.status}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap text-muted">{formatDateTime(o.createdAt)}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center text-muted">No outreach sent yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       )}
     </div>

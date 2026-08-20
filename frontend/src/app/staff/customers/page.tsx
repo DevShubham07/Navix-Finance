@@ -4,7 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info } from "lucide-react";
+import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
@@ -93,6 +94,27 @@ function CustomersPageInner() {
     () => scoped.filter((c) => inSegment(c, seg)),
     [scoped, seg],
   );
+
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(filtered);
+  const [collapsedDates, setCollapsedDates] = React.useState<Set<string>>(new Set());
+  const toggleDate = (key: string) =>
+    setCollapsedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  // Consecutive rows on the current page grouped by their signup (createdAt) date.
+  const dateGroups = React.useMemo(() => {
+    const list: { key: string; rows: CustomerSummary[] }[] = [];
+    for (const c of pageRows) {
+      const key = c.createdAt ? c.createdAt.slice(0, 10) : "unknown";
+      const last = list[list.length - 1];
+      if (last && last.key === key) last.rows.push(c);
+      else list.push({ key, rows: [c] });
+    }
+    return list;
+  }, [pageRows]);
 
   function setSeg(next: CustomerSegment) {
     const p = new URLSearchParams(searchParams.toString());
@@ -204,6 +226,7 @@ function CustomersPageInner() {
                     shape on both screens. Account/IFSC/amount/due describe the customer's LATEST
                     application; the roll-up columns (Owner/Loans/Outstanding) are customer-only. */}
                 <tr>
+                  <th>S.No.</th>
                   <th className="staff-sticky-identity">Customer</th>
                   <th>Date</th>
                   <th>Mobile</th>
@@ -222,8 +245,33 @@ function CustomersPageInner() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => (
+                {(() => {
+                  let running = (page - 1) * pageSize;
+                  return dateGroups.map((group) => {
+                    const isCollapsed = collapsedDates.has(group.key);
+                    const groupRows = group.rows.map((c) => {
+                      running += 1;
+                      return { c, sno: running };
+                    });
+                    return (
+                      <React.Fragment key={group.key}>
+                        <tr>
+                          <td colSpan={16} className="bg-grey-50 px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleDate(group.key)}
+                              className="flex items-center gap-1.5 font-semibold text-ink"
+                            >
+                              {isCollapsed ? <ChevronRightIcon size={14} /> : <ChevronDown size={14} />}
+                              {group.key === "unknown" ? "Date unknown" : formatDate(group.key)} · {group.rows.length} customer
+                              {group.rows.length === 1 ? "" : "s"}
+                            </button>
+                          </td>
+                        </tr>
+                        {!isCollapsed &&
+                          groupRows.map(({ c, sno }) => (
                   <tr key={c.customerId} className="hover:bg-grey-50">
+                    <td className="text-muted">{sno}</td>
                     <td className="staff-cell staff-sticky-identity">
                       <button
                         onClick={() => setOpenId(c.customerId)}
@@ -298,10 +346,22 @@ function CustomersPageInner() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                          ))}
+                      </React.Fragment>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           )}
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={total}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
       </PermissionGate>
 

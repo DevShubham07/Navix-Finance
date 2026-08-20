@@ -9,6 +9,7 @@ import { errMessage, useStaffMe, NoAccessNotice, ROLE_LABEL } from "@/components
 import { ExportMenu } from "@/components/staff/export-menu";
 import { hasPermission } from "@/lib/auth/rbac";
 import { staffReferralApi, featureFlagsApi, paiseToINR, type ReferralPayout } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 /** Short date for a nullable ISO timestamp. */
 function fmtDate(iso: string | null): string {
@@ -72,6 +73,10 @@ export default function ReferralPayoutsPage() {
     },
   });
 
+  const rows = payoutsQ.data ?? [];
+  const sum = expensesQ.data;
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total: rowsTotal } = usePagination(rows);
+
   if (role && !allowed) {
     return <NoAccessNotice message="Disbursement Head access only." />;
   }
@@ -90,9 +95,6 @@ export default function ReferralPayoutsPage() {
       </div>
     );
   }
-
-  const rows = payoutsQ.data ?? [];
-  const sum = expensesQ.data;
 
   return (
     <div>
@@ -162,6 +164,7 @@ export default function ReferralPayoutsPage() {
             <table className="staff-data-table">
               <thead>
                 <tr>
+                  <th>S.No.</th>
                   <th>Beneficiary</th>
                   <th>Referral</th>
                   <th className="whitespace-nowrap text-right">Amount</th>
@@ -178,8 +181,9 @@ export default function ReferralPayoutsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
-                {rows.map((p) => (
+                {pageRows.map((p, i) => (
                   <tr key={p.id} className="hover:bg-grey-50">
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                     <td>
                       <span className="block font-medium text-ink">{p.beneficiaryName ?? `#${p.beneficiaryCustomerId}`}</span>
                       <span className="text-xs text-muted">{roleLabel(p.beneficiaryRole)}</span>
@@ -219,7 +223,7 @@ export default function ReferralPayoutsPage() {
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={tab === "PENDING" ? 5 : 7} className="text-center text-muted">
+                    <td colSpan={tab === "PENDING" ? 6 : 8} className="text-center text-muted">
                       {tab === "PENDING" ? "No pending referral payouts." : "No referral rewards paid yet."}
                     </td>
                   </tr>
@@ -227,6 +231,14 @@ export default function ReferralPayoutsPage() {
               </tbody>
             </table>
           </div>
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={rowsTotal}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
       )}
       {pay.error && <p className="mt-3 text-sm text-error-700">{errMessage(pay.error)}</p>}

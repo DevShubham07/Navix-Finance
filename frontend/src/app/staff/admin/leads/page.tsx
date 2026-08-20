@@ -17,6 +17,7 @@ import {
   type LeadSource,
   type LeadView,
 } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const CALL_STATUSES: LeadCallStatus[] = [
   "NOT_CALLED",
@@ -89,11 +90,12 @@ export default function AdminLeadsPage() {
     enabled: !!myRole && hasPermission(myRole, "staff:manage"),
   });
 
+  const rows = list.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
   if (myRole && !hasPermission(myRole, "staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
-
-  const rows = list.data ?? [];
 
   return (
     <div>
@@ -230,6 +232,7 @@ export default function AdminLeadsPage() {
           <table className="staff-data-table">
             <thead>
               <tr>
+                <th>S.No.</th>
                 <th>Name</th>
                 <th>Mobile</th>
                 <th>Source</th>
@@ -243,13 +246,14 @@ export default function AdminLeadsPage() {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center text-navy/40">
+                  <td colSpan={9} className="text-center text-navy/40">
                     {list.isLoading ? "Loading…" : "No leads in this filter."}
                   </td>
                 </tr>
               )}
-              {rows.map((row) => (
+              {pageRows.map((row, i) => (
                 <tr key={row.id} className="border-b border-navy/5">
+                  <td className="text-navy/50">{(page - 1) * pageSize + i + 1}</td>
                   <td className="font-medium text-navy">{row.name}</td>
                   <td className="font-mono text-xs">{row.mobile}</td>
                   <td>
@@ -272,6 +276,7 @@ export default function AdminLeadsPage() {
             </tbody>
           </table>
         </div>
+        <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
       </section>
     </div>
   );

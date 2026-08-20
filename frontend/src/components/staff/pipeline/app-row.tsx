@@ -27,11 +27,14 @@ export function AppRow({
   actions,
   withLoanHistory,
   showJourney = true,
+  index,
 }: {
   app: ApplicationView;
   actions: (app: ApplicationView) => React.ReactNode;
   withLoanHistory?: boolean;
   showJourney?: boolean;
+  /** Page-adjusted 0-based row index, rendered as a leading S.No. column. */
+  index: number;
 }) {
   const [journeyOpen, setJourneyOpen] = React.useState(false);
   const [showDetail, setShowDetail] = React.useState(false);
@@ -45,6 +48,7 @@ export function AppRow({
   return (
     <>
       <tr>
+        <td className="text-muted">{index + 1}</td>
         <td className="staff-sticky-identity">
           <button
             type="button"
@@ -146,7 +150,7 @@ export function AppRow({
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={13} className="bg-grey-50">
+          <td colSpan={14} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

@@ -507,9 +507,9 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
         ) : (
           <div className="staff-table-scroll">
             <table className="staff-data-table">
-              <thead><tr><th>Loan ID</th><th>Transaction reference</th></tr></thead>
-              <tbody>{c.loans.map((loan) => (
-                <tr key={loan.id}><td>#{loan.id}</td><td className="font-mono">{loan.disbursalTxnRef ?? "—"}</td></tr>
+              <thead><tr><th>S.No.</th><th>Loan ID</th><th>Transaction reference</th></tr></thead>
+              <tbody>{c.loans.map((loan, i) => (
+                <tr key={loan.id}><td className="text-muted">{i + 1}</td><td>#{loan.id}</td><td className="font-mono">{loan.disbursalTxnRef ?? "—"}</td></tr>
               ))}</tbody>
             </table>
           </div>
@@ -587,10 +587,11 @@ function StaffFieldTable({ rows }: { rows: Array<[string, React.ReactNode, strin
   return (
     <div className="staff-table-scroll">
       <table className="staff-data-table">
-        <thead><tr><th>Field</th><th>Value</th><th>Source</th></tr></thead>
+        <thead><tr><th>S.No.</th><th>Field</th><th>Value</th><th>Source</th></tr></thead>
         <tbody>
-          {rows.map(([field, value, source]) => (
+          {rows.map(([field, value, source], i) => (
             <tr key={field}>
+              <td className="text-muted">{i + 1}</td>
               <td className="font-semibold text-ink">{field}</td>
               <td>{value || "—"}</td>
               <td className="text-muted">{source}</td>

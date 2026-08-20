@@ -19,6 +19,7 @@ import { AppRow } from "@/components/staff/pipeline/app-row";
 import { AssignActions, CreditDecisionActions } from "@/components/staff/pipeline/actions";
 import { useStaffMe } from "@/components/staff/pipeline/hooks";
 import { useQueueRange } from "@/components/staff/pipeline/queue-date-filter";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 export function StatusQueue({
   title,
@@ -223,38 +224,52 @@ export function QueueTable({
   withLoanHistory?: boolean;
   showJourney?: boolean;
 }) {
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(apps);
+
   return (
-    <div className="staff-table-scroll">
-      <table className="staff-data-table">
-        <thead>
-          <tr>
-            <th className="staff-sticky-identity">Application</th>
-            <th>Customer ID</th>
-            <th>Date</th>
-            <th>Customer</th>
-            <th>Mobile</th>
-            <th>PAN</th>
-            <th>Account</th>
-            <th>IFSC</th>
-            <th>Loan</th>
-            <th>Amount</th>
-            <th>Due</th>
-            <th>Credit</th>
-            <th className="staff-sticky-actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {apps.map((app) => (
-            <AppRow
-              key={app.id}
-              app={app}
-              actions={actions}
-              withLoanHistory={withLoanHistory}
-              showJourney={showJourney}
-            />
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <div className="staff-table-scroll">
+        <table className="staff-data-table">
+          <thead>
+            <tr>
+              <th>S.No.</th>
+              <th className="staff-sticky-identity">Application</th>
+              <th>Customer ID</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Mobile</th>
+              <th>PAN</th>
+              <th>Account</th>
+              <th>IFSC</th>
+              <th>Loan</th>
+              <th>Amount</th>
+              <th>Due</th>
+              <th>Credit</th>
+              <th className="staff-sticky-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((app, i) => (
+              <AppRow
+                key={app.id}
+                app={app}
+                actions={actions}
+                withLoanHistory={withLoanHistory}
+                showJourney={showJourney}
+                index={(page - 1) * pageSize + i}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <PaginationBar
+        page={page}
+        pageCount={pageCount}
+        setPage={setPage}
+        total={total}
+        pageSize={pageSize}
+        setPageSize={setPageSize}
+      />
     </div>
   );
 }

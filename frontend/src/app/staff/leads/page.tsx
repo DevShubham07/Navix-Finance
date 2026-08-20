@@ -17,6 +17,7 @@ import {
   type LeadView,
   type CreateLeadInput,
 } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const CALL_STATUSES: LeadCallStatus[] = [
   "NOT_CALLED",
@@ -51,12 +52,13 @@ export default function StaffLeadsPage() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["leads"] });
 
+  const rows = list.data ?? [];
+  const selected = rows.find((r) => r.id === selectedId) ?? null;
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
   if (myRole && !hasPermission(myRole, "leads:manage")) {
     return <NoAccessNotice message="Telecaller or Admin access required." />;
   }
-
-  const rows = list.data ?? [];
-  const selected = rows.find((r) => r.id === selectedId) ?? null;
 
   return (
     <div>
@@ -109,6 +111,7 @@ export default function StaffLeadsPage() {
           <table className="staff-data-table">
             <thead>
               <tr>
+                <th>S.No.</th>
                 <th>Name</th>
                 <th>Mobile</th>
                 <th>Source</th>
@@ -120,17 +123,18 @@ export default function StaffLeadsPage() {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-navy/40">
+                  <td colSpan={7} className="py-8 text-center text-navy/40">
                     {list.isLoading ? "Loading…" : "No leads yet — add one above."}
                   </td>
                 </tr>
               )}
-              {rows.map((row) => (
+              {pageRows.map((row, i) => (
                 <tr
                   key={row.id}
                   onClick={() => setSelectedId(row.id)}
                   className={`cursor-pointer hover:bg-ivory/80 ${selectedId === row.id ? "bg-gold/10" : ""}`}
                 >
+                  <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
                   <td className="staff-cell font-medium text-navy">{row.name}</td>
                   <td className="font-mono text-xs">{row.mobile}</td>
                   <td className="staff-cell text-navy/70">
@@ -146,6 +150,14 @@ export default function StaffLeadsPage() {
               ))}
             </tbody>
           </table>
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={total}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
 
         <DispositionPanel lead={selected} onSaved={invalidate} />

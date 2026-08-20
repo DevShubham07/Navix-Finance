@@ -7,6 +7,7 @@ import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { hasPermission } from "@/lib/auth/rbac";
 import { dsaApi, paiseToINR, type DsaCommissionStatus } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const STATUS_TONE: Record<DsaCommissionStatus, string> = {
   ACCRUED: "bg-amber-50 text-amber-900",
@@ -25,12 +26,13 @@ export default function DsaEarningsPage() {
   const summary = useQuery({ queryKey: ["dsa-earnings"], queryFn: dsaApi.earnings });
   const commissions = useQuery({ queryKey: ["dsa-commissions"], queryFn: dsaApi.commissions });
 
+  const rows = commissions.data ?? [];
+  const s = summary.data;
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+
   if (myRole && !hasPermission(myRole, "dsa:portal")) {
     return <NoAccessNotice message="DSA access required." />;
   }
-
-  const rows = commissions.data ?? [];
-  const s = summary.data;
 
   return (
     <div>
@@ -69,6 +71,7 @@ export default function DsaEarningsPage() {
         <table className="staff-data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>PAN</th>
               <th>Name</th>
               <th>Mobile</th>
@@ -80,13 +83,14 @@ export default function DsaEarningsPage() {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-navy/40">
+                <td colSpan={7} className="py-8 text-center text-navy/40">
                   {commissions.isLoading ? "Loading…" : "No commissions yet — they accrue once a lead's loan disburses."}
                 </td>
               </tr>
             )}
-            {rows.map((c) => (
+            {pageRows.map((c, i) => (
               <tr key={c.id}>
+                <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
                 <td className="font-mono text-xs">{c.pan ?? "—"}</td>
                 <td className="staff-cell font-medium text-navy">{c.name ?? "—"}</td>
                 <td className="font-mono text-xs">{c.mobile ?? "—"}</td>
@@ -101,6 +105,14 @@ export default function DsaEarningsPage() {
             ))}
           </tbody>
         </table>
+        <PaginationBar
+          page={page}
+          pageCount={pageCount}
+          setPage={setPage}
+          total={total}
+          pageSize={pageSize}
+          setPageSize={setPageSize}
+        />
       </div>
     </div>
   );

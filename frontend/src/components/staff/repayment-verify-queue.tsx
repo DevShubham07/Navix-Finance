@@ -16,6 +16,7 @@ import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const REASON_OPTIONS = (Object.keys(REJECTION_REASON_LABEL) as RejectionReasonCode[]).map((v) => ({
   value: v,
@@ -58,6 +59,7 @@ export function RepaymentVerifyQueue() {
     (reject.isPending && reject.variables?.p.id === p.id);
 
   const rows = q.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   return (
     <section className="rounded border border-line bg-white p-5 shadow-sm">
@@ -84,6 +86,7 @@ export function RepaymentVerifyQueue() {
           <table className="staff-data-table">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+                <th className="py-2 pr-3 font-semibold">S.No.</th>
                 <th className="py-2 pr-3 font-semibold">Customer</th>
                 <th className="py-2 pr-3 font-semibold">Loan</th>
                 <th className="py-2 pr-3 font-semibold">Amount</th>
@@ -95,8 +98,9 @@ export function RepaymentVerifyQueue() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((p) => (
+              {pageRows.map((p, i) => (
                 <tr key={p.id} className="border-b border-line/60">
+                  <td className="py-2.5 pr-3 text-muted">{(page - 1) * pageSize + i + 1}</td>
                   <td className="py-2.5 pr-3">
                     {p.customerId != null ? (
                       <button type="button" onClick={() => setOpenCustomerId(p.customerId ?? null)} className="text-left hover:underline" title="Open full customer details">
@@ -150,6 +154,14 @@ export function RepaymentVerifyQueue() {
               ))}
             </tbody>
           </table>
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={total}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
       )}
 

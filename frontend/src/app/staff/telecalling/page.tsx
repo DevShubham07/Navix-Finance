@@ -9,6 +9,7 @@ import { ApplicationInfoDialog } from "@/components/staff/application-info-dialo
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { hasPermission } from "@/lib/auth/rbac";
 import { customersApi, staffApi, statusLabel, type TelecallingView } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const TELECALLER_ONLY = ["TELECALLER"] as const;
 
@@ -128,6 +129,7 @@ function TelecallingSection({
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [bulkBusy, setBulkBusy] = React.useState(false);
   const [bulkDone, setBulkDone] = React.useState(0);
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   React.useEffect(() => setSelected(new Set()), [rows.length]);
 
@@ -184,10 +186,12 @@ function TelecallingSection({
       {rows.length === 0 ? (
         <p className="px-5 py-6 text-center text-sm text-muted">Nothing here.</p>
       ) : (
-        <div className="staff-table-scroll">
+        <div>
+          <div className="staff-table-scroll">
           <table className="staff-data-table">
             <thead>
               <tr>
+                <th>S.No.</th>
                 <th className="staff-sticky-identity">
                   <input
                     type="checkbox"
@@ -209,8 +213,9 @@ function TelecallingSection({
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {pageRows.map((r, i) => (
                 <tr key={r.id}>
+                  <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                   <td className="staff-sticky-identity">
                     <input
                       type="checkbox"
@@ -287,6 +292,8 @@ function TelecallingSection({
               ))}
             </tbody>
           </table>
+          </div>
+          <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       )}
     </section>

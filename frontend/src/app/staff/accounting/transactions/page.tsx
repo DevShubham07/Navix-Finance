@@ -11,6 +11,7 @@ import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { formatDate } from "@/lib/utils";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const TABS: { key: "ALL" | TransactionDirection; label: string }[] = [
   { key: "ALL", label: "All" },
@@ -99,6 +100,7 @@ export default function TransactionsPage() {
   const totalIn = rows.filter((r) => r.direction === "INCOMING").reduce((s, r) => s + r.amountPaise, 0);
   const totalOut = rows.filter((r) => r.direction === "OUTGOING").reduce((s, r) => s + r.amountPaise, 0);
   const net = totalIn - totalOut;
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   return (
     <div>
@@ -214,6 +216,7 @@ export default function TransactionsPage() {
               <table className="staff-data-table">
                 <thead>
                   <tr>
+                    <th>S.No.</th>
                     <th>Date</th>
                     <th>Borrower</th>
                     <th>Type</th>
@@ -225,12 +228,22 @@ export default function TransactionsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
-                    <TxnRow key={r.id} t={r} />
+                  {pageRows.map((r, i) => (
+                    <TxnRow key={r.id} t={r} sno={(page - 1) * pageSize + i + 1} />
                   ))}
                 </tbody>
               </table>
             </div>
+          )}
+          {rows.length > 0 && (
+            <PaginationBar
+              page={page}
+              pageCount={pageCount}
+              setPage={setPage}
+              total={total}
+              pageSize={pageSize}
+              setPageSize={setPageSize}
+            />
           )}
         </div>
       </PermissionGate>
@@ -238,10 +251,11 @@ export default function TransactionsPage() {
   );
 }
 
-function TxnRow({ t }: { t: TransactionView }) {
+function TxnRow({ t, sno }: { t: TransactionView; sno: number }) {
   const incoming = t.direction === "INCOMING";
   return (
     <tr>
+      <td className="text-muted">{sno}</td>
       <td className="text-muted">{t.date ? formatDate(t.date) : "—"}</td>
       <td className="staff-cell" title={t.borrowerName ?? undefined}>
         <span className="font-medium text-ink">{t.borrowerName ?? "—"}</span>

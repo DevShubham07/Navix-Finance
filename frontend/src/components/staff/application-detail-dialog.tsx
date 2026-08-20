@@ -27,8 +27,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { X, Loader2, Zap, Banknote, ShieldCheck, PhoneCall, Gauge, Check, ExternalLink } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { X, Loader2, Zap, Banknote, ShieldCheck, PhoneCall, Gauge, Check, ExternalLink, Pencil } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { CreditBadge } from "@/components/staff/credit-badge";
@@ -51,12 +51,14 @@ import {
   customersApi,
   statusLabel,
   paiseToINR,
+  REFERENCE_RELATIONS,
   type ApplicationView,
   type ProfileView,
   type LoanView,
   type OutstandingView,
   type VerificationProgress,
   type EventView,
+  type ReferenceInput,
 } from "@/lib/api/applications";
 import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import {
@@ -463,15 +465,20 @@ function Headline({ label, value, tone = "navy", caption }: {
   );
 }
 
-function FocusCard({ icon: Icon, title, children }: {
+function FocusCard({ icon: Icon, title, children, headerRight }: {
   icon: typeof Banknote;
   title: string;
   children: React.ReactNode;
+  /** Optional right-aligned action rendered beside the title (e.g. an ADMIN "Edit" button). */
+  headerRight?: React.ReactNode;
 }) {
   return (
     <div className="rounded border border-line bg-white p-4">
-      <h4 className="mb-3 flex items-center gap-2 font-serif text-sm font-semibold text-navy">
-        <Icon size={15} aria-hidden /> {title}
+      <h4 className="mb-3 flex items-center justify-between gap-2 font-serif text-sm font-semibold text-navy">
+        <span className="flex items-center gap-2">
+          <Icon size={15} aria-hidden /> {title}
+        </span>
+        {headerRight}
       </h4>
       {children}
     </div>
@@ -489,28 +496,137 @@ const RELATION_LABEL: Record<string, string> = {
  * The two contacts the borrower named in the offer journey (V46). Shown to every role rather than
  * scoped to collections: credit reads them as part of the file, and collections is simply the role
  * that eventually calls them. Renders nothing before the borrower reaches that screen.
+ *
+ * ADMIN additionally gets an inline "Edit" affordance — the backend's `offer/references` endpoint
+ * already permits ADMIN (not just the owning borrower), so a staffer can correct a mistyped name/
+ * mobile/relation without the borrower having to redo the screen.
  */
 function ReferencesFocus({ applicationId }: { applicationId: number }) {
+  const role = useStaffMe().data?.role;
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["staff-references", applicationId],
     queryFn: () => staffApi.references(applicationId),
     retry: false,
   });
   const rows = q.data ?? [];
+  const [editing, setEditing] = React.useState(false);
+  const [drafts, setDrafts] = React.useState<ReferenceInput[]>([]);
+
+  const startEdit = () => {
+    setDrafts(rows.map((r) => ({ fullName: r.fullName, mobile: r.mobile, relation: r.relation })));
+    setEditing(true);
+  };
+
+  const save = useMutation({
+    mutationFn: () => staffApi.saveReferences(applicationId, drafts),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-references", applicationId] });
+      setEditing(false);
+    },
+  });
+
   if (rows.length === 0) return null;
 
+  const canEdit = role === "ADMIN";
+
   return (
-    <FocusCard icon={PhoneCall} title="References">
-      <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-        {rows.map((r) => (
-          <KV
-            key={r.slot}
-            k={`${RELATION_LABEL[r.relation] ?? r.relation} · ${r.fullName}`}
-            v={r.mobile}
-            mono
-          />
-        ))}
-      </dl>
+    <FocusCard
+      icon={PhoneCall}
+      title="References"
+      headerRight={
+        canEdit && !editing ? (
+          <button
+            type="button"
+            onClick={startEdit}
+            className="btn btn-sm btn-outline btn-icon"
+            aria-label="Edit references"
+            title="Edit references"
+          >
+            <Pencil size={13} />
+          </button>
+        ) : undefined
+      }
+    >
+      {editing ? (
+        <div className="space-y-3">
+          {drafts.map((d, i) => (
+            <div key={i} className="grid gap-2 rounded border border-line p-2 sm:grid-cols-3">
+              <label className="field !mb-0">
+                <span className="text-xs">Full name</span>
+                <input
+                  type="text"
+                  value={d.fullName}
+                  onChange={(e) =>
+                    setDrafts((prev) => prev.map((x, j) => (j === i ? { ...x, fullName: e.target.value } : x)))
+                  }
+                  className="w-full rounded border border-line px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="field !mb-0">
+                <span className="text-xs">Mobile</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={d.mobile}
+                  onChange={(e) =>
+                    setDrafts((prev) => prev.map((x, j) => (j === i ? { ...x, mobile: e.target.value } : x)))
+                  }
+                  className="w-full rounded border border-line px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="field !mb-0">
+                <span className="text-xs">Relation</span>
+                <select
+                  value={d.relation}
+                  onChange={(e) =>
+                    setDrafts((prev) => prev.map((x, j) => (j === i ? { ...x, relation: e.target.value } : x)))
+                  }
+                  className="w-full rounded border border-line px-2 py-1.5 text-sm"
+                >
+                  {REFERENCE_RELATIONS.map((rel) => (
+                    <option key={rel} value={rel}>
+                      {RELATION_LABEL[rel] ?? rel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ))}
+          {save.error && <p className="text-xs text-error-700">{errMessage(save.error)}</p>}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              disabled={save.isPending}
+              className="btn btn-sm btn-outline"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => save.mutate()}
+              disabled={save.isPending}
+              className="btn btn-sm btn-navy disabled:opacity-50"
+            >
+              {save.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+          {rows.map((r) => (
+            <KV
+              key={r.slot}
+              k={`${RELATION_LABEL[r.relation] ?? r.relation} · ${r.fullName}`}
+              v={r.mobile}
+              mono
+            />
+          ))}
+        </dl>
+      )}
     </FocusCard>
   );
 }

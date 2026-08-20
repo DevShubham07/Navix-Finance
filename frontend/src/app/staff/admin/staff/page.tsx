@@ -14,6 +14,7 @@ import {
   type StaffRoleName,
   type StaffStatus,
 } from "@/lib/api/applications";
+import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const ROLES: StaffRoleName[] = [
   "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
@@ -25,6 +26,9 @@ const STATUSES: StaffStatus[] = ["INVITED", "ACTIVE", "DISABLED"];
 export default function AdminStaffPage() {
   const role = useStaffMe().data?.role;
   const q = useQuery({ queryKey: ["admin-staff"], queryFn: adminApi.listStaff });
+
+  const rows = q.data ?? [];
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   if (role && !hasPermission(role, "staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -64,6 +68,7 @@ export default function AdminStaffPage() {
           <table className="staff-data-table">
             <thead>
               <tr>
+                <th>S.No.</th>
                 <th>Staff</th>
                 <th>Role</th>
                 <th>Status</th>
@@ -71,12 +76,22 @@ export default function AdminStaffPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {(q.data ?? []).map((s) => <StaffRow key={s.id} staff={s} />)}
-              {(q.data ?? []).length === 0 && (
-                <tr><td colSpan={4} className="text-center text-muted">No staff accounts.</td></tr>
+              {pageRows.map((s, i) => (
+                <StaffRow key={s.id} staff={s} index={(page - 1) * pageSize + i} />
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={5} className="text-center text-muted">No staff accounts.</td></tr>
               )}
             </tbody>
           </table>
+          <PaginationBar
+            page={page}
+            pageCount={pageCount}
+            setPage={setPage}
+            total={total}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+          />
         </div>
       )}
     </div>
@@ -146,7 +161,7 @@ function CreateStaffForm() {
   );
 }
 
-function StaffRow({ staff }: { staff: StaffResponse }) {
+function StaffRow({ staff, index }: { staff: StaffResponse; index: number }) {
   const qc = useQueryClient();
   const [role, setRole] = React.useState<StaffRoleName>(staff.role);
   const [status, setStatus] = React.useState<StaffStatus>(staff.status);
@@ -172,6 +187,7 @@ function StaffRow({ staff }: { staff: StaffResponse }) {
 
   return (
     <tr>
+      <td className="text-muted">{index + 1}</td>
       <td>
         <div className="font-semibold text-ink">{staff.name}</div>
         <div className="text-xs text-muted">{staff.email} · #{staff.id}</div>
