@@ -1,5 +1,6 @@
 package com.navix.loan.service;
 
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.dto.LoanDtos.TransactionView;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
@@ -43,6 +44,7 @@ public class TransactionService {
     private final PaymentRepository paymentRepository;
     private final LoanApplicationRepository applicationRepository;
     private final CustomerProfileRepository profileRepository;
+    private final DocumentStoragePort storage;
 
     @Transactional(readOnly = true)
     public List<TransactionView> listTransactions(String q, String direction) {
@@ -87,7 +89,7 @@ public class TransactionService {
                     loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
                     loan.getDisbursalTxnRef(),
                     loan.getStatus() != null ? loan.getStatus().name() : null,
-                    loan.getDisbursedOn()));
+                    loan.getDisbursedOn(), null));
         }
 
         // Incoming: each payment is one repayment.
@@ -103,7 +105,7 @@ public class TransactionService {
                     pay.getAmount() != null ? pay.getAmount() : 0L,
                     pay.getTxnRef(),
                     pay.getStatus() != null ? pay.getStatus().name() : null,
-                    pay.getPaidOn()));
+                    pay.getPaidOn(), presignedProof(pay.getProofUrl())));
         }
 
         String dir = direction != null ? direction.trim().toUpperCase() : null;
@@ -128,6 +130,11 @@ public class TransactionService {
         out.sort(Comparator.comparing(TransactionView::date,
                 Comparator.nullsLast(Comparator.<LocalDate>reverseOrder())));
         return out;
+    }
+
+    /** Resolve a stored S3 key to a short-lived presigned GET; null in, null out. */
+    private String presignedProof(String key) {
+        return key == null || key.isBlank() ? null : storage.presignDownload(key);
     }
 
     /** Match the search needle against borrower name, mobile, or loan id. */

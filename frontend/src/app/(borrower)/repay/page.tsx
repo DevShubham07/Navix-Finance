@@ -3,9 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Wallet, Smartphone, Landmark, CheckCircle2, ArrowRight, AlertTriangle, Clock } from "lucide-react";
+import { Wallet, Smartphone, Landmark, CheckCircle2, ArrowRight, AlertTriangle, Clock, Paperclip, X } from "lucide-react";
 import { Input } from "@/components/ui";
 import { ZoomableImage } from "@/components/ui/image-lightbox";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { InfoRow } from "@/components/borrower/summary";
 import { PaymentHelp } from "@/components/borrower/payment-help";
 import { useMounted } from "@/hooks/use-mounted";
@@ -13,6 +14,7 @@ import { useLiveApplication } from "@/lib/api/live-journey";
 import {
   borrowerApi,
   paymentSettingsApi,
+  storageApi,
   paiseToINR,
   rupeesToPaise,
   REJECTION_REASON_LABEL,
@@ -40,6 +42,12 @@ export default function RepayPage() {
   const [mode, setMode] = React.useState<"full" | "custom">("full");
   const [custom, setCustom] = React.useState("");
   const [txnRef, setTxnRef] = React.useState("");
+  // The payment screenshot is mandatory (uploaded to S3 only when Pay is pressed, so a borrower who
+  // changes the amount or method after picking a file doesn't re-upload for nothing).
+  const [proof, setProof] = React.useState<File | null>(null);
+  const [proofError, setProofError] = React.useState<string | null>(null);
+  const proofPreviewUrl = React.useMemo(() => (proof ? URL.createObjectURL(proof) : null), [proof]);
+  React.useEffect(() => () => { if (proofPreviewUrl) URL.revokeObjectURL(proofPreviewUrl); }, [proofPreviewUrl]);
 
   const loanQuery = useQuery({
     queryKey: ["repay-loan", loanId],
@@ -79,11 +87,23 @@ export default function RepayPage() {
   });
 
   const record = useMutation({
-    mutationFn: (payload: { amountPaise: number; method: PaymentMethodName; txnRef: string }) =>
-      borrowerApi.recordRepayment(loanId as number, { ...payload, paidOn: todayISO() }),
+    mutationFn: async (payload: { amountPaise: number; method: PaymentMethodName; txnRef: string }) => {
+      if (!proof) throw new Error("Attach a screenshot of your payment before submitting.");
+      // Direct browser -> S3 PUT via a presigned URL, same pattern as every other upload in the app —
+      // the bytes never pass through the BFF. Uploaded only now (not on file-select) so switching the
+      // amount/method after picking a screenshot never re-uploads it for nothing.
+      const up = await storageApi.presignUpload({
+        category: "REPAYMENT_PROOF",
+        filename: proof.name,
+        contentType: proof.type || "application/octet-stream",
+      });
+      await storageApi.putToPresignedUrl(up.url, proof);
+      return borrowerApi.recordRepayment(loanId as number, { ...payload, proofUrl: up.key, paidOn: todayISO() });
+    },
     onSuccess: () => {
       setTxnRef("");
       setCustom("");
+      setProof(null);
       qc.invalidateQueries({ queryKey: ["repay-payments", loanId] });
       qc.invalidateQueries({ queryKey: ["repay-outstanding", loanId] });
       qc.invalidateQueries({ queryKey: ["repay-loan", loanId] });
@@ -167,10 +187,31 @@ export default function RepayPage() {
 
   const customPaise = rupeesToPaise(Number(custom.replace(/\D/g, "")) || 0);
   const amountPaise = mode === "full" ? dueToday : Math.min(customPaise, dueToday);
-  const canPay = amountPaise > 0 && txnRef.trim().length >= 4 && !record.isPending;
-  // Pay is disabled SOLELY because the txn reference is missing/too short (amount is valid, not mid-record)
-  // — surface a hint under the button so the disabled state is never unexplained.
+  const canPay = amountPaise > 0 && txnRef.trim().length >= 4 && proof != null && !record.isPending;
+  // Pay is disabled SOLELY because the txn reference/screenshot is missing (amount is valid, not
+  // mid-record) — surface a hint under the button so the disabled state is never unexplained.
   const needsTxnRef = amountPaise > 0 && !record.isPending && txnRef.trim().length < 4;
+  const needsProof = amountPaise > 0 && !record.isPending && txnRef.trim().length >= 4 && proof == null;
+
+  const MAX_PROOF_BYTES = 8 * 1024 * 1024;
+  const onProofSelected = (file: File | null) => {
+    setProofError(null);
+    if (!file) {
+      setProof(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setProofError("Attach an image (screenshot) of your payment confirmation.");
+      setProof(null);
+      return;
+    }
+    if (file.size > MAX_PROOF_BYTES) {
+      setProofError("That screenshot is too large — please attach one under 8 MB.");
+      setProof(null);
+      return;
+    }
+    setProof(file);
+  };
 
   const pay = () => {
     if (!canPay) return;
@@ -396,12 +437,55 @@ export default function RepayPage() {
             helperText="We verify your payment against this reference before it reduces your balance"
           />
 
+          <label className="field">
+            <span>Payment screenshot *</span>
+            {proof ? (
+              <div className="flex items-center gap-3 rounded border border-line bg-grey-50 p-2">
+                {proofPreviewUrl && (
+                  <ZoomableImage
+                    src={proofPreviewUrl}
+                    alt="Payment screenshot"
+                    thumbClassName="h-14 w-14 rounded border border-line bg-white object-cover"
+                  />
+                )}
+                <span className="flex-1 truncate text-xs text-ink">{proof.name}</span>
+                <button
+                  type="button"
+                  onClick={() => onProofSelected(null)}
+                  className="rounded border border-line bg-white p-1.5 text-muted hover:text-error-700"
+                  aria-label="Remove screenshot"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => onProofSelected(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-muted file:mr-3 file:rounded file:border file:border-line file:bg-grey-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-navy hover:file:bg-grey-100"
+              />
+            )}
+          </label>
+          {proofError && <p className="-mt-2 mb-3 text-xs text-error-700">{proofError}</p>}
+          {!proof && !proofError && (
+            <p className="-mt-2 mb-3 flex items-center gap-1 text-xs text-muted">
+              <Paperclip size={12} /> A screenshot of the payment confirmation is required — this is
+              what our accounts team checks against your reference before verifying.
+            </p>
+          )}
+
           <button onClick={pay} disabled={!canPay} className="btn btn-gold btn-block mt-2">
-            <Wallet size={16} /> {record.isPending ? "Recording…" : `Pay ${paiseToINR(amountPaise)}`}
+            <Wallet size={16} /> {record.isPending ? "Uploading & recording…" : `Pay ${paiseToINR(amountPaise)}`}
           </button>
           {needsTxnRef && (
             <p className="mt-2 text-center text-xs text-gold-dark">
               Paste your UPI/UTR reference (min 4 characters) to enable payment
+            </p>
+          )}
+          {needsProof && (
+            <p className="mt-2 text-center text-xs text-gold-dark">
+              Attach a screenshot of your payment to enable payment
             </p>
           )}
           <p className="mt-3 text-center text-xs text-muted">
@@ -455,6 +539,7 @@ function PaymentRow({ p }: { p: PaymentView }) {
             {p.txnRef ? ` · ${p.txnRef}` : ""}
             {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
           </span>
+          <PaymentProofLink url={p.proofUrl} className="text-xs" />
         </span>
         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}>{s.label}</span>
       </div>

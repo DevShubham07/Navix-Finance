@@ -33,7 +33,7 @@ public class RepaymentController {
     @PostMapping
     public ApiResponse<PaymentView> record(@PathVariable Long loanId,
                                            @Valid @RequestBody RepaymentRequest request) {
-        return ApiResponse.ok(PaymentView.of(repaymentService.recordPayment(
+        return ApiResponse.ok(repaymentService.view(repaymentService.recordPayment(
                 loanId, request.amountPaise(), request.method(), request.txnRef(),
                 request.proofUrl(), request.paidOn())));
     }
@@ -42,7 +42,7 @@ public class RepaymentController {
     @GetMapping
     public ApiResponse<List<PaymentView>> list(@PathVariable Long loanId) {
         return ApiResponse.ok(repaymentService.listPayments(loanId).stream()
-                .map(PaymentView::of)
+                .map(repaymentService::view)
                 .toList());
     }
 
@@ -59,7 +59,7 @@ public class RepaymentController {
     @PostMapping("/{paymentId}/verify")
     public ApiResponse<PaymentView> verify(@PathVariable Long loanId, @PathVariable Long paymentId) {
         requireRole("ACCOUNTANT", "ADMIN");
-        return ApiResponse.ok(PaymentView.of(repaymentService.verifyPayment(paymentId)));
+        return ApiResponse.ok(repaymentService.view(repaymentService.verifyPayment(paymentId)));
     }
 
     /**
@@ -70,7 +70,7 @@ public class RepaymentController {
     public ApiResponse<PaymentView> reject(@PathVariable Long loanId, @PathVariable Long paymentId,
                                            @Valid @RequestBody RejectRepaymentRequest request) {
         requireRole("ACCOUNTANT", "ADMIN");
-        return ApiResponse.ok(PaymentView.of(
+        return ApiResponse.ok(repaymentService.view(
                 repaymentService.rejectPayment(paymentId, request.reason(), request.note())));
     }
 

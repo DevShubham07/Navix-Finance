@@ -15,6 +15,7 @@ import {
 import { formatApiError } from "@/lib/api/errors";
 import { formatDate } from "@/lib/utils";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 
 const REASON_OPTIONS = (Object.keys(REJECTION_REASON_LABEL) as RejectionReasonCode[]).map((v) => ({
   value: v,
@@ -88,6 +89,7 @@ export function RepaymentVerifyQueue() {
                 <th className="py-2 pr-3 font-semibold">Amount</th>
                 <th className="py-2 pr-3 font-semibold">Method</th>
                 <th className="py-2 pr-3 font-semibold">Reference</th>
+                <th className="py-2 pr-3 font-semibold">Proof</th>
                 <th className="py-2 pr-3 font-semibold">Paid on</th>
                 <th className="py-2 font-semibold" />
               </tr>
@@ -112,6 +114,10 @@ export function RepaymentVerifyQueue() {
                   </td>
                   <td className="py-2.5 pr-3">{p.method === "UPI" ? "UPI" : "Bank transfer"}</td>
                   <td className="py-2.5 pr-3 text-muted">{p.txnRef || "—"}</td>
+                  <td className="py-2.5 pr-3">
+                    <PaymentProofLink url={p.proofUrl} className="text-xs" />
+                    {!p.proofUrl && <span className="text-xs text-muted">—</span>}
+                  </td>
                   <td className="py-2.5 pr-3 text-muted">{p.paidOn ? formatDate(p.paidOn) : "—"}</td>
                   <td className="py-2.5 text-right">
                     <div className="flex items-center justify-end gap-2">

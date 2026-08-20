@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.navix.common.collections.SettlementDirectory;
 import com.navix.common.exception.BusinessException;
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentMethod;
 import com.navix.loan.domain.PaymentStatus;
@@ -40,13 +41,15 @@ class RepaymentServiceTest {
     private SettlementDirectory settlementDirectory;
     @Mock
     private DsaCommissionService dsaCommissionService;
+    @Mock
+    private DocumentStoragePort storage;
 
     private RepaymentService repaymentService;
 
     @BeforeEach
     void setUp() {
         repaymentService = new RepaymentService(paymentRepository, loanRepository, new LoanMath(),
-                applicationFlowService, settlementDirectory, event -> {}, dsaCommissionService);
+                applicationFlowService, settlementDirectory, event -> {}, dsaCommissionService, storage);
     }
 
     /**
@@ -93,14 +96,53 @@ class RepaymentServiceTest {
     }
 
     @Test
-    void theOwningBorrowerCanRecordTheirOwnPayment() {
+    void theOwningBorrowerCanRecordTheirOwnPaymentWithAScreenshotAttached() {
         when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan())); // customer 7
         when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(0L);
         when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         com.navix.common.security.ActorContext.set(
                 new com.navix.common.security.CurrentActor("7", "Asha", "BORROWER"));
         try {
-            assertThat(repaymentService.recordPayment(1L, 500_000L, PaymentMethod.UPI, "TXN-OK", null, DUE)
+            assertThat(repaymentService.recordPayment(
+                    1L, 500_000L, PaymentMethod.UPI, "TXN-OK", "loan/repayment-proof/1.jpg", DUE)
+                    .getStatus()).isEqualTo(PaymentStatus.PENDING_VERIFICATION);
+        } finally {
+            com.navix.common.security.ActorContext.clear();
+        }
+    }
+
+    /**
+     * The screenshot is mandatory for the borrower's own submission — without it there is nothing an
+     * accountant can verify a claimed transfer against before it reduces a real balance.
+     */
+    @Test
+    void aBorrowerCannotRecordAPaymentWithoutAScreenshot() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan())); // customer 7
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor("7", "Asha", "BORROWER"));
+        try {
+            assertThatThrownBy(() -> repaymentService.recordPayment(
+                    1L, 500_000L, PaymentMethod.UPI, "TXN-OK", "  ", DUE))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("screenshot");
+        } finally {
+            com.navix.common.security.ActorContext.clear();
+        }
+    }
+
+    /**
+     * Staff recording on a borrower's behalf (branch walk-in, phoned-in reference) has no upload to
+     * attach — the screenshot requirement must stay scoped to the BORROWER actor only.
+     */
+    @Test
+    void staffCanRecordAPaymentWithoutAScreenshot() {
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(0L);
+        when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor("40", "Accountant Rao", "ACCOUNTANT"));
+        try {
+            assertThat(repaymentService.recordPayment(1L, 500_000L, PaymentMethod.UPI, "TXN-WALKIN", null, DUE)
                     .getStatus()).isEqualTo(PaymentStatus.PENDING_VERIFICATION);
         } finally {
             com.navix.common.security.ActorContext.clear();
@@ -355,5 +397,34 @@ class RepaymentServiceTest {
         assertThat(loan.getOutstanding()).isZero();
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.CLOSED);
         verify(applicationFlowService).closeForLoan(1L);
+    }
+
+    /**
+     * The stored {@code proofUrl} is a raw S3 key, never fetchable by a browser directly — every read
+     * path must resolve it to a short-lived presigned GET before it reaches a response.
+     */
+    private Payment paymentFixture() {
+        Payment payment = new Payment();
+        payment.setId(1L);
+        payment.setLoanId(1L);
+        payment.setAmount(500_000L);
+        payment.setMethod(PaymentMethod.UPI);
+        payment.setStatus(PaymentStatus.PENDING_VERIFICATION);
+        return payment;
+    }
+
+    @Test
+    void viewResolvesTheStoredProofKeyToAPresignedUrl() {
+        Payment payment = paymentFixture();
+        payment.setProofUrl("loan/repayment-proof/1.jpg");
+        when(storage.presignDownload("loan/repayment-proof/1.jpg")).thenReturn("https://s3.example/signed?x=1");
+
+        assertThat(repaymentService.view(payment).proofUrl()).isEqualTo("https://s3.example/signed?x=1");
+    }
+
+    @Test
+    void viewLeavesProofUrlNullWhenNothingWasUploaded() {
+        assertThat(repaymentService.view(paymentFixture()).proofUrl()).isNull();
+        verify(storage, never()).presignDownload(any());
     }
 }

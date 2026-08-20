@@ -56,7 +56,7 @@ public class LoanController {
                 .collect(Collectors.toMap(TransactionView::id, t -> t, (a, b) -> a));
         return ApiResponse.ok(repaymentService.listPending().stream().map(payment -> {
             TransactionView transaction = byPaymentId.get("P-" + payment.getId());
-            return PaymentView.of(payment,
+            return repaymentService.view(payment,
                     transaction != null ? transaction.customerId() : null,
                     transaction != null ? transaction.borrowerName() : null);
         }).toList());

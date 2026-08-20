@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Badge, Dialog, DialogHeader, DialogTitle } from "@/components/ui";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { InfoRow } from "@/components/borrower/summary";
 import {
   borrowerApi,
@@ -221,6 +222,7 @@ function PaymentRow({ p }: { p: PaymentView }) {
           {p.txnRef ? ` · ${p.txnRef}` : ""}
           {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
         </span>
+        <PaymentProofLink url={p.proofUrl} className="text-xs" />
       </span>
       <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}>{s.label}</span>
     </li>

@@ -1,6 +1,8 @@
 package com.navix.loan.service;
 
 import com.navix.common.collections.SettlementDirectory;
+import com.navix.common.security.ActorContext;
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.RepaymentRecordedEvent;
@@ -12,6 +14,7 @@ import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.Payment;
 import com.navix.loan.repository.LoanRepository;
+import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.repository.PaymentRepository;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -41,13 +44,26 @@ public class RepaymentService {
     private final SettlementDirectory settlementDirectory;
     private final ApplicationEventPublisher eventPublisher;
     private final DsaCommissionService dsaCommissionService;
+    private final DocumentStoragePort storage;
 
-    /** Record a (possibly partial) repayment. Idempotent on {@code txnRef} per loan. */
+    /**
+     * Record a (possibly partial) repayment. Idempotent on {@code txnRef} per loan.
+     *
+     * <p>A screenshot is mandatory ONLY when the caller is the borrower themselves — staff recording
+     * on a borrower's behalf (a branch walk-in, a phoned-in reference) legitimately has no upload, and
+     * collections' validated-payment path (proof is deliberately flexible there — screenshot / text /
+     * transaction id, revamp.md decision) also flows through this same method. Gate on the actor, not
+     * a DTO-level constraint, so those two paths stay unaffected.
+     */
     @Transactional
     public Payment recordPayment(Long loanId, long amountPaise, PaymentMethod method,
                                  String txnRef, String proofUrl, LocalDate paidOn) {
         Loan loan = requireLoan(loanId);
         requireOwnLoanIfBorrower(loan);
+        if ("BORROWER".equals(ActorContext.get().role()) && (proofUrl == null || proofUrl.isBlank())) {
+            throw new BusinessException("PAYMENT_PROOF_REQUIRED",
+                    "Attach a screenshot of your payment before submitting.");
+        }
         if (loan.getStatus() == LoanStatus.CLOSED || loan.getStatus() == LoanStatus.REPAID) {
             throw new BusinessException("LOAN_SETTLED", "Loan is already settled");
         }
@@ -145,6 +161,25 @@ public class RepaymentService {
     @Transactional(readOnly = true)
     public List<Payment> listPending() {
         return paymentRepository.findByStatusOrderByIdAsc(PaymentStatus.PENDING_VERIFICATION);
+    }
+
+    /**
+     * {@link PaymentView} with {@code proofUrl} resolved to a short-lived presigned GET — the DTO
+     * factories only know the raw S3 key, and every read path (borrower's own list, the accountant's
+     * verify queue, a staff loan-detail dialog) needs a link the browser can actually open.
+     */
+    public PaymentView view(Payment p) {
+        return PaymentView.ofWithResolvedProof(p, presignedProof(p));
+    }
+
+    /** {@link #view(Payment)} + the staff-only borrower context (verify queue). */
+    public PaymentView view(Payment p, Long customerId, String customerName) {
+        return PaymentView.ofWithResolvedProof(p, customerId, customerName, presignedProof(p));
+    }
+
+    private String presignedProof(Payment p) {
+        String key = p.getProofUrl();
+        return key == null || key.isBlank() ? null : storage.presignDownload(key);
     }
 
     /**

@@ -324,6 +324,8 @@ export interface TransactionView {
   txnRef: string | null;
   status: string | null;
   date: string | null;
+  /** Presigned link to the borrower-uploaded repayment screenshot. REPAYMENT rows only. */
+  proofUrl: string | null;
 }
 
 /**

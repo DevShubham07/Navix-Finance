@@ -4,6 +4,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, X } from "lucide-react";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { LoanBreakdown } from "@/components/staff/loan-breakdown";
 import { EventTimeline } from "@/components/staff/event-timeline";
 import {
@@ -122,7 +123,8 @@ function PaymentLi({ p }: { p: PaymentView }) {
           {p.txnRef ? ` · ${p.txnRef}` : ""}
           {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
           {p.partial ? " · partial" : ""}
-        </span>
+        </span>{" "}
+        <PaymentProofLink url={p.proofUrl} className="text-xs" />
       </span>
       <span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${tone}`}>
         {p.status.replace(/_/g, " ").toLowerCase()}

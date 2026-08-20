@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe, errMessage } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { formatDate } from "@/lib/utils";
 
 const TABS: { key: "ALL" | TransactionDirection; label: string }[] = [
@@ -114,6 +115,7 @@ export default function TransactionsPage() {
             { header: "Direction", value: (t) => t.direction },
             { header: "Amount (₹)", value: (t) => (t.amountPaise / 100).toFixed(2) },
             { header: "Reference", value: (t) => t.txnRef ?? "" },
+            { header: "Proof attached", value: (t) => (t.proofUrl ? "Yes" : "No") },
             { header: "Status", value: (t) => t.status ?? "" },
             { header: "Loan", value: (t) => (t.loanId != null ? `#${t.loanId}` : "") },
           ]}
@@ -217,6 +219,7 @@ export default function TransactionsPage() {
                     <th>Type</th>
                     <th>Amount</th>
                     <th>Reference</th>
+                    <th>Proof</th>
                     <th>Status</th>
                     <th>Loan</th>
                   </tr>
@@ -254,6 +257,10 @@ function TxnRow({ t }: { t: TransactionView }) {
         {incoming ? "+" : "−"}{paiseToINR(t.amountPaise)}
       </td>
       <td className="staff-cell text-muted" title={t.txnRef || undefined}>{t.txnRef || "—"}</td>
+      <td>
+        <PaymentProofLink url={t.proofUrl} className="text-xs" />
+        {!t.proofUrl && <span className="text-xs text-muted">—</span>}
+      </td>
       <td className="text-muted">{t.status ?? "—"}</td>
       <td className="text-muted">{t.loanId != null ? `#${t.loanId}` : "—"}</td>
     </tr>

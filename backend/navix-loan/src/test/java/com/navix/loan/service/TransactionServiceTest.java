@@ -1,8 +1,10 @@
 package com.navix.loan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentMethod;
 import com.navix.loan.domain.PaymentStatus;
@@ -34,12 +36,16 @@ class TransactionServiceTest {
     private LoanApplicationRepository applicationRepository;
     @Mock
     private CustomerProfileRepository profileRepository;
+    @Mock
+    private DocumentStoragePort storage;
 
     private TransactionService service;
 
     @BeforeEach
     void setUp() {
-        service = new TransactionService(loanRepository, paymentRepository, applicationRepository, profileRepository);
+        service = new TransactionService(loanRepository, paymentRepository, applicationRepository, profileRepository, storage);
+        // Only the proof-resolution test cares about the return value; a harmless default elsewhere.
+        lenient().when(storage.presignDownload("loan/repayment-proof/1.jpg")).thenReturn("https://s3.example/signed?p=1");
     }
 
     private Loan loan2() {
@@ -79,6 +85,7 @@ class TransactionServiceTest {
         pay.setStatus(PaymentStatus.VERIFIED);
         pay.setTxnRef("PAY-IN-1");
         pay.setPaidOn(LocalDate.of(2026, 6, 20));
+        pay.setProofUrl("loan/repayment-proof/1.jpg");
         return pay;
     }
 
@@ -108,6 +115,10 @@ class TransactionServiceTest {
         assertThat(repayment.direction()).isEqualTo("INCOMING");
         assertThat(repayment.amountPaise()).isEqualTo(100_000L);
         assertThat(repayment.borrowerName()).isEqualTo("Aman");
+        // The borrower-uploaded screenshot resolves to a presigned link wherever the ledger shows a
+        // repayment's transaction id — a disbursal (nothing was ever uploaded against it) gets none.
+        assertThat(repayment.proofUrl()).isEqualTo("https://s3.example/signed?p=1");
+        assertThat(disbursal.proofUrl()).isNull();
     }
 
     @Test

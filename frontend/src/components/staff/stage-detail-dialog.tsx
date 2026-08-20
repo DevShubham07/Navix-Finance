@@ -46,6 +46,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
 import { EventTimeline } from "@/components/staff/event-timeline";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
@@ -697,7 +698,8 @@ function PaymentLi({ p }: { p: PaymentView }) {
           {p.txnRef ? ` · ${p.txnRef}` : ""}
           {p.paidOn ? ` · ${formatDate(p.paidOn)}` : ""}
           {p.partial ? " · partial" : ""}
-        </span>
+        </span>{" "}
+        <PaymentProofLink url={p.proofUrl} className="text-xs" />
       </span>
       <span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${tone}`}>
         {p.status.replace(/_/g, " ").toLowerCase()}

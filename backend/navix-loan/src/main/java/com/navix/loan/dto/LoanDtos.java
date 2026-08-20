@@ -96,6 +96,26 @@ public final class LoanDtos {
                     p.getTxnRef(), p.getProofUrl(), p.getPaidOn(), p.isPartial(), customerId, customerName,
                     p.getRejectionReason(), p.getRejectionNote());
         }
+
+        /**
+         * As {@link #of(Payment)}, but {@code proofUrl} is a caller-resolved value (a short-lived
+         * presigned GET, never the raw S3 key) — the object storage key {@link Payment#getProofUrl()}
+         * holds isn't fetchable by a browser directly. Used by every read path so a borrower or staff
+         * screen showing a transaction id can also link straight to the uploaded proof.
+         */
+        public static PaymentView ofWithResolvedProof(Payment p, String presignedProofUrl) {
+            return new PaymentView(p.getId(), p.getLoanId(), p.getAmount(), p.getMethod(), p.getStatus(),
+                    p.getTxnRef(), presignedProofUrl, p.getPaidOn(), p.isPartial(), null, null,
+                    p.getRejectionReason(), p.getRejectionNote());
+        }
+
+        /** {@link #of(Payment, Long, String)} + {@link #ofWithResolvedProof(Payment, String)} combined. */
+        public static PaymentView ofWithResolvedProof(Payment p, Long customerId, String customerName,
+                                                       String presignedProofUrl) {
+            return new PaymentView(p.getId(), p.getLoanId(), p.getAmount(), p.getMethod(), p.getStatus(),
+                    p.getTxnRef(), presignedProofUrl, p.getPaidOn(), p.isPartial(), customerId, customerName,
+                    p.getRejectionReason(), p.getRejectionNote());
+        }
     }
 
     /**
@@ -133,6 +153,10 @@ public final class LoanDtos {
             long amountPaise,
             String txnRef,
             String status,
-            LocalDate date) {
+            LocalDate date,
+            // Presigned GET for the borrower-uploaded repayment screenshot — REPAYMENT rows only,
+            // null for a DISBURSAL row (nothing was ever uploaded against it) and for a REPAYMENT
+            // row with no proof on file.
+            String proofUrl) {
     }
 }
