@@ -477,6 +477,11 @@ export interface DocumentView {
   uploadedAt: string;
   /** True when the bytes live in S3 (fetch a presigned URL); false for legacy inline base64. */
   s3?: boolean;
+  /**
+   * The borrower's password for a protected upload, when they supplied one (V56). Bank statements and
+   * payslips are routinely password-locked; staff need the key to open the file.
+   */
+  filePassword?: string | null;
 }
 
 /** A presigned GET URL for an S3-backed document (mirrors backend DocumentUrlView). */
@@ -1009,12 +1014,20 @@ export const verificationApi = {
    * Declared salary + uploaded slip object keys (min 3 months). Optionally sets the salary-credit day
    * (1–31) in the same call — used by the reborrow salary step so the customer confirms their salary
    * day alongside re-verifying income; omitted on the first-time onboarding path (day set at apply).
+   * `filePassword` is the borrower's optional key for password-protected slip PDFs.
    */
-  salary: (id: number, monthlySalaryPaise: number, slipObjectKeys: string[], salaryCreditDay?: number) =>
+  salary: (
+    id: number,
+    monthlySalaryPaise: number,
+    slipObjectKeys: string[],
+    salaryCreditDay?: number,
+    filePassword?: string,
+  ) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/salary`, "POST", {
       monthlySalaryPaise,
       slipObjectKeys,
       salaryCreditDay,
+      filePassword,
     }),
 
   /** Penny-drop on the salary account → name match. */
@@ -1073,7 +1086,10 @@ export const verificationApi = {
    * generic counterpart to `salary(...)`'s hardcoded SALARY_SLIP persistence. Used for the 6-month
    * bank-statement upload on the bank-details page (docType "BANK_STATEMENT").
    */
-  uploadedDocuments: (id: number, body: { docType: string; objectKeys: string[] }) =>
+  uploadedDocuments: (
+    id: number,
+    body: { docType: string; objectKeys: string[]; filePassword?: string },
+  ) =>
     bff<void>(`${BORROWER_BASE}/${id}/verify/documents`, "POST", body),
 };
 

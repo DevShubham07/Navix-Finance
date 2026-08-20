@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { FileCheck2, UploadCloud } from "lucide-react";
+import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
@@ -20,6 +21,8 @@ export default function SignupPayslipsPage() {
   const { mounted, appId } = useOnboarding();
   const saved = useSavedProfile(appId);
   const [files, setFiles] = React.useState<Slips>([null, null, null]);
+  // Payroll systems commonly mail encrypted payslips; the key is the borrower's to hand over.
+  const [slipPassword, setSlipPassword] = React.useState("");
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<StepResult | null>(null);
@@ -72,7 +75,8 @@ export default function SignupPayslipsPage() {
         await verificationApi.putToPresignedUrl(url, f, contentType);
         keys.push(key);
       }
-      const r = await verificationApi.salary(appId, saved.monthlySalaryPaise, keys);
+      const r = await verificationApi.salary(appId, saved.monthlySalaryPaise, keys, undefined,
+        slipPassword.trim() || undefined);
       setResult(r);
       if (r.status !== "FAIL") await completeStep(appId, "PAYSLIPS", router, "/signup/consent");
     } catch (err) {
@@ -115,6 +119,18 @@ export default function SignupPayslipsPage() {
             <p className="text-sm text-error-600">All 3 payslips are required to continue.</p>
           ) : null}
         </div>
+
+        {files.some(Boolean) ? (
+          <div className="mt-4">
+            <Input
+              label="PDF password (optional)"
+              value={slipPassword}
+              onChange={(e) => setSlipPassword(e.target.value)}
+              autoComplete="off"
+              helperText="If your payslips are password-protected, enter the password so our team can open them."
+            />
+          </div>
+        ) : null}
 
         <StepResultBanner result={result} />
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}

@@ -305,6 +305,7 @@ public class CustomerReviewService {
         d.setContentType(req.contentType());
         d.setSizeBytes((long) bytes.length);
         d.setData(bytes);
+        d.setFilePassword(ApplicationVerificationService.normalizeFilePassword(req.filePassword()));
         return documentRepository.save(d);
     }
 

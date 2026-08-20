@@ -44,4 +44,11 @@ public class ApplicationDocument extends BaseAuditEntity {
     /** S3 object key (the live path). Exactly one of {@link #data} / this is set. */
     @Column(name = "s3_object_key", length = 512)
     private String s3ObjectKey;
+
+    /**
+     * Optional borrower-supplied password for a protected upload (V56) — bank statements and payslips
+     * often arrive as encrypted PDFs. Shown to reviewing staff so they can open the file; never logged.
+     */
+    @Column(name = "file_password", length = 128)
+    private String filePassword;
 }

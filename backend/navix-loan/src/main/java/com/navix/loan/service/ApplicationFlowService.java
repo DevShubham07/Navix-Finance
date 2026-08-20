@@ -12,6 +12,7 @@ import com.navix.loan.dto.ApplicationDtos.EventView;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.ApplicationReference;
 import com.navix.loan.entity.ApplicationRejection;
@@ -20,6 +21,7 @@ import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.ApplicationReferenceRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
+import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.ApplicationRejectionRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
@@ -74,6 +76,8 @@ public class ApplicationFlowService {
     private final CustomerProfileRepository profileRepository;
     // Intake rejections + their cooling-off blocks (V44).
     private final ApplicationRejectionRepository rejectionRepository;
+    // Re-apply carry-over: the CREDIT_BRIEF PDF moves with the profile facts it belongs to.
+    private final ApplicationDocumentRepository documentRepository;
     // The eSign gate on acceptOffer (V46) — read directly rather than through
     // ApplicationVerificationService, which already depends on this class's collaborators.
     private final ApplicationVerificationRepository verificationRepository;
@@ -114,6 +118,13 @@ public class ApplicationFlowService {
 
     /** Cooling-off window after a sub-600 bureau-score auto-reject. */
     public static final int LOW_BUREAU_SCORE_BLOCK_DAYS = 90;
+
+    /**
+     * Cooling-off window after a <b>manual</b> credit rejection ({@link #rejectLead}). Shorter than the
+     * engine-rule blocks above: a reviewer's judgement call should not weigh as heavily as a hard
+     * eligibility failure, but a reject still has to mean something for a month.
+     */
+    public static final int MANUAL_REJECT_BLOCK_DAYS = 30;
 
     /**
      * How many days past a due date a returning borrower may have settled and still be welcome back
@@ -192,6 +203,7 @@ public class ApplicationFlowService {
         // Clone the carried-over KYC into a profile row of THIS application's own — needed for both the
         // disbursement review and the staff detail surfaces (no onboarding wizard runs on this path).
         copyProfileForReborrow(prior, app.getId());
+        copyCreditBriefDocument(prior.getApplicationId(), app.getId());
 
         // Action is "REBORROW" for both forks — the notification listener (NotificationEventListener
         // .mapAction) keys on the action + toStatus to pick the right template.
@@ -286,6 +298,40 @@ public class ApplicationFlowService {
                     + (src.getMessage() != null ? " — " + src.getMessage() : ""));
             verificationRepository.save(copy);
         }
+    }
+
+    /**
+     * Carry the {@code CREDIT_BRIEF} PDF onto a re-apply, pointing at the <b>same</b> S3 object — no
+     * re-render, no bureau call, no S3 write.
+     *
+     * <p>{@link #copyProfileForReborrow} already clones the rating and {@code creditBriefFacts} onto
+     * the new profile, but the document row stayed behind on the source application. That left every
+     * reborrow in a facts-without-PDF state, which is precisely the state
+     * {@code CreditBriefService.ensureBrief} treats as "regenerate me" — so every staff read of such a
+     * customer tried to write a document. Carrying the row keeps the copied facts and the copied PDF
+     * consistent, and the regeneration never fires.
+     */
+    private void copyCreditBriefDocument(Long sourceAppId, Long newAppId) {
+        if (sourceAppId == null) {
+            return;
+        }
+        if (documentRepository.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                newAppId, CreditBriefService.DOC_TYPE).isPresent()) {
+            return;
+        }
+        documentRepository.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                sourceAppId, CreditBriefService.DOC_TYPE).ifPresent(src -> {
+            ApplicationDocument copy = new ApplicationDocument();
+            copy.setApplicationId(newAppId);
+            copy.setDocType(src.getDocType());
+            copy.setFileName(src.getFileName());
+            copy.setContentType(src.getContentType());
+            copy.setSizeBytes(src.getSizeBytes());
+            copy.setS3ObjectKey(src.getS3ObjectKey());
+            // Legacy pre-S3 rows keep their bytes inline; carry whichever half the source used.
+            copy.setData(src.getS3ObjectKey() == null ? src.getData() : null);
+            documentRepository.save(copy);
+        });
     }
 
     /** Carry the two named contacts forward; the borrower is not asked for them again. */
@@ -474,14 +520,23 @@ public class ApplicationFlowService {
     /**
      * "Reject lead" — a staff credit rejection. The borrower is notified but <b>never told why</b>
      * (decision 31); the executive's remarks go to the staff-only rejection register tagged
-     * {@code MANUAL}. No cooling-off block: a manual reject is a judgement call, not an engine rule.
+     * {@code MANUAL}.
+     *
+     * <p><b>Carries a {@value #MANUAL_REJECT_BLOCK_DAYS}-day cooling-off block.</b> A reject is meant
+     * to be final for a while: this is the door closing, not a request for better paperwork. When the
+     * problem is fixable — a stale salary slip, a statement that would not open — the reviewer is
+     * expected to <em>park</em> the lead ({@link #markPending}) and ask for the document, because a
+     * rejected borrower who can re-apply minutes later makes the rejection meaningless. Until this
+     * block was added that is exactly what happened: a reject at 11:04 was undone by a reborrow at
+     * 11:08, which sailed past KYC and credit as a pre-approved returning borrower.
      */
     @Transactional
     public LoanApplication rejectLead(Long appId, String remarks) {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
         requireCreditOwnership(app);
-        recordRejection(app, ApplicationRejection.MANUAL, remarks, false, null);
+        recordRejection(app, ApplicationRejection.MANUAL, remarks, false,
+                Instant.now().plus(Duration.ofDays(MANUAL_REJECT_BLOCK_DAYS)));
         transition(app, ApplicationStatus.REJECTED, "REJECT_LEAD", remarks);
         return applicationRepository.save(app);
     }

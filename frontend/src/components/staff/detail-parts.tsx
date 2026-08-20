@@ -232,6 +232,20 @@ function SingleApplicationDocuments({
   );
 }
 
+/**
+ * The borrower-supplied key for a password-protected upload (V56). Bank statements and payslips
+ * routinely arrive encrypted; without the key the reviewer cannot open the file at all. Rendered
+ * plainly (and `select-all`) so it can be copied straight into the PDF reader's prompt.
+ */
+export function DocPassword({ password }: { password?: string | null }) {
+  if (!password) return null;
+  return (
+    <span className="block text-xs text-muted">
+      Password: <span className="select-all font-mono text-ink">{password}</span>
+    </span>
+  );
+}
+
 export function DocRow({
   appId,
   doc,
@@ -267,6 +281,7 @@ export function DocRow({
       <span className="min-w-0 flex-1 text-ink">
         <span className="block">{doc.fileName}</span>
         {sourceMeta && <span className="block text-xs text-muted">{sourceMeta}</span>}
+        <DocPassword password={doc.filePassword} />
       </span>
       <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[8.8px] font-semibold text-navy">{docTypeLabel(doc.docType)}</span>
       <button onClick={view} disabled={busy} className="btn btn-sm btn-outline disabled:opacity-50">

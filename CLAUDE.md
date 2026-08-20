@@ -421,6 +421,13 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 | `ADMIN` | oversight — **bypasses role checks**; also exempt from the credit SoD + active-executive `assign`, so may walk a loan KYC→ACTIVE **solo, per-step** (credit queue shows an **"Assign to me"** button); edits salary/profile data; manages company expenses + blocklist |
 | `DEVELOPER` | internal read-only (health/logs/DB); `customer:view` only |
 
+> **A credit reject (`REJECT_LEAD`) carries a 30-day cooling-off.** `MANUAL_REJECT_BLOCK_DAYS = 30`
+> is written to `application_rejection.blocked_until`, and `assertNotBlocked` (mobile-keyed) then
+> turns away both a fresh signup and a reborrow with `NOT_ELIGIBLE`. Rejecting is the door closing;
+> when the problem is fixable (a stale salary slip, an unopenable statement) the reviewer is meant
+> to **park** the lead and ask for the document instead. Before this, a reject was undone by a
+> reborrow minutes later that came back `PRE_APPROVED`, skipping KYC *and* credit.
+
 > Role names are `COLLECTION_HEAD` / `COLLECTION_EXECUTIVE` (not the old
 > COLLECTIONS_HEAD / COLLECTION_OFFICER), plus `DEVELOPER`. Reconciled in Flyway **V8**.
 > `TELECALLER` was added in **V42**, `DSA` in **V55**.
@@ -574,6 +581,7 @@ navix-common). Applied on every boot:
 | `V34__auth_passwords_and_reset.sql` | password auth: `borrower_credential` (first durable per-customer row, keyed by `customer_id`), `staff_user.mobile` (+ demo backfill `9000000000` for the email+mobile reset gate), `password_reset_token` (one-time, SHA-256-hashed, single-use, 30-min) |
 | `V35`–`V54` | *(not yet catalogued here — read the migration directory; notable ones are **V42** `TELECALLER` role, **V43** `lead`, **V45** drops `KYC_APPROVER` + the Phase-2 credit workbench, **V50** `loan.closed_on`, **V53** `loan_application.created_at`, **V54** staff session registry)* |
 | `V55__dsa_role_and_commission.sql` | **DSA** role (+ CHECK constraints + demo persona) · `lead.{owner_dsa_id, pan}` with a PAN-format CHECK and a **partial unique index on `pan` where `owner_dsa_id is not null`** (the cross-DSA duplicate guard) · `dsa_commission` (unique on `lead_id` → one commission per lead, i.e. first loan only) · `dsa_commission_event` (ADMIN override audit) · `dsa_lead_rejection` (PAN-enumeration audit) · `lead_outreach` (SMS/email send audit) |
+| `V56__application_document_password.sql` | `application_document.file_password` — the borrower's optional key for a password-protected upload (bank statements / payslips), captured on the two signup upload screens and shown plainly to reviewing staff. Not a credential; never logged. |
 
 **The aggregate** `loan_application`: `id`, `customer_id` (was `applicant_id`, renamed in V33), `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.

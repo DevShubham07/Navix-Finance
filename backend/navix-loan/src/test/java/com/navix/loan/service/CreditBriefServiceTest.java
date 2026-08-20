@@ -3,7 +3,9 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,6 +31,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @ExtendWith(MockitoExtension.class)
 class CreditBriefServiceTest {
@@ -43,7 +46,8 @@ class CreditBriefServiceTest {
     @Test
     void generatedDocumentContainsTheCompleteProviderResponseAppendix() throws Exception {
         CreditBriefService service = new CreditBriefService(
-                new CreditRatingCalculator(), new CreditBriefPdfRenderer(), storage,
+                new CreditRatingCalculator(), new CreditBriefPdfRenderer(),
+                new CreditBriefPdfWriter(storage, documentRepo),
                 documentRepo, profileRepo, applicationRepo, verificationRepo, new ObjectMapper(),
                 bureauStateService);
         CustomerProfile profile = new CustomerProfile();
@@ -85,7 +89,8 @@ class CreditBriefServiceTest {
     void staffViewReturnsTheCompleteStoredProviderResponseAsStructuredJson() throws Exception {
         ObjectMapper json = new ObjectMapper();
         CreditBriefService service = new CreditBriefService(
-                new CreditRatingCalculator(), new CreditBriefPdfRenderer(), storage,
+                new CreditRatingCalculator(), new CreditBriefPdfRenderer(),
+                new CreditBriefPdfWriter(storage, documentRepo),
                 documentRepo, profileRepo, applicationRepo, verificationRepo, json,
                 bureauStateService);
         BureauReportFacts facts = new BureauReportFacts(
@@ -124,5 +129,51 @@ class CreditBriefServiceTest {
                 .path("Payment_History_Profile").asText()).isEqualTo("000000");
         assertThat(view.facts().city()).isEqualTo("Testville");
         assertThat(view.facts().pin()).isEqualTo("100001");
+    }
+
+    /**
+     * The 500 this guard exists to prevent: {@code CustomerService.detail()} is
+     * {@code @Transactional(readOnly = true)}, so the lazy PDF regeneration inside {@code view()} used
+     * to attempt an INSERT on a read-only transaction. Postgres rejects it (25006) and — swallowed or
+     * not — marks the whole transaction aborted, so the caller's next read fails too. On a read-only
+     * transaction the brief must still be returned, just without touching storage or the document table.
+     */
+    @Test
+    void viewOnAReadOnlyTransactionReturnsTheBriefWithoutWritingAnything() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        CreditBriefService service = new CreditBriefService(
+                new CreditRatingCalculator(), new CreditBriefPdfRenderer(),
+                new CreditBriefPdfWriter(storage, documentRepo),
+                documentRepo, profileRepo, applicationRepo, verificationRepo, json,
+                bureauStateService);
+        BureauReportFacts facts = new BureauReportFacts(
+                "TEST BORROWER", "ABCDE1234F", "9000000000", "1990-01-01", "Testville", "100001",
+                778, 11, 9, 2, 0, 805314L, 717556L, 87758L, 0, "TEST-REPORT-1");
+        CustomerProfile profile = new CustomerProfile();
+        profile.setApplicationId(123L);
+        profile.setFullName("TEST BORROWER");
+        profile.setCreditStarRating(BigDecimal.valueOf(4.5));
+        profile.setCreditBriefFacts(json.writeValueAsString(facts));
+        when(profileRepo.findByApplicationId(123L)).thenReturn(Optional.of(profile));
+        // Facts present, CREDIT_BRIEF document missing — exactly the reborrow state that triggered
+        // the regeneration attempt.
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(123L, CreditBriefService.DOC_TYPE))
+                .thenReturn(Optional.empty());
+
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        TransactionSynchronizationManager.setCurrentTransactionReadOnly(true);
+        try {
+            var view = service.view(123L);
+
+            assertThat(view.available()).isTrue();
+            assertThat(view.starRating()).isEqualTo(4.5);
+            assertThat(view.documentId()).isNull(); // no PDF yet — cosmetic, and the read survives
+        } finally {
+            TransactionSynchronizationManager.setCurrentTransactionReadOnly(false);
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
+
+        verifyNoInteractions(storage);
+        verify(documentRepo, never()).save(any());
     }
 }

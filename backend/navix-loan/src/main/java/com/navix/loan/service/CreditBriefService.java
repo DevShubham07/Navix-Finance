@@ -2,7 +2,6 @@ package com.navix.loan.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.loan.dto.BureauState;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
@@ -23,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Builds and persists the borrower credit brief from a bureau {@link BureauReportFacts} snapshot:
@@ -40,12 +40,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class CreditBriefService {
 
     public static final String DOC_TYPE = "CREDIT_BRIEF";
-    private static final String FILE_NAME = "credit-brief.pdf";
-    private static final String CONTENT_TYPE = "application/pdf";
+    // Package-visible: CreditBriefPdfWriter owns the S3 + document-row write and reuses these.
+    static final String FILE_NAME = "credit-brief.pdf";
+    static final String CONTENT_TYPE = "application/pdf";
 
     private final CreditRatingCalculator calculator;
     private final CreditBriefPdfRenderer renderer;
-    private final DocumentStoragePort storage;
+    private final CreditBriefPdfWriter pdfWriter;
     private final ApplicationDocumentRepository documentRepo;
     private final CustomerProfileRepository profileRepo;
     private final LoanApplicationRepository applicationRepo;
@@ -93,8 +94,8 @@ public class CreditBriefService {
             byte[] pdf = renderer.render(appId, customerId, profile.getBureauSource(),
                     displayFacts(facts, profile), rating, LocalDate.now(), rawResponseJson);
             String key = "applications/" + appId + "/credit_brief/" + FILE_NAME;
-            storage.store(key, pdf, CONTENT_TYPE);
-            upsertDocument(appId, key, pdf.length);
+            // Own transaction (REQUIRES_NEW): a failure in here must not abort the caller's.
+            pdfWriter.storeAndRegister(appId, key, pdf);
         } catch (Exception e) {
             log.warn("Credit brief PDF/S3 step failed for application {} (rating saved): {}",
                     appId, e.toString());
@@ -104,10 +105,20 @@ public class CreditBriefService {
     /**
      * Lazy backstop for read paths: if the profile carries parsed facts but the PDF document is missing
      * (e.g. an earlier S3 hiccup, or the row was removed), regenerate it from the stored facts.
+     *
+     * <p><b>Never writes on a read-only transaction.</b> This is a write hanging off a read path, and
+     * callers like {@code CustomerService.detail()} are {@code @Transactional(readOnly = true)}. The
+     * INSERT below would fail with Postgres {@code 25006} and — swallowed or not — leave the caller's
+     * transaction aborted, turning their read into a 500. A missing PDF is a cosmetic gap (the brief
+     * still renders from the stored facts, just without a download link); poisoning the caller's read
+     * is not. The next write-path read of the brief regenerates it.
      */
     @Transactional
     public void ensureBrief(Long appId, CustomerProfile profile) {
         if (profile == null || profile.getCreditBriefFacts() == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
             return;
         }
         if (briefDocument(appId).isPresent()) {
@@ -223,19 +234,5 @@ public class CreditBriefService {
 
     private static String firstNonBlank(String a, String b) {
         return a != null && !a.isBlank() ? a : b;
-    }
-
-    private void upsertDocument(Long appId, String key, long sizeBytes) {
-        ApplicationDocument doc = documentRepo
-                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, DOC_TYPE)
-                .orElseGet(ApplicationDocument::new);
-        doc.setApplicationId(appId);
-        doc.setDocType(DOC_TYPE);
-        doc.setFileName(FILE_NAME);
-        doc.setContentType(CONTENT_TYPE);
-        doc.setSizeBytes(sizeBytes);
-        doc.setS3ObjectKey(key);
-        doc.setData(null); // S3-backed: keep the "exactly one of data / s3ObjectKey" invariant
-        documentRepo.save(doc);
     }
 }

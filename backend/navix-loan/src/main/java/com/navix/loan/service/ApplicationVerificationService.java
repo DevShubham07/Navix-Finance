@@ -399,7 +399,8 @@ public class ApplicationVerificationService {
      * not a check, so {@link #REQUIRED} / submit-kyc completeness gating is unaffected.
      */
     @Transactional
-    public void saveUploadedDocuments(Long appId, String docType, List<String> objectKeys) {
+    public void saveUploadedDocuments(Long appId, String docType, List<String> objectKeys,
+                                      String filePassword) {
         requireApplication(appId);
         String type = docType == null ? "" : docType.trim().toUpperCase();
         if (!UPLOADABLE_DOC_TYPES.contains(type)) {
@@ -408,6 +409,7 @@ public class ApplicationVerificationService {
         if (objectKeys == null || objectKeys.isEmpty()) {
             throw new BusinessException("INVALID_INPUT", "At least one uploaded file is required");
         }
+        String password = normalizeFilePassword(filePassword);
         int seq = 0;
         for (String key : objectKeys) {
             if (key == null || key.isBlank()) continue;
@@ -416,9 +418,29 @@ public class ApplicationVerificationService {
             doc.setDocType(type);
             doc.setFileName(type.toLowerCase().replace('_', '-') + "-" + (++seq));
             doc.setS3ObjectKey(key);
+            doc.setFilePassword(password);
             documentRepo.save(doc);
         }
     }
+
+    /**
+     * Normalize a borrower-supplied document password (V56): trim, blank becomes null, and cap at the
+     * column width so an oversized paste is truncated rather than throwing at flush time. The value is
+     * never logged.
+     */
+    static String normalizeFilePassword(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed.length() > MAX_FILE_PASSWORD_CHARS ? trimmed.substring(0, MAX_FILE_PASSWORD_CHARS) : trimmed;
+    }
+
+    /** Matches {@code application_document.file_password} (V56). */
+    private static final int MAX_FILE_PASSWORD_CHARS = 128;
 
     /** Presigned PUT target (key the caller echoes back on the verify/* call; url the browser PUTs to). */
     public record PresignedUpload(String key, String url) {
@@ -832,10 +854,13 @@ public class ApplicationVerificationService {
      * reborrow the customer may re-declare salary and/or salary-credit day: when {@code salaryCreditDay}
      * is supplied it overwrites the application's day, the eligible limit is recomputed inline, and any
      * change to a previously-recorded salary/day is audited to {@code profile_change_log}.
+     *
+     * <p>{@code filePassword} is the borrower's optional key for password-protected slip PDFs (V56);
+     * it is stored on every slip row this call persists.
      */
     @Transactional
     public StepResult verifySalary(Long appId, long monthlySalaryPaise, List<String> slipObjectKeys,
-                                   Integer salaryCreditDay) {
+                                   Integer salaryCreditDay, String filePassword) {
         if (monthlySalaryPaise <= 0) {
             throw new BusinessException("INVALID_SALARY", "Monthly salary must be positive");
         }
@@ -866,6 +891,7 @@ public class ApplicationVerificationService {
         }
 
         if (slipObjectKeys != null) {
+            String slipPassword = normalizeFilePassword(filePassword);
             for (int i = 0; i < slipObjectKeys.size(); i++) {
                 String key = slipObjectKeys.get(i);
                 if (key == null || key.isBlank()) continue;
@@ -874,6 +900,7 @@ public class ApplicationVerificationService {
                 slip.setDocType("SALARY_SLIP");
                 slip.setFileName("salary-slip-" + (i + 1));
                 slip.setS3ObjectKey(key);
+                slip.setFilePassword(slipPassword);
                 documentRepo.save(slip);
             }
         }

@@ -166,7 +166,9 @@ public final class ReviewDtos {
             @NotBlank String docType,
             @NotBlank String fileName,
             String contentType,
-            @NotBlank String dataBase64) {
+            @NotBlank String dataBase64,
+            /** Optional key for a password-protected PDF (V56). */
+            String filePassword) {
     }
 
     /** Document metadata for listing — no bytes. {@code s3} ⇒ fetch via the presigned-URL route. */
@@ -177,11 +179,13 @@ public final class ReviewDtos {
             String contentType,
             Long sizeBytes,
             boolean s3,
-            Instant uploadedAt) {
+            Instant uploadedAt,
+            /** The borrower's password for a protected upload (V56), so a reviewer can open it. */
+            String filePassword) {
 
         public static DocumentView of(ApplicationDocument d) {
             return new DocumentView(d.getId(), d.getDocType(), d.getFileName(), d.getContentType(),
-                    d.getSizeBytes(), d.getS3ObjectKey() != null, d.getCreatedAt());
+                    d.getSizeBytes(), d.getS3ObjectKey() != null, d.getCreatedAt(), d.getFilePassword());
         }
     }
 

@@ -28,6 +28,8 @@ export default function SignupBankPage() {
   const [mobile, setMobile] = React.useState("");
   // Single flexible upload: any number of bank statements (1+), not a fixed count of 6.
   const [statements, setStatements] = React.useState<File[]>([]);
+  // Banks mail statements as encrypted PDFs; without the key a reviewer simply cannot open the file.
+  const [statementPassword, setStatementPassword] = React.useState("");
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
@@ -112,7 +114,11 @@ export default function SignupBankPage() {
         await verificationApi.putToPresignedUrl(url, f, contentType);
         keys.push(key);
       }
-      await verificationApi.uploadedDocuments(appId, { docType: "BANK_STATEMENT", objectKeys: keys });
+      await verificationApi.uploadedDocuments(appId, {
+        docType: "BANK_STATEMENT",
+        objectKeys: keys,
+        filePassword: statementPassword.trim() || undefined,
+      });
       await completeStep(appId, "BANK", router, "/signup/payslips");
     } catch (err) {
       setError(formatApiError(err, "Could not save — please try again."));
@@ -233,6 +239,16 @@ export default function SignupBankPage() {
             <p className="mt-2 text-sm text-error-600">Upload at least one bank statement to continue.</p>
           ) : null}
         </div>
+
+        {hasStatements ? (
+          <Input
+            label="PDF password (optional)"
+            value={statementPassword}
+            onChange={(e) => setStatementPassword(e.target.value)}
+            autoComplete="off"
+            helperText="If your statement is password-protected, enter the password so our team can open it."
+          />
+        ) : null}
 
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>

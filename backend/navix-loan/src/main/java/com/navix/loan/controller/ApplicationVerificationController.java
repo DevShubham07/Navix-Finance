@@ -110,7 +110,8 @@ public class ApplicationVerificationController {
     @PostMapping("/salary")
     public ApiResponse<StepResult> salary(@PathVariable Long id, @Valid @RequestBody SalaryVerifyRequest req) {
         authorize(id);
-        return ApiResponse.ok(verification.verifySalary(id, req.monthlySalaryPaise(), req.slipObjectKeys(), req.salaryCreditDay()));
+        return ApiResponse.ok(verification.verifySalary(id, req.monthlySalaryPaise(), req.slipObjectKeys(), req.salaryCreditDay(),
+                req.filePassword()));
     }
 
     /**
@@ -191,7 +192,7 @@ public class ApplicationVerificationController {
     public ApiResponse<Void> uploadedDocuments(@PathVariable Long id,
                                                @Valid @RequestBody UploadedDocumentsRequest req) {
         authorize(id);
-        verification.saveUploadedDocuments(id, req.docType(), req.objectKeys());
+        verification.saveUploadedDocuments(id, req.docType(), req.objectKeys(), req.filePassword());
         return ApiResponse.ok(null);
     }
 

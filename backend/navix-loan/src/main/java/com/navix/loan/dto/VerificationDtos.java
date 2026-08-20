@@ -28,8 +28,12 @@ public final class VerificationDtos {
     public record PanVerifyRequest(@NotBlank String pan) {
     }
 
+    /**
+     * {@code filePassword} is the optional key for password-protected payslip PDFs (V56); it is
+     * applied to every slip persisted by this call.
+     */
     public record SalaryVerifyRequest(@Positive long monthlySalaryPaise, List<String> slipObjectKeys,
-                                      Integer salaryCreditDay) {
+                                      Integer salaryCreditDay, String filePassword) {
     }
 
     public record PennyDropVerifyRequest(@NotBlank String accountNumber, @NotBlank String ifsc) {
@@ -73,6 +77,7 @@ public final class VerificationDtos {
      * listed) docType — the generic counterpart to {@code salary(...)}'s hardcoded SALARY_SLIP
      * persistence. Used for the 6-month bank-statement upload on the bank-details page.
      */
-    public record UploadedDocumentsRequest(@NotBlank String docType, @NotEmpty List<String> objectKeys) {
+    public record UploadedDocumentsRequest(@NotBlank String docType, @NotEmpty List<String> objectKeys,
+                                          String filePassword) {
     }
 }

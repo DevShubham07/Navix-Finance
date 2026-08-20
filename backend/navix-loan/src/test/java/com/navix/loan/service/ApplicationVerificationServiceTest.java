@@ -342,7 +342,7 @@ class ApplicationVerificationServiceTest {
         when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
         when(risk.eligibleLimitPaise(4_000_000L)).thenReturn(1_000_000L);
 
-        var result = service.verifySalary(APP, 4_000_000L, List.of("applications/42/salary_slip/1.pdf"), null);
+        var result = service.verifySalary(APP, 4_000_000L, List.of("applications/42/salary_slip/1.pdf"), null, null);
 
         assertThat(result.status()).isEqualTo("PASS");
         assertThat(app.getEligibleLimit()).isEqualTo(1_000_000L);

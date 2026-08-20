@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -18,6 +19,7 @@ import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.dto.ApplicationDtos.EventView;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationVerification;
@@ -65,6 +67,8 @@ class ApplicationFlowServiceTest {
     @Mock
     private com.navix.loan.repository.ApplicationRejectionRepository rejectionRepository;
     @Mock
+    private com.navix.loan.repository.ApplicationDocumentRepository documentRepository;
+    @Mock
     private com.navix.common.risk.RiskPort riskPort;
     @Mock
     private ReferralService referralService;
@@ -83,8 +87,8 @@ class ApplicationFlowServiceTest {
         flow = new ApplicationFlowService(applicationRepository, eventRepository,
                 new EligibilityService(applicationRepository, riskPort), loanService, staffDirectory,
                 loanRepository, paymentRepository, profileRepository, rejectionRepository,
-                verificationRepository, referenceRepository, new LoanMath(), event -> {}, referralService,
-                dsaCommissionService);
+                documentRepository, verificationRepository, referenceRepository, new LoanMath(),
+                event -> {}, referralService, dsaCommissionService);
         // Default: assignee passes activation gating; negative case overrides below.
         lenient().when(staffDirectory.isActiveWithRole(any(), any())).thenReturn(true);
         lenient().when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -239,7 +243,7 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
-    void rejectLeadRecordsAManualRegisterRowWithNoBlock() {
+    void rejectLeadRecordsAManualRegisterRowWithA30DayBlock() {
         LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
         app.setAssignedExecutiveId(55L);
         actor("55", "CREDIT_EXECUTIVE");
@@ -251,8 +255,33 @@ class ApplicationFlowServiceTest {
         verify(rejectionRepository).save(captor.capture());
         assertThat(captor.getValue().getReasonCode()).isEqualTo(ApplicationRejection.MANUAL);
         assertThat(captor.getValue().getAuto()).isFalse();
-        // A judgement call, not an engine rule — the borrower is not locked out.
-        assertThat(captor.getValue().getBlockedUntil()).isNull();
+        // A reject means the door is shut for a month. Fixable paperwork should be parked, not rejected.
+        assertThat(captor.getValue().getBlockedUntil())
+                .isCloseTo(Instant.now().plus(Duration.ofDays(ApplicationFlowService.MANUAL_REJECT_BLOCK_DAYS)),
+                        within(1, java.time.temporal.ChronoUnit.MINUTES));
+    }
+
+    /**
+     * The hole this block closes: a borrower rejected by credit used to tap "Borrow again" moments
+     * later and come back PRE_APPROVED, skipping both KYC and credit review.
+     */
+    @Test
+    void reborrowIsBlockedByTheCoolingOffFromAManualReject() {
+        actor("7", "BORROWER");
+        LoanApplication rejected = priorApp();
+        rejected.setStatus(ApplicationStatus.REJECTED);
+        CustomerProfile profile = priorProfile();
+        profile.setMobile("9000000000"); // the block is keyed on the mobile, not the customer id
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(rejected));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(profile));
+        ApplicationRejection block = new ApplicationRejection();
+        block.setBlockedUntil(Instant.now().plus(Duration.ofDays(29)));
+        when(rejectionRepository.findFirstByMobileAndBlockedUntilAfterOrderByBlockedUntilDesc(
+                eq("9000000000"), any())).thenReturn(Optional.of(block));
+
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE");
     }
 
     @Test
@@ -469,6 +498,54 @@ class ApplicationFlowServiceTest {
         // ₹10,00,000 (100_000_000-paise) instant cap -> eligible limit = 1_500_000.
         assertThat(result.getEligibleLimit()).isEqualTo(1_500_000L);
         assertThat(result.getSalaryCreditDay()).isEqualTo(30);
+    }
+
+    /**
+     * A reborrow clones the prior profile's credit-brief facts, so it must clone the CREDIT_BRIEF
+     * document with them — pointing at the same S3 object, no re-render. Leaving the document behind
+     * put every reborrow in the facts-without-PDF state that makes CreditBriefService try to
+     * regenerate on read, which 500s any read-only caller.
+     */
+    @Test
+    void reborrowCarriesTheCreditBriefDocumentOntoTheNewApplication() {
+        actor("7", "BORROWER");
+        LoanApplication prior = priorApp();
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of());
+        ApplicationDocument brief = new ApplicationDocument();
+        brief.setApplicationId(10L);
+        brief.setDocType(CreditBriefService.DOC_TYPE);
+        brief.setFileName("credit-brief.pdf");
+        brief.setContentType("application/pdf");
+        brief.setSizeBytes(4096L);
+        brief.setS3ObjectKey("applications/10/credit_brief/credit-brief.pdf");
+        when(documentRepository.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                10L, CreditBriefService.DOC_TYPE)).thenReturn(Optional.of(brief));
+        // The new draft has no brief of its own yet (the copy is idempotent on that check).
+        when(documentRepository.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                99L, CreditBriefService.DOC_TYPE)).thenReturn(Optional.empty());
+        // The real repository assigns the identity on insert; the shared stub echoes the argument back.
+        when(applicationRepository.save(any())).thenAnswer(i -> {
+            LoanApplication saved = i.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(99L);
+            }
+            return saved;
+        });
+
+        flow.reborrow();
+
+        ArgumentCaptor<ApplicationDocument> captor = ArgumentCaptor.forClass(ApplicationDocument.class);
+        verify(documentRepository).save(captor.capture());
+        ApplicationDocument copy = captor.getValue();
+        assertThat(copy.getDocType()).isEqualTo(CreditBriefService.DOC_TYPE);
+        // Same object in S3 — the copy is a pointer, not a re-render.
+        assertThat(copy.getS3ObjectKey()).isEqualTo(brief.getS3ObjectKey());
+        assertThat(copy.getSizeBytes()).isEqualTo(4096L);
+        assertThat(copy.getData()).isNull();
     }
 
     /**
