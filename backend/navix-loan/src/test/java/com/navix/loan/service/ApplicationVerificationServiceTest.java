@@ -514,8 +514,8 @@ class ApplicationVerificationServiceTest {
 
         assertThat(result.status()).isEqualTo("PASS");
         assertThat(p.getPersonalEmailVerified()).isTrue();
-        // The raw address must never land in the audit-visible derived map.
-        assertThat(result.derived()).doesNotContainEntry("email", "borrower@example.com");
+        // Shown in full on the staff verification tab, matching every other identity field.
+        assertThat(result.derived()).containsEntry("email", "borrower@example.com");
     }
 
     @Test

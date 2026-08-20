@@ -9,7 +9,6 @@ import com.navix.common.notification.event.SanctionLetterSignedEvent;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
-import com.navix.common.util.Masking;
 import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.OtpVerifierPort;
@@ -1708,7 +1707,9 @@ public class ApplicationVerificationService {
         profileRepo.save(profile);
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("channel", "OTP");
-        derived.put("email", Masking.maskEmail(email)); // never store the raw address in derived
+        // Shown in full on the staff verification tab — staff already see every other identity field
+        // (name, PAN, mobile) unmasked, so masking only this one was inconsistent, not protective.
+        derived.put("email", email);
         return view(upsert(appId, EMAIL_OTP, PASS, "DhanBoost", null, ref(appId, EMAIL_OTP),
                 null, null, null, derived, "Personal email verified (OTP)"));
     }
