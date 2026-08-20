@@ -14,6 +14,7 @@ import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.verification.VerificationPort;
+import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationRejection;
@@ -87,6 +88,14 @@ public class ApplicationVerificationService {
     /** Document types the Phase-3 sanction letter + eSign write (not verification check types). */
     public static final String SANCTION_LETTER = "SANCTION_LETTER";
     public static final String SIGNED_AGREEMENT = "SIGNED_AGREEMENT";
+    /**
+     * A cancelled cheque or bank passbook — the manual alternative to a penny drop, uploaded via the
+     * existing presign-upload + {@link #saveUploadedDocuments} path. Not a verification check type of
+     * its own: it is evidence a human (the Disbursement Head, via {@link #bankProofDecision}) judges,
+     * and that judgement is still recorded on the {@link #PENNY_DROP} row so every staff surface that
+     * already reads that check keeps working unchanged.
+     */
+    public static final String BANK_PROOF = "BANK_PROOF";
     /**
      * The borrower's OTP-verified consent to the credit-bureau enquiry. Deliberately NOT in
      * {@link #REQUIRED} (that would wedge every application whose PAN passed before this shipped)
@@ -394,7 +403,7 @@ public class ApplicationVerificationService {
     /** docTypes a borrower may persist via {@link #saveUploadedDocuments}. SALARY_SLIP is deliberately
      *  excluded — that persistence stays inside {@link #verifySalary}, which also records the declared
      *  monthly salary; this generic path is for documents with no accompanying verification step. */
-    private static final java.util.Set<String> UPLOADABLE_DOC_TYPES = java.util.Set.of("BANK_STATEMENT");
+    private static final java.util.Set<String> UPLOADABLE_DOC_TYPES = java.util.Set.of("BANK_STATEMENT", BANK_PROOF);
 
     /**
      * Persist already-uploaded S3 keys as {@link ApplicationDocument} rows under an arbitrary
@@ -1125,6 +1134,70 @@ public class ApplicationVerificationService {
     }
 
     /**
+     * Record that a penny drop was skipped in favour of an uploaded bank proof (cancelled cheque /
+     * passbook), so every staff surface that reads the {@link #PENNY_DROP} row — the verification
+     * dashboard, the credit-brief view, the disbursement queue — shows something other than "never
+     * run" while the account sits unverified. Deliberately {@code REVIEW}, not PASS: the account is
+     * only as good as the Disbursement Head's later look at the proof ({@link #bankProofDecision}),
+     * which is the row this call is a placeholder for.
+     */
+    @Transactional
+    public void recordBankProofPending(Long appId, String accountNumber, String ifsc) {
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("bankProofPending", true);
+        derived.put("accountNumber", accountNumber);
+        derived.put("ifsc", ifsc);
+        upsert(appId, PENNY_DROP, REVIEW, "MANUAL_PROOF", null, ref(appId, PENNY_DROP), null, null, null,
+                derived, "Bank proof uploaded — awaiting Disbursement Head verification");
+    }
+
+    /**
+     * The Disbursement Head's sign-off on a bank proof — the escape hatch for a borrower the penny
+     * drop has locked out. Approve reuses {@link #acceptDisbursalAccountManually}, the same side
+     * effects the existing manual-PENNY_DROP override already performs (mark the account verified,
+     * flag the profile, lift any penny-drop lock), so this doesn't duplicate that logic. Reject
+     * leaves the application exactly where it is — {@code DISBURSEMENT_PENDING} with
+     * {@code disbursalAccountVerified} still false — so {@code ApplicationFlowService
+     * .disbursementDecision}'s {@code BANK_ACCOUNT_UNVERIFIED} gate keeps blocking release until a
+     * fresh proof is judged.
+     *
+     * <p>Lives here rather than on {@code ApplicationFlowService} deliberately: that class does not
+     * depend back on this one (kept one-directional so {@link #manualDecision}'s
+     * {@code acceptDisbursalAccountManually} call has somewhere safe to live), and this action needs
+     * exactly that helper. Putting it there would have required either duplicating
+     * {@code acceptDisbursalAccountManually} or introducing the very cycle that edge was built to
+     * avoid.
+     */
+    @Transactional
+    public StepResult bankProofDecision(Long appId, boolean approve, String notes) {
+        requireDisbursementHead("Bank-proof verification");
+        LoanApplication app = requireApplication(appId);
+        if (app.getStatus() != ApplicationStatus.DISBURSEMENT_PENDING) {
+            throw new BusinessException("NOT_APPLICABLE", "This application isn't awaiting disbursement");
+        }
+        String actor = ActorContext.get().name();
+        String trimmed = notes != null ? notes.trim() : "";
+        String message = (approve ? "Bank proof approved" : "Bank proof rejected") + " by " + actor
+                + (trimmed.isEmpty() ? "" : " — " + trimmed);
+        Map<String, Object> derived = new LinkedHashMap<>(derivedFor(appId, PENNY_DROP));
+        // The proof has now been looked at, so it is no longer pending — carrying the flag forward
+        // would leave every staff surface that keys off it (the disbursement card's fourth reading)
+        // reporting "awaiting your verification" on an account this call just decided.
+        derived.put("bankProofPending", false);
+        derived.put("manualOverride", true);
+        derived.put("manualBy", actor);
+        derived.put("manualAt", Instant.now().toString());
+        ApplicationVerification row = upsert(appId, PENNY_DROP, approve ? PASS : FAIL, "MANUAL",
+                null, null, null, null, null, derived, message);
+        if (approve) {
+            acceptDisbursalAccountManually(appId, derived);
+        }
+        flow.recordEvent(appId, approve ? "BANK_PROOF_APPROVE" : "BANK_PROOF_REJECT",
+                trimmed.isEmpty() ? null : trimmed);
+        return view(row);
+    }
+
+    /**
      * Face-match the uploaded selfie against the DigiLocker Aadhaar photo (presigned GET URLs → Digitap
      * Face Match). When no Aadhaar photo has been captured yet, degrades to a single-image face/quality
      * check on the selfie alone.
@@ -1846,6 +1919,14 @@ public class ApplicationVerificationService {
         if (!"CREDIT_EXECUTIVE".equals(role) && !"CREDIT_HEAD".equals(role) && !"ADMIN".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE",
                     what + " requires CREDIT_EXECUTIVE or CREDIT_HEAD");
+        }
+    }
+
+    /** The Disbursement Head owns the release, so only they (plus ADMIN oversight) may judge a bank proof. */
+    private void requireDisbursementHead(String what) {
+        String role = ActorContext.get().role();
+        if (!"DISBURSEMENT_HEAD".equals(role) && !"ADMIN".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", what + " requires DISBURSEMENT_HEAD");
         }
     }
 

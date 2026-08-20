@@ -77,7 +77,13 @@ public final class OfferDtos {
             int attemptsLeft) {
     }
 
+    /**
+     * {@code useBankProof} is the escape hatch for a borrower the penny drop has locked out (a
+     * name-at-bank mismatch, most often): instead of another automated attempt, they upload a
+     * cancelled cheque or passbook (already persisted as a {@code BANK_PROOF} document via the
+     * existing presign-upload flow) and the Disbursement Head verifies it by eye before release.
+     */
     public record DisbursalAccountRequest(@NotBlank String accountNumber, @NotBlank String ifsc,
-                                          String holderName, String bank) {
+                                          String holderName, String bank, boolean useBankProof) {
     }
 }

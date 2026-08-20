@@ -25,13 +25,39 @@ import { humanizeCheck } from "@/lib/utils";
 import { errMessage } from "@/components/staff/pipeline/hooks";
 import { PermissionGate } from "@/components/staff/pipeline/actions";
 
-/** Status pill styling per verification outcome (green PASS / amber REVIEW / red FAIL / grey PENDING). */
-const CHECK_PILL: Record<CheckStatus, string> = {
+/**
+ * A placeholder card's status is `NOT_RUN` — deliberately distinct from the real `PENDING` status
+ * (which means "ran, awaiting a result") so a reviewer can't mistake "never attempted" for
+ * "in flight". `StepResult.status` (applications.ts) is intentionally left alone since it mirrors
+ * the backend's real `CheckStatus` enum; this widened type only exists for this panel's display list.
+ */
+type DisplayStatus = CheckStatus | "NOT_RUN";
+type DisplayStep = Omit<StepResult, "status"> & { status: DisplayStatus };
+
+/**
+ * Status pill styling per verification outcome (green PASS / amber REVIEW / red FAIL / grey
+ * PENDING / grey NOT_RUN — a synthetic placeholder card, see {@link RETRYABLE_CHECKS}).
+ */
+const CHECK_PILL: Record<DisplayStatus, string> = {
   PASS: "bg-success-100 text-success-700",
   REVIEW: "bg-warning-100 text-warning-800",
   FAIL: "bg-error-100 text-error-700",
   PENDING: "bg-grey-100 text-muted",
+  NOT_RUN: "bg-grey-100 text-muted",
 };
+
+/** Pill label per status — "NOT_RUN" reads as "NOT RUN" for humans; the underlying value is unchanged. */
+const CHECK_PILL_LABEL: Partial<Record<DisplayStatus, string>> = { NOT_RUN: "NOT RUN" };
+
+/**
+ * Mirrors the backend allow-list in `ApplicationVerificationService.retryExternalCheck` exactly.
+ * `summary()` only returns rows that already exist in `application_verification`, so a check that
+ * has never run (e.g. PENNY_DROP on a fresh application) has no card at all — and therefore no
+ * "Manual override" or "Retry API" button, even though both endpoints upsert and work fine with no
+ * pre-existing row. We backfill a synthetic placeholder card for any retryable check missing from
+ * `q.data` so those actions are always reachable.
+ */
+const RETRYABLE_CHECKS: readonly string[] = ["PAN", "EMAIL", "ADDRESS", "BUREAU", "EMPLOYMENT", "PENNY_DROP", "SELFIE"];
 
 /** "monthlySalaryPaise" -> "Monthly salary" (the trailing "Paise" is stripped — see {@link isPaiseKey}). */
 function humanizeKey(key: string): string {
@@ -80,10 +106,23 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
   const remind = useMutation({ mutationFn: () => staffApi.sendReminder(applicationId) });
 
   // The check currently open in the manual-override dialog (KYC approver / admin), or null.
-  const [override, setOverride] = React.useState<StepResult | null>(null);
-  const [retry, setRetry] = React.useState<StepResult | null>(null);
+  const [override, setOverride] = React.useState<DisplayStep | null>(null);
+  const [retry, setRetry] = React.useState<DisplayStep | null>(null);
 
-  const steps: StepResult[] = q.data ?? [];
+  // Real rows first, then a synthetic NOT_RUN placeholder for every retryable check with no row
+  // yet — otherwise a never-run check (PENNY_DROP is the live case) has no card and so no way to
+  // override or retry it, even though both backend endpoints upsert and work with no prior row.
+  const steps: DisplayStep[] = React.useMemo(() => {
+    const real = q.data ?? [];
+    const seen = new Set(real.map((s) => s.checkType));
+    const placeholders: DisplayStep[] = RETRYABLE_CHECKS.filter((c) => !seen.has(c)).map((checkType) => ({
+      checkType,
+      status: "NOT_RUN",
+      message: "Not run on this application",
+      derived: {},
+    }));
+    return [...real, ...placeholders];
+  }, [q.data]);
   const p = progressQ.data;
 
   return (
@@ -131,7 +170,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-navy">{humanizeCheck(s.checkType)}</span>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[s.status]}`}>
-                    {s.status}
+                    {CHECK_PILL_LABEL[s.status] ?? s.status}
                   </span>
                 </div>
                 {s.message ? <p className="mt-1 text-xs text-ink/90">{s.message}</p> : null}
@@ -179,7 +218,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
   );
 }
 
-function RetryDialog({ applicationId, step, onClose }: { applicationId: number; step: StepResult; onClose: () => void }) {
+function RetryDialog({ applicationId, step, onClose }: { applicationId: number; step: DisplayStep; onClose: () => void }) {
   const qc = useQueryClient();
   const fields = retryFields(step.checkType);
   const [input, setInput] = React.useState<Record<string, string>>({});
@@ -231,6 +270,9 @@ function retryFields(checkType: string): RetryField[] {
       ];
     case "BUREAU":
       return [{ key: "otp", label: "Consent OTP", placeholder: "Enter the borrower’s fresh 6-digit consent OTP", required: true, help: "A fresh OTP is required by Digitap. Do not reuse a previous code." }];
+    case "EMPLOYMENT":
+      // The backend derives every EMPLOYMENT input from the stored profile — no extra fields to collect.
+      return [];
     case "PENNY_DROP":
       return [
         { key: "accountNumber", label: "Account number", placeholder: "Uses saved account when blank" },
@@ -254,7 +296,7 @@ function OverrideDialog({
   onClose,
 }: {
   applicationId: number;
-  step: StepResult;
+  step: DisplayStep;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -288,7 +330,7 @@ function OverrideDialog({
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Current status</span>
           <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[step.status]}`}>
-            {step.status}
+            {CHECK_PILL_LABEL[step.status] ?? step.status}
           </span>
         </div>
         {step.message ? <p className="mt-1.5 text-xs text-ink/90">{step.message}</p> : null}

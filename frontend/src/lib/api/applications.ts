@@ -1200,7 +1200,19 @@ export const offerApi = {
    */
   confirmDisbursalAccount: (
     id: number,
-    payload: { accountNumber: string; ifsc: string; holderName?: string; bank?: string },
+    payload: {
+      accountNumber: string;
+      ifsc: string;
+      holderName?: string;
+      bank?: string;
+      /**
+       * The bank-proof fallback: skips the penny drop entirely and leaves the account
+       * REVIEW-pending for the Disbursement Head to verify against an uploaded cheque/passbook.
+       * Only meaningful once a BANK_PROOF document already exists — the backend 400s
+       * (`BANK_PROOF_REQUIRED`) otherwise.
+       */
+      useBankProof?: boolean;
+    },
   ) => bff<ApplicationView>(`${OFFER(id)}/disbursal-account`, "POST", payload),
 };
 
@@ -1298,6 +1310,14 @@ export const staffApi = {
   disbursementDecision: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/disbursement-decision`, "POST", { decision, txnRef, notes }),
 
+  /**
+   * Disbursement Head verifies/rejects the account details against the borrower's uploaded
+   * BANK_PROOF (cancelled cheque / passbook) when the penny drop was bypassed via the bank-proof
+   * fallback. Approving sets `disbursalAccountVerified=true` so `disbursementDecision`'s accept
+   * path (which otherwise 422s with `BANK_ACCOUNT_UNVERIFIED`) can proceed.
+   */
+  bankProofDecision: (id: number, decision: boolean, notes?: string) =>
+    bff<ApplicationView>(`${STAFF_BASE}/${id}/bank-proof-decision`, "POST", { decision, notes }),
 
   /** Cancel a pre-disbursement application (staff/admin). Backend rejects once past disbursement. */
   cancel: (id: number, notes?: string) =>

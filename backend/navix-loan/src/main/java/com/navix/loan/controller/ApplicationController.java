@@ -363,6 +363,18 @@ public class ApplicationController {
                 flow.disbursementDecision(id, req.decision(), req.txnRef(), req.notes())));
     }
 
+    /**
+     * The Disbursement Head's judgement of an uploaded bank proof (cancelled cheque / passbook) — the
+     * escape hatch for a borrower the penny drop has locked out. Approve unblocks the ordinary
+     * {@code disbursement-decision} accept above by flipping {@code disbursalAccountVerified}; reject
+     * leaves the application in {@code DISBURSEMENT_PENDING} for the borrower to try again.
+     */
+    @PostMapping("/{id}/bank-proof-decision")
+    public ApiResponse<ApplicationView> bankProofDecision(@PathVariable Long id, @RequestBody DecisionRequest req) {
+        verification.bankProofDecision(id, req.decision(), req.notes());
+        return ApiResponse.ok(ApplicationView.of(flow.get(id)));
+    }
+
     // No accountant-validate endpoint: the Disbursement Head's transaction id IS the validation
     // (V48). The Accountant's remaining money work is repayment verification and collections
     // payments, both under /api/loan and /api/collections.

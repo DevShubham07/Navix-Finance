@@ -114,6 +114,70 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void recordBankProofPending_flagsPennyDropAsReviewAwaitingTheDisbursementHead() {
+        service.recordBankProofPending(APP, "999988887777", "ICIC0004321");
+
+        ArgumentCaptor<ApplicationVerification> captor = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo("REVIEW");
+        assertThat(captor.getValue().getProvider()).isEqualTo("MANUAL_PROOF");
+    }
+
+    @Test
+    void bankProofDecision_approveVerifiesTheAccountAndClearsThePennyDropLock() {
+        ActorContext.set(new CurrentActor("d1", "Dinesh", "DISBURSEMENT_HEAD"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setCustomerId(9L);
+        app.setStatus(com.navix.loan.domain.ApplicationStatus.DISBURSEMENT_PENDING);
+        ApplicationVerification existing = row("PENNY_DROP", "REVIEW");
+        existing.setDerived("{\"bankProofPending\":true,\"accountNumber\":\"999988887777\",\"ifsc\":\"ICIC0004321\"}");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PENNY_DROP"))
+                .thenReturn(Optional.of(existing));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.empty());
+
+        var result = service.bankProofDecision(APP, true, "cheque looks fine");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(app.getDisbursalAccountVerified()).isTrue();
+        assertThat(app.getDisbursalAccountNumber()).isEqualTo("999988887777");
+        assertThat(app.getDisbursalIfsc()).isEqualTo("ICIC0004321");
+        verify(pennyDropGuard).clearLock(9L);
+        verify(flow).recordEvent(APP, "BANK_PROOF_APPROVE", "cheque looks fine");
+    }
+
+    @Test
+    void bankProofDecision_rejectLeavesTheAccountUnverified() {
+        ActorContext.set(new CurrentActor("d1", "Dinesh", "DISBURSEMENT_HEAD"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setCustomerId(9L);
+        app.setStatus(com.navix.loan.domain.ApplicationStatus.DISBURSEMENT_PENDING);
+        ApplicationVerification existing = row("PENNY_DROP", "REVIEW");
+        existing.setDerived("{\"bankProofPending\":true,\"accountNumber\":\"999988887777\",\"ifsc\":\"ICIC0004321\"}");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PENNY_DROP"))
+                .thenReturn(Optional.of(existing));
+
+        var result = service.bankProofDecision(APP, false, "signature doesn't match");
+
+        assertThat(result.status()).isEqualTo("FAIL");
+        assertThat(app.getDisbursalAccountVerified()).isNotEqualTo(Boolean.TRUE);
+        verify(pennyDropGuard, never()).clearLock(any());
+        verify(flow).recordEvent(APP, "BANK_PROOF_REJECT", "signature doesn't match");
+    }
+
+    @Test
+    void bankProofDecision_rejectsACreditHeadCaller() {
+        ActorContext.set(new CurrentActor("17", "Credit Head", "CREDIT_HEAD"));
+
+        assertThatThrownBy(() -> service.bankProofDecision(APP, true, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+    }
+
+    @Test
     void manualDecision_stillClearsDerivedForNonPennyDropChecks() {
         ActorContext.set(new CurrentActor("17", "Credit Reviewer", "CREDIT_HEAD"));
         LoanApplication app = new LoanApplication();

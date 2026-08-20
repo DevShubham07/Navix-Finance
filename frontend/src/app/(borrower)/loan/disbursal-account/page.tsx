@@ -3,16 +3,21 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Landmark, Loader2, Lock, User } from "lucide-react";
+import { CheckCircle2, Landmark, Loader2, Lock, UploadCloud, User } from "lucide-react";
 import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
-import { offerApi } from "@/lib/api/applications";
+import { offerApi, verificationApi } from "@/lib/api/applications";
 import { useOffer } from "@/lib/offer";
 import { formatDateTime } from "@/lib/utils";
 import { formatApiError } from "@/lib/api/errors";
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+// Cancelled cheques and passbook photos arrive the same way bank statements do (signup/bank):
+// a photo or a scanned PDF, never anything larger than a phone camera would produce.
+const BANK_PROOF_ACCEPT = "application/pdf,image/jpeg,image/png";
+const BANK_PROOF_MAX_BYTES = 10 * 1024 * 1024;
 
 function maskAccount(account: string | null): string {
   if (!account || account.length < 4) return "—";
@@ -39,6 +44,12 @@ export default function DisbursalAccountPage() {
   const [touched, setTouched] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
+
+  // The bank-proof fallback is a wholly separate submit path — it never touches the penny-drop
+  // attempt counter or the lock, so its own file/busy/error state stays independent of the block above.
+  const [bankProofFile, setBankProofFile] = React.useState<File | null>(null);
+  const [bankProofBusy, setBankProofBusy] = React.useState(false);
+  const [bankProofError, setBankProofError] = React.useState<string>();
 
   const q = useQuery({
     queryKey: ["disbursal-account", appId],
@@ -73,6 +84,58 @@ export default function DisbursalAccountPage() {
       setBusy(false);
       // A failed drop burns an attempt — re-read so the remaining count and any lock are current.
       void q.refetch();
+    }
+  };
+
+  const pickBankProof = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    e.target.value = ""; // allow re-picking the same file after a mistaken selection
+    if (!f) return;
+    if (!BANK_PROOF_ACCEPT.split(",").includes(f.type)) {
+      setBankProofError("Upload a PDF, JPG or PNG file.");
+      return;
+    }
+    if (f.size > BANK_PROOF_MAX_BYTES) {
+      setBankProofError("File must be under 10 MB.");
+      return;
+    }
+    setBankProofError(undefined);
+    setBankProofFile(f);
+  };
+
+  /**
+   * The fallback path: no penny drop, no lock, no attempts counter — that machinery is exactly
+   * what this exists to route around. The account number/IFSC/holder name are still required
+   * (the proof confirms the account is theirs; it doesn't tell us where to send money), so this
+   * reuses the same `changing` fields — or the saved salary account when the borrower never
+   * switched — and the same `formOk` validity gate as the penny-drop submit above.
+   */
+  const submitBankProof = async () => {
+    if (appId == null || !saved) return;
+    if (!bankProofFile) { setBankProofError("Choose a cancelled cheque or passbook photo first."); return; }
+    if (changing && !formOk) { setTouched(true); return; }
+    setBankProofBusy(true);
+    setBankProofError(undefined);
+    try {
+      const contentType = bankProofFile.type || "application/octet-stream";
+      const { key, url } = await verificationApi.presignUpload(appId, {
+        docType: "BANK_PROOF",
+        fileName: bankProofFile.name,
+        contentType,
+      });
+      await verificationApi.putToPresignedUrl(url, bankProofFile, contentType);
+      await verificationApi.uploadedDocuments(appId, { docType: "BANK_PROOF", objectKeys: [key] });
+      await offerApi.confirmDisbursalAccount(appId, {
+        accountNumber: changing ? account : (saved.accountNumber ?? ""),
+        ifsc: changing ? ifsc : (saved.ifsc ?? ""),
+        holderName: changing ? holder.trim() : (saved.holderName ?? undefined),
+        bank: changing ? undefined : (saved.bank ?? undefined),
+        useBankProof: true,
+      });
+      router.push("/loan/status");
+    } catch (err) {
+      setBankProofError(formatApiError(err, "Could not upload your proof — please try again."));
+      setBankProofBusy(false);
     }
   };
 
@@ -171,6 +234,36 @@ export default function DisbursalAccountPage() {
         ) : null}
 
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
+      </div>
+
+      {/* The bank-proof fallback. Deliberately ALWAYS rendered — including while `isLocked` — because
+          the 12-hour penny-drop lock is exactly the situation this exists to unblock. Nothing here
+          reads `isLocked` or `saved.attemptsLeft`; wiring either in would recreate the dead end. */}
+      <div className="form-card mt-4">
+        <p className="lead mb-1">Not able to verify your account?</p>
+        <p className="mb-4 text-sm text-muted">
+          Upload a cancelled cheque or your bank passbook instead — we&apos;ll verify it manually
+          before your advance is sent.
+        </p>
+        <input
+          type="file"
+          accept={BANK_PROOF_ACCEPT}
+          onChange={pickBankProof}
+          className="block w-full text-sm text-ink file:mr-3 file:rounded file:border-0 file:bg-navy file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white file:cursor-pointer"
+        />
+        {bankProofFile ? (
+          <p className="mt-2 text-sm text-muted">Selected: {bankProofFile.name}</p>
+        ) : null}
+        {bankProofError ? <p className="mt-2 text-sm text-error-600">{bankProofError}</p> : null}
+        <button
+          type="button"
+          onClick={submitBankProof}
+          disabled={bankProofBusy || !bankProofFile || (changing && !formOk)}
+          className="btn btn-outline btn-sm mt-3"
+        >
+          <UploadCloud size={15} />
+          {bankProofBusy ? "Uploading…" : "Upload proof & continue"}
+        </button>
       </div>
 
       {/* `formOk` was computed but never reached the button: on the "different account" form,

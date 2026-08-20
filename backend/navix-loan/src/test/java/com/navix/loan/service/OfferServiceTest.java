@@ -238,7 +238,7 @@ class OfferServiceTest {
         profile.setSalaryIfsc(null);
 
         offer.confirmDisbursalAccount(APP,
-                new DisbursalAccountRequest("555544443333", "SBIN0009999", "Asha Kumari", null));
+                new DisbursalAccountRequest("555544443333", "SBIN0009999", "Asha Kumari", null, false));
 
         verify(verification, never()).verifyPennyDrop(any(), anyString(), anyString(), anyBoolean());
         assertThat(app.getDisbursalAccountChanged()).isFalse();
@@ -256,7 +256,7 @@ class OfferServiceTest {
                         "ok", java.util.Map.of()));
 
         offer.confirmDisbursalAccount(APP,
-                new DisbursalAccountRequest("777766665555", "AXIS0001111", "Asha Kumari", null));
+                new DisbursalAccountRequest("777766665555", "AXIS0001111", "Asha Kumari", null, false));
 
         assertThat(app.getDisbursalAccountChanged()).isTrue();
         verify(verification).verifyPennyDrop(eq(APP), eq("777766665555"), eq("AXIS0001111"), anyBoolean());
@@ -269,7 +269,7 @@ class OfferServiceTest {
                 .thenReturn(pass());
 
         offer.confirmDisbursalAccount(APP,
-                new DisbursalAccountRequest("123456789012", "HDFC0001234", "Asha Kumari", null));
+                new DisbursalAccountRequest("123456789012", "HDFC0001234", "Asha Kumari", null, false));
 
         verify(verification).verifyPennyDrop(eq(APP), eq("123456789012"), eq("HDFC0001234"), eq(true));
         verify(pennyDropGuard).record(eq(CUSTOMER), eq(APP), eq("123456789012"), eq("HDFC0001234"),
@@ -288,7 +288,7 @@ class OfferServiceTest {
         app.setDisbursalAccountVerified(true);
 
         offer.confirmDisbursalAccount(APP,
-                new DisbursalAccountRequest("123456789012", "hdfc0001234", "Asha Kumari", null));
+                new DisbursalAccountRequest("123456789012", "hdfc0001234", "Asha Kumari", null, false));
 
         verify(verification, never()).verifyPennyDrop(any(), anyString(), anyString(), anyBoolean());
         verify(pennyDropGuard, never()).record(any(), any(), anyString(), anyString(), anyBoolean(), any());
@@ -302,7 +302,7 @@ class OfferServiceTest {
                 .thenReturn(pass());
 
         offer.confirmDisbursalAccount(APP,
-                new DisbursalAccountRequest("999988887777", "icic0004321", null, null));
+                new DisbursalAccountRequest("999988887777", "icic0004321", null, null, false));
 
         assertThat(app.getDisbursalAccountChanged()).isTrue();
         assertThat(app.getDisbursalAccountVerified()).isTrue();
@@ -323,7 +323,7 @@ class OfferServiceTest {
                 .thenReturn(review());
 
         assertThatThrownBy(() -> offer.confirmDisbursalAccount(APP,
-                new DisbursalAccountRequest("999988887777", "ICIC0004321", null, null)))
+                new DisbursalAccountRequest("999988887777", "ICIC0004321", null, null, false)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Invalid account details");
 
@@ -340,7 +340,7 @@ class OfferServiceTest {
                 .thenReturn(Optional.of(Instant.now().plusSeconds(3600)));
 
         assertThatThrownBy(() -> offer.confirmDisbursalAccount(APP,
-                new DisbursalAccountRequest("999988887777", "ICIC0004321", null, null)))
+                new DisbursalAccountRequest("999988887777", "ICIC0004321", null, null, false)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Too many failed attempts");
 
@@ -351,9 +351,76 @@ class OfferServiceTest {
     @Test
     void theDisbursalAccountCannotBeConfirmedBeforeAnAmountIsChosen() {
         assertThatThrownBy(() -> offer.confirmDisbursalAccount(APP,
-                new DisbursalAccountRequest("123456789012", "HDFC0001234", null, null)))
+                new DisbursalAccountRequest("123456789012", "HDFC0001234", null, null, false)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Choose your loan amount first");
+    }
+
+    // ---------------------------------------------------------------- bank proof (penny-drop fallback)
+
+    @Test
+    void bankProofRequiresAnUploadedDocumentFirst() {
+        app.setAmountRequested(1_500_000L);
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.BANK_PROOF)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> offer.confirmDisbursalAccount(APP,
+                new DisbursalAccountRequest("999988887777", "ICIC0004321", "Asha Kumari", null, true)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "BANK_PROOF_REQUIRED");
+
+        verify(verification, never()).verifyPennyDrop(any(), anyString(), anyString(), anyBoolean());
+        verify(pennyDropGuard, never()).record(any(), any(), anyString(), anyString(), anyBoolean(), any());
+    }
+
+    @Test
+    void bankProofSkipsThePennyDropEntirelyAndLeavesTheAccountUnverified() {
+        app.setAmountRequested(1_500_000L);
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.BANK_PROOF))
+                .thenReturn(Optional.of(new ApplicationDocument()));
+
+        offer.confirmDisbursalAccount(APP,
+                new DisbursalAccountRequest("999988887777", "ICIC0004321", "Asha Kumari", null, true));
+
+        verify(verification, never()).verifyPennyDrop(any(), anyString(), anyString(), anyBoolean());
+        verify(pennyDropGuard, never()).record(any(), any(), anyString(), anyString(), anyBoolean(), any());
+        verify(verification).recordBankProofPending(APP, "999988887777", "ICIC0004321");
+        assertThat(app.getDisbursalAccountVerified()).isFalse();
+        assertThat(app.getDisbursalAccountNumber()).isEqualTo("999988887777");
+        assertThat(app.getDisbursalIfsc()).isEqualTo("ICIC0004321");
+        verify(flow).acceptOffer(APP, 1_500_000L);
+    }
+
+    @Test
+    void bankProofSucceedsEvenUnderAnActivePennyDropLock() {
+        app.setAmountRequested(1_500_000L);
+        // Never even consulted on this path — the useBankProof branch skips the lock check entirely,
+        // which is the point: this IS the escape hatch from that lock.
+        lenient().when(pennyDropGuard.lockedUntil(CUSTOMER))
+                .thenReturn(Optional.of(Instant.now().plusSeconds(3600)));
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                APP, ApplicationVerificationService.BANK_PROOF))
+                .thenReturn(Optional.of(new ApplicationDocument()));
+
+        offer.confirmDisbursalAccount(APP,
+                new DisbursalAccountRequest("999988887777", "ICIC0004321", "Asha Kumari", null, true));
+
+        verify(verification, never()).verifyPennyDrop(any(), anyString(), anyString(), anyBoolean());
+        verify(flow).acceptOffer(APP, 1_500_000L);
+    }
+
+    @Test
+    void bankProofStillRejectsAMalformedAccountOrIfsc() {
+        app.setAmountRequested(1_500_000L);
+
+        assertThatThrownBy(() -> offer.confirmDisbursalAccount(APP,
+                new DisbursalAccountRequest("123", "SHORT", "Asha Kumari", null, true)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "ACCOUNT_INVALID");
+
+        verify(documentRepo, never()).findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                any(), anyString());
     }
 
     @Test

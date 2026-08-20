@@ -358,11 +358,41 @@ public class OfferService {
         // "Changed" means changed from an account we already have reason to trust — either the
         // salary account credit verified the file against, or (on a re-apply) the account the last
         // advance was actually paid into, carried over by ApplicationFlowService. Matching either is
-        // not a change, so no penny drop fires (revamp.md decisions 9, 45).
+        // not a change, so no penny drop fires (revamp.md decisions 9, 45). Computed before either
+        // branch writes to the application, since both compare against the PREVIOUS destination.
         boolean changed = !matches(account, ifsc, p == null ? null : p.getSalaryAccountNumber(),
                 p == null ? null : p.getSalaryIfsc())
                 && !matches(account, ifsc, app.getDisbursalAccountNumber(), app.getDisbursalIfsc());
 
+        if (req.useBankProof()) {
+            // The escape hatch for a borrower the penny drop has locked out (typically a name-at-bank
+            // mismatch three strikes running): a cancelled cheque or passbook stands in for the
+            // provider check, judged later by the Disbursement Head. This bypasses the strikes lock
+            // deliberately — it IS the way out of that lock — and never calls verifyPennyDrop or
+            // PennyDropGuard.record, so it can neither trip nor be blocked by the 3-strikes rule.
+            if (documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                    appId, ApplicationVerificationService.BANK_PROOF).isEmpty()) {
+                throw new BusinessException("BANK_PROOF_REQUIRED",
+                        "Upload a cancelled cheque or passbook first");
+            }
+            app.setDisbursalAccountNumber(account);
+            app.setDisbursalIfsc(ifsc);
+            app.setDisbursalHolderName(firstNonBlank(req.holderName(), p != null ? p.getFullName() : null));
+            app.setDisbursalBank(firstNonBlank(req.bank(), p != null ? p.getSalaryBank() : null));
+            // The real value, not a blanket true: this column records whether the money is going
+            // somewhere other than the salary account credit saw, and a borrower who simply could
+            // not verify the account they have always used has not changed anything. Hardcoding it
+            // would misreport them to the release desk as having redirected their payout.
+            app.setDisbursalAccountChanged(changed);
+            app.setDisbursalAccountVerified(false);
+            app.setDisbursalConfirmedAt(Instant.now());
+            applicationRepo.save(app);
+
+            verification.recordBankProofPending(appId, account, ifsc);
+
+            journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
+            return flow.acceptOffer(appId, app.getAmountRequested());
+        }
         boolean verified = Boolean.TRUE.equals(app.getDisbursalAccountVerified())
                 && matches(account, ifsc, app.getDisbursalAccountNumber(), app.getDisbursalIfsc());
         if (!verified) {
