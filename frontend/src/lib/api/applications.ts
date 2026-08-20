@@ -1003,6 +1003,15 @@ export const verificationApi = {
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/digilocker/complete`, "POST"),
 
   /**
+   * The DigiLocker fallback: confirms both an AADHAAR_FRONT and AADHAAR_BACK document already
+   * exist and records the AADHAAR row as REVIEW/MANUAL_PROOF for the Disbursement Head to judge —
+   * the identity twin of `offerApi.confirmDisbursalAccount`'s `useBankProof`. Errors
+   * `AADHAAR_PROOF_REQUIRED` if either side hasn't been uploaded yet.
+   */
+  aadhaarManual: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/aadhaar-manual`, "POST"),
+
+  /**
    * Credit bureau pull. `otp` is the already-verified bureau-consent code (see `bureauConsent` below)
    * forwarded so it can be threaded into Digitap's Credit Analytics payload, which mandates it — omit
    * it only for a staff-triggered manual retry. Score/category are never surfaced to the borrower.
@@ -1309,15 +1318,6 @@ export const staffApi = {
 
   disbursementDecision: (id: number, decision: boolean, txnRef?: string, notes?: string) =>
     bff<ApplicationView>(`${STAFF_BASE}/${id}/disbursement-decision`, "POST", { decision, txnRef, notes }),
-
-  /**
-   * Disbursement Head verifies/rejects the account details against the borrower's uploaded
-   * BANK_PROOF (cancelled cheque / passbook) when the penny drop was bypassed via the bank-proof
-   * fallback. Approving sets `disbursalAccountVerified=true` so `disbursementDecision`'s accept
-   * path (which otherwise 422s with `BANK_ACCOUNT_UNVERIFIED`) can proceed.
-   */
-  bankProofDecision: (id: number, decision: boolean, notes?: string) =>
-    bff<ApplicationView>(`${STAFF_BASE}/${id}/bank-proof-decision`, "POST", { decision, notes }),
 
   /** Cancel a pre-disbursement application (staff/admin). Backend rejects once past disbursement. */
   cancel: (id: number, notes?: string) =>

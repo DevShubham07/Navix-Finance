@@ -27,7 +27,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { X, Loader2, Zap, Banknote, ShieldCheck, PhoneCall, Gauge, Check, ExternalLink } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
@@ -39,7 +39,7 @@ import { StageDetailDialog } from "@/components/staff/stage-detail-dialog";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
-import { Section, KV, DocumentsTab, CustomerDocsByType } from "@/components/staff/detail-parts";
+import { Section, KV, DocumentsTab, NeedsManualReviewBadge } from "@/components/staff/detail-parts";
 import { CustomerTabBody } from "@/components/staff/customer-tabs";
 import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
 import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
@@ -58,13 +58,12 @@ import {
   type VerificationProgress,
   type EventView,
 } from "@/lib/api/applications";
-import { useStaffMe, errMessage, REVIEW_PERMS, useRefreshAfterAction } from "@/components/staff/pipeline/hooks";
+import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import {
   AssignActions,
   CreditDecisionActions,
   DisbursementActions,
   NoAccessNotice,
-  PermissionGate,
 } from "@/components/staff/live-pipeline";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -241,6 +240,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                     recommendation={briefQ.data.recommendation}
                   />
                 )}
+                {app?.customerId != null && <NeedsManualReviewBadge customerId={app.customerId} />}
               </div>
             </div>
             {app?.customerId != null && (
@@ -531,7 +531,6 @@ function ReferencesFocus({ applicationId }: { applicationId: number }) {
  * be legible rather than collapsed into a green tick.
  */
 function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefined }) {
-  const qc = useQueryClient();
   const hasLoan = app.loanId != null;
   const loanQ = useQuery({
     queryKey: ["staff-loan", app.loanId],
@@ -551,14 +550,11 @@ function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | 
   const pennyDropStep = (verificationsQ.data ?? []).find((s) => s.checkType === "PENNY_DROP");
   const bankProofPending = (pennyDropStep?.derived as Record<string, unknown> | undefined)?.bankProofPending === true;
 
-  const refresh = useRefreshAfterAction();
-  const bankProofDecision = useMutation({
-    mutationFn: (decision: boolean) => staffApi.bankProofDecision(app.id, decision),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["staff-verifications", app.id] });
-      refresh(app.id);
-    },
-  });
+  // The Aadhaar identity twin of the bank-proof marker above, read off the same verifications
+  // query — `aadhaarManual` writes this on the AADHAAR row when DigiLocker never connected and the
+  // borrower uploaded card photos instead.
+  const aadhaarStep = (verificationsQ.data ?? []).find((s) => s.checkType === "AADHAAR");
+  const aadhaarProofPending = (aadhaarStep?.derived as Record<string, unknown> | undefined)?.aadhaarProofPending === true;
 
   // Pre-disbursal the payable is the requested amount; post-disbursal it's the minted loan.
   const principal = loan?.principalPaise ?? app.amountRequestedPaise ?? null;
@@ -613,6 +609,12 @@ function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | 
           k="Name match at bank"
           v={p?.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null}
         />
+        {/* Only when there IS something to say: KV renders a placeholder for a null value, so an
+            unconditional row printed a bare "Aadhaar —" on every disbursement card, including the
+            overwhelming majority where DigiLocker worked and there is nothing to review. */}
+        {aadhaarProofPending && (
+          <KV k="Aadhaar" v={<span className="font-semibold text-warning-800">Card uploaded — needs review</span>} />
+        )}
         <KV k="Transaction ref" v={loan?.disbursalTxnRef} mono />
         <KV k="Disbursed on" v={loan?.disbursedOn ? formatDate(loan.disbursedOn) : null} />
         <KV k="Repayment due" v={loan?.dueDate ? formatDate(loan.dueDate) : null} />
@@ -626,43 +628,6 @@ function DisbursementFocus({ app, p }: { app: ApplicationView; p: ProfileView | 
             ? "The penny-drop check has not passed on this account. Confirm it before releasing funds."
             : "This account was never penny-dropped — the borrower kept the salary account they typed at intake. Check the number against their payslips before releasing funds."}
         </p>
-      )}
-      {bankProofPending && (
-        <div className="mt-3 space-y-2">
-          <Section title="Uploaded bank proof">
-            <CustomerDocsByType
-              customerId={app.customerId}
-              docTypes={new Set(["BANK_PROOF"])}
-              emptyCopy="No bank proof document found — the borrower's upload may still be in flight."
-            />
-          </Section>
-          {/* Only while the account is still unverified and the file is where the Head can act on
-              it — once verified/rejected the account's disposition is final for this application. */}
-          {app.status === "DISBURSEMENT_PENDING" && app.disbursalAccountVerified !== true && (
-            <PermissionGate permission="loan:disburse">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => bankProofDecision.mutate(true)}
-                  disabled={bankProofDecision.isPending}
-                  className="btn btn-sm bg-success-600 border-success-600 text-white hover:bg-success-700 disabled:opacity-50"
-                >
-                  {bankProofDecision.isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                  Approve bank details
-                </button>
-                <button
-                  onClick={() => bankProofDecision.mutate(false)}
-                  disabled={bankProofDecision.isPending}
-                  className="btn btn-sm bg-error-600 border-error-600 text-white hover:bg-error-700 disabled:opacity-50"
-                >
-                  <X size={14} /> Reject bank details
-                </button>
-              </div>
-              {bankProofDecision.error && (
-                <p className="text-sm text-error-700">{errMessage(bankProofDecision.error)}</p>
-              )}
-            </PermissionGate>
-          )}
-        </div>
       )}
     </FocusCard>
   );

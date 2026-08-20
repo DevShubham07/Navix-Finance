@@ -114,11 +114,6 @@ class ApplicationFlowServiceTest {
         app.setCustomerId(7L);
         app.setAmountRequested(1_000_000L);
         app.setStatus(status);
-        // The normal path: OfferService.confirmDisbursalAccount already ran (penny drop or the
-        // account-unchanged fast path) before the application ever reaches disbursement, so the
-        // account is verified by the time a test drives it here. The BANK_ACCOUNT_UNVERIFIED-gate
-        // tests below override this explicitly to cover the unverified case.
-        app.setDisbursalAccountVerified(Boolean.TRUE);
         lenient().when(applicationRepository.findById(1L)).thenReturn(Optional.of(app));
         return app;
     }
@@ -331,38 +326,6 @@ class ApplicationFlowServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("transaction id");
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
-    }
-
-    /**
-     * The hard gate on release (the bank-proof escape hatch's whole reason for existing):
-     * OfferService.confirmDisbursalAccount's useBankProof branch deliberately leaves
-     * disbursalAccountVerified false, and nothing may release money against an account nobody —
-     * neither the automated penny drop nor a human — has confirmed.
-     */
-    @Test
-    void disbursementIsRefusedWhenTheBankAccountIsNotVerified() {
-        LoanApplication app = appAt(ApplicationStatus.DISBURSEMENT_PENDING);
-        app.setDisbursalAccountVerified(Boolean.FALSE);
-        actor("disb1", "DISBURSEMENT_HEAD");
-
-        assertThatThrownBy(() -> flow.disbursementDecision(1L, true, "UTR999", "released"))
-                .isInstanceOf(BusinessException.class)
-                .hasFieldOrPropertyWithValue("code", "BANK_ACCOUNT_UNVERIFIED");
-        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
-    }
-
-    @Test
-    void disbursementSucceedsOnceTheBankAccountIsVerified() {
-        LoanApplication app = appAt(ApplicationStatus.DISBURSEMENT_PENDING);
-        app.setDisbursalAccountVerified(Boolean.TRUE);
-        Loan loan = new Loan();
-        loan.setId(99L);
-        when(loanService.disburse(any(), any(), any())).thenReturn(loan);
-        actor("disb1", "DISBURSEMENT_HEAD");
-
-        flow.disbursementDecision(1L, true, "UTR999", "released");
-
-        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.ACTIVE);
     }
 
     /** A failed transfer goes back to the Disbursement Head, who owns the release. */

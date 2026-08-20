@@ -129,8 +129,6 @@ function ProofDecisionActions({
   requireProofOnApprove = true,
   proofPlaceholder = "Transaction id / reference",
   hint,
-  approveDisabled = false,
-  approveDisabledTitle,
 }: {
   compact?: boolean;
   permission: Permission;
@@ -143,13 +141,6 @@ function ProofDecisionActions({
   requireProofOnApprove?: boolean;
   proofPlaceholder?: string;
   hint?: string;
-  /**
-   * An extra gate on top of `proofMissing` — the server is still the real enforcement
-   * (`BANK_ACCOUNT_UNVERIFIED`), this only stops the Head hitting that wall on an unverified
-   * bank-proof account. Callers that don't need it (KYC, credit, accountant) simply never pass it.
-   */
-  approveDisabled?: boolean;
-  approveDisabledTitle?: string;
 }) {
   const [proof, setProof] = React.useState("");
   const proofMissing = requireProofOnApprove && proof.trim().length === 0;
@@ -168,8 +159,7 @@ function ProofDecisionActions({
           />
           <button
             onClick={() => onApprove(proof.trim())}
-            disabled={pending || proofMissing || approveDisabled}
-            title={approveDisabled ? approveDisabledTitle : undefined}
+            disabled={pending || proofMissing}
             className="btn btn-sm bg-success-600 border-success-600 text-white hover:bg-success-700 disabled:opacity-50"
           >
             {pending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {approveLabel}
@@ -422,11 +412,6 @@ export function DisbursementActions({ app, compact }: { app: ApplicationView; co
       staffApi.disbursementDecision(app.id, vars.decision, vars.txnRef, vars.notes),
     onSuccess: () => refresh(app.id),
   });
-  // The bank-proof fallback (disbursal-account "not able to verify" path) skips the penny drop and
-  // leaves `disbursalAccountVerified` false/REVIEW until the Head clears the uploaded cheque/passbook
-  // via bank-proof-decision. The server is the real gate (`disbursementDecision` 422s
-  // `BANK_ACCOUNT_UNVERIFIED`) — this just stops the release button from walking into that wall.
-  const accountUnverified = app.disbursalAccountVerified !== true;
   return (
     <ProofDecisionActions
       compact={compact}
@@ -440,12 +425,6 @@ export function DisbursementActions({ app, compact }: { app: ApplicationView; co
       requireProofOnApprove
       proofPlaceholder="Transaction id"
       hint="Enter the transaction id of the transfer you made. Releasing activates the loan immediately."
-      approveDisabled={accountUnverified}
-      approveDisabledTitle={
-        accountUnverified
-          ? "The disbursal account details must be verified (penny drop, or bank-proof approval) before releasing funds."
-          : undefined
-      }
       onApprove={(proof) => m.mutate({ decision: true, txnRef: proof || undefined, notes: proof ? `Txn/ref: ${proof}` : undefined })}
       onReject={(proof) => m.mutate({ decision: false, notes: proof })}
     />

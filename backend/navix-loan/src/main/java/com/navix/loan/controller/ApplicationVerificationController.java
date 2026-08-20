@@ -171,6 +171,17 @@ public class ApplicationVerificationController {
         return ApiResponse.ok(verification.recordBureauConsent(id, req.otp(), req.consentText()));
     }
 
+    /**
+     * The manual Aadhaar-upload alternative to DigiLocker: the borrower has already uploaded
+     * {@code AADHAAR_FRONT} + {@code AADHAAR_BACK} via {@code /documents}, and this records the
+     * card as awaiting the Disbursement Head's review instead of a DigiLocker pull.
+     */
+    @PostMapping("/aadhaar-manual")
+    public ApiResponse<StepResult> aadhaarManual(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.recordAadhaarProofPending(id));
+    }
+
     @GetMapping("/summary")
     public ApiResponse<List<StepResult>> summary(@PathVariable Long id) {
         authorize(id);

@@ -124,57 +124,45 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
-    void bankProofDecision_approveVerifiesTheAccountAndClearsThePennyDropLock() {
-        ActorContext.set(new CurrentActor("d1", "Dinesh", "DISBURSEMENT_HEAD"));
-        LoanApplication app = new LoanApplication();
-        app.setId(APP);
-        app.setCustomerId(9L);
-        app.setStatus(com.navix.loan.domain.ApplicationStatus.DISBURSEMENT_PENDING);
-        ApplicationVerification existing = row("PENNY_DROP", "REVIEW");
-        existing.setDerived("{\"bankProofPending\":true,\"accountNumber\":\"999988887777\",\"ifsc\":\"ICIC0004321\"}");
-        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
-        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PENNY_DROP"))
-                .thenReturn(Optional.of(existing));
-        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.empty());
+    void recordAadhaarProofPending_requiresBothSides_missingBack() {
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(APP, "AADHAAR_FRONT"))
+                .thenReturn(Optional.of(new ApplicationDocument()));
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(APP, "AADHAAR_BACK"))
+                .thenReturn(Optional.empty());
 
-        var result = service.bankProofDecision(APP, true, "cheque looks fine");
-
-        assertThat(result.status()).isEqualTo("PASS");
-        assertThat(app.getDisbursalAccountVerified()).isTrue();
-        assertThat(app.getDisbursalAccountNumber()).isEqualTo("999988887777");
-        assertThat(app.getDisbursalIfsc()).isEqualTo("ICIC0004321");
-        verify(pennyDropGuard).clearLock(9L);
-        verify(flow).recordEvent(APP, "BANK_PROOF_APPROVE", "cheque looks fine");
-    }
-
-    @Test
-    void bankProofDecision_rejectLeavesTheAccountUnverified() {
-        ActorContext.set(new CurrentActor("d1", "Dinesh", "DISBURSEMENT_HEAD"));
-        LoanApplication app = new LoanApplication();
-        app.setId(APP);
-        app.setCustomerId(9L);
-        app.setStatus(com.navix.loan.domain.ApplicationStatus.DISBURSEMENT_PENDING);
-        ApplicationVerification existing = row("PENNY_DROP", "REVIEW");
-        existing.setDerived("{\"bankProofPending\":true,\"accountNumber\":\"999988887777\",\"ifsc\":\"ICIC0004321\"}");
-        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
-        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PENNY_DROP"))
-                .thenReturn(Optional.of(existing));
-
-        var result = service.bankProofDecision(APP, false, "signature doesn't match");
-
-        assertThat(result.status()).isEqualTo("FAIL");
-        assertThat(app.getDisbursalAccountVerified()).isNotEqualTo(Boolean.TRUE);
-        verify(pennyDropGuard, never()).clearLock(any());
-        verify(flow).recordEvent(APP, "BANK_PROOF_REJECT", "signature doesn't match");
-    }
-
-    @Test
-    void bankProofDecision_rejectsACreditHeadCaller() {
-        ActorContext.set(new CurrentActor("17", "Credit Head", "CREDIT_HEAD"));
-
-        assertThatThrownBy(() -> service.bankProofDecision(APP, true, null))
+        assertThatThrownBy(() -> service.recordAadhaarProofPending(APP))
                 .isInstanceOf(BusinessException.class)
-                .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+                .hasFieldOrPropertyWithValue("code", "AADHAAR_PROOF_REQUIRED");
+    }
+
+    @Test
+    void recordAadhaarProofPending_requiresBothSides_missingFront() {
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(APP, "AADHAAR_FRONT"))
+                .thenReturn(Optional.empty());
+        lenient().when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(APP, "AADHAAR_BACK"))
+                .thenReturn(Optional.of(new ApplicationDocument()));
+
+        assertThatThrownBy(() -> service.recordAadhaarProofPending(APP))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "AADHAAR_PROOF_REQUIRED");
+    }
+
+    @Test
+    void recordAadhaarProofPending_withBothSides_upsertsAadhaarAsReviewAwaitingTheDisbursementHead() {
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(APP, "AADHAAR_FRONT"))
+                .thenReturn(Optional.of(new ApplicationDocument()));
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(APP, "AADHAAR_BACK"))
+                .thenReturn(Optional.of(new ApplicationDocument()));
+
+        var result = service.recordAadhaarProofPending(APP);
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("aadhaarProofPending", true);
+        ArgumentCaptor<ApplicationVerification> captor = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(captor.capture());
+        assertThat(captor.getValue().getCheckType()).isEqualTo("AADHAAR");
+        assertThat(captor.getValue().getStatus()).isEqualTo("REVIEW");
+        assertThat(captor.getValue().getProvider()).isEqualTo("MANUAL_PROOF");
     }
 
     @Test

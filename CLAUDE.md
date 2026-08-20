@@ -829,6 +829,16 @@ multiple accounts (kartikjindal, meetzy-india). If push fails on OAuth scope, ru
   (`applicant_profile` ↔ onboarding `Borrower`); PII-at-rest encryption.
 - 🔴 Persisted `borrower_standing` table (standing is recomputed from loan history today); design-system
   polish; full-Aadhaar masking; compliance/regulatory alignment (NBFC/DLG, reporting, product copy).
+- ⚠️ **Known exception to "never store the raw Aadhaar number".** The manual-proof fallbacks store
+  borrower-uploaded images of identity and bank instruments: `AADHAAR_FRONT` / `AADHAAR_BACK` (the
+  DigiLocker alternative) and `BANK_PROOF` (a cancelled cheque or passbook, the penny-drop
+  alternative). An Aadhaar card image necessarily carries the **full** Aadhaar number, so these
+  documents are a deliberate, product-approved exception to the masking rule stated in the security
+  guidance — not an oversight. They are handled exactly like every other KYC document (S3, SSE-KMS,
+  short-lived presigned GETs, never logged, never exported), and are readable by any staff role that
+  can already open a document. Two consequences to weigh before an audit or a masking pass: the
+  images are **not** redacted at rest, and the presigned-URL route is **not** narrowed to the roles
+  that actually review them. Revisit both alongside full-Aadhaar masking above.
 
 ---
 

@@ -15,6 +15,7 @@ import { Loader2, Check, Upload, Trash2, FileText, ExternalLink, ChevronDown, Ch
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { hasPermission } from "@/lib/auth/rbac";
 import { formatDateTime } from "@/lib/utils";
+import { InfoTooltip } from "@/components/ui/tooltip";
 import {
   customersApi,
   staffApi,
@@ -354,6 +355,47 @@ export function CustomerDocsByType({
         />
       ))}
     </ul>
+  );
+}
+
+/** The two "manual proof" fallback upload types this flag watches for. */
+const MANUAL_REVIEW_DOC_TYPES = new Set(["BANK_PROOF", "AADHAAR_FRONT", "AADHAAR_BACK"]);
+
+/**
+ * Purely visual "needs manual review" flag — lit iff the customer has ever uploaded a cancelled
+ * cheque/passbook (BANK_PROOF) or Aadhaar card photos (AADHAAR_FRONT/AADHAAR_BACK) as a fallback
+ * for a failed penny drop or a DigiLocker that never connected. It carries no backend meaning: no
+ * clearing logic, no gate, nothing to click — reviewing those documents happens on the
+ * Verifications tab's existing per-check manual override.
+ *
+ * Deliberately derived from document PRESENCE, not the PENNY_DROP/AADHAAR verification rows'
+ * `derived.bankProofPending`/`aadhaarProofPending` markers: those flip false the moment a reviewer
+ * records ANY manual-override decision on that check, so a marker-driven flag would go dark the
+ * instant someone acts on it — the opposite of what a durable "this file needed a fallback upload"
+ * flag is for. Uploads are permanent, so this stays lit for the life of the file. Resist the urge
+ * to "simplify" this to read the markers instead — that would silently reintroduce clearing.
+ */
+export function NeedsManualReviewBadge({ customerId, className }: { customerId: number; className?: string }) {
+  const groupsQ = useQuery({
+    queryKey: ["customer-documents", customerId],
+    queryFn: () => customersApi.documents(customerId),
+  });
+  const flagged = (groupsQ.data ?? []).some((group) =>
+    group.documents.some((doc) => MANUAL_REVIEW_DOC_TYPES.has(doc.docType.toUpperCase())),
+  );
+  if (!flagged) return null;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full bg-warning-100 px-2 py-0.5 font-semibold text-warning-800 ${className ?? ""}`}
+    >
+      Needs manual review
+      <InfoTooltip
+        content="Cheque or Aadhaar uploaded — verify manually on the Verifications tab."
+        label="Why this needs manual review"
+        size={12}
+      />
+    </span>
   );
 }
 

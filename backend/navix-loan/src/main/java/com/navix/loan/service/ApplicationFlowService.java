@@ -609,19 +609,11 @@ public class ApplicationFlowService {
         LoanApplication app = require(appId);
         if (!accept) {
             transition(app, ApplicationStatus.REJECTED, "DISB_REJECT", notes);
-        } else if (txnRef == null || txnRef.isBlank()) {
+        } else if (txnRef != null && !txnRef.isBlank()) {
+            finalizeDisbursal(app, txnRef, notes);
+        } else {
             throw new BusinessException("TXN_REF_REQUIRED",
                     "Enter the transaction id of the transfer to release this loan");
-        } else if (!Boolean.TRUE.equals(app.getDisbursalAccountVerified())) {
-            // The bank-proof escape hatch (OfferService.confirmDisbursalAccount's useBankProof
-            // branch) deliberately skips the penny drop and leaves this flag false until the
-            // Disbursement Head judges the uploaded proof (ApplicationVerificationService
-            // .bankProofDecision). Releasing money on an account nobody has confirmed — neither the
-            // automated check nor a human — is exactly the gap that guard exists to close.
-            throw new BusinessException("BANK_ACCOUNT_UNVERIFIED",
-                    "Verify the borrower's bank details before releasing funds");
-        } else {
-            finalizeDisbursal(app, txnRef, notes);
         }
         return applicationRepository.save(app);
     }
@@ -855,25 +847,6 @@ public class ApplicationFlowService {
             counts.put(row.getStatus(), row.getCount());
         }
         return counts;
-    }
-
-    /**
-     * Append a same-status audit-trail row for an action that decides something without moving the
-     * application — the counterpart to {@link #transition} for those. Introduced for
-     * {@code ApplicationVerificationService#bankProofDecision}: a Disbursement Head's approve/reject
-     * of an uploaded bank proof stays in {@code DISBURSEMENT_PENDING} either way (reject simply
-     * leaves the borrower to try again; approve is picked up by the ordinary {@code
-     * disbursementDecision} accept afterwards), so there is no transition to hang the event off —
-     * only the REASSIGN case in {@link #assignExecutive} needed this shape before, and that one is
-     * private. Public here rather than duplicated: {@code ApplicationVerificationService} already
-     * depends on this class one-directionally (see the {@code flow} field there), so exposing this
-     * doesn't create a cycle, and re-deriving actor/notification plumbing on the other side would.
-     */
-    @Transactional
-    public LoanApplication recordEvent(Long appId, String action, String notes) {
-        LoanApplication app = require(appId);
-        logEvent(app, app.getStatus(), app.getStatus(), action, notes);
-        return applicationRepository.save(app);
     }
 
     // ---- internals -----------------------------------------------------------------

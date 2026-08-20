@@ -16,7 +16,15 @@ import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
-import { Section, KV, Bool, DocumentsTab, RemarksTab, CustomerDocsByType } from "@/components/staff/detail-parts";
+import {
+  Section,
+  KV,
+  Bool,
+  DocumentsTab,
+  RemarksTab,
+  CustomerDocsByType,
+  NeedsManualReviewBadge,
+} from "@/components/staff/detail-parts";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import {
@@ -90,50 +98,63 @@ export function CustomerTabBody({
 }) {
   const latestAppId = applicationId ?? detail.applications[0]?.id ?? null;
 
-  switch (tab) {
-    case "personal":
-      return <PersonalTab c={detail} applicationId={latestAppId} onChanged={onChanged} />;
-    case "employment":
-      return <EmploymentTab c={detail} />;
-    case "salary":
-      return <SalaryTab c={detail} customerId={customerId} />;
-    case "bank":
-      return <BankTab c={detail} latestAppId={latestAppId} />;
-    case "verifications":
-      // Every check on the file, penny drop included, with the same per-check detail and manual
-      // override the application dialog offers — reachable from the customer without having to
-      // find the right application first.
-      return latestAppId != null ? (
-        <VerificationChecksPanel applicationId={latestAppId} />
-      ) : (
-        <p className="text-sm text-muted">No application to show verifications for.</p>
-      );
-    case "credit":
-      return <CreditTab c={detail} latestAppId={latestAppId} />;
-    case "documents":
-      // Grouped mode: every application this customer ever filed, not just the newest — a
-      // reborrow's prior-application uploads must stay reachable (item 4).
-      return applicationId != null ? (
-        <DocumentsTab applicationId={applicationId} />
-      ) : (
-        <DocumentsTab customerId={customerId} />
-      );
-    case "loans":
-      return <LoansTab c={detail} onChanged={onChanged} />;
-    case "calls":
-      return (
-        <div className="space-y-6">
-          <CallLogsTab customerId={customerId} />
-          <Section title="Remarks">
-            <RemarksTab customerId={customerId} />
-          </Section>
-        </div>
-      );
-    case "audit":
-      return <AuditLogsTab customerId={customerId} />;
-    default:
-      return null;
-  }
+  const content = (() => {
+    switch (tab) {
+      case "personal":
+        return <PersonalTab c={detail} applicationId={latestAppId} onChanged={onChanged} />;
+      case "employment":
+        return <EmploymentTab c={detail} />;
+      case "salary":
+        return <SalaryTab c={detail} customerId={customerId} />;
+      case "bank":
+        return <BankTab c={detail} latestAppId={latestAppId} />;
+      case "verifications":
+        // Every check on the file, penny drop included, with the same per-check detail and manual
+        // override the application dialog offers — reachable from the customer without having to
+        // find the right application first.
+        return latestAppId != null ? (
+          <VerificationChecksPanel applicationId={latestAppId} />
+        ) : (
+          <p className="text-sm text-muted">No application to show verifications for.</p>
+        );
+      case "credit":
+        return <CreditTab c={detail} latestAppId={latestAppId} />;
+      case "documents":
+        // Grouped mode: every application this customer ever filed, not just the newest — a
+        // reborrow's prior-application uploads must stay reachable (item 4).
+        return applicationId != null ? (
+          <DocumentsTab applicationId={applicationId} />
+        ) : (
+          <DocumentsTab customerId={customerId} />
+        );
+      case "loans":
+        return <LoansTab c={detail} onChanged={onChanged} />;
+      case "calls":
+        return (
+          <div className="space-y-6">
+            <CallLogsTab customerId={customerId} />
+            <Section title="Remarks">
+              <RemarksTab customerId={customerId} />
+            </Section>
+          </div>
+        );
+      case "audit":
+        return <AuditLogsTab customerId={customerId} />;
+      default:
+        return null;
+    }
+  })();
+
+  // The two callers of this body (the customer list dialog and the full customer page) each build
+  // their own bespoke header around <Tabs>/<CustomerTabBody> — there's no shared header component
+  // to hang a badge off. Rendering it here instead, ahead of the per-tab content above, means it
+  // stays visible across every tab both callers offer without duplicating it in each caller.
+  return (
+    <>
+      <NeedsManualReviewBadge customerId={customerId} className="mb-3" />
+      {content}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +249,14 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
       )}
 
       {latestApp != null && <AadhaarCard applicationId={latestApp.id} />}
+
+      <Section title="Aadhaar card">
+        <CustomerDocsByType
+          customerId={c.customerId}
+          docTypes={new Set(["AADHAAR_FRONT", "AADHAAR_BACK"])}
+          emptyCopy="No Aadhaar card uploaded."
+        />
+      </Section>
 
       <Section title="Emergency contact">
         <KV k="Name" v={p?.emergencyContactName} />
@@ -441,6 +470,13 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
           customerId={c.customerId}
           docTypes={new Set(["BANK_STATEMENT"])}
           emptyCopy="No bank statements uploaded."
+        />
+      </Section>
+      <Section title="Cancelled cheque / passbook">
+        <CustomerDocsByType
+          customerId={c.customerId}
+          docTypes={new Set(["BANK_PROOF"])}
+          emptyCopy="No cancelled cheque or passbook uploaded."
         />
       </Section>
       <Section title="Penny-drop derived">
