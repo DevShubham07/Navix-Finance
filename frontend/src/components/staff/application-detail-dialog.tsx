@@ -893,11 +893,14 @@ function CollectionsFocus({ app }: { app: ApplicationView }) {
 // ---- Credit (CREDIT_HEAD/EXECUTIVE, ADMIN) ---------------------------------
 
 /**
- * What the credit roles decide on: the bureau headline against the limit and the ask.
+ * What the credit roles decide on: the sanctioned ceiling against the ask.
  *
- * Since Phase 1 the borrower never names an amount — the Credit Executive sets the sanctioned
- * figure — so `amountRequestedPaise` is null right up to the sanction and the headline falls back
- * to the salary-derived eligible limit, labelled as guidance rather than a cap (decision 33).
+ * `eligibleLimitPaise` (25% of salary) is salary-derived GUIDANCE only, computed long before any
+ * human credit decision — it must never stand in for `sanctionedAmountPaise`, the real ceiling a
+ * Credit Executive/Head actually approved (`SanctionDialog`), including in the "over limit"
+ * comparison. It renders here, honestly labelled as guidance, only pre-sanction (`sanctioned ==
+ * null`); once a sanction exists (including a reborrow's carried-over sanction — see
+ * `ApplicationFlowService.carryOverForReapply`) it is never read by this component again.
  */
 function CreditFocus({
   app,
@@ -909,9 +912,10 @@ function CreditFocus({
   detail: CreditBriefDetail | null;
 }) {
   const limit = app.eligibleLimitPaise;
+  const sanctioned = app.sanctionedAmountPaise;
   const asked = app.amountRequestedPaise;
   const applied = asked != null;
-  const withinLimit = limit != null && asked != null ? asked <= limit : null;
+  const withinLimit = sanctioned != null && asked != null ? asked <= sanctioned : null;
 
   return (
     <FocusCard icon={Gauge} title="Credit">
@@ -920,17 +924,23 @@ function CreditFocus({
           label="Requested"
           value={paiseToINR(asked)}
           caption={
-            limit != null ? (
+            sanctioned != null ? (
               <>
-                against an approved limit of {paiseToINR(limit)}
+                against a sanctioned amount of {paiseToINR(sanctioned)}
                 {withinLimit === false && (
                   <span className="ml-1 font-semibold text-error-700">— over limit</span>
                 )}
               </>
             ) : (
-              "No eligible limit computed yet"
+              <span className="font-semibold text-error-700">No sanctioned amount on record</span>
             )
           }
+        />
+      ) : sanctioned != null ? (
+        <Headline
+          label="Sanctioned"
+          value={paiseToINR(sanctioned)}
+          caption="Approved by the credit team — awaiting the borrower's offer acceptance."
         />
       ) : (
         <Headline
