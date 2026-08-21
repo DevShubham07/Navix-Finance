@@ -160,7 +160,7 @@ public class CreditBriefService {
                 f.name(), f.pan(), f.mobile(), f.dob(), f.city(),
                 f.pin(), f.creditScore(), f.totalAccounts(), f.activeAccounts(), f.closedAccounts(),
                 f.defaults(), f.totalBalanceRupees(), f.securedBalanceRupees(), f.unsecuredBalanceRupees(),
-                f.recentInquiries30d());
+                f.recentInquiries30d(), f.detail());
         return new CreditBriefView(appId, true,
                 profile.getBureauScore() != null ? profile.getBureauScore().intValue() : null,
                 profile.getCreditStarRating().doubleValue(),
@@ -211,9 +211,11 @@ public class CreditBriefService {
      * local demo ({@code NAVIX_BUREAU_FIXTURE}) every pull returns the same sample report — so its
      * PAN / mobile / DOB / name belong to the fixture person, wrong for everyone. The profile value wins
      * when present (it's exactly what the staff profile card shows), falling back to the bureau only if a
-     * profile field is blank. City / PIN have no KYC equivalent, so they're dropped rather than surfaced
-     * from the (possibly-mismatched / fixture) report. Credit-health (B) and exposure (C) are genuine
-     * bureau data and pass through unchanged.
+     * profile field is blank. City / PIN <b>are passed through</b> from the bureau report — they have
+     * no KYC equivalent to override with, so unlike name/PAN/mobile/DOB there is nothing to prefer over
+     * the report's copy. (Category B/C credit-health and exposure figures, and the itemised
+     * {@link com.navix.common.verification.BureauDetail}, are genuine bureau data throughout and always
+     * pass through unchanged.)
      */
     private BureauReportFacts displayFacts(BureauReportFacts bureau, CustomerProfile profile) {
         if (bureau == null || profile == null) {
@@ -229,7 +231,8 @@ public class CreditBriefService {
                 bureau.creditScore(), bureau.totalAccounts(), bureau.activeAccounts(),
                 bureau.closedAccounts(), bureau.defaults(),
                 bureau.totalBalanceRupees(), bureau.securedBalanceRupees(),
-                bureau.unsecuredBalanceRupees(), bureau.recentInquiries30d(), bureau.reportNumber());
+                bureau.unsecuredBalanceRupees(), bureau.recentInquiries30d(), bureau.reportNumber(),
+                bureau.detail());
     }
 
     private static String firstNonBlank(String a, String b) {

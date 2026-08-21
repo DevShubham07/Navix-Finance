@@ -16,17 +16,25 @@ import com.lowagie.text.pdf.PdfPCellEvent;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 import com.lowagie.text.pdf.draw.LineSeparator;
+import com.navix.common.verification.BureauDelinquency;
+import com.navix.common.verification.BureauDetail;
+import com.navix.common.verification.BureauEnquiry;
+import com.navix.common.verification.BureauEnquiryVelocity;
 import com.navix.common.verification.BureauReportFacts;
+import com.navix.common.verification.BureauTradeline;
 import com.navix.loan.service.CreditRatingCalculator.Rating;
+import com.navix.common.verification.BureauCodes;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
@@ -45,6 +53,7 @@ public class CreditBriefPdfRenderer {
     private static final Color GREY = new Color(120, 130, 140);
     private static final Color LIGHT = new Color(210, 214, 220);
     private static final Color LINE = new Color(190, 196, 204);
+    private static final Color ERROR = new Color(178, 34, 34);
 
     private static final Font WORDMARK = new Font(Font.HELVETICA, 17, Font.BOLD, NAVY);
     private static final Font TITLE = new Font(Font.HELVETICA, 13, Font.BOLD, GREY);
@@ -60,6 +69,8 @@ public class CreditBriefPdfRenderer {
     private static final Font REPORT_HEADER = new Font(Font.HELVETICA, 7.5f, Font.BOLD, Color.WHITE);
     private static final Font REPORT_PATH = new Font(Font.HELVETICA, 6.5f, Font.NORMAL, GREY);
     private static final Font REPORT_VALUE = new Font(Font.HELVETICA, 7f, Font.NORMAL, new Color(33, 43, 54));
+    /** A currently-past-due amount in the tradeline table — same emphasis the staff UI gives it. */
+    private static final Font REPORT_VALUE_EMPHASIS = new Font(Font.HELVETICA, 7f, Font.BOLD, ERROR);
 
     private static final NumberFormat IN = NumberFormat.getInstance(new Locale("en", "IN"));
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -100,6 +111,13 @@ public class CreditBriefPdfRenderer {
 
             doc.add(spaced(new Paragraph("Underwriter Summary", SECTION), 8, 2));
             doc.add(new Paragraph(pdfSafe(rating.summary()), BODY));
+
+            // `detail` is null on any brief generated before tradeline parsing shipped (no backfill
+            // ran) — an older/thin-file brief must render exactly as it did before this change, so
+            // this whole block is skippable rather than an empty heading + table.
+            if (f.detail() != null) {
+                addDetailSections(doc, f.detail());
+            }
 
             PdfPTable providerReport = providerReportTable(rawResponseJson);
             if (providerReport != null) {
@@ -220,6 +238,304 @@ public class CreditBriefPdfRenderer {
     }
 
     private record ReportField(String path, String value) {
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Structured detail sections (delinquency / enquiry velocity / tradelines / enquiries) —
+    // the interpreted "missing middle" between the twelve `categories()` scalars above and the
+    // raw `providerReportTable` appendix below. Mirrors the staff UI's
+    // credit/tradeline-table.tsx (TradelineTable/EnquiryTable/DelinquencySummaryBlock/
+    // EnquiryVelocityBlock) field-for-field and rule-for-rule so the PDF a reviewer downloads
+    // can't disagree with the screen they read it off. See that file's per-rule comments for the
+    // production-data reasoning (900+ DPD, null-vs-zero, negative balances, etc.) — the same
+    // rules are re-stated locally below since Java/TS can't share the helper.
+    // -----------------------------------------------------------------------------------------
+
+    private void addDetailSections(Document doc, BureauDetail detail) throws DocumentException {
+        doc.add(spaced(new Paragraph("Delinquency History", SECTION), 12, 3));
+        BureauDelinquency d = detail.delinquency();
+        if (d != null) {
+            doc.add(delinquencyTable(d));
+        } else {
+            doc.add(new Paragraph("No delinquency aggregates parsed for this report.", META));
+        }
+
+        doc.add(spaced(new Paragraph("Enquiry Velocity", SECTION), 12, 3));
+        BureauEnquiryVelocity v = detail.enquiryVelocity();
+        if (v != null) {
+            doc.add(enquiryVelocityTable(v));
+        } else {
+            doc.add(new Paragraph("No enquiry-velocity data parsed for this report.", META));
+        }
+
+        doc.add(spaced(new Paragraph("Tradelines", SECTION), 12, 3));
+        List<BureauTradeline> tradelines = detail.tradelines() != null ? detail.tradelines() : List.of();
+        if (tradelines.isEmpty()) {
+            doc.add(new Paragraph("No tradelines parsed for this report.", META));
+        } else {
+            // Bound the table: the largest real report has 543 tradelines, and printing every one
+            // would run this brief to hundreds of pages. Print only the rows that matter for a
+            // credit decision — open, delinquent, written-off, restructured, or currently past
+            // due (the same `isDefaultVisible` cut the staff UI's "Show all" toggle defaults to) —
+            // worst-first, and say plainly how many of the true total that is rather than silently
+            // truncating.
+            List<BureauTradeline> visible = tradelines.stream()
+                    .filter(CreditBriefPdfRenderer::isTradelineDefaultVisible)
+                    .sorted(tradelineComparator())
+                    .toList();
+            int total = detail.tradelineCount() != null ? detail.tradelineCount() : tradelines.size();
+            String caption = visible.size() < total
+                    ? "Showing " + visible.size() + " of " + total
+                            + " tradelines in the report (open, delinquent, written-off, restructured, or currently past due)."
+                    : visible.size() + " tradeline" + (visible.size() == 1 ? "" : "s") + ".";
+            doc.add(new Paragraph(caption, META));
+            if (visible.isEmpty()) {
+                doc.add(new Paragraph("No open, delinquent, written-off, restructured or past-due tradelines.", META));
+            } else {
+                doc.add(tradelineTable(visible));
+            }
+        }
+
+        doc.add(spaced(new Paragraph("Enquiries", SECTION), 12, 3));
+        List<BureauEnquiry> enquiries = detail.enquiries() != null ? detail.enquiries() : List.of();
+        if (enquiries.isEmpty()) {
+            doc.add(new Paragraph("No enquiries parsed for this report.", META));
+        } else {
+            doc.add(enquiryTable(enquiries));
+        }
+    }
+
+    private PdfPTable delinquencyTable(BureauDelinquency d) throws DocumentException {
+        // Every field here is `Integer`/`String` that may be null — null means the bureau data
+        // couldn't tell us and MUST print "—", never "0". A fabricated "0 accounts ever 30+ dpd"
+        // on a report where the bureau simply didn't say is how a delinquent borrower gets waved
+        // through underwriting.
+        return kvTable(new String[][] {
+                {"Worst DPD (12m)", formatDpdDays(d.worstDpd12m())},
+                {"Worst DPD (24m)", formatDpdDays(d.worstDpd24m())},
+                {"Worst DPD (36m)", formatDpdDays(d.worstDpd36m())},
+                {"Accounts ever 30+ dpd", formatCount(d.accountsEver30Plus())},
+                {"Currently past due", formatCount(d.accountsCurrentlyPastDue())},
+                {"Written-off / settled", formatCount(d.accountsWrittenOffOrSettled())},
+                {"Oldest account opened", safe(d.oldestAccountOpenedOn(), "—")},
+        });
+    }
+
+    private PdfPTable enquiryVelocityTable(BureauEnquiryVelocity v) throws DocumentException {
+        return kvTable(new String[][] {
+                {"Last 7 days", formatCount(v.last7())},
+                {"Last 30 days", formatCount(v.last30())},
+                {"Last 90 days", formatCount(v.last90())},
+                {"Last 180 days", formatCount(v.last180())},
+        });
+    }
+
+    /** Plain label|value rows, one per line — used for the delinquency/velocity blocks above. */
+    private PdfPTable kvTable(String[][] rows) throws DocumentException {
+        PdfPTable t = new PdfPTable(2);
+        t.setWidthPercentage(60);
+        t.setHorizontalAlignment(Element.ALIGN_LEFT);
+        t.setWidths(new float[] {1.4f, 1f});
+        t.setSpacingBefore(2f);
+        t.setSpacingAfter(4f);
+        for (String[] row : rows) {
+            kv(t, row[0], row[1]);
+        }
+        return t;
+    }
+
+    private static void kv(PdfPTable t, String label, String value) {
+        t.addCell(kvCell(new Phrase(label, LABEL)));
+        t.addCell(kvCell(new Phrase(value, VALUE)));
+    }
+
+    // ---- Tradeline table ----
+
+    /** Rows that matter for a credit decision by default — mirrors the staff UI's
+     *  `isDefaultVisible` in credit/tradeline-table.tsx exactly. */
+    private static boolean isTradelineDefaultVisible(BureauTradeline t) {
+        Long pastDue = t.amountPastDueRupees();
+        if (pastDue != null && pastDue > 0) {
+            return true;
+        }
+        StatusBucket bucket = classifyStatus(t.accountStatusCode());
+        return bucket != StatusBucket.CLOSED && bucket != StatusBucket.SETTLED;
+    }
+
+    /** Worst-first, deterministic — mirrors the staff UI's `tradelinePriority`/`sortTradelines`. */
+    private static int tradelinePriority(BureauTradeline t) {
+        StatusBucket bucket = classifyStatus(t.accountStatusCode());
+        if (bucket == StatusBucket.DELINQUENT || bucket == StatusBucket.WRITTEN_OFF) {
+            return 0;
+        }
+        Long pastDue = t.amountPastDueRupees();
+        if (pastDue != null && pastDue > 0) {
+            return 1;
+        }
+        if (bucket == StatusBucket.ACTIVE) {
+            return 2;
+        }
+        return 3;
+    }
+
+    private static Comparator<BureauTradeline> tradelineComparator() {
+        return Comparator.comparingInt(CreditBriefPdfRenderer::tradelinePriority)
+                .thenComparing((BureauTradeline t) -> nz(t.currentBalanceRupees()), Comparator.reverseOrder())
+                .thenComparing((BureauTradeline t) -> t.closedOn() == null ? "" : t.closedOn(),
+                        Comparator.reverseOrder());
+    }
+
+    private PdfPTable tradelineTable(List<BureauTradeline> rows) throws DocumentException {
+        PdfPTable t = new PdfPTable(7);
+        t.setWidthPercentage(100);
+        t.setWidths(new float[] {1.6f, 1.1f, 0.9f, 0.8f, 0.9f, 0.9f, 0.9f});
+        t.setSpacingBefore(3f);
+        t.setSpacingAfter(6f);
+        t.setHeaderRows(1);
+        for (String h : new String[] {"Lender", "Type", "Status", "Opened", "Balance", "Past due", "Worst DPD"}) {
+            t.addCell(reportHeader(h));
+        }
+        for (BureauTradeline tl : rows) {
+            boolean pastDue = tl.amountPastDueRupees() != null && tl.amountPastDueRupees() > 0;
+            t.addCell(reportCell(safe(tl.lender(), "—"), REPORT_VALUE));
+            t.addCell(reportCell(accountTypeLabel(tl.accountTypeCode()), REPORT_VALUE));
+            t.addCell(reportCell(accountStatusLabel(tl.accountStatusCode()), REPORT_VALUE));
+            t.addCell(reportCell(safe(tl.openedOn(), "—"), REPORT_VALUE));
+            t.addCell(reportCell(rs(tl.currentBalanceRupees()), REPORT_VALUE));
+            t.addCell(reportCell(rs(tl.amountPastDueRupees()), pastDue ? REPORT_VALUE_EMPHASIS : REPORT_VALUE));
+            t.addCell(reportCell(formatDpdDays(tl.worstDpdMonths()), REPORT_VALUE));
+        }
+        return t;
+    }
+
+    // ---- Enquiry table ----
+
+    private PdfPTable enquiryTable(List<BureauEnquiry> rows) throws DocumentException {
+        // Sorted newest-first, mirrors the staff UI's `sortEnquiries`.
+        List<BureauEnquiry> sorted = rows.stream()
+                .sorted(Comparator.comparing((BureauEnquiry e) -> e.requestedOn() == null ? "" : e.requestedOn())
+                        .reversed())
+                .toList();
+        PdfPTable t = new PdfPTable(5);
+        t.setWidthPercentage(100);
+        t.setWidths(new float[] {0.9f, 1.6f, 1.3f, 1f, 0.8f});
+        t.setSpacingBefore(3f);
+        t.setSpacingAfter(4f);
+        t.setHeaderRows(1);
+        for (String h : new String[] {"Date", "Lender", "Reason", "Amount financed", "Duration"}) {
+            t.addCell(reportHeader(h));
+        }
+        for (BureauEnquiry e : sorted) {
+            t.addCell(reportCell(safe(e.requestedOn(), "—"), REPORT_VALUE));
+            t.addCell(reportCell(safe(e.subscriber(), "—"), REPORT_VALUE));
+            t.addCell(reportCell(enquiryReasonLabel(e.reasonCode()), REPORT_VALUE));
+            t.addCell(reportCell(rs(e.amountFinancedRupees()), REPORT_VALUE));
+            t.addCell(reportCell(e.durationMonths() != null ? e.durationMonths() + " mo" : "—", REPORT_VALUE));
+        }
+        return t;
+    }
+
+    // ---- Bureau code -> label lookups (via BureauCodes; unknown codes never guessed) ----
+
+    private enum StatusBucket { DELINQUENT, WRITTEN_OFF, SETTLED, RESTRUCTURED, ACTIVE, CLOSED, UNKNOWN }
+
+    private static final Set<Integer> DELINQUENT_CODES = Set.of(71, 78, 80, 82, 84, 97);
+    private static final Set<Integer> WRITTEN_OFF_CODES = Set.of(43, 45);
+    private static final Set<Integer> SETTLED_CODES = Set.of(32);
+    private static final Set<Integer> RESTRUCTURED_CODES = Set.of(30);
+    private static final Set<Integer> ACTIVE_CODES = Set.of(11, 21);
+    private static final Set<Integer> CLOSED_CODES = Set.of(13, 15);
+
+    /** Buckets a status code for sort order/priority only — mirrors `classifyStatus` in
+     *  credit/tradeline-table.tsx. The DISPLAYED label always comes from {@link BureauCodes}
+     *  separately, never from this bucket. */
+    private static StatusBucket classifyStatus(String code) {
+        Integer n = codeToInt(code);
+        if (n == null) {
+            return StatusBucket.UNKNOWN;
+        }
+        if (DELINQUENT_CODES.contains(n)) return StatusBucket.DELINQUENT;
+        if (WRITTEN_OFF_CODES.contains(n)) return StatusBucket.WRITTEN_OFF;
+        if (SETTLED_CODES.contains(n)) return StatusBucket.SETTLED;
+        if (RESTRUCTURED_CODES.contains(n)) return StatusBucket.RESTRUCTURED;
+        if (ACTIVE_CODES.contains(n)) return StatusBucket.ACTIVE;
+        if (CLOSED_CODES.contains(n)) return StatusBucket.CLOSED;
+        return StatusBucket.UNKNOWN;
+    }
+
+    /** Codes arrive zero-padded ("05", "01") in real data — strip leading zeros before lookup/bucketing. */
+    private static Integer codeToInt(String code) {
+        if (code == null) {
+            return null;
+        }
+        String trimmed = code.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(trimmed);
+        } catch (NumberFormatException notNumeric) {
+            return null;
+        }
+    }
+
+    /** Falls back to "Type &lt;code&gt;" for anything {@link BureauCodes} doesn't recognise —
+     *  never guesses a label. */
+    private static String accountTypeLabel(String code) {
+        if (code == null || code.isBlank()) {
+            return "—";
+        }
+        return BureauCodes.accountType(code).orElseGet(() -> "Type " + fallbackCode(code));
+    }
+
+    /** Falls back to "Status &lt;code&gt;" for anything {@link BureauCodes} doesn't recognise —
+     *  never guesses a label. */
+    private static String accountStatusLabel(String code) {
+        if (code == null || code.isBlank()) {
+            return "—";
+        }
+        return BureauCodes.accountStatus(code).orElseGet(() -> "Status " + fallbackCode(code));
+    }
+
+    private static String enquiryReasonLabel(String code) {
+        if (code == null || code.isBlank()) {
+            return "—";
+        }
+        return BureauCodes.enquiryReason(code).orElseGet(() -> "Reason " + fallbackCode(code));
+    }
+
+    /** The code to show in an unmapped-code fallback label: zero-stripped when numeric, raw otherwise. */
+    private static String fallbackCode(String code) {
+        Integer n = codeToInt(code);
+        return n != null ? String.valueOf(n) : code;
+    }
+
+    // ---- DPD / count formatting (null vs zero matters — see the field-level javadoc on
+    //      BureauDelinquency/BureauTradeline for why) ----
+
+    /**
+     * Absent ≠ zero. A `null` aggregate must render as "—", never "0" — mirrors `formatCount` in
+     * credit/tradeline-table.tsx. "0 accounts past due" on a file where the bureau simply didn't
+     * say is how a delinquent borrower gets waved through.
+     */
+    private static String formatCount(Integer n) {
+        return n == null ? "—" : String.valueOf(n);
+    }
+
+    /**
+     * DPD/default-age readings run to 900+ in real data (900 occurs 981 times — a genuine
+     * long-default signal, not a sentinel to hide) — mirrors `formatDpdDays` in
+     * credit/tradeline-table.tsx. Render "900+ days" so it reads as "very delinquent" rather than
+     * looking like a data error, but never suppress it.
+     */
+    private static String formatDpdDays(Integer days) {
+        if (days == null) {
+            return "—";
+        }
+        if (days >= 900) {
+            return "900+ days";
+        }
+        return days + (days == 1 ? " day" : " days");
     }
 
     private PdfPTable headerTable() throws DocumentException {

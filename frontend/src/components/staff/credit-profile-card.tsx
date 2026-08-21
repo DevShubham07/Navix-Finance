@@ -6,9 +6,10 @@ import { Gauge, Download, Loader2, FileText } from "lucide-react";
 import { InfoTooltip } from "@/components/ui";
 import { StarRating } from "@/components/ui/star-rating";
 import { PdfPreviewDialog } from "@/components/staff/pdf-preview-dialog";
-import { staffApi, type CreditBriefFacts } from "@/lib/api/applications";
+import { staffApi, type CreditBriefFacts, type CreditBriefDetail } from "@/lib/api/applications";
 import { flattenProviderReport, type JsonValue } from "@/lib/credit/provider-report";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
+import { TradelineTable, EnquiryTable } from "@/components/staff/credit/tradeline-table";
 
 const inr = (rupees: number | null | undefined): string =>
   rupees == null
@@ -60,6 +61,27 @@ function Facts({ f }: { f: CreditBriefFacts }) {
         <Row label="Unsecured" value={`${inr(f.unsecuredBalance)}${pct(f.unsecuredBalance, f.totalBalance)}`} />
         <Row label="Inquiries (30d)" value={f.recentInquiries30d} />
       </dl>
+    </div>
+  );
+}
+
+/**
+ * The parsed tradeline/enquiry detail behind the twelve `Facts` scalars — the "missing middle"
+ * between the curated summary and the raw `CompleteProviderReport` dump. `detail` is null on any
+ * brief generated before this parsing shipped (no backfill ran) — render nothing here in that case
+ * rather than an empty table, so an older brief looks exactly like it did before this change.
+ */
+function ReportDetail({ detail }: { detail: CreditBriefDetail }) {
+  return (
+    <div className="mt-5 space-y-4">
+      <div>
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Tradelines</div>
+        <TradelineTable tradelines={detail.tradelines} tradelineCount={detail.tradelineCount} />
+      </div>
+      <div>
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Enquiries</div>
+        <EnquiryTable enquiries={detail.enquiries} />
+      </div>
     </div>
   );
 }
@@ -200,6 +222,8 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
           </div>
 
           {brief.facts && <Facts f={brief.facts} />}
+
+          {brief.facts?.detail && <ReportDetail detail={brief.facts.detail} />}
 
           {brief.summary && (
             <div className="mt-4 rounded bg-navy-tint/60 p-3">

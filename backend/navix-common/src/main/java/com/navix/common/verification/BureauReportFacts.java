@@ -26,6 +26,13 @@ package com.navix.common.verification;
  * @param unsecuredBalanceRupees Category C — unsecured outstanding balance (₹)
  * @param recentInquiries30d Category C — total CAPS enquiries in the last 30 days
  * @param reportNumber       bureau report number (for the brief footer/audit), optional
+ * @param detail             the itemised tradeline/enquiry/delinquency detail behind the totals above
+ *                           ({@link BureauDetail}), or {@code null}. This is a single, additive 17th
+ *                           component rather than a flattening of its fields into this record, so that
+ *                           a {@code customer_profile.credit_brief_facts} jsonb row persisted before
+ *                           this field existed still deserialises cleanly with {@code detail == null}
+ *                           — i.e. "new pulls only" is the natural Jackson behaviour, with no migration
+ *                           and no explicit version-tagging needed. Never assume non-null.
  */
 public record BureauReportFacts(
         String name,
@@ -43,5 +50,34 @@ public record BureauReportFacts(
         Long securedBalanceRupees,
         Long unsecuredBalanceRupees,
         Integer recentInquiries30d,
-        String reportNumber) {
+        String reportNumber,
+        BureauDetail detail) {
+
+    /**
+     * Back-compat constructor for call sites/tests written before {@link #detail} existed — delegates
+     * to the canonical constructor with {@code detail = null}. Kept so pre-existing tests that build a
+     * 16-field {@code BureauReportFacts} (deliberately unrelated to this task, e.g.
+     * {@code CreditRatingCalculatorTest}) keep compiling unchanged.
+     */
+    public BureauReportFacts(
+            String name,
+            String pan,
+            String mobile,
+            String dob,
+            String city,
+            String pin,
+            Integer creditScore,
+            Integer totalAccounts,
+            Integer activeAccounts,
+            Integer closedAccounts,
+            Integer defaults,
+            Long totalBalanceRupees,
+            Long securedBalanceRupees,
+            Long unsecuredBalanceRupees,
+            Integer recentInquiries30d,
+            String reportNumber) {
+        this(name, pan, mobile, dob, city, pin, creditScore, totalAccounts, activeAccounts,
+                closedAccounts, defaults, totalBalanceRupees, securedBalanceRupees, unsecuredBalanceRupees,
+                recentInquiries30d, reportNumber, null);
+    }
 }

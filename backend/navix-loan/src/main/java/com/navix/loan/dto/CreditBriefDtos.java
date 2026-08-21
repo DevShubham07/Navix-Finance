@@ -1,6 +1,7 @@
 package com.navix.loan.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.navix.common.verification.BureauDetail;
 import java.time.Instant;
 
 /**
@@ -45,7 +46,10 @@ public final class CreditBriefDtos {
                 Long totalBalance,
                 Long securedBalance,
                 Long unsecuredBalance,
-                Integer recentInquiries30d) {
+                Integer recentInquiries30d,
+                /** Itemised tradelines/enquiries/delinquency behind the totals above; may be
+                 *  {@code null} for a brief generated before this field existed. */
+                BureauDetail detail) {
         }
     }
 }

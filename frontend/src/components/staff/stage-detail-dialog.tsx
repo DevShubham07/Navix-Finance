@@ -70,6 +70,7 @@ import {
 } from "@/lib/domain/journey";
 import { formatDate, humanizeCheck } from "@/lib/utils";
 import { DocPassword } from "@/components/staff/detail-parts";
+import { DelinquencySummaryBlock, EnquiryVelocityBlock } from "@/components/staff/credit/tradeline-table";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -474,7 +475,11 @@ function KycSection({ applicationId, showCreditBrief }: { applicationId: number;
         )}
       </section>
 
-      {brief?.available && (
+      {/* `available` is legacy and true even for NO_RECORD (see the field comment on CreditBriefView
+          in applications.ts) — gating on it rendered an empty "Credit brief" heading with a blank
+          paragraph for every no-record file. Gate on actual content instead, same rule
+          credit-profile-card.tsx uses via `bureauState`. */}
+      {brief != null && (brief.starRating != null || brief.creditScore != null || brief.summary) && (
         <section>
           <h4 className="mb-2 font-semibold text-ink">Credit brief</h4>
           <p className="text-ink">
@@ -551,13 +556,70 @@ function DocRow({ appId, doc }: { appId: number; doc: DocumentView }) {
 
 function CreditSection({ app }: { app: ApplicationView }) {
   const hasAmount = app.amountRequestedPaise != null;
+  // Same query key/fn KycSection and CreditFocus (application-detail-dialog.tsx) use for this
+  // application's brief, so the three surfaces can't disagree and a second visit is a cache hit.
+  const briefQ = useQuery({
+    queryKey: ["credit-brief", app.id],
+    queryFn: () => staffApi.creditBrief(app.id),
+    retry: false,
+    enabled: app.status !== "DRAFT",
+  });
+  const brief = briefQ.data;
+  const hasBriefContent = brief != null && (brief.starRating != null || brief.creditScore != null || brief.summary);
+  // `detail` exists only on briefs generated after tradeline parsing shipped (no backfill ran) — a
+  // brief pulled earlier, or no pull at all, must render nothing here rather than an empty table or
+  // a fabricated zero (on a credit report a false "0 delinquencies" reads as "clean").
+  const detail = brief?.facts?.detail ?? null;
+
   return (
-    <section>
-      <h4 className="mb-2 font-semibold text-ink">
-        {hasAmount ? "Projected cost (estimate)" : "Projected cost"}
-      </h4>
-      <ProjectedCostBreakdown app={app} />
-    </section>
+    <>
+      <section>
+        <h4 className="mb-2 flex items-center gap-2 font-semibold text-ink">
+          Credit
+          {briefQ.isLoading && <Loader2 size={12} className="animate-spin text-muted" />}
+        </h4>
+        {hasBriefContent ? (
+          <>
+            <p className="text-ink">
+              {brief!.starRating != null && (
+                <span className="font-semibold text-navy">{brief!.starRating.toFixed(1)}★ </span>
+              )}
+              {brief!.recommendation ?? ""}
+              {brief!.creditScore != null && (
+                <span className="text-muted"> · score {brief!.creditScore}</span>
+              )}
+            </p>
+            {brief!.summary && <p className="mt-1 text-muted">{brief!.summary}</p>}
+          </>
+        ) : (
+          <p className="text-muted">
+            {app.status === "DRAFT"
+              ? "No bureau pull yet — the applicant hasn't submitted KYC."
+              : "The bureau pull hasn't returned a usable rating for this application."}
+          </p>
+        )}
+      </section>
+
+      {detail && (
+        <>
+          <section>
+            <h4 className="mb-2 font-semibold text-ink">Delinquency history</h4>
+            <DelinquencySummaryBlock d={detail.delinquency} />
+          </section>
+          <section>
+            <h4 className="mb-2 font-semibold text-ink">Enquiry velocity</h4>
+            <EnquiryVelocityBlock v={detail.enquiryVelocity} />
+          </section>
+        </>
+      )}
+
+      <section>
+        <h4 className="mb-2 font-semibold text-ink">
+          {hasAmount ? "Projected cost (estimate)" : "Projected cost"}
+        </h4>
+        <ProjectedCostBreakdown app={app} />
+      </section>
+    </>
   );
 }
 

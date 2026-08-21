@@ -31,6 +31,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Zap, Banknote, ShieldCheck, PhoneCall, Gauge, Check, ExternalLink, Pencil } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
+import { InfoTooltip } from "@/components/ui/tooltip";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { EventTimeline } from "@/components/staff/event-timeline";
 import { JourneyStepper } from "@/components/staff/journey-stepper";
@@ -59,8 +60,14 @@ import {
   type VerificationProgress,
   type EventView,
   type ReferenceInput,
+  type CreditBriefDetail,
 } from "@/lib/api/applications";
 import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
+import {
+  TradelineTable,
+  DelinquencySummaryBlock,
+  EnquiryVelocityBlock,
+} from "@/components/staff/credit/tradeline-table";
 import {
   AssignActions,
   CreditDecisionActions,
@@ -289,7 +296,14 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
             <>
               {tab === "basic" &&
                 (canReview ? (
-                  <OverviewTab app={app} p={p} role={role} loading={profileQ.isLoading} events={events} />
+                  <OverviewTab
+                    app={app}
+                    p={p}
+                    role={role}
+                    loading={profileQ.isLoading}
+                    events={events}
+                    creditDetail={briefQ.data?.facts?.detail ?? null}
+                  />
                 ) : (
                   <NoAccessNotice message="Customer details (incl. PII) aren't available to your role." />
                 ))}
@@ -373,12 +387,14 @@ function OverviewTab({
   role,
   loading,
   events,
+  creditDetail,
 }: {
   app: ApplicationView;
   p: ProfileView | undefined;
   role: StaffRole | undefined;
   loading: boolean;
   events: EventView[];
+  creditDetail: CreditBriefDetail | null;
 }) {
   if (loading && !p) {
     return <p className="py-6 text-sm text-muted">Loading…</p>;
@@ -391,7 +407,7 @@ function OverviewTab({
       <BorrowerStrip app={app} p={p} />
       <WaitTime app={app} events={events} />
       {focus.includes("kyc") && <KycFocus applicationId={app.id} p={p} />}
-      {focus.includes("credit") && <CreditFocus app={app} p={p} />}
+      {focus.includes("credit") && <CreditFocus app={app} p={p} detail={creditDetail} />}
       {focus.includes("disbursement") && <DisbursementFocus app={app} p={p} />}
       {focus.includes("collections") && <CollectionsFocus app={app} />}
       <ReferencesFocus applicationId={app.id} />
@@ -883,7 +899,15 @@ function CollectionsFocus({ app }: { app: ApplicationView }) {
  * figure — so `amountRequestedPaise` is null right up to the sanction and the headline falls back
  * to the salary-derived eligible limit, labelled as guidance rather than a cap (decision 33).
  */
-function CreditFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefined }) {
+function CreditFocus({
+  app,
+  p,
+  detail,
+}: {
+  app: ApplicationView;
+  p: ProfileView | undefined;
+  detail: CreditBriefDetail | null;
+}) {
   const limit = app.eligibleLimitPaise;
   const asked = app.amountRequestedPaise;
   const applied = asked != null;
@@ -927,6 +951,31 @@ function CreditFocus({ app, p }: { app: ApplicationView; p: ProfileView | undefi
         <p className="mt-3 rounded border border-line bg-grey-50 px-3 py-2 text-xs text-muted">
           {p.creditBriefSummary}
         </p>
+      )}
+
+      {/* `detail` exists only on briefs generated AFTER tradeline parsing shipped — there is
+          deliberately no backfill, so every application pulled before it (and any with no bureau
+          pull at all) renders exactly what this card showed before. Absent detail must never
+          become an empty table or a row of zeroes: on a credit report a fabricated 0 reads as
+          "clean", which is a materially different claim from "we don't know". */}
+      {detail && (
+        <div className="mt-4 space-y-4 border-t border-line pt-3">
+          <div>
+            <div className="mb-1.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted">
+              Delinquency history
+              <InfoTooltip content="Aggregated from the full bureau report. A dash means the bureau data couldn't tell us — never read a dash as clean." />
+            </div>
+            <DelinquencySummaryBlock d={detail.delinquency} />
+          </div>
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Enquiry velocity</div>
+            <EnquiryVelocityBlock v={detail.enquiryVelocity} />
+          </div>
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Tradelines</div>
+            <TradelineTable tradelines={detail.tradelines} tradelineCount={detail.tradelineCount} />
+          </div>
+        </div>
       )}
     </FocusCard>
   );
