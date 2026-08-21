@@ -11,6 +11,7 @@ import com.navix.loan.entity.CustomerRemark;
 import com.navix.loan.entity.ProfileChangeLog;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -115,9 +116,11 @@ public final class CustomerDtos {
     }
 
     /**
-     * ADMIN correcting a customer's mobile number — a KYC-data fix only. It does <b>not</b> change
-     * which number the borrower logs in with (login identity is derived from whatever mobile the
-     * borrower types at login, not from this profile field).
+     * ADMIN correcting a customer's mobile number. Does not affect login identity (JWT minting
+     * never reads this field), but IS read by forgot-password lookup and the login display name —
+     * see {@code CustomerService.requestMobileChangeOtp}'s javadoc for the full picture. The server
+     * enforces the same cross-customer uniqueness rule KYC intake already enforces
+     * ({@code DUPLICATE_MOBILE}).
      */
     public record RequestMobileChangeRequest(@NotBlank String newMobile) {
     }
@@ -128,15 +131,18 @@ public final class CustomerDtos {
     }
 
     /**
-     * ADMIN correcting the amount credit approved (sanctioned) for the customer's current, not-yet-
-     * disbursed application. The OTP is sent to the customer's existing mobile on file — their own
-     * consent that the approved figure is changing.
+     * ADMIN correcting the amount credit approved (sanctioned) for {@code applicationId} — the
+     * specific application, not just "the customer's latest one" (a customer can hold several; the
+     * server verifies this id is actually theirs, sanctioned, and not yet disbursed). The OTP is
+     * sent to the customer's existing mobile on file — their own consent that the approved figure is
+     * changing — and is bound to this exact application + amount, so it cannot confirm a different one.
      */
-    public record RequestSanctionedAmountChangeRequest(long newAmountPaise) {
+    public record RequestSanctionedAmountChangeRequest(@NotNull Long applicationId, long newAmountPaise) {
     }
 
     /** Confirms a sanctioned-amount change with the OTP sent to the customer's mobile on file. */
-    public record ConfirmSanctionedAmountChangeRequest(long newAmountPaise, @NotBlank String otp) {
+    public record ConfirmSanctionedAmountChangeRequest(
+            @NotNull Long applicationId, long newAmountPaise, @NotBlank String otp) {
     }
 
     /** One audited profile/salary change for the customer detail history pane (Phase 2.1). */

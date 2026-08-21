@@ -102,13 +102,15 @@ public class CustomerController {
 
     /**
      * ADMIN, step 1 of 2 — send an OTP to the customer's mobile on file to correct the amount
-     * credit approved (sanctioned) for their current, not-yet-disbursed application.
+     * credit approved (sanctioned) for {@code applicationId} — verified server-side to be this
+     * customer's own, sanctioned, not-yet-disbursed application.
      */
     @PostMapping("/{customerId}/sanctioned-amount/request-otp")
     public ApiResponse<OtpVerifierPort.OtpRequestResult> requestSanctionedAmountOtp(
-            @PathVariable Long customerId, @RequestBody RequestSanctionedAmountChangeRequest req) {
+            @PathVariable Long customerId, @Valid @RequestBody RequestSanctionedAmountChangeRequest req) {
         requireStaff();
-        return ApiResponse.ok(customerService.requestSanctionedAmountOtp(customerId, req.newAmountPaise()));
+        return ApiResponse.ok(customerService.requestSanctionedAmountOtp(
+                customerId, req.applicationId(), req.newAmountPaise()));
     }
 
     /** ADMIN, step 2 of 2 — confirm the sanctioned-amount correction with the customer's OTP. */
@@ -117,7 +119,7 @@ public class CustomerController {
             @PathVariable Long customerId, @Valid @RequestBody ConfirmSanctionedAmountChangeRequest req) {
         requireStaff();
         return ApiResponse.ok(customerService.confirmSanctionedAmountChange(
-                customerId, req.newAmountPaise(), req.otp()));
+                customerId, req.applicationId(), req.newAmountPaise(), req.otp()));
     }
 
     /** Every document across ALL of this customer's applications, grouped by application (newest

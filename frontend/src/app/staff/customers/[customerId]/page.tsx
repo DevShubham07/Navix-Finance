@@ -252,7 +252,7 @@ function MobileChangeCard({ detail, onSaved }: { detail: CustomerDetail; onSaved
         label="New mobile number"
         inputMode="numeric"
         value={newMobile}
-        onChange={(e) => { setNewMobile(e.target.value.replace(/\D/g, "").slice(0, 10)); setSent(false); }}
+        onChange={(e) => setNewMobile(e.target.value.replace(/\D/g, "").slice(0, 10))}
         placeholder="9876543210"
         className="!mb-2"
         disabled={sent}
@@ -310,7 +310,7 @@ function SanctionedAmountCard({
   onSaved,
 }: {
   customerId: number;
-  app: { id: number; amountRequestedPaise?: number | null; sanctionedAmountPaise?: number | null };
+  app: { id: number; sanctionedAmountPaise?: number | null };
   onSaved: () => void;
 }) {
   const currentPaise = app.sanctionedAmountPaise ?? null;
@@ -320,11 +320,11 @@ function SanctionedAmountCard({
   const newAmountPaise = amount ? rupeesToPaise(Number(amount.replace(/[^\d]/g, ""))) : 0;
 
   const request = useMutation({
-    mutationFn: () => customersApi.requestSanctionedAmountOtp(customerId, newAmountPaise),
+    mutationFn: () => customersApi.requestSanctionedAmountOtp(customerId, app.id, newAmountPaise),
     onSuccess: () => { setSent(true); setOtp(""); },
   });
   const confirm = useMutation({
-    mutationFn: () => customersApi.confirmSanctionedAmountChange(customerId, newAmountPaise, otp.trim()),
+    mutationFn: () => customersApi.confirmSanctionedAmountChange(customerId, app.id, newAmountPaise, otp.trim()),
     onSuccess: () => { setSent(false); setOtp(""); onSaved(); },
   });
 
@@ -338,7 +338,7 @@ function SanctionedAmountCard({
         label="New approved amount (₹)"
         inputMode="numeric"
         value={amount}
-        onChange={(e) => { setAmount(e.target.value.replace(/[^\d]/g, "")); setSent(false); }}
+        onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
         placeholder={currentPaise != null ? String(Math.round(currentPaise / 100)) : "50000"}
         className="!mb-2"
         disabled={sent}

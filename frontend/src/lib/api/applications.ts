@@ -1567,14 +1567,15 @@ export const customersApi = {
 
   /**
    * ADMIN, step 1 of 2 — send an OTP to the customer's mobile on file to correct the amount
-   * credit approved (sanctioned) for their current, not-yet-disbursed application.
+   * credit approved (sanctioned) for `applicationId` — the specific application, verified
+   * server-side to actually be this customer's own, sanctioned, not-yet-disbursed one.
    */
-  requestSanctionedAmountOtp: (customerId: number, newAmountPaise: number) =>
-    bff<OtpRequestResult>(`${CUSTOMERS_BASE}/${customerId}/sanctioned-amount/request-otp`, "POST", { newAmountPaise }),
+  requestSanctionedAmountOtp: (customerId: number, applicationId: number, newAmountPaise: number) =>
+    bff<OtpRequestResult>(`${CUSTOMERS_BASE}/${customerId}/sanctioned-amount/request-otp`, "POST", { applicationId, newAmountPaise }),
 
   /** ADMIN, step 2 of 2 — confirm the sanctioned-amount correction with the customer's OTP. */
-  confirmSanctionedAmountChange: (customerId: number, newAmountPaise: number, otp: string) =>
-    bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/sanctioned-amount/confirm`, "POST", { newAmountPaise, otp }),
+  confirmSanctionedAmountChange: (customerId: number, applicationId: number, newAmountPaise: number, otp: string) =>
+    bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/sanctioned-amount/confirm`, "POST", { applicationId, newAmountPaise, otp }),
 
   /** One customer's audited profile/salary change history (newest first). */
   changes: (customerId: number) =>
