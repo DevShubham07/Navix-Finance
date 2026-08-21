@@ -33,6 +33,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -188,7 +190,27 @@ public class ApplicationVerificationService {
     private final PennyDropGuard pennyDropGuard;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
-    public record StepResult(String checkType, String status, String message, Map<String, Object> derived) {
+    /**
+     * One check's result as every surface sees it.
+     *
+     * <p>This used to carry four fields and drop the other eight columns of the row, so a staff
+     * reviewer could read what a check concluded but not who concluded it, when, or against which
+     * provider transaction — all of which they need when a borrower disputes an outcome or a
+     * provider is suspected of being wrong. {@code provider}, {@code providerTxnId},
+     * {@code clientRefNum}, {@code nameMatch}, {@code score} and {@code checkedAt} are those columns.
+     *
+     * <p>{@code provider} is {@code "MANUAL"} on a staff override and names the vendor otherwise, so
+     * the two are finally distinguishable without reading the message text.
+     */
+    public record StepResult(String checkType, String status, String message,
+                             Map<String, Object> derived,
+                             String provider, String providerTxnId, String clientRefNum,
+                             Double nameMatch, Long score, Instant checkedAt) {
+
+        /** The short form, for the handful of places that synthesise a result rather than read a row. */
+        public StepResult(String checkType, String status, String message, Map<String, Object> derived) {
+            this(checkType, status, message, derived, null, null, null, null, null, null);
+        }
     }
 
     /** Required-step completion snapshot for the progress tracker (Phase 3.2). */
@@ -986,6 +1008,15 @@ public class ApplicationVerificationService {
 
         Integer tenureMonths = tenureMonths(r.dateOfJoining(), r.dateOfExit());
 
+        // Re-check a negative employer match ourselves before it costs anyone a review.
+        Boolean employerMatch = r.employerNameMatch();
+        boolean employerMatchedLocally = false;
+        if (Boolean.FALSE.equals(employerMatch)
+                && employerNamesAgree(profile.getEmployer(), r.employerName())) {
+            employerMatch = Boolean.TRUE;
+            employerMatchedLocally = true;
+        }
+
         Map<String, Object> derived = new LinkedHashMap<>();
         // `is_employed` from the provider is NOT "this person has a job" — it is "this person is
         // employed at the employer you asked about", and we always ask about the declared one. Verified
@@ -1003,7 +1034,9 @@ public class ApplicationVerificationService {
         derived.put("dateOfExit", r.dateOfExit());
         derived.put("tenureMonths", tenureMonths);
         derived.put("employeeNameMatch", r.employeeNameMatch());
-        derived.put("employerNameMatch", r.employerNameMatch());
+        derived.put("employerNameMatch", employerMatch);
+        derived.put("employerNameMatchProvider", r.employerNameMatch());
+        derived.put("employerNameMatchedLocally", employerMatchedLocally);
         derived.put("employerConfidenceScore", r.employerConfidenceScore());
         derived.put("recentPfFiling", r.recentPfFiling());
         derived.put("hasPfFilings", r.hasPfFilings());
@@ -1034,7 +1067,7 @@ public class ApplicationVerificationService {
             message = r.dateOfExit() != null
                     ? "EPFO shows an exit on " + r.dateOfExit() + " — manual review"
                     : "EPFO shows the employment has ended — manual review";
-        } else if (Boolean.FALSE.equals(r.employerNameMatch())) {
+        } else if (Boolean.FALSE.equals(employerMatch)) {
             // Ordered ahead of the is_employed check on purpose. The provider reports is_employed
             // false whenever the employer name does not match, so testing that first swallowed every
             // mismatch into "employment not current" — telling a reviewer someone had left a job they
@@ -1053,7 +1086,10 @@ public class ApplicationVerificationService {
             message = r.nameOnRecord() == null
                     ? "EPFO name does not match the applicant — manual review"
                     : "EPFO holds this employment under " + r.nameOnRecord() + " — manual review";
-        } else if (r.employed()) {
+        } else if (r.employed() || employerMatchedLocally) {
+            // employerMatchedLocally implies the provider's is_employed was dragged down by the name
+            // score alone: we have already established there is no exit and that neither name
+            // contradicts, so the employment stands on its own evidence.
             status = PASS;
             message = r.employerName() == null
                     ? "Employment confirmed with EPFO"
@@ -1071,6 +1107,76 @@ public class ApplicationVerificationService {
         // it would alter risk categories for in-flight applications.
         return view(upsert(appId, EMPLOYMENT, status, r.provider(), r.txnId(), ref,
                 null, null, null, derived, message));
+    }
+
+    /**
+     * Corporate boilerplate that carries no identity. Stripped from both sides before comparing, so
+     * "ENDURANCE TECHNOLOGIES LTD" and "ENDURANCE TECHNOLOGIES LIMITED" are the same employer.
+     */
+    private static final Set<String> EMPLOYER_NOISE = Set.of(
+            "PVT", "PVTLTD", "PRIVATE", "LTD", "LTDS", "LIMITED", "LLP", "LLC", "INC", "CORP",
+            "CORPORATION", "CO", "COMPANY", "MS", "THE", "AND", "OF");
+
+    /**
+     * Do these two employer names describe the same employer?
+     *
+     * <p>Digitap's own {@code employer_name_match} scores whole-string similarity, so a short but exact
+     * declared name against a longer establishment name falls under its threshold. Measured live on one
+     * identity: {@code "sprinklr"} against {@code "SPRINKLR INDIA PVT LTD"} returns match false, while
+     * {@code "Sprinklr India Pvt Ltd"} against the same establishment returns true. Nothing about the
+     * employment differs between those two calls — only how much of the legal name the borrower
+     * happened to type into a free-text box.
+     *
+     * <p>So we re-check the provider's negatives ourselves. Deliberately NOT a similarity threshold:
+     * for a lender a false confirmation is far worse than a false review, so this only says yes when
+     * one name's distinctive words are wholly contained in the other's. It accepts
+     * {@code "Accenture"} vs {@code "ACCENTURE SOLUTIONS PVT. LTD."} and {@code "Hygro Chemicals"} vs
+     * {@code "HY GRO CHEMICALS PHARMTEK PRIVATE LIMITED"} (spacing differences survive the
+     * de-spaced comparison), and still rejects {@code "Accenture"} vs
+     * {@code "M/S ECLERX SERVICES LIMITED"} — which is a real mismatch and the reason this check
+     * exists.
+     *
+     * @return true only on a positive identification; false means "not established", not "different".
+     */
+    static boolean employerNamesAgree(String declared, String onRecord) {
+        Set<String> a = employerTokens(declared);
+        Set<String> b = employerTokens(onRecord);
+        if (a.isEmpty() || b.isEmpty()) {
+            // One side is nothing but boilerplate. No opinion rather than a guess.
+            return false;
+        }
+        // Every distinctive word of one appears in the other. A lone shared word has to be a real one:
+        // two-letter fragments collide far too easily to be evidence of anything.
+        Set<String> smaller = a.size() <= b.size() ? a : b;
+        Set<String> larger = a.size() <= b.size() ? b : a;
+        if (larger.containsAll(smaller)
+                && (smaller.size() > 1 || smaller.iterator().next().length() >= 3)) {
+            return true;
+        }
+        // Fall back to a de-spaced prefix compare, which is what catches a name the borrower typed
+        // closed up ("Hygro" for "HY GRO") or singular where the register has a plural
+        // ("...SERVICE" for "...SERVICES").
+        // Joined in the order the words were written, not sorted: the whole point is to compare
+        // "HYGRO CHEMICALS" with "HY GRO CHEMICALS", and sorting turns that into gibberish.
+        String flatA = String.join("", a);
+        String flatB = String.join("", b);
+        String shortFlat = flatA.length() <= flatB.length() ? flatA : flatB;
+        String longFlat = flatA.length() <= flatB.length() ? flatB : flatA;
+        return shortFlat.length() >= 5 && longFlat.startsWith(shortFlat);
+    }
+
+    /** Upper-cased alphanumeric words, boilerplate removed. */
+    private static Set<String> employerTokens(String name) {
+        if (name == null || name.isBlank()) {
+            return Set.of();
+        }
+        Set<String> out = new LinkedHashSet<>();
+        for (String raw : name.toUpperCase(Locale.ROOT).split("[^A-Z0-9]+")) {
+            if (!raw.isEmpty() && !EMPLOYER_NOISE.contains(raw)) {
+                out.add(raw);
+            }
+        }
+        return out;
     }
 
     /** Whole months between joining and exit (or today, when still employed). Null when unparseable. */
@@ -1867,10 +1973,12 @@ public class ApplicationVerificationService {
                 .map(row -> {
                     if (DIGILOCKER.equals(row.getCheckType()) && aadhaarSettled
                             && !PASS.equals(row.getStatus()) && !REVIEW.equals(row.getStatus())) {
+                        StepResult full = view(row);
                         return new StepResult(DIGILOCKER, aadhaarStatus,
                                 PASS.equals(aadhaarStatus) ? "DigiLocker completed"
                                         : "DigiLocker completed — Aadhaar under manual review",
-                                fromJson(row.getDerived()));
+                                full.derived(), full.provider(), full.providerTxnId(),
+                                full.clientRefNum(), full.nameMatch(), full.score(), full.checkedAt());
                     }
                     return view(row);
                 })
@@ -1893,7 +2001,9 @@ public class ApplicationVerificationService {
         }
         Map<String, Object> safe = new LinkedHashMap<>(step.derived());
         safe.remove("uan");
-        return new StepResult(step.checkType(), step.status(), step.message(), safe);
+        return new StepResult(step.checkType(), step.status(), step.message(), safe,
+                step.provider(), step.providerTxnId(), step.clientRefNum(),
+                step.nameMatch(), step.score(), step.checkedAt());
     }
 
     /**
@@ -2273,7 +2383,10 @@ public class ApplicationVerificationService {
 
     private StepResult view(ApplicationVerification row) {
         Map<String, Object> derived = fromJson(row.getDerived());
-        return new StepResult(row.getCheckType(), row.getStatus(), row.getMessage(), derived);
+        return new StepResult(row.getCheckType(), row.getStatus(), row.getMessage(), derived,
+                row.getProvider(), row.getProviderTxnId(), row.getClientRefNum(),
+                row.getNameMatch(), row.getScore(),
+                row.getUpdatedAt() != null ? row.getUpdatedAt() : row.getCreatedAt());
     }
 
     /** Cross-match PAN / Aadhaar / penny-drop names; store min pairwise on the profile. */

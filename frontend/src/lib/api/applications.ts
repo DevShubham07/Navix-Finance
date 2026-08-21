@@ -1057,6 +1057,16 @@ export interface StepResult {
   status: CheckStatus;
   message: string | null;
   derived: Record<string, unknown>;
+  /** "MANUAL" on a staff override, otherwise the vendor that answered (e.g. "DIGITAP"). */
+  provider?: string | null;
+  /** The provider's own transaction id — what you quote when raising a dispute with them. */
+  providerTxnId?: string | null;
+  /** The reference we sent them, for finding the call in the provider-API log. */
+  clientRefNum?: string | null;
+  nameMatch?: number | null;
+  score?: number | null;
+  /** When the check last ran. Optional: rows written before this existed have no value. */
+  checkedAt?: string | null;
 }
 
 /** Result of an OTP send: whether it went out, and (dev/mock only) the code itself. */

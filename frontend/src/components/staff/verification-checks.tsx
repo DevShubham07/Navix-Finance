@@ -21,7 +21,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Bell, ShieldCheck, RotateCcw } from "lucide-react";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { staffApi, paiseToINR, type StepResult, type CheckStatus } from "@/lib/api/applications";
-import { humanizeCheck } from "@/lib/utils";
+import { humanizeCheck, formatDateTime } from "@/lib/utils";
 import { errMessage } from "@/components/staff/pipeline/hooks";
 import { PermissionGate } from "@/components/staff/pipeline/actions";
 
@@ -174,6 +174,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                   </span>
                 </div>
                 {s.message ? <p className="mt-1 text-xs text-ink/90">{s.message}</p> : null}
+                <Provenance step={s} />
                 {entries.length > 0 && (
                   <dl className="mt-2 space-y-0.5 text-xs">
                     {entries.map(([k, v]) => (
@@ -215,6 +216,36 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
       )}
       {retry && <RetryDialog applicationId={applicationId} step={retry} onClose={() => setRetry(null)} />}
     </div>
+  );
+}
+
+/**
+ * Who produced this result, when, and against which provider transaction.
+ *
+ * <p>The step payload used to carry only the check type, status, message and derived blob, so a
+ * reviewer could read what a check concluded but not whether a vendor or a colleague concluded it,
+ * how long ago, or which provider call to quote when disputing it. `provider` is "MANUAL" on a staff
+ * override, which is the distinction that matters most here and was previously only inferable from
+ * the message text.
+ */
+function Provenance({ step }: { step: DisplayStep }) {
+  const manual = step.provider === "MANUAL";
+  const bits: string[] = [];
+  if (step.provider) bits.push(manual ? "Manual override" : step.provider);
+  if (step.checkedAt) bits.push(formatDateTime(step.checkedAt));
+  if (typeof step.nameMatch === "number") bits.push(`name match ${Math.round(step.nameMatch * 100)}%`);
+  if (typeof step.score === "number") bits.push(`score ${step.score}`);
+  if (bits.length === 0) return null;
+  return (
+    <p className="mt-1 text-[8.8px] text-muted">
+      {bits.join(" · ")}
+      {step.providerTxnId ? (
+        <>
+          {" · "}
+          <span className="font-mono break-all" title="Provider transaction id">{step.providerTxnId}</span>
+        </>
+      ) : null}
+    </p>
   );
 }
 
