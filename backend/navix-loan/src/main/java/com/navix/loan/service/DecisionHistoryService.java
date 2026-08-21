@@ -1,5 +1,6 @@
 package com.navix.loan.service;
 
+import com.navix.common.collections.CollectionActivityDirectory;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.staff.StaffDirectory;
@@ -9,6 +10,7 @@ import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.ApplicationEventRepository;
+import com.navix.loan.repository.CustomerCallLogRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.time.Instant;
@@ -57,6 +59,8 @@ public class DecisionHistoryService {
     private final ApplicationEventRepository eventRepository;
     private final CustomerProfileRepository profileRepository;
     private final LoanApplicationRepository applicationRepository;
+    private final CustomerCallLogRepository callLogRepository;
+    private final CollectionActivityDirectory collectionActivity;
     private final StaffDirectory staffDirectory;
 
     /**
@@ -71,17 +75,26 @@ public class DecisionHistoryService {
                                String notes) {
     }
 
-    /** {@code staffId} null → the caller's own history. */
+    /**
+     * One staffer's decisions, newest first. {@code staffId} null → the caller's own; {@code from}
+     * / {@code to} null → all time.
+     *
+     * <p>The window matters beyond convenience: this list is what the staff-performance dashboard
+     * links into, and totals shown there would be unexplainable next to an unbounded list.
+     */
     @Transactional(readOnly = true)
-    public List<DecisionView> decisions(Long staffId) {
+    public List<DecisionView> decisions(Long staffId, LocalDate from, LocalDate to) {
         String callerId = ActorContext.get().id();
         String target = staffId != null ? String.valueOf(staffId) : callerId;
         if (!target.equals(callerId)) {
             requireCanInspect(staffId);
         }
-        List<ApplicationEvent> events = eventRepository.findByActorIdOrderByAtDesc(target).stream()
-                .filter(e -> DECISION_ACTIONS.contains(e.getAction()))
-                .toList();
+        Instant fromInst = from == null ? Instant.EPOCH : from.atStartOfDay(IST).toInstant();
+        Instant toInst = to == null ? Instant.now() : to.plusDays(1).atStartOfDay(IST).toInstant();
+        List<ApplicationEvent> events =
+                eventRepository.findForActorsInWindow(List.of(target), fromInst, toInst).stream()
+                        .filter(e -> DECISION_ACTIONS.contains(e.getAction()))
+                        .toList();
         if (events.isEmpty()) {
             return List.of();
         }
@@ -150,31 +163,55 @@ public class DecisionHistoryService {
      * @param activeDays           distinct IST days on which they did anything
      * @param firstActionAt        earliest action in the window (their "start")
      * @param lastActionAt         latest action in the window
+     * @param callsMade            telecaller + collections calls they logged in the window; see
+     *                             {@link StaffPerformanceSummary#callTrackingSince()} before reading
+     *                             a 0 here as "made no calls"
      */
     public record StaffPerformanceRow(Long staffId, String staffName, String role, boolean active,
                                       long accepted, long rejected, long totalActions,
                                       long activeDays, Long avgTurnaroundMinutes, long pendingNow,
-                                      long moneyPaise, Instant firstActionAt, Instant lastActionAt) {
+                                      long moneyPaise, Instant firstActionAt, Instant lastActionAt,
+                                      long callsMade) {
     }
 
     /** One day's total action count across the whole roster — the trend line. */
     public record ActivityPoint(LocalDate date, long actions) {
     }
 
-    /** The staff-performance payload: a row per employee plus the roster-wide daily series. */
-    public record StaffPerformanceSummary(List<StaffPerformanceRow> rows, List<ActivityPoint> daily) {
+    /**
+     * The staff-performance payload: a row per employee plus the roster-wide daily series.
+     *
+     * @param callTrackingSince the date call logging started recording WHO made the call (V59).
+     *                          Calls before it recorded only a mutable display name, so they cannot
+     *                          be attributed and are not counted. Returned rather than folded into a
+     *                          null count so the UI can say "since 21 Aug" on a partial window and
+     *                          show a dash on one that ends before it — the service should not have
+     *                          to guess which of those the caller wants.
+     */
+    public record StaffPerformanceSummary(List<StaffPerformanceRow> rows, List<ActivityPoint> daily,
+                                          LocalDate callTrackingSince) {
     }
 
     /**
-     * Aggregate every employee's work over {@code [from, to]} (inclusive dates, IST). Both null =
-     * all time. ADMIN sees the whole company; a Head sees only their own team; everyone else sees
-     * only themselves — the same scoping rule {@link #decisions(Long)} enforces.
+     * When V59 shipped and call rows began carrying a staff id. A constant, not a lookup: it is a
+     * fact about a migration that has already run, and reading it from the Flyway history at request
+     * time would couple this service to Flyway's bookkeeping for no gain.
+     */
+    private static final LocalDate CALL_TRACKING_SINCE = LocalDate.of(2026, 8, 21);
+
+    /**
+     * Aggregate work over {@code [from, to]} (inclusive dates, IST). Both null = all time.
+     *
+     * <p>ADMIN sees the whole company; a Head sees only their own team; everyone else sees only
+     * themselves — the same scoping rule {@link #decisions(Long, LocalDate, LocalDate)} enforces.
+     * Passing {@code staffId} narrows that to one person (after the same inspect check), so the
+     * per-employee page does not make an ADMIN aggregate the entire company to render one row.
      */
     @Transactional(readOnly = true)
-    public StaffPerformanceSummary summary(LocalDate from, LocalDate to) {
-        List<StaffSummary> roster = rosterForCaller();
+    public StaffPerformanceSummary summary(LocalDate from, LocalDate to, Long staffId) {
+        List<StaffSummary> roster = rosterFor(staffId);
         if (roster.isEmpty()) {
-            return new StaffPerformanceSummary(List.of(), List.of());
+            return new StaffPerformanceSummary(List.of(), List.of(), CALL_TRACKING_SINCE);
         }
         // Half-open in IST, matching every other from/to endpoint in this codebase. An absent bound
         // becomes the real limit of the data rather than a null: nothing predates the epoch and
@@ -197,13 +234,16 @@ public class DecisionHistoryService {
                 .countGroupByAssignedExecutive(ApplicationStatus.CREDIT_EXEC_PENDING).stream()
                 .collect(Collectors.toMap(c -> c.getStaffId(), c -> c.getCount(), (a, b) -> a));
 
+        Map<Long, Long> callsByStaff = callCounts(
+                roster.stream().map(StaffSummary::id).toList(), fromInst, toInst);
+
         Map<String, List<ApplicationEvent>> byActor =
                 events.stream().collect(Collectors.groupingBy(ApplicationEvent::getActorId));
         Map<Long, Instant> assignedAt = assignmentClock(events);
 
         List<StaffPerformanceRow> rows = roster.stream()
                 .map(s -> row(s, byActor.getOrDefault(String.valueOf(s.id()), List.of()),
-                        assignedAt, pendingByStaff))
+                        assignedAt, pendingByStaff, callsByStaff))
                 .toList();
 
         Map<LocalDate, Long> perDay = events.stream()
@@ -214,7 +254,28 @@ public class DecisionHistoryService {
                 .map(e -> new ActivityPoint(e.getKey(), e.getValue()))
                 .toList();
 
-        return new StaffPerformanceSummary(rows, daily);
+        return new StaffPerformanceSummary(rows, daily, CALL_TRACKING_SINCE);
+    }
+
+    /**
+     * Calls each staffer logged in the window, telecaller and collections summed into one figure.
+     *
+     * <p>Most people only ever produce one kind, so two columns would be mostly dashes; a staffer
+     * who does both gets a single honest total. Collections lives in another module, so its half
+     * arrives through {@link CollectionActivityDirectory} rather than a direct repository read.
+     */
+    private Map<Long, Long> callCounts(List<Long> staffIds, Instant from, Instant to) {
+        if (staffIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> merged = new HashMap<>();
+        for (CustomerCallLogRepository.StaffCallCount c
+                : callLogRepository.countByStaffInWindow(staffIds, from, to)) {
+            merged.merge(c.getStaffId(), c.getCount(), Long::sum);
+        }
+        collectionActivity.callCountsByStaff(staffIds, from, to)
+                .forEach((staffId, count) -> merged.merge(staffId, count, Long::sum));
+        return merged;
     }
 
     /**
@@ -236,7 +297,8 @@ public class DecisionHistoryService {
     }
 
     private StaffPerformanceRow row(StaffSummary staff, List<ApplicationEvent> mine,
-                                    Map<Long, Instant> assignedAt, Map<Long, Long> pendingByStaff) {
+                                    Map<Long, Instant> assignedAt, Map<Long, Long> pendingByStaff,
+                                    Map<Long, Long> callsByStaff) {
         long accepted = 0;
         long rejected = 0;
         long moneyPaise = 0;
@@ -283,7 +345,23 @@ public class DecisionHistoryService {
         Long avgTurnaround = turnaroundSamples == 0 ? null : turnaroundTotalMinutes / turnaroundSamples;
         return new StaffPerformanceRow(staff.id(), staff.name(), staff.role(), staff.active(),
                 accepted, rejected, humanActions, days.size(), avgTurnaround,
-                pendingByStaff.getOrDefault(staff.id(), 0L), moneyPaise, first, last);
+                pendingByStaff.getOrDefault(staff.id(), 0L), moneyPaise, first, last,
+                callsByStaff.getOrDefault(staff.id(), 0L));
+    }
+
+    /**
+     * The roster to aggregate: one named person when {@code staffId} is given, otherwise everyone the
+     * caller may see. Narrowing still goes through the same inspect check, so asking for a specific
+     * id can never widen what a caller is entitled to.
+     */
+    private List<StaffSummary> rosterFor(Long staffId) {
+        if (staffId == null) {
+            return rosterForCaller();
+        }
+        if (!String.valueOf(staffId).equals(ActorContext.get().id())) {
+            requireCanInspect(staffId);
+        }
+        return staffDirectory.findStaff(staffId).map(List::of).orElseGet(List::of);
     }
 
     /** Who the caller is allowed to see: ADMIN everyone, a Head their team, anyone else themselves. */

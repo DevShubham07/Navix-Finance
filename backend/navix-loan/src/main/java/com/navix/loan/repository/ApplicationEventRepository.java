@@ -36,10 +36,14 @@ public interface ApplicationEventRepository extends JpaRepository<ApplicationEve
      *
      * <p>Scoped by actor rather than by date alone so it rides {@code idx_application_event_actor_at}
      * (V59); the roster is always a bounded list of staff ids, even for ADMIN.
+     *
+     * <p>Newest first, so the decision-history list can share this one query with the aggregation
+     * instead of keeping a second, unbounded finder alongside it.
      */
     @Query("""
             select e from ApplicationEvent e
             where e.actorId in :actorIds and e.at >= :from and e.at < :to
+            order by e.at desc
             """)
     List<ApplicationEvent> findForActorsInWindow(@Param("actorIds") Collection<String> actorIds,
                                                  @Param("from") Instant from,

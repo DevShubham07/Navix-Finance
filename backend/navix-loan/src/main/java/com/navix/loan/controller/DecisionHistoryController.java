@@ -29,9 +29,12 @@ public class DecisionHistoryController {
     private final DecisionHistoryService decisions;
 
     @GetMapping
-    public ApiResponse<List<DecisionView>> list(@RequestParam(required = false) Long staffId) {
+    public ApiResponse<List<DecisionView>> list(
+            @RequestParam(required = false) Long staffId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         requireStaff();
-        return ApiResponse.ok(decisions.decisions(staffId));
+        return ApiResponse.ok(decisions.decisions(staffId, from, to));
     }
 
     /**
@@ -42,9 +45,10 @@ public class DecisionHistoryController {
     @GetMapping("/summary")
     public ApiResponse<StaffPerformanceSummary> summary(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Long staffId) {
         requireStaff();
-        return ApiResponse.ok(decisions.summary(from, to));
+        return ApiResponse.ok(decisions.summary(from, to, staffId));
     }
 
     /** Staff whose history the caller may open (a Head's team; everything for ADMIN). */

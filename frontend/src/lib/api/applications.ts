@@ -171,6 +171,8 @@ export interface StaffPerformanceRow {
   /** Their first action in the window — the closest thing to a "start time". */
   firstActionAt: string | null;
   lastActionAt: string | null;
+  /** Telecaller + collections calls logged in the window. See `callTrackingSince` before reading a 0. */
+  callsMade: number;
 }
 
 /** One day's action count across the whole visible roster — the trend line. */
@@ -183,6 +185,12 @@ export interface StaffActivityPoint {
 export interface StaffPerformanceSummary {
   rows: StaffPerformanceRow[];
   daily: StaffActivityPoint[];
+  /**
+   * yyyy-mm-dd — when call logs began recording WHO made the call. Before it they stored only a
+   * mutable display name, so a 0 for an earlier window means "not tracked", not "made none". Any
+   * surface showing `callsMade` must consult this before letting a reader draw a conclusion.
+   */
+  callTrackingSince: string;
 }
 
 /**
@@ -1460,17 +1468,25 @@ export const staffApi = {
     bff<ApplicationView>(`${STAFF_BASE}/${id}/mark-pending`, "POST", { notes }),
 
   /** Own decisions by default; a Head may pass a team member's id, ADMIN anyone's. */
-  decisions: (staffId?: number) =>
-    bff<DecisionView[]>(`/api/staff/decisions${staffId ? `?staffId=${staffId}` : ""}`, "GET"),
+  decisions: (staffId?: number, from?: string, to?: string) => {
+    const qs = new URLSearchParams();
+    if (staffId != null) qs.set("staffId", String(staffId));
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    const suffix = qs.toString();
+    return bff<DecisionView[]>(`/api/staff/decisions${suffix ? `?${suffix}` : ""}`, "GET");
+  },
 
   /**
    * Per-employee work totals over a window — the staff-performance dashboard. Omit both dates for
    * all time. Scoping is the server's: ADMIN gets the company, a Head their team, anyone else self.
    */
-  performance: (from?: string, to?: string) => {
+  performance: (from?: string, to?: string, staffId?: number) => {
     const qs = new URLSearchParams();
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
+    // Narrows the roster server-side, so a one-person view never aggregates the whole company.
+    if (staffId != null) qs.set("staffId", String(staffId));
     const suffix = qs.toString();
     return bff<StaffPerformanceSummary>(
       `/api/staff/decisions/summary${suffix ? `?${suffix}` : ""}`, "GET");

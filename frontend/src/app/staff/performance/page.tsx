@@ -24,81 +24,19 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Search } from "lucide-react";
 import { PageHeader, StatCard, RefreshButton } from "@/components/staff/staff-ui";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { NoAccessNotice, errMessage, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { useTableSort, SortableTh } from "@/components/staff/sortable-table";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PeriodPicker } from "@/components/staff/period-picker";
 import { InfoTooltip } from "@/components/ui/tooltip";
+import { Input } from "@/components/ui";
+import { rangeFor, periodLabelFor, type Range } from "@/lib/period";
 import { staffApi, paiseToINR, type StaffPerformanceRow } from "@/lib/api/applications";
 
 const NAVY = "#0C2540";
-
-/** Local-time ISO yyyy-mm-dd — never UTC, which shifts the day at either end of the window. */
-function iso(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function addDays(d: Date, days: number): Date {
-  const copy = new Date(d);
-  copy.setDate(copy.getDate() + days);
-  return copy;
-}
-
-/** Monday of the week containing `d` (ISO week start, the Indian business convention). */
-function mondayOf(d: Date): Date {
-  // getDay(): 0=Sun..6=Sat. Sunday belongs to the week that started six days earlier, not the next one.
-  return addDays(d, -((d.getDay() + 6) % 7));
-}
-
-type Range = { from?: string; to?: string };
-
-/**
- * Bounded windows, not rolling ones: "Last week" must END last Sunday, otherwise it overlaps this
- * week and the two periods double-count the same actions.
- */
-const PRESETS: { key: string; label: string; range: () => Range }[] = [
-  { key: "today", label: "Today", range: () => ({ from: iso(new Date()), to: iso(new Date()) }) },
-  {
-    key: "yesterday",
-    label: "Yesterday",
-    range: () => ({ from: iso(addDays(new Date(), -1)), to: iso(addDays(new Date(), -1)) }),
-  },
-  {
-    key: "this-week",
-    label: "This week",
-    range: () => ({ from: iso(mondayOf(new Date())), to: iso(new Date()) }),
-  },
-  {
-    key: "last-week",
-    label: "Last week",
-    range: () => {
-      const lastMonday = addDays(mondayOf(new Date()), -7);
-      return { from: iso(lastMonday), to: iso(addDays(lastMonday, 6)) };
-    },
-  },
-  {
-    key: "this-month",
-    label: "This month",
-    range: () => {
-      const now = new Date();
-      return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: iso(now) };
-    },
-  },
-  {
-    key: "last-month",
-    label: "Last month",
-    range: () => {
-      const now = new Date();
-      return {
-        from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
-        to: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
-      };
-    },
-  },
-  { key: "all", label: "All time", range: () => ({}) },
-];
 
 /** Minutes → "3h 20m" / "45m" / "2d 4h" — a bare minute count is unreadable past an hour. */
 function humanMinutes(mins: number | null): string {
@@ -124,10 +62,9 @@ export default function StaffPerformancePage() {
   const [preset, setPreset] = React.useState("this-month");
   const [custom, setCustom] = React.useState<Range>({});
 
-  const range: Range = React.useMemo(() => {
-    if (preset === "custom") return custom;
-    return PRESETS.find((p) => p.key === preset)?.range() ?? {};
-  }, [preset, custom]);
+  const [search, setSearch] = React.useState("");
+
+  const range: Range = React.useMemo(() => rangeFor(preset, custom), [preset, custom]);
 
   const q = useQuery({
     queryKey: ["staff-performance", range.from ?? "", range.to ?? ""],
@@ -135,24 +72,43 @@ export default function StaffPerformancePage() {
     retry: false,
   });
 
-  const rows = React.useMemo(() => q.data?.rows ?? [], [q.data]);
+  const allRows = React.useMemo(() => q.data?.rows ?? [], [q.data]);
   const daily = q.data?.daily ?? [];
+  const callTrackingSince = q.data?.callTrackingSince;
+
+  // Filtered client-side: the roster is a company's staff list (tens of rows), already in memory,
+  // so a round-trip per keystroke would be slower and no more correct.
+  const rows = React.useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return allRows;
+    return allRows.filter((r) =>
+      r.staffName.toLowerCase().includes(needle)
+      || (ROLE_LABEL[r.role] ?? r.role).toLowerCase().includes(needle));
+  }, [allRows, search]);
+
   const { sorted, sortKey, dir, toggle } = useTableSort<StaffPerformanceRow>(rows, "totalActions", "desc");
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(sorted);
 
-  const periodLabel = preset === "custom"
-    ? `${custom.from ?? "start"} → ${custom.to ?? "today"}`
-    : PRESETS.find((p) => p.key === preset)?.label ?? "";
+  const periodLabel = periodLabelFor(preset, custom);
 
+  // Totals follow the search, so the tiles always describe the rows actually on screen rather than
+  // a hidden population — a filtered table under unfiltered totals reads as a bug.
   const totals = rows.reduce(
     (acc, r) => ({
       accepted: acc.accepted + r.accepted,
       rejected: acc.rejected + r.rejected,
       actions: acc.actions + r.totalActions,
       pending: acc.pending + r.pendingNow,
+      calls: acc.calls + r.callsMade,
     }),
-    { accepted: 0, rejected: 0, actions: 0, pending: 0 },
+    { accepted: 0, rejected: 0, actions: 0, pending: 0, calls: 0 },
   );
+
+  /** True when the window reaches back past the point calls started being attributed. */
+  const callsPartial = !!callTrackingSince && (!range.from || range.from < callTrackingSince);
+  const callsNote = callTrackingSince
+    ? `Telecaller + collections calls. Calls have only been attributed to a person since ${callTrackingSince}; anything earlier isn't counted.`
+    : undefined;
 
   // A 403 here means the caller's role has no roster to show — say so plainly rather than
   // rendering an empty table that looks like "nobody did anything".
@@ -192,6 +148,7 @@ export default function StaffPerformancePage() {
             { header: "Active days", value: (r) => r.activeDays },
             { header: "Avg turnaround", value: (r) => humanMinutes(r.avgTurnaroundMinutes) },
             { header: "Value moved", value: (r) => (r.moneyPaise ? paiseToINR(r.moneyPaise) : "—") },
+            { header: "Calls", value: (r) => r.callsMade },
             { header: "First action", value: (r) => r.firstActionAt ?? "" },
             { header: "Last action", value: (r) => r.lastActionAt ?? "" },
           ]}
@@ -199,51 +156,19 @@ export default function StaffPerformancePage() {
         <RefreshButton queryKeys={[["staff-performance"]]} />
       </PageHeader>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Period</span>
-        <div className="flex flex-wrap items-center gap-1 rounded-full border border-line bg-white p-1">
-          {PRESETS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPreset(p.key)}
-              className={`rounded-full px-3 py-1 text-sm font-semibold transition ${
-                preset === p.key ? "bg-gold text-white" : "text-muted hover:text-navy"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-          <button
-            onClick={() => setPreset("custom")}
-            className={`rounded-full px-3 py-1 text-sm font-semibold transition ${
-              preset === "custom" ? "bg-gold text-white" : "text-muted hover:text-navy"
-            }`}
-          >
-            Custom
-          </button>
-        </div>
-        {preset === "custom" && (
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              aria-label="From"
-              value={custom.from ?? ""}
-              onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value || undefined }))}
-              className="rounded border border-line px-2 py-1 text-sm"
-            />
-            <span className="text-xs text-muted">→</span>
-            <input
-              type="date"
-              aria-label="To"
-              value={custom.to ?? ""}
-              onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value || undefined }))}
-              className="rounded border border-line px-2 py-1 text-sm"
-            />
-          </div>
-        )}
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <PeriodPicker preset={preset} onPreset={setPreset} custom={custom} onCustom={setCustom} />
+        <Input
+          aria-label="Search employees"
+          placeholder="Search name or role…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          leftIcon={<Search size={15} />}
+          className="!mb-4 w-full sm:w-64"
+        />
       </div>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="Approved" value={totals.accepted} accent="success" />
         <StatCard label="Rejected" value={totals.rejected} accent="error" />
         <StatCard
@@ -257,6 +182,7 @@ export default function StaffPerformancePage() {
           accent="gold"
           info="Files sitting with these staff right now. A live snapshot — it does not change with the selected period."
         />
+        <StatCard label="Calls" value={totals.calls} info={callsNote} />
       </div>
 
       {daily.length > 0 && (
@@ -295,6 +221,7 @@ export default function StaffPerformancePage() {
                 <SortableTh label="Active days" sortKey="activeDays" active={sortKey} dir={dir} onToggle={toggle} />
                 <SortableTh label="Avg turnaround" sortKey="avgTurnaroundMinutes" active={sortKey} dir={dir} onToggle={toggle} />
                 <SortableTh label="Value moved" sortKey="moneyPaise" active={sortKey} dir={dir} onToggle={toggle} />
+                <SortableTh label="Calls" sortKey="callsMade" active={sortKey} dir={dir} onToggle={toggle} />
                 <th>First / last action</th>
                 <th></th>
               </tr>
@@ -302,7 +229,7 @@ export default function StaffPerformancePage() {
             <tbody>
               {pageRows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-muted">
+                  <td colSpan={13} className="py-8 text-center text-muted">
                     No staff activity in this period.
                   </td>
                 </tr>
@@ -327,12 +254,19 @@ export default function StaffPerformancePage() {
                       )}
                     </td>
                     <td className="font-mono">{r.moneyPaise ? paiseToINR(r.moneyPaise) : "—"}</td>
+                    <td>
+                      {r.callsMade}
+                      {callsPartial && r.callsMade === 0 && callsNote && (
+                        <InfoTooltip content={callsNote} />
+                      )}
+                    </td>
                     <td className="text-muted">
                       {clockTime(r.firstActionAt)} / {clockTime(r.lastActionAt)}
                     </td>
                     <td>
+                      {/* Carry the window through, so the totals on the next page match these. */}
                       <Link
-                        href={`/staff/my-decisions?staffId=${r.staffId}`}
+                        href={`/staff/my-decisions?staffId=${r.staffId}${range.from ? `&from=${range.from}` : ""}${range.to ? `&to=${range.to}` : ""}`}
                         className="text-xs font-semibold text-navy underline"
                       >
                         Open

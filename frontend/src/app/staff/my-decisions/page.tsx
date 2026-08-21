@@ -11,9 +11,11 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { PageHeader } from "@/components/staff/staff-ui";
+import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { Select } from "@/components/ui";
 import Link from "next/link";
+import { PeriodPicker } from "@/components/staff/period-picker";
+import { rangeFor, presetMatching, type Range } from "@/lib/period";
 import { staffApi, statusLabel, paiseToINR, type ApplicationStatus } from "@/lib/api/applications";
 import { useStaffMe, errMessage } from "@/components/staff/pipeline/hooks";
 import { customerPageHref } from "@/lib/customers/customer-page";
@@ -45,15 +47,28 @@ const ACTION_LABEL: Record<string, string> = {
 export default function MyDecisionsPage() {
   const me = useStaffMe();
   const [staffId, setStaffId] = React.useState("");
+  const [preset, setPreset] = React.useState("all");
+  const [custom, setCustom] = React.useState<Range>({});
 
-  // Seeded from `?staffId=` so the staff-performance table can link straight into one person's
-  // history. Read off `location` in an effect rather than via `useSearchParams`, which would drag
-  // this page behind a Suspense boundary for static prerendering; the switcher below stays the
-  // source of truth afterwards. The server still enforces who may be opened.
+  // Seeded from `?staffId=&from=&to=` so the staff-performance table can link straight into one
+  // person's history *for the period it was showing* — land on a different window and the totals
+  // there would look wrong here. Read off `location` in an effect rather than via
+  // `useSearchParams`, which would drag this page behind a Suspense boundary for static
+  // prerendering; the controls below take over afterwards. The server still enforces who may be
+  // opened.
   React.useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get("staffId");
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("staffId");
     if (requested) setStaffId(requested);
+    const from = params.get("from") ?? undefined;
+    const to = params.get("to") ?? undefined;
+    if (from || to) {
+      setCustom({ from, to });
+      setPreset(presetMatching({ from, to }));
+    }
   }, []);
+
+  const range: Range = React.useMemo(() => rangeFor(preset, custom), [preset, custom]);
 
   const team = useQuery({
     queryKey: ["decisions-inspectable"],
@@ -62,19 +77,41 @@ export default function MyDecisionsPage() {
   });
 
   const q = useQuery({
-    queryKey: ["decisions", staffId],
-    queryFn: () => staffApi.decisions(staffId ? Number(staffId) : undefined),
+    queryKey: ["decisions", staffId, range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.decisions(staffId ? Number(staffId) : undefined, range.from, range.to),
   });
+
+  // The same aggregate the performance dashboard renders, narrowed to this one person, so the two
+  // pages can never disagree about what someone did.
+  const summaryQ = useQuery({
+    queryKey: ["decisions-summary", staffId, range.from ?? "", range.to ?? ""],
+    queryFn: () =>
+      staffApi.performance(range.from, range.to, staffId ? Number(staffId) : undefined),
+    retry: false,
+  });
+  const stats = summaryQ.data?.rows?.[0];
+  const callTrackingSince = summaryQ.data?.callTrackingSince;
+  const callsUntracked = !!callTrackingSince && !!range.to && range.to < callTrackingSince;
+  const callsNote = callTrackingSince
+    ? `Telecaller + collections calls. Calls have only been attributed to a person since ${callTrackingSince}; anything earlier isn't counted.`
+    : undefined;
 
   const rows = q.data ?? [];
   const others = (team.data ?? []).filter((s) => String(s.id) !== String(me.data?.id));
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
+  // Name the person on screen: arriving from the performance table you have picked someone
+  // specific, and a page headed only "Decision history" gives no confirmation you opened the
+  // right one.
+  const whose = staffId ? others.find((s) => String(s.id) === staffId)?.name : null;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Decision history"
-        subtitle="Every lifecycle decision you've made, newest first."
+        subtitle={whose
+          ? `${whose} — every lifecycle decision, newest first.`
+          : "Every lifecycle decision you've made, newest first."}
       />
 
       {others.length > 0 && (
@@ -94,6 +131,34 @@ export default function MyDecisionsPage() {
           </Select>
           {q.isFetching && <Loader2 size={15} className="animate-spin text-muted" />}
         </div>
+      )}
+
+      <PeriodPicker preset={preset} onPreset={setPreset} custom={custom} onCustom={setCustom} />
+
+      {/* Totals for whoever is selected. Deliberately the same figures as the performance
+          dashboard: this page is what that page links into, so a reader arrives expecting them. */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <StatCard label="Approved" value={stats ? stats.accepted : "—"} accent="success" />
+        <StatCard label="Rejected" value={stats ? stats.rejected : "—"} accent="error" />
+        <StatCard
+          label="Total actions"
+          value={stats ? stats.totalActions : "—"}
+          info="Every logged action in this period. The list below shows decisions only, so it can be shorter than this."
+        />
+        <StatCard
+          label="In queue now"
+          value={stats ? stats.pendingNow : "—"}
+          accent="gold"
+          info={`Files sitting with ${staffId ? "them" : "you"} right now. A live snapshot — it does not change with the selected period.`}
+        />
+        <StatCard
+          label="Calls"
+          value={stats && !callsUntracked ? stats.callsMade : "—"}
+          info={callsNote}
+        />
+      </div>
+      {summaryQ.isError && (
+        <p className="text-sm text-error-700">{errMessage(summaryQ.error)}</p>
       )}
 
       <section className="staff-table-scroll rounded border border-line bg-white shadow-sm">

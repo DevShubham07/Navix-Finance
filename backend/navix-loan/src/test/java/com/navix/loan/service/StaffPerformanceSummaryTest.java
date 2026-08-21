@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.collections.CollectionActivityDirectory;
+import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
@@ -13,6 +15,7 @@ import com.navix.common.staff.StaffSummary;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.repository.ApplicationEventRepository;
+import com.navix.loan.repository.CustomerCallLogRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.service.DecisionHistoryService.StaffPerformanceRow;
@@ -21,6 +24,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,6 +61,10 @@ class StaffPerformanceSummaryTest {
     @Mock
     private LoanApplicationRepository applicationRepository;
     @Mock
+    private CustomerCallLogRepository callLogRepository;
+    @Mock
+    private CollectionActivityDirectory collectionActivity;
+    @Mock
     private StaffDirectory staffDirectory;
 
     private DecisionHistoryService service;
@@ -64,9 +72,28 @@ class StaffPerformanceSummaryTest {
     @BeforeEach
     void setUp() {
         service = new DecisionHistoryService(eventRepository, profileRepository,
-                applicationRepository, staffDirectory);
+                applicationRepository, callLogRepository, collectionActivity, staffDirectory);
         lenient().when(applicationRepository.countGroupByAssignedExecutive(any())).thenReturn(List.of());
+        lenient().when(callLogRepository.countByStaffInWindow(anyCollection(), any(), any()))
+                .thenReturn(List.of());
+        lenient().when(collectionActivity.callCountsByStaff(anyCollection(), any(), any()))
+                .thenReturn(Map.of());
         ActorContext.set(ADMIN);
+    }
+
+    /** A telecaller/collections call-count projection stub. */
+    private static CustomerCallLogRepository.StaffCallCount callCount(long staffId, long count) {
+        return new CustomerCallLogRepository.StaffCallCount() {
+            @Override
+            public Long getStaffId() {
+                return staffId;
+            }
+
+            @Override
+            public Long getCount() {
+                return count;
+            }
+        };
     }
 
     @AfterEach
@@ -107,7 +134,7 @@ class StaffPerformanceSummaryTest {
                 event("41", "REJECT_LEAD", ist("2026-08-10", 12), 3L, "Credit score issue"),
                 event("41", "MARK_PENDING", ist("2026-08-10", 13), 4L, "Awaiting payslip")));
 
-        StaffPerformanceRow row = rowFor(service.summary(null, null), 41L);
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
 
         assertThat(row.accepted()).isEqualTo(2);
         assertThat(row.rejected()).isEqualTo(1);
@@ -123,7 +150,7 @@ class StaffPerformanceSummaryTest {
                 event("41", "AUTO_REJECT_BUREAU_THIN_FILE", ist("2026-08-10", 11), 2L, null),
                 event("41", "AUTO_REJECT_BLOCKLISTED", ist("2026-08-10", 12), 3L, null)));
 
-        StaffPerformanceSummary summary = service.summary(null, null);
+        StaffPerformanceSummary summary = service.summary(null, null, null);
         StaffPerformanceRow row = rowFor(summary, 41L);
 
         assertThat(row.rejected()).as("auto-rejects are the system's, not the staffer's").isEqualTo(1);
@@ -142,7 +169,7 @@ class StaffPerformanceSummaryTest {
                 event("41", "HEAD_APPROVE", ist("2026-08-10", 11), 2L, null),
                 event("41", "DISB_ACCEPT", ist("2026-08-10", 12), 3L, null)));
 
-        StaffPerformanceRow row = rowFor(service.summary(null, null), 41L);
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
 
         assertThat(row.accepted())
                 .as("dead pre-V45/V48 actions must not be reported as approvals")
@@ -157,7 +184,7 @@ class StaffPerformanceSummaryTest {
                 event("41", "SANCTION", ist("2026-08-11", 10), 2L, "amountPaise=250000"),
                 event("41", "REJECT_LEAD", ist("2026-08-12", 10), 3L, "amountPaise=999999")));
 
-        StaffPerformanceRow row = rowFor(service.summary(null, null), 41L);
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
 
         assertThat(row.moneyPaise()).isEqualTo(750_000L);
     }
@@ -172,7 +199,7 @@ class StaffPerformanceSummaryTest {
                 event("41", "SANCTION", ist("2026-08-10", 17), 2L, null),
                 event("41", "SANCTION", late, 3L, null)));
 
-        StaffPerformanceRow row = rowFor(service.summary(null, null), 41L);
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
 
         assertThat(row.activeDays()).isEqualTo(2);
         assertThat(row.firstActionAt()).isEqualTo(early);
@@ -188,7 +215,7 @@ class StaffPerformanceSummaryTest {
                 event("41", "ASSIGN", ist("2026-08-11", 9), 2L, null),
                 event("41", "REJECT_LEAD", ist("2026-08-11", 13), 2L, null))); // 240 min
 
-        StaffPerformanceRow row = rowFor(service.summary(null, null), 41L);
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
 
         assertThat(row.avgTurnaroundMinutes()).isEqualTo(180L);
     }
@@ -201,7 +228,7 @@ class StaffPerformanceSummaryTest {
         when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of(
                 event("41", "SANCTION", ist("2026-08-10", 11), 1L, null)));
 
-        StaffPerformanceRow row = rowFor(service.summary(null, null), 41L);
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
 
         assertThat(row.avgTurnaroundMinutes()).isNull();
     }
@@ -212,7 +239,7 @@ class StaffPerformanceSummaryTest {
         when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of(
                 event("41", "SANCTION", ist("2026-08-10", 10), 1L, null)));
 
-        StaffPerformanceSummary summary = service.summary(null, null);
+        StaffPerformanceSummary summary = service.summary(null, null, null);
 
         assertThat(summary.rows()).hasSize(2);
         assertThat(rowFor(summary, 42L).totalActions()).isZero();
@@ -225,7 +252,7 @@ class StaffPerformanceSummaryTest {
         ArgumentCaptor<Instant> from = ArgumentCaptor.forClass(Instant.class);
         ArgumentCaptor<Instant> to = ArgumentCaptor.forClass(Instant.class);
 
-        service.summary(LocalDate.parse("2026-08-10"), LocalDate.parse("2026-08-10"));
+        service.summary(LocalDate.parse("2026-08-10"), LocalDate.parse("2026-08-10"), null);
 
         org.mockito.Mockito.verify(eventRepository)
                 .findForActorsInWindow(anyCollection(), from.capture(), to.capture());
@@ -243,7 +270,7 @@ class StaffPerformanceSummaryTest {
         ArgumentCaptor<Instant> to = ArgumentCaptor.forClass(Instant.class);
         Instant before = Instant.now();
 
-        service.summary(null, null);
+        service.summary(null, null, null);
 
         org.mockito.Mockito.verify(eventRepository)
                 .findForActorsInWindow(anyCollection(), from.capture(), to.capture());
@@ -261,7 +288,7 @@ class StaffPerformanceSummaryTest {
                 event("42", "KYC_APPROVE", ist("2026-08-10", 12), 2L, null),
                 event("41", "SANCTION", ist("2026-08-12", 10), 3L, null)));
 
-        StaffPerformanceSummary summary = service.summary(null, null);
+        StaffPerformanceSummary summary = service.summary(null, null, null);
 
         assertThat(summary.daily()).containsExactly(
                 new DecisionHistoryService.ActivityPoint(LocalDate.parse("2026-08-10"), 2L),
@@ -273,7 +300,7 @@ class StaffPerformanceSummaryTest {
         rosterIsEveryone(RAVI, NEHA);
         when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
 
-        assertThat(service.summary(null, null).rows()).hasSize(2);
+        assertThat(service.summary(null, null, null).rows()).hasSize(2);
     }
 
     @Test
@@ -283,7 +310,7 @@ class StaffPerformanceSummaryTest {
         when(staffDirectory.listActive("CREDIT_EXECUTIVE")).thenReturn(List.of(RAVI));
         when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
 
-        StaffPerformanceSummary summary = service.summary(null, null);
+        StaffPerformanceSummary summary = service.summary(null, null, null);
 
         assertThat(summary.rows()).extracting(StaffPerformanceRow::staffId)
                 .containsExactlyInAnyOrder(41L, 42L);
@@ -297,8 +324,75 @@ class StaffPerformanceSummaryTest {
         when(staffDirectory.findStaff(41L)).thenReturn(Optional.of(RAVI));
         when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
 
-        StaffPerformanceSummary summary = service.summary(null, null);
+        StaffPerformanceSummary summary = service.summary(null, null, null);
 
         assertThat(summary.rows()).extracting(StaffPerformanceRow::staffId).containsExactly(41L);
+    }
+
+    // ---- calls ------------------------------------------------------------
+
+    @Test
+    void sumsTelecallerAndCollectionsCallsIntoOneFigure() {
+        rosterIsEveryone(RAVI);
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
+        when(callLogRepository.countByStaffInWindow(anyCollection(), any(), any()))
+                .thenReturn(List.of(callCount(41L, 4L)));
+        when(collectionActivity.callCountsByStaff(anyCollection(), any(), any()))
+                .thenReturn(Map.of(41L, 3L));
+
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
+
+        assertThat(row.callsMade()).as("both call logs count toward the one figure").isEqualTo(7);
+    }
+
+    @Test
+    void doesNotAttributeOnePersonsCallsToAnother() {
+        rosterIsEveryone(RAVI, NEHA);
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
+        when(callLogRepository.countByStaffInWindow(anyCollection(), any(), any()))
+                .thenReturn(List.of(callCount(41L, 5L)));
+
+        StaffPerformanceSummary summary = service.summary(null, null, null);
+
+        assertThat(rowFor(summary, 41L).callsMade()).isEqualTo(5);
+        assertThat(rowFor(summary, 42L).callsMade()).isZero();
+    }
+
+    @Test
+    void reportsWhenCallAttributionBegan() {
+        rosterIsEveryone(RAVI);
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
+
+        // Calls before V59 recorded only a mutable display name, so a 0 for an earlier window means
+        // "not tracked", not "made none" — the UI needs this date to tell the two apart.
+        assertThat(service.summary(null, null, null).callTrackingSince()).isNotNull();
+    }
+
+    // ---- single-staff narrowing (the decisions page) ----------------------
+
+    @Test
+    void staffIdNarrowsTheRosterToThatOnePerson() {
+        // No listEveryone() stub on purpose: if narrowing works it is never called, and Mockito's
+        // strict stubbing turns an unused stub here into a failure — which is the assertion.
+        when(staffDirectory.findStaff(41L)).thenReturn(Optional.of(RAVI));
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
+
+        StaffPerformanceSummary summary = service.summary(null, null, 41L);
+
+        assertThat(summary.rows()).extracting(StaffPerformanceRow::staffId).containsExactly(41L);
+        // The whole-company roster must not be loaded just to render one person.
+        org.mockito.Mockito.verify(staffDirectory, org.mockito.Mockito.never()).listEveryone();
+    }
+
+    @Test
+    void aHeadCannotNarrowToSomeoneOutsideTheirTeam() {
+        ActorContext.set(CREDIT_HEAD);
+        StaffSummary outsider = new StaffSummary(9L, "Sana Khan", "COLLECTION_EXECUTIVE", true);
+        when(staffDirectory.findStaff(9L)).thenReturn(Optional.of(outsider));
+
+        // Asking for a specific id must not become a way around the team scoping.
+        org.assertj.core.api.Assertions
+                .assertThatThrownBy(() -> service.summary(null, null, 9L))
+                .isInstanceOf(BusinessException.class);
     }
 }
