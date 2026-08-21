@@ -765,6 +765,8 @@ class ApplicationVerificationServiceTest {
         assertThat(row.getStatus()).isEqualTo("REVIEW");
         assertThat(row.getMessage()).contains("2026-03-31");
         assertThat(row.getDerived()).contains("\"dateOfExitMarked\"" + ":true");
+        // A genuine exit outranks the employer-name check — the reviewer needs the date, not the name.
+        assertThat(row.getDerived()).contains("\"employed\"" + ":false");
     }
 
     @Test
@@ -773,7 +775,29 @@ class ApplicationVerificationServiceTest {
                 true, false, true, "SOMEONE ELSE LIMITED", "2024-07-29", null, Boolean.FALSE));
 
         assertThat(row.getStatus()).isEqualTo("REVIEW");
-        assertThat(row.getMessage()).contains("does not match the declared employer");
+        assertThat(row.getMessage()).contains("not the declared employer");
+        assertThat(row.getMessage()).contains("SOMEONE ELSE LIMITED");
+    }
+
+    @Test
+    void verifyEmployment_anEmployerMismatchIsNotReportedAsHavingLeftTheJob() {
+        // The provider's is_employed means "employed AT THE EMPLOYER YOU ASKED ABOUT", and we always
+        // ask about the declared one. Verified live: one identity returns is_employed true with no
+        // employer_name and false with a non-matching employer_name, date_of_exit "" both times.
+        // The old ladder tested is_employed before the name match, so every fuzzy-match miss on a
+        // borrower's free-typed employer surfaced as "employment not current" — telling a reviewer
+        // someone had left a job the EPFO shows them still in. That is a decline in the making.
+        ApplicationVerification row = runEmployment(employmentCheck(
+                true, false, /* employed at declared */ false, "SPRINKLR INDIA PVT LTD",
+                "2024-07-29", /* no exit */ null, Boolean.FALSE));
+
+        assertThat(row.getStatus()).isEqualTo("REVIEW");
+        assertThat(row.getMessage()).contains("not the declared employer");
+        assertThat(row.getMessage()).doesNotContain("not current");
+        assertThat(row.getMessage()).doesNotContain("exit");
+        // The employment itself is live — only the name failed to match.
+        assertThat(row.getDerived()).contains("\"employed\"" + ":true");
+        assertThat(row.getDerived()).contains("\"employedAtDeclaredEmployer\"" + ":false");
     }
 
     @Test

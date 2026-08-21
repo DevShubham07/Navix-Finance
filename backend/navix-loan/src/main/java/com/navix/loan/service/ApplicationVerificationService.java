@@ -987,8 +987,16 @@ public class ApplicationVerificationService {
         Integer tenureMonths = tenureMonths(r.dateOfJoining(), r.dateOfExit());
 
         Map<String, Object> derived = new LinkedHashMap<>();
+        // `is_employed` from the provider is NOT "this person has a job" — it is "this person is
+        // employed at the employer you asked about", and we always ask about the declared one. Verified
+        // against the live API on one identity: the same PAN+mobile returns is_employed true with no
+        // employer_name and false with a non-matching employer_name, while date_of_exit stays "" both
+        // times. Store the raw flag under a name that says so, and derive the real answer from the exit
+        // signals, which are about the employment itself.
+        boolean stillEmployed = r.dateOfExit() == null && !Boolean.TRUE.equals(r.dateOfExitMarked());
         derived.put("found", r.found());
-        derived.put("employed", r.employed());
+        derived.put("employed", r.found() && stillEmployed);
+        derived.put("employedAtDeclaredEmployer", r.employed());
         derived.put("employerName", r.employerName());
         derived.put("declaredEmployer", nz(profile.getEmployer()));
         derived.put("dateOfJoining", r.dateOfJoining());
@@ -1020,19 +1028,32 @@ public class ApplicationVerificationService {
             // Legitimately common. Say so plainly rather than implying wrongdoing.
             status = REVIEW;
             message = "No EPFO employment record found — manual review";
-        } else if (r.employed() && !Boolean.FALSE.equals(r.employerNameMatch())) {
+        } else if (!stillEmployed) {
+            // A real exit, on the employment record itself.
+            status = REVIEW;
+            message = r.dateOfExit() != null
+                    ? "EPFO shows an exit on " + r.dateOfExit() + " — manual review"
+                    : "EPFO shows the employment has ended — manual review";
+        } else if (Boolean.FALSE.equals(r.employerNameMatch())) {
+            // Ordered ahead of the is_employed check on purpose. The provider reports is_employed
+            // false whenever the employer name does not match, so testing that first swallowed every
+            // mismatch into "employment not current" — telling a reviewer someone had left a job they
+            // are demonstrably still in. Name matching is fuzzy over free text a borrower typed
+            // ("sprinklr" vs "SPRINKLR INDIA PVT LTD"), so this is a normal outcome, not an accusation.
+            status = REVIEW;
+            message = r.employerName() == null
+                    ? "Employer does not match the declared employer — manual review"
+                    : "EPFO shows " + r.employerName() + ", not the declared employer — manual review";
+        } else if (r.employed()) {
             status = PASS;
             message = r.employerName() == null
                     ? "Employment confirmed with EPFO"
                     : "Employment confirmed — " + r.employerName();
-        } else if (!r.employed()) {
-            status = REVIEW;
-            message = r.dateOfExit() != null
-                    ? "EPFO shows an exit on " + r.dateOfExit() + " — manual review"
-                    : "EPFO record found but employment not current — manual review";
         } else {
+            // Employment is live and the employer matches, yet the provider still says not employed.
+            // No known shape produces this; say exactly that rather than inventing a reason.
             status = REVIEW;
-            message = "Employer does not match the declared employer — manual review";
+            message = "EPFO record found but employment could not be confirmed — manual review";
         }
 
         // NOTE: tenureMonths is exactly the employment-continuity signal RiskPort.grade takes as its
