@@ -143,6 +143,20 @@ public class CreditBriefPdfRenderer {
         }
     }
 
+    /**
+     * Hard bound on the raw appendix below. This section flattens the ENTIRE provider response into
+     * one row per leaf field, and bureau reports are enormous: the 196 KB sample renders 91 pages,
+     * and the largest real production response (2.0 MB, 543 tradelines) would render roughly 930 —
+     * a credit brief nobody can open, held in memory by OpenPDF and pushed to S3 on every pull.
+     *
+     * <p>The appendix existed because it was the only route by which account-level detail reached
+     * staff at all. It no longer is: the structured tradeline, enquiry and delinquency sections above
+     * carry the parts that inform a decision, and the complete untruncated response remains available
+     * in the staff console and the provider-API dashboard. So this keeps the appendix useful as a
+     * spot-check while refusing to let one borrower's file become a thousand-page document.
+     */
+    private static final int MAX_PROVIDER_FIELDS = 400;
+
     private PdfPTable providerReportTable(String rawResponseJson) throws DocumentException {
         if (rawResponseJson == null || rawResponseJson.isBlank()) {
             return null;
@@ -155,6 +169,11 @@ public class CreditBriefPdfRenderer {
         }
         List<ReportField> fields = new ArrayList<>();
         flatten(root, "", fields);
+        int total = fields.size();
+        boolean truncated = total > MAX_PROVIDER_FIELDS;
+        if (truncated) {
+            fields = fields.subList(0, MAX_PROVIDER_FIELDS);
+        }
 
         PdfPTable table = new PdfPTable(2);
         table.setWidthPercentage(100);
@@ -167,6 +186,10 @@ public class CreditBriefPdfRenderer {
         for (ReportField field : fields) {
             table.addCell(reportCell(field.path(), REPORT_PATH));
             table.addCell(reportCell(field.value(), REPORT_VALUE));
+        }
+        if (truncated) {
+            table.addCell(reportCell("… " + (total - MAX_PROVIDER_FIELDS) + " further fields not printed", REPORT_PATH));
+            table.addCell(reportCell("Open the full provider response in the staff console", REPORT_VALUE));
         }
         return table;
     }
