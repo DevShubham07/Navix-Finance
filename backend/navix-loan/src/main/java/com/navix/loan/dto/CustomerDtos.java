@@ -80,7 +80,15 @@ public final class CustomerDtos {
             /** Newest loan's due date. DPD is deliberately NOT sent — it is derived from this
              *  date on the client everywhere in the codebase, and a second source would drift. */
             LocalDate loanDueDate,
-            Instant markedPendingAt) {
+            Instant markedPendingAt,
+            /** When the customer's latest application ENTERED its current status (from
+             *  {@code application_event} — a derived value, not a stored column): the newest event
+             *  that actually transitioned into {@code latestStatus}. Same-status audit rows
+             *  (REASSIGN / MARK_PENDING / REVERIFY / APPLY) are ignored. Falls back to
+             *  {@link #createdAt} when no such event exists (a row whose status was set outside the
+             *  flow service). Pairs with {@code latestStatus}; contrast {@link #createdAt}, which is
+             *  the signup date. */
+            Instant statusChangedAt) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */

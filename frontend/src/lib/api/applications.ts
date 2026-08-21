@@ -571,8 +571,12 @@ export interface CustomerSummary {
   ownerName?: string | null;
   bureauState?: BureauState | null;
   /** The customer's most recent application's created_at — same timestamp as the live-applications
-   *  "Date" column. */
+   *  "Date" column. This is the SIGNUP date, not when the current status was entered — see
+   *  statusChangedAt below. */
   createdAt?: string | null;
+  /** When the latest application entered its CURRENT status (derived from application_event).
+   *  Falls back to createdAt when no transition event exists. Drives the list's default order. */
+  statusChangedAt?: string | null;
   // --- Parity with the live-applications queue ---------------------------------------------
   // All read off the customer's LATEST application/loan, so the whole row describes one file.
   latestApplicationId?: number | null;

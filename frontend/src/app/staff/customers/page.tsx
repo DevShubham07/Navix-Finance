@@ -104,11 +104,12 @@ function CustomersPageInner() {
       else next.add(key);
       return next;
     });
-  // Consecutive rows on the current page grouped by their signup (createdAt) date.
+  // Consecutive rows on the current page grouped by their stage-change (statusChangedAt) date —
+  // the same key the API sorts by, so a run of consecutive rows really does share one date.
   const dateGroups = React.useMemo(() => {
     const list: { key: string; rows: CustomerSummary[] }[] = [];
     for (const c of pageRows) {
-      const key = c.createdAt ? c.createdAt.slice(0, 10) : "unknown";
+      const key = c.statusChangedAt ? c.statusChangedAt.slice(0, 10) : "unknown";
       const last = list[list.length - 1];
       if (last && last.key === key) last.rows.push(c);
       else list.push({ key, rows: [c] });
@@ -147,6 +148,7 @@ function CustomersPageInner() {
             { header: "Applications", value: (c) => c.applicationCount },
             { header: "Loans", value: (c) => c.loanCount },
             { header: "Latest status", value: (c) => (c.latestStatus ? statusLabel(c.latestStatus as ApplicationStatus) : "") },
+            { header: "Stage date", value: (c) => (c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "") },
             { header: "Loan status", value: (c) => c.loanStatus ?? "" },
             { header: "Outstanding (₹)", value: (c) => (c.totalOutstandingPaise / 100).toFixed(2) },
             { header: "Credit score", value: (c) => c.creditScore ?? "" },
@@ -228,7 +230,7 @@ function CustomersPageInner() {
                 <tr>
                   <th>S.No.</th>
                   <th className="staff-sticky-identity">Customer</th>
-                  <th>Date</th>
+                  <th title="Signup / application start date">Date</th>
                   <th>Mobile</th>
                   <th>PAN</th>
                   <th>Account</th>
@@ -241,6 +243,7 @@ function CustomersPageInner() {
                   <th>Outstanding</th>
                   <th>CIBIL</th>
                   <th>Latest status</th>
+                  <th title="When this customer entered their current status">Stage date</th>
                   <th className="staff-sticky-actions text-right">Open</th>
                 </tr>
               </thead>
@@ -256,7 +259,7 @@ function CustomersPageInner() {
                     return (
                       <React.Fragment key={group.key}>
                         <tr>
-                          <td colSpan={16} className="bg-grey-50 px-3 py-2">
+                          <td colSpan={17} className="bg-grey-50 px-3 py-2">
                             <button
                               type="button"
                               onClick={() => toggleDate(group.key)}
@@ -329,6 +332,9 @@ function CustomersPageInner() {
                           {statusLabel(c.latestStatus as ApplicationStatus)}
                         </span>
                       ) : "—"}
+                    </td>
+                    <td className="whitespace-nowrap text-muted">
+                      {c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "—"}
                     </td>
                     <td className="staff-sticky-actions text-right">
                       <div className="flex items-center justify-end gap-1.5">

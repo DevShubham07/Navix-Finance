@@ -44,4 +44,31 @@ public interface ApplicationEventRepository extends JpaRepository<ApplicationEve
     List<ApplicationEvent> findForActorsInWindow(@Param("actorIds") Collection<String> actorIds,
                                                  @Param("from") Instant from,
                                                  @Param("to") Instant to);
+
+    /**
+     * When each application's CURRENT status was entered: the newest event that actually transitioned
+     * INTO the application's live status. Same-status audit rows (APPLY / REASSIGN / MARK_PENDING /
+     * REVERIFY all log from == to) are excluded — they are activity, not a stage change — and CREATE
+     * (from = null -> DRAFT) is deliberately included as a genuine first entry into DRAFT.
+     *
+     * <p>Aggregated in the database so the customer-list rollup reads one row per application instead
+     * of every application's whole history. Callers MUST short-circuit on an empty collection —
+     * {@code in ()} is not valid SQL.
+     */
+    @Query("""
+            select e.applicationId as applicationId, max(e.at) as at
+            from ApplicationEvent e, LoanApplication a
+            where a.id = e.applicationId
+              and e.applicationId in :applicationIds
+              and e.toStatus = a.status
+              and (e.fromStatus is null or e.fromStatus <> e.toStatus)
+            group by e.applicationId
+            """)
+    List<StatusEnteredAt> findCurrentStatusEnteredAt(@Param("applicationIds") Collection<Long> applicationIds);
+
+    /** Projection for {@link #findCurrentStatusEnteredAt} — one application and its stage-entry time. */
+    interface StatusEnteredAt {
+        Long getApplicationId();
+        Instant getAt();
+    }
 }

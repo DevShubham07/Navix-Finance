@@ -222,7 +222,13 @@ public class CustomerService {
     /**
      * All customers (distinct customers), optionally filtered by {@code q} matching the name
      * (case-insensitive contains), PAN, mobile, or the customer id, and by an inclusive
-     * {@code [from, to]} window over the customer's latest application date. Ordered by customer id.
+     * {@code [from, to]} window over the customer's latest application SIGNUP date. Ordered by
+     * {@code statusChangedAt} descending — when each customer's latest application entered its
+     * current status — so the freshest decisions (a rejection, a sanction) surface first, even
+     * though the date-window filter itself still runs on the signup date. Those two are
+     * deliberately different fields: switching the window to the stage date would silently change
+     * which customers appear for "Today" and diverge from the sibling live-applications/loans
+     * queues, which all window on signup date.
      *
      * <p>The window is resolved in IST server-side rather than in the browser, so a staffer on a
      * UTC laptop sees the same "Today" as the live-applications queues.
@@ -252,22 +258,36 @@ public class CustomerService {
         // BUREAU-state lookup in one query instead of one per customer.
         Map<Long, CustomerProfile> profileByCustomer = new HashMap<>();
         Map<Long, Long> bureauAppIdByCustomer = new HashMap<>();
+        Map<Long, Long> latestAppIdByCustomerForEvents = new HashMap<>();
         for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
             List<LoanApplication> apps = e.getValue();
             CustomerProfile profile = latestProfile(apps);
             profileByCustomer.put(e.getKey(), profile);
-            Long bureauAppId = profile != null ? profile.getApplicationId()
-                    : apps.stream().max(Comparator.comparing(LoanApplication::getId))
-                            .map(LoanApplication::getId).orElse(null);
+            Long latestAppId = apps.stream().max(Comparator.comparing(LoanApplication::getId))
+                    .map(LoanApplication::getId).orElse(null);
+            if (latestAppId != null) {
+                latestAppIdByCustomerForEvents.put(e.getKey(), latestAppId);
+            }
+            Long bureauAppId = profile != null ? profile.getApplicationId() : latestAppId;
             if (bureauAppId != null) {
                 bureauAppIdByCustomer.put(e.getKey(), bureauAppId);
             }
         }
         Map<Long, BureauState> bureauStates = bureauStateService.states(bureauAppIdByCustomer.values());
+        // Stage-date rollup: when each customer's LATEST application entered its current status
+        // (application_event, filtered to real transitions — see the repository javadoc). Batched
+        // once for the whole list rather than per customer, and short-circuited on empty since
+        // "in ()" is invalid SQL.
+        Map<Long, Instant> statusChangedAtByAppId = new HashMap<>();
+        if (!latestAppIdByCustomerForEvents.isEmpty()) {
+            for (ApplicationEventRepository.StatusEnteredAt r : applicationEventRepository
+                    .findCurrentStatusEnteredAt(latestAppIdByCustomerForEvents.values())) {
+                statusChangedAtByAppId.put(r.getApplicationId(), r.getAt());
+            }
+        }
 
         LocalDate today = LocalDate.now();
         List<CustomerSummary> out = new ArrayList<>();
-        Map<Long, Long> latestAppIdByCustomer = new HashMap<>();
         for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
             Long customerId = e.getKey();
             List<LoanApplication> apps = e.getValue();
@@ -306,6 +326,8 @@ public class CustomerService {
             boolean amountIsRequested = latestApp != null && latestApp.getAmountRequested() != null;
             Long amountPaise = latestApp == null ? null
                     : (amountIsRequested ? latestApp.getAmountRequested() : latestApp.getEligibleLimit());
+            Instant statusChangedAt = latestApp == null ? null
+                    : statusChangedAtByAppId.getOrDefault(latestApp.getId(), latestApp.getCreatedAt());
             CustomerSummary cs = new CustomerSummary(
                     customerId,
                     profile != null ? profile.getFullName() : null,
@@ -331,17 +353,17 @@ public class CustomerService {
                     amountPaise,
                     amountIsRequested,
                     latestLoan != null ? latestLoan.getDueDate() : null,
-                    latestApp != null ? latestApp.getMarkedPendingAt() : null);
+                    latestApp != null ? latestApp.getMarkedPendingAt() : null,
+                    statusChangedAt);
             if (matches(cs, needle)) {
                 out.add(cs);
-                // customerId is mobile-derived (§10), not a signup-order sequence, so it carries no
-                // recency signal — the customer's most recent application id (auto-increment, hence
-                // chronological) is what actually orders "newest first".
-                latestAppIdByCustomer.put(customerId, latestApp != null ? latestApp.getId() : 0L);
             }
         }
-        out.sort(Comparator.comparing((CustomerSummary c) -> latestAppIdByCustomer.get(c.customerId()))
-                .reversed());
+        // Stage date descending — when each customer's latest application entered its current status,
+        // so the freshest decisions (a rejection, a sanction) surface first rather than the oldest
+        // signups. Nulls last: a customer whose application predates created_at auditing has no date.
+        out.sort(Comparator.comparing(CustomerSummary::statusChangedAt,
+                Comparator.nullsLast(Comparator.reverseOrder())));
         return out;
     }
 

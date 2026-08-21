@@ -141,6 +141,79 @@ class CustomerServiceTest {
         assertThat(service.list("")).hasSize(2);
     }
 
+    /** Minimal implementer of the interface projection {@code findCurrentStatusEnteredAt} returns. */
+    private static com.navix.loan.repository.ApplicationEventRepository.StatusEnteredAt statusEnteredAt(
+            long applicationId, java.time.Instant at) {
+        return new com.navix.loan.repository.ApplicationEventRepository.StatusEnteredAt() {
+            @Override
+            public Long getApplicationId() {
+                return applicationId;
+            }
+
+            @Override
+            public java.time.Instant getAt() {
+                return at;
+            }
+        };
+    }
+
+    @Test
+    void listUsesTheCurrentStatusEnteredAtProjectionForStatusChangedAt() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        LoanApplication a = app(1, 9000001L, ApplicationStatus.REJECTED);
+        java.time.Instant rejectedAt = java.time.Instant.parse("2026-08-01T10:00:00Z");
+        when(applicationRepository.findAll()).thenReturn(List.of(a));
+        lenient().when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.empty());
+        when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+        // The map iterated to build the query's argument is a HashMap-backed Collection, not a
+        // List, so match structurally rather than on List.of(1L) (List.equals rejects non-Lists).
+        when(applicationEventRepository.findCurrentStatusEnteredAt(any()))
+                .thenReturn(List.of(statusEnteredAt(1L, rejectedAt)));
+
+        CustomerSummary cs = service.list(null).get(0);
+
+        // The rejection date, NOT a later reassignment/mark-pending — that is the whole point of
+        // querying findCurrentStatusEnteredAt rather than "the latest event" for the application.
+        assertThat(cs.statusChangedAt()).isEqualTo(rejectedAt);
+    }
+
+    @Test
+    void listFallsBackToCreatedAtWhenNoTransitionEventExists() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        LoanApplication a = app(1, 9000001L, ApplicationStatus.DRAFT);
+        java.time.Instant createdAt = java.time.Instant.parse("2026-07-01T09:00:00Z");
+        a.setCreatedAt(createdAt);
+        when(applicationRepository.findAll()).thenReturn(List.of(a));
+        lenient().when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.empty());
+        when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+        // Unstubbed findCurrentStatusEnteredAt returns Mockito's default empty list — the intended
+        // fallback path, no stub needed — but stub it explicitly here to make the case unambiguous.
+        when(applicationEventRepository.findCurrentStatusEnteredAt(any())).thenReturn(List.of());
+
+        CustomerSummary cs = service.list(null).get(0);
+
+        assertThat(cs.statusChangedAt()).isEqualTo(createdAt);
+    }
+
+    @Test
+    void listOrdersByStatusChangedAtDescendingWithNullsLast() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        LoanApplication older = app(1, 9000001L, ApplicationStatus.REJECTED);
+        LoanApplication newer = app(2, 9000002L, ApplicationStatus.REJECTED);
+        LoanApplication undated = app(3, 9000003L, ApplicationStatus.DRAFT); // no createdAt, no event
+        when(applicationRepository.findAll()).thenReturn(List.of(older, newer, undated));
+        lenient().when(profileRepository.findByApplicationId(any())).thenReturn(Optional.empty());
+        lenient().when(loanRepository.findByCustomerId(any())).thenReturn(List.of());
+        when(applicationEventRepository.findCurrentStatusEnteredAt(any())).thenReturn(List.of(
+                statusEnteredAt(1L, java.time.Instant.parse("2026-08-01T00:00:00Z")),
+                statusEnteredAt(2L, java.time.Instant.parse("2026-08-05T00:00:00Z"))));
+
+        List<CustomerSummary> rows = service.list(null);
+
+        assertThat(rows).extracting(CustomerSummary::customerId)
+                .containsExactly(9000002L, 9000001L, 9000003L); // newest stage date first, null last
+    }
+
     @Test
     void updateProfileRejectedForNonAdmin() {
         ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
