@@ -4,6 +4,7 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
+import com.navix.common.security.BorrowerIdentityPort;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
@@ -103,6 +104,7 @@ public class CustomerService {
     private final ApplicationVerificationRepository verificationRepository;
     private final ApplicationReferenceRepository referenceRepository;
     private final OtpVerifierPort otpVerifier;
+    private final BorrowerIdentityPort borrowerIdentity;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -569,10 +571,13 @@ public class CustomerService {
      * <b>not</b> fully inert elsewhere, though: {@code PasswordResetService.requestBorrowerReset} and
      * {@code AuthController.resolveBorrowerName} both look a profile up BY this column, so a
      * correction changes which forgot-password mobile finds this customer and what display name
-     * their session shows. The uniqueness check below (mirroring {@code CustomerReviewService}'s
-     * {@code DUPLICATE_MOBILE} rule) prevents two customers from ever sharing one stored value, which
-     * is the only guard achievable from this module — see the commit history for the fuller
-     * cross-module risk this does not close.
+     * their session shows. Two guards close the identity-collision risk that creates: the string
+     * uniqueness check (mirroring {@code CustomerReviewService}'s {@code DUPLICATE_MOBILE} rule)
+     * prevents two customers ever sharing one stored value, and {@link BorrowerIdentityPort} — a
+     * cross-module check into {@code navix-app}'s {@code borrower_mobile} claim table — additionally
+     * catches a DIFFERENT number that merely derives the same login identity (login identity keeps
+     * only the last 7 digits, so two distinct 10-digit numbers can collide there even though they
+     * are never string-equal).
      */
     public OtpVerifierPort.OtpRequestResult requestMobileChangeOtp(Long customerId, String newMobile) {
         requireAdmin();
@@ -667,13 +672,25 @@ public class CustomerService {
         return normalized;
     }
 
-    /** Mirrors {@code CustomerReviewService}'s DUPLICATE_MOBILE rule — a number already on file for a
-     *  different customer must never become ambiguous across the mobile-keyed lookups that trust it
-     *  (forgot-password, display name). */
+    /**
+     * Two checks, closing two different collision shapes across the mobile-keyed lookups that trust
+     * this column (forgot-password, login display name):
+     * <ul>
+     *   <li>string equality — mirrors {@code CustomerReviewService}'s {@code DUPLICATE_MOBILE} rule,
+     *       so the exact same number can never sit on two customers' KYC profiles.</li>
+     *   <li>{@link BorrowerIdentityPort} — login identity keeps only the last 7 digits, so two
+     *       DIFFERENT 10-digit numbers can derive the same identity even though neither check above
+     *       would ever see them as equal. This catches that case against the real claim table.</li>
+     * </ul>
+     */
     private void requireMobileNotTaken(String mobile, Long customerId) {
         if (profileRepository.existsMobileForOtherCustomer(mobile, customerId)) {
             throw new BusinessException("DUPLICATE_MOBILE",
                     "This mobile number is already registered with another customer.");
+        }
+        if (borrowerIdentity.wouldCollideWithAnotherCustomer(mobile, customerId)) {
+            throw new BusinessException("MOBILE_IDENTITY_COLLISION",
+                    "This mobile number's login identity is already claimed by another customer.");
         }
     }
 
