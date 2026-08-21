@@ -1,8 +1,8 @@
-# backfill-employment-checks.ps1 — run the EPFO/UAN employment lookup on files that predate it.
+﻿# backfill-employment-checks.ps1 -- run the EPFO/UAN employment lookup on files that predate it.
 #
 # WHY
 #   The EMPLOYMENT check only started returning data once the client was repointed from Digitap's
-#   UAN Advanced V4 (412 — not provisioned on our account) to UAN Basic V3. New signups now fire it
+#   UAN Advanced V4 (412 -- not provisioned on our account) to UAN Basic V3. New signups now fire it
 #   automatically alongside the bureau pull, but every application created before that has no
 #   EMPLOYMENT row at all, so its staff Employment (EPFO) card reads "no check has been run".
 #
@@ -11,7 +11,7 @@
 #   target application. That is the same service path the staff "Retry API" button uses, so the row,
 #   the audit trail and the provider-call log all look identical to a staff-triggered run.
 #
-# COST — READ THIS BEFORE THE -Execute RUN
+# COST -- READ THIS BEFORE THE -Execute RUN
 #   Each resolved lookup is a BILLABLE Digitap call. Per the vendor guide only result_code 101 bills
 #   (103 "no record" should not), but that is worth confirming against an invoice rather than trusting.
 #   The script therefore DRY RUNS BY DEFAULT: it reports the target count and does not call anything
@@ -28,7 +28,7 @@
 
 [CmdletBinding()]
 param(
-    # Live-but-undisbursed files a reviewer can still act on, plus borrowers with money out — the
+    # Live-but-undisbursed files a reviewer can still act on, plus borrowers with money out -- the
     # latter so collections can see whether the employer is still current.
     [string[]] $Statuses = @('KYC_PENDING', 'CREDIT_EXEC_PENDING', 'SANCTIONED', 'DISBURSEMENT_PENDING',
                              'ACCOUNTANT_PENDING', 'ACTIVE', 'OVERDUE'),
@@ -57,7 +57,11 @@ $token = $login.data.token
 if (-not $token) { throw "Login failed: no token returned" }
 
 # Collect the target applications, de-duplicated across statuses.
-$targets = [ordered]@{}
+# A plain Hashtable, not [ordered]@{} -- OrderedDictionary's indexer is ambiguous with
+# integer keys: $dict[123] = x dispatches to the positional set_Item(int, object) overload
+# and throws ArgumentOutOfRangeException once 123 exceeds Count, instead of setting a key.
+# Application ids are ints, so this bit on the very first insert.
+$targets = @{}
 foreach ($status in $Statuses) {
     $resp = Invoke-Api -Method Get -Path "/api/applications?status=$status" -Token $token
     foreach ($app in $resp.data) {
@@ -70,7 +74,7 @@ foreach ($status in $Statuses) {
     Write-Host ("  {0,-22} {1,4} applications" -f $status, @($resp.data).Count)
 }
 
-# Skip anything that already has a PASS — the service would short-circuit anyway, but not asking is
+# Skip anything that already has a PASS -- the service would short-circuit anyway, but not asking is
 # faster and keeps the reported plan honest about what will actually be spent.
 $plan = @()
 foreach ($t in $targets.Values) {
@@ -90,7 +94,7 @@ if (-not $Execute) {
     $plan | Select-Object -First 20 | Format-Table -AutoSize
     if ($plan.Count -gt 20) { Write-Host "  ... and $($plan.Count - 20) more" }
     Write-Host ""
-    Write-Host "DRY RUN — nothing was called. Re-run with -Execute to fire." -ForegroundColor Green
+    Write-Host "DRY RUN -- nothing was called. Re-run with -Execute to fire." -ForegroundColor Green
     return
 }
 
