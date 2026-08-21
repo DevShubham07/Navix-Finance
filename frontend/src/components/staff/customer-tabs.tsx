@@ -43,8 +43,7 @@ import {
 
 export const CUSTOMER_TABS: TabDef[] = [
   { key: "personal", label: "Personal Details" },
-  { key: "employment", label: "Employment" },
-  { key: "salary", label: "Salary" },
+  { key: "employment", label: "Employment & salary" },
   { key: "bank", label: "Bank Accounts" },
   { key: "verifications", label: "Verifications" },
   { key: "credit", label: "Credit Report" },
@@ -108,9 +107,7 @@ export function CustomerTabBody({
       case "personal":
         return <PersonalTab c={detail} applicationId={latestAppId} onChanged={onChanged} />;
       case "employment":
-        return <EmploymentTab c={detail} />;
-      case "salary":
-        return <SalaryTab c={detail} customerId={customerId} />;
+        return <EmploymentTab c={detail} customerId={customerId} />;
       case "bank":
         return <BankTab c={detail} latestAppId={latestAppId} />;
       case "verifications":
@@ -297,71 +294,67 @@ function str(v: unknown): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Employment
+// Employment & salary
 // ---------------------------------------------------------------------------
 
-function EmploymentTab({ c }: { c: CustomerDetail }) {
-  const p = c.profile;
-  const latestApp = c.applications[0] ?? null;
-  const annualPaise = p ? displayAnnualSalaryPaise(p) : null;
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <Section title="Employment & salary (declared)">
-        <KV k="Employer" v={p?.employer} />
-        <KV k="Employment status" v={p?.employmentStatus} />
-        <KV k="Salary bank" v={p?.salaryBank} />
-        <KV
-          k="Monthly salary"
-          v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null}
-        />
-        <KV
-          k="Annual salary"
-          v={annualPaise != null ? paiseToINR(annualPaise) : null}
-        />
-        <KV
-          k="Salary %"
-          v={p?.salaryPercentage != null ? `${p.salaryPercentage}%` : null}
-        />
-        <KV
-          k="Increment %"
-          v={p?.incrementPercentage != null ? `${p.incrementPercentage}%` : null}
-        />
-        <KV
-          k="Eligible limit"
-          v={
-            latestApp?.eligibleLimitPaise != null
-              ? paiseToINR(latestApp.eligibleLimitPaise)
-              : null
-          }
-        />
-      </Section>
-      {latestApp != null && <EpfoEmploymentCard applicationId={latestApp.id} />}
-    </div>
-  );
-}
-
-/** Declared income + the borrower's uploaded salary slips (SALARY_SLIP docs), separate from the
- *  Employment tab's EPFO corroboration and from the Bank Accounts tab's bank statements. */
-function SalaryTab({ c, customerId }: { c: CustomerDetail; customerId: number }) {
+/**
+ * Employment and income on one tab: what the borrower declared, the EPFO record that corroborates
+ * it, and the payslips they uploaded as proof.
+ *
+ * <p>This was split across two tabs — an "Employment" tab whose declared block already carried the
+ * salary figures, and a "Salary" tab repeating a strict subset of them plus the slips. A reviewer
+ * had to click between the two to read the same three numbers, so they are clubbed here.
+ */
+function EmploymentTab({ c, customerId }: { c: CustomerDetail; customerId: number }) {
   const p = c.profile;
   const latestApp = c.applications[0] ?? null;
   const annualPaise = p ? displayAnnualSalaryPaise(p) : null;
   return (
     <div className="space-y-4">
-      <Section title="Declared income">
-        <KV
-          k="Monthly salary"
-          v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null}
-        />
-        <KV
-          k="Annual salary"
-          v={annualPaise != null ? paiseToINR(annualPaise) : null}
-        />
-        <KV
-          k="Eligible limit"
-          v={latestApp?.eligibleLimitPaise != null ? paiseToINR(latestApp.eligibleLimitPaise) : null}
-        />
-      </Section>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Section title="Employment & salary (declared)">
+          <KV k="Employer" v={p?.employer} />
+          <KV k="Employment status" v={p?.employmentStatus} />
+          <KV k="Salary bank" v={p?.salaryBank} />
+          {/* The date the borrower reported being last paid, beside the recurring day the due date
+              is actually computed from. salaryCreditDay is derived from previousSalaryDate's
+              day-of-month at intake, so the two disagreeing is worth a reviewer's attention. */}
+          <KV
+            k="Last salary received"
+            v={p?.previousSalaryDate ? formatDate(p.previousSalaryDate) : null}
+          />
+          <KV
+            k="Salary day"
+            v={latestApp?.salaryCreditDay != null ? `Day ${latestApp.salaryCreditDay}` : null}
+          />
+          <KV
+            k="Monthly salary"
+            v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null}
+          />
+          <KV
+            k="Annual salary"
+            v={annualPaise != null ? paiseToINR(annualPaise) : null}
+          />
+          <KV
+            k="Salary %"
+            v={p?.salaryPercentage != null ? `${p.salaryPercentage}%` : null}
+          />
+          <KV
+            k="Increment %"
+            v={p?.incrementPercentage != null ? `${p.incrementPercentage}%` : null}
+          />
+          <KV
+            k="Eligible limit"
+            v={
+              latestApp?.eligibleLimitPaise != null
+                ? paiseToINR(latestApp.eligibleLimitPaise)
+                : null
+            }
+          />
+        </Section>
+        {latestApp != null && <EpfoEmploymentCard applicationId={latestApp.id} />}
+      </div>
+      {/* Full width below the grid: a file list squeezed into a half-width column reads badly. */}
       <Section title="Salary slips">
         <CustomerDocsByType
           customerId={customerId}

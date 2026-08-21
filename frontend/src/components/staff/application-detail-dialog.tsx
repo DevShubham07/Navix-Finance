@@ -139,8 +139,7 @@ function actionFor(app: ApplicationView): React.ReactNode {
  */
 const CUSTOMER_TAB_DEFS: TabDef[] = [
   { key: "c:personal", label: "Personal" },
-  { key: "c:employment", label: "Employment" },
-  { key: "c:salary", label: "Salary" },
+  { key: "c:employment", label: "Employment & salary" },
   { key: "c:bank", label: "Bank" },
   { key: "c:credit", label: "Credit report" },
   { key: "c:loans", label: "Loan applications" },
