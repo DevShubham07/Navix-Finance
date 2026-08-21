@@ -10,6 +10,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage, AdminForceDisbursementAction } from "@/components/staff/live-pipeline";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import {
   customersApi,
@@ -27,6 +28,8 @@ export default function CustomerDetailPage() {
   const id = Number(customerId);
   const qc = useQueryClient();
   const [tab, setTab] = React.useState("personal");
+  /** An application opened from the Loan applications tab — carries its own Journey. */
+  const [selectedAppId, setSelectedAppId] = React.useState<number | null>(null);
   const q = useQuery({ queryKey: ["customer", id], queryFn: () => customersApi.get(id), enabled: Number.isFinite(id) });
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["customer", id] });
@@ -62,7 +65,13 @@ export default function CustomerDetailPage() {
             <div className="min-w-0 rounded border border-line bg-white p-4 shadow-sm">
               <Tabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
               <div className="mt-3 max-h-[68vh] overflow-y-auto text-[10.4px]">
-                <CustomerTabBody tab={tab} detail={c} customerId={id} onChanged={invalidate} />
+                <CustomerTabBody
+                  tab={tab}
+                  detail={c}
+                  customerId={id}
+                  onChanged={invalidate}
+                  onOpenApplication={setSelectedAppId}
+                />
               </div>
             </div>
             <div className="space-y-6">
@@ -98,6 +107,15 @@ export default function CustomerDetailPage() {
           </div>
         )}
       </PermissionGate>
+
+      {/* Opened from the Loan applications tab — the only route to an older application's Journey,
+          since queues are status-filtered and a closed reborrow predecessor appears in none. */}
+      {selectedAppId != null && (
+        <ApplicationDetailDialog
+          applicationId={selectedAppId}
+          onClose={() => setSelectedAppId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -36,7 +36,7 @@ public class ProviderApiWorkbenchService {
     private final DigitapAddressClient digitapAddress;
     private final DigitapCreditClient digitapCredit;
     private final DigitapFaceMatchClient digitapFace;
-    private final DigitapUanAdvancedClient digitapUan;
+    private final DigitapUanClient digitapUan;
 
     public record Field(String key, String label, String type, boolean required) {}
     public record CatalogItem(String operation, List<String> providers, List<Field> fields) {}

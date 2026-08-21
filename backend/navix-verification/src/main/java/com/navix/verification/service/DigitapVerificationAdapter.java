@@ -7,7 +7,7 @@ import com.navix.verification.client.DigitapCreditClient;
 import com.navix.verification.client.DigitapEmailClient;
 import com.navix.verification.client.DigitapFaceMatchClient;
 import com.navix.verification.client.DigitapPanClient;
-import com.navix.verification.client.DigitapUanAdvancedClient;
+import com.navix.verification.client.DigitapUanClient;
 import com.navix.verification.dto.DigitapDtos;
 import com.navix.verification.exception.CapabilityNotSupportedException;
 import java.util.List;
@@ -40,7 +40,7 @@ public class DigitapVerificationAdapter implements VerificationPort {
     private final DigitapAddressClient addressClient;
     private final DigitapCreditClient creditClient;
     private final DigitapFaceMatchClient faceMatchClient;
-    private final DigitapUanAdvancedClient uanAdvancedClient;
+    private final DigitapUanClient uanClient;
 
     @Override
     public PanCheck verifyPan(String pan, String clientRef) {
@@ -87,14 +87,15 @@ public class DigitapVerificationAdapter implements VerificationPort {
     @Override
     public EmploymentCheck verifyEmployment(String pan, String mobile, String dob, String employeeName,
                                             String employerName, String clientRef) {
-        DigitapDtos.UanAdvancedResponse r =
-                uanAdvancedClient.verify(pan, mobile, dob, employeeName, employerName, clientRef);
+        DigitapDtos.UanLookupResponse r =
+                uanClient.verify(pan, mobile, dob, employeeName, employerName, clientRef);
         boolean found = r.resultCode() != null && r.resultCode() == UAN_RESULT_OK;
         boolean tooMany = r.resultCode() != null && r.resultCode() == UAN_RESULT_TOO_MANY;
         return new EmploymentCheck(r.txnId(), "DIGITAP", found, tooMany, r.message(),
                 found && Boolean.TRUE.equals(r.isEmployed()),
                 r.uan(), r.uanCount(), trim(r.employerName()), r.establishmentId(), r.memberId(),
                 r.dateOfJoining(), r.dateOfExit(),
+                r.dateOfExitMarked(), r.leaveReason(), r.uanSource(),
                 r.employeeNameMatch(), r.employerNameMatch(), r.employerConfidenceScore(),
                 r.isRecent(), r.hasPfFilings(),
                 trim(r.nameOnRecord()), r.dobOnRecord(), r.genderOnRecord());

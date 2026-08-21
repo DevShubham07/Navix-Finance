@@ -111,7 +111,7 @@ public final class DigitapDtos {
      * field; {@code employer_name} is accepted only alongside {@code employee_name}.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record UanAdvancedRequest(
+    public record UanLookupRequest(
             @JsonProperty("client_ref_num") String clientRefNum,
             @JsonProperty("pan") String pan,
             @JsonProperty("mobile") String mobile,
@@ -123,8 +123,12 @@ public final class DigitapDtos {
     /**
      * {@code resultCode}: 101 = record resolved, 103 = no record found, 104 = more than five UANs matched
      * (nothing resolved). All three arrive as HTTP 200, so the code — not the status — is the outcome.
+     *
+     * <p>{@code isRecent} / {@code hasPfFilings} / {@code employerConfidenceScore} are Advanced-tier
+     * fields. On the Basic variant we are provisioned for they are absent and stay null — which is why
+     * every one of them is boxed. Null means "not carried by this product", never "no".
      */
-    public record UanAdvancedResponse(
+    public record UanLookupResponse(
             String txnId,
             Integer resultCode,
             String message,
@@ -136,6 +140,13 @@ public final class DigitapDtos {
             String memberId,
             String dateOfJoining,
             String dateOfExit,
+            /** EPFO's own flag for whether the employer ever marked the exit — an unmarked exit is the
+             *  case a reviewer most needs to see, since the employment can look current when it is not. */
+            Boolean dateOfExitMarked,
+            String leaveReason,
+            /** Which identifiers actually resolved the UAN, e.g. "pan and mobile". Useful when a match
+             *  looks wrong — it says what we matched on. */
+            String uanSource,
             Boolean employeeNameMatch,
             Boolean employerNameMatch,
             Double employerConfidenceScore,

@@ -137,6 +137,7 @@ public interface VerificationPort {
                            String message, boolean employed, String uan, Integer uanCount,
                            String employerName, String establishmentId, String memberId,
                            String dateOfJoining, String dateOfExit,
+                           Boolean dateOfExitMarked, String leaveReason, String uanSource,
                            Boolean employeeNameMatch, Boolean employerNameMatch,
                            Double employerConfidenceScore, Boolean recentPfFiling, Boolean hasPfFilings,
                            String nameOnRecord, String dobOnRecord, String genderOnRecord) {

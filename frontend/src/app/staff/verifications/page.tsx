@@ -36,6 +36,19 @@ const UNDECIDED_STATUSES = ["DRAFT", "KYC_PENDING", "REVIEW_PENDING"];
  */
 const REQUIRED_CHECKS = ["PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY", "PENNY_DROP", "SELFIE"];
 
+/**
+ * Checks that inform the credit decision but gate nothing, and so must be kept out of the bucket
+ * maths below.
+ *
+ * EMPLOYMENT is the EPFO/UAN lookup. It can never return PASS for a borrower the EPFO has no record
+ * of — a first job, a cash employer, a non-PF establishment all land in REVIEW legitimately — and it
+ * is deliberately absent from the backend's REQUIRED set for exactly that reason. Counting it in
+ * `pendingReview` would drag a large share of otherwise-clean files out of "All checks passed" and
+ * into "Awaiting borrower steps", where there is no borrower step to take. It gets its own chip on
+ * the card instead: visible, not gating.
+ */
+const ADVISORY_CHECKS = ["EMPLOYMENT"];
+
 /** One application rolled up from its verification rows (or a never-started KYC_PENDING app). */
 interface AppCard {
   applicationId: number;
@@ -46,6 +59,8 @@ interface AppCard {
   passed: number;
   failed: number;
   pendingReview: number;
+  /** EPFO/UAN outcome, shown as its own chip. Advisory — see {@link ADVISORY_CHECKS}. */
+  employmentStatus: string | null;
   lastUpdate: string | null;
   bucket: Bucket;
 }
@@ -93,17 +108,19 @@ export default function VerificationsDashboardPage() {
     }
     const out: AppCard[] = [];
     for (const [applicationId, checks] of byApp) {
-      const failed = checks.filter((c) => c.status === "FAIL").length;
-      const passed = checks.filter((c) => c.status === "PASS").length;
+      const gating = checks.filter((c) => !ADVISORY_CHECKS.includes(c.checkType));
+      const employment = checks.find((c) => c.checkType === "EMPLOYMENT") ?? null;
+      const failed = gating.filter((c) => c.status === "FAIL").length;
+      const passed = gating.filter((c) => c.status === "PASS").length;
       // Required checks with no recorded row at all are still outstanding borrower work — count
       // them as pending so a barely-started application can't read as "all checks passed".
       const cleared = new Set(
-        checks.filter((c) => c.status === "PASS" || c.status === "REVIEW").map((c) => c.checkType),
+        gating.filter((c) => c.status === "PASS" || c.status === "REVIEW").map((c) => c.checkType),
       );
-      const recorded = new Set(checks.map((c) => c.checkType));
+      const recorded = new Set(gating.map((c) => c.checkType));
       const missingRequired = REQUIRED_CHECKS.filter((t) => !recorded.has(t)).length;
       const pendingReview =
-        checks.filter((c) => c.status === "PENDING" || c.status === "REVIEW").length + missingRequired;
+        gating.filter((c) => c.status === "PENDING" || c.status === "REVIEW").length + missingRequired;
       const requiredCleared = REQUIRED_CHECKS.every((t) => cleared.has(t));
       const lastUpdate = checks.reduce<string | null>(
         (acc, c) => (c.updatedAt && (!acc || c.updatedAt > acc) ? c.updatedAt : acc),
@@ -116,7 +133,8 @@ export default function VerificationsDashboardPage() {
         customerId: checks.find((c) => c.customerId != null)?.customerId ?? null,
         borrowerName: checks.find((c) => c.borrowerName != null)?.borrowerName ?? null,
         borrowerMobile: checks.find((c) => c.borrowerMobile != null)?.borrowerMobile ?? null,
-        total: checks.length + missingRequired,
+        total: gating.length + missingRequired,
+        employmentStatus: employment?.status ?? null,
         passed,
         failed,
         pendingReview,
@@ -145,6 +163,7 @@ export default function VerificationsDashboardPage() {
         passed: 0,
         failed: 0,
         pendingReview: 0,
+        employmentStatus: null,
         lastUpdate: null,
         bucket: "notStarted",
       });
@@ -282,6 +301,25 @@ function Tile({ label, value, valueClass }: { label: string; value: number | und
   );
 }
 
+/**
+ * The EPFO/UAN outcome as a standalone chip. Deliberately outside the passed/failed/pending counts:
+ * this check gates nothing, so it must not move an application between buckets (see
+ * {@link ADVISORY_CHECKS}). A REVIEW here reads "we could not confirm employment", not "the borrower
+ * still owes us a step" — hence the neutral wording rather than a warning colour.
+ */
+function EmploymentChip({ status }: { status: string | null }) {
+  if (!status) return null;
+  const label =
+    status === "PASS" ? "EPFO ok" : status === "FAIL" ? "EPFO failed" : "EPFO unconfirmed";
+  const tone =
+    status === "PASS"
+      ? "bg-success-100 text-success-700"
+      : status === "FAIL"
+        ? "bg-error-100 text-error-700"
+        : "bg-grey-100 text-muted";
+  return <span className={`rounded-full px-1.5 py-0.5 font-semibold ${tone}`}>{label}</span>;
+}
+
 function AppCardTile({ card, onOpen }: { card: AppCard; onOpen: () => void }) {
   const pct = card.total > 0 ? Math.round((card.passed / card.total) * 100) : 0;
   return (
@@ -310,6 +348,7 @@ function AppCardTile({ card, onOpen }: { card: AppCard; onOpen: () => void }) {
             <span className="flex items-center gap-1.5">
               {card.failed > 0 && <span className="rounded-full bg-error-100 px-1.5 py-0.5 font-semibold text-error-700">{card.failed} failed</span>}
               {card.pendingReview > 0 && <span className="rounded-full bg-warning-100 px-1.5 py-0.5 font-semibold text-warning-800">{card.pendingReview} pending</span>}
+              <EmploymentChip status={card.employmentStatus} />
             </span>
           </div>
           <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-grey-200">

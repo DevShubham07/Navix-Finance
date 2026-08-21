@@ -157,11 +157,20 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
   const id = applicationId ?? 0;
   const [tab, setTab] = React.useState("basic");
   const [openStage, setOpenStage] = React.useState<JourneyStage | null>(null);
+  /** Another application of the same customer, stacked on top of this one (see the render below). */
+  const [nestedAppId, setNestedAppId] = React.useState<number | null>(null);
 
   // Close any open step popup whenever the dialog itself closes (mirrors ApplicationJourney).
   React.useEffect(() => {
     if (!open) setOpenStage(null);
   }, [open]);
+
+  // Drop the stacked application when this dialog closes OR retargets: the parent keeps this
+  // component mounted and swaps `applicationId`, so without this a stale nested dialog would
+  // reappear over an unrelated file.
+  React.useEffect(() => {
+    setNestedAppId(null);
+  }, [open, id]);
 
   const role = useStaffMe().data?.role;
   const canReview = role != null && REVIEW_PERMS.some((p) => hasPermission(role, p));
@@ -327,7 +336,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                   <NoAccessNotice message="Documents aren't available to your role." />
                 ))}
 
-              {tab === "past" && <PastDetailsTab app={app} />}
+              {tab === "past" && <PastDetailsTab app={app} onOpen={setNestedAppId} />}
 
               {tab === "audit" && (
                 events.length === 0 ? (
@@ -353,6 +362,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                     customerId={app.customerId}
                     applicationId={id}
                     onChanged={() => customerQ.refetch()}
+                    onOpenApplication={setNestedAppId}
                   />
                 ) : null)}
             </>
@@ -370,6 +380,19 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
           open
           onClose={() => setOpenStage(null)}
           onNavigate={setOpenStage}
+        />
+      )}
+
+      {/* Another of this customer's applications, opened from Past details or the Loan applications
+          tab. Stacked rather than swapped so closing it returns you here, on the tab you left — and
+          a reborrow's earlier Journey is otherwise unreachable, since queues are status-filtered.
+          Placed outside <Dialog> in the fragment, the same structure StageDetailDialog above uses:
+          Dialog portals to document.body, so the inner one lands later in DOM order and paints on
+          top. Self-recursive reference, no import — this module is the one that defines it. */}
+      {nestedAppId != null && (
+        <ApplicationDetailDialog
+          applicationId={nestedAppId}
+          onClose={() => setNestedAppId(null)}
         />
       )}
     </>
@@ -1146,7 +1169,14 @@ function CostCard({ app }: { app: ApplicationView }) {
 // Past details — this customer's other applications/payments + loan history
 // ---------------------------------------------------------------------------
 
-function PastDetailsTab({ app }: { app: ApplicationView }) {
+function PastDetailsTab({
+  app,
+  onOpen,
+}: {
+  app: ApplicationView;
+  /** Stack another of this customer's applications — the way to reach a reborrow's prior journey. */
+  onOpen: (applicationId: number) => void;
+}) {
   const q = useQuery({
     queryKey: ["customer-detail", app.customerId],
     queryFn: () => customersApi.get(app.customerId),
@@ -1168,7 +1198,16 @@ function PastDetailsTab({ app }: { app: ApplicationView }) {
             {otherApps.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
                 <span className="text-ink">
-                  #{a.id} · {statusLabel(a.status)}
+                  {/* `otherApps` already excludes the current file, so every row here is safe to open. */}
+                  <button
+                    type="button"
+                    onClick={() => onOpen(a.id)}
+                    className="font-semibold text-navy hover:underline"
+                    title={`Open application #${a.id}`}
+                  >
+                    #{a.id}
+                  </button>{" "}
+                  · {statusLabel(a.status)}
                   {a.purpose ? <span className="text-muted"> · {a.purpose}</span> : null}
                 </span>
                 <span className="font-mono text-muted">

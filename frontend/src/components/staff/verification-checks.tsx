@@ -229,7 +229,16 @@ function RetryDialog({ applicationId, step, onClose }: { applicationId: number; 
       step.checkType,
       Object.fromEntries(Object.entries(input).filter(([, value]) => value.trim() !== "")),
     ),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] }); qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] }); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
+      qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
+      qc.invalidateQueries({ queryKey: ["staff-verif-overview"] });
+      // Same reason as the override below: the customer tabs hold their own copies of these rows.
+      qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
+      qc.invalidateQueries({ queryKey: ["customer-verifications-personal", applicationId] });
+      qc.invalidateQueries({ queryKey: ["customer-verifications-employment", applicationId] });
+      onClose();
+    },
   });
   return <Dialog open onClose={onClose} className="!max-w-md" aria-labelledby="retry-api-title">
     <h3 id="retry-api-title" className="font-serif text-lg text-navy">Retry {humanizeCheck(step.checkType)}</h3>
@@ -313,6 +322,12 @@ function OverrideDialog({
       // The dashboard groups applications off this overview query; refresh it so a card's
       // failed/passed counts update immediately after an override (not on the 15s poll).
       qc.invalidateQueries({ queryKey: ["staff-verif-overview"] });
+      // The customer tabs each re-fetch the same rows under their own keys, so without these an
+      // overridden check still reads its pre-override values on the Personal / Employment / Bank
+      // cards until those queries happen to refetch.
+      qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
+      qc.invalidateQueries({ queryKey: ["customer-verifications-personal", applicationId] });
+      qc.invalidateQueries({ queryKey: ["customer-verifications-employment", applicationId] });
       onClose();
     },
   });

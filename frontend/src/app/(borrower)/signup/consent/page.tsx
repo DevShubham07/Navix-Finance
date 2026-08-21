@@ -97,12 +97,16 @@ export default function SignupConsentPage() {
       await saveProfileSlice(appId, { dob });
       await verificationApi.bureauConsent(appId, otp, BUREAU_CONSENT_TEXT);
       setVerifying(true);
-      // All three run here. A FAIL is recorded and passed on to the credit team, so failures are
+      // All four run here. A FAIL is recorded and passed on to the credit team, so failures are
       // caught per-call and never stop the borrower.
       const pan = saved?.pan ?? "";
       if (pan) await verificationApi.pan(appId, pan).catch(() => {});
       if (saved?.officialEmail) await verificationApi.email(appId, saved.officialEmail).catch(() => {});
       await verificationApi.bureau(appId, otp).catch(() => {});
+      // EPFO employment, alongside the bureau pull: both need only PAN/mobile/name/DOB, all of which
+      // are on the profile by now, and both are read by the same credit reviewer. Advisory — it is
+      // absent from the submit-kyc REQUIRED set, so a no-record result cannot trap the borrower here.
+      await verificationApi.employment(appId).catch(() => {});
       await completeStep(appId, "CONSENT", router, "/signup/submitted");
     } catch (err) {
       setVerifying(false);

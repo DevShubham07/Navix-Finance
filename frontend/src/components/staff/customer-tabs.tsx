@@ -84,6 +84,7 @@ export function CustomerTabBody({
   customerId,
   applicationId,
   onChanged,
+  onOpenApplication,
 }: {
   tab: string;
   detail: CustomerDetail;
@@ -91,6 +92,13 @@ export function CustomerTabBody({
   applicationId?: number;
   /** Fired after cancel / owner assign so parents can refetch. */
   onChanged?: () => void;
+  /**
+   * Open another of this customer's applications. Optional, and taken as a callback rather than
+   * importing ApplicationDetailDialog here — that dialog already imports this module, so importing
+   * it back would be a cycle. Callers that can host a dialog pass a handler; the rest degrade to
+   * the plain non-clickable list.
+   */
+  onOpenApplication?: (applicationId: number) => void;
 }) {
   const latestAppId = applicationId ?? detail.applications[0]?.id ?? null;
 
@@ -122,7 +130,14 @@ export function CustomerTabBody({
           <DocumentsTab customerId={customerId} />
         );
       case "loans":
-        return <LoansTab c={detail} onChanged={onChanged} />;
+        return (
+          <LoansTab
+            c={detail}
+            onChanged={onChanged}
+            onOpenApplication={onOpenApplication}
+            currentApplicationId={applicationId ?? null}
+          />
+        );
       case "calls":
         return (
           <div className="space-y-6">
@@ -359,12 +374,16 @@ function EmploymentTab({ c, customerId }: { c: CustomerDetail; customerId: numbe
 }
 
 /**
- * The EPFO/UAN counterpart to the declared block above — what Digitap's UAN Advanced lookup found,
- * so a reviewer can put the borrower's claim and the provident-fund record side by side.
+ * The EPFO/UAN counterpart to the declared block above — what the provident-fund record says, so a
+ * reviewer can put the borrower's claim and the EPFO's answer side by side. The declared employer is
+ * repeated here on purpose: the comparison is the point, and making the reviewer look at two
+ * different cards to make it is how mismatches get missed.
  *
- * <p>Reads the EMPLOYMENT verification row's `derived` fields. The match booleans are deliberately
- * tri-state: the provider returns null when the corresponding name was never sent, and rendering that
- * as "No" would read as a contradiction that was never actually checked.
+ * <p>Reads the EMPLOYMENT verification row's `derived` fields. Booleans are deliberately tri-state:
+ * null means "not carried / never asked", and rendering that as "No" would read as a contradiction
+ * that was never actually checked. Several fields are null for every borrower today — the PF-filing
+ * cross-check and the employer confidence score are Advanced-tier and we are provisioned for Basic
+ * — so they show "—" rather than being hidden, and light up if that ever changes.
  */
 function EpfoEmploymentCard({ applicationId }: { applicationId: number }) {
   const q = useQuery({
@@ -384,18 +403,58 @@ function EpfoEmploymentCard({ applicationId }: { applicationId: number }) {
   }
 
   const tenure = d.tenureMonths;
+  // Three distinct "nothing to show" cases that must not be conflated: we never asked (no PAN or
+  // mobile on file), we asked and the EPFO had nothing, or the identity matched too many UANs to
+  // resolve one. Only the first is our own gap.
+  const notAsked = d.reason === "NO_IDENTIFIER";
+  const noRecord = d.found === false && !notAsked && d.tooManyRecords !== true;
+
   return (
     <Section title="Employment (EPFO)">
       <KV k="Status" v={`${step.status}${step.message ? ` — ${step.message}` : ""}`} />
+      {notAsked && (
+        <p className="py-1 text-xs text-muted">
+          Not checked — no PAN or mobile was on file to look up.
+        </p>
+      )}
+      {noRecord && (
+        <p className="py-1 text-xs text-muted">
+          The EPFO holds no record for this identity. Common and not itself a concern: a first job, a
+          cash employer or a non-PF establishment all look like this.
+        </p>
+      )}
+      {d.tooManyRecords === true && (
+        <p className="py-1 text-xs text-muted">
+          The identity matched more than five UANs, so none could be resolved.
+        </p>
+      )}
+
+      <KV k="Declared employer" v={str(d.declaredEmployer)} />
       <KV k="Employer on record" v={str(d.employerName)} />
+      <KV k="Employer name match" v={triState(d.employerNameMatch)} />
+      <KV k="Employee name match" v={triState(d.employeeNameMatch)} />
+
       <KV k="Currently employed" v={triState(d.employed)} />
       <KV k="Date of joining" v={str(d.dateOfJoining)} />
       <KV k="Date of exit" v={str(d.dateOfExit)} />
+      <KV k="Exit marked by employer" v={triState(d.dateOfExitMarked)} />
+      <KV k="Leave reason" v={str(d.leaveReason)} />
       <KV k="Tenure" v={typeof tenure === "number" ? `${tenure} month${tenure === 1 ? "" : "s"}` : null} />
-      <KV k="Employer name match" v={triState(d.employerNameMatch)} />
-      <KV k="Employee name match" v={triState(d.employeeNameMatch)} />
+
+      <KV k="UAN" v={str(d.uan) ?? str(d.uanMasked)} mono />
+      <KV k="UANs matched" v={typeof d.uanCount === "number" ? String(d.uanCount) : null} />
+      <KV k="Matched on" v={str(d.uanSource)} />
+      <KV k="Establishment id" v={str(d.establishmentId)} mono />
+
       <KV k="Recent PF filing" v={triState(d.recentPfFiling)} />
-      <KV k="UAN" v={str(d.uanMasked)} mono />
+      <KV k="PF filing details" v={triState(d.hasPfFilings)} />
+      <KV
+        k="Employer confidence"
+        v={typeof d.employerConfidenceScore === "number" ? d.employerConfidenceScore.toFixed(2) : null}
+      />
+      {d.manualOverride === true && (
+        <KV k="Manually overridden" v={`${str(d.manualBy) ?? "staff"}${d.manualAt ? ` · ${formatDateTime(String(d.manualAt))}` : ""}`} />
+      )}
     </Section>
   );
 }
@@ -623,7 +682,18 @@ function AadhaarCard({ applicationId }: { applicationId: number }) {
 // Loan applications
 // ---------------------------------------------------------------------------
 
-function LoansTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void }) {
+function LoansTab({
+  c,
+  onChanged,
+  onOpenApplication,
+  currentApplicationId,
+}: {
+  c: CustomerDetail;
+  onChanged?: () => void;
+  onOpenApplication?: (applicationId: number) => void;
+  /** The application already on screen, if any — it is never made clickable. */
+  currentApplicationId?: number | null;
+}) {
   const [selectedLoanId, setSelectedLoanId] = React.useState<number | null>(null);
 
   return (
@@ -636,7 +706,21 @@ function LoansTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void 
             {c.applications.map((a: ApplicationView) => (
               <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
                 <span className="text-ink">
-                  #{a.id} · {statusLabel(a.status)}
+                  {/* Clickable only when a caller can host the dialog, and never for the file already
+                      open — opening a nested copy of the application you are looking at is pointless. */}
+                  {onOpenApplication && a.id !== currentApplicationId ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenApplication(a.id)}
+                      className="font-semibold text-navy hover:underline"
+                      title={`Open application #${a.id}`}
+                    >
+                      #{a.id}
+                    </button>
+                  ) : (
+                    <>#{a.id}</>
+                  )}{" "}
+                  · {statusLabel(a.status)}
                   {a.purpose ? <span className="text-muted"> · {a.purpose}</span> : null}
                   {/* Real assignee only — no implied Credit Head fallback outside the journey view. */}
                   <span className="block text-xs text-muted">

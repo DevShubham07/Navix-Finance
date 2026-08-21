@@ -99,11 +99,19 @@ public class ApplicationFlowService {
      * identity, their face, where they live — so they hold across advances. Everything else is
      * per-advance and re-run: notably {@code ESIGN}, which is consent to one specific Key Fact
      * Statement, and {@code PENNY_DROP}, which only fires if the destination account changes.
+     *
+     * <p>{@code EMPLOYMENT} is the one entry here that is not strictly a property of the person — a
+     * borrower can change jobs between advances. It is carried anyway, by product decision, so a
+     * repeat borrower's file still shows an EPFO employer instead of an empty card, and so a reborrow
+     * does not spend a provider call on every advance. The copy is re-stamped "Carried over from
+     * application N" like every other carried check, which is what tells a reviewer the employer they
+     * are looking at was established earlier rather than today.
      */
     private static final Set<String> CARRIED_CHECKS = Set.of(
             ApplicationVerificationService.AADHAAR,
             ApplicationVerificationService.SELFIE,
-            ApplicationVerificationService.ADDRESS);
+            ApplicationVerificationService.ADDRESS,
+            ApplicationVerificationService.EMPLOYMENT);
 
     /**
      * Application statuses that represent an already-disbursed, still-live loan. One advance at a time:

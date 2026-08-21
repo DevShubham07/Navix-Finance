@@ -865,6 +865,7 @@ a `CapabilityNotSupportedException` tells the router "skip to the next provider"
 | `digilocker*` | **Signzy only** (prod acct) | Signzy **v2** `/api/v3/digilocker-v2/createUrl` + `/geteAadhaar` (Digitap has no consent flow). Migrated 2026-07-29: v2 is entitled on the **production** account only — the preprod account is out of API credits and prod is not entitled for the retired v1 pair |
 | `verifyEmail` | **Signzy** → Digitap | Signzy `/api/v3/email/verificationV2` (prod acct; deliverability + person/company enrichment) → Digitap `/cv/email_verification/v1` |
 | `verifyAddress` | **Digitap only** | Digitap `/ent/v1/address-verification` (Signzy has no address API) |
+| `verifyEmployment` | **Digitap only** | Digitap `/cv/v3/uan_basic/sync` — EPFO/UAN employment (Signzy has no UAN API). **Basic V3, not Advanced V4**: every Advanced variant answers `412` (product not provisioned), so the PF-filing cross-check (`is_recent`, `has_pf_filings_details`) and `employer_confidence_score` are permanently null. Advisory — absent from `REQUIRED`, never blocks KYC, never returns FAIL. Full probe table + wiring in `docs/digitap/UAN_EMPLOYMENT.md` |
 
 **Aadhaar eSign of the sanction letter** sits on its own seam — `EsignPort` (navix-common), *not*
 `VerificationPort`/the router, because it is one provider and a legal act rather than a check.

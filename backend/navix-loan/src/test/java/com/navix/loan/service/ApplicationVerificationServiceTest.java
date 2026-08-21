@@ -687,6 +687,164 @@ class ApplicationVerificationServiceTest {
                 .isEqualTo("PENDING");
     }
 
+
+    // ---------------------------------------------------------------------
+    // EMPLOYMENT (EPFO/UAN). The step can never FAIL by design - it PASSes or it asks for a human -
+    // so these tests are really about which REVIEW you get and why, because the message is what the
+    // credit reviewer acts on.
+    // ---------------------------------------------------------------------
+
+    /** An EmploymentCheck carrying the fields these tests care about; the rest are neutral. */
+    private static VerificationPort.EmploymentCheck employmentCheck(
+            boolean found, boolean tooMany, boolean employed, String employerName,
+            String doj, String doe, Boolean employerNameMatch) {
+        return new VerificationPort.EmploymentCheck("TXN-UAN", "DIGITAP", found, tooMany, null,
+                employed, "100000000000", 1, employerName, "XXXXX0000000000", "MEMBER-1",
+                doj, doe, doe != null, null, "pan and mobile",
+                Boolean.TRUE, employerNameMatch, null, null, null,
+                "FIRSTNAME LASTNAME", "2000-01-31", "MALE");
+    }
+
+    private ApplicationVerification runEmployment(VerificationPort.EmploymentCheck check) {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn(check);
+
+        service.verifyEmployment(APP);
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        return saved.getValue();
+    }
+
+    @Test
+    void verifyEmployment_currentEmploymentAtTheDeclaredEmployerPasses() {
+        ApplicationVerification row = runEmployment(employmentCheck(
+                true, false, true, "DIGITAP.AI", "2024-07-29", null, Boolean.TRUE));
+
+        assertThat(row.getStatus()).isEqualTo("PASS");
+        assertThat(row.getMessage()).contains("DIGITAP.AI");
+        assertThat(row.getDerived()).contains("\"employed\"" + ":true");
+        // The full UAN is stored for staff; the masked form rides along for borrower reads.
+        assertThat(row.getDerived()).contains("\"uan\"" + ":" + "\"100000000000\"");
+        assertThat(row.getDerived()).contains("\"uanSource\"" + ":" + "\"pan and mobile\"");
+        // The declared employer is stored beside the EPFO one so the card can compare the two.
+        assertThat(row.getDerived()).contains("\"declaredEmployer\"" + ":" + "\"Digitap.ai\"");
+    }
+
+    @Test
+    void verifyEmployment_noEpfoRecordIsAReviewAndSaysSoWithoutImplyingWrongdoing() {
+        // result_code 103. A first job, a cash employer or a non-PF establishment all land here, so
+        // the wording must not read as an accusation and the status must never be FAIL.
+        ApplicationVerification row = runEmployment(employmentCheck(
+                false, false, false, null, null, null, null));
+
+        assertThat(row.getStatus()).isEqualTo("REVIEW");
+        assertThat(row.getMessage()).contains("No EPFO employment record found");
+    }
+
+    @Test
+    void verifyEmployment_tooManyUansIsItsOwnReviewNotANoRecord() {
+        ApplicationVerification row = runEmployment(employmentCheck(
+                false, true, false, null, null, null, null));
+
+        assertThat(row.getStatus()).isEqualTo("REVIEW");
+        assertThat(row.getMessage()).contains("Multiple UANs");
+        assertThat(row.getDerived()).contains("\"tooManyRecords\"" + ":true");
+    }
+
+    @Test
+    void verifyEmployment_anExitedEmploymentReviewsAndNamesTheExitDate() {
+        ApplicationVerification row = runEmployment(employmentCheck(
+                true, false, false, "FORMER EMPLOYER LIMITED", "2021-02-01", "2026-03-31", Boolean.TRUE));
+
+        assertThat(row.getStatus()).isEqualTo("REVIEW");
+        assertThat(row.getMessage()).contains("2026-03-31");
+        assertThat(row.getDerived()).contains("\"dateOfExitMarked\"" + ":true");
+    }
+
+    @Test
+    void verifyEmployment_aDifferentEmployerReviewsRatherThanPassing() {
+        ApplicationVerification row = runEmployment(employmentCheck(
+                true, false, true, "SOMEONE ELSE LIMITED", "2024-07-29", null, Boolean.FALSE));
+
+        assertThat(row.getStatus()).isEqualTo("REVIEW");
+        assertThat(row.getMessage()).contains("does not match the declared employer");
+    }
+
+    @Test
+    void verifyEmployment_anUnaskedEmployerNameMatchDoesNotBlockThePass() {
+        // employerNameMatch is null when the provider was never given an employer to compare against.
+        // Null is "not asked"; treating it as a mismatch would review every PAN-only lookup.
+        ApplicationVerification row = runEmployment(employmentCheck(
+                true, false, true, "DIGITAP.AI", "2024-07-29", null, null));
+
+        assertThat(row.getStatus()).isEqualTo("PASS");
+    }
+
+    @Test
+    void verifyEmployment_withoutAPanOrMobileWeSayWeNeverAskedRatherThanNoRecord() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = new CustomerProfile();
+        p.setApplicationId(APP);
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+
+        service.verifyEmployment(APP);
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo("REVIEW");
+        assertThat(saved.getValue().getDerived()).contains("NO_IDENTIFIER");
+        verifyNoInteractions(verification);
+    }
+
+    @Test
+    void verifyEmployment_aProviderOutageIsAReviewNotAFailedEmployment() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("provider down"));
+
+        service.verifyEmployment(APP);
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo("REVIEW");
+        assertThat(saved.getValue().getMessage()).contains("unavailable");
+    }
+
+    @Test
+    void manualDecision_preservesEmploymentDerivedSoTheEpfoCardSurvivesAnOverride() {
+        // Before this, an override wiped derived to {} for every check but PENNY_DROP - blanking the
+        // very EPFO record the reviewer had just read in order to make the decision.
+        ActorContext.set(new CurrentActor("17", "Credit Reviewer", "CREDIT_HEAD"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        ApplicationVerification existing = rowWithDerived("EMPLOYMENT", "REVIEW",
+                "{" + "\"employerName\"" + ":" + "\"DIGITAP.AI\"" + "}");
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMPLOYMENT"))
+                .thenReturn(Optional.of(existing));
+
+        service.manualDecision(APP, "EMPLOYMENT", true, "Payslip and offer letter seen");
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo("PASS");
+        assertThat(saved.getValue().getDerived()).contains("DIGITAP.AI");
+        assertThat(saved.getValue().getDerived()).contains("\"manualOverride\"" + ":true");
+    }
+
     private static ApplicationVerification rowWithDerived(String type, String status, String derivedJson) {
         ApplicationVerification v = row(type, status);
         v.setDerived(derivedJson);

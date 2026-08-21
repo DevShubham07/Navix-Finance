@@ -8,6 +8,7 @@ import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.SanctionLetterSignedEvent;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.EmailOtpPort;
@@ -149,8 +150,10 @@ public class ApplicationVerificationService {
      * on every advance (revamp.md decision 45), so inheriting the previous signature would report a
      * file as fully verified before the borrower had signed anything for the money about to be
      * released. PENNY_DROP is absent because it is never counted anywhere (revamp.md decision 9).
-     * EMPLOYMENT is absent for the opposite reason to the others: it is precisely the fact most likely
-     * to have changed since the last advance, so it must be re-asked rather than carried over.
+     * EMPLOYMENT is absent here only because this set feeds {@code progress()}, which counts REQUIRED
+     * and REQUIRED_SANCTION — neither contains EMPLOYMENT, so listing it would do nothing. The actual
+     * carry-forward of a repeat borrower's EPFO result happens in
+     * {@code ApplicationFlowService.CARRIED_CHECKS}, which does include it.
      */
     private static final Set<String> INHERITABLE_CHECKS =
             Set.of(PAN, EMAIL, BUREAU, SALARY, AADHAAR, SELFIE, ADDRESS);
@@ -998,8 +1001,13 @@ public class ApplicationVerificationService {
         derived.put("hasPfFilings", r.hasPfFilings());
         derived.put("uanCount", r.uanCount());
         derived.put("establishmentId", r.establishmentId());
-        // The UAN itself is an employment identifier, not an identity document, but it is still the
-        // borrower's — store it masked to the last 4 so staff can correlate without it being readable.
+        derived.put("dateOfExitMarked", r.dateOfExitMarked());
+        derived.put("leaveReason", r.leaveReason());
+        derived.put("uanSource", r.uanSource());
+        // The UAN is an employment identifier rather than an identity document, and staff need the full
+        // number to cross-check on the EPFO portal — so store both. The full one is stripped from
+        // borrower-facing reads by {@link #summary}; the masked one is what that audience sees.
+        derived.put("uan", r.uan());
         derived.put("uanMasked", maskUan(r.uan()));
         derived.put("tooManyRecords", r.tooManyRecords());
 
@@ -1804,6 +1812,13 @@ public class ApplicationVerificationService {
     }
 
     /** All verification rows for an application as borrower-safe step results. */
+    /**
+     * Both audiences read the step list through here — staff via {@code GET /{id}/verifications} and the
+     * borrower via {@code GET /{id}/verify/summary} — so this is the one place a staff-only field can be
+     * withheld. Today that is the full UAN: staff get all 12 digits to cross-check against the EPFO
+     * portal, the borrower gets only the masked form, mirroring how {@code ProfileView.withoutCredit()}
+     * keeps the credit score and star rating off borrower reads of their own profile.
+     */
     @Transactional(readOnly = true)
     public List<StepResult> summary(Long appId) {
         List<ApplicationVerification> rows = verificationRepo.findByApplicationIdOrderByIdAsc(appId);
@@ -1829,7 +1844,26 @@ public class ApplicationVerificationService {
                     }
                     return view(row);
                 })
+                .map(ApplicationVerificationService::withoutStaffOnlyFields)
                 .toList();
+    }
+
+    /**
+     * Strip fields the borrower must not see from a step result. No-op for every other audience —
+     * ADMIN reads through the same endpoint and keeps the full view.
+     */
+    private static StepResult withoutStaffOnlyFields(StepResult step) {
+        CurrentActor actor = ActorContext.get();
+        if (actor == null || !"BORROWER".equals(actor.role())) {
+            return step;
+        }
+        if (!EMPLOYMENT.equals(step.checkType()) || step.derived() == null
+                || !step.derived().containsKey("uan")) {
+            return step;
+        }
+        Map<String, Object> safe = new LinkedHashMap<>(step.derived());
+        safe.remove("uan");
+        return new StepResult(step.checkType(), step.status(), step.message(), safe);
     }
 
     /**
@@ -1946,8 +1980,12 @@ public class ApplicationVerificationService {
         String trimmed = notes != null ? notes.trim() : "";
         String message = (pass ? "Manually approved" : "Manually rejected") + " by " + actor
                 + (trimmed.isEmpty() ? "" : " — " + trimmed);
+        // Most checks carry nothing worth keeping once a human has ruled on them. Two do: PENNY_DROP,
+        // whose derived names the account the override blesses (see acceptDisbursalAccountManually),
+        // and EMPLOYMENT, whose derived IS the EPFO record the staff card renders — wiping it would
+        // blank the very evidence the reviewer just acted on.
         Map<String, Object> derived = Map.of();
-        if (PENNY_DROP.equals(type)) {
+        if (PENNY_DROP.equals(type) || EMPLOYMENT.equals(type)) {
             derived = new LinkedHashMap<>(derivedFor(appId, type));
             derived.put("manualOverride", true);
             derived.put("manualBy", actor);

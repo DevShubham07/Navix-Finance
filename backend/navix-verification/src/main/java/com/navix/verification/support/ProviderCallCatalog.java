@@ -33,7 +33,7 @@ public final class ProviderCallCatalog {
         ROUTES.put("/cv/email_verification/v1", new Route("EMAIL", "DIGITAP"));
         ROUTES.put("/ent/v1/address-verification", new Route("ADDRESS", "DIGITAP"));
         ROUTES.put("/fmfl/v2/face-match", new Route("FACE_MATCH", "DIGITAP"));
-        ROUTES.put("/cv/v4/uan_advanced/sync", new Route("UAN", "DIGITAP"));
+        ROUTES.put("/cv/v3/uan_basic/sync", new Route("UAN", "DIGITAP"));
         // Signzy — the two bureaux stay distinguishable because the router tries Experian then CRIF.
         ROUTES.put("/api/v3/bureau/experian-lite", new Route("BUREAU", "SIGNZY_EXPERIAN"));
         ROUTES.put("/api/v3/bureau/crif", new Route("BUREAU", "SIGNZY_CRIF"));

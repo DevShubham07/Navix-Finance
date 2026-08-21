@@ -75,6 +75,11 @@ export type Permission =
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
   // referral-expense dashboard; ADMIN has oversight.
   | "referral:payout"
+  // Re-fire a provider verification (PAN / email / address / bureau / employment / penny-drop) from
+  // the staff console. Held by ADMIN and the credit roles: they already hold kyc:approve, so without
+  // this they could OVERRIDE a stale provider result but not simply re-run it, which is backwards.
+  // Note it is per-action, not per-check — a credit reviewer who can re-run the employment lookup can
+  // also re-run the (billable) bureau pull.
   | "verification:retry"
   // The DSA self-service portal (own leads, outreach, own commissions/earnings). DSA gets this and
   // NOTHING else — explicitly not customer:view, not leads:manage, not loan:pipeline: a DSA must
@@ -94,11 +99,19 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   // The credit roles absorbed the deleted KYC_APPROVER (V45). The Executive holds kyc:approve
   // because the sanction IS the credit decision — there is no Head counter-approval; the Head's
   // loan:approve now gates assignment (handing work out), not a second sign-off.
-  CREDIT_EXECUTIVE: ["kyc:approve", "loan:review", "customer:view", "loan:pipeline", "document:upload"],
+  CREDIT_EXECUTIVE: [
+    "kyc:approve",
+    "loan:review",
+    "customer:view",
+    "loan:pipeline",
+    "document:upload",
+    "verification:retry",
+  ],
   CREDIT_HEAD: [
     "kyc:approve",
     "loan:review",
     "loan:approve",
+    "verification:retry",
     "customer:view",
     "customer:view:all",
     "customer:assign",

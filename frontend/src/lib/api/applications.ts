@@ -1174,6 +1174,14 @@ export const verificationApi = {
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau`, "POST", otp ? { otp } : undefined),
 
   /**
+   * EPFO/UAN employment lookup. Takes no body — every input (PAN, mobile, DOB, name, declared
+   * employer) is read off the stored profile, so it can only run once those are saved. Advisory:
+   * it never gates KYC, and a borrower with no EPFO record (a first job, a cash employer, a non-PF
+   * establishment) legitimately comes back REVIEW rather than PASS.
+   */
+  employment: (id: number) => bff<StepResult>(`${BORROWER_BASE}/${id}/verify/employment`, "POST"),
+
+  /**
    * Declared salary + uploaded slip object keys (min 3 months). Optionally sets the salary-credit day
    * (1–31) in the same call — used by the reborrow salary step so the customer confirms their salary
    * day alongside re-verifying income; omitted on the first-time onboarding path (day set at apply).
