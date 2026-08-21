@@ -17,15 +17,7 @@ import { formatRupees } from "@/components/staff/credit/tradeline-table";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
-import {
-  Section,
-  KV,
-  Bool,
-  DocumentsTab,
-  RemarksTab,
-  CustomerDocsByType,
-  NeedsManualReviewBadge,
-} from "@/components/staff/detail-parts";
+import { Bool, CallLogRow, CustomerDocsByType, DocumentsTab, KV, NeedsManualReviewBadge, RemarksTab, Section } from "@/components/staff/detail-parts";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { stageOf, STAGE_LABELS } from "@/lib/domain/journey";
@@ -134,7 +126,7 @@ export function CustomerTabBody({
       case "calls":
         return (
           <div className="space-y-6">
-            <CallLogsTab customerId={customerId} />
+            <CallLogsTab customerId={customerId} loans={detail.loans} />
             <Section title="Remarks">
               <RemarksTab customerId={customerId} />
             </Section>
@@ -632,9 +624,7 @@ function AadhaarCard({ applicationId }: { applicationId: number }) {
 // ---------------------------------------------------------------------------
 
 function LoansTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void }) {
-  const [selectedLoan, setSelectedLoan] = React.useState<LoanView | null>(null);
-  const appIdFor = (loanId: number) =>
-    c.applications.find((a) => a.loanId === loanId)?.id ?? null;
+  const [selectedLoanId, setSelectedLoanId] = React.useState<number | null>(null);
 
   return (
     <div className="space-y-4">
@@ -676,7 +666,7 @@ function LoansTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void 
         ) : (
           <div className="space-y-3">
             {c.loans.map((l) => (
-              <LoanCard key={l.id} loan={l} onSelect={() => setSelectedLoan(l)} />
+              <LoanCard key={l.id} loan={l} onSelect={() => setSelectedLoanId(l.id)} />
             ))}
           </div>
         )}
@@ -702,13 +692,7 @@ function LoansTab({ c, onChanged }: { c: CustomerDetail; onChanged?: () => void 
         )}
       </Section>
 
-      {selectedLoan && (
-        <LoanDetailDialog
-          loan={selectedLoan}
-          applicationId={appIdFor(selectedLoan.id)}
-          onClose={() => setSelectedLoan(null)}
-        />
-      )}
+      <LoanDetailDialog loanId={selectedLoanId} onClose={() => setSelectedLoanId(null)} />
     </div>
   );
 }
@@ -757,12 +741,16 @@ function CancelButton({ appId, onDone }: { appId: number; onDone?: () => void })
 // Call logs
 // ---------------------------------------------------------------------------
 
-function CallLogsTab({ customerId }: { customerId: number }) {
+function CallLogsTab({ customerId, loans }: { customerId: number; loans: LoanView[] }) {
   const qc = useQueryClient();
   const [callType, setCallType] = React.useState("OUTBOUND");
   const [outcome, setOutcome] = React.useState("CONNECTED");
   const [callbackOn, setCallbackOn] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  // "Relates to loan" — how a call gets tagged to a loan (the loan detail modal itself is
+  // read-only). Defaults to the customer's one loan when there's only one to pick; otherwise the
+  // caller has to choose, since guessing wrong would mistag the call.
+  const [loanId, setLoanId] = React.useState(loans.length === 1 ? String(loans[0].id) : "");
 
   const q = useQuery({
     queryKey: ["customer-call-logs", customerId],
@@ -775,6 +763,7 @@ function CallLogsTab({ customerId }: { customerId: number }) {
         outcome,
         callbackOn: outcome === "CALLBACK" && callbackOn ? callbackOn : null,
         notes: notes.trim() || null,
+        loanId: loanId ? Number(loanId) : undefined,
       }),
     onSuccess: () => {
       setNotes("");
@@ -783,6 +772,14 @@ function CallLogsTab({ customerId }: { customerId: number }) {
       qc.invalidateQueries({ queryKey: ["customer-activity", customerId] });
     },
   });
+
+  const loanOptions = [
+    { value: "", label: "— not loan-specific —" },
+    ...loans.map((l) => ({
+      value: String(l.id),
+      label: `#${l.id} · disbursed ${l.disbursedOn ? formatDate(l.disbursedOn) : "—"}`,
+    })),
+  ];
 
   const logs = q.data ?? [];
   return (
@@ -803,6 +800,15 @@ function CallLogsTab({ customerId }: { customerId: number }) {
           className="!mb-0"
         />
       </div>
+      {loans.length > 0 && (
+        <Select
+          label="Relates to loan"
+          value={loanId}
+          onChange={(e) => setLoanId(e.target.value)}
+          options={loanOptions}
+          className="!mb-0"
+        />
+      )}
       {outcome === "CALLBACK" && (
         <label className="block text-xs text-muted">
           Callback on
@@ -837,17 +843,7 @@ function CallLogsTab({ customerId }: { customerId: number }) {
       ) : (
         <ul className="space-y-2">
           {logs.map((r) => (
-            <li key={r.id} className="rounded border border-line p-2.5">
-              <p className="text-sm font-semibold text-ink">
-                {r.callType} · {r.outcome}
-                {r.callbackOn ? ` · callback ${r.callbackOn}` : ""}
-              </p>
-              {r.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{r.notes}</p>}
-              <p className="mt-1 text-[8.8px] text-muted">
-                {r.author ?? "staff"}
-                {r.at ? ` · ${formatDateTime(r.at)}` : ""}
-              </p>
-            </li>
+            <CallLogRow key={r.id} log={r} />
           ))}
         </ul>
       )}
