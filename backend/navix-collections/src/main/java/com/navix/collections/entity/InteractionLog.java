@@ -54,4 +54,12 @@ public class InteractionLog {
 
     @Column(name = "logged_at", nullable = false, updatable = false)
     private Instant loggedAt = Instant.now();
+
+    /**
+     * The staffer who logged this interaction (FK to {@code staff_user.id}); null on pre-V59 rows.
+     * Without it a Collection Executive's call activity is unattributable, which is exactly the
+     * "are they actually logging their calls?" signal the staff-performance dashboard reports on.
+     */
+    @Column(name = "logged_by_staff_id")
+    private Long loggedByStaffId;
 }

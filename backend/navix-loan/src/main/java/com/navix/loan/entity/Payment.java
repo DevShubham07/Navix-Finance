@@ -8,6 +8,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.time.LocalDate;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -72,4 +73,18 @@ public class Payment extends BaseAuditEntity {
     /** Optional free-text elaboration alongside {@link #rejectionReason}. */
     @Column(name = "rejection_note")
     private String rejectionNote;
+
+    /**
+     * The Accountant who verified or rejected this payment (FK to {@code staff_user.id}); null on
+     * rows decided before V59. Which way they went is {@link #status} — this records only who and
+     * when, so the two can never disagree.
+     *
+     * <p>Deliberately not {@code updatedBy}: that column holds the actor's mutable display name
+     * (see V59's header) and is overwritten by any later write to the row.
+     */
+    @Column(name = "decided_by")
+    private Long decidedBy;
+
+    @Column(name = "decided_at")
+    private Instant decidedAt;
 }

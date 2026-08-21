@@ -40,4 +40,13 @@ public class CustomerCallLog extends BaseAuditEntity {
 
     @Column(name = "notes", columnDefinition = "text")
     private String notes;
+
+    /**
+     * The staffer who logged this call (FK to {@code staff_user.id}); null on pre-V59 rows.
+     * {@code createdBy} (from {@link com.navix.common.entity.BaseAuditEntity}) holds their display
+     * name, which a staffer can change via {@code PUT /api/staff/me} and which is not unique — so it
+     * cannot key a per-employee aggregation. This can.
+     */
+    @Column(name = "created_by_staff_id")
+    private Long createdByStaffId;
 }

@@ -19,6 +19,7 @@ import {
   Files,
   ListChecks,
   History,
+  Gauge,
   Gift,
   Phone,
   LogOut,
@@ -158,6 +159,9 @@ const NAV: NavGroup[] = [
       { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
       // No `perm`: every staffer may read their own decision history (the server scopes it).
       { label: "My decisions", href: "/staff/my-decisions", Icon: History, hideFor: ["DSA"] },
+      // No `perm`: the server scopes the roster (ADMIN → company, Head → team, else self), so
+      // gating the route would only hide a page that already shows the caller their own numbers.
+      { label: "Staff performance", href: "/staff/performance", Icon: Gauge, hideFor: ["DSA"] },
       { label: "Leads", href: "/staff/leads", Icon: Phone, perm: "leads:manage" },
       { label: "Telecalling", href: "/staff/telecalling", Icon: Phone, perm: "leads:manage" },
       { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },

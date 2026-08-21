@@ -4,6 +4,7 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
+import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
@@ -12,10 +13,14 @@ import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -96,6 +101,207 @@ public class DecisionHistoryService {
         return events.stream()
                 .map(e -> view(e, profileByApp, customerIdByApp, assigneeNames))
                 .toList();
+    }
+
+    /**
+     * Actions that count as *approving* something. Deliberately NOT derived from
+     * {@link #DECISION_ACTIONS}: that set is about "is this row worth showing", and it both omits
+     * real staff decisions ({@code ADMIN_FORCE_DISBURSE}) and still lists actions nothing has emitted
+     * since V45/V48 ({@code EXEC_APPROVE}, {@code HEAD_APPROVE}, {@code DISB_ACCEPT},
+     * {@code VALIDATE_FAIL}). Counting approvals off it would report work nobody did.
+     */
+    private static final Set<String> ACCEPT_ACTIONS =
+            Set.of("KYC_APPROVE", "SANCTION", "VALIDATE_SUCCESS", "ADMIN_FORCE_DISBURSE");
+
+    /**
+     * Actions that count as *turning something down*.
+     *
+     * <p>{@code AUTO_REJECT_*} is excluded on purpose — it is a dynamic action prefix written by the
+     * system's own auto-reject rules, not a human decision, and crediting it to whoever happened to
+     * be the actor would inflate their rejection count with work they never did.
+     */
+    private static final Set<String> REJECT_ACTIONS =
+            Set.of("KYC_REJECT", "REJECT_LEAD", "DISB_REJECT", "CANCEL");
+
+    /** Assignment actions — the clock-start for turnaround. */
+    private static final Set<String> ASSIGN_ACTIONS = Set.of("ASSIGN", "REASSIGN");
+
+    /**
+     * Prefix of the system's own auto-reject rules. The actor on these rows is whoever's request
+     * happened to trip the rule, not someone who made a decision, so they are excluded from every
+     * per-person count — including the total. Counting them only in the total would contradict
+     * leaving them out of the rejections, and would make the totals disagree with the per-action
+     * list on /staff/my-decisions that this dashboard links into.
+     */
+    private static final String AUTO_REJECT_PREFIX = "AUTO_REJECT_";
+
+    /** The product's only operating timezone; "today" means today in Delhi, never UTC. */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /**
+     * One employee's work over a window. Counts are of actions actually attributable to them;
+     * {@code null} means "we cannot measure this", never zero — a fabricated 0 reads as
+     * "this person did nothing", which is a materially different claim.
+     *
+     * @param avgTurnaroundMinutes mean time from the file being assigned to them until they acted;
+     *                             null when none of their decisions had a preceding assignment
+     * @param pendingNow           live count of files sitting with them right now (not windowed)
+     * @param moneyPaise           total sanctioned/released value they moved in the window
+     * @param activeDays           distinct IST days on which they did anything
+     * @param firstActionAt        earliest action in the window (their "start")
+     * @param lastActionAt         latest action in the window
+     */
+    public record StaffPerformanceRow(Long staffId, String staffName, String role, boolean active,
+                                      long accepted, long rejected, long totalActions,
+                                      long activeDays, Long avgTurnaroundMinutes, long pendingNow,
+                                      long moneyPaise, Instant firstActionAt, Instant lastActionAt) {
+    }
+
+    /** One day's total action count across the whole roster — the trend line. */
+    public record ActivityPoint(LocalDate date, long actions) {
+    }
+
+    /** The staff-performance payload: a row per employee plus the roster-wide daily series. */
+    public record StaffPerformanceSummary(List<StaffPerformanceRow> rows, List<ActivityPoint> daily) {
+    }
+
+    /**
+     * Aggregate every employee's work over {@code [from, to]} (inclusive dates, IST). Both null =
+     * all time. ADMIN sees the whole company; a Head sees only their own team; everyone else sees
+     * only themselves — the same scoping rule {@link #decisions(Long)} enforces.
+     */
+    @Transactional(readOnly = true)
+    public StaffPerformanceSummary summary(LocalDate from, LocalDate to) {
+        List<StaffSummary> roster = rosterForCaller();
+        if (roster.isEmpty()) {
+            return new StaffPerformanceSummary(List.of(), List.of());
+        }
+        // Half-open in IST, matching every other from/to endpoint in this codebase. An absent bound
+        // becomes the real limit of the data rather than a null: nothing predates the epoch and
+        // nothing is logged in the future, so "all time" needs no separate query (and Postgres
+        // cannot type-infer a bare null bound anyway).
+        Instant fromInst = from == null ? Instant.EPOCH : from.atStartOfDay(IST).toInstant();
+        Instant toInst = to == null ? Instant.now() : to.plusDays(1).atStartOfDay(IST).toInstant();
+
+        Map<String, StaffSummary> byActorId = roster.stream().collect(Collectors.toMap(
+                s -> String.valueOf(s.id()), Function.identity(), (a, b) -> a));
+
+        // ponytail: buckets the window's events in memory rather than pushing GROUP BY into SQL —
+        // one indexed query feeds counts, active days, turnaround, money AND the trend series. Swap
+        // in projections if an all-time read over a large trail gets slow (DashboardService already
+        // does a bare findAll(), so this is not the first place that would hurt).
+        List<ApplicationEvent> events =
+                eventRepository.findForActorsInWindow(byActorId.keySet(), fromInst, toInst);
+
+        Map<Long, Long> pendingByStaff = applicationRepository
+                .countGroupByAssignedExecutive(ApplicationStatus.CREDIT_EXEC_PENDING).stream()
+                .collect(Collectors.toMap(c -> c.getStaffId(), c -> c.getCount(), (a, b) -> a));
+
+        Map<String, List<ApplicationEvent>> byActor =
+                events.stream().collect(Collectors.groupingBy(ApplicationEvent::getActorId));
+        Map<Long, Instant> assignedAt = assignmentClock(events);
+
+        List<StaffPerformanceRow> rows = roster.stream()
+                .map(s -> row(s, byActor.getOrDefault(String.valueOf(s.id()), List.of()),
+                        assignedAt, pendingByStaff))
+                .toList();
+
+        Map<LocalDate, Long> perDay = events.stream()
+                .filter(e -> e.getAction() == null || !e.getAction().startsWith(AUTO_REJECT_PREFIX))
+                .collect(Collectors.groupingBy(
+                        e -> LocalDate.ofInstant(e.getAt(), IST), TreeMap::new, Collectors.counting()));
+        List<ActivityPoint> daily = perDay.entrySet().stream()
+                .map(e -> new ActivityPoint(e.getKey(), e.getValue()))
+                .toList();
+
+        return new StaffPerformanceSummary(rows, daily);
+    }
+
+    /**
+     * When each application was last handed to somebody, from the assignment events in the window.
+     *
+     * <p>Only assignments that fall inside the window are visible here, so a decision on a file
+     * assigned before it simply has no clock-start and is left out of the turnaround average rather
+     * than being timed from an invented origin.
+     */
+    private Map<Long, Instant> assignmentClock(List<ApplicationEvent> events) {
+        Map<Long, Instant> latest = new HashMap<>();
+        for (ApplicationEvent e : events) {
+            if (ASSIGN_ACTIONS.contains(e.getAction())) {
+                latest.merge(e.getApplicationId(), e.getAt(),
+                        (a, b) -> a.isAfter(b) ? a : b);
+            }
+        }
+        return latest;
+    }
+
+    private StaffPerformanceRow row(StaffSummary staff, List<ApplicationEvent> mine,
+                                    Map<Long, Instant> assignedAt, Map<Long, Long> pendingByStaff) {
+        long accepted = 0;
+        long rejected = 0;
+        long moneyPaise = 0;
+        long turnaroundTotalMinutes = 0;
+        long turnaroundSamples = 0;
+        Instant first = null;
+        Instant last = null;
+        Set<LocalDate> days = new HashSet<>();
+
+        long humanActions = 0;
+        for (ApplicationEvent e : mine) {
+            String action = e.getAction();
+            if (action != null && action.startsWith(AUTO_REJECT_PREFIX)) {
+                continue; // the system's, not theirs — see AUTO_REJECT_PREFIX
+            }
+            humanActions++;
+            boolean isAccept = ACCEPT_ACTIONS.contains(action);
+            if (isAccept) {
+                accepted++;
+            } else if (REJECT_ACTIONS.contains(action)) {
+                rejected++;
+            }
+            days.add(LocalDate.ofInstant(e.getAt(), IST));
+            if (first == null || e.getAt().isBefore(first)) {
+                first = e.getAt();
+            }
+            if (last == null || e.getAt().isAfter(last)) {
+                last = e.getAt();
+            }
+            // Money and the assignee id are already parsed out of the free-text notes column for
+            // /staff/my-decisions — reuse that parser rather than re-reading the string here.
+            DecisionNotes.Parsed parsed = DecisionNotes.parse(e.getNotes());
+            if (isAccept && parsed.amountPaise() != null) {
+                moneyPaise += parsed.amountPaise();
+            }
+            Instant handedOver = assignedAt.get(e.getApplicationId());
+            if (handedOver != null && (isAccept || REJECT_ACTIONS.contains(action))
+                    && !e.getAt().isBefore(handedOver)) {
+                turnaroundTotalMinutes += ChronoUnit.MINUTES.between(handedOver, e.getAt());
+                turnaroundSamples++;
+            }
+        }
+
+        Long avgTurnaround = turnaroundSamples == 0 ? null : turnaroundTotalMinutes / turnaroundSamples;
+        return new StaffPerformanceRow(staff.id(), staff.name(), staff.role(), staff.active(),
+                accepted, rejected, humanActions, days.size(), avgTurnaround,
+                pendingByStaff.getOrDefault(staff.id(), 0L), moneyPaise, first, last);
+    }
+
+    /** Who the caller is allowed to see: ADMIN everyone, a Head their team, anyone else themselves. */
+    private List<StaffSummary> rosterForCaller() {
+        String role = ActorContext.get().role();
+        if ("ADMIN".equals(role)) {
+            return staffDirectory.listEveryone();
+        }
+        Set<String> team = TEAM_OF.get(role);
+        if (team != null) {
+            return team.stream().flatMap(r -> staffDirectory.listActive(r).stream()).toList();
+        }
+        try {
+            return staffDirectory.findStaff(Long.valueOf(ActorContext.get().id()))
+                    .map(List::of).orElseGet(List::of);
+        } catch (RuntimeException e) {
+            return List.of();
+        }
     }
 
     /** Staff whose history the caller may open — for the Head's team switcher. */

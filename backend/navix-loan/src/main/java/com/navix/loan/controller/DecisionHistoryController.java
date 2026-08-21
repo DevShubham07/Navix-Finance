@@ -6,8 +6,11 @@ import com.navix.common.staff.StaffSummary;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.service.DecisionHistoryService;
 import com.navix.loan.service.DecisionHistoryService.DecisionView;
+import com.navix.loan.service.DecisionHistoryService.StaffPerformanceSummary;
+import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -29,6 +32,19 @@ public class DecisionHistoryController {
     public ApiResponse<List<DecisionView>> list(@RequestParam(required = false) Long staffId) {
         requireStaff();
         return ApiResponse.ok(decisions.decisions(staffId));
+    }
+
+    /**
+     * Per-employee work totals over a window — the staff-performance dashboard. Both dates optional
+     * (omit for all time), inclusive, interpreted in IST. Scoping is the service's job: ADMIN gets
+     * the whole company, a Head their team, anyone else just themselves.
+     */
+    @GetMapping("/summary")
+    public ApiResponse<StaffPerformanceSummary> summary(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        requireStaff();
+        return ApiResponse.ok(decisions.summary(from, to));
     }
 
     /** Staff whose history the caller may open (a Head's team; everything for ADMIN). */

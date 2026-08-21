@@ -35,4 +35,12 @@ public interface StaffDirectory {
      * {@link #listActive(String)}. An unknown role name yields an empty list.
      */
     List<StaffSummary> listAll(String role);
+
+    /**
+     * Every staff member, any role, any status — for an ADMIN roster that must account for the whole
+     * company rather than a named role. The role-scoped {@link #listAll(String)}/{@link
+     * #listActive(String)} cannot express "everyone" without the caller hardcoding the role list,
+     * which then silently misses any role added later.
+     */
+    List<StaffSummary> listEveryone();
 }

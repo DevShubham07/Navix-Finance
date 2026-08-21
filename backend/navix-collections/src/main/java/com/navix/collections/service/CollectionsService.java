@@ -217,12 +217,22 @@ public class CollectionsService {
         log.setPromiseToPayDate(promiseToPayDate);
         log.setProofRef(proofRef);
         log.setLoggedAt(Instant.now());
+        log.setLoggedByStaffId(actorStaffIdOrNull());
         return interactionRepository.save(log);
     }
 
     @Transactional(readOnly = true)
     public List<InteractionLog> listInteractions(UUID caseId) {
         return interactionRepository.findByCollectionCaseIdOrderByLoggedAtDesc(caseId);
+    }
+
+    /** The acting staff id, or null when it isn't resolvable (system paths) — never a guess. */
+    private Long actorStaffIdOrNull() {
+        try {
+            return Long.valueOf(ActorContext.get().id());
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     // --- view builders -----------------------------------------------------

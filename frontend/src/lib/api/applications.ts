@@ -146,6 +146,46 @@ export interface DecisionView {
 }
 
 /**
+ * One employee's work over a window (backs /staff/performance).
+ *
+ * A `null` count means "we cannot measure this", never zero — rendering 0 for an unmeasurable
+ * metric reads as "this person did nothing", which is a materially different claim about a
+ * colleague. Only `avgTurnaroundMinutes` can be null today; the rest are real counts.
+ */
+export interface StaffPerformanceRow {
+  staffId: number;
+  staffName: string;
+  role: StaffRoleName;
+  active: boolean;
+  accepted: number;
+  rejected: number;
+  totalActions: number;
+  /** Distinct IST days on which they did anything. */
+  activeDays: number;
+  /** Mean minutes from the file being assigned to them until they acted; null = no measurable pair. */
+  avgTurnaroundMinutes: number | null;
+  /** Live count of files sitting with them right now — a snapshot, NOT windowed. */
+  pendingNow: number;
+  /** Total value they sanctioned/released in the window, integer paise. */
+  moneyPaise: number;
+  /** Their first action in the window — the closest thing to a "start time". */
+  firstActionAt: string | null;
+  lastActionAt: string | null;
+}
+
+/** One day's action count across the whole visible roster — the trend line. */
+export interface StaffActivityPoint {
+  /** yyyy-mm-dd */
+  date: string;
+  actions: number;
+}
+
+export interface StaffPerformanceSummary {
+  rows: StaffPerformanceRow[];
+  daily: StaffActivityPoint[];
+}
+
+/**
  * True when a disbursed loan is past its due date — the DPD definition used across this product
  * (`daysBetween` compares calendar dates, so this is timezone-safe). Falls back to the application
  * status only when no loan due date is known.
@@ -1418,6 +1458,19 @@ export const staffApi = {
   /** Own decisions by default; a Head may pass a team member's id, ADMIN anyone's. */
   decisions: (staffId?: number) =>
     bff<DecisionView[]>(`/api/staff/decisions${staffId ? `?staffId=${staffId}` : ""}`, "GET"),
+
+  /**
+   * Per-employee work totals over a window — the staff-performance dashboard. Omit both dates for
+   * all time. Scoping is the server's: ADMIN gets the company, a Head their team, anyone else self.
+   */
+  performance: (from?: string, to?: string) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    const suffix = qs.toString();
+    return bff<StaffPerformanceSummary>(
+      `/api/staff/decisions/summary${suffix ? `?${suffix}` : ""}`, "GET");
+  },
 
   /** Staff whose decision history the caller may open (a Head's team; everyone for ADMIN). */
   inspectableStaff: () => bff<StaffSummary[]>(`/api/staff/decisions/inspectable`, "GET"),

@@ -991,7 +991,17 @@ public class CustomerService {
         c.setOutcome(req.outcome().trim());
         c.setCallbackOn(req.callbackOn());
         c.setNotes(req.notes() != null ? req.notes().trim() : null);
+        c.setCreatedByStaffId(actorStaffIdOrNull());
         return CallLogView.of(callLogRepository.save(c));
+    }
+
+    /** The acting staff id, or null when it isn't resolvable (system paths) — never a guess. */
+    private Long actorStaffIdOrNull() {
+        try {
+            return Long.valueOf(ActorContext.get().id());
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** "monthlySalaryPaise"/"KYC_CREDIT_APPROVE" → "Monthly salary paise"/"Kyc credit approve". */

@@ -106,6 +106,7 @@ public class RepaymentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Payment", String.valueOf(paymentId)));
         if (payment.getStatus() != PaymentStatus.VERIFIED) {
             payment.setStatus(PaymentStatus.VERIFIED);
+            stampDecider(payment);
             paymentRepository.save(payment);
         }
         recomputeOutstanding(payment.getLoanId());
@@ -114,6 +115,22 @@ public class RepaymentService {
                 loan.getId(), loan.getCustomerId(), payment.getId(), payment.getAmount(),
                 loan.getStatus() == LoanStatus.CLOSED, Instant.now()));
         return payment;
+    }
+
+    /**
+     * Record WHO decided this payment and when (V59) — the Accountant's verify/reject was previously
+     * unattributable, which left their core daily work invisible to the staff-performance dashboard.
+     * Deliberately not {@code updatedBy}: that holds a mutable display name and any later write to
+     * the row overwrites it. Which way the decision went stays on {@code status}.
+     */
+    private void stampDecider(Payment payment) {
+        try {
+            payment.setDecidedBy(Long.valueOf(ActorContext.get().id()));
+        } catch (RuntimeException e) {
+            // No resolvable staff id (system/scheduler path) — leave it null rather than guess.
+            payment.setDecidedBy(null);
+        }
+        payment.setDecidedAt(Instant.now());
     }
 
     /** The fixed rejection-reason picklist — kept here (not a DB enum/check) to match how
@@ -146,6 +163,7 @@ public class RepaymentService {
             payment.setStatus(PaymentStatus.REJECTED);
             payment.setRejectionReason(reason);
             payment.setRejectionNote(note);
+            stampDecider(payment);
             paymentRepository.save(payment);
         }
         Loan loan = requireLoan(payment.getLoanId());

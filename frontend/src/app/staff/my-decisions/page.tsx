@@ -46,6 +46,15 @@ export default function MyDecisionsPage() {
   const me = useStaffMe();
   const [staffId, setStaffId] = React.useState("");
 
+  // Seeded from `?staffId=` so the staff-performance table can link straight into one person's
+  // history. Read off `location` in an effect rather than via `useSearchParams`, which would drag
+  // this page behind a Suspense boundary for static prerendering; the switcher below stays the
+  // source of truth afterwards. The server still enforces who may be opened.
+  React.useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("staffId");
+    if (requested) setStaffId(requested);
+  }, []);
+
   const team = useQuery({
     queryKey: ["decisions-inspectable"],
     queryFn: () => staffApi.inspectableStaff(),

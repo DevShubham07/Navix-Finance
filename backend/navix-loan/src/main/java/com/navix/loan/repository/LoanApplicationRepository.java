@@ -62,4 +62,23 @@ public interface LoanApplicationRepository
 
         Long getCount();
     }
+
+    /**
+     * Live count of applications sitting with each executive at {@code status} — the
+     * "in their queue right now" figure on the staff-performance dashboard. A snapshot, deliberately
+     * not date-windowed: it answers "what are they holding", not "what did they do".
+     */
+    @Query("""
+            select a.assignedExecutiveId as staffId, count(a) as count from LoanApplication a
+            where a.assignedExecutiveId is not null and a.status = :status
+            group by a.assignedExecutiveId
+            """)
+    List<AssigneeCount> countGroupByAssignedExecutive(@Param("status") ApplicationStatus status);
+
+    /** Projection for {@link #countGroupByAssignedExecutive(ApplicationStatus)}. */
+    interface AssigneeCount {
+        Long getStaffId();
+
+        Long getCount();
+    }
 }
