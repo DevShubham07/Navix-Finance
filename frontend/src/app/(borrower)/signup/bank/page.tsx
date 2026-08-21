@@ -3,13 +3,13 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Landmark, Phone, FileCheck2, UploadCloud, X } from "lucide-react";
-import { Input } from "@/components/ui";
+import { Input, Combobox } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice, completeStep, useSavedProfile } from "@/lib/onboarding";
 import { verificationApi } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
-import { INDIAN_BANKS, isListedIndianBank } from "@/lib/indian-banks";
+import { INDIAN_BANKS } from "@/lib/indian-banks";
 import { normalizeMobile } from "@/lib/utils";
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
@@ -21,8 +21,7 @@ export default function SignupBankPage() {
   const router = useRouter();
   const { mounted, appId } = useOnboarding();
   const saved = useSavedProfile(appId);
-  const [bankChoice, setBankChoice] = React.useState("");
-  const [otherBank, setOtherBank] = React.useState("");
+  const [bank, setBank] = React.useState("");
   const [account, setAccount] = React.useState("");
   const [ifsc, setIfsc] = React.useState("");
   const [mobile, setMobile] = React.useState("");
@@ -36,13 +35,7 @@ export default function SignupBankPage() {
 
   React.useEffect(() => {
     if (!saved) return;
-    if (saved.salaryBank) {
-      if (isListedIndianBank(saved.salaryBank)) setBankChoice(saved.salaryBank);
-      else {
-        setBankChoice("Other bank");
-        setOtherBank(saved.salaryBank);
-      }
-    }
+    if (saved.salaryBank) setBank(saved.salaryBank);
     if (saved.salaryAccountNumber) setAccount(saved.salaryAccountNumber);
     if (saved.salaryIfsc) setIfsc(saved.salaryIfsc);
     if (saved.salaryAccountMobile) setMobile(saved.salaryAccountMobile);
@@ -52,8 +45,7 @@ export default function SignupBankPage() {
     if (mounted && appId == null) router.replace("/signup/start");
   }, [mounted, appId, router]);
 
-  const bank = bankChoice === "Other bank" ? otherBank : bankChoice;
-  const bankOk = bank.trim().length > 1 && (bankChoice === "Other bank" || isListedIndianBank(bankChoice));
+  const bankOk = bank.trim().length > 1;
   const accountOk = /^\d{9,18}$/.test(account);
   const ifscOk = IFSC_RE.test(ifsc);
   const mobileOk = /^[6-9]\d{9}$/.test(mobile);
@@ -133,30 +125,16 @@ export default function SignupBankPage() {
           Add the salary account your employer credits each month, and upload your bank statements
           (ideally the last 6 months).
         </p>
-        <Input
+        <Combobox
           label="Salary bank"
           required
-          value={bankChoice}
-          onChange={(e) => setBankChoice(e.target.value)}
+          options={INDIAN_BANKS}
+          value={bank}
+          onChange={setBank}
           placeholder="Search or select a bank"
-          list="indian-bank-options"
           leftIcon={<Landmark size={16} />}
-          error={touched && !bankOk ? "Select a listed bank or choose Other bank" : undefined}
+          error={touched && !bankOk ? "Enter your salary bank" : undefined}
         />
-        <datalist id="indian-bank-options">
-          {INDIAN_BANKS.map((name) => <option key={name} value={name} />)}
-          <option value="Other bank" />
-        </datalist>
-        {bankChoice === "Other bank" ? (
-          <Input
-            label="Other bank name"
-            required
-            value={otherBank}
-            onChange={(e) => setOtherBank(e.target.value)}
-            placeholder="Enter your bank's name"
-            error={touched && otherBank.trim().length < 2 ? "Enter your bank's name" : undefined}
-          />
-        ) : null}
         <Input
           label="Account number"
           required

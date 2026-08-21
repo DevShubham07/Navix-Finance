@@ -2,6 +2,7 @@
 export * from "./button";
 export * from "./input";
 export * from "./select";
+export * from "./combobox";
 export * from "./card";
 export * from "./badge";
 export * from "./table";

@@ -5,10 +5,11 @@ import { LogOut, ShieldCheck, Save, Loader2, Lock, AlertTriangle } from "lucide-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { InfoRow, SummarySection } from "@/components/borrower/summary";
 import { KycProgress } from "@/components/borrower/kyc-progress";
-import { Input } from "@/components/ui";
+import { Input, Combobox } from "@/components/ui";
 import { useLiveApplication, useBorrowerLogout } from "@/lib/api/live-journey";
 import { borrowerApi, rupeesToPaise, type ApplicationStatus } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
+import { INDIAN_BANKS } from "@/lib/indian-banks";
 import type { KycCheck, KycState } from "@/lib/domain/borrower";
 
 /** Statuses at/after KYC clearance — all checks read as verified. */
@@ -123,7 +124,7 @@ export default function ProfilePage() {
               <Input label="Employer" value={employer} onChange={(e) => setEmployer(e.target.value)} className="!mb-0" />
               <Input label="Employment status" value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} className="!mb-0" />
               <Input label="Monthly salary (₹)" inputMode="numeric" value={salary} onChange={(e) => setSalary(e.target.value.replace(/[^\d]/g, ""))} className="!mb-0" />
-              <Input label="Salary bank" value={salaryBank} onChange={(e) => setSalaryBank(e.target.value)} className="!mb-0" />
+              <Combobox label="Salary bank" options={INDIAN_BANKS} value={salaryBank} onChange={setSalaryBank} className="!mb-0" />
             </div>
             <div className="mt-3 flex items-start gap-2 rounded border border-gold-soft bg-gold-50/60 px-3 py-2 text-xs text-ink">
               <AlertTriangle size={14} className="mt-0.5 flex-shrink-0 text-gold-dark" />
