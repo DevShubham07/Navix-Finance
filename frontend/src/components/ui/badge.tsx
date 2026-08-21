@@ -1,7 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-type BadgeVariant =
+export type BadgeVariant =
   | "default"
   | "primary"
   | "success"

@@ -190,12 +190,13 @@ public final class CustomerDtos {
     public record AssignOwnerRequest(Long staffId) {
     }
 
-    /** A staff call log on a customer. */
+    /** A staff call log on a customer. {@code loanId}, if given, must belong to the same customer. */
     public record AddCallLogRequest(
             @NotBlank String callType,
             @NotBlank String outcome,
             LocalDate callbackOn,
-            String notes) {
+            String notes,
+            Long loanId) {
     }
 
     public record CallLogView(
@@ -205,10 +206,11 @@ public final class CustomerDtos {
             LocalDate callbackOn,
             String notes,
             String author,
-            Instant at) {
+            Instant at,
+            Long loanId) {
         public static CallLogView of(CustomerCallLog c) {
             return new CallLogView(c.getId(), c.getCallType(), c.getOutcome(), c.getCallbackOn(),
-                    c.getNotes(), c.getCreatedBy(), c.getCreatedAt());
+                    c.getNotes(), c.getCreatedBy(), c.getCreatedAt(), c.getLoanId());
         }
     }
 }

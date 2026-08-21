@@ -248,6 +248,8 @@ export interface LoanView {
   status: string;
   /** Bank/UPI reference for the outgoing disbursal (captured at release). */
   disbursalTxnRef: string | null;
+  /** When the loan was settled in full. Null while it is still running. */
+  closedOn: string | null;
 }
 
 export interface OutstandingView {
@@ -750,6 +752,10 @@ export interface CallLogView {
   author: string | null;
   /** ISO timestamp. */
   at: string | null;
+  /** Which of the customer's loans this call was about, when the caller tagged one — null for a
+   *  general/pre-disbursal call. Added alongside the Loans register (WP4) so a call log can be
+   *  filtered to a specific loan from the loan detail modal, not just the customer as a whole. */
+  loanId: number | null;
 }
 
 export interface AddCallLogInput {
@@ -757,6 +763,8 @@ export interface AddCallLogInput {
   outcome: string;
   callbackOn?: string | null;
   notes?: string | null;
+  /** Tag the call to a specific loan (optional — most calls are still customer-level). */
+  loanId?: number;
 }
 
 /**
@@ -1597,9 +1605,12 @@ export const customersApi = {
   assignOwner: (customerId: number, staffId: number | null) =>
     bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}/owner`, "POST", { staffId }),
 
-  /** Staff call logs on a customer. */
-  callLogs: (customerId: number) =>
-    bff<CallLogView[]>(`${CUSTOMERS_BASE}/${customerId}/call-logs`, "GET"),
+  /** Staff call logs on a customer, optionally narrowed to one of their loans. */
+  callLogs: (customerId: number, loanId?: number) =>
+    bff<CallLogView[]>(
+      `${CUSTOMERS_BASE}/${customerId}/call-logs${loanId != null ? `?loanId=${loanId}` : ""}`,
+      "GET",
+    ),
 
   /** Add a staff call log to a customer. */
   addCallLog: (customerId: number, body: AddCallLogInput) =>
@@ -1612,6 +1623,82 @@ export const customersApi = {
   /** Documents across every one of this customer's applications, newest application first. */
   documents: (customerId: number) =>
     bff<ApplicationDocumentGroup[]>(`${CUSTOMERS_BASE}/${customerId}/documents`, "GET"),
+};
+
+// ---------------------------------------------------------------------------
+// Loans register (WP4) — routes under /api/staff/loans/*
+// ---------------------------------------------------------------------------
+
+/**
+ * One row of the company-wide Loans register — one row per disbursed loan (not per application;
+ * a customer with two advances over time has two rows). This is a PINNED CONTRACT shape: the
+ * register page, the loan detail modal, and the backend all agree on these exact field names.
+ * Dates are ISO `yyyy-mm-dd` strings (or null when the event hasn't happened yet); every money
+ * field is integer paise — format with `paiseToINR` at render time, never before.
+ */
+export interface LoanRegisterRow {
+  loanId: number;
+  customerId: number;
+  applicationId: number;
+
+  borrowerName: string;
+  mobile: string;
+  /** Already masked server-side (e.g. `ABCDE1234F` → `ABCXX1234X`-style masking) — safe to render as-is. */
+  panMasked: string;
+
+  /** 1-based: this is the customer's Nth advance (1 = their first loan ever). */
+  loanCycle: number;
+
+  principalPaise: number;
+  netDisbursedPaise: number;
+  totalRepayablePaise: number;
+  /** Penalty/prepayment-aware outstanding as of now — the same compute-on-read balance as
+   *  `GET /api/loan/{id}/outstanding`, not a stale cached column. */
+  outstandingPaise: number;
+  sanctionedAmountPaise: number;
+
+  sanctionedAt: string | null;
+  /** Non-null in practice — every row in this register is a loan that has actually disbursed. */
+  disbursedOn: string | null;
+  dueDate: string | null;
+  closedOn: string | null;
+
+  /** Day of month (1-31) the borrower's salary lands on, or null if never captured. */
+  salaryCreditDay: number | null;
+
+  /** Effective loan status (ACTIVE/OVERDUE/IN_COLLECTIONS/REPAID/CLOSED/…) — see
+   *  `lib/loans/segments.ts` for how this maps to the register's segment chips. */
+  status: string;
+  /** Days past due; 0 when not overdue. */
+  dpd: number;
+
+  assignedOfficerId: number | null;
+  assignedOfficerName: string | null;
+
+  /** The outgoing disbursal's transaction reference, when the Disbursement Head finalized directly
+   *  with a txn id (fast-path) or the Accountant recorded one. */
+  disbursalTxnRef: string | null;
+}
+
+const LOANS_BASE = "/api/staff/loans";
+
+export const loansApi = {
+  /**
+   * The loan register, optionally filtered by free-text `q` (borrower name / mobile / PAN / loan or
+   * application id — mirrors `customersApi.list`'s search), an inclusive `range.from`/`range.to`
+   * (yyyy-mm-dd) window over `disbursedOn`, and an exact `status` match (effective loan status, e.g.
+   * "OVERDUE"). All three are optional and independently combinable, same query-string assembly as
+   * `customersApi.list`.
+   */
+  list: (q?: string, range?: { from?: string; to?: string }, status?: string) => {
+    const qs = new URLSearchParams();
+    if (q) qs.set("q", q);
+    if (range?.from) qs.set("from", range.from);
+    if (range?.to) qs.set("to", range.to);
+    if (status) qs.set("status", status);
+    const search = qs.toString();
+    return bff<LoanRegisterRow[]>(`${LOANS_BASE}${search ? `?${search}` : ""}`, "GET");
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -2471,6 +2558,24 @@ const COLLECTIONS_BASE = "/api/staff/collections";
 export const collectionsApi = {
   listCases: () => bff<CaseView[]>(`${COLLECTIONS_BASE}/cases`, "GET"),
   getCase: (caseId: string) => bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases/${caseId}`, "GET"),
+
+  /**
+   * Look up the (open) collections case for a loan, from the loan side — used by the loan detail
+   * modal, which only knows the loan id, not whether/which case exists for it. Returns `null` when
+   * no case has been opened for this loan (a normal, expected answer for a loan that's current or
+   * whose case hasn't been opened yet), NOT an error. We distinguish that from a real failure by
+   * catching `ApplicationApiError` and checking `.status === 404` — the bff() helper always throws
+   * ApplicationApiError (never returns undefined) on a non-2xx response, so this is the one clean
+   * signal callers have without inventing a second response shape.
+   */
+  caseByLoan: async (loanId: number): Promise<CaseDetailView | null> => {
+    try {
+      return await bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases/by-loan/${loanId}`, "GET");
+    } catch (e) {
+      if (e instanceof ApplicationApiError && e.status === 404) return null;
+      throw e;
+    }
+  },
   openCase: (loanId: number) => bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases`, "POST", { loanId }),
   assignOfficer: (caseId: string, officerId: number) =>
     bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases/${caseId}/assign`, "POST", { officerId }),

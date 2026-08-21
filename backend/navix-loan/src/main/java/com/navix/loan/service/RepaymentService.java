@@ -19,7 +19,10 @@ import com.navix.loan.repository.PaymentRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -243,6 +246,60 @@ public class RepaymentService {
         int chargedPenaltyDays = Math.min(penaltyDays, LoanMath.LATE_PENALTY_CAP_DAYS);
         return new OutstandingBreakdown(owed, interest, penalty, verified, settled,
                 Math.max(0, interestDays), chargedPenaltyDays);
+    }
+
+    /**
+     * The batched twin of {@link #outstandingAsOf}: the same penalty/prepayment-aware balance for a
+     * whole set of loans in a small, fixed number of queries instead of one round trip per loan —
+     * {@link #outstandingBreakdownAsOf} alone costs 3 DB queries per loan (verified-payment sum, the
+     * loan reload inside {@code requireLoan}, and the settlement lookup), so a 50-row page would
+     * otherwise be ~150 queries. Callers must already hold the {@link Loan} rows (no reload here).
+     *
+     * <p>Runs <b>the same formula</b> {@link #outstandingBreakdownAsOf} uses, in memory, per loan —
+     * this is deliberate: the loan register, the repay page, and collections must all agree on
+     * "amount owed", so the math is not allowed to fork into a second implementation.
+     *
+     * <p>The verified-payment sums are pre-fetched in one grouped query
+     * ({@link PaymentRepository#sumAmountByLoanIdInAndStatus}). The approved-settlement lookup stays
+     * per-loan ({@link SettlementDirectory} exposes only a single-loan read) — settlements are rare
+     * (most loans have none), so this remaining per-loan call is far cheaper than the payment-sum
+     * query it replaces and does not undermine the batching.
+     *
+     * @param loans the loans to price (any subset; duplicates/foreign loans are harmless)
+     * @param asOf  the as-of date (defaults to today when null)
+     * @return loan id → outstanding paise, for every loan passed in
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, Long> outstandingForAll(List<Loan> loans, LocalDate asOf) {
+        if (loans.isEmpty()) {
+            return Map.of();
+        }
+        LocalDate at = asOf != null ? asOf : LocalDate.now();
+        List<Long> loanIds = loans.stream().map(Loan::getId).toList();
+        Map<Long, Long> verifiedByLoanId = paymentRepository
+                .sumAmountByLoanIdInAndStatus(loanIds, PaymentStatus.VERIFIED).stream()
+                .collect(Collectors.toMap(PaymentRepository.LoanAmount::getLoanId,
+                        PaymentRepository.LoanAmount::getTotal));
+
+        Map<Long, Long> result = new HashMap<>();
+        for (Loan loan : loans) {
+            LocalDate loanAt = at;
+            // Same freeze-at-close rule as outstandingBreakdownAsOf.
+            if (loan.getClosedOn() != null && loanAt.isAfter(loan.getClosedOn())) {
+                loanAt = loan.getClosedOn();
+            }
+            int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
+            int daysToAsOf = (int) Math.max(0L, ChronoUnit.DAYS.between(loan.getDisbursedOn(), loanAt));
+            int interestDays = Math.min(daysToAsOf, tenureDays + LoanMath.SALARY_GRACE_DAYS);
+            int rawDpd = loanMath.daysPastDue(loan.getDueDate(), loanAt);
+            int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
+            long verified = verifiedByLoanId.getOrDefault(loan.getId(), 0L);
+            long formulaOwed = loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
+            Long settled = settlementDirectory.approvedSettlementAmount(loan.getId()).orElse(null);
+            long owed = settled != null ? Math.min(formulaOwed, Math.max(0L, settled - verified)) : formulaOwed;
+            result.put(loan.getId(), owed);
+        }
+        return result;
     }
 
     /**

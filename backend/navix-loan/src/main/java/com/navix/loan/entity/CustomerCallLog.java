@@ -23,6 +23,10 @@ public class CustomerCallLog extends BaseAuditEntity {
     @Column(name = "customer_id", nullable = false)
     private Long customerId;
 
+    /** The loan this call was about, if any (must belong to {@link #customerId}); null = customer-level. */
+    @Column(name = "loan_id")
+    private Long loanId;
+
     /** OUTBOUND | INBOUND | MISSED */
     @Column(name = "call_type", nullable = false, length = 24)
     private String callType;

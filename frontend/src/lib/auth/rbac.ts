@@ -82,7 +82,12 @@ export type Permission =
   | "dsa:portal"
   // ADMIN administration of the DSA program (roster, company-wide lead register, commission ledger
   // pay/void/reassign, outreach audit).
-  | "dsa:manage";
+  | "dsa:manage"
+  // The company-wide Loans register (every disbursed loan, sortable/filterable, read-only). ADMIN
+  // for oversight; COLLECTION_HEAD because DPD/overdue triage is their job and the register is
+  // where they'd start a case. This token is display-only wording — the backend enforces the real
+  // gate (mirrors this file's own convention: see customer:view / document:upload above).
+  | "loan:register";
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
@@ -115,6 +120,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:view:all",
     "customer:assign",
     "loan:pipeline",
+    "loan:register",
   ],
   COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline"],
   // Telecaller: view customers, enter DSA-style leads, disposition calls, self-assign chase-up
@@ -142,6 +148,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "leads:manage",
     "referral:payout",
     "verification:retry",
+    "loan:register",
     // NOT dsa:portal — that is the DSA's own self-service portal, gated backend-side by
     // DsaService.requireDsaId() with a strict role equality and no ADMIN bypass (the portal is
     // scoped by JWT identity, and an ADMIN owns no lead/commission rows). Granting it here put

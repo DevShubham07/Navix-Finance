@@ -90,6 +90,54 @@ public class CollectionsService {
     }
 
     /**
+     * Full case detail for a real loan, resolved by loan id rather than the case's own UUID —
+     * for staff surfaces (e.g. a loan detail modal) that only know the loan id and want its
+     * collections activity. A loan with no open case is the normal state for a healthy loan, so
+     * that's a {@code ResourceNotFoundException} (404) here, not an error condition — callers
+     * treat 404 as "no case" rather than a failure to be surfaced.
+     *
+     * <p>If more than one case exists for the loan (not expected — {@link #openCase} is
+     * idempotent per loan — but not structurally prevented; see
+     * {@link CollectionCaseRepository#findFirstByLoanIdOrderByCreatedAtDesc}), this returns the
+     * most recently opened one rather than throwing.
+     *
+     * <p><b>Staff-only, unlike the sibling {@link #getCaseDetail(UUID)}.</b> That lookup is keyed
+     * by the case's random UUID, which is not practically guessable. This one is keyed by the
+     * loan id — a sequential bigint — so leaving it open the way its sibling is would let any
+     * authenticated borrower walk loan ids upward and harvest other borrowers' collections data.
+     * {@link #requireStaff()} closes that off.
+     *
+     * @throws ResourceNotFoundException if no case has been opened for this loan
+     * @throws BusinessException {@code FORBIDDEN_ROLE} if the caller is not staff
+     */
+    @Transactional(readOnly = true)
+    public CaseDetailView getCaseDetailByLoanId(Long loanId) {
+        requireStaff();
+        CollectionCase c = caseRepository.findFirstByLoanIdOrderByCreatedAtDesc(loanId)
+                .orElseThrow(() -> new ResourceNotFoundException("CollectionCase", "loan:" + loanId));
+        return buildDetail(c);
+    }
+
+    /**
+     * Staff-only guard for {@link #getCaseDetailByLoanId}. Mirrors the established
+     * {@code requireStaff}/{@code rejectDsa} shape used elsewhere in the codebase (see
+     * {@code ApplicationController.requireStaff} in navix-loan) — reject BORROWER/ANONYMOUS,
+     * then reject DSA (a DSA is staff but must never reach borrower-identifying data).
+     * Duplicated locally rather than shared cross-module, matching how the loan module
+     * keeps its own copy rather than factoring it into navix-common.
+     */
+    private void requireStaff() {
+        CurrentActor actor = ActorContext.get();
+        String role = actor != null ? actor.role() : null;
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+        if ("DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view collections cases");
+        }
+    }
+
+    /**
      * The collections worklist as enriched rows. Cases whose loan has settled (CLOSED/REPAID/
      * WRITTEN_OFF) are dropped so a fully-repaid loan no longer surfaces as an open case.
      */

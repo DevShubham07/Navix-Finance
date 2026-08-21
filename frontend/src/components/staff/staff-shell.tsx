@@ -25,6 +25,7 @@ import {
   ChevronRight,
   Briefcase,
   Banknote,
+  Landmark,
 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { NotificationBell } from "@/components/notifications/notification-bell";
@@ -33,7 +34,9 @@ import { collectionsApi, featureFlagsApi, type FeatureFlags } from "@/lib/api/ap
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
 import { cn } from "@/lib/utils";
 import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
+import { SEGMENTS as LOAN_SEGMENTS, SEGMENT_LABEL as LOAN_SEGMENT_LABEL, SEGMENT_TONE as LOAN_SEGMENT_TONE, type LoanSegment } from "@/lib/loans/segments";
 import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
+import type { BadgeVariant } from "@/components/ui/badge";
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
 
@@ -109,8 +112,10 @@ type NavItem = {
   perm?: Permission;
   /** Hide this item when the named dev-controlled feature flag is off (in addition to RBAC). */
   flag?: string;
-  /** Optional segment children (Customers). href for a child = `${parent.href}?seg=${seg}`. */
-  sub?: { label: string; seg: CustomerSegment }[];
+  /** Optional segment children (Customers, Loans). href for a child = `${parent.href}?seg=${seg}`.
+   *  `tone` drives an optional coloured status dot (e.g. loan segments) — omitted for segments
+   *  (like the customer ones) that don't carry a status colour. */
+  sub?: { label: string; seg: CustomerSegment | LoanSegment; tone?: BadgeVariant }[];
   collectionBuckets?: boolean;
   /** Roles that never see this item even if it has no `perm` (e.g. perm-less items that would
    *  otherwise leak to a firewalled role like DSA). */
@@ -164,6 +169,15 @@ const NAV: NavGroup[] = [
       { label: "DPD buckets", href: "/staff/collections", Icon: HandCoins, perm: "collections:interact", collectionBuckets: true },
       // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
       { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: "collections:interact" },
+      {
+        label: "Loans",
+        href: "/staff/loans",
+        Icon: Landmark,
+        perm: "loan:register",
+        // No explicit "All" child — same convention as Customers: the parent label itself
+        // (no `seg`) is the "all" view, so only the real segments get a chip.
+        sub: LOAN_SEGMENTS.map((seg) => ({ label: LOAN_SEGMENT_LABEL[seg], seg, tone: LOAN_SEGMENT_TONE[seg] })),
+      },
     ],
   },
   {
@@ -190,6 +204,14 @@ const NAV: NavGroup[] = [
     ],
   },
 ];
+
+/** Parent paths that expand into segment children (Customers, Loans, …). A plain "no seg" link that
+ *  shares one of these paths (e.g. the bare parent href itself) must not stay highlighted once a
+ *  `seg` child is active — derived from NAV so a new segmented entry never needs a second hardcoded
+ *  path check alongside it. */
+const SEGMENTED_PARENT_PATHS = new Set(
+  NAV.flatMap((g) => g.items).filter((it) => it.sub?.length).map((it) => it.href.split("?")[0]),
+);
 
 /** Flattened horizontal nav for the mobile strip — ignores `sub` (segment chips live on the page). */
 function MobileNavLinks({ role, pathname, flags }: { role: Parameters<typeof hasPermission>[0]; pathname: string; flags?: FeatureFlags }) {
@@ -301,7 +323,7 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
                           <ChevronRight size={14} className="flex-shrink-0 opacity-60 transition-transform group-open:rotate-90" />
                         </summary>
                         <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
-                          {sub.map(({ label: sl, seg }) => {
+                          {sub.map(({ label: sl, seg, tone }) => {
                             const childActive = parentActive && currentSeg === seg;
                             return (
                               <li key={seg}>
@@ -309,12 +331,23 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
                                   href={`${href}?seg=${seg}`}
                                   onClick={onNavigate}
                                   className={cn(
-                                    "block rounded px-2 py-1.5 text-xs transition-colors",
+                                    "flex items-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors",
                                     childActive
                                       ? "bg-white/10 font-semibold text-white"
                                       : "text-navix-300 hover:bg-white/5 hover:text-white",
                                   )}
                                 >
+                                  {/* Status dot only for segments carrying a success/error tone (e.g.
+                                      loan Active/Overdue) — Closed/All and Customers' segments stay undotted. */}
+                                  {(tone === "success" || tone === "error") && (
+                                    <span
+                                      aria-hidden
+                                      className={cn(
+                                        "h-1.5 w-1.5 flex-shrink-0 rounded-full",
+                                        tone === "success" ? "bg-success-500" : "bg-error-500",
+                                      )}
+                                    />
+                                  )}
                                   {sl}
                                 </Link>
                               </li>
@@ -326,9 +359,13 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
                   );
                 }
 
+                // A plain link whose own href carries no `seg` (e.g. "Unallocated customers") must
+                // NOT stay highlighted merely because it shares `pathOnly` with a segmented parent
+                // (Customers, Loans, …) that has an active `seg` child — that child owns the
+                // highlight alone. Driven by `SEGMENTED_PARENT_PATHS`, not a hardcoded path string.
                 const active = hrefSeg
                   ? pathname === pathOnly && currentSeg === hrefSeg
-                  : parentActive && !(pathOnly === "/staff/customers" && currentSeg);
+                  : parentActive && !(SEGMENTED_PARENT_PATHS.has(pathOnly) && currentSeg);
 
                 return (
                   <li key={href}>

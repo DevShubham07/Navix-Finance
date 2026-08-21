@@ -49,7 +49,9 @@ public final class LoanDtos {
             Long totalRepayablePaise,
             Long outstandingPaise,
             LoanStatus status,
-            String disbursalTxnRef) {
+            String disbursalTxnRef,
+            /** When the loan was settled in full (V50). Null while it is still running. */
+            LocalDate closedOn) {
 
         public static LoanView of(Loan l) {
             return of(l, l.getOutstanding(), l.getStatus());
@@ -64,7 +66,7 @@ public final class LoanDtos {
             return new LoanView(l.getId(), l.getCustomerId(), l.getPrincipal(), l.getProcessingFee(),
                     l.getGst(), l.getNetDisbursed(), l.getDailyInterestRate(), l.getDisbursedOn(),
                     l.getDueDate(), l.getTotalRepayable(), outstandingPaise, status,
-                    l.getDisbursalTxnRef());
+                    l.getDisbursalTxnRef(), l.getClosedOn());
         }
     }
 

@@ -24,7 +24,7 @@ export function LoanHistory({ customerId }: { customerId: number }) {
     enabled: load,
     retry: false,
   });
-  const [selected, setSelected] = React.useState<{ loan: LoanView; applicationId: number | null } | null>(null);
+  const [selectedLoanId, setSelectedLoanId] = React.useState<number | null>(null);
 
   if (!load) {
     return (
@@ -37,8 +37,7 @@ export function LoanHistory({ customerId }: { customerId: number }) {
   const c = q.data;
   const current = c?.loans.find((l) => OPEN_LOAN_STATUSES.has(l.status)) ?? null;
   const past = c ? c.loans.filter((l) => l !== current) : [];
-  const appIdFor = (loanId: number) => c?.applications.find((a) => a.loanId === loanId)?.id ?? null;
-  const open = (loan: LoanView) => setSelected({ loan, applicationId: appIdFor(loan.id) });
+  const open = (loan: LoanView) => setSelectedLoanId(loan.id);
 
   return (
     <div className="w-full rounded border border-line bg-white p-5 shadow-sm">
@@ -103,13 +102,7 @@ export function LoanHistory({ customerId }: { customerId: number }) {
         </div>
       )}
 
-      {selected && (
-        <LoanDetailDialog
-          loan={selected.loan}
-          applicationId={selected.applicationId}
-          onClose={() => setSelected(null)}
-        />
-      )}
+      <LoanDetailDialog loanId={selectedLoanId} onClose={() => setSelectedLoanId(null)} />
     </div>
   );
 }

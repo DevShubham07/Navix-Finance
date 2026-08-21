@@ -24,6 +24,7 @@ import {
   statusLabel,
   type DocumentView,
   type ApplicationDocumentGroup,
+  type CallLogView,
 } from "@/lib/api/applications";
 
 export const CUSTOMER_LEVEL_DOC_TYPES = new Set([
@@ -564,5 +565,28 @@ export function Bool({ on }: { on?: boolean | null }) {
     </span>
   ) : (
     <span className="text-muted">No</span>
+  );
+}
+
+/**
+ * One call-log row, shared verbatim between this tab and the loan detail modal's Calls tab
+ * (`loan-detail-dialog.tsx`) so the two never render the same data two different ways. Shows
+ * the loan tag whenever the log carries one — the modal filters rows before handing them here,
+ * so a bare `Loan #id` is enough context in either place.
+ */
+export function CallLogRow({ log }: { log: CallLogView }) {
+  return (
+    <li className="rounded border border-line p-2.5">
+      <p className="text-sm font-semibold text-ink">
+        {log.callType} · {log.outcome}
+        {log.callbackOn ? ` · callback ${log.callbackOn}` : ""}
+        {log.loanId != null ? ` · Loan #${log.loanId}` : ""}
+      </p>
+      {log.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{log.notes}</p>}
+      <p className="mt-1 text-[8.8px] text-muted">
+        {log.author ?? "staff"}
+        {log.at ? ` · ${formatDateTime(log.at)}` : ""}
+      </p>
+    </li>
   );
 }

@@ -484,6 +484,12 @@ table.data td strong { color: var(--navy); }
 .cal-divide { height: 1px; background: var(--line); margin: 4px 0 24px; }
 .cal-preset { padding: 7px 15px; border-radius: var(--pill); border: 1px solid var(--line-2); background: #fff; font-size: 0.656rem; font-weight: 600; color: var(--slate); cursor: pointer; transition: .2s; }
 .cal-preset:hover, .cal-preset.on { background: var(--navy-800); color: #fff; border-color: var(--navy-800); }
+/* Colour modifiers for chips that carry a lifecycle tone (e.g. the staff Loans register's Active /
+   Overdue segment chips). Additive to `.cal-preset` — never edit the base rule, which is shared by
+   the Customers page chips and the marketing /calculator calendar presets. Only apply when selected
+   (`.on`); an unselected chip keeps the neutral default look. Reuses the existing status tokens. */
+.cal-preset--success.on { background: var(--success); border-color: var(--success); color: #fff; }
+.cal-preset--error.on { background: var(--danger); border-color: var(--danger); color: #fff; }
 .cal-sublabel { font-family: var(--mono); font-size: 0.528rem; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-700); font-weight: 500; margin-bottom: 5px; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .cal-title { font-family: var(--font-display); font-size: clamp(0.96rem, 1.84vw, 1.2rem); font-weight: 700; color: var(--navy-800); letter-spacing: -.02em; line-height: 1; }

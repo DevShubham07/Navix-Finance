@@ -22,6 +22,14 @@ public interface LoanApplicationRepository
     /** The application that minted a given loan (set at activation); for loan→borrower resolution. */
     Optional<LoanApplication> findByLoanId(Long loanId);
 
+    /**
+     * The applications that minted a batch of loans, in one query — backs {@code
+     * LoanRegisterService}'s bulk "loan → application" resolution so the staff loan register costs a
+     * fixed number of queries instead of loading every application in the database. Callers MUST
+     * short-circuit on an empty collection; {@code in ()} is not valid SQL.
+     */
+    List<LoanApplication> findByLoanIdIn(Collection<Long> loanIds);
+
     /** Drives the Credit Head queue (no date filter there) — newest first. */
     List<LoanApplication> findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus status);
 

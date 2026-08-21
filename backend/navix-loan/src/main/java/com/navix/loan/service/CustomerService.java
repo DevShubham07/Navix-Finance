@@ -956,14 +956,18 @@ public class CustomerService {
         return RemarkView.of(remarkRepository.save(r));
     }
 
-    /** One customer's call logs (newest first). */
+    /**
+     * One customer's call logs (newest first), optionally narrowed to a single loan via
+     * {@code loanId} — the per-loan call history a customer-level log alone can't give.
+     */
     @Transactional(readOnly = true)
-    public List<CallLogView> callLogs(Long customerId) {
+    public List<CallLogView> callLogs(Long customerId, Long loanId) {
         rejectDsa();
         requireVisible(customerId);
-        return callLogRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
-                .map(CallLogView::of)
-                .toList();
+        List<CustomerCallLog> rows = loanId != null
+                ? callLogRepository.findByCustomerIdAndLoanIdOrderByIdDesc(customerId, loanId)
+                : callLogRepository.findByCustomerIdOrderByIdDesc(customerId);
+        return rows.stream().map(CallLogView::of).toList();
     }
 
     /** Add a staff call log to a customer (author + timestamp captured by JPA auditing). */
@@ -971,8 +975,18 @@ public class CustomerService {
     public CallLogView addCallLog(Long customerId, AddCallLogRequest req) {
         rejectDsa();
         requireVisible(customerId);
+        if (req.loanId() != null) {
+            Loan loan = loanRepository.findById(req.loanId())
+                    .orElseThrow(() -> new BusinessException("LOAN_NOT_FOUND",
+                            "No such loan: " + req.loanId()));
+            if (!customerId.equals(loan.getCustomerId())) {
+                throw new BusinessException("LOAN_CUSTOMER_MISMATCH",
+                        "That loan does not belong to this customer");
+            }
+        }
         CustomerCallLog c = new CustomerCallLog();
         c.setCustomerId(customerId);
+        c.setLoanId(req.loanId());
         c.setCallType(req.callType().trim());
         c.setOutcome(req.outcome().trim());
         c.setCallbackOn(req.callbackOn());

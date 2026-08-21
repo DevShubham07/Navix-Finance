@@ -18,6 +18,7 @@ import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.entity.ApplicationEvent;
+import com.navix.loan.entity.CustomerCallLog;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.CustomerOwner;
 import com.navix.loan.entity.LoanApplication;
@@ -725,6 +726,70 @@ class CustomerServiceTest {
         java.time.LocalDate d20 = java.time.LocalDate.of(2026, 8, 20);
         assertThat(service.list(null, d19, d19)).hasSize(1);
         assertThat(service.list(null, d20, d20)).isEmpty();
+    }
+
+    // --- Call log loan tagging (WP2) ----------------------------------------------------------
+
+    private com.navix.loan.entity.Loan loan(long id, long customerId) {
+        com.navix.loan.entity.Loan l = new com.navix.loan.entity.Loan();
+        l.setId(id);
+        l.setCustomerId(customerId);
+        return l;
+    }
+
+    private com.navix.loan.dto.CustomerDtos.AddCallLogRequest callLogRequest(Long loanId) {
+        return new com.navix.loan.dto.CustomerDtos.AddCallLogRequest(
+                "OUTBOUND", "CONNECTED", null, "Discussed overdue payment", loanId);
+    }
+
+    @Test
+    void addCallLogWithLoanIdRoundTrips() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        when(loanRepository.findById(500L)).thenReturn(Optional.of(loan(500L, 9000001L)));
+        when(callLogRepository.save(any())).thenAnswer(inv -> {
+            CustomerCallLog saved = inv.getArgument(0);
+            saved.setId(1L);
+            return saved;
+        });
+
+        var view = service.addCallLog(9000001L, callLogRequest(500L));
+
+        assertThat(view.loanId()).isEqualTo(500L);
+        org.mockito.ArgumentCaptor<CustomerCallLog> captor =
+                org.mockito.ArgumentCaptor.forClass(CustomerCallLog.class);
+        verify(callLogRepository).save(captor.capture());
+        assertThat(captor.getValue().getLoanId()).isEqualTo(500L);
+        assertThat(captor.getValue().getCustomerId()).isEqualTo(9000001L);
+    }
+
+    @Test
+    void callLogsFilterByLoanIdReturnsOnlyTaggedRows() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        CustomerCallLog tagged = new CustomerCallLog();
+        tagged.setId(1L);
+        tagged.setCustomerId(9000001L);
+        tagged.setLoanId(500L);
+        tagged.setCallType("OUTBOUND");
+        tagged.setOutcome("CONNECTED");
+        when(callLogRepository.findByCustomerIdAndLoanIdOrderByIdDesc(9000001L, 500L))
+                .thenReturn(List.of(tagged));
+
+        var rows = service.callLogs(9000001L, 500L);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).loanId()).isEqualTo(500L);
+        verify(callLogRepository).findByCustomerIdAndLoanIdOrderByIdDesc(9000001L, 500L);
+        verify(callLogRepository, org.mockito.Mockito.never()).findByCustomerIdOrderByIdDesc(any());
+    }
+
+    @Test
+    void addCallLogRejectsLoanBelongingToAnotherCustomer() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        when(loanRepository.findById(500L)).thenReturn(Optional.of(loan(500L, 9000002L)));
+
+        assertThatThrownBy(() -> service.addCallLog(9000001L, callLogRequest(500L)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "LOAN_CUSTOMER_MISMATCH");
     }
 
     private void givenAssignableCustomer(String actorId, String actorName, String actorRole) {

@@ -82,6 +82,17 @@ public class CollectionsController {
         return ApiResponse.ok(collectionsService.getCaseDetail(caseId));
     }
 
+    /**
+     * The collection case for a real loan, looked up by loan id rather than the case's own UUID —
+     * a staff loan detail view knows the loan id, not the case id. Same {@link CaseDetailView}
+     * shape as {@link #getCase}. A loan with no case (the normal state for a healthy loan) is a
+     * 404, not an error.
+     */
+    @GetMapping("/cases/by-loan/{loanId}")
+    public ApiResponse<CaseDetailView> getCaseByLoan(@PathVariable Long loanId) {
+        return ApiResponse.ok(collectionsService.getCaseDetailByLoanId(loanId));
+    }
+
     /** Assign a collections officer (a real ACTIVE executive) to a case. */
     @PostMapping("/cases/{caseId}/assign")
     public ApiResponse<CaseDetailView> assignOfficer(@PathVariable UUID caseId,

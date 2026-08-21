@@ -186,4 +186,61 @@ class CollectionsServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Collection Head");
     }
+
+    @Test
+    void caseDetailByLoanIdFindsTheCaseForThatLoan() {
+        when(caseRepository.findFirstByLoanIdOrderByCreatedAtDesc(2L))
+                .thenReturn(Optional.of(existingCase()));
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loanSummary(2L, LocalDate.now().minusDays(10))));
+
+        CaseDetailView detail = service.getCaseDetailByLoanId(2L);
+
+        assertThat(detail.id()).isEqualTo(caseId);
+        assertThat(detail.loanId()).isEqualTo(2L);
+        assertThat(detail.dpd()).isEqualTo(10);
+    }
+
+    @Test
+    void caseDetailByLoanIdIsNotFoundForALoanWithNoCase() {
+        // The normal state for a healthy loan — no collection case has ever been opened for it.
+        when(caseRepository.findFirstByLoanIdOrderByCreatedAtDesc(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getCaseDetailByLoanId(404L))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void caseDetailByLoanIdRejectsBorrower() {
+        // Unlike getCaseDetail(UUID) (keyed by an unguessable UUID), this is keyed by a sequential
+        // loan id, so it must not be open to a borrower — that would let any authenticated borrower
+        // walk loan ids upward and harvest other borrowers' collections data.
+        ActorContext.set(new CurrentActor("55", "A Borrower", "BORROWER"));
+
+        assertThatThrownBy(() -> service.getCaseDetailByLoanId(2L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Staff role required");
+    }
+
+    @Test
+    void caseDetailByLoanIdRejectsDsa() {
+        // A DSA is staff but is firewalled from all customer data, including collections activity.
+        ActorContext.set(new CurrentActor("77", "An Agent", "DSA"));
+
+        assertThatThrownBy(() -> service.getCaseDetailByLoanId(2L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSAs cannot view collections cases");
+    }
+
+    @Test
+    void caseDetailByLoanIdAllowsALegitimateStaffRole() {
+        // Default actor from setUp() is COLLECTION_HEAD; assert the happy path explicitly here too
+        // so the guard's positive case is co-located with its two rejection cases above.
+        when(caseRepository.findFirstByLoanIdOrderByCreatedAtDesc(2L))
+                .thenReturn(Optional.of(existingCase()));
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loanSummary(2L, LocalDate.now())));
+
+        CaseDetailView detail = service.getCaseDetailByLoanId(2L);
+
+        assertThat(detail.loanId()).isEqualTo(2L);
+    }
 }

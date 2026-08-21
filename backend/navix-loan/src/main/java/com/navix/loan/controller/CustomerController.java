@@ -166,11 +166,12 @@ public class CustomerController {
         return ApiResponse.ok(customerService.assignOwner(customerId, req.staffId()));
     }
 
-    /** Staff call logs on a customer. */
+    /** Staff call logs on a customer, optionally narrowed to one loan via {@code ?loanId=}. */
     @GetMapping("/{customerId}/call-logs")
-    public ApiResponse<List<CallLogView>> callLogs(@PathVariable Long customerId) {
+    public ApiResponse<List<CallLogView>> callLogs(@PathVariable Long customerId,
+                                                    @RequestParam(required = false) Long loanId) {
         requireStaff();
-        return ApiResponse.ok(customerService.callLogs(customerId));
+        return ApiResponse.ok(customerService.callLogs(customerId, loanId));
     }
 
     @PostMapping("/{customerId}/call-logs")
