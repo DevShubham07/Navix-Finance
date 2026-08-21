@@ -1044,6 +1044,15 @@ public class ApplicationVerificationService {
             message = r.employerName() == null
                     ? "Employer does not match the declared employer — manual review"
                     : "EPFO shows " + r.employerName() + ", not the declared employer — manual review";
+        } else if (Boolean.FALSE.equals(r.employeeNameMatch())) {
+            // is_employed folds in the EMPLOYEE name match as well as the employer one: seen live on a
+            // file whose employer matched exactly but whose person-name did not, against a PAN carrying
+            // three UANs. "Not employed as the person you described" is a different question from
+            // "not employed", and on a PAN with several UANs it is the one worth a human look.
+            status = REVIEW;
+            message = r.nameOnRecord() == null
+                    ? "EPFO name does not match the applicant — manual review"
+                    : "EPFO holds this employment under " + r.nameOnRecord() + " — manual review";
         } else if (r.employed()) {
             status = PASS;
             message = r.employerName() == null

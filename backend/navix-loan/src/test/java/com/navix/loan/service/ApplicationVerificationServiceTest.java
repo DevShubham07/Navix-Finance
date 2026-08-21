@@ -801,6 +801,28 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void verifyEmployment_aPersonNameMismatchIsNotReportedAsHavingLeftTheJob() {
+        // Seen live: employer matched exactly, person-name did not, PAN carried three UANs. is_employed
+        // folds in BOTH name matches, so this arrived as false with no exit on record. It must read as
+        // "the EPFO holds this job under a different name", which is a namesake/shared-PAN question, not
+        // as an ended employment.
+        VerificationPort.EmploymentCheck check = new VerificationPort.EmploymentCheck(
+                "TXN-UAN", "DIGITAP", true, false, null,
+                /* employed at declared */ false, "100000000000", 3, "CUTMAC MARKETING PVT LTD",
+                "XXXXX0000000000", "MEMBER-1", "2020-02-01", null, false, null, "pan",
+                /* employeeNameMatch */ Boolean.FALSE, /* employerNameMatch */ Boolean.TRUE,
+                null, null, null, "SOMEONE ELSE", "2000-01-31", "MALE");
+        ApplicationVerification row = runEmployment(check);
+
+        assertThat(row.getStatus()).isEqualTo("REVIEW");
+        assertThat(row.getMessage()).contains("SOMEONE ELSE");
+        assertThat(row.getMessage()).doesNotContain("not current");
+        assertThat(row.getMessage()).doesNotContain("exit");
+        assertThat(row.getMessage()).doesNotContain("declared employer");
+        assertThat(row.getDerived()).contains("\"employed\"" + ":true");
+    }
+
+    @Test
     void verifyEmployment_anUnaskedEmployerNameMatchDoesNotBlockThePass() {
         // employerNameMatch is null when the provider was never given an employer to compare against.
         // Null is "not asked"; treating it as a mismatch would review every PAN-only lookup.
