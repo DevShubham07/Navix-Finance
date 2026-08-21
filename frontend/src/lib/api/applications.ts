@@ -1554,6 +1554,28 @@ export const customersApi = {
   updateProfile: (customerId: number, body: UpdateCustomerInput) =>
     bff<ProfileView>(`${CUSTOMERS_BASE}/${customerId}/profile`, "PUT", body),
 
+  /**
+   * ADMIN, step 1 of 2 — send an OTP to a NEW mobile number to correct a customer's mobile on
+   * file. KYC-data correction only; does not change which number the borrower logs in with.
+   */
+  requestMobileChangeOtp: (customerId: number, newMobile: string) =>
+    bff<OtpRequestResult>(`${CUSTOMERS_BASE}/${customerId}/mobile/request-otp`, "POST", { newMobile }),
+
+  /** ADMIN, step 2 of 2 — confirm the mobile correction with the code sent to the new number. */
+  confirmMobileChange: (customerId: number, newMobile: string, otp: string) =>
+    bff<ProfileView>(`${CUSTOMERS_BASE}/${customerId}/mobile/confirm`, "POST", { newMobile, otp }),
+
+  /**
+   * ADMIN, step 1 of 2 — send an OTP to the customer's mobile on file to correct the amount
+   * credit approved (sanctioned) for their current, not-yet-disbursed application.
+   */
+  requestSanctionedAmountOtp: (customerId: number, newAmountPaise: number) =>
+    bff<OtpRequestResult>(`${CUSTOMERS_BASE}/${customerId}/sanctioned-amount/request-otp`, "POST", { newAmountPaise }),
+
+  /** ADMIN, step 2 of 2 — confirm the sanctioned-amount correction with the customer's OTP. */
+  confirmSanctionedAmountChange: (customerId: number, newAmountPaise: number, otp: string) =>
+    bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/sanctioned-amount/confirm`, "POST", { newAmountPaise, otp }),
+
   /** One customer's audited profile/salary change history (newest first). */
   changes: (customerId: number) =>
     bff<ProfileChangeView[]>(`${CUSTOMERS_BASE}/${customerId}/changes`, "GET"),

@@ -114,6 +114,31 @@ public final class CustomerDtos {
             String salaryBank) {
     }
 
+    /**
+     * ADMIN correcting a customer's mobile number — a KYC-data fix only. It does <b>not</b> change
+     * which number the borrower logs in with (login identity is derived from whatever mobile the
+     * borrower types at login, not from this profile field).
+     */
+    public record RequestMobileChangeRequest(@NotBlank String newMobile) {
+    }
+
+    /** Confirms a mobile change with the OTP sent to {@code newMobile} — must carry the SAME value
+     *  passed to the request-OTP call, or verification legitimately fails. */
+    public record ConfirmMobileChangeRequest(@NotBlank String newMobile, @NotBlank String otp) {
+    }
+
+    /**
+     * ADMIN correcting the amount credit approved (sanctioned) for the customer's current, not-yet-
+     * disbursed application. The OTP is sent to the customer's existing mobile on file — their own
+     * consent that the approved figure is changing.
+     */
+    public record RequestSanctionedAmountChangeRequest(long newAmountPaise) {
+    }
+
+    /** Confirms a sanctioned-amount change with the OTP sent to the customer's mobile on file. */
+    public record ConfirmSanctionedAmountChangeRequest(long newAmountPaise, @NotBlank String otp) {
+    }
+
     /** One audited profile/salary change for the customer detail history pane (Phase 2.1). */
     public record ProfileChangeView(
             Long id,

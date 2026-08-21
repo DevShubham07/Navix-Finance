@@ -7,6 +7,7 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
+import com.navix.common.verification.OtpVerifierPort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.BureauState;
@@ -101,6 +102,7 @@ public class CustomerService {
     private final BureauStateService bureauStateService;
     private final ApplicationVerificationRepository verificationRepository;
     private final ApplicationReferenceRepository referenceRepository;
+    private final OtpVerifierPort otpVerifier;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -550,6 +552,128 @@ public class CustomerService {
             recomputeEligibility(customerId, saved.getMonthlySalaryPaise());
         }
         return ProfileView.of(saved);
+    }
+
+    // ---------------------------------------------------------------- mobile-number correction (OTP)
+
+    /**
+     * ADMIN-only: send an OTP to a NEW mobile number as the first step of correcting a customer's
+     * mobile on file. The code is sent to {@code newMobile} itself — there is nothing stored yet to
+     * resolve server-side, so unlike every other OTP purpose in this codebase the target number
+     * legitimately comes from the caller (see {@link OtpVerifierPort}'s javadoc on
+     * {@link OtpVerifierPort#ADMIN_MOBILE_CHANGE}). {@link #confirmMobileChange} must be called with
+     * this exact same {@code newMobile} string.
+     *
+     * <p>This is a KYC-data correction only — it does not change which number the borrower logs in
+     * with (login identity is derived from whatever mobile the borrower types at login, not from
+     * this profile field).
+     */
+    public OtpVerifierPort.OtpRequestResult requestMobileChangeOtp(Long customerId, String newMobile) {
+        requireAdmin();
+        requireExistingProfile(customerId);
+        String mobile = requireValidMobile(newMobile);
+        return otpVerifier.request(mobile, OtpVerifierPort.ADMIN_MOBILE_CHANGE);
+    }
+
+    /** ADMIN-only: confirm the mobile-number correction with the code sent to {@code newMobile}. */
+    @Transactional
+    public ProfileView confirmMobileChange(Long customerId, String newMobile, String otp) {
+        requireAdmin();
+        CustomerProfile profile = requireExistingProfile(customerId);
+        String mobile = requireValidMobile(newMobile);
+        if (!otpVerifier.verify(mobile, otp, OtpVerifierPort.ADMIN_MOBILE_CHANGE)) {
+            throw new BusinessException("INVALID_OTP", "Invalid or expired code");
+        }
+        logIfChanged(customerId, profile.getApplicationId(), "mobile", profile.getMobile(), mobile);
+        profile.setMobile(mobile);
+        return ProfileView.of(profileRepository.save(profile));
+    }
+
+    // ---------------------------------------------------------------- sanctioned-amount correction (OTP)
+
+    /**
+     * ADMIN-only: send an OTP to the customer's EXISTING mobile on file as the first step of
+     * correcting the amount credit approved (sanctioned) for their current, not-yet-disbursed
+     * application — this is the borrower's own consent that the approved figure is changing, not
+     * merely an admin's say-so. Resolving the mobile server-side (never from the request) follows
+     * the same rule every other OTP purpose in this codebase follows.
+     */
+    public OtpVerifierPort.OtpRequestResult requestSanctionedAmountOtp(Long customerId, long newAmountPaise) {
+        requireAdmin();
+        LoanApplication app = requireSanctionedNotYetDisbursed(customerId);
+        validateSanctionedAmount(app, newAmountPaise);
+        String mobile = requireCustomerMobile(customerId, app);
+        return otpVerifier.request(mobile, OtpVerifierPort.ADMIN_AMOUNT_CHANGE);
+    }
+
+    /** ADMIN-only: confirm the sanctioned-amount correction with the code sent to the customer's
+     *  mobile on file. Does not transition the application's status — only the ceiling changes. */
+    @Transactional
+    public ApplicationView confirmSanctionedAmountChange(Long customerId, long newAmountPaise, String otp) {
+        requireAdmin();
+        LoanApplication app = requireSanctionedNotYetDisbursed(customerId);
+        validateSanctionedAmount(app, newAmountPaise);
+        String mobile = requireCustomerMobile(customerId, app);
+        if (!otpVerifier.verify(mobile, otp, OtpVerifierPort.ADMIN_AMOUNT_CHANGE)) {
+            throw new BusinessException("INVALID_OTP", "Invalid or expired code");
+        }
+        logIfChanged(customerId, app.getId(), "sanctionedAmountPaise",
+                str(app.getSanctionedAmountPaise()), str(newAmountPaise));
+        app.setSanctionedAmountPaise(newAmountPaise);
+        return ApplicationView.of(applicationRepository.save(app));
+    }
+
+    /** The customer's KYC profile, or {@code CUSTOMER_NOT_FOUND} if they have none. */
+    private CustomerProfile requireExistingProfile(Long customerId) {
+        CustomerProfile profile = latestProfile(applicationRepository.findByCustomerId(customerId));
+        if (profile == null) {
+            throw new ResourceNotFoundException("CustomerProfile", "customer:" + customerId);
+        }
+        return profile;
+    }
+
+    /** Bare 10-digit Indian mobile — same shape the borrower-facing OTP flows already require. */
+    private static String requireValidMobile(String mobile) {
+        String normalized = mobile == null ? "" : mobile.trim().replaceAll("\\D", "");
+        if (!normalized.matches("[6-9]\\d{9}")) {
+            throw new BusinessException("INVALID_MOBILE", "Enter a valid 10-digit mobile number");
+        }
+        return normalized;
+    }
+
+    /**
+     * The customer's current application that has been sanctioned but not yet disbursed — the only
+     * state a correction may target. Once {@code loanId} is set, {@link Loan#getPrincipal()} is the
+     * immutable, actually-disbursed figure and nothing here may touch it.
+     */
+    private LoanApplication requireSanctionedNotYetDisbursed(Long customerId) {
+        return applicationRepository.findByCustomerId(customerId).stream()
+                .filter(a -> a.getLoanId() == null && a.getSanctionedAmountPaise() != null)
+                .max(Comparator.comparing(LoanApplication::getId))
+                .orElseThrow(() -> new BusinessException("NO_SANCTIONED_APPLICATION",
+                        "This customer has no sanctioned application awaiting disbursement"));
+    }
+
+    /** Mirrors {@code sanction()}'s own floor; also protects a draw amount the borrower already chose. */
+    private static void validateSanctionedAmount(LoanApplication app, long newAmountPaise) {
+        if (newAmountPaise < LoanMath.MIN_LOAN_PAISE) {
+            throw new BusinessException("AMOUNT_TOO_LOW", "The sanctioned amount is below the minimum of ₹1,000");
+        }
+        Long drawn = app.getAmountRequested();
+        if (drawn != null && newAmountPaise < drawn) {
+            throw new BusinessException("BELOW_DRAWN_AMOUNT",
+                    "The borrower already chose to draw " + drawn + " paise — the sanctioned amount "
+                            + "cannot be corrected below that");
+        }
+    }
+
+    private String requireCustomerMobile(Long customerId, LoanApplication app) {
+        CustomerProfile profile = profileRepository.findByApplicationId(app.getId())
+                .orElseGet(() -> requireExistingProfile(customerId));
+        if (profile.getMobile() == null || profile.getMobile().isBlank()) {
+            throw new BusinessException("MOBILE_MISSING", "This customer has no mobile number on file");
+        }
+        return profile.getMobile();
     }
 
     /** Summary of a cascade delete: how many rows went across the key tables. */

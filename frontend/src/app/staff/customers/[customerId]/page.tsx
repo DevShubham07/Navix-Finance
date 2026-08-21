@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send, Phone, IndianRupee } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -82,7 +82,11 @@ export default function CustomerDetailPage() {
                     <AdminForceDisbursementAction app={sanctionedApp} />
                   </Card>
                 )}
+                {sanctionedApp && (
+                  <SanctionedAmountCard customerId={id} app={sanctionedApp} onSaved={invalidate} />
+                )}
                 <AdminEditCard detail={c} onSaved={invalidate} />
+                <MobileChangeCard detail={c} onSaved={invalidate} />
                 <BlocklistCard customerId={id} />
                 <DeleteCustomerCard
                   customerId={id}
@@ -198,7 +202,7 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
 
   return (
     <Card title="Edit KYC / salary (admin)" icon={<Pencil size={16} />}>
-      <p className="mb-3 text-xs text-muted">Identity (PAN/Aadhaar/mobile) is locked. Salary edits are audited and recompute the eligible limit.</p>
+      <p className="mb-3 text-xs text-muted">Identity (PAN/Aadhaar) is locked. Mobile can be corrected below, with OTP verification. Salary edits are audited and recompute the eligible limit.</p>
       <Input label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} className="!mb-2" />
       <Input label="Employer" value={employer} onChange={(e) => setEmployer(e.target.value)} className="!mb-2" />
       <Input label="Employment status" value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} className="!mb-2" />
@@ -213,6 +217,168 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
       <button onClick={() => m.mutate()} disabled={m.isPending} className="btn btn-sm btn-navy btn-block disabled:opacity-50">
         {m.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save changes
       </button>
+    </Card>
+  );
+}
+
+/**
+ * ADMIN correcting a customer's mobile number — a two-step OTP flow (mirrors the borrower-facing
+ * bureau-consent OTP: request, then confirm with the code). The OTP is sent to the NEW number,
+ * proving it's real and reachable before it's saved. This is a KYC-data correction only — it does
+ * NOT change which number the borrower logs in with (login identity is derived from whatever
+ * mobile the borrower types at login, not from this profile field).
+ */
+function MobileChangeCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: () => void }) {
+  const [newMobile, setNewMobile] = React.useState("");
+  const [otp, setOtp] = React.useState("");
+  const [sent, setSent] = React.useState(false);
+
+  const request = useMutation({
+    mutationFn: () => customersApi.requestMobileChangeOtp(detail.customerId, newMobile.trim()),
+    onSuccess: () => { setSent(true); setOtp(""); },
+  });
+  const confirm = useMutation({
+    mutationFn: () => customersApi.confirmMobileChange(detail.customerId, newMobile.trim(), otp.trim()),
+    onSuccess: () => { setSent(false); setNewMobile(""); setOtp(""); onSaved(); },
+  });
+
+  return (
+    <Card title="Correct mobile number (admin)" icon={<Phone size={16} />}>
+      <p className="mb-3 text-xs text-muted">
+        Current: <span className="font-mono text-ink">{detail.profile?.mobile ?? "—"}</span>. Sends an OTP
+        to the new number before saving it — does not change the borrower&apos;s login number.
+      </p>
+      <Input
+        label="New mobile number"
+        inputMode="numeric"
+        value={newMobile}
+        onChange={(e) => { setNewMobile(e.target.value.replace(/\D/g, "").slice(0, 10)); setSent(false); }}
+        placeholder="9876543210"
+        className="!mb-2"
+        disabled={sent}
+      />
+      {!sent ? (
+        <>
+          {request.error && <p className="mb-2 text-sm text-error-700">{errMessage(request.error)}</p>}
+          <button
+            onClick={() => request.mutate()}
+            disabled={request.isPending || newMobile.trim().length !== 10}
+            className="btn btn-sm btn-outline btn-block disabled:opacity-50"
+          >
+            {request.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Send OTP
+          </button>
+        </>
+      ) : (
+        <>
+          <Input
+            label="OTP"
+            inputMode="numeric"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="6-digit code"
+            className="!mb-2"
+          />
+          {confirm.error && <p className="mb-2 text-sm text-error-700">{errMessage(confirm.error)}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => confirm.mutate()}
+              disabled={confirm.isPending || otp.trim().length !== 6}
+              className="btn btn-sm btn-navy flex-1 disabled:opacity-50"
+            >
+              {confirm.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Confirm
+            </button>
+            <button onClick={() => setSent(false)} disabled={confirm.isPending} className="btn btn-sm btn-outline">
+              Change number
+            </button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * ADMIN correcting the amount credit approved (sanctioned) for the customer's current, not-yet-
+ * disbursed application. The OTP is sent to the customer's EXISTING mobile — the borrower's own
+ * consent that the approved figure is changing, not merely an admin's say-so. Only shown while an
+ * application is still SANCTIONED (mirrors {@code AdminForceDisbursementAction}'s own visibility
+ * rule on this page); once disbursed the loan's principal is fixed and cannot be corrected here.
+ */
+function SanctionedAmountCard({
+  customerId,
+  app,
+  onSaved,
+}: {
+  customerId: number;
+  app: { id: number; amountRequestedPaise?: number | null; sanctionedAmountPaise?: number | null };
+  onSaved: () => void;
+}) {
+  const currentPaise = app.sanctionedAmountPaise ?? null;
+  const [amount, setAmount] = React.useState(currentPaise != null ? String(Math.round(currentPaise / 100)) : "");
+  const [otp, setOtp] = React.useState("");
+  const [sent, setSent] = React.useState(false);
+  const newAmountPaise = amount ? rupeesToPaise(Number(amount.replace(/[^\d]/g, ""))) : 0;
+
+  const request = useMutation({
+    mutationFn: () => customersApi.requestSanctionedAmountOtp(customerId, newAmountPaise),
+    onSuccess: () => { setSent(true); setOtp(""); },
+  });
+  const confirm = useMutation({
+    mutationFn: () => customersApi.confirmSanctionedAmountChange(customerId, newAmountPaise, otp.trim()),
+    onSuccess: () => { setSent(false); setOtp(""); onSaved(); },
+  });
+
+  return (
+    <Card title="Correct approved amount (admin)" icon={<IndianRupee size={16} />}>
+      <p className="mb-3 text-xs text-muted">
+        Currently approved: <span className="font-mono text-ink">{currentPaise != null ? `₹${(currentPaise / 100).toLocaleString("en-IN")}` : "—"}</span>.
+        Sends an OTP to the customer&apos;s mobile as their consent before saving. Only available before disbursement.
+      </p>
+      <Input
+        label="New approved amount (₹)"
+        inputMode="numeric"
+        value={amount}
+        onChange={(e) => { setAmount(e.target.value.replace(/[^\d]/g, "")); setSent(false); }}
+        placeholder={currentPaise != null ? String(Math.round(currentPaise / 100)) : "50000"}
+        className="!mb-2"
+        disabled={sent}
+      />
+      {!sent ? (
+        <>
+          {request.error && <p className="mb-2 text-sm text-error-700">{errMessage(request.error)}</p>}
+          <button
+            onClick={() => request.mutate()}
+            disabled={request.isPending || newAmountPaise <= 0}
+            className="btn btn-sm btn-outline btn-block disabled:opacity-50"
+          >
+            {request.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Send OTP
+          </button>
+        </>
+      ) : (
+        <>
+          <Input
+            label="OTP"
+            inputMode="numeric"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="6-digit code"
+            className="!mb-2"
+          />
+          {confirm.error && <p className="mb-2 text-sm text-error-700">{errMessage(confirm.error)}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => confirm.mutate()}
+              disabled={confirm.isPending || otp.trim().length !== 6}
+              className="btn btn-sm btn-navy flex-1 disabled:opacity-50"
+            >
+              {confirm.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Confirm
+            </button>
+            <button onClick={() => setSent(false)} disabled={confirm.isPending} className="btn btn-sm btn-outline">
+              Change amount
+            </button>
+          </div>
+        </>
+      )}
     </Card>
   );
 }

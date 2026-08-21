@@ -2,17 +2,23 @@ package com.navix.loan.controller;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
+import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.web.ApiResponse;
+import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.AssignOwnerRequest;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
+import com.navix.loan.dto.CustomerDtos.ConfirmMobileChangeRequest;
+import com.navix.loan.dto.CustomerDtos.ConfirmSanctionedAmountChangeRequest;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.RemarkView;
+import com.navix.loan.dto.CustomerDtos.RequestMobileChangeRequest;
+import com.navix.loan.dto.CustomerDtos.RequestSanctionedAmountChangeRequest;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.service.CustomerService;
@@ -73,6 +79,45 @@ public class CustomerController {
                                                   @RequestBody UpdateCustomerRequest req) {
         requireStaff();
         return ApiResponse.ok(customerService.updateProfile(customerId, req));
+    }
+
+    /**
+     * ADMIN, step 1 of 2 — send an OTP to a NEW mobile number to correct a customer's mobile on
+     * file. KYC-data correction only; does not change which number the borrower logs in with.
+     */
+    @PostMapping("/{customerId}/mobile/request-otp")
+    public ApiResponse<OtpVerifierPort.OtpRequestResult> requestMobileChangeOtp(
+            @PathVariable Long customerId, @Valid @RequestBody RequestMobileChangeRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.requestMobileChangeOtp(customerId, req.newMobile()));
+    }
+
+    /** ADMIN, step 2 of 2 — confirm the mobile correction with the code sent to the new number. */
+    @PostMapping("/{customerId}/mobile/confirm")
+    public ApiResponse<ProfileView> confirmMobileChange(
+            @PathVariable Long customerId, @Valid @RequestBody ConfirmMobileChangeRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.confirmMobileChange(customerId, req.newMobile(), req.otp()));
+    }
+
+    /**
+     * ADMIN, step 1 of 2 — send an OTP to the customer's mobile on file to correct the amount
+     * credit approved (sanctioned) for their current, not-yet-disbursed application.
+     */
+    @PostMapping("/{customerId}/sanctioned-amount/request-otp")
+    public ApiResponse<OtpVerifierPort.OtpRequestResult> requestSanctionedAmountOtp(
+            @PathVariable Long customerId, @RequestBody RequestSanctionedAmountChangeRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.requestSanctionedAmountOtp(customerId, req.newAmountPaise()));
+    }
+
+    /** ADMIN, step 2 of 2 — confirm the sanctioned-amount correction with the customer's OTP. */
+    @PostMapping("/{customerId}/sanctioned-amount/confirm")
+    public ApiResponse<ApplicationView> confirmSanctionedAmountChange(
+            @PathVariable Long customerId, @Valid @RequestBody ConfirmSanctionedAmountChangeRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.confirmSanctionedAmountChange(
+                customerId, req.newAmountPaise(), req.otp()));
     }
 
     /** Every document across ALL of this customer's applications, grouped by application (newest

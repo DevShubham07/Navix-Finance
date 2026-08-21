@@ -57,6 +57,7 @@ class CustomerServiceTest {
     @Mock private BureauStateService bureauStateService;
     @Mock private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
     @Mock private com.navix.loan.repository.ApplicationReferenceRepository referenceRepository;
+    @Mock private com.navix.common.verification.OtpVerifierPort otpVerifier;
 
     private CustomerService service;
 
@@ -66,7 +67,7 @@ class CustomerServiceTest {
                 paymentRepository, repaymentService, changeLogRepository,
                 applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
                 staffDirectory, risk, jdbc, creditBriefService, documentRepository, bureauStateService,
-                verificationRepository, referenceRepository);
+                verificationRepository, referenceRepository, otpVerifier);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
     }
 
@@ -178,6 +179,165 @@ class CustomerServiceTest {
 
         verify(changeLogRepository, atLeastOnce()).save(any());   // the salary change is recorded
         assertThat(a.getEligibleLimit()).isEqualTo(1_500_000L);   // eligibility recomputed from new salary
+    }
+
+    // ---------------------------------------------------------------- mobile-number correction (OTP)
+
+    @Test
+    void requestMobileChangeOtpRejectedForNonAdmin() {
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+        assertThatThrownBy(() -> service.requestMobileChangeOtp(9000001L, "9876543210"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ADMIN");
+    }
+
+    @Test
+    void requestMobileChangeOtpRejectsAnInvalidMobile() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(app(2, 9000001L, ApplicationStatus.ACTIVE)));
+        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(profile(2, "Asha", "ABCDE1234F")));
+
+        assertThatThrownBy(() -> service.requestMobileChangeOtp(9000001L, "12345"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("valid 10-digit");
+        verify(otpVerifier, org.mockito.Mockito.never()).request(anyString(), anyString());
+    }
+
+    @Test
+    void requestMobileChangeOtpSendsToTheNewNumber() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(app(2, 9000001L, ApplicationStatus.ACTIVE)));
+        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(profile(2, "Asha", "ABCDE1234F")));
+        var expected = new com.navix.common.verification.OtpVerifierPort.OtpRequestResult(true, null, 300);
+        when(otpVerifier.request("9876543210", com.navix.common.verification.OtpVerifierPort.ADMIN_MOBILE_CHANGE))
+                .thenReturn(expected);
+
+        var result = service.requestMobileChangeOtp(9000001L, "9876543210");
+
+        assertThat(result.sent()).isTrue();
+        verify(otpVerifier).request("9876543210", com.navix.common.verification.OtpVerifierPort.ADMIN_MOBILE_CHANGE);
+    }
+
+    @Test
+    void confirmMobileChangeRejectsAnInvalidOtpAndLeavesTheProfileUntouched() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        CustomerProfile p = profile(2, "Asha", "ABCDE1234F");
+        p.setMobile("9000000000");
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(app(2, 9000001L, ApplicationStatus.ACTIVE)));
+        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
+        when(otpVerifier.verify(eq("9876543210"), anyString(),
+                eq(com.navix.common.verification.OtpVerifierPort.ADMIN_MOBILE_CHANGE))).thenReturn(false);
+
+        assertThatThrownBy(() -> service.confirmMobileChange(9000001L, "9876543210", "000000"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Invalid or expired");
+        assertThat(p.getMobile()).isEqualTo("9000000000"); // untouched
+        verify(profileRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void confirmMobileChangeUpdatesTheProfileAndLogsTheChange() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        CustomerProfile p = profile(2, "Asha", "ABCDE1234F");
+        p.setMobile("9000000000");
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(app(2, 9000001L, ApplicationStatus.ACTIVE)));
+        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(otpVerifier.verify(eq("9876543210"), eq("123456"),
+                eq(com.navix.common.verification.OtpVerifierPort.ADMIN_MOBILE_CHANGE))).thenReturn(true);
+
+        service.confirmMobileChange(9000001L, "9876543210", "123456");
+
+        assertThat(p.getMobile()).isEqualTo("9876543210");
+        assertThat(p.getPan()).isEqualTo("ABCDE1234F"); // identity untouched
+        verify(changeLogRepository).save(any());
+    }
+
+    // ---------------------------------------------------------------- sanctioned-amount correction (OTP)
+
+    @Test
+    void requestSanctionedAmountOtpRejectedForNonAdmin() {
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 500_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ADMIN");
+    }
+
+    @Test
+    void requestSanctionedAmountOtpRejectsWhenNothingIsSanctionedAndUndisbursed() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        // Sanctioned but already disbursed — must NOT be a correction target.
+        LoanApplication disbursed = app(2, 9000001L, ApplicationStatus.ACTIVE);
+        disbursed.setSanctionedAmountPaise(500_000L);
+        disbursed.setLoanId(77L);
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(disbursed));
+
+        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 600_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("no sanctioned application");
+    }
+
+    @Test
+    void requestSanctionedAmountOtpRejectsBelowTheMinimum() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
+        a.setSanctionedAmountPaise(500_000L);
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
+
+        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 50_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("below the minimum");
+    }
+
+    @Test
+    void requestSanctionedAmountOtpRejectsBelowWhatTheBorrowerAlreadyChoseToDraw() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
+        a.setSanctionedAmountPaise(500_000L);
+        a.setAmountRequested(400_000L);
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
+
+        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 300_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("already chose to draw");
+    }
+
+    @Test
+    void requestSanctionedAmountOtpSendsToTheCustomersExistingMobileNotTheRequestBody() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
+        a.setSanctionedAmountPaise(500_000L);
+        CustomerProfile p = profile(2, "Asha", "ABCDE1234F");
+        p.setMobile("9000000000");
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
+        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
+        var expected = new com.navix.common.verification.OtpVerifierPort.OtpRequestResult(true, null, 300);
+        when(otpVerifier.request("9000000000", com.navix.common.verification.OtpVerifierPort.ADMIN_AMOUNT_CHANGE))
+                .thenReturn(expected);
+
+        service.requestSanctionedAmountOtp(9000001L, 700_000L);
+
+        verify(otpVerifier).request("9000000000", com.navix.common.verification.OtpVerifierPort.ADMIN_AMOUNT_CHANGE);
+    }
+
+    @Test
+    void confirmSanctionedAmountChangeUpdatesTheAmountWithoutTouchingStatus() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
+        a.setSanctionedAmountPaise(500_000L);
+        CustomerProfile p = profile(2, "Asha", "ABCDE1234F");
+        p.setMobile("9000000000");
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
+        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
+        when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(otpVerifier.verify(eq("9000000000"), eq("123456"),
+                eq(com.navix.common.verification.OtpVerifierPort.ADMIN_AMOUNT_CHANGE))).thenReturn(true);
+
+        service.confirmSanctionedAmountChange(9000001L, 700_000L, "123456");
+
+        assertThat(a.getSanctionedAmountPaise()).isEqualTo(700_000L);
+        assertThat(a.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED); // status untouched
+        verify(changeLogRepository).save(any());
     }
 
     @Test
