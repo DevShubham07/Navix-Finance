@@ -189,6 +189,8 @@ The backend imports `aws-parameterstore:/navix/dev/` (path = `/navix/${NAVIX_ENV
 | `/navix/dev/navix/sms/user` · `password` | **SecureString** | `navix.sms.*` |
 | `/navix/dev/navix/sms/channel` | String | `navix.sms.channel` |
 | `/navix/dev/navix/app/frontend-base-url` | String | `navix.app.frontend-base-url` (env `NAVIX_APP_BASE_URL`) |
+| `/navix/dev/navix/captcha/secret` | **SecureString** | `navix.captcha.secret` (Cloudflare Turnstile; **unset = the check is skipped**) |
+| `/navix/dev/navix/captcha/hostnames` | String | `navix.captcha.hostnames` (comma-separated origins a token may be minted on) |
 
 List them (names only): `aws ssm get-parameters-by-path --path /navix/dev/ --recursive --query 'Parameters[].Name'`
 Set one: `aws ssm put-parameter --name /navix/dev/... --type SecureString --value '...' --overwrite`

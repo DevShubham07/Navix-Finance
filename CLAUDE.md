@@ -777,7 +777,13 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
-  `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs).
+  `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs),
+  `NAVIX_CAPTCHA_SECRET` + the frontend's `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (Cloudflare Turnstile on the
+  password logins + both forgot-password forms — **unset = the check is skipped**, which is how dev, CI,
+  the Playwright suite and the demo seed run; set them together or not at all). The backend secret is
+  an **SSM param** (`/navix/dev/navix/captcha/secret`), not a task-def env var — no new ECS revision.
+  **Order matters:** site key first, secret second; the reverse locks everyone out until the frontend
+  rebuild lands, because `NEXT_PUBLIC_*` is inlined at build time.
 
 ---
 

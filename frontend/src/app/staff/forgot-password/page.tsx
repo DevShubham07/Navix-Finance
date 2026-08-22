@@ -4,8 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { ShieldCheck, Mail, Smartphone, CheckCircle2 } from "lucide-react";
 import { Brand } from "@/components/site/brand";
-import { Input } from "@/components/ui";
+import { Input, Turnstile } from "@/components/ui";
 import { normalizeMobile } from "@/lib/utils";
+import { config } from "@/lib/config";
+import { formatEnvelopeError, readEnvelopeError } from "@/lib/api/errors";
 
 /**
  * Staff forgot-password. The email + mobile must match an active staff account; on a match the
@@ -18,6 +20,11 @@ export default function StaffForgotPasswordPage() {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
   const [sent, setSent] = React.useState(false);
+  const [captcha, setCaptcha] = React.useState("");
+  const [captchaKey, setCaptchaKey] = React.useState(0);
+  // The widget failed to load/render (usually a domain not on the site key's allowlist). Submit is
+  // unblocked rather than leaving a dead button — the backend still decides.
+  const [captchaBroken, setCaptchaBroken] = React.useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,12 +33,24 @@ export default function StaffForgotPasswordPage() {
     setBusy(true);
     setError(undefined);
     try {
-      await fetch("/api/auth/staff/forgot-password", {
+      const res = await fetch("/api/auth/staff/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), mobile: normalizeMobile(mobile) }),
+        body: JSON.stringify({
+          email: email.trim(),
+          mobile: normalizeMobile(mobile),
+          captchaToken: captcha,
+        }),
       });
-      setSent(true);
+      // See the borrower page: an unconditional setSent(true) showed the success ack for a
+      // rejection, so a failed captcha or a rate limit was invisible.
+      if (res.ok) {
+        setSent(true);
+      } else {
+        setError(formatEnvelopeError(await readEnvelopeError(res, "Something went wrong — please try again.")));
+        setCaptcha("");
+        setCaptchaKey((k) => k + 1);
+      }
     } catch {
       setError("Something went wrong — please try again.");
     }
@@ -74,7 +93,17 @@ export default function StaffForgotPasswordPage() {
             autoComplete="tel"
             error={error}
           />
-          <button type="submit" disabled={busy} className="btn btn-navy btn-block">
+          <Turnstile
+                action="staff-forgot-password"
+                onToken={setCaptcha}
+                onError={() => setCaptchaBroken(true)}
+                resetKey={captchaKey}
+              />
+          <button
+            type="submit"
+            disabled={busy || (!!config.turnstileSiteKey && !captcha && !captchaBroken)}
+            className="btn btn-navy btn-block"
+          >
             {busy ? "Sending…" : "Email me a reset link"}
           </button>
           <p className="mt-3 text-center text-sm">

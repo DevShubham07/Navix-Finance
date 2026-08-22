@@ -29,10 +29,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { email, password, force } = (body ?? {}) as {
+  const { email, password, force, captchaToken } = (body ?? {}) as {
     email?: unknown;
     password?: unknown;
     force?: unknown;
+    captchaToken?: unknown;
   };
 
   if (typeof email !== "string" || !email || typeof password !== "string" || !password) {
@@ -46,7 +47,13 @@ export async function POST(req: NextRequest) {
     backendRes = await fetch(`${config.backendBaseUrl}/api/auth/staff/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ email: loginEmail, password: loginPassword, force: force === true }),
+      body: JSON.stringify({
+        email: loginEmail,
+        password: loginPassword,
+        force: force === true,
+        // Forwarded verbatim — only the backend may judge it.
+        captchaToken: typeof captchaToken === "string" ? captchaToken : "",
+      }),
       cache: "no-store",
     });
   } catch {

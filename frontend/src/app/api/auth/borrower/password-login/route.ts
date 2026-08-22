@@ -24,7 +24,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { mobile, password } = (body ?? {}) as { mobile?: unknown; password?: unknown };
+  const { mobile, password, captchaToken } = (body ?? {}) as {
+    mobile?: unknown;
+    password?: unknown;
+    captchaToken?: unknown;
+  };
   const cleanMobile = typeof mobile === "string" ? normalizeMobile(mobile) : "";
   if (cleanMobile.length < 10) {
     return NextResponse.json({ error: "Enter a valid 10-digit mobile number." }, { status: 400 });
@@ -35,7 +39,12 @@ export async function POST(req: NextRequest) {
     backendRes = await fetch(`${config.backendBaseUrl}/api/auth/borrower/password-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ mobile: cleanMobile, password: typeof password === "string" ? password : "" }),
+      body: JSON.stringify({
+        mobile: cleanMobile,
+        password: typeof password === "string" ? password : "",
+        // Forwarded verbatim — only the backend may judge it.
+        captchaToken: typeof captchaToken === "string" ? captchaToken : "",
+      }),
       cache: "no-store",
     });
   } catch {

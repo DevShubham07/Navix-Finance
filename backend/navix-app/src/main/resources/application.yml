@@ -122,6 +122,15 @@ navix:
     ttl-seconds: ${AUTH_TTL_SECONDS:86400}
     borrower-ttl-seconds: ${BORROWER_AUTH_TTL_SECONDS:604800}
 
+  # Cloudflare Turnstile on the pre-auth forms (password logins + forgot-password).
+  # UNSET = the check is skipped entirely (local dev, ./mvnw test, e2e, the demo seed script).
+  captcha:
+    secret: ${NAVIX_CAPTCHA_SECRET:}
+    # Comma-separated origins a token may be minted on (Cloudflare echoes the hostname back).
+    # Stops anyone embedding our PUBLIC site key on their own page to farm tokens. Empty = not
+    # checked, logged as a warning at boot — success + action still are.
+    hostnames: ${NAVIX_CAPTCHA_HOSTNAMES:}
+
   # App-level URLs. frontend-base-url builds the password-reset links carried in emails.
   app:
     frontend-base-url: ${NAVIX_APP_BASE_URL:http://localhost:3000}

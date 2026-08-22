@@ -51,14 +51,21 @@ export class StaffLoginError extends Error {
  * (e.g. "Invalid email or password", or `SESSION_CONFLICT` when a session is already live)
  * so the form can surface it. `force` = "sign me in here and end the other session" — pass
  * `true` only after the caller has shown the SESSION_CONFLICT choice and the user picked
- * "Continue here".
+ * "Continue here". `captchaToken` is the Cloudflare Turnstile response — ignored by the backend
+ * unless NAVIX_CAPTCHA_SECRET is set, and SPENT by every call, so the SESSION_CONFLICT retry needs
+ * a fresh one.
  */
-export async function loginStaff(email: string, password: string, force = false): Promise<StaffSession> {
+export async function loginStaff(
+  email: string,
+  password: string,
+  force = false,
+  captchaToken = "",
+): Promise<StaffSession> {
   const res = await fetch("/api/auth/staff/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify({ email, password, force }),
+    body: JSON.stringify({ email, password, force, captchaToken }),
   });
   if (!res.ok) {
     const env = await readEnvelopeError(res, "Sign-in failed. Please try again.");

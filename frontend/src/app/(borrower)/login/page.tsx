@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Smartphone, CheckCircle2, Lock, Loader2 } from "lucide-react";
-import { Input } from "@/components/ui";
+import { Input, Turnstile } from "@/components/ui";
 import { OtpInput } from "@/components/borrower/otp-input";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { requestBorrowerOtp, clearBorrowerClientState, type OtpRequestResult } from "@/lib/api/live-journey";
 import { borrowerApi, type ApplicationStatus } from "@/lib/api/applications";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 import { normalizeMobile } from "@/lib/utils";
+import { config } from "@/lib/config";
 
 /** An application is past KYC (verified by an approver) once it's in any of these states. */
 const KYC_DONE = new Set<ApplicationStatus>([
@@ -32,6 +33,12 @@ export default function LoginPage() {
   const [error, setError] = React.useState<string>();
   const [sentInfo, setSentInfo] = React.useState<OtpRequestResult>();
   const [resendCount, setResendCount] = React.useState(0);
+  // Password branch only — the OTP branch is not captcha-gated (the SMS cost is throttled server-side).
+  const [captcha, setCaptcha] = React.useState("");
+  const [captchaKey, setCaptchaKey] = React.useState(0);
+  // The widget failed to load/render (usually a domain not on the site key's allowlist). Submit is
+  // unblocked rather than leaving a dead button — the backend still decides.
+  const [captchaBroken, setCaptchaBroken] = React.useState(false);
   // "Remember me": a returning, KYC-verified borrower who logged in within the 7-day cookie window
   // skips the login form entirely. We check this once on mount; show nothing until it resolves.
   const [checking, setChecking] = React.useState(true);
@@ -123,10 +130,12 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/borrower/password-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mobile, password }),
+        body: JSON.stringify({ mobile, password, captchaToken: captcha }),
       });
       if (!res.ok) {
         setError(formatEnvelopeError(await readEnvelopeError(res, "Invalid mobile or password.")));
+        setCaptcha("");
+        setCaptchaKey((k) => k + 1); // Turnstile tokens are single-use — re-challenge before a retry
         setBusy(false);
         return;
       }
@@ -195,7 +204,17 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 error={error}
               />
-              <button onClick={passwordLogin} disabled={!mobileOk || !password || busy} className="btn btn-gold btn-block">
+              <Turnstile
+                action="borrower-password-login"
+                onToken={setCaptcha}
+                onError={() => setCaptchaBroken(true)}
+                resetKey={captchaKey}
+              />
+              <button
+                onClick={passwordLogin}
+                disabled={!mobileOk || !password || busy || (!!config.turnstileSiteKey && !captcha && !captchaBroken)}
+                className="btn btn-gold btn-block"
+              >
                 {busy ? "Signing in…" : "Sign in"}
               </button>
               <p className="mt-3 text-center text-sm">

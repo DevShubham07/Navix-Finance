@@ -27,18 +27,22 @@ const gaImg =
 // S3 (ap-south-1) — presigned direct browser<->S3 upload/view. Region-scoped: virtual-hosted
 // (bucket.s3.…) covers any bucket/env; path-style (s3.…) is a fallback for that URL form.
 const s3 = "https://*.s3.ap-south-1.amazonaws.com https://s3.ap-south-1.amazonaws.com";
+// Cloudflare Turnstile (bot challenge on the password + forgot-password forms). One origin, but it
+// needs THREE directives: api.js is a script, the widget itself renders in a cross-origin iframe,
+// and it posts the challenge result back over fetch. Miss any one and the widget fails silently.
+const turnstile = "https://challenges.cloudflare.com";
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' ${gaScript}${isDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' ${gaScript} ${turnstile}${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: ${gaImg} ${s3}`,
   "media-src 'self' blob:",
   "font-src 'self'",
-  `connect-src 'self' ${gaConnect} ${s3}`,
+  `connect-src 'self' ${gaConnect} ${s3} ${turnstile}`,
   "worker-src 'self' blob:",
   // The KYC selfie step embeds Signzy's hosted liveness journey, and the sanction-letter
   // step embeds its short-lived S3 PDF URL. Both must be explicitly allowed in frames.
-  "frame-src 'self' https://*.signzy.app " + s3,
+  "frame-src 'self' https://*.signzy.app " + s3 + " " + turnstile,
   "frame-ancestors 'self'",
   "form-action 'self'",
   "base-uri 'self'",

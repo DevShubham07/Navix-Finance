@@ -62,7 +62,18 @@ public class AuthController {
     private final InviteService inviteService;
     private final BorrowerMobileRepository mobileRepository;
     private final AttemptLimiter limiter;
+    private final CaptchaVerifier captcha;
     private final com.navix.config.StaffSessionRegistry staffSessionRegistry;
+
+    /**
+     * Turnstile {@code action} per surface — must match the {@code action} the widget is rendered
+     * with on the matching page. This is what stops a token farmed on the (unauthenticated,
+     * low-friction) forgot-password form being spent against staff sign-in.
+     */
+    private static final String ACTION_STAFF_LOGIN = "staff-login";
+    private static final String ACTION_BORROWER_LOGIN = "borrower-password-login";
+    private static final String ACTION_BORROWER_FORGOT = "borrower-forgot-password";
+    private static final String ACTION_STAFF_FORGOT = "staff-forgot-password";
 
     /**
      * Sign-in attempts allowed per identifier per {@link #LOGIN_WINDOW} (either audience).
@@ -93,6 +104,9 @@ public class AuthController {
 
     @PostMapping("/staff/login")
     public ApiResponse<AuthResponse> staffLogin(@Valid @RequestBody StaffLoginRequest req) {
+        // Ahead of the limiter on purpose: a bot that cannot answer the challenge must not be able
+        // to spend a real staffer's three attempts and hold them out of the console.
+        captcha.verify(req.captchaToken(), ACTION_STAFF_LOGIN);
         String maskedEmail = Masking.maskEmail(req.email() == null ? null : req.email().trim());
         String limitKey = "staff:" + req.email().trim().toLowerCase(Locale.ROOT);
         // Before the lookup AND before BCrypt — otherwise the endpoint is an unbounded password oracle.
@@ -219,6 +233,7 @@ public class AuthController {
     /** Borrower sign-in by password (the OTP-less alternative; requires a previously set password). */
     @PostMapping("/borrower/password-login")
     public ApiResponse<AuthResponse> borrowerPasswordLogin(@Valid @RequestBody BorrowerPasswordLoginRequest req) {
+        captcha.verify(req.captchaToken(), ACTION_BORROWER_LOGIN); // ahead of the limiter — see staffLogin
         String limitKey = "pw:" + req.mobile().replaceAll("\\D", "");
         limiter.hit(limitKey, MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, LOGIN_COOLOFF, TOO_MANY_LOGINS);
         long customerId = claimCustomerId(req.mobile());
@@ -254,6 +269,7 @@ public class AuthController {
     /** Borrower forgot-password — emails a reset link only when email + mobile match (no enumeration). */
     @PostMapping("/borrower/forgot-password")
     public ApiResponse<MessageResponse> borrowerForgotPassword(@Valid @RequestBody ForgotPasswordRequest req) {
+        captcha.verify(req.captchaToken(), ACTION_BORROWER_FORGOT);
         passwordResetService.requestBorrowerReset(req.email(), req.mobile());
         return ApiResponse.ok(genericResetAck());
     }
@@ -268,6 +284,7 @@ public class AuthController {
     /** Staff forgot-password — emails a reset link only when email + mobile match (no enumeration). */
     @PostMapping("/staff/forgot-password")
     public ApiResponse<MessageResponse> staffForgotPassword(@Valid @RequestBody ForgotPasswordRequest req) {
+        captcha.verify(req.captchaToken(), ACTION_STAFF_FORGOT);
         passwordResetService.requestStaffReset(req.email(), req.mobile());
         return ApiResponse.ok(genericResetAck());
     }

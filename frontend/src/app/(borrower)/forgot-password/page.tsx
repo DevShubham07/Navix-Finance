@@ -3,9 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { Mail, Smartphone, CheckCircle2 } from "lucide-react";
-import { Input } from "@/components/ui";
+import { Input, Turnstile } from "@/components/ui";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { normalizeMobile } from "@/lib/utils";
+import { config } from "@/lib/config";
+import { formatEnvelopeError, readEnvelopeError } from "@/lib/api/errors";
 
 /**
  * Borrower forgot-password. The email + mobile must match the account on record; on a match the
@@ -18,6 +20,11 @@ export default function ForgotPasswordPage() {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string>();
   const [sent, setSent] = React.useState(false);
+  const [captcha, setCaptcha] = React.useState("");
+  const [captchaKey, setCaptchaKey] = React.useState(0);
+  // The widget failed to load/render (usually a domain not on the site key's allowlist). Submit is
+  // unblocked rather than leaving a dead button — the backend still decides.
+  const [captchaBroken, setCaptchaBroken] = React.useState(false);
 
   const submit = async () => {
     if (!email.includes("@")) { setError("Enter the email on your account."); return; }
@@ -25,12 +32,20 @@ export default function ForgotPasswordPage() {
     setBusy(true);
     setError(undefined);
     try {
-      await fetch("/api/auth/borrower/forgot-password", {
+      const res = await fetch("/api/auth/borrower/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, mobile }),
+        body: JSON.stringify({ email, mobile, captchaToken: captcha }),
       });
-      setSent(true);
+      // This used to setSent(true) unconditionally, so a rejection (rate limit, failed captcha)
+      // rendered as the success acknowledgement and the user just never got an email.
+      if (res.ok) {
+        setSent(true);
+      } else {
+        setError(formatEnvelopeError(await readEnvelopeError(res, "Something went wrong — please try again.")));
+        setCaptcha("");
+        setCaptchaKey((k) => k + 1); // the token is spent — a retry needs a fresh challenge
+      }
     } catch {
       setError("Something went wrong — please try again.");
     }
@@ -77,7 +92,17 @@ export default function ForgotPasswordPage() {
                 autoComplete="tel"
                 error={error}
               />
-              <button onClick={submit} disabled={busy} className="btn btn-gold btn-block">
+              <Turnstile
+                action="borrower-forgot-password"
+                onToken={setCaptcha}
+                onError={() => setCaptchaBroken(true)}
+                resetKey={captchaKey}
+              />
+              <button
+                onClick={submit}
+                disabled={busy || (!!config.turnstileSiteKey && !captcha && !captchaBroken)}
+                className="btn btn-gold btn-block"
+              >
                 {busy ? "Sending…" : "Email me a reset link"}
               </button>
               <p className="mt-3 text-center text-sm">

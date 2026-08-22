@@ -55,7 +55,7 @@ class AuthControllerTest {
         PasswordEncoder encoder = new BCryptPasswordEncoder();
         controller = new AuthController(staffRepository, jwt, encoder, otpService, profileRepository,
                 credentialRepository, passwordResetService, inviteService, mobileRepository,
-                new AttemptLimiter(), staffSessionRegistry);
+                new AttemptLimiter(), new CaptchaVerifier("", ""), staffSessionRegistry);
     }
 
     @AfterEach
@@ -85,7 +85,7 @@ class AuthControllerTest {
     void staffLogin_succeeds_withSeededDefaultPassword() {
         when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin()));
 
-        var resp = controller.staffLogin(new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", null));
+        var resp = controller.staffLogin(new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", null, null));
 
         assertThat(resp.isSuccess()).isTrue();
         assertThat(resp.getData().role()).isEqualTo("ADMIN");
@@ -99,7 +99,7 @@ class AuthControllerTest {
     void staffLogin_rejectsWrongPassword() {
         when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin()));
         assertThatThrownBy(() ->
-                controller.staffLogin(new StaffLoginRequest("meera.krishnan@navix.example", "wrong", null)))
+                controller.staffLogin(new StaffLoginRequest("meera.krishnan@navix.example", "wrong", null, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Invalid");
     }
@@ -111,7 +111,7 @@ class AuthControllerTest {
         when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin));
 
         assertThatThrownBy(() -> controller.staffLogin(
-                new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", null)))
+                new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", null, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("already signed in");
         verify(staffRepository, never()).save(any());
@@ -124,7 +124,7 @@ class AuthControllerTest {
         when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin));
 
         var resp = controller.staffLogin(
-                new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", true));
+                new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", true, null));
 
         assertThat(resp.isSuccess()).isTrue();
         JwtService.Principal p = jwt.verify(resp.getData().token());

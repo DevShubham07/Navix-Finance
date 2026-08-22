@@ -13,8 +13,14 @@ public final class AuthDtos {
      * seen a {@code SESSION_CONFLICT} and the user picked "Continue here". A boxed {@code Boolean}
      * (not primitive) so an older client that omits the field is treated as {@code false}, not a
      * bind error.
+     *
+     * <p>{@code captchaToken} is the Cloudflare Turnstile response. Deliberately un-annotated for the
+     * same reason as {@code force}: whether a missing token matters is
+     * {@link CaptchaVerifier}'s call (it is unconfigured, and so ignored, in dev/CI), not bean
+     * validation's.
      */
-    public record StaffLoginRequest(@NotBlank String email, @NotBlank String password, Boolean force) {
+    public record StaffLoginRequest(@NotBlank String email, @NotBlank String password, Boolean force,
+                                    String captchaToken) {
     }
 
     /**
@@ -40,16 +46,20 @@ public final class AuthDtos {
     public record AuthResponse(String token, String id, String name, String role, Long customerId) {
     }
 
-    /** Borrower sign-in by password (the OTP-less alternative). */
-    public record BorrowerPasswordLoginRequest(@NotBlank String mobile, @NotBlank String password) {
+    /** Borrower sign-in by password (the OTP-less alternative). {@code captchaToken}: see
+     *  {@link StaffLoginRequest}. */
+    public record BorrowerPasswordLoginRequest(@NotBlank String mobile, @NotBlank String password,
+                                               String captchaToken) {
     }
 
     /** Set/replace a password for the signed-in borrower (optional signup step / profile). */
     public record SetPasswordRequest(@NotBlank String password) {
     }
 
-    /** Forgot-password: the email + mobile that must match an account before a reset link is sent. */
-    public record ForgotPasswordRequest(@NotBlank String email, @NotBlank String mobile) {
+    /** Forgot-password: the email + mobile that must match an account before a reset link is sent.
+     *  {@code captchaToken}: see {@link StaffLoginRequest}. */
+    public record ForgotPasswordRequest(@NotBlank String email, @NotBlank String mobile,
+                                        String captchaToken) {
     }
 
     /** Reset-password landing: the one-time token from the email link + the chosen new password. */

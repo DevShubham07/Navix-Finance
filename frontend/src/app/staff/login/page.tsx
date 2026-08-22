@@ -6,8 +6,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, Lock, Mail } from "lucide-react";
 import { Brand } from "@/components/site/brand";
-import { Input, Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui";
+import { Input, Dialog, DialogHeader, DialogTitle, DialogFooter, Turnstile } from "@/components/ui";
 import { loginStaff, StaffLoginError } from "@/lib/auth/staff-session";
+import { config } from "@/lib/config";
 
 function LoginInner() {
   const router = useRouter();
@@ -21,17 +22,29 @@ function LoginInner() {
   // Only one console session is allowed per account (all roles). A second sign-in while one is
   // live is refused with SESSION_CONFLICT; this dialog is the "continue there / continue here" choice.
   const [conflict, setConflict] = React.useState(false);
+  const [captcha, setCaptcha] = React.useState("");
+  const [captchaKey, setCaptchaKey] = React.useState(0);
+  // The widget failed to load/render (usually a domain not on the site key's allowlist). Submit is
+  // unblocked rather than leaving a dead button — the backend still decides.
+  const [captchaBroken, setCaptchaBroken] = React.useState(false);
 
-  const canSubmit = email.trim().length > 0 && password.length > 0 && !busy;
+  // Unset site key = no widget rendered, so the gate must not block dev / e2e / the demo stack.
+  const captchaReady = !config.turnstileSiteKey || !!captcha || captchaBroken;
+  const canSubmit = email.trim().length > 0 && password.length > 0 && !busy && captchaReady;
 
   const doLogin = async (force: boolean) => {
     setBusy(true);
     setError(undefined);
     try {
       // Authenticates against the backend; the JWT lands in the httpOnly navix_staff cookie.
-      await loginStaff(email.trim(), password, force);
+      await loginStaff(email.trim(), password, force, captcha);
       router.push(redirect);
     } catch (err) {
+      // Every outcome below re-challenges: the token just sent is spent, SESSION_CONFLICT included
+      // (it is raised after the captcha check, and "Continue here" is a second call). The widget is
+      // usually invisible, so a fresh token lands before the user can click.
+      setCaptcha("");
+      setCaptchaKey((k) => k + 1);
       if (err instanceof StaffLoginError && err.code === "SESSION_CONFLICT") {
         setConflict(true);
         setBusy(false);
@@ -92,6 +105,12 @@ function LoginInner() {
               Forgot password?
             </Link>
           </div>
+          <Turnstile
+                action="staff-login"
+                onToken={setCaptcha}
+                onError={() => setCaptchaBroken(true)}
+                resetKey={captchaKey}
+              />
           <button type="submit" disabled={!canSubmit} className="btn btn-navy btn-block">
             {busy ? "Signing in…" : "Sign in"}
           </button>
@@ -118,9 +137,9 @@ function LoginInner() {
             type="button"
             className="btn btn-navy"
             onClick={() => { setConflict(false); void doLogin(true); }}
-            disabled={busy}
+            disabled={busy || !captchaReady}
           >
-            {busy ? "Signing in…" : "Continue here"}
+            {busy ? "Signing in…" : !captchaReady ? "Checking…" : "Continue here"}
           </button>
         </DialogFooter>
       </Dialog>

@@ -10,3 +10,4 @@ export * from "./dialog";
 export * from "./drawer";
 export * from "./tooltip";
 export * from "./zoomable-qr";
+export * from "./turnstile";
