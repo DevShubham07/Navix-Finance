@@ -60,6 +60,7 @@ class CustomerServiceTest {
     @Mock private com.navix.loan.repository.ApplicationReferenceRepository referenceRepository;
     @Mock private com.navix.common.verification.OtpVerifierPort otpVerifier;
     @Mock private com.navix.common.security.BorrowerIdentityPort borrowerIdentity;
+    @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private CustomerService service;
 
@@ -69,7 +70,7 @@ class CustomerServiceTest {
                 paymentRepository, repaymentService, changeLogRepository,
                 applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
                 staffDirectory, risk, jdbc, creditBriefService, documentRepository, bureauStateService,
-                verificationRepository, referenceRepository, otpVerifier, borrowerIdentity);
+                verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
         // No collision by default — the handful of tests that DO care about this stub it explicitly.
         lenient().when(borrowerIdentity.wouldCollideWithAnotherCustomer(anyString(), any())).thenReturn(false);
@@ -412,18 +413,18 @@ class CustomerServiceTest {
         assertThat(service.requestMobileChangeOtp(9000001L, "9876543210").sent()).isTrue();
     }
 
-    // ---------------------------------------------------------------- sanctioned-amount correction (OTP)
+    // ---------------------------------------------------------------- sanctioned-amount correction
 
     @Test
-    void requestSanctionedAmountOtpRejectedForNonAdmin() {
+    void changeSanctionedAmountRejectedForNonAdmin() {
         ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
-        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 2L, 500_000L))
+        assertThatThrownBy(() -> service.changeSanctionedAmount(9000001L, 2L, 500_000L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("ADMIN");
     }
 
     @Test
-    void requestSanctionedAmountOtpRejectsWhenTheApplicationIsAlreadyDisbursed() {
+    void changeSanctionedAmountRejectsWhenTheApplicationIsAlreadyDisbursed() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
         // Sanctioned but already disbursed — must NOT be a correction target.
         LoanApplication disbursed = app(2, 9000001L, ApplicationStatus.ACTIVE);
@@ -431,7 +432,7 @@ class CustomerServiceTest {
         disbursed.setLoanId(77L);
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(disbursed));
 
-        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 2L, 600_000L))
+        assertThatThrownBy(() -> service.changeSanctionedAmount(9000001L, 2L, 600_000L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("not sanctioned");
     }
@@ -442,113 +443,70 @@ class CustomerServiceTest {
      * would incorrectly qualify as a live correction target.
      */
     @Test
-    void requestSanctionedAmountOtpRejectsACancelledApplicationEvenThoughItsLoanIdIsNull() {
+    void changeSanctionedAmountRejectsACancelledApplicationEvenThoughItsLoanIdIsNull() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
         LoanApplication cancelled = app(2, 9000001L, ApplicationStatus.CANCELLED);
         cancelled.setSanctionedAmountPaise(500_000L);
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(cancelled));
 
-        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 2L, 600_000L))
+        assertThatThrownBy(() -> service.changeSanctionedAmount(9000001L, 2L, 600_000L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("not sanctioned");
     }
 
     @Test
-    void requestSanctionedAmountOtpRejectsAnApplicationIdThatIsNotThisCustomersOwn() {
+    void changeSanctionedAmountRejectsAnApplicationIdThatIsNotThisCustomersOwn() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
         LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
         a.setSanctionedAmountPaise(500_000L);
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
 
         // applicationId 99 was never returned for this customer — must not silently fall back to app 2.
-        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 99L, 600_000L))
+        assertThatThrownBy(() -> service.changeSanctionedAmount(9000001L, 99L, 600_000L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("not sanctioned");
     }
 
     @Test
-    void requestSanctionedAmountOtpRejectsBelowTheMinimum() {
+    void changeSanctionedAmountRejectsBelowTheMinimum() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
         LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
         a.setSanctionedAmountPaise(500_000L);
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
 
-        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 2L, 50_000L))
+        assertThatThrownBy(() -> service.changeSanctionedAmount(9000001L, 2L, 50_000L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("below the minimum");
     }
 
     @Test
-    void requestSanctionedAmountOtpRejectsBelowWhatTheBorrowerAlreadyChoseToDraw() {
+    void changeSanctionedAmountRejectsBelowWhatTheBorrowerAlreadyChoseToDraw() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
         LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
         a.setSanctionedAmountPaise(500_000L);
         a.setAmountRequested(400_000L);
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
 
-        assertThatThrownBy(() -> service.requestSanctionedAmountOtp(9000001L, 2L, 300_000L))
+        assertThatThrownBy(() -> service.changeSanctionedAmount(9000001L, 2L, 300_000L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("already chose to draw");
     }
 
     @Test
-    void requestSanctionedAmountOtpSendsToTheCustomersExistingMobileNotTheRequestBody() {
+    void changeSanctionedAmountUpdatesTheAmountWithoutTouchingStatus() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
         LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
         a.setSanctionedAmountPaise(500_000L);
-        CustomerProfile p = profile(2, "Asha", "ABCDE1234F");
-        p.setMobile("9000000000");
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
-        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
-        var expected = new com.navix.common.verification.OtpVerifierPort.OtpRequestResult(true, null, 300);
-        when(otpVerifier.request("9000000000", "ADMIN_AMOUNT_CHANGE:9000001:2:700000")).thenReturn(expected);
-
-        service.requestSanctionedAmountOtp(9000001L, 2L, 700_000L);
-
-        verify(otpVerifier).request("9000000000", "ADMIN_AMOUNT_CHANGE:9000001:2:700000");
-    }
-
-    @Test
-    void confirmSanctionedAmountChangeUpdatesTheAmountWithoutTouchingStatus() {
-        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
-        LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
-        a.setSanctionedAmountPaise(500_000L);
-        CustomerProfile p = profile(2, "Asha", "ABCDE1234F");
-        p.setMobile("9000000000");
-        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
-        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
         when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(otpVerifier.verify(eq("9000000000"), eq("123456"), eq("ADMIN_AMOUNT_CHANGE:9000001:2:700000")))
-                .thenReturn(true);
 
-        service.confirmSanctionedAmountChange(9000001L, 2L, 700_000L, "123456");
+        service.changeSanctionedAmount(9000001L, 2L, 700_000L);
 
         assertThat(a.getSanctionedAmountPaise()).isEqualTo(700_000L);
         assertThat(a.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED); // status untouched
         verify(changeLogRepository).save(any());
-    }
-
-    /**
-     * The OTP purpose is bound to the exact amount, so a code requested for one figure cannot
-     * confirm a different one — closes the gap where an admin could quote one number on the phone
-     * and silently confirm a larger one.
-     */
-    @Test
-    void confirmSanctionedAmountChangeRejectsWhenTheAmountDiffersFromWhatTheOtpWasRequestedFor() {
-        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
-        LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED);
-        a.setSanctionedAmountPaise(500_000L);
-        CustomerProfile p = profile(2, "Asha", "ABCDE1234F");
-        p.setMobile("9000000000");
-        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
-        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
-        // A code was requested (and would be valid) for 700,000 paise, but confirm is attempted for
-        // 50,000,000 — the mock is deliberately left unstubbed for THAT purpose string (defaults to
-        // false), simulating the real OTP store having no entry under a purpose nobody requested.
-        assertThatThrownBy(() -> service.confirmSanctionedAmountChange(9000001L, 2L, 50_000_000L, "123456"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Invalid or expired");
-        assertThat(a.getSanctionedAmountPaise()).isEqualTo(500_000L); // untouched
+        verify(eventPublisher).publishEvent(
+                any(com.navix.common.notification.event.SanctionedAmountRevisedEvent.class));
     }
 
     @Test

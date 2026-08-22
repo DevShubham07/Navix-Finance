@@ -141,16 +141,10 @@ public final class CustomerDtos {
     /**
      * ADMIN correcting the amount credit approved (sanctioned) for {@code applicationId} — the
      * specific application, not just "the customer's latest one" (a customer can hold several; the
-     * server verifies this id is actually theirs, sanctioned, and not yet disbursed). The OTP is
-     * sent to the customer's existing mobile on file — their own consent that the approved figure is
-     * changing — and is bound to this exact application + amount, so it cannot confirm a different one.
+     * server verifies this id is actually theirs, sanctioned, and not yet disbursed). Takes effect
+     * immediately; the borrower is notified afterwards (email + in-app), not asked to consent via OTP.
      */
-    public record RequestSanctionedAmountChangeRequest(@NotNull Long applicationId, long newAmountPaise) {
-    }
-
-    /** Confirms a sanctioned-amount change with the OTP sent to the customer's mobile on file. */
-    public record ConfirmSanctionedAmountChangeRequest(
-            @NotNull Long applicationId, long newAmountPaise, @NotBlank String otp) {
+    public record ChangeSanctionedAmountRequest(@NotNull Long applicationId, long newAmountPaise) {
     }
 
     /** One audited profile/salary change for the customer detail history pane (Phase 2.1). */

@@ -14,6 +14,7 @@ import com.navix.common.notification.event.RepaymentRecordedEvent;
 import com.navix.common.notification.event.RepaymentRejectedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
 import com.navix.common.notification.event.SanctionLetterSignedEvent;
+import com.navix.common.notification.event.SanctionedAmountRevisedEvent;
 import com.navix.common.notification.event.SettlementApprovedEvent;
 import com.navix.common.notification.event.SettlementProposedEvent;
 import com.navix.common.notification.event.SettlementRejectedEvent;
@@ -159,6 +160,18 @@ public class NotificationEventListener {
                 .customerId(e.customerId())
                 .applicationId(e.applicationId())
                 .attachments(attachments)
+                .build());
+    }
+
+    /** An ADMIN corrected the sanctioned amount — tell the borrower the revised figure. */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onSanctionedAmountRevised(SanctionedAmountRevisedEvent e) {
+        dispatcher.dispatch(NotificationType.SANCTIONED_AMOUNT_REVISED, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("amount", NotificationFormat.inr(e.newAmountPaise()))
+                .put("previousAmount", NotificationFormat.inr(e.previousAmountPaise()))
                 .build());
     }
 

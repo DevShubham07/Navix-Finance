@@ -11,14 +11,13 @@ import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.AssignOwnerRequest;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
+import com.navix.loan.dto.CustomerDtos.ChangeSanctionedAmountRequest;
 import com.navix.loan.dto.CustomerDtos.ConfirmMobileChangeRequest;
-import com.navix.loan.dto.CustomerDtos.ConfirmSanctionedAmountChangeRequest;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.RemarkView;
 import com.navix.loan.dto.CustomerDtos.RequestMobileChangeRequest;
-import com.navix.loan.dto.CustomerDtos.RequestSanctionedAmountChangeRequest;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.service.CustomerService;
@@ -101,25 +100,16 @@ public class CustomerController {
     }
 
     /**
-     * ADMIN, step 1 of 2 — send an OTP to the customer's mobile on file to correct the amount
-     * credit approved (sanctioned) for {@code applicationId} — verified server-side to be this
-     * customer's own, sanctioned, not-yet-disbursed application.
+     * ADMIN — correct the amount credit approved (sanctioned) for {@code applicationId}, verified
+     * server-side to be this customer's own, sanctioned, not-yet-disbursed application. Takes effect
+     * immediately; the borrower is notified afterwards (email + in-app), not asked to confirm via OTP.
      */
-    @PostMapping("/{customerId}/sanctioned-amount/request-otp")
-    public ApiResponse<OtpVerifierPort.OtpRequestResult> requestSanctionedAmountOtp(
-            @PathVariable Long customerId, @Valid @RequestBody RequestSanctionedAmountChangeRequest req) {
+    @PostMapping("/{customerId}/sanctioned-amount")
+    public ApiResponse<ApplicationView> changeSanctionedAmount(
+            @PathVariable Long customerId, @Valid @RequestBody ChangeSanctionedAmountRequest req) {
         requireStaff();
-        return ApiResponse.ok(customerService.requestSanctionedAmountOtp(
+        return ApiResponse.ok(customerService.changeSanctionedAmount(
                 customerId, req.applicationId(), req.newAmountPaise()));
-    }
-
-    /** ADMIN, step 2 of 2 — confirm the sanctioned-amount correction with the customer's OTP. */
-    @PostMapping("/{customerId}/sanctioned-amount/confirm")
-    public ApiResponse<ApplicationView> confirmSanctionedAmountChange(
-            @PathVariable Long customerId, @Valid @RequestBody ConfirmSanctionedAmountChangeRequest req) {
-        requireStaff();
-        return ApiResponse.ok(customerService.confirmSanctionedAmountChange(
-                customerId, req.applicationId(), req.newAmountPaise(), req.otp()));
     }
 
     /** Every document across ALL of this customer's applications, grouped by application (newest

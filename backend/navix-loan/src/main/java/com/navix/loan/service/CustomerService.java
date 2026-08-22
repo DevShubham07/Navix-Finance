@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.notification.event.SanctionedAmountRevisedEvent;
 import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.BorrowerIdentityPort;
@@ -51,6 +52,7 @@ import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
 import com.navix.loan.repository.ProfileChangeLogRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -105,6 +107,7 @@ public class CustomerService {
     private final ApplicationReferenceRepository referenceRepository;
     private final OtpVerifierPort otpVerifier;
     private final BorrowerIdentityPort borrowerIdentity;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -624,56 +627,29 @@ public class CustomerService {
         return ProfileView.of(profileRepository.save(profile));
     }
 
-    // ---------------------------------------------------------------- sanctioned-amount correction (OTP)
+    // ---------------------------------------------------------------- sanctioned-amount correction
 
     /**
-     * ADMIN-only: send an OTP to the customer's EXISTING mobile on file as the first step of
-     * correcting the amount credit approved (sanctioned) for {@code applicationId} — this is the
-     * borrower's own consent that the approved figure is changing, not merely an admin's say-so.
-     * Resolving the mobile server-side (never from the request) follows the same rule every other
-     * OTP purpose in this codebase follows.
-     *
-     * <p>The OTP purpose string is bound to {@code (customerId, applicationId, newAmountPaise)} —
-     * not just the bare purpose constant — so a code requested for one figure cannot confirm a
-     * different one, and a code requested for one customer's mobile cannot confirm another's.
+     * ADMIN-only: correct the amount credit approved (sanctioned) for {@code applicationId} —
+     * verified server-side to be this customer's own, sanctioned, not-yet-disbursed application.
+     * Takes effect immediately; there is no borrower-side consent step. The change is audited to
+     * {@code profile_change_log} like every other admin correction, and the borrower is notified
+     * (email + in-app) once the transaction commits — see {@code SanctionedAmountRevisedEvent}. Does
+     * not transition the application's status — only the ceiling changes.
      */
-    public OtpVerifierPort.OtpRequestResult requestSanctionedAmountOtp(
-            Long customerId, Long applicationId, long newAmountPaise) {
-        requireAdmin();
-        LoanApplication app = requireSanctionedNotYetDisbursed(customerId, applicationId);
-        validateSanctionedAmount(app, newAmountPaise);
-        String mobile = requireCustomerMobile(customerId, app);
-        return otpVerifier.request(mobile, amountChangePurpose(customerId, app.getId(), newAmountPaise));
-    }
-
-    /** ADMIN-only: confirm the sanctioned-amount correction with the code sent to the customer's
-     *  mobile on file. Does not transition the application's status — only the ceiling changes. */
     @Transactional
-    public ApplicationView confirmSanctionedAmountChange(
-            Long customerId, Long applicationId, long newAmountPaise, String otp) {
+    public ApplicationView changeSanctionedAmount(Long customerId, Long applicationId, long newAmountPaise) {
         requireAdmin();
         LoanApplication app = requireSanctionedNotYetDisbursed(customerId, applicationId);
         validateSanctionedAmount(app, newAmountPaise);
-        String mobile = requireCustomerMobile(customerId, app);
-        if (!otpVerifier.verify(mobile, otp, amountChangePurpose(customerId, app.getId(), newAmountPaise))) {
-            throw new BusinessException("INVALID_OTP", "Invalid or expired code");
-        }
+        long previousAmountPaise = app.getSanctionedAmountPaise();
         logIfChanged(customerId, app.getId(), "sanctionedAmountPaise",
-                str(app.getSanctionedAmountPaise()), str(newAmountPaise));
+                str(previousAmountPaise), str(newAmountPaise));
         app.setSanctionedAmountPaise(newAmountPaise);
-        return ApplicationView.of(applicationRepository.save(app));
-    }
-
-    /**
-     * The OTP store key is {@code purpose + ":" + mobile} ({@link OtpVerifierPort} treats purpose as
-     * opaque), so folding the customer, application and exact amount into the purpose string means
-     * the stored code only ever confirms THAT triple — an admin cannot request a code for one figure
-     * and confirm a different one, and a code cannot cross customers even if two ever shared a
-     * mobile. Neither {@code BorrowerOtpService.dltTemplateKey}/{@code buildMessage} special-case
-     * this purpose, so it falls through to the generic template regardless of the suffix.
-     */
-    private static String amountChangePurpose(Long customerId, Long applicationId, long newAmountPaise) {
-        return OtpVerifierPort.ADMIN_AMOUNT_CHANGE + ":" + customerId + ":" + applicationId + ":" + newAmountPaise;
+        ApplicationView view = ApplicationView.of(applicationRepository.save(app));
+        eventPublisher.publishEvent(new SanctionedAmountRevisedEvent(
+                customerId, app.getId(), previousAmountPaise, newAmountPaise, Instant.now()));
+        return view;
     }
 
     /** The customer's KYC profile, or {@code CUSTOMER_NOT_FOUND} if they have none. */
@@ -747,15 +723,6 @@ public class CustomerService {
                     "The borrower already chose to draw " + (drawn / 100) + " — the sanctioned amount "
                             + "cannot be corrected below that");
         }
-    }
-
-    private String requireCustomerMobile(Long customerId, LoanApplication app) {
-        CustomerProfile profile = profileRepository.findByApplicationId(app.getId())
-                .orElseGet(() -> requireExistingProfile(customerId));
-        if (profile.getMobile() == null || profile.getMobile().isBlank()) {
-            throw new BusinessException("MOBILE_MISSING", "This customer has no mobile number on file");
-        }
-        return profile.getMobile();
     }
 
     /** Summary of a cascade delete: how many rows went across the key tables. */

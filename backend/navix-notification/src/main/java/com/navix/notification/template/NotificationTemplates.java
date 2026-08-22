@@ -121,6 +121,14 @@ public class NotificationTemplates {
                         + "credit team. Sign in to review your offer and complete the remaining steps."
                         + "\n\n— DhanBoost");
 
+        inApp(NotificationType.SANCTIONED_AMOUNT_REVISED, "Sanctioned amount revised",
+                "Your approved loan amount for application #{applicationId} has been revised to {amount} "
+                        + "(previously {previousAmount}).");
+        email(NotificationType.SANCTIONED_AMOUNT_REVISED, "Your DhanBoost sanctioned amount has been revised",
+                "Hi {name},\n\nThe approved (sanctioned) amount on your loan application #{applicationId} "
+                        + "has been revised to {amount} (previously {previousAmount}). Log in to review "
+                        + "your offer.\n\n— DhanBoost");
+
         // ---------------- DISBURSEMENT ----------------
         inApp(NotificationType.LOAN_APPLIED_FAST_TRACK, "Fast-track disbursal",
                 "Pre-approved application #{applicationId} is ready for disbursement (fast-track).");

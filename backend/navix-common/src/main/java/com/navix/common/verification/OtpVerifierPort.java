@@ -22,10 +22,6 @@ public interface OtpVerifierPort {
     /** An admin correcting a customer's mobile number on file — the code is sent to the NEW number,
      *  proving it is real and reachable before it is saved over the old one. */
     String ADMIN_MOBILE_CHANGE = "ADMIN_MOBILE_CHANGE";
-    /** An admin correcting a customer's approved (sanctioned) loan amount — the code is sent to the
-     *  customer's EXISTING number on file, as the borrower's own consent that the figure credit
-     *  approved for them is changing. */
-    String ADMIN_AMOUNT_CHANGE = "ADMIN_AMOUNT_CHANGE";
 
     /**
      * @param mobile  the number the code was sent to. For every purpose except
@@ -36,9 +32,8 @@ public interface OtpVerifierPort {
      *                yet, so it legitimately comes from the request; callers MUST reuse the exact
      *                same string across the request and confirm calls rather than re-deriving it.
      * @param code    the code the borrower entered
-     * @param purpose one of {@link #LOGIN} / {@link #BUREAU_CONSENT} / {@link #ADMIN_MOBILE_CHANGE} /
-     *                {@link #ADMIN_AMOUNT_CHANGE} — must match the purpose the code was requested
-     *                for, or verification fails.
+     * @param purpose one of {@link #LOGIN} / {@link #BUREAU_CONSENT} / {@link #ADMIN_MOBILE_CHANGE} —
+     *                must match the purpose the code was requested for, or verification fails.
      * @return true if the code was valid (and is now consumed), false otherwise
      */
     boolean verify(String mobile, String code, String purpose);

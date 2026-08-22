@@ -317,10 +317,10 @@ function MobileChangeCard({ detail, onSaved }: { detail: CustomerDetail; onSaved
 
 /**
  * ADMIN correcting the amount credit approved (sanctioned) for the customer's current, not-yet-
- * disbursed application. The OTP is sent to the customer's EXISTING mobile — the borrower's own
- * consent that the approved figure is changing, not merely an admin's say-so. Only shown while an
- * application is still SANCTIONED (mirrors {@code AdminForceDisbursementAction}'s own visibility
- * rule on this page); once disbursed the loan's principal is fixed and cannot be corrected here.
+ * disbursed application. Saves immediately — the backend emails the customer the revised approved
+ * amount. Only shown while an application is still SANCTIONED (mirrors
+ * {@code AdminForceDisbursementAction}'s own visibility rule on this page); once disbursed the
+ * loan's principal is fixed and cannot be corrected here.
  */
 function SanctionedAmountCard({
   customerId,
@@ -333,24 +333,18 @@ function SanctionedAmountCard({
 }) {
   const currentPaise = app.sanctionedAmountPaise ?? null;
   const [amount, setAmount] = React.useState(currentPaise != null ? String(Math.round(currentPaise / 100)) : "");
-  const [otp, setOtp] = React.useState("");
-  const [sent, setSent] = React.useState(false);
   const newAmountPaise = amount ? rupeesToPaise(Number(amount.replace(/[^\d]/g, ""))) : 0;
 
-  const request = useMutation({
-    mutationFn: () => customersApi.requestSanctionedAmountOtp(customerId, app.id, newAmountPaise),
-    onSuccess: () => { setSent(true); setOtp(""); },
-  });
-  const confirm = useMutation({
-    mutationFn: () => customersApi.confirmSanctionedAmountChange(customerId, app.id, newAmountPaise, otp.trim()),
-    onSuccess: () => { setSent(false); setOtp(""); onSaved(); },
+  const save = useMutation({
+    mutationFn: () => customersApi.changeSanctionedAmount(customerId, app.id, newAmountPaise),
+    onSuccess: () => onSaved(),
   });
 
   return (
     <Card title="Correct approved amount (admin)" icon={<IndianRupee size={16} />}>
       <p className="mb-3 text-xs text-muted">
         Currently approved: <span className="font-mono text-ink">{currentPaise != null ? `₹${(currentPaise / 100).toLocaleString("en-IN")}` : "—"}</span>.
-        Sends an OTP to the customer&apos;s mobile as their consent before saving. Only available before disbursement.
+        Saves immediately and emails the customer the revised approved amount. Only available before disbursement.
       </p>
       <Input
         label="New approved amount (₹)"
@@ -359,44 +353,15 @@ function SanctionedAmountCard({
         onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
         placeholder={currentPaise != null ? String(Math.round(currentPaise / 100)) : "50000"}
         className="!mb-2"
-        disabled={sent}
       />
-      {!sent ? (
-        <>
-          {request.error && <p className="mb-2 text-sm text-error-700">{errMessage(request.error)}</p>}
-          <button
-            onClick={() => request.mutate()}
-            disabled={request.isPending || newAmountPaise <= 0}
-            className="btn btn-sm btn-outline btn-block disabled:opacity-50"
-          >
-            {request.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Send OTP
-          </button>
-        </>
-      ) : (
-        <>
-          <Input
-            label="OTP"
-            inputMode="numeric"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            placeholder="6-digit code"
-            className="!mb-2"
-          />
-          {confirm.error && <p className="mb-2 text-sm text-error-700">{errMessage(confirm.error)}</p>}
-          <div className="flex gap-2">
-            <button
-              onClick={() => confirm.mutate()}
-              disabled={confirm.isPending || otp.trim().length !== 6}
-              className="btn btn-sm btn-navy flex-1 disabled:opacity-50"
-            >
-              {confirm.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Confirm
-            </button>
-            <button onClick={() => setSent(false)} disabled={confirm.isPending} className="btn btn-sm btn-outline">
-              Change amount
-            </button>
-          </div>
-        </>
-      )}
+      {save.error && <p className="mb-2 text-sm text-error-700">{errMessage(save.error)}</p>}
+      <button
+        onClick={() => save.mutate()}
+        disabled={save.isPending || newAmountPaise <= 0}
+        className="btn btn-sm btn-navy btn-block disabled:opacity-50"
+      >
+        {save.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save
+      </button>
     </Card>
   );
 }

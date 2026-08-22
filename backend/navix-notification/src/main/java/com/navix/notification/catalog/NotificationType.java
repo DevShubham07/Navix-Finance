@@ -59,6 +59,10 @@ public enum NotificationType {
     CREDIT_REJECTED(CREDIT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
     /** The Credit Executive's final sanction (V45) — the borrower's offer is ready to accept. */
     LOAN_SANCTIONED(CREDIT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    // An ADMIN corrected the sanctioned amount post-approval. Deliberately no SMS — a new DLT
+    // template would be needed and every DHANBOOST_*_V1 registration is still pending operator
+    // approval, so an SMS leg would silently fail (same rationale as SANCTION_LETTER_SIGNED).
+    SANCTIONED_AMOUNT_REVISED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
 
     // ---- DISBURSEMENT ----
     // Every route into DISBURSEMENT_PENDING (fast-track reborrow, offer acceptance, and a retry after
