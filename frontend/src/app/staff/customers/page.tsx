@@ -14,7 +14,7 @@ import { CreditBadge } from "@/components/staff/credit-badge";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
-import { customersApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
+import { customersApi, staffApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
 import { AmountCell, DueCell, dpdFor } from "@/components/staff/pipeline/cells";
 import {
   QueueDateFilter,
@@ -31,6 +31,7 @@ import {
   segmentCounts,
   type CustomerSegment,
 } from "@/lib/customers/segments";
+import { isMine, decidedCustomerIds } from "@/lib/customers/mine";
 
 /**
  * Customers — a borrower-centric roll-up across the loan aggregate. Segment chips filter
@@ -79,15 +80,27 @@ function CustomersPageInner() {
     queryFn: () => customersApi.list(debounced || undefined, range),
   });
 
+  // Only fetched when "mine" is active — needed so a customer this staffer decided on (but isn't
+  // the owner of) still counts as "mine", matching the dashboard's "your book" tile exactly.
+  const myDecisionsQ = useQuery({
+    queryKey: ["customers-mine-decisions"],
+    queryFn: () => staffApi.decisions(),
+    enabled: mine && me?.id != null,
+  });
+
   const rows = React.useMemo(() => q.data ?? [], [q.data]);
   const scoped = React.useMemo(() => {
     let list = rows;
-    if (mine && me?.id != null) {
-      const sid = Number(me.id);
-      list = list.filter((c) => c.ownerStaffId === sid);
+    if (mine) {
+      // Fail CLOSED when the staff id will not resolve: an unfiltered company list under the
+      // "My customers" chip is worse than an empty one, and it would also disagree with the
+      // dashboard's "borrowers in your book" tile, which links here.
+      const sid = me?.id != null ? Number(me.id) : NaN;
+      const decided = decidedCustomerIds(myDecisionsQ.data ?? []);
+      list = Number.isFinite(sid) ? list.filter((c) => isMine(c, sid, decided)) : [];
     }
     return list;
-  }, [rows, mine, me?.id]);
+  }, [rows, mine, me?.id, myDecisionsQ.data]);
 
   const counts = React.useMemo(() => segmentCounts(scoped), [scoped]);
   const filtered = React.useMemo(

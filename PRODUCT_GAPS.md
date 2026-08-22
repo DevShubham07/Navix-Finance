@@ -123,8 +123,8 @@ is reachable directly, bypassing the BFF and all header injection; the only enfo
 ### G1 — Applicant PII is open to every staff role  · **HIGH**
 The "Open application by ID" review (`frontend/src/components/staff/live-pipeline.tsx` `ApplicantReview`,
 surfaced on `staff/applications` and `staff/credit/[id]`) is **not role-gated**. Any role — including
-`DEVELOPER` and `COLLECTION_*` — can pull full name, masked PAN/Aadhaar, **monthly salary**, employer,
-and address. PM call: a developer should see **zero** PII; collections doesn't need salary. Scope the
+`COLLECTION_*` — can pull full name, masked PAN/Aadhaar, **monthly salary**, employer,
+and address. PM call: collections doesn't need salary. Scope the
 review lookup by permission.
 
 ### G2 — Collections sees credit-assessment data  · **HIGH** · _proven ([shot 27](docs/product-gaps-shots/27-collections-case-dpd.png))_

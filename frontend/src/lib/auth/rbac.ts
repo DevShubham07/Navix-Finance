@@ -18,7 +18,6 @@ export const STAFF_ROLES = [
   "TELECALLER",
   "DSA",
   "ADMIN",
-  "DEVELOPER",
 ] as const;
 
 export type StaffRole = (typeof STAFF_ROLES)[number];
@@ -34,7 +33,6 @@ export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   TELECALLER: "Telecaller",
   DSA: "DSA",
   ADMIN: "Administrator",
-  DEVELOPER: "Developer",
 };
 
 /**
@@ -142,7 +140,6 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   // External commission agent, firewalled from the platform: own leads + own commissions/earnings
   // only. Deliberately NOT customer:view, NOT leads:manage, NOT loan:pipeline.
   DSA: ["dsa:portal"],
-  DEVELOPER: ["customer:view", "loan:pipeline"],
   ADMIN: [
     "kyc:approve",
     "loan:review",

@@ -9,10 +9,13 @@ import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.domain.PaymentStatus;
+import com.navix.loan.entity.Payment;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.CustomerCallLogRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import com.navix.loan.repository.PaymentRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -62,6 +65,7 @@ public class DecisionHistoryService {
     private final CustomerCallLogRepository callLogRepository;
     private final CollectionActivityDirectory collectionActivity;
     private final StaffDirectory staffDirectory;
+    private final PaymentRepository paymentRepository;
 
     /**
      * One decision, with {@code application_event.notes} already parsed into typed columns by
@@ -166,12 +170,19 @@ public class DecisionHistoryService {
      * @param callsMade            telecaller + collections calls they logged in the window; see
      *                             {@link StaffPerformanceSummary#callTrackingSince()} before reading
      *                             a 0 here as "made no calls"
+     * @param verifiedCount        repayments they verified (Accountant) in the window; null when
+     *                             they decided none — never 0, which would claim they worked and
+     *                             verified nothing rather than "no attributable rows"
+     * @param verifiedPaise        total paise across {@code verifiedCount}; null under the same rule
+     * @param rejectedPaymentCount repayments they rejected (Accountant) in the window; null under
+     *                             the same rule
      */
     public record StaffPerformanceRow(Long staffId, String staffName, String role, boolean active,
                                       long accepted, long rejected, long totalActions,
                                       long activeDays, Long avgTurnaroundMinutes, long pendingNow,
                                       long moneyPaise, Instant firstActionAt, Instant lastActionAt,
-                                      long callsMade) {
+                                      long callsMade, Long verifiedCount, Long verifiedPaise,
+                                      Long rejectedPaymentCount) {
     }
 
     /** One day's total action count across the whole roster — the trend line. */
@@ -223,10 +234,11 @@ public class DecisionHistoryService {
         Map<String, StaffSummary> byActorId = roster.stream().collect(Collectors.toMap(
                 s -> String.valueOf(s.id()), Function.identity(), (a, b) -> a));
 
-        // ponytail: buckets the window's events in memory rather than pushing GROUP BY into SQL —
-        // one indexed query feeds counts, active days, turnaround, money AND the trend series. Swap
-        // in projections if an all-time read over a large trail gets slow (DashboardService already
-        // does a bare findAll(), so this is not the first place that would hurt).
+        // ponytail: buckets the window's events (and, below, the window's decided payments) in
+        // memory rather than pushing GROUP BY into SQL — one indexed query each feeds counts, active
+        // days, turnaround, money AND the trend series, plus the accountant verify/reject columns.
+        // Swap in projections if an all-time read over a large trail gets slow (DashboardService
+        // already does a bare findAll(), so this is not the first place that would hurt).
         List<ApplicationEvent> events =
                 eventRepository.findForActorsInWindow(byActorId.keySet(), fromInst, toInst);
 
@@ -237,13 +249,16 @@ public class DecisionHistoryService {
         Map<Long, Long> callsByStaff = callCounts(
                 roster.stream().map(StaffSummary::id).toList(), fromInst, toInst);
 
+        Map<Long, PaymentTally> paymentsByStaff = paymentTallies(
+                roster.stream().map(StaffSummary::id).toList(), fromInst, toInst);
+
         Map<String, List<ApplicationEvent>> byActor =
                 events.stream().collect(Collectors.groupingBy(ApplicationEvent::getActorId));
         Map<Long, Instant> assignedAt = assignmentClock(events);
 
         List<StaffPerformanceRow> rows = roster.stream()
                 .map(s -> row(s, byActor.getOrDefault(String.valueOf(s.id()), List.of()),
-                        assignedAt, pendingByStaff, callsByStaff))
+                        assignedAt, pendingByStaff, callsByStaff, paymentsByStaff))
                 .toList();
 
         Map<LocalDate, Long> perDay = events.stream()
@@ -278,6 +293,34 @@ public class DecisionHistoryService {
         return merged;
     }
 
+    /** One staffer's accountant-verification tally over the window: counts and paise, never 0-by-default. */
+    private record PaymentTally(long verifiedCount, long verifiedPaise, long rejectedCount) {
+    }
+
+    /**
+     * Repayments each staffer verified/rejected (V59 {@code decided_by}) in the window, bucketed in
+     * memory over one query — same shape as {@link #callCounts}. A staffer absent from the result has
+     * no attributable payment rows, which {@link #row} renders as {@code null}, not 0.
+     */
+    private Map<Long, PaymentTally> paymentTallies(List<Long> staffIds, Instant from, Instant to) {
+        if (staffIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, long[]> counts = new HashMap<>(); // [verifiedCount, verifiedPaise, rejectedCount]
+        for (Payment p : paymentRepository.findDecidedByInWindow(staffIds, from, to)) {
+            long[] bucket = counts.computeIfAbsent(p.getDecidedBy(), id -> new long[3]);
+            if (p.getStatus() == PaymentStatus.VERIFIED) {
+                bucket[0]++;
+                bucket[1] += p.getAmount();
+            } else if (p.getStatus() == PaymentStatus.REJECTED) {
+                bucket[2]++;
+            }
+        }
+        Map<Long, PaymentTally> tallies = new HashMap<>();
+        counts.forEach((staffId, bucket) -> tallies.put(staffId, new PaymentTally(bucket[0], bucket[1], bucket[2])));
+        return tallies;
+    }
+
     /**
      * When each application was last handed to somebody, from the assignment events in the window.
      *
@@ -298,7 +341,7 @@ public class DecisionHistoryService {
 
     private StaffPerformanceRow row(StaffSummary staff, List<ApplicationEvent> mine,
                                     Map<Long, Instant> assignedAt, Map<Long, Long> pendingByStaff,
-                                    Map<Long, Long> callsByStaff) {
+                                    Map<Long, Long> callsByStaff, Map<Long, PaymentTally> paymentsByStaff) {
         long accepted = 0;
         long rejected = 0;
         long moneyPaise = 0;
@@ -343,10 +386,14 @@ public class DecisionHistoryService {
         }
 
         Long avgTurnaround = turnaroundSamples == 0 ? null : turnaroundTotalMinutes / turnaroundSamples;
+        PaymentTally payments = paymentsByStaff.get(staff.id());
         return new StaffPerformanceRow(staff.id(), staff.name(), staff.role(), staff.active(),
                 accepted, rejected, humanActions, days.size(), avgTurnaround,
                 pendingByStaff.getOrDefault(staff.id(), 0L), moneyPaise, first, last,
-                callsByStaff.getOrDefault(staff.id(), 0L));
+                callsByStaff.getOrDefault(staff.id(), 0L),
+                payments == null ? null : payments.verifiedCount(),
+                payments == null ? null : payments.verifiedPaise(),
+                payments == null ? null : payments.rejectedCount());
     }
 
     /**

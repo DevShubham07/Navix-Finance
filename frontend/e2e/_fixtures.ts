@@ -3,7 +3,7 @@ import { type BrowserContext, type Page } from "@playwright/test";
 /** Staff roles (mirrors lib/auth/rbac.ts). */
 export const STAFF_ROLES = [
   "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD", "ACCOUNTANT",
-  "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "DSA", "ADMIN", "DEVELOPER",
+  "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "DSA", "ADMIN",
 ] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
@@ -17,7 +17,6 @@ export const STAFF_PERSONA_NAMES: Record<StaffRole, string> = {
   COLLECTION_EXECUTIVE: "Sana Khan",
   DSA: "Arjun Rao",
   ADMIN: "Meera Krishnan",
-  DEVELOPER: "Dev Ops",
 };
 
 /** Seeded login email per role (V10 seed); the shared demo password is below. */
@@ -30,7 +29,6 @@ export const STAFF_PERSONA_EMAILS: Record<StaffRole, string> = {
   COLLECTION_EXECUTIVE: "sana.khan@navix.example",
   DSA: "arjun.rao@navix.example",
   ADMIN: "meera.krishnan@navix.example",
-  DEVELOPER: "dev.ops@navix.example",
 };
 export const STAFF_DEFAULT_PASSWORD = "Admin@12345";
 

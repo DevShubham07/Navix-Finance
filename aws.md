@@ -393,7 +393,7 @@ staff account"). Rotate `demo` before any real use.
 V17; emails from V10): `meera.krishnan@navix.example`=ADMIN · `ananya.rao`=KYC_APPROVER ·
 `priya.nair`=CREDIT_HEAD · `rahul.mehta`/`kabir.singh`/`neha.gupta`=CREDIT_EXECUTIVE ·
 `vikram.shah`=DISBURSEMENT_HEAD · `deepa.iyer`=ACCOUNTANT · `arjun.patel`=COLLECTION_HEAD ·
-`sana.khan`=COLLECTION_EXECUTIVE · `dev.ops`=DEVELOPER. Borrower demo: mobile any 10 digits, OTP
+`sana.khan`=COLLECTION_EXECUTIVE. Borrower demo: mobile any 10 digits, OTP
 **`123456`** (mock).
 
 ---

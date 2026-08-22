@@ -419,7 +419,6 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 | `COLLECTION_EXECUTIVE` | borrower collections interactions |
 | `DSA` | **external commission agent** (V55). Enters leads and earns **3.5% of net disbursed** on their lead's *first* loan, payable only once that loan is fully repaid. Holds **no** lifecycle authority and is **firewalled from all customer data** — see the note below |
 | `ADMIN` | oversight — **bypasses role checks**; also exempt from the credit SoD + active-executive `assign`, so may walk a loan KYC→ACTIVE **solo, per-step** (credit queue shows an **"Assign to me"** button); edits salary/profile data; manages company expenses + blocklist |
-| `DEVELOPER` | internal read-only (health/logs/DB); `customer:view` only |
 
 > **A credit reject (`REJECT_LEAD`) carries a 30-day cooling-off.** `MANUAL_REJECT_BLOCK_DAYS = 30`
 > is written to `application_rejection.blocked_until`, and `assertNotBlocked` (mobile-keyed) then
@@ -429,8 +428,9 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 > reborrow minutes later that came back `PRE_APPROVED`, skipping KYC *and* credit.
 
 > Role names are `COLLECTION_HEAD` / `COLLECTION_EXECUTIVE` (not the old
-> COLLECTIONS_HEAD / COLLECTION_OFFICER), plus `DEVELOPER`. Reconciled in Flyway **V8**.
-> `TELECALLER` was added in **V42**, `DSA` in **V55**.
+> COLLECTIONS_HEAD / COLLECTION_OFFICER). Reconciled in Flyway **V8**.
+> `TELECALLER` was added in **V42**, `DSA` in **V55**. `DEVELOPER` (added in V8) was **dropped in
+> V61** — its holders were deactivated, not deleted.
 
 > **⚠ `DSA` is the one staff role that is an authz *exclusion*, not just an absence of permissions.**
 > Every other staff role holds the broad `customer:view`, and several controllers gate with a
@@ -443,7 +443,7 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 **Permission tokens** (`frontend/src/lib/auth/rbac.ts`, mirrored by service-level guards): `kyc:approve`,
 `loan:review`, `loan:approve`, `loan:disburse`, `loan:activate`, `collections:manage`,
-`collections:interact`, `staff:manage`, `customer:view` (granted to **all** roles incl. DEVELOPER —
+`collections:interact`, `staff:manage`, `customer:view` (granted to **all** roles —
 every staff member can view the Customers pane incl. PII), `customer:manage` (ADMIN — correct KYC,
 cancel, blocklist), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER + ADMIN),
 `dsa:portal` (**DSA only** — and it is the *only* token a DSA holds), `dsa:manage` (ADMIN).
@@ -556,7 +556,7 @@ navix-common). Applied on every boot:
 | `V5__application_state_machine.sql` | `loan_application.status` → `ApplicationStatus`; add `purpose`, `assigned_executive_id`, `loan_id`; create `application_event` audit table |
 | `V6__loan_application_amount_nullable.sql` | `amount_requested` nullable (DRAFT has no amount yet) |
 | `V7__loan_application_salary_credit_day.sql` | add `salary_credit_day` |
-| `V8__staff_roles_rename.sql` | role check-constraint + data: COLLECTION_HEAD / COLLECTION_EXECUTIVE / +DEVELOPER |
+| `V8__staff_roles_rename.sql` | role check-constraint + data: COLLECTION_HEAD / COLLECTION_EXECUTIVE / +DEVELOPER (DEVELOPER dropped in **V61**) |
 | `V9__applicant_profile_and_documents.sql` | `applicant_profile` (1:1 KYC snapshot) + `application_document` (uploaded docs, `bytea`) for staff review |
 | `V10__seed_demo_staff.sql` | seed demo staff users (one ACTIVE per role) so role-pick login resolves to a **real** staff id |
 | `V11__collection_case_real_loan_and_staff_ids.sql` | retype `collection_case.loan_id`/`assigned_officer_id` + `settlement.proposed_by`/`approved_by` to **bigint** (real loan + staff ids) |

@@ -53,7 +53,7 @@ class StaffServiceTest {
 
     @Test
     void staffManagementRejectsNonAdmin() {
-        ActorContext.set(new CurrentActor("9", "Dev", "DEVELOPER"));
+        ActorContext.set(new CurrentActor("9", "Dev", "TELECALLER"));
         assertThatThrownBy(() -> staffService.listStaff())
                 .isInstanceOf(BusinessException.class)
                 .extracting("code").isEqualTo("FORBIDDEN_ROLE");

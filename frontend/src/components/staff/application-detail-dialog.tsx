@@ -22,7 +22,7 @@
  * strip, then the one card the signed-in role actually decides on ({@link RoleFocus}) —
  * disbursement + payout gate for the release roles, the penalty-aware amount due for
  * collections, the credit headline for the credit roles, KYC progress for the approver.
- * ADMIN/DEVELOPER get every card (oversight). Everything else stays one tab away.
+ * ADMIN gets every card (oversight). Everything else stays one tab away.
  */
 
 import * as React from "react";
@@ -103,7 +103,6 @@ const ROLE_FOCUS: Record<StaffRole, Array<"disbursement" | "collections" | "cred
   DSA: [],
   // Oversight roles see everything.
   ADMIN: ["kyc", "credit", "disbursement", "collections"],
-  DEVELOPER: ["kyc", "credit", "disbursement", "collections"],
 };
 
 /** The maker-checker action available for an application's current pipeline stage. */

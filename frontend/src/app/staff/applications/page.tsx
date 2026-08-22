@@ -37,7 +37,7 @@ import { InfoTooltip } from "@/components/ui";
 
 /** Roles that don't drive the credit/disbursement pipeline but do need the repayment/closed
  * back-office panels (see `RoleQueues`) — previously left with "no application-pipeline queue". */
-const BACK_OFFICE_ROLES: StaffRole[] = ["DEVELOPER", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE"];
+const BACK_OFFICE_ROLES: StaffRole[] = ["COLLECTION_HEAD", "COLLECTION_EXECUTIVE"];
 
 export default function StaffApplicationsPage() {
   const me = useStaffMe();
@@ -122,9 +122,9 @@ function RoleQueues({ role }: { role: StaffRole }) {
   const showAll = role === "ADMIN";
 
   // "Awaiting repayment" (ACTIVE+OVERDUE) and "Closed" are back-office, not credit-pipeline,
-  // panels: the show-all view (ADMIN/DEVELOPER) and ACCOUNTANT get both; collections roles only
+  // panels: the show-all view (ADMIN) and ACCOUNTANT get both; collections roles only
   // need to see what's still owed, not the closed archive.
-  const showBothRepaymentPanels = showAll || role === "DEVELOPER" || role === "ACCOUNTANT";
+  const showBothRepaymentPanels = showAll || role === "ACCOUNTANT";
   const isCollections = role === "COLLECTION_HEAD" || role === "COLLECTION_EXECUTIVE";
   const showAwaitingRepayment = showBothRepaymentPanels || isCollections;
 

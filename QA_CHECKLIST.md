@@ -105,7 +105,6 @@ password **`Admin@12345`** (BCrypt hash set in **V17**).
 | `COLLECTION_HEAD` | `arjun.patel@navix.example` |
 | `COLLECTION_EXECUTIVE` | `sana.khan@navix.example` |
 | `ADMIN` | `meera.krishnan@navix.example` |
-| `DEVELOPER` | `dev.ops@navix.example` |
 
 ```bash
 # Helper: grab a staff JWT for any seeded email
@@ -514,7 +513,7 @@ preserves entered data**, and confirm **bureau score / risk category are NEVER s
 One **denied page** + one **denied action** per role. Permission map: KYC_APPROVER=`kyc:approve`,
 CREDIT_EXECUTIVE=`loan:review`, CREDIT_HEAD=`loan:approve`, DISBURSEMENT_HEAD=`loan:disburse`,
 ACCOUNTANT=`loan:activate`, COLLECTION_HEAD=`collections:manage`+`interact`,
-COLLECTION_EXECUTIVE=`collections:interact`, DEVELOPER=`customer:view` only, ADMIN=all. Every staff role
+COLLECTION_EXECUTIVE=`collections:interact`, ADMIN=all. Every staff role
 also has `customer:view`; only ADMIN has `staff:manage` + `customer:manage`.
 
 | ID | Role | Denied PAGE (expect blocked/empty/no-action) | Denied ACTION (expect disabled or 422 `FORBIDDEN_ROLE`) | P/F |
@@ -526,7 +525,6 @@ also has `customer:view`; only ADMIN has `staff:manage` + `customer:manage`.
 | RBAC-05 | ACCOUNTANT | `/staff/credit/queue` (no assign/approve) | `POST …/assign` → `422 FORBIDDEN_ROLE` | |
 | RBAC-06 | COLLECTION_HEAD | `/staff/admin/staff` (no `staff:manage`) | `PUT /api/payment-settings` → `422 FORBIDDEN_ROLE` (ADMIN-only) | |
 | RBAC-07 | COLLECTION_EXECUTIVE | `/staff/collections/settlements` approve hidden (no `collections:manage`) | Settlement **approve** unavailable | |
-| RBAC-08 | DEVELOPER | All staff action pages read-only (only `customer:view`) | No business action available anywhere | |
 | RBAC-09 | ADMIN | (control) all pages reachable | Walks KYC→ACTIVE solo, per-step; **exempt** from credit SoD + assign-exec requirement | |
 | RBAC-10 | BORROWER (no staff cookie) | any `/staff/*` | Redirect to `/staff/login`; backend `FORBIDDEN_ROLE`/`401` | |
 

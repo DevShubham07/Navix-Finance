@@ -30,7 +30,5 @@ public enum StaffRole {
      * step), so — like TELECALLER — it never participates in maker-checker or SoD.
      */
     DSA,
-    ADMIN,
-    /** Internal read-only operations role (health, logs, read-only DB). */
-    DEVELOPER
+    ADMIN
 }

@@ -53,7 +53,6 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
   TELECALLER: "Telecaller",
   DSA: "DSA",
   ADMIN: "Administrator",
-  DEVELOPER: "Developer",
 };
 
 /** Roles that drive the application state machine. */
@@ -73,7 +72,7 @@ export const PIPELINE_ROLES: StaffRole[] = [
  *
  * `.some(p => hasPermission(role, p))` against this list is therefore true for every staff role —
  * the check exists so a future role without `customer:view` is still handled correctly, not to
- * exclude anyone today. Collections/DEVELOPER were previously excluded here by mistake (this list
+ * exclude anyone today. Collections were previously excluded here by mistake (this list
  * held only the credit/KYC permissions), which silently hid `ReviewLookup` for those roles and
  * made every "Open" popup dead-end on "Customer details aren't available to your role" — fixed by
  * adding `customer:view`.

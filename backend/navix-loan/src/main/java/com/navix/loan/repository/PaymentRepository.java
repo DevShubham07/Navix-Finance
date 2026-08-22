@@ -2,6 +2,7 @@ package com.navix.loan.repository;
 
 import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.entity.Payment;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -44,4 +45,15 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
         Long getTotal();
     }
+
+    /**
+     * Every payment decided (verified or rejected) by any of {@code staffIds} in the half-open
+     * window {@code [from, to)} — backs the accountant-attribution columns on the staff-performance
+     * summary (V59's {@code decided_by}/{@code decided_at}). Callers MUST short-circuit on an empty
+     * collection — {@code in ()} is not valid SQL.
+     */
+    @Query("select p from Payment p "
+            + "where p.decidedBy in :staffIds and p.decidedAt >= :from and p.decidedAt < :to")
+    List<Payment> findDecidedByInWindow(@Param("staffIds") Collection<Long> staffIds,
+                                        @Param("from") Instant from, @Param("to") Instant to);
 }

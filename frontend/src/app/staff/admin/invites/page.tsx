@@ -14,7 +14,7 @@ import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagina
 
 const ROLES: StaffRoleName[] = [
   "CREDIT_EXECUTIVE", "CREDIT_HEAD", "DISBURSEMENT_HEAD",
-  "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "TELECALLER", "DSA", "ADMIN", "DEVELOPER",
+  "ACCOUNTANT", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "TELECALLER", "DSA", "ADMIN",
 ];
 
 /** Admin · invites — issue an invite (returns a one-time token) and list invites. ADMIN only. */

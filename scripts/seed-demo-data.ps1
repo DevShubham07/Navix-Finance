@@ -103,7 +103,6 @@ function Login-Staff([string]$Role) {
     COLLECTION_HEAD      = "arjun.patel@navix.example"
     COLLECTION_EXECUTIVE = "sana.khan@navix.example"
     ADMIN                = "meera.krishnan@navix.example"
-    DEVELOPER            = "dev.ops@navix.example"
   }
   $body = @{ email = $emails[$Role]; password = "Admin@12345" } | ConvertTo-Json -Compress
   $r = Invoke-RestMethod -Method Post -Uri "$BackendBase/api/auth/staff/login" -ContentType "application/json" -Body $body

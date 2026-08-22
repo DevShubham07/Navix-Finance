@@ -113,7 +113,6 @@ identity across states.
 | Arjun Patel | `COLLECTION_HEAD` |
 | Sana Khan | `COLLECTION_EXECUTIVE` |
 | Meera Krishnan | `ADMIN` |
-| Dev Ops | `DEVELOPER` |
 
 ## The customer/application personas (~49 applications)
 

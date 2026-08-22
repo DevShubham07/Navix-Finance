@@ -13,11 +13,15 @@ import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.domain.PaymentMethod;
+import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.entity.ApplicationEvent;
+import com.navix.loan.entity.Payment;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.CustomerCallLogRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import com.navix.loan.repository.PaymentRepository;
 import com.navix.loan.service.DecisionHistoryService.StaffPerformanceRow;
 import com.navix.loan.service.DecisionHistoryService.StaffPerformanceSummary;
 import java.time.Instant;
@@ -66,19 +70,35 @@ class StaffPerformanceSummaryTest {
     private CollectionActivityDirectory collectionActivity;
     @Mock
     private StaffDirectory staffDirectory;
+    @Mock
+    private PaymentRepository paymentRepository;
 
     private DecisionHistoryService service;
 
     @BeforeEach
     void setUp() {
         service = new DecisionHistoryService(eventRepository, profileRepository,
-                applicationRepository, callLogRepository, collectionActivity, staffDirectory);
+                applicationRepository, callLogRepository, collectionActivity, staffDirectory, paymentRepository);
         lenient().when(applicationRepository.countGroupByAssignedExecutive(any())).thenReturn(List.of());
         lenient().when(callLogRepository.countByStaffInWindow(anyCollection(), any(), any()))
                 .thenReturn(List.of());
         lenient().when(collectionActivity.callCountsByStaff(anyCollection(), any(), any()))
                 .thenReturn(Map.of());
+        lenient().when(paymentRepository.findDecidedByInWindow(anyCollection(), any(), any()))
+                .thenReturn(List.of());
         ActorContext.set(ADMIN);
+    }
+
+    /** A decided repayment attributed to {@code decidedBy} for the payment-attribution columns. */
+    private static Payment payment(long decidedBy, PaymentStatus status, long amountPaise) {
+        Payment p = new Payment();
+        p.setLoanId(1L);
+        p.setAmount(amountPaise);
+        p.setMethod(PaymentMethod.UPI);
+        p.setStatus(status);
+        p.setDecidedBy(decidedBy);
+        p.setDecidedAt(Instant.now());
+        return p;
     }
 
     /** A telecaller/collections call-count projection stub. */
@@ -394,5 +414,35 @@ class StaffPerformanceSummaryTest {
         org.assertj.core.api.Assertions
                 .assertThatThrownBy(() -> service.summary(null, null, 9L))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    // ---- accountant repayment-verification attribution (V59 decided_by/decided_at) ---------------
+
+    @Test
+    void attributesVerifiedAndRejectedPaymentsToTheDecidingStaffer() {
+        rosterIsEveryone(RAVI);
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
+        when(paymentRepository.findDecidedByInWindow(anyCollection(), any(), any())).thenReturn(List.of(
+                payment(41L, PaymentStatus.VERIFIED, 500_000L),
+                payment(41L, PaymentStatus.REJECTED, 250_000L)));
+
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
+
+        assertThat(row.verifiedCount()).isEqualTo(1L);
+        assertThat(row.verifiedPaise()).isEqualTo(500_000L);
+        assertThat(row.rejectedPaymentCount()).isEqualTo(1L);
+    }
+
+    @Test
+    void reportsNoAttributablePaymentsAsNullRatherThanZero() {
+        rosterIsEveryone(RAVI);
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of());
+        // No stub for findDecidedByInWindow beyond the default empty list from setUp.
+
+        StaffPerformanceRow row = rowFor(service.summary(null, null, null), 41L);
+
+        assertThat(row.verifiedCount()).isNull();
+        assertThat(row.verifiedPaise()).isNull();
+        assertThat(row.rejectedPaymentCount()).isNull();
     }
 }

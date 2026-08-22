@@ -48,9 +48,8 @@ const STAGE_INFO: Record<JourneyStageKey, string> = {
 const TERMINAL_STAGES: ReadonlySet<JourneyStageKey> = new Set(["CLOSED"]);
 
 /**
- * Which macro-stages each role acts on (drives the highlight span). ADMIN and
- * DEVELOPER have no single span — ADMIN sees all full-opacity, DEVELOPER (no
- * queue) sees all at full opacity too (nothing to emphasise).
+ * Which macro-stages each role acts on (drives the highlight span). ADMIN has
+ * no single span — it sees all full-opacity (nothing to emphasise).
  */
 const ROLE_STAGES: Partial<Record<StaffRole, JourneyStageKey[]>> = {
   // The credit roles absorbed KYC in V45, so their span covers both stages.
@@ -87,7 +86,7 @@ export function PipelineBar({
   }
 
   const isAdmin = role === "ADMIN";
-  const span = ROLE_STAGES[role]; // undefined for ADMIN / DEVELOPER
+  const span = ROLE_STAGES[role]; // undefined for ADMIN
   const highlighted = (key: JourneyStageKey) => !isAdmin && !!span?.includes(key);
   const dimmed = (key: JourneyStageKey) => !isAdmin && span != null && !span.includes(key);
 

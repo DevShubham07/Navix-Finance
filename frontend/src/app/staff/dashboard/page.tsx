@@ -13,12 +13,15 @@ import {
   Clock,
   Route,
   ChevronRight,
+  Users,
 } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { NoAccessNotice } from "@/components/staff/live-pipeline";
 import { InfoTooltip } from "@/components/ui";
 import { PipelineBar } from "@/components/staff/pipeline-bar";
 import { QueueTable } from "@/components/staff/pipeline/status-queue";
+import { PeriodPicker } from "@/components/staff/period-picker";
+import { rangeFor as decisionRangeFor, type Range } from "@/lib/period";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import {
@@ -34,12 +37,59 @@ import {
   type TransactionView,
   type TrendPoint,
   type TrendResponse,
+  type CaseView,
+  type CustomerSummary,
 } from "@/lib/api/applications";
 import { segmentCounts, SEGMENT_LABEL, SEGMENTS, type CustomerSegment } from "@/lib/customers/segments";
+import { isMine, decidedCustomerIds } from "@/lib/customers/mine";
+import {
+  decisionStats,
+  outcomeStats,
+  bookStats,
+  collectionsStats,
+} from "@/lib/staff/my-stats";
 import { useMounted } from "@/hooks/use-mounted";
 import { formatDate } from "@/lib/utils";
 
 const REFRESH_MS = 10_000;
+
+// ---------------------------------------------------------------------------
+// Formatting helpers — a null metric is unmeasurable, never a fabricated 0.
+// ---------------------------------------------------------------------------
+
+function num(n: number | null | undefined): string {
+  return n == null ? "—" : String(n);
+}
+function pct(n: number | null | undefined, digits = 0): string {
+  return n == null ? "—" : `${(n * 100).toFixed(digits)}%`;
+}
+function mins(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return n < 60 ? `${Math.round(n)}m` : `${(n / 60).toFixed(1)}h`;
+}
+function score(n: number | null | undefined): string {
+  return n == null ? "—" : n.toFixed(0);
+}
+
+// ---------------------------------------------------------------------------
+// Section composition — which sections each role's dashboard shows.
+// ---------------------------------------------------------------------------
+
+type SectionKey = "work" | "decisions" | "outcomes" | "borrowers" | "collections" | "team";
+
+// Total Record<StaffRole, …> on purpose: adding a role to rbac.ts without listing its
+// sections here is a typecheck failure, not a silently blank dashboard.
+const SECTIONS: Record<StaffRole, SectionKey[]> = {
+  CREDIT_EXECUTIVE: ["work", "decisions", "outcomes", "borrowers"],
+  CREDIT_HEAD: ["work", "decisions", "outcomes", "borrowers", "team"],
+  DISBURSEMENT_HEAD: ["work", "decisions", "borrowers"],
+  ACCOUNTANT: ["work", "decisions", "borrowers"],
+  COLLECTION_EXECUTIVE: ["work", "collections", "borrowers"],
+  COLLECTION_HEAD: ["work", "decisions", "collections", "borrowers", "team"],
+  TELECALLER: ["work", "decisions", "borrowers"],
+  DSA: [],
+  ADMIN: ["work", "decisions", "outcomes", "borrowers", "collections", "team"],
+};
 
 /** Per-role "your queue" label (+ an ⓘ explanation) and the live statuses that feed it. */
 const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
@@ -48,8 +98,8 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
     info: "Verify the file, then accept it with a sanctioned amount and repayment date, reject it, or park it as pending. Your decision is final — it goes straight to disbursement.",
   },
   CREDIT_HEAD: {
-    label: "Leads to assign",
-    info: "Hand each submitted intake to an ACTIVE credit executive. You can also decide a lead yourself; either way that decision is the final one.",
+    label: "Leads to assign or decide",
+    info: "Hand each submitted intake to an ACTIVE credit executive, or decide it yourself. This count also includes files already out with your team, since you may decide those too — either way the decision is final.",
   },
   DISBURSEMENT_HEAD: {
     label: "Approved loans to release",
@@ -65,15 +115,11 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
   },
   COLLECTION_EXECUTIVE: {
     label: "Open collection cases",
-    info: "Work overdue loans in your DPD buckets and log borrower interactions. Open a case for any collectible loan, then follow up.",
+    info: "Work overdue loans assigned to you in your DPD buckets and log borrower interactions.",
   },
   ADMIN: {
     label: "Live pipeline",
     info: "Oversight across every queue — ADMIN can act in any role.",
-  },
-  DEVELOPER: {
-    label: "Read-only oversight",
-    info: "Browse the live application pipeline and your allocated customers. Developer is read-only — no maker-checker actions.",
   },
 };
 
@@ -93,7 +139,6 @@ const ROLE_HREF: Partial<Record<StaffRole, string>> = {
   COLLECTION_HEAD: "/staff/applications",
   COLLECTION_EXECUTIVE: "/staff/applications",
   ADMIN: "/staff/applications",
-  DEVELOPER: "/staff/applications",
 };
 
 /** A non-application actionable source (repayments, referral payouts, settlements, cases). */
@@ -134,6 +179,7 @@ const settlementsExtra = (count: number): QueueExtra =>
  * // list stops fitting one response — same change as adding server-side segment filters.
  */
 async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promise<RoleQueue> {
+  const sid = staffId != null && staffId !== "" && Number.isFinite(Number(staffId)) ? Number(staffId) : undefined;
   let base: RoleQueue;
   switch (role) {
     case "CREDIT_EXECUTIVE":
@@ -184,9 +230,17 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
       break;
     }
     case "COLLECTION_EXECUTIVE": {
-      const cases = await countOf(collectionsApi.listCases());
+      // Headline bug fix: this used to count every open case company-wide. An executive only acts
+      // on cases assigned to them.
+      // Fail CLOSED without a resolvable staff id — showing every company case is the bug, so an
+      // unknown actor gets nothing. Same convention as ApplicationFlowService.byStatus (returns
+      // List.of() when the executive id is missing) and CustomerService.scope().
+      const allCases = sid == null ? [] : await collectionsApi.listCases().catch(() => [] as CaseView[]);
+      const mine = allCases.filter((c) => c.assignedOfficerId === sid);
       const extras: QueueExtra[] = [];
-      if (cases > 0) extras.push({ key: "cases", label: "Open collection cases", count: cases, href: "/staff/applications" });
+      if (mine.length > 0) {
+        extras.push({ key: "cases", label: "Your open collection cases", count: mine.length, href: "/staff/applications" });
+      }
       base = { apps: [], extras };
       break;
     }
@@ -206,37 +260,35 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
       base = { apps: lists.flat(), extras };
       break;
     }
-    case "DEVELOPER":
+    case "TELECALLER":
+    case "DSA":
     default:
       base = { apps: [], extras: [] };
       break;
   }
 
-  if (staffId != null && staffId !== "") {
-    const sid = Number(staffId);
-    if (Number.isFinite(sid)) {
-      try {
-        const mine = (await customersApi.list()).filter((c) => c.ownerStaffId === sid);
-        const overdue = mine.filter(
-          (c) => c.loanStatus === "OVERDUE" || c.loanStatus === "IN_COLLECTIONS",
-        );
+  if (sid != null) {
+    try {
+      const mine = (await customersApi.list()).filter((c) => c.ownerStaffId === sid);
+      const overdue = mine.filter(
+        (c) => c.loanStatus === "OVERDUE" || c.loanStatus === "IN_COLLECTIONS",
+      );
+      base.extras.push({
+        key: "my-customers",
+        label: "Customers allocated to you",
+        count: mine.length,
+        href: "/staff/customers?mine=1",
+      });
+      if (overdue.length > 0) {
         base.extras.push({
-          key: "my-customers",
-          label: "Customers allocated to you",
-          count: mine.length,
-          href: "/staff/customers?mine=1",
+          key: "my-overdue",
+          label: "Your customers now overdue",
+          count: overdue.length,
+          href: "/staff/customers?seg=overdue&mine=1",
         });
-        if (overdue.length > 0) {
-          base.extras.push({
-            key: "my-overdue",
-            label: "Your customers now overdue",
-            count: overdue.length,
-            href: "/staff/customers?seg=overdue&mine=1",
-          });
-        }
-      } catch {
-        // customers list is best-effort; don't zero the pipeline queue
       }
+    } catch {
+      // customers list is best-effort; don't zero the pipeline queue
     }
   }
   return base;
@@ -245,34 +297,102 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
 export default function StaffDashboardPage() {
   const mounted = useMounted();
   const { session } = useStaffSession();
-  const role = session?.role;
+  const role = session?.role as StaffRole | undefined;
+  const sid = session?.id != null ? Number(session.id) : undefined;
+  const sections = role ? SECTIONS[role] : [];
+  const has = (k: SectionKey) => sections.includes(k);
+  const isAdmin = role === "ADMIN";
 
-  // Layer 3 — per-status pipeline counts (one call, was 10 parallel list calls).
-  const stats = useQuery({
-    queryKey: ["staff-dashboard-stats"],
-    queryFn: () => staffApi.stats(),
-    enabled: mounted && !!session,
-    refetchInterval: REFRESH_MS,
-  });
+  // Reporting period for the decisions/outcomes sections — shared with /staff/my-decisions and
+  // /staff/performance so the same "this month" means the same thing everywhere.
+  const [preset, setPreset] = React.useState("this-month");
+  const [custom, setCustom] = React.useState<Range>({});
+  const range: Range = React.useMemo(() => decisionRangeFor(preset, custom), [preset, custom]);
 
-  // Layers 1 + 2 — the signed-in role's action queue (+ book-of-business extras).
+  // Layer 1+2 — the signed-in role's action queue (+ book-of-business extras).
   const queueQuery = useQuery({
     queryKey: ["staff-dashboard-queue", role, session?.id],
     queryFn: () => fetchRoleQueue(role as StaffRole, session?.id),
-    enabled: mounted && !!role && !!QUEUE[role as StaffRole],
+    enabled: mounted && !!role && has("work"),
     refetchInterval: REFRESH_MS,
   });
 
-  // 30-day activity trends (applications / disbursals / repayments).
+  // "Your decisions" + team roster — one call, server-scoped (self, or the whole team for a Head).
+  const performanceQuery = useQuery({
+    queryKey: ["staff-dashboard-performance", range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.performance(range.from, range.to),
+    enabled: mounted && !!role && (has("decisions") || has("team")),
+    refetchInterval: REFRESH_MS,
+  });
+
+  // "Your decision outcomes" — decisions in the selected period, joined against the book below.
+  const windowedDecisionsQuery = useQuery({
+    queryKey: ["staff-dashboard-decisions-windowed", range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.decisions(undefined, range.from, range.to),
+    enabled: mounted && !!role && has("outcomes"),
+    refetchInterval: REFRESH_MS,
+  });
+
+  // All-time "mine" decisions — used only to decide book membership (isMine), so the "borrowers in
+  // your book" tile matches /staff/customers?mine=1 exactly (that page's ownership check is also
+  // all-time, unwindowed).
+  const allDecisionsQuery = useQuery({
+    queryKey: ["staff-dashboard-decisions-all"],
+    queryFn: () => staffApi.decisions(),
+    enabled: mounted && !!role && has("borrowers"),
+    refetchInterval: REFRESH_MS,
+  });
+
+  // "Your borrowers" — company list, scoped server-side for most roles already; narrowed further by
+  // isMine for the roles (Head/ADMIN) whose server scope is broader.
+  const myBookQuery = useQuery({
+    queryKey: ["staff-dashboard-book"],
+    queryFn: () => customersApi.list(),
+    enabled: mounted && !!role && has("borrowers"),
+    refetchInterval: REFRESH_MS,
+  });
+  const book: CustomerSummary[] = React.useMemo(() => {
+    const rows = myBookQuery.data ?? [];
+    // Fail CLOSED: without a resolvable staff id an ADMIN/Head would read the whole company book
+    // under a "your borrowers" heading — the precise mislabelling this dashboard exists to remove.
+    if (sid == null) return [];
+    const decided = decidedCustomerIds(allDecisionsQuery.data ?? []);
+    return rows.filter((c) => isMine(c, sid, decided));
+  }, [myBookQuery.data, allDecisionsQuery.data, sid]);
+
+  // Collections desk — only for the two collections roles (+ ADMIN).
+  const casesQuery = useQuery({
+    queryKey: ["staff-dashboard-cases"],
+    queryFn: () => collectionsApi.listCases(),
+    enabled: mounted && !!role && has("collections"),
+    refetchInterval: REFRESH_MS,
+  });
+  const settlementsQuery = useQuery({
+    queryKey: ["staff-dashboard-settlements"],
+    queryFn: () => collectionsApi.listSettlements(),
+    enabled: mounted && !!role && has("collections"),
+    refetchInterval: REFRESH_MS,
+  });
+  const collectionPaymentsQuery = useQuery({
+    queryKey: ["staff-dashboard-collection-payments"],
+    queryFn: () => collectionsApi.listPayments(),
+    enabled: mounted && !!role && has("collections"),
+    refetchInterval: REFRESH_MS,
+  });
+
+  // Admin oversight only — company-wide pipeline / trend / segment / ledger rollups.
+  const stats = useQuery({
+    queryKey: ["staff-dashboard-stats"],
+    queryFn: () => staffApi.stats(),
+    enabled: mounted && isAdmin,
+    refetchInterval: REFRESH_MS,
+  });
   const trends = useQuery({
     queryKey: ["staff-dashboard-trends"],
     queryFn: () => dashboardApi.trends(30),
-    enabled: mounted && !!session,
+    enabled: mounted && isAdmin,
     refetchInterval: REFRESH_MS,
   });
-
-  // Admin oversight: segment roll-up + company-wide transactions.
-  const isAdmin = role === "ADMIN";
   const customersQ = useQuery({
     queryKey: ["staff-dashboard-customers"],
     queryFn: () => customersApi.list(),
@@ -305,38 +425,64 @@ export default function StaffDashboardPage() {
   // rows + non-application actionable sources (repayments, payouts, settlements, cases).
   const headlineCount = myApps.length + activeExtras.reduce((s, e) => s + e.count, 0);
   const actingHref = ROLE_HREF[role];
+
+  const decisions = performanceQuery.data ? decisionStats(performanceQuery.data, range.from) : null;
+  const outcomes = has("outcomes") && windowedDecisionsQuery.data
+    ? outcomeStats(windowedDecisionsQuery.data, book)
+    : null;
+  const books = has("borrowers") ? bookStats(book, new Date()) : null;
+  const collections = has("collections")
+    && casesQuery.data && settlementsQuery.data && collectionPaymentsQuery.data && sid != null
+    ? collectionsStats(casesQuery.data, settlementsQuery.data, collectionPaymentsQuery.data, sid)
+    : null;
+  const accountantRow = performanceQuery.data?.rows?.[0];
+
   // Refresh spinner (RQ v5): isLoading is first-load only — key the spinner off isFetching
   // across every dashboard query so a manual refresh gives visible feedback.
   const fetching =
-    stats.isFetching ||
     queueQuery.isFetching ||
-    trends.isFetching ||
-    (isAdmin && (txns.isFetching || customersQ.isFetching));
+    performanceQuery.isFetching ||
+    windowedDecisionsQuery.isFetching ||
+    allDecisionsQuery.isFetching ||
+    myBookQuery.isFetching ||
+    casesQuery.isFetching ||
+    settlementsQuery.isFetching ||
+    collectionPaymentsQuery.isFetching ||
+    (isAdmin && (stats.isFetching || trends.isFetching || txns.isFetching || customersQ.isFetching));
+
+  const refreshAll = () => {
+    queueQuery.refetch();
+    performanceQuery.refetch();
+    windowedDecisionsQuery.refetch();
+    allDecisionsQuery.refetch();
+    myBookQuery.refetch();
+    casesQuery.refetch();
+    settlementsQuery.refetch();
+    collectionPaymentsQuery.refetch();
+    if (isAdmin) {
+      stats.refetch();
+      trends.refetch();
+      txns.refetch();
+      customersQ.refetch();
+    }
+  };
 
   return (
     <div>
       <PageHeader
         title={`Welcome, ${session.name.split(" ")[0]}`}
-        subtitle={`${STAFF_ROLE_LABELS[role]} · live operations overview`}
+        subtitle={`${STAFF_ROLE_LABELS[role]} · your work, decisions and borrowers`}
       >
         <button
-          onClick={() => {
-            stats.refetch();
-            queueQuery.refetch();
-            trends.refetch();
-            if (isAdmin) {
-              txns.refetch();
-              customersQ.refetch();
-            }
-          }}
+          onClick={refreshAll}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
           {fetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
-      {/* Layer 1 — "Your work" hero (every role has a QUEUE entry now, incl. DEVELOPER). */}
-      {queue && (
+      {/* Layer 1 — "Your work" hero */}
+      {has("work") && queue && (
         <WorkHero
           queue={queue}
           count={headlineCount}
@@ -347,100 +493,128 @@ export default function StaffDashboardPage() {
         />
       )}
 
-      {/* 30-day activity trends — applications, disbursals and repayments. */}
-      <TrendsSection data={trends.data} loading={trends.isLoading} />
-
-      {/* Layer 2 — Pending actions (full width; the nav already carries every destination, so the
-          former "More & quick links" aside was pure duplication). */}
-      <div>
-        <div>
-          {queue && (
-            <section>
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h2 className="mb-0 text-xl">{queue.label}</h2>
-                  <InfoTooltip content={queue.info} />
-                </div>
-                <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">
-                  {headlineCount} pending
-                </span>
-              </div>
-
-              {queueQuery.isLoading ? (
-                <div className="h-40 animate-pulse rounded border border-line bg-white" />
-              ) : headlineCount ? (
-                <div className="space-y-3">
-                  {myApps.length > 0 && (
-                    <QueueTable apps={myApps} actions={() => null} showJourney={false} />
-                  )}
-                  {activeExtras.length > 0 && (
-                    <ul className="divide-y divide-grey-200 rounded border border-line bg-white">
-                      {activeExtras.map((extra) => <ExtraActionRow key={extra.key} extra={extra} />)}
-                    </ul>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded border border-line bg-white p-8 text-center text-sm text-muted">
-                  You&apos;re all caught up — nothing in your queue.
-                </div>
-              )}
-            </section>
-          )}
-        </div>
-
-        {stats.isError && (
-          <div className="mt-4 rounded border border-warning-100 bg-warning-50 p-4 text-xs text-warning-800">
-            Couldn&apos;t load live counts — check that you&apos;re signed in to the staff console.
+      {has("work") && queue && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="mb-0 text-xl">{queue.label}</h2>
+              <InfoTooltip content={queue.info} />
+            </div>
+            <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">
+              {headlineCount} pending
+            </span>
           </div>
-        )}
-      </div>
 
-      {/* Layer 3 — Pipeline at a glance (full width) */}
-      <section className="mt-8">
-        <div className="mb-3 flex items-center gap-2">
-          <Route size={16} className="text-navy" />
-          <h2 className="mb-0 text-xl">Pipeline at a glance</h2>
-          <InfoTooltip content="Live application load across the loan lifecycle. Your role's stage is highlighted; terminal (closed) loans are shown subdued." />
-        </div>
-        {stats.isLoading ? (
-          <div className="h-24 animate-pulse rounded border border-line bg-white" />
-        ) : (
-          <PipelineBar stats={stats.data ?? {}} role={role} />
-        )}
-      </section>
+          {queueQuery.isLoading ? (
+            <div className="h-40 animate-pulse rounded border border-line bg-white" />
+          ) : headlineCount ? (
+            <div className="space-y-3">
+              {myApps.length > 0 && (
+                <QueueTable apps={myApps} actions={() => null} showJourney={false} />
+              )}
+              {activeExtras.length > 0 && (
+                <ul className="divide-y divide-grey-200 rounded border border-line bg-white">
+                  {activeExtras.map((extra) => <ExtraActionRow key={extra.key} extra={extra} />)}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <div className="rounded border border-line bg-white p-8 text-center text-sm text-muted">
+              You&apos;re all caught up — nothing in your queue.
+            </div>
+          )}
+        </section>
+      )}
 
-      {/* Admin — customer book by segment */}
-      {isAdmin && (
-        <SegmentBar
-          counts={segmentCounts(customersQ.data ?? [])}
-          loading={customersQ.isLoading}
+      {/* Period picker governs the two decision-quality sections below. */}
+      {(has("decisions") || has("outcomes")) && (
+        <section className="mt-8">
+          <PeriodPicker preset={preset} onPreset={setPreset} custom={custom} onCustom={setCustom} />
+        </section>
+      )}
+
+      {/* Section 2 — Your decisions */}
+      {has("decisions") && (
+        <DecisionsSection
+          stats={decisions}
+          loading={performanceQuery.isLoading}
+          error={performanceQuery.isError}
+          accountantExtra={role === "ACCOUNTANT" ? accountantRow : undefined}
         />
       )}
 
-      {/* Layer 4 — Admin transactions summary (collapsed) */}
-      {isAdmin && (
-        <details className="group mt-8 rounded border border-line bg-white shadow-sm">
-          {/* No interactive children inside <summary> — it is itself a disclosure control. */}
-          <summary className="flex cursor-pointer items-center gap-2 px-5 py-4 [&::-webkit-details-marker]:hidden">
-            <ChevronRight size={15} className="text-navy transition-transform group-open:rotate-90" />
-            <Receipt size={16} className="text-navy" />
-            <h2 className="mb-0 text-lg">Transactions</h2>
-          </summary>
-          <div className="border-t border-line p-5">
-            <p className="mb-3 flex items-center gap-1.5 text-xs text-muted">
-              Company-wide money movement — disbursals out and repayments in.
-              <InfoTooltip content="Admin oversight; the full searchable ledger lives under Administration → Transactions." />
-            </p>
-            <AdminTransactions rows={txns.data ?? []} loading={txns.isLoading} />
-          </div>
-        </details>
+      {/* Section 3 — Your decision outcomes */}
+      {has("outcomes") && (
+        <OutcomesSection
+          stats={outcomes}
+          loading={windowedDecisionsQuery.isLoading || myBookQuery.isLoading}
+        />
       )}
 
+      {/* Section 4 — Your borrowers */}
+      {has("borrowers") && (
+        <BorrowersSection stats={books} loading={myBookQuery.isLoading || allDecisionsQuery.isLoading} />
+      )}
+
+      {/* Section 5 — Collections desk */}
+      {has("collections") && (
+        <CollectionsSection
+          stats={collections}
+          isHead={role === "COLLECTION_HEAD"}
+          loading={casesQuery.isLoading || settlementsQuery.isLoading || collectionPaymentsQuery.isLoading}
+        />
+      )}
+
+      {/* Section 6 — Team roster (heads only) */}
+      {has("team") && (
+        <TeamSection rows={performanceQuery.data?.rows ?? []} loading={performanceQuery.isLoading} range={range} />
+      )}
+
+      {/* Section 7 — Admin oversight */}
+      {isAdmin && (
+        <>
+          <TrendsSection data={trends.data} loading={trends.isLoading} />
+
+          <section className="mt-8">
+            <div className="mb-3 flex items-center gap-2">
+              <Route size={16} className="text-navy" />
+              <h2 className="mb-0 text-xl">Pipeline at a glance</h2>
+              <InfoTooltip content="Live application load across the loan lifecycle, company-wide. Your role's stage is highlighted; terminal (closed) loans are shown subdued." />
+            </div>
+            {stats.isLoading ? (
+              <div className="h-24 animate-pulse rounded border border-line bg-white" />
+            ) : (
+              <PipelineBar stats={stats.data ?? {}} role={role} />
+            )}
+          </section>
+
+          <SegmentBar
+            counts={segmentCounts(customersQ.data ?? [])}
+            loading={customersQ.isLoading}
+          />
+
+          <details className="group mt-8 rounded border border-line bg-white shadow-sm">
+            {/* No interactive children inside <summary> — it is itself a disclosure control. */}
+            <summary className="flex cursor-pointer items-center gap-2 px-5 py-4 [&::-webkit-details-marker]:hidden">
+              <ChevronRight size={15} className="text-navy transition-transform group-open:rotate-90" />
+              <Receipt size={16} className="text-navy" />
+              <h2 className="mb-0 text-lg">Transactions</h2>
+            </summary>
+            <div className="border-t border-line p-5">
+              <p className="mb-3 flex items-center gap-1.5 text-xs text-muted">
+                Company-wide money movement — disbursals out and repayments in.
+                <InfoTooltip content="Admin oversight; the full searchable ledger lives under Administration → Transactions." />
+              </p>
+              <AdminTransactions rows={txns.data ?? []} loading={txns.isLoading} />
+            </div>
+          </details>
+        </>
+      )}
     </div>
   );
 }
 
-/** Layer 1 — the signed-in role's actionable count + the oldest-waiting item. */
+/** Layer 1 — the signed-in role's actionable count + the oldest-waiting item + queue aging. */
 function WorkHero({
   queue,
   count,
@@ -464,6 +638,19 @@ function WorkHero({
   const oldest = items.length
     ? [...items].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.id - b.id)[0]
     : null;
+
+  // Queue aging: hours since the oldest item entered its CURRENT stage, plus how many items have
+  // been sitting more than a day / two days. currentStageEnteredAt resets on every transition, so
+  // this measures time-in-stage, not time-since-signup.
+  const now = Date.now();
+  const stageAgeHours = (a: ApplicationView) => {
+    const at = a.currentStageEnteredAt ?? a.createdAt;
+    if (!at) return null;
+    return (now - new Date(at).getTime()) / 3_600_000;
+  };
+  const oldestAgeHours = oldest ? stageAgeHours(oldest) : null;
+  const olderThan24h = items.filter((a) => (stageAgeHours(a) ?? 0) > 24).length;
+  const olderThan48h = items.filter((a) => (stageAgeHours(a) ?? 0) > 48).length;
 
   return (
     <section className="mb-8 rounded-lg border border-gold-soft bg-white p-6 shadow-sm">
@@ -496,9 +683,17 @@ function WorkHero({
         <div className="mt-5 h-16 animate-pulse rounded border border-line bg-grey-50" />
       ) : oldest ? (
         <div className="mt-5 space-y-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-tint px-2.5 py-1 text-xs font-semibold text-navy">
-            <Clock size={12} /> Oldest waiting
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-tint px-2.5 py-1 text-xs font-semibold text-navy">
+              <Clock size={12} /> Oldest waiting{oldestAgeHours != null ? ` · ${mins(oldestAgeHours * 60)} in stage` : ""}
+            </span>
+            {(olderThan24h > 0 || olderThan48h > 0) && (
+              <span className="text-xs text-muted">
+                {olderThan24h} item{olderThan24h === 1 ? "" : "s"} over 24h waiting
+                {olderThan48h > 0 ? ` · ${olderThan48h} over 48h` : ""}
+              </span>
+            )}
+          </div>
           <QueueTable apps={[oldest]} actions={() => null} showJourney={false} />
         </div>
       ) : count > 0 ? (
@@ -520,6 +715,315 @@ function WorkHero({
         <p className="mt-4 rounded border border-line bg-grey-50 p-4 text-sm text-muted">
           You&apos;re all caught up — nothing waiting on you right now.
         </p>
+      )}
+    </section>
+  );
+}
+
+/** Section 2 — Your decisions, off decisionStats(). */
+function DecisionsSection({
+  stats,
+  loading,
+  error,
+  accountantExtra,
+}: {
+  stats: ReturnType<typeof decisionStats> | null;
+  loading: boolean;
+  error: boolean;
+  accountantExtra?: { verifiedCount: number | null; verifiedPaise: number | null; rejectedPaymentCount: number | null };
+}) {
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className="mb-0 text-xl">Your decisions</h2>
+          <InfoTooltip content="Everything you decided in the selected period. 'In queue now' is a live snapshot — it does not change with the period picker. A dash means the metric can't be measured, never a real zero." />
+        </div>
+        <Link href="/staff/my-decisions" className="inline-flex items-center gap-1 text-sm font-semibold text-navy hover:underline">
+          Full history <ArrowRight size={14} />
+        </Link>
+      </div>
+      {error && <p className="mb-3 text-sm text-error-700">Couldn&apos;t load your decision totals.</p>}
+      {loading ? (
+        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Decided" value={num(stats?.decided)} />
+            <StatCard
+              label="Approved / rejected"
+              value={`${num(stats?.approved)} / ${num(stats?.rejected)}`}
+              hint={`Approval rate ${pct(stats?.approvalRate)}`}
+              accent="success"
+            />
+            <StatCard
+              label="In queue now"
+              value={num(stats?.pendingNow)}
+              accent="gold"
+              info="Files sitting with you right now — a live snapshot, not scoped to the period picker."
+            />
+            <StatCard label="Avg turnaround" value={mins(stats?.avgTurnaroundMinutes)} info="Mean time from a file being assigned to you until you acted on it." />
+            <StatCard label="Value moved" value={paiseToINR(stats?.valuePaise ?? null)} />
+            <StatCard
+              label="Active days"
+              value={num(stats?.activeDays)}
+              hint={stats?.actionsPerActiveDay != null ? `${stats.actionsPerActiveDay.toFixed(1)} actions/day` : undefined}
+            />
+            <StatCard
+              label="Busiest day"
+              value={stats?.busiestDay ? `${formatDate(stats.busiestDay.date)}` : "—"}
+              hint={stats?.busiestDay ? `${stats.busiestDay.actions} actions` : undefined}
+            />
+            <StatCard
+              label="Working window"
+              value={stats?.firstActionAt ? formatDate(stats.firstActionAt) : "—"}
+              hint={stats?.lastActionAt ? `through ${formatDate(stats.lastActionAt)}` : undefined}
+            />
+            {stats?.callsTracked && (
+              <StatCard label="Calls made" value={num(stats.callsMade)} />
+            )}
+            {accountantExtra && (
+              <>
+                <StatCard
+                  label="Repayments verified"
+                  value={num(accountantExtra.verifiedCount)}
+                  hint={accountantExtra.verifiedPaise != null ? paiseToINR(accountantExtra.verifiedPaise) : undefined}
+                  accent="success"
+                />
+                <StatCard label="Repayments rejected" value={num(accountantExtra.rejectedPaymentCount)} accent="error" />
+              </>
+            )}
+          </div>
+          {stats && stats.daily.length > 0 && (
+            <div className="mt-4 rounded border border-line bg-white p-4 shadow-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted">Activity</span>
+              <Sparkline values={stats.daily.map((d) => d.actions)} color="#0C2540" />
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Section 3 — Your decision outcomes, off outcomeStats(). */
+function OutcomesSection({ stats, loading }: { stats: ReturnType<typeof outcomeStats> | null; loading: boolean }) {
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="mb-0 text-xl">Your decision outcomes</h2>
+        <InfoTooltip content="What happened to the borrowers you approved in the selected period — the truest read on decision quality. A dash means there's nothing to measure yet, never a real zero." />
+      </div>
+      {loading ? (
+        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+      ) : !stats || stats.approvedCount === 0 ? (
+        <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
+          No approvals in this period yet.
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Now overdue"
+            value={num(stats.nowOverdue)}
+            hint={`${pct(stats.overdueRate)} of your approvals`}
+            accent={stats.nowOverdue > 0 ? "error" : "navy"}
+          />
+          <StatCard label="Repaid clean" value={num(stats.repaidClean)} accent="success" />
+          <StatCard label="Still live" value={num(stats.stillLive)} />
+          <StatCard
+            label="Your PAR"
+            value={pct(stats.parPct)}
+            hint={`${paiseToINR(stats.overdueOutstandingPaise)} overdue / ${paiseToINR(stats.liveOutstandingPaise)} live`}
+            accent={stats.parPct != null && stats.parPct > 0 ? "error" : "navy"}
+          />
+          <StatCard label="Avg sanctioned" value={stats.avgSanctionedPaise != null ? paiseToINR(stats.avgSanctionedPaise) : "—"} />
+          <StatCard
+            label="Avg bureau score"
+            value={`${score(stats.avgScoreApproved)} approved`}
+            hint={`vs ${score(stats.avgScoreRejected)} rejected`}
+          />
+          <StatCard
+            label="★ mix (approved)"
+            value={([5, 4, 3, 2, 1] as const).map((s) => `${s}★ ${stats.starMix[s]}`).join(" · ")}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Section 4 — Your borrowers, off bookStats(). */
+function BorrowersSection({ stats, loading }: { stats: ReturnType<typeof bookStats> | null; loading: boolean }) {
+  const href = (seg?: CustomerSegment) => `/staff/customers?mine=1${seg ? `&seg=${seg}` : ""}`;
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Users size={16} className="text-navy" />
+          <h2 className="mb-0 text-xl">Your borrowers</h2>
+          <InfoTooltip content="Every customer allocated to you or that you've decided on — your book, not the company's. Tiles link straight into the matching filter on Customers." />
+        </div>
+        <Link href={href()} className="inline-flex items-center gap-1 text-sm font-semibold text-navy hover:underline">
+          Open book <ArrowRight size={14} />
+        </Link>
+      </div>
+      {loading ? (
+        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+      ) : !stats || stats.total === 0 ? (
+        <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
+          Nothing allocated to you yet.
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Link href={href()} className="block">
+            <StatCard label="Borrowers in your book" value={stats.total} />
+          </Link>
+          <Link href={href("active")} className="block">
+            <StatCard label="Live" value={stats.counts.active} />
+          </Link>
+          <Link href={href("overdue")} className="block">
+            <StatCard label="Overdue" value={stats.counts.overdue} accent={stats.counts.overdue > 0 ? "error" : "navy"} />
+          </Link>
+          <Link href={href("closed")} className="block">
+            <StatCard label="Closed" value={stats.counts.closed} />
+          </Link>
+          <StatCard label="Outstanding" value={paiseToINR(stats.outstandingPaise)} />
+          <StatCard label="At risk" value={paiseToINR(stats.atRiskPaise)} accent={stats.atRiskPaise > 0 ? "error" : "navy"} />
+          <StatCard
+            label="DPD split"
+            value={`${stats.dpd.d1to30} / ${stats.dpd.d31to60} / ${stats.dpd.d60plus}`}
+            hint="1-30 / 31-60 / 60+ days"
+          />
+          <StatCard label="Due next 7 days" value={stats.dueNext7Days} accent="gold" />
+          <StatCard label="Avg ticket" value={stats.avgTicketPaise != null ? paiseToINR(stats.avgTicketPaise) : "—"} />
+          <StatCard label="Largest exposure" value={paiseToINR(stats.largestExposurePaise)} />
+          <StatCard label="Concentration" value={pct(stats.concentrationPct)} info="Largest single exposure as a share of your total outstanding." />
+          <StatCard label="Repeat borrowers" value={stats.repeatBorrowers} />
+          <StatCard label="Avg credit score" value={score(stats.avgCreditScore)} />
+          <StatCard label="Thin file" value={stats.thinFile} />
+          <Link href={href("incomplete")} className="block">
+            <StatCard label="To chase" value={stats.toChase} info="Abandoned mid-onboarding (DRAFT) — nobody can act on these until the borrower comes back." />
+          </Link>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Section 5 — Collections desk, off collectionsStats(). */
+function CollectionsSection({
+  stats,
+  isHead,
+  loading,
+}: {
+  stats: ReturnType<typeof collectionsStats> | null;
+  isHead: boolean;
+  loading: boolean;
+}) {
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="mb-0 text-xl">Collections desk</h2>
+        <InfoTooltip content="Your assigned cases, what you've recovered, and your settlement activity. Recovery rate is recovered ÷ outstanding across your cases." />
+      </div>
+      {loading ? (
+        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+      ) : !stats ? (
+        <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
+          No collections data yet.
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Open cases" value={stats.myCases.length} />
+          <StatCard
+            label="By DPD bucket"
+            value={(Object.keys(stats.byBucket) as (keyof typeof stats.byBucket)[])
+              .filter((b) => stats.byBucket[b].length > 0)
+              .map((b) => `${b}: ${stats.byBucket[b].length}`)
+              .join(" · ") || "—"}
+          />
+          <StatCard label="Outstanding (your cases)" value={paiseToINR(stats.myCasesOutstandingPaise)} accent="error" />
+          <StatCard label="Recovered by you" value={paiseToINR(stats.recoveredPaise)} accent="success" />
+          <StatCard label="Recovery rate" value={pct(stats.recoveryRate)} />
+          <StatCard label="Awaiting validation" value={stats.awaitingValidation} accent="gold" />
+          <StatCard
+            label="Settlements proposed"
+            value={num(stats.settlementsProposed.proposed)}
+            hint={`${stats.settlementsProposed.approved} approved · ${stats.settlementsProposed.rejected} rejected`}
+          />
+          {isHead && (
+            <>
+              <StatCard label="Settlements you approved" value={stats.settlementsApproved} accent="success" />
+              <StatCard label="Conceded" value={paiseToINR(stats.concededPaise)} />
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Section 6 — Team roster (heads only) — costs zero extra calls: summary.rows IS the team. */
+function TeamSection({
+  rows,
+  loading,
+  range,
+}: {
+  rows: import("@/lib/api/applications").StaffPerformanceRow[];
+  loading: boolean;
+  range: Range;
+}) {
+  const qs = new URLSearchParams();
+  if (range.from) qs.set("from", range.from);
+  if (range.to) qs.set("to", range.to);
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="mb-0 text-xl">Team</h2>
+        <InfoTooltip content="Everyone reporting to you in the selected period. Click a row to see their full decision history." />
+      </div>
+      {loading ? (
+        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+      ) : rows.length === 0 ? (
+        <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
+          No team data yet.
+        </div>
+      ) : (
+        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+          <table className="staff-data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th className="text-right">Actions</th>
+                <th className="text-right">Approval rate</th>
+                <th className="text-right">Avg turnaround</th>
+                <th className="text-right">In queue now</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const approvalRate = r.accepted + r.rejected > 0 ? r.accepted / (r.accepted + r.rejected) : null;
+                const rowQs = new URLSearchParams(qs);
+                rowQs.set("staffId", String(r.staffId));
+                return (
+                  <tr key={r.staffId} className="hover:bg-grey-50">
+                    <td className="staff-cell">
+                      <Link href={`/staff/my-decisions?${rowQs.toString()}`} className="font-semibold text-navy hover:underline">
+                        {r.staffName}
+                      </Link>
+                    </td>
+                    <td className="text-muted">{r.role}</td>
+                    <td className="text-right">{r.totalActions}</td>
+                    <td className="text-right">{pct(approvalRate)}</td>
+                    <td className="text-right">{mins(r.avgTurnaroundMinutes)}</td>
+                    <td className="text-right">{r.pendingNow}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
@@ -644,7 +1148,7 @@ function TrendCard({
   const values = points.map(pick);
   const total = values.reduce((s, v) => s + v, 0);
   const delta = thisWeek - lastWeek;
-  const pct = lastWeek > 0 ? Math.round((delta / lastWeek) * 100) : null;
+  const pctDelta = lastWeek > 0 ? Math.round((delta / lastWeek) * 100) : null;
   return (
     <div className="rounded border border-line bg-white p-4 shadow-sm">
       <div className="flex items-baseline justify-between">
@@ -655,7 +1159,7 @@ function TrendCard({
       <div className="mt-1 flex items-center justify-between text-[8.8px] text-muted">
         <span>Last 30 days</span>
         <span className={delta > 0 ? "text-success-700" : delta < 0 ? "text-error-700" : ""}>
-          {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)} vs last wk{pct != null ? ` (${delta >= 0 ? "+" : ""}${pct}%)` : ""}
+          {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)} vs last wk{pctDelta != null ? ` (${delta >= 0 ? "+" : ""}${pctDelta}%)` : ""}
         </span>
       </div>
     </div>

@@ -171,6 +171,12 @@ export interface StaffPerformanceRow {
   /** Their first action in the window — the closest thing to a "start time". */
   firstActionAt: string | null;
   lastActionAt: string | null;
+  /** Repayments this staffer verified in the window; null = no attributable payment rows (never 0). */
+  verifiedCount: number | null;
+  /** Total paise across those verified repayments. */
+  verifiedPaise: number | null;
+  /** Repayments this staffer rejected in the window. */
+  rejectedPaymentCount: number | null;
   /** Telecaller + collections calls logged in the window. See `callTrackingSince` before reading a 0. */
   callsMade: number;
 }
@@ -2229,8 +2235,7 @@ export type StaffRoleName =
   | "COLLECTION_EXECUTIVE"
   | "TELECALLER"
   | "DSA"
-  | "ADMIN"
-  | "DEVELOPER";
+  | "ADMIN";
 
 export type StaffStatus = "INVITED" | "ACTIVE" | "DISABLED";
 
