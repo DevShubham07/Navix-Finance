@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Script from "next/script";
 import { config } from "@/lib/config";
 
@@ -23,23 +23,29 @@ import { config } from "@/lib/config";
  * blocking submit: a dead button with no message is a worse failure than letting the request
  * through for the backend to judge (it answers CAPTCHA_FAILED, which the user can actually read).
  *
- * It fires from TWO sources, and the second is the important one. Turnstile's own `error-callback`
- * covers the errors it knows about — but a widget can also simply never finish: a slow network, an
- * extension or privacy blocker, or an interactive challenge the visitor never completes. In that
- * case no callback of any kind arrives. That happened in production and left the sign-in button
- * permanently disabled with nothing on screen to explain it, so a WATCHDOG also fires `onError`
- * when no token has arrived within {@link STALL_TIMEOUT_MS}. Deliberately fail-open on the client:
- * the backend is still the one that decides.
+ * It fires from TWO sources. Turnstile's own `error-callback` covers the errors it knows about —
+ * but a widget can also simply never finish (a privacy blocker, a dead network), and then no
+ * callback of any kind arrives, which once left the sign-in button disabled with no way forward.
+ * So a WATCHDOG also fires `onError` after {@link STALL_TIMEOUT_MS}. Deliberately fail-open on the
+ * client: the backend is still the one that decides.
+ *
+ * <p><b>The watchdog is silent, and it never touches the widget.</b> An earlier version hid the
+ * container and swapped in a "couldn't load" message when it fired. That was actively harmful:
+ * Cloudflare's managed challenge legitimately spends time "Checking your Browser…" and an
+ * interactive one waits on a human, so the timer was firing mid-challenge and REMOVING the very
+ * widget the visitor still needed — guaranteeing it could never be solved. It now only unblocks
+ * the submit button; the widget stays on screen and a token arriving late still works normally.
  *
  * Needs `challenges.cloudflare.com` in script-src, frame-src AND connect-src — see next.config.mjs.
  */
 
 /**
- * How long to wait for a token before declaring the widget stalled. Comfortably longer than a
- * normal invisible pass (well under a second) and than a human ticking a checkbox, so this only
- * fires when something is actually wrong.
+ * How long to wait before unblocking submit anyway. Generous on purpose: a managed challenge can
+ * take several seconds, and an interactive one takes as long as the person does. This is a
+ * last-resort escape hatch for a widget that is genuinely dead, NOT a deadline for the challenge —
+ * at 8s it was cutting off perfectly healthy challenges.
  */
-const STALL_TIMEOUT_MS = 8000;
+const STALL_TIMEOUT_MS = 25000;
 
 interface TurnstileApi {
   render: (
@@ -83,7 +89,6 @@ export function Turnstile({
 }) {
   const siteKey = config.turnstileSiteKey;
   const holder = useRef<HTMLDivElement>(null);
-  const [stalled, setStalled] = useState(false);
   // The callback identity changes on every parent render; keeping it in a ref means the widget is
   // mounted once per resetKey instead of being torn down and re-rendered mid-challenge.
   const cb = useRef(onToken);
@@ -95,12 +100,11 @@ export function Turnstile({
     if (!siteKey) return;
     let widgetId: string | undefined;
     let cancelled = false;
-    setStalled(false);
 
+    // Unblock submit only. No visual change — the widget must stay put so a slow or interactive
+    // challenge can still be completed, and a token arriving after this still flows through.
     const giveUp = () => {
       if (cancelled) return;
-      setStalled(true);
-      cb.current("");
       errCb.current?.();
     };
     const watchdog = window.setTimeout(giveUp, STALL_TIMEOUT_MS);
@@ -144,12 +148,7 @@ export function Turnstile({
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
       />
-      <div ref={holder} className={stalled ? "hidden" : "mb-4"} />
-      {stalled && (
-        <p className="mb-4 text-sm text-muted" role="status">
-          Couldn&apos;t load the human-verification check. You can still continue.
-        </p>
-      )}
+      <div ref={holder} className="mb-4" />
     </>
   );
 }
