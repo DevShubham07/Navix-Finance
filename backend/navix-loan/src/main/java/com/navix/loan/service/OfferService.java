@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.security.ActorContext;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
@@ -65,6 +66,7 @@ public class OfferService {
     private final ApplicationVerificationService verification;
     private final ApplicationFlowService flow;
     private final JourneyService journey;
+    private final ProfileChangeLogger changeLogger;
     private final SanctionLetterPdfRenderer letterRenderer;
     private final DocumentStoragePort storage;
     private final LoanMath loanMath;
@@ -118,7 +120,13 @@ public class OfferService {
      */
     @Transactional
     public List<ReferenceView> saveReferences(Long appId, List<ReferenceInput> inputs) {
-        LoanApplication app = requireSanctioned(appId);
+        // ADMIN corrections (staff detail dialog) land here long after the borrower accepted the
+        // offer, so they must not be held to SANCTIONED — that is the borrower's window, not theirs.
+        boolean admin = "ADMIN".equals(ActorContext.get().role());
+        LoanApplication app = admin
+                ? applicationRepo.findById(appId)
+                        .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)))
+                : requireSanctioned(appId);
         if (inputs == null || inputs.size() != 2) {
             throw new BusinessException("REFERENCES_REQUIRED", "Two references are required");
         }
@@ -149,6 +157,10 @@ public class OfferService {
             short slot = (short) (i + 1);
             ApplicationReference row = referenceRepo.findByApplicationIdAndSlot(appId, slot)
                     .orElseGet(ApplicationReference::new);
+            String oldName = row.getFullName();
+            String oldMobile = row.getMobile();
+            String oldRelation = row.getRelation();
+
             row.setApplicationId(appId);
             row.setCustomerId(app.getCustomerId());
             row.setSlot(slot);
@@ -156,8 +168,18 @@ public class OfferService {
             row.setMobile(mobiles.get(i));
             row.setRelation(in.relation());
             referenceRepo.save(row);
+
+            if (admin) {
+                String prefix = "reference" + slot;
+                changeLogger.logIfChanged(app.getCustomerId(), appId, prefix + ".fullName", oldName, row.getFullName());
+                changeLogger.logIfChanged(app.getCustomerId(), appId, prefix + ".mobile", oldMobile, row.getMobile());
+                changeLogger.logIfChanged(app.getCustomerId(), appId, prefix + ".relation", oldRelation, row.getRelation());
+            }
         }
-        journey.advance(appId, JourneyService.OfferStep.OFFER_SUMMARY);
+        // Only the borrower walking the journey moves the pointer; an admin edit must not rewind it.
+        if (!admin) {
+            journey.advance(appId, JourneyService.OfferStep.OFFER_SUMMARY);
+        }
         return references(appId);
     }
 

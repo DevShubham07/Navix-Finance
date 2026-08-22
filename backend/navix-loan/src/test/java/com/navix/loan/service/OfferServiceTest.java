@@ -12,6 +12,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
@@ -58,6 +60,7 @@ class OfferServiceTest {
     @Mock private ApplicationVerificationService verification;
     @Mock private ApplicationFlowService flow;
     @Mock private JourneyService journey;
+    @Mock private ProfileChangeLogger changeLogger;
     @Mock private SanctionLetterPdfRenderer letterRenderer;
     @Mock private DocumentStoragePort storage;
 
@@ -68,7 +71,7 @@ class OfferServiceTest {
     @BeforeEach
     void setUp() {
         offer = new OfferService(applicationRepo, profileRepo, referenceRepo, pennyDropGuard,
-                documentRepo, verification, flow, journey, letterRenderer, storage, new LoanMath());
+                documentRepo, verification, flow, journey, changeLogger, letterRenderer, storage, new LoanMath());
 
         app = new LoanApplication();
         app.setId(APP);
@@ -153,6 +156,61 @@ class OfferServiceTest {
 
         verify(referenceRepo).findByApplicationIdAndSlot(APP, (short) 1);
         verify(referenceRepo).findByApplicationIdAndSlot(APP, (short) 2);
+    }
+
+    /**
+     * An ADMIN correcting a mistyped reference from the staff detail dialog arrives long after the
+     * borrower accepted the offer, so SANCTIONED is not their gate — and their edit must not rewind
+     * the borrower's journey pointer back to the summary screen.
+     */
+    @Test
+    void adminMayCorrectReferencesAfterTheOfferHasMovedOn() {
+        app.setStatus(ApplicationStatus.ACTIVE);
+        ActorContext.set(new CurrentActor("12", "Admin", "ADMIN"));
+        try {
+            offer.saveReferences(APP, List.of(
+                    new ReferenceInput("Ravi", "9000000002", "PARENT"),
+                    new ReferenceInput("Sita", "9000000003", "COLLEAGUE")));
+        } finally {
+            ActorContext.clear();
+        }
+
+        verify(referenceRepo).findByApplicationIdAndSlot(APP, (short) 2);
+        verify(journey, never()).advance(eq(APP), any(JourneyService.OfferStep.class));
+        verify(changeLogger).logIfChanged(eq(CUSTOMER), eq(APP), eq("reference1.mobile"), any(), eq("9000000002"));
+        verify(changeLogger).logIfChanged(eq(CUSTOMER), eq(APP), eq("reference2.mobile"), any(), eq("9000000003"));
+    }
+
+    /** An ADMIN correction is still held to every validation rule — only the SANCTIONED gate relaxes. */
+    @Test
+    void adminEditStillRejectsInvalidReferencePayload() {
+        app.setStatus(ApplicationStatus.ACTIVE);
+        ActorContext.set(new CurrentActor("12", "Admin", "ADMIN"));
+        try {
+            assertThatThrownBy(() -> offer.saveReferences(APP, List.of(
+                    new ReferenceInput("Ravi", "9000000002", "PARENT"),
+                    new ReferenceInput("Myself", "9000000001", "FRIEND"))))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("your own mobile number");
+        } finally {
+            ActorContext.clear();
+        }
+    }
+
+    /** A non-admin actor on a non-SANCTIONED application is still refused by saveReferences. */
+    @Test
+    void nonAdminActorOnNonSanctionedApplicationStillGetsNotApplicable() {
+        app.setStatus(ApplicationStatus.KYC_PENDING);
+        ActorContext.set(new CurrentActor(String.valueOf(CUSTOMER), "Asha", "BORROWER"));
+        try {
+            assertThatThrownBy(() -> offer.saveReferences(APP, List.of(
+                    new ReferenceInput("Ravi", "9000000002", "PARENT"),
+                    new ReferenceInput("Sita", "9000000003", "COLLEAGUE"))))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("code", "NOT_APPLICABLE");
+        } finally {
+            ActorContext.clear();
+        }
     }
 
     // ---------------------------------------------------------------- summary
