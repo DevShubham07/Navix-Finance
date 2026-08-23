@@ -1619,4 +1619,29 @@ class ApplicationVerificationServiceTest {
 
         assertThat(result.status()).isEqualTo("REVIEW");
     }
+
+    /**
+     * The borrower's PAN can sit in PAN-VARIATIONS while REQUEST.PAN echoes a different one - the
+     * bureau holds several per person and echoes an arbitrary one. Reading only REQUEST would call
+     * this a wrong-person report and, in the rejects cohort, suppress a reopen the borrower earned.
+     * The junk "0" entry alongside it is real: only PAN-shaped values count as identity.
+     */
+    @Test
+    void bureau_profilePanFoundOnlyInVariations_isNotAMismatch() throws Exception {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        String raw = "{\"canonical\":{\"data\":{\"credit_report\":{\"REQUEST\":{\"PAN\":\"ZZZZZ9999Z\"},\"PERSONAL-INFO-VARIATION\":{\"PAN-VARIATIONS\":{\"VARIATION\":[{\"VALUE\":\"0\"},{\"VALUE\":\"" + p.getPan() + "\"}]}}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-PAN-VARIATION", "FINTRIX_CRIF", 700, false,
+                        1, 0, 5000.0, null, raw));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(new ObjectMapper().readTree(saved.getValue().getDerived())
+                .path("identityMismatch").isMissingNode()).isTrue();
+    }
 }

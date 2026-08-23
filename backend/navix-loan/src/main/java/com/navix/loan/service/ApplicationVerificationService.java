@@ -1097,6 +1097,42 @@ public class ApplicationVerificationService {
      * exact date. A null/blank on either side is "cannot compare", not a mismatch — this is a defensive
      * identity guard, not a fraud-detection engine. Returns a human-readable reason, or {@code null}.
      */
+    private static final java.util.regex.Pattern PAN_SHAPE =
+            java.util.regex.Pattern.compile("[A-Za-z]{5}[0-9]{4}[A-Za-z]");
+
+    /** CRIF emits "" for an empty variation set, a bare object for one, an array for many. */
+    private static List<String> variationValues(JsonNode variationsNode) {
+        JsonNode v = variationsNode.path("VARIATION");
+        if (v.isMissingNode() || v.isNull() || v.isTextual()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        if (v.isArray()) {
+            v.forEach(node -> addIfPresent(out, node.path("VALUE").asText(null)));
+        } else {
+            addIfPresent(out, v.path("VALUE").asText(null));
+        }
+        return out;
+    }
+
+    private static void addIfPresent(java.util.Collection<String> target, String value) {
+        String trimmed = trimToNull(value);
+        if (trimmed != null) {
+            target.add(trimmed);
+        }
+    }
+
+    /** The PERSONAL-INFO-VARIATION block, or a missing node when the envelope has none. */
+    private JsonNode objectMapperNode(String rawResponseJson) {
+        try {
+            return objectMapper.readTree(rawResponseJson)
+                    .path("canonical").path("data").path("credit_report")
+                    .path("PERSONAL-INFO-VARIATION");
+        } catch (Exception malformed) {
+            return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        }
+    }
+
     /**
      * Does this report describe our borrower? The request is keyed on name + mobile alone, so the
      * vendor decides who we meant and can return a stranger's file — 2 of 24 in the first
@@ -1104,7 +1140,14 @@ public class ApplicationVerificationService {
      *
      * <p>PAN decides it. It is unique to one person and it is the borrower's OWN verified PAN, so a
      * match settles identity and a difference condemns it. The report's DOB only gets a vote when
-     * there is no PAN to compare on one side.
+     * the report carries no PAN at all.
+     *
+     * <p>Both are read across the WHOLE identity block, not just {@code REQUEST}: the bureau holds
+     * several PANs and several dates per person and echoes an arbitrary one into {@code REQUEST}.
+     * In the first CREDIT_REVIEW batch the borrower's real date of birth sat in
+     * {@code DATE-OF-BIRTH-VARIATIONS} for 5 of 6 flagged applications while {@code REQUEST.DOB} held
+     * a placeholder, and one report carried a second PAN in {@code PAN-VARIATIONS} that
+     * {@code REQUEST.PAN} did not show.
      *
      * <p>DOB deliberately does NOT override a matching PAN. We never send a date of birth, so
      * {@code REQUEST.DOB} is not an echo of our input — it is whatever the bureau holds, and in
@@ -1129,26 +1172,44 @@ public class ApplicationVerificationService {
         if (request.isMissingNode()) {
             return null;
         }
-        String reportPan = trimToNull(request.path("PAN").asText(null));
+        JsonNode variations = objectMapperNode(rawResponseJson);
         String profilePan = trimToNull(profile.getPan());
-        if (reportPan != null && profilePan != null) {
-            // A PAN is unique to one person, and this is the borrower's OWN verified PAN. When it
-            // matches, identity is settled and the report's other identity fields do not get a vote.
-            return reportPan.equalsIgnoreCase(profilePan)
+        Set<String> reportPans = new LinkedHashSet<>();
+        addIfPresent(reportPans, request.path("PAN").asText(null));
+        for (String v : variationValues(variations.path("PAN-VARIATIONS"))) {
+            addIfPresent(reportPans, v);
+        }
+        // Junk slips into the variation list ("0" has been seen); only PAN-shaped values are identity.
+        reportPans.removeIf(pan -> !PAN_SHAPE.matcher(pan).matches());
+
+        if (profilePan != null && !reportPans.isEmpty()) {
+            return reportPans.stream().anyMatch(pan -> pan.equalsIgnoreCase(profilePan))
                     ? null
                     : "Bureau report PAN does not match the verified profile PAN";
         }
-        // No PAN to compare on one side or the other — fall back to date of birth, which is all
-        // that is left. Same rule as ever: a null or unparseable value is "cannot compare".
-        String reportDobRaw = trimToNull(request.path("DOB").asText(null));
-        if (reportDobRaw != null && profile.getDob() != null) {
-            try {
-                LocalDate reportDob = LocalDate.parse(reportDobRaw, CRIF_DOB_FORMAT);
-                if (!reportDob.equals(profile.getDob())) {
-                    return "Bureau report date of birth does not match the verified profile";
+
+        // No PAN anywhere in the report - date of birth is all that is left. Read the variation list
+        // too, for the same reason: REQUEST.DOB is one of several dates the bureau holds and often the
+        // worst of them.
+        if (profile.getDob() != null) {
+            Set<String> reportDobs = new LinkedHashSet<>();
+            addIfPresent(reportDobs, request.path("DOB").asText(null));
+            for (String v : variationValues(variations.path("DATE-OF-BIRTH-VARIATIONS"))) {
+                addIfPresent(reportDobs, v);
+            }
+            boolean anyParsed = false;
+            for (String raw : reportDobs) {
+                try {
+                    if (LocalDate.parse(raw, CRIF_DOB_FORMAT).equals(profile.getDob())) {
+                        return null;
+                    }
+                    anyParsed = true;
+                } catch (DateTimeParseException unparseable) {
+                    // Skip - an unparseable value contributes nothing either way.
                 }
-            } catch (DateTimeParseException unparseable) {
-                // An unparseable report DOB is "cannot compare", not a mismatch.
+            }
+            if (anyParsed) {
+                return "Bureau report date of birth does not match the verified profile";
             }
         }
         return null;
