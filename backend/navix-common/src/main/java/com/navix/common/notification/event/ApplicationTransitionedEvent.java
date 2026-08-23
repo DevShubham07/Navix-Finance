@@ -19,5 +19,7 @@ public record ApplicationTransitionedEvent(
         Long assignedExecutiveId,
         String actorId,
         String actorRole,
-        Instant at) {
+        Instant at,
+        /** When the borrower may apply again, if this transition set a cooling-off block; else null. */
+        Instant retryFrom) {
 }

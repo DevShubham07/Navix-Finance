@@ -7,6 +7,7 @@ import com.navix.common.verification.BureauDetail;
 import com.navix.common.verification.BureauEnquiry;
 import com.navix.common.verification.BureauEnquiryVelocity;
 import com.navix.common.verification.BureauReportFacts;
+import com.navix.common.verification.BureauScoreHistory;
 import com.navix.common.verification.BureauTradeline;
 import com.navix.loan.service.CreditRatingCalculator;
 import com.lowagie.text.pdf.PdfReader;
@@ -149,6 +150,97 @@ class CreditBriefPdfRendererTest {
                 // Bounding: the settled/no-past-due tradeline is excluded, and the caption says so.
                 "Showing 2 of 5");
         assertThat(normalized).doesNotContain("OLD SETTLED BANK");
+    }
+
+    /**
+     * A {@code detail} with no scoreHistory (Experian, or a CRIF backfill run before this field
+     * existed) must render exactly like before — no "Score Trend" heading, no "Top Exposures" strip
+     * (that one rides on tradelines, not scoreHistory, but is only ever added alongside the tradeline
+     * table so is covered here too since this detail's tradelines all resolve to a single positive
+     * balance).
+     */
+    @Test
+    void nullScoreHistoryOmitsScoreTrendSection() throws Exception {
+        BureauTradeline delinquent = new BureauTradeline(
+                "ABC BANK", "XXXX1234", "5", "I", "97",
+                "2020-01-01", null, 50_000L, 12_000L, null, "111111111111", null, null, 950);
+        BureauDetail detail = new BureauDetail(
+                List.of(delinquent), 1, List.of(),
+                new BureauDelinquency(950, null, 10, null, 2, 0, null),
+                new BureauEnquiryVelocity(1, null, 5, null));
+        assertThat(detail.scoreHistory()).isNull();
+        BureauReportFacts f = new BureauReportFacts(
+                "KARTIK JINDAL", "BXFPJ0767C", "95880784XX", "1985-07-10", "Mumbai", "400001",
+                778, 11, 9, 2, 0, 861232L, 712212L, 149020L, 5, "1782599074402", detail);
+
+        byte[] pdf = renderer.render(123L, 45L, "EXPERIAN", f, calc.rate(f), LocalDate.of(2026, 6, 28));
+
+        assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+        assertThat(extractText(pdf)).doesNotContain("Score Trend");
+    }
+
+    /**
+     * A populated {@code scoreHistory} (CRIF-only) draws the sparkline + credit-age stats, and the
+     * tradelines behind it drive the "Top Exposures" strip — largest live balances first, closed/settled
+     * excluded.
+     */
+    @Test
+    void populatedScoreHistoryRendersSparklineAndTopExposures() throws Exception {
+        BureauTradeline live1 = new BureauTradeline(
+                "SBI", "XXXX0001", "2", "S", "11",
+                "2018-01-01", null, 702_175L, 0L, null, "000000000000", null, null, 0);
+        BureauTradeline live2 = new BureauTradeline(
+                "HDFC BANK", "XXXX0002", "10", "R", "11",
+                "2019-01-01", null, 112_685L, 0L, null, "000000000000", null, null, 0);
+        BureauTradeline closed = new BureauTradeline(
+                "OLD CLOSED BANK", "XXXX0003", "10", "R", "13",
+                "2010-01-01", "2015-01-01", 999_999L, 0L, null, "N", null, null, null);
+        BureauScoreHistory scoreHistory = new BureauScoreHistory(
+                List.of(
+                        new BureauScoreHistory.Point("2026-06-30", 799),
+                        new BureauScoreHistory.Point("2026-03-31", 780),
+                        new BureauScoreHistory.Point("2025-12-31", 760)),
+                87, 42, 1, 0, 3);
+        BureauDetail detail = new BureauDetail(
+                List.of(live1, live2, closed), 3, List.of(),
+                new BureauDelinquency(0, null, 0, 0, 0, 0, "2018-01-01"),
+                new BureauEnquiryVelocity(0, 1, 3, 5),
+                scoreHistory);
+        BureauReportFacts f = new BureauReportFacts(
+                "KARTIK JINDAL", "BXFPJ0767C", "95880784XX", "1985-07-10", "Mumbai", "400001",
+                799, 3, 2, 1, 0, 819_215L, 702_175L, 117_040L, 0, "CCR260822CR415935862", detail);
+
+        byte[] pdf = renderer.render(123L, 45L, "FINTRIX_CRIF", f, calc.rate(f), LocalDate.of(2026, 8, 22));
+
+        assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+        String normalized = extractText(pdf);
+        assertThat(normalized).contains(
+                "Score Trend", "Credit history length", "Average account age",
+                "Top Exposures", "SBI", "HDFC BANK");
+        // Highest live balance (SBI) leads, and the closed account never counts as an exposure.
+        assertThat(normalized.indexOf("SBI")).isLessThan(normalized.indexOf("HDFC BANK"));
+        assertThat(normalized).doesNotContain("OLD CLOSED BANK");
+    }
+
+    /**
+     * {@code providerReportTable} (the raw-field appendix) is skipped for a Fintrix CRIF source — it
+     * would blow {@code MAX_PROVIDER_FIELDS}'s cap and run to many pages (see that constant's javadoc)
+     * — but stays for the older Experian/Digitap-shaped sources.
+     */
+    @Test
+    void rawAppendixIsAbsentForFintrixCrifButPresentForExperian() throws Exception {
+        BureauReportFacts f = new BureauReportFacts(
+                "TEST BORROWER", "ABCDE1234F", "9000000000", "1990-01-01", "Testville", "100001",
+                778, 11, 9, 2, 0, 805314L, 717556L, 87758L, 0, "TEST-REPORT-1");
+        String raw = "{\"HEADER\":{\"REPORT-ID\":\"R1\"}}";
+
+        byte[] crifPdf = renderer.render(1L, 2L, "FINTRIX_CRIF", f, calc.rate(f),
+                LocalDate.of(2026, 8, 22), raw);
+        assertThat(extractText(crifPdf)).doesNotContain("Complete Provider Response");
+
+        byte[] experianPdf = renderer.render(1L, 2L, "EXPERIAN", f, calc.rate(f),
+                LocalDate.of(2026, 8, 22), raw);
+        assertThat(extractText(experianPdf)).contains("Complete Provider Response");
     }
 
     private static String extractText(byte[] pdf) throws Exception {

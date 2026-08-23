@@ -201,10 +201,18 @@ public final class BureauCodes {
         if (key.isEmpty()) {
             return Optional.empty();
         }
-        if (normalizeNumeric && key.chars().allMatch(Character::isDigit)) {
-            // "05" -> "5", but keep a lone "0" as "0" (it is itself a valid code = Others).
-            String stripped = key.replaceFirst("^0+(?=\\d)", "");
-            key = stripped.isEmpty() ? "0" : stripped;
+        if (normalizeNumeric) {
+            if (key.chars().allMatch(Character::isDigit)) {
+                // "05" -> "5", but keep a lone "0" as "0" (it is itself a valid code = Others).
+                String stripped = key.replaceFirst("^0+(?=\\d)", "");
+                key = stripped.isEmpty() ? "0" : stripped;
+            } else {
+                // These tables are keyed on Experian's numeric codes. CRIF (and other bureaus) send
+                // the human label directly instead ("Credit Card", "Active", "OTHER") — it is already
+                // a label, not a code to resolve, so pass it through rather than letting the caller's
+                // "Type <n>" fallback produce "Type Credit Card".
+                return Optional.of(key);
+            }
         }
         return Optional.ofNullable(table.get(key));
     }

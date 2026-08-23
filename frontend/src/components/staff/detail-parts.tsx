@@ -45,6 +45,18 @@ export const CUSTOMER_LEVEL_DOC_TYPES = new Set([
 export const DOC_TYPE_LABELS: Record<string, string> = {
   SALARY_SLIP: "Salary slip",
   BANK_STATEMENT: "Bank statement",
+  BUREAU_REPORT: "Bureau report (CRIF)",
+  CREDIT_BRIEF: "Credit brief",
+  AADHAAR_PHOTO: "Aadhaar photo",
+  AADHAAR_FRONT: "Aadhaar (front)",
+  AADHAAR_BACK: "Aadhaar (back)",
+  AADHAAR_JPEG: "Aadhaar image",
+  SANCTION_LETTER: "Sanction letter",
+  SIGNED_AGREEMENT: "Signed agreement",
+  BANK_PROOF: "Bank proof",
+  SELFIE: "Selfie",
+  PAN: "PAN",
+  ADDRESS: "Address proof",
 };
 
 export function docTypeLabel(docType: string): string {

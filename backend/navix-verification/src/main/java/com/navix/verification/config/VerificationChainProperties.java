@@ -11,10 +11,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * ECS task-def env var rather than a redeploy — and which must stay consistent with the ALB idle
  * timeout in front of the service.
  *
- * <p>{@code chain} -> {@code NAVIX_VERIFICATION_CHAIN} (default {@code [signzy, digitap]}) — the ordered
- * list of provider ids the {@code RoutingVerificationPort} tries per capability: it calls each in turn,
- * skipping a provider that does not offer the capability and falling through to the next on a failure,
- * returning the first success. Provider ids: {@code signzy}, {@code digitap}.
+ * <p>{@code chain} -> {@code NAVIX_VERIFICATION_CHAIN} (default {@code [fintrix, signzy, digitap]}) —
+ * the ordered list of provider ids the {@code RoutingVerificationPort} tries per capability: it calls
+ * each in turn, skipping a provider that does not offer the capability and falling through to the next
+ * on a failure, returning the first success. Provider ids: {@code fintrix}, {@code signzy},
+ * {@code digitap}.
  */
 @ConfigurationProperties(prefix = "navix.verification")
 public record VerificationChainProperties(
@@ -22,7 +23,8 @@ public record VerificationChainProperties(
         Integer connectTimeoutSeconds,
         Integer readTimeoutSeconds,
         Integer bureauReadTimeoutSeconds,
-        Integer signzyBureauReadTimeoutSeconds
+        Integer signzyBureauReadTimeoutSeconds,
+        Integer fintrixBureauReadTimeoutSeconds
 ) {
 
     /**
@@ -32,15 +34,20 @@ public record VerificationChainProperties(
      */
     private static final int DEFAULT_CONNECT_SECONDS = 5;
     private static final int DEFAULT_READ_SECONDS = 30;
-    /** Digitap Credit Analytics is genuinely slow; 30s was cutting off pulls that would have landed. */
-    private static final int DEFAULT_BUREAU_READ_SECONDS = 90;
     /**
-     * The bureau step is a CHAIN — Signzy Experian, then Signzy CRIF, then Digitap. At the shared 30s
-     * that is 150s worst case, past the 120s ALB idle timeout, so the borrower would get a 504 instead
-     * of the Digitap result. Capping the two Signzy legs keeps the whole chain inside the budget
-     * (12 + 12 + 90 = 114s). They are cheap to cap: both currently fail fast on a 403.
+     * Fintrix is now the bureau PRIMARY, tried first; Digitap Credit Analytics is the fallback, reached
+     * only when Fintrix is down. The bureau chain is sequential and the ALB idle timeout in front of the
+     * service is 120s, so 45 (Fintrix) + 60 (Digitap) = 105s worst case keeps both inside the budget —
+     * which is why Digitap's own default was cut from 90s to 60s in the same change.
+     */
+    private static final int DEFAULT_BUREAU_READ_SECONDS = 60;
+    /**
+     * Signzy's bureau legs (Experian, CRIF) are retired from the routing chain — Fintrix replaced them —
+     * but the clients stay live for the ADMIN provider workbench, so this default is kept short as before.
      */
     private static final int DEFAULT_SIGNZY_BUREAU_READ_SECONDS = 12;
+    /** Fintrix {@code /crif_combine} read timeout — see the class-level worst-case budget above. */
+    private static final int DEFAULT_FINTRIX_BUREAU_READ_SECONDS = 45;
 
     public Duration connectTimeout() {
         return seconds(connectTimeoutSeconds, DEFAULT_CONNECT_SECONDS);
@@ -56,17 +63,22 @@ public record VerificationChainProperties(
         return seconds(bureauReadTimeoutSeconds, DEFAULT_BUREAU_READ_SECONDS);
     }
 
-    /** Read timeout for the two Signzy bureau legs that precede the Digitap fallback. */
+    /** Read timeout for the two Signzy bureau legs (workbench-only; retired from routing). */
     public Duration signzyBureauReadTimeout() {
         return seconds(signzyBureauReadTimeoutSeconds, DEFAULT_SIGNZY_BUREAU_READ_SECONDS);
+    }
+
+    /** Read timeout for Fintrix {@code /crif_combine} — the bureau PRIMARY. */
+    public Duration fintrixBureauReadTimeout() {
+        return seconds(fintrixBureauReadTimeoutSeconds, DEFAULT_FINTRIX_BUREAU_READ_SECONDS);
     }
 
     private static Duration seconds(Integer configured, int fallback) {
         return Duration.ofSeconds(configured == null || configured <= 0 ? fallback : configured);
     }
 
-    /** The effective chain, defaulting to Signzy → Digitap when unset/blank. */
+    /** The effective chain, defaulting to Fintrix → Signzy → Digitap when unset/blank. */
     public List<String> effectiveChain() {
-        return (chain == null || chain.isEmpty()) ? List.of("signzy", "digitap") : chain;
+        return (chain == null || chain.isEmpty()) ? List.of("fintrix", "signzy", "digitap") : chain;
     }
 }

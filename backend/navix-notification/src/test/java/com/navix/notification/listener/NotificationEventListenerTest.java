@@ -43,13 +43,58 @@ class NotificationEventListenerTest {
     }
 
     private static ApplicationTransitionedEvent transition(String action, String toStatus) {
-        return new ApplicationTransitionedEvent(10L, 5L, 2L, "FROM", toStatus, action, 9L, "1", "ADMIN", Instant.now());
+        return transition(action, toStatus, null);
+    }
+
+    private static ApplicationTransitionedEvent transition(String action, String toStatus, Instant retryFrom) {
+        return new ApplicationTransitionedEvent(10L, 5L, 2L, "FROM", toStatus, action, 9L, "1", "ADMIN",
+                Instant.now(), retryFrom);
+    }
+
+    /** The model the dispatcher was handed. */
+    private java.util.Map<String, Object> model() {
+        ArgumentCaptor<NotificationContext> ctx = ArgumentCaptor.forClass(NotificationContext.class);
+        verify(dispatcher).dispatch(any(NotificationType.class), ctx.capture());
+        return ctx.getValue().model();
     }
 
     private NotificationType dispatched() {
         ArgumentCaptor<NotificationType> type = ArgumentCaptor.forClass(NotificationType.class);
         verify(dispatcher).dispatch(type.capture(), any(NotificationContext.class));
         return type.getValue();
+    }
+
+    /**
+     * A rejection that set a cooling-off block tells the borrower the DATE they may re-apply. Without
+     * it a declined borrower had no way to learn when "at this time" ends, and simply retried into
+     * the block until they gave up.
+     */
+    @Test
+    void aRejectionWithABlockCarriesTheRetryDate() {
+        Instant retryFrom = Instant.parse("2026-11-20T04:30:00Z"); // 10:00 IST on the 20th
+        listener.onApplicationTransitioned(transition("REJECT_LEAD", "REJECTED", retryFrom));
+
+        assertThat(model().get("retryLine")).isEqualTo(" You can apply again on or after 20 Nov 2026.");
+    }
+
+    /** The date is rendered in IST, so a UTC instant late on the 19th is still the 20th here. */
+    @Test
+    void theRetryDateIsRenderedInIst() {
+        listener.onApplicationTransitioned(
+                transition("AUTO_REJECT_LOW_BUREAU_SCORE", "REJECTED", Instant.parse("2026-11-19T20:00:00Z")));
+
+        assertThat(model().get("retryLine")).isEqualTo(" You can apply again on or after 20 Nov 2026.");
+    }
+
+    /**
+     * No block, no sentence — and an EMPTY string rather than a null, because TemplateRenderer
+     * renders an absent key as an em dash, which would leave "at this time.—" in the borrower's mail.
+     */
+    @Test
+    void aTransitionWithNoBlockRendersAnEmptyRetryLineNotAnEmDash() {
+        listener.onApplicationTransitioned(transition("KYC_APPROVE", "KYC_APPROVED"));
+
+        assertThat(model().get("retryLine")).isEqualTo("");
     }
 
     @Test

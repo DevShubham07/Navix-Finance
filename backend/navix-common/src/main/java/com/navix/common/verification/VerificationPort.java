@@ -104,16 +104,31 @@ public interface VerificationPort {
                         String state, String district, String country, Double confidenceScore) {
     }
 
-    /** {@code source} is the bureau that answered (e.g. SIGNZY_EXPERIAN / DIGITAP_EXPERIAN); facts null on thin-file/CRIF. */
+    /**
+     * {@code source} is the bureau that answered (e.g. SIGNZY_EXPERIAN / DIGITAP_EXPERIAN); facts null
+     * on thin-file/CRIF. {@code reportUrl} is a provider-supplied link to the vendor's own report
+     * document (e.g. Fintrix CRIF's {@code credit_report_link}), carried neutrally here rather than
+     * pulled out of {@code rawResponseJson} downstream — {@code VerificationPort}'s records are
+     * provider-neutral, and reaching into the Fintrix envelope shape from navix-loan would hard-code
+     * that provider's JSON there. Null when the provider offers no such document (Signzy/Digitap today).
+     */
     record BureauCheck(String txnId, String source, Integer score, boolean noRecord,
                        Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
-                       BureauReportFacts facts, String rawResponseJson) {
+                       BureauReportFacts facts, String rawResponseJson, String reportUrl) {
+
+        /** Backward-compatible constructor for providers/tests that do not yet expose a raw report. */
+        public BureauCheck(String txnId, String source, Integer score, boolean noRecord,
+                           Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
+                           BureauReportFacts facts, String rawResponseJson) {
+            this(txnId, source, score, noRecord, activeAccounts, overdueAccounts, totalBalance, facts,
+                    rawResponseJson, null);
+        }
 
         /** Backward-compatible constructor for providers/tests that do not yet expose a raw report. */
         public BureauCheck(String txnId, String source, Integer score, boolean noRecord,
                            Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
                            BureauReportFacts facts) {
-            this(txnId, source, score, noRecord, activeAccounts, overdueAccounts, totalBalance, facts, null);
+            this(txnId, source, score, noRecord, activeAccounts, overdueAccounts, totalBalance, facts, null, null);
         }
     }
 

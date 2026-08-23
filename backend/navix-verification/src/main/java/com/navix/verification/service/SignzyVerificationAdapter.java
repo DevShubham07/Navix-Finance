@@ -2,13 +2,10 @@ package com.navix.verification.service;
 
 import static com.navix.verification.support.ProviderJson.ref;
 
-import com.navix.common.verification.BureauReportFacts;
 import com.navix.common.verification.VerificationPort;
 import com.navix.verification.client.SignzyBankVerificationClient;
-import com.navix.verification.client.SignzyCrifClient;
 import com.navix.verification.client.SignzyDigiLockerClient;
 import com.navix.verification.client.SignzyEmailClient;
-import com.navix.verification.client.SignzyExperianClient;
 import com.navix.verification.client.SignzyGeocodeClient;
 import com.navix.verification.client.SignzyLivenessClient;
 import com.navix.verification.client.SignzyPanClient;
@@ -27,6 +24,11 @@ import org.springframework.stereotype.Component;
  *   <li>{@link #faceLiveness} — Signzy Liveness Secure is an interactive iframe flow, not the
  *       synchronous single-image liveness this port method expects; the router uses Digitap Face Match.
  *       ({@code SignzyLivenessClient} remains available for a future async selfie journey.)</li>
+ *   <li>{@link #pullBureau} — RETIRED from routing: Fintrix ({@code FintrixVerificationAdapter}) is now
+ *       the bureau primary and Digitap Credit Analytics the fallback. {@code SignzyExperianClient} /
+ *       {@code SignzyCrifClient} are kept as beans purely for the ADMIN provider workbench
+ *       ({@code ProviderApiWorkbenchService}), which dispatches them directly — not through this
+ *       adapter — so this class no longer needs them as fields.</li>
  * </ul>
  * {@link #verifyEmail} (Email Verification V2), {@link #verifyAddress} (reverse-geocoding) and PAN 206AB
  * all run on the production account; Digitap is the fallback for each. Penny-drop and the full DigiLocker
@@ -38,8 +40,6 @@ public class SignzyVerificationAdapter implements VerificationPort {
 
     private final SignzyPanClient panClient;
     private final SignzyBankVerificationClient bankClient;
-    private final SignzyExperianClient experianClient;
-    private final SignzyCrifClient crifClient;
     private final SignzyDigiLockerClient digiLockerClient;
     private final SignzyGeocodeClient geocodeClient;
     private final SignzyEmailClient emailClient;
@@ -84,24 +84,12 @@ public class SignzyVerificationAdapter implements VerificationPort {
 
     @Override
     public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
-        // Experian PRIMARY → CRIF FALLBACK, mirroring the retired BureauService. `otp` is unused here —
-        // Signzy's Experian-lite call has no OTP requirement (only Digitap's Credit Analytics does).
-        try {
-            SignzyDtos.ExperianResponse e = experianClient.pull(pan, name, mobile, dob);
-            if (e != null && e.creditScore() != null && !Boolean.TRUE.equals(e.noRecord())) {
-                BureauReportFacts f = e.facts();
-                return new BureauCheck(e.txnId(), "SIGNZY_EXPERIAN", e.creditScore(), false,
-                        f != null ? f.activeAccounts() : null,
-                        f != null ? f.defaults() : null,
-                        f != null && f.totalBalanceRupees() != null ? f.totalBalanceRupees().doubleValue() : null,
-                        f, e.rawResponseJson());
-            }
-        } catch (VerificationException experianMiss) {
-            // fall through to CRIF
-        }
-        SignzyDtos.CrifResponse c = crifClient.pull(pan, name, mobile, dob);
-        return new BureauCheck(c.txnId(), "SIGNZY_CRIF", c.score(), c.score() == null,
-                null, null, null, null, c.rawResponseJson());
+        // Retired from routing — Fintrix is now the bureau primary, Digitap Credit Analytics the
+        // fallback (see the class javadoc). Throwing here — rather than still calling Experian/CRIF —
+        // is the only way to drop Signzy's bureau role while it stays in the chain for its other seven
+        // capabilities (the chain property is global, not per-capability).
+        throw new CapabilityNotSupportedException(
+                "Signzy bureau (Experian/CRIF) retired from routing — Fintrix is now primary");
     }
 
     @Override

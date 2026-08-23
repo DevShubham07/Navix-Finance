@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.navix.common.verification.ProviderCallContext;
 import com.navix.verification.exception.VerificationException;
 import java.util.ArrayList;
 import java.util.List;

@@ -773,7 +773,9 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `BORROWER_AUTH_TTL_SECONDS`
   (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
   `AWS_PROFILE`, `NAVIX_ENV`,
-  `SIGNZY_*` + `DIGITAP_*` + `NAVIX_VERIFICATION_CHAIN` (verification providers, §14; loaded from `.env`),
+  `SIGNZY_*` + `DIGITAP_*` + `FINTRIX_*` (`FINTRIX_BASE_URL`, `FINTRIX_CLIENT_ID`, `FINTRIX_CLIENT_SECRET` —
+  the bureau-primary Fintrix `crif_combine` client) + `NAVIX_VERIFICATION_CHAIN` (default
+  `fintrix,signzy,digitap`; verification providers, §14; loaded from `.env`),
   `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
@@ -854,17 +856,22 @@ multiple accounts (kartikjindal, meetzy-india). If push fails on OAuth scope, ru
 
 NAVIX's identity/bureau/penny-drop/DigiLocker verification runs behind the provider-neutral
 `VerificationPort` seam via `RoutingVerificationPort` (`@Primary`, `navix-verification`), which routes **per
-capability: Signzy first, Digitap as fallback; where Signzy lacks a capability, Digitap directly**. The old
-Fintrix + Fintrix-DigiLocker integration was **removed** (`git` history has it). Two per-provider adapters
-(`SignzyVerificationAdapter`, `DigitapVerificationAdapter`) map provider clients → the neutral records;
-a `CapabilityNotSupportedException` tells the router "skip to the next provider" vs a `VerificationException`
-"tried and failed, fall through". Full API catalogs + field/sample specs: **`docs/signzy/`** (11 APIs) and
-**`docs/digitap/`** (43 APIs).
+capability: Signzy first, Digitap as fallback; where Signzy lacks a capability, Digitap directly** — **except
+`pullBureau`, which is Fintrix first, Digitap as fallback (Signzy no longer does bureau at all)**. The old
+Fintrix + Fintrix-DigiLocker integration was **removed** (`git` history has it) — **Fintrix later came back
+as the bureau primary only**, via a single new endpoint unrelated to the old multi-API integration (see
+`NAVIX_Fintrix_Integration_Flow.md` §3.5 for the full history + the live contract). Three per-provider
+adapters (`SignzyVerificationAdapter`, `DigitapVerificationAdapter`, `FintrixVerificationAdapter`) map
+provider clients → the neutral records; `FintrixVerificationAdapter` offers **only** the bureau capability —
+every other method throws `CapabilityNotSupportedException` so the router falls straight through to Signzy/
+Digitap for everything else. A `CapabilityNotSupportedException` tells the router "skip to the next
+provider" vs a `VerificationException` "tried and failed, fall through". Full API catalogs + field/sample
+specs: **`docs/signzy/`** (11 APIs) and **`docs/digitap/`** (43 APIs).
 
 | Capability (`VerificationPort`) | Provider used | Endpoint |
 |---|---|---|
 | `verifyPan` | **Signzy** → Digitap | Signzy `/api/v3/pan/compliance-206-individual-search` → Digitap `/validation/kyc/v1/pan_details_plus` |
-| `pullBureau` | **Signzy** → Digitap | Signzy `/api/v3/bureau/experian-lite` → `/api/v3/bureau/crif` → Digitap `/credit_analytics/request` |
+| `pullBureau` | **Fintrix** → Digitap | Fintrix `POST /crif_combine` (CRIF Highmark; PRIMARY) → Digitap `/credit_analytics/request`. Signzy's `experian-lite`/`crif` legs are **retired from routing** (`SignzyVerificationAdapter.pullBureau` now throws `CapabilityNotSupportedException`) — `SignzyExperianClient`/`SignzyCrifClient` are kept only for the ADMIN provider workbench. Gated by the `fintrix-bureau` feature flag (on by default; off falls through to Digitap). See `NAVIX_Fintrix_Integration_Flow.md` §3.5 |
 | `livenessInit` / `livenessResult` (selfie) | **Signzy** | Signzy `/api/v3/liveness-secure/createUrl` + `/getData` (prod acct) — **interactive video journey**: passive liveness + 1:1 face-match vs the DigiLocker Aadhaar photo, embedded in an iframe (`allow="camera"`), polled to completion (our DB authoritative). Two-step async, mirrors DigiLocker |
 | `faceLiveness` (selfie fallback) | **Digitap** | Digitap `/fmfl/v2/face-match` — synchronous 1:1 face-match of an uploaded selfie vs the Aadhaar photo (no live camera). **Fallback** used only when Signzy liveness init is unavailable (`selfieLivenessInit` → `derived.fallback=true`) |
 | `pennyDrop` | **Signzy only** | Signzy `/api/v3/bankaccountverification/bankaccountverifications` (Digitap has no penny-drop) |
@@ -925,9 +932,11 @@ and is set only by the demo seed script and tests). Specs + verified corrections
   presigns the selfie **and** the `AADHAAR_PHOTO` and calls `faceLiveness(selfieUrl, referenceUrl, ref)` →
   Digitap Face Match (`is_same_face` + confidence ≥ 0.60; no Aadhaar photo → single-image quality check).
   Neither path ever hard-blocks — a KYC approver makes the final call.
-- **Bureau fixture** — `NAVIX_BUREAU_FIXTURE=classpath:samplepan.json` still yields a rich local credit brief
-  offline (now via `SignzyExperianClient`, which tolerates both the real `jsonExperianReport` and the fixture
-  `credit_report` shape).
+- **Bureau fixture** — `NAVIX_BUREAU_FIXTURE` (any non-blank value) still yields a rich local credit brief
+  offline. Since Fintrix is now the bureau primary, the fixture is read by `FintrixCrifClient`, which
+  ignores the property's value and always serves its own bundled `docs/fintrix/crif-combine-sample.json`
+  (CRIF-shaped); `SignzyExperianClient`/`DigitapCreditClient` still honour the same property for their own
+  Experian-shaped `classpath:samplepan.json` when reached (workbench / fallback paths).
 - **Live-test status (verified 2026-07-14, preproduction/production).** ✅ Signzy PAN, **penny-drop**, CRIF
   (score 799), DigiLocker init; ✅ Digitap **Address** (200, prod host). ⚠️ **Account-side blockers, not code:**
   Digitap **Email** → `412` (product not provisioned), Digitap **Face Match** → `402` (needs account balance),
@@ -950,15 +959,21 @@ and is set only by the demo seed script and tests). Specs + verified corrections
   whitelisted. **Status (2026-07-10):** `NAVIX_OTP_LOGIN_V2` approved & live; the other 14 pending
   (return `006 Invalid template text`).
 
-**Bureau report → credit brief:** the Signzy Experian pull (`SignzyExperianClient`) unwraps the report to
-`data.jsonExperianReport` and hands it to `support/ExperianFactsParser`, which parses the **full** report
-(CAIS summary, outstanding balances, CAPS enquiries) into `BureauReportFacts`, not just the score — the
-**same shape** the Digitap Credit client (`DigitapCreditClient`, `result.result_json.INProfileResponse`) reuses.
-A **thin-file** response (no CAIS detail → `facts == null`) is score-only, no brief; a rich response yields the
-brief. For local end-to-end demos set **`NAVIX_BUREAU_FIXTURE=classpath:samplepan.json`** (bundled in
-`navix-app`/`navix-verification` resources; the client tolerates the fixture's `data.credit_report` shape) —
-every pull then returns that report, yielding a real 4.0★ brief + PDF without a live call. The rating math +
-field map live in `CreditRatingCalculator`
+**Bureau report → credit brief:** the PRIMARY path is now Fintrix — `FintrixCrifClient` (`POST
+/crif_combine`) unwraps the envelope to `canonical.data.credit_report` and hands it to
+`support/CrifHighmarkFactsParser`, which parses the **full** CRIF Highmark report (accounts summary,
+tradelines, inquiry history, score trend) into `BureauReportFacts` — the **same shape**
+`support/ExperianFactsParser` produces for the Digitap fallback (`DigitapCreditClient`,
+`result.result_json.INProfileResponse`), so the credit-brief PDF/rating stay bureau-agnostic regardless of
+which provider answered (`SignzyExperianClient`/`SignzyCrifClient` are retained only for the ADMIN provider
+workbench, no longer in the routed path). A **thin-file** response (no tradeline/summary detail → `facts ==
+null`) is score-only, no brief; a rich
+response yields the brief. For local end-to-end demos set **`NAVIX_BUREAU_FIXTURE`** (any non-blank value —
+`FintrixCrifClient` treats it as an on/off toggle, not a path, and always serves its own bundled
+`docs/fintrix/crif-combine-sample.json`, a redacted real capture; the Digitap/Signzy clients still honour
+the same property name for their own `classpath:samplepan.json` Experian-shaped fixture) — every pull then
+returns a real report, yielding a brief + PDF without a live (billable) call. The rating math + field map
+live in `CreditRatingCalculator`
 (see §2); the PDF needs **OpenPDF** (`com.github.librepdf:openpdf`, in the parent BOM + `navix-loan`).
 The bureau facts drive the **rating + credit-health + exposure** numbers, but the brief's **displayed
 identity** (name/PAN/mobile/DOB) is overridden from the borrower's `ApplicantProfile`

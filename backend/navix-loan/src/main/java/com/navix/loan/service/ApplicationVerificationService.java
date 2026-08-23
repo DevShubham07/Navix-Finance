@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.KycReminderEvent;
@@ -43,6 +44,7 @@ import java.util.HashSet;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -90,6 +92,11 @@ public class ApplicationVerificationService {
     /** Document types the Phase-3 sanction letter + eSign write (not verification check types). */
     public static final String SANCTION_LETTER = "SANCTION_LETTER";
     public static final String SIGNED_AGREEMENT = "SIGNED_AGREEMENT";
+    /**
+     * The vendor's own bureau report PDF (e.g. Fintrix CRIF's {@code credit_report_link}), ingested
+     * best-effort alongside the generated {@code CREDIT_BRIEF}. Staff-only, like every bureau artifact.
+     */
+    public static final String BUREAU_REPORT = "BUREAU_REPORT";
     /**
      * A cancelled cheque or bank passbook — the manual alternative to a penny drop, uploaded via the
      * existing presign-upload + {@link #saveUploadedDocuments} path. Not a verification check type of
@@ -768,7 +775,9 @@ public class ApplicationVerificationService {
             case PAN -> verifyPan(appId, value(values, "pan", p.getPan()));
             case EMAIL -> verifyEmail(appId, value(values, "email", p.getOfficialEmail() != null ? p.getOfficialEmail() : p.getEmail()));
             case ADDRESS -> verifyAddress(appId, number(values, "latitude"), number(values, "longitude"));
-            case BUREAU -> pullBureau(appId, value(values, "otp", null));
+            // force=true: an ADMIN-triggered retry must always talk to the provider, bypassing the
+            // 24h customer-scoped reuse window (see pullBureau overload below).
+            case BUREAU -> pullBureau(appId, value(values, "otp", null), true);
             // Every input comes off the stored profile, so this one needs no borrower session at all.
             case EMPLOYMENT -> verifyEmployment(appId);
             case PENNY_DROP -> verifyPennyDrop(appId, value(values, "accountNumber", p.getSalaryAccountNumber()), value(values, "ifsc", p.getSalaryIfsc()), true);
@@ -818,7 +827,37 @@ public class ApplicationVerificationService {
      */
     @Transactional
     public StepResult pullBureau(Long appId, String otp) {
-        Optional<ApplicationVerification> existing = passed(appId, BUREAU);
+        return pullBureau(appId, otp, false);
+    }
+
+    /**
+     * @param force bypasses the 24h customer-scoped reuse window (see {@link #reusableBureauPass}) —
+     *              set by the ADMIN retry endpoint ({@code POST .../verifications/BUREAU/retry}) and
+     *              the score backfill, both of which need a genuine re-pull. The borrower-facing path
+     *              always calls the two-arg overload above (force=false).
+     */
+    @Transactional
+    public StepResult pullBureau(Long appId, String otp, boolean force) {
+        return pullBureau(appId, otp, force, true);
+    }
+
+    /**
+     * @param allowAutoReject false suppresses the score-floor auto-reject entirely — set by the bureau
+     *              rescore backfill ({@code BureauBackfillService}). A refresh in a live cohort must
+     *              never knock a customer out of a queue from a batch job (see
+     *              {@link ApplicationFlowService#MIN_BUREAU_SCORE}); it would also fail outright, since
+     *              {@link ApplicationFlowService#autoReject} requires the BORROWER role and a batch
+     *              runs as ADMIN/system. The borrower-facing and staff-retry overloads above always
+     *              pass {@code true} — this is the only caller that ever passes {@code false}.
+     */
+    @Transactional
+    public StepResult pullBureau(Long appId, String otp, boolean force, boolean allowAutoReject) {
+        // force=true means "genuinely re-pull" — it must bypass THIS application's own already-PASSed
+        // row too, not just the cross-application reuse window below. A sub-floor score is still a
+        // PASS on the BUREAU check itself (only the application gets rejected, as a side effect — see
+        // finishBureauPull), so without this a forced re-pull of a rejected application (the backfill's
+        // core case) would just hand back the stale PASS row and never call the provider.
+        Optional<ApplicationVerification> existing = force ? Optional.empty() : passed(appId, BUREAU);
         if (existing.isPresent()) {
             return new StepResult(BUREAU, existing.get().getStatus(), existing.get().getMessage(), Map.of());
         }
@@ -836,6 +875,14 @@ public class ApplicationVerificationService {
                     "Your date of birth is required before we can run the credit check.");
             return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
         }
+
+        if (!force) {
+            Optional<ApplicationVerification> reusable = reusableBureauPass(appId);
+            if (reusable.isPresent()) {
+                return reuseBureauPass(appId, profile, ref, reusable.get(), allowAutoReject);
+            }
+        }
+
         VerificationPort.BureauCheck r;
         try {
             r = verification.pullBureau(
@@ -860,6 +907,22 @@ public class ApplicationVerificationService {
             return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
         }
 
+        return finishBureauPull(appId, profile, ref, r, allowAutoReject);
+    }
+
+    /**
+     * Bureau score floor is {@link ApplicationFlowService#MIN_BUREAU_SCORE}; the reuse window is
+     * {@link #BUREAU_REUSE_WINDOW_HOURS}.
+     */
+    private static final long BUREAU_REUSE_WINDOW_HOURS = 24;
+
+    /**
+     * Finishes a fresh, successful provider pull: sets profile score/risk, cross-checks identity,
+     * ingests the vendor's own report PDF, generates the staff credit brief, persists the check, and
+     * applies (or skips, on a mismatch) the score-floor auto-reject.
+     */
+    private StepResult finishBureauPull(Long appId, CustomerProfile profile, String ref,
+                                        VerificationPort.BureauCheck r, boolean allowAutoReject) {
         Integer bureauScore = r.score();
         profile.setBureauScore(bureauScore != null ? bureauScore.longValue() : null);
         profile.setBureauSource(r.source());
@@ -868,9 +931,21 @@ public class ApplicationVerificationService {
             RiskPort.RiskGrade grade = risk.grade(salary, bureauScore, null);
             profile.setRiskCategory(grade.category());
         }
+
+        // A stranger's low score must never auto-reject our borrower. The report's own PAN/DOB (never
+        // harvested by CrifHighmarkFactsParser — see its javadoc) are dug out of the raw envelope here
+        // rather than added to BureauReportFacts; unlike the report link (§ below), this comparison is
+        // one-off and read-only, so a raw JsonNode.path() walk stays local to this one check instead of
+        // widening the neutral BureauReportFacts shape for every provider.
+        String mismatch = bureauIdentityMismatch(profile, r.rawResponseJson());
+
+        // Ingest the vendor's own report PDF (best-effort — must never fail the bureau step) and return
+        // the envelope with the signed link scrubbed before it is EVER persisted.
+        String cleanRawResponseJson = storeAndScrubBureauReport(appId, r);
+
         // Build the staff credit brief (1–5★ rating + one-page PDF → S3 + CREDIT_BRIEF document) from
         // the parsed report. Best-effort and self-saving; no-op on a thin-file (facts == null).
-        creditBriefService.generate(appId, profile, r.facts(), r.rawResponseJson());
+        creditBriefService.generate(appId, profile, r.facts(), cleanRawResponseJson);
         profileRepo.save(profile);
 
         // Staff CRM derived: aggregates + noRecord (score stays on row.score / profile — not here for borrower summary).
@@ -880,22 +955,259 @@ public class ApplicationVerificationService {
         derived.put("overdueAccounts", r.overdueAccounts());
         derived.put("totalBalance", r.totalBalance());
         derived.put("source", r.source());
-        ApplicationVerification row = upsert(appId, BUREAU, PASS, r.source(), r.txnId(), ref,
+        if (mismatch != null) {
+            derived.put("identityMismatch", mismatch);
+        }
+        String status = mismatch != null ? REVIEW : PASS;
+        String message = mismatch != null ? mismatch
+                : (r.noRecord() ? "Thin-file (no bureau record)" : "Bureau pulled");
+        ApplicationVerification row = upsert(appId, BUREAU, status, r.source(), r.txnId(), ref,
                 null, bureauScore != null ? bureauScore.longValue() : null, null, derived,
-                r.noRecord() ? "Thin-file (no bureau record)" : "Bureau pulled", r.rawResponseJson());
+                message, cleanRawResponseJson);
 
         // Engine auto-reject (revamp.md-style intake rule, same shape as self-employed/past-delinquency):
-        // a real, numeric sub-600 score rejects the application outright. A null/missing score (provider
-        // failure, thin-file) never triggers this — that keeps today's soft-degrade-to-REVIEW behavior,
-        // deliberately. The bureau check itself still reports PASS (the pull succeeded); it's the
-        // application that gets rejected as a side effect.
-        if (bureauScore != null && bureauScore < 600) {
+        // a real, numeric sub-floor score rejects the application outright. A null/missing score
+        // (provider failure, thin-file) never triggers this — that keeps the soft-degrade-to-REVIEW
+        // behavior, deliberately — and neither does an identity mismatch (see above). The bureau check
+        // itself still reports PASS when there's no mismatch (the pull succeeded); it's the application
+        // that gets rejected as a side effect.
+        if (allowAutoReject && mismatch == null && bureauScore != null
+                && bureauScore < ApplicationFlowService.MIN_BUREAU_SCORE) {
             flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
-                    "Rejected because credit score is under 600",
+                    "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
                     ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS);
         }
 
-        return new StepResult(BUREAU, PASS, row.getMessage(), Map.of());
+        return new StepResult(BUREAU, status, row.getMessage(), Map.of());
+    }
+
+    /**
+     * Copy the rating, verdict, summary and {@code credit_brief_facts} from the application whose
+     * bureau pull we are reusing, then carry its {@code CREDIT_BRIEF} document row so the facts and
+     * the PDF stay consistent. Best-effort: a missing source brief simply leaves this application
+     * without one, exactly as it would have been.
+     */
+    private void carryCreditBrief(Long sourceAppId, Long appId, CustomerProfile target) {
+        if (sourceAppId == null) {
+            return;
+        }
+        profileRepo.findByApplicationId(sourceAppId).ifPresent(src -> {
+            target.setCreditStarRating(src.getCreditStarRating());
+            target.setCreditRecommendation(src.getCreditRecommendation());
+            target.setCreditBriefSummary(src.getCreditBriefSummary());
+            target.setCreditBriefGeneratedAt(src.getCreditBriefGeneratedAt());
+            target.setCreditBriefFacts(src.getCreditBriefFacts());
+        });
+        try {
+            flow.copyCreditBriefDocument(sourceAppId, appId);
+        } catch (RuntimeException carryFailure) {
+            log.warn("credit-brief carry failed application={} source={}", appId, sourceAppId);
+        }
+    }
+
+    /**
+     * Copies a sibling application's fresh-enough (within {@link #BUREAU_REUSE_WINDOW_HOURS}) PASSed
+     * bureau pull onto THIS application instead of calling the provider again — see
+     * {@link #reusableBureauPass}. The identity cross-check still runs against this application's own
+     * profile (a typo'd DOB here shouldn't inherit a sibling's clean verdict), but no new
+     * CREDIT_BRIEF/BUREAU_REPORT document is generated for this application: the facts needed to
+     * re-render the brief live only in the provider's own JSON shape, and re-parsing that here would be
+     * exactly the "provider DTO on the loan classpath" the {@link VerificationPort} neutrality boundary
+     * exists to prevent (see its javadoc) — the original application already carries that brief/report.
+     */
+    private StepResult reuseBureauPass(Long appId, CustomerProfile profile, String ref,
+                                       ApplicationVerification source, boolean allowAutoReject) {
+        Long score = source.getScore();
+        String mismatch = bureauIdentityMismatch(profile, source.getRawResponse());
+        Map<String, Object> derived = new LinkedHashMap<>(fromJson(source.getDerived()));
+        derived.put("reusedFromApplicationId", source.getApplicationId());
+        if (mismatch != null) {
+            derived.put("identityMismatch", mismatch);
+        }
+        String status = mismatch != null ? REVIEW : source.getStatus();
+        String message = (mismatch != null ? mismatch : nz(source.getMessage())) + " (reused within 24h)";
+        ApplicationVerification row = upsert(appId, BUREAU, status, source.getProvider(),
+                source.getProviderTxnId(), ref, source.getNameMatch(), score, null, derived,
+                message, source.getRawResponse());
+
+        profile.setBureauScore(score);
+        profile.setBureauSource(source.getProvider());
+        Long salary = profile.getMonthlySalaryPaise();
+        if (salary != null) {
+            RiskPort.RiskGrade grade = risk.grade(salary, score != null ? score.intValue() : null, null);
+            profile.setRiskCategory(grade.category());
+        }
+        // Carry the brief across with the score. Reusing a sibling pull deliberately does not re-parse
+        // the provider envelope (that would put the vendor's shape on this classpath), so without this
+        // the new application would hold a score and nothing else - no star rating, no verdict, and no
+        // credit_brief_facts for CreditBriefService.ensureBrief to rebuild a PDF from. The staff credit
+        // card would show a number with no assessment beside it. Same carry the reborrow path does.
+        carryCreditBrief(source.getApplicationId(), appId, profile);
+        profileRepo.save(profile);
+
+        if (allowAutoReject && mismatch == null && score != null
+                && score < ApplicationFlowService.MIN_BUREAU_SCORE) {
+            flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
+                    "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
+                    ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS);
+        }
+        return new StepResult(BUREAU, status, row.getMessage(), Map.of());
+    }
+
+    /**
+     * A PASSed BUREAU verification for this same customer, on any OTHER application of theirs, still
+     * inside the reuse window — so a cancelled-and-restarted application doesn't trigger a second
+     * billable Fintrix pull. Scoped by {@code customerId} (per the plan: "customer, not application
+     * id"): two applications sharing a customerId are the same person by construction.
+     */
+    private Optional<ApplicationVerification> reusableBureauPass(Long appId) {
+        // findById, not requireApplication: existing unit tests exercise pullBureau against a profile
+        // mock without an applicationRepo stub, and a missing application here just means "nothing to
+        // reuse against" — it doesn't warrant a 404 in the middle of a bureau pull.
+        Long customerId = applicationRepo.findById(appId).map(LoanApplication::getCustomerId).orElse(null);
+        if (customerId == null) {
+            return Optional.empty();
+        }
+        List<Long> siblingIds = applicationRepo.findByCustomerId(customerId).stream()
+                .map(LoanApplication::getId)
+                .filter(id -> !id.equals(appId))
+                .toList();
+        if (siblingIds.isEmpty()) {
+            return Optional.empty();
+        }
+        List<ApplicationVerification> latest =
+                verificationRepo.findLatestPassed(BUREAU, siblingIds, PageRequest.of(0, 1));
+        if (latest.isEmpty()) {
+            return Optional.empty();
+        }
+        ApplicationVerification row = latest.get(0);
+        Instant at = row.getUpdatedAt() != null ? row.getUpdatedAt() : row.getCreatedAt();
+        if (at == null || at.isBefore(Instant.now().minus(BUREAU_REUSE_WINDOW_HOURS, ChronoUnit.HOURS))) {
+            return Optional.empty();
+        }
+        return Optional.of(row);
+    }
+
+    private static final DateTimeFormatter CRIF_DOB_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
+
+    /**
+     * Cross-checks the CRIF report's own PAN/DOB (buried in {@code canonical.data.credit_report.
+     * REQUEST} — CrifHighmarkFactsParser deliberately never harvests them, see its javadoc) against the
+     * verified {@link CustomerProfile}. PAN is compared strictly (exact, case-insensitive); DOB as an
+     * exact date. A null/blank on either side is "cannot compare", not a mismatch — this is a defensive
+     * identity guard, not a fraud-detection engine. Returns a human-readable reason, or {@code null}.
+     */
+    private String bureauIdentityMismatch(CustomerProfile profile, String rawResponseJson) {
+        if (rawResponseJson == null || rawResponseJson.isBlank()) {
+            return null;
+        }
+        JsonNode request;
+        try {
+            request = objectMapper.readTree(rawResponseJson)
+                    .path("canonical").path("data").path("credit_report").path("REQUEST");
+        } catch (Exception malformed) {
+            return null;
+        }
+        if (request.isMissingNode()) {
+            return null;
+        }
+        String reportPan = trimToNull(request.path("PAN").asText(null));
+        String profilePan = trimToNull(profile.getPan());
+        if (reportPan != null && profilePan != null && !reportPan.equalsIgnoreCase(profilePan)) {
+            return "Bureau report PAN does not match the verified profile PAN";
+        }
+        String reportDobRaw = trimToNull(request.path("DOB").asText(null));
+        if (reportDobRaw != null && profile.getDob() != null) {
+            try {
+                LocalDate reportDob = LocalDate.parse(reportDobRaw, CRIF_DOB_FORMAT);
+                if (!reportDob.equals(profile.getDob())) {
+                    return "Bureau report date of birth does not match the verified profile";
+                }
+            } catch (DateTimeParseException unparseable) {
+                // An unparseable report DOB is "cannot compare", not a mismatch.
+            }
+        }
+        return null;
+    }
+
+    private static String trimToNull(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    /**
+     * Ingests the vendor's own report PDF (best-effort — an ingest failure must never fail the bureau
+     * step) and returns the raw envelope with {@code credit_report_link} replaced by a marker, ready to
+     * persist. {@code application_verification.raw_response} / {@code provider_api_execution} store this
+     * string verbatim, and the brief PDF's raw-envelope appendix + the staff "complete provider report"
+     * pane both flatten every leaf of it — left un-scrubbed, a signed S3 URL carrying AWS signature
+     * query params would get printed straight into a PDF and a staff screen.
+     */
+    private String storeAndScrubBureauReport(Long appId, VerificationPort.BureauCheck r) {
+        String reportUrl = r.reportUrl();
+        if (reportUrl != null && !reportUrl.isBlank()) {
+            // Fintrix HTML-escapes the query separators in credit_report_link ("&amp;" for "&") — fetched
+            // as-received, the AWS signature breaks. This unescape is the single most likely thing to be
+            // silently wrong here; it must run before storeProviderDocument ever calls storeFromUrl.
+            String fetchUrl = unescapeHtmlEntities(reportUrl);
+            try {
+                storeProviderDocument(appId, BUREAU_REPORT, "bureau-report.pdf", "pdf", fetchUrl, "application/pdf");
+            } catch (RuntimeException ingestFailure) {
+                // Best-effort like the other provider-document ingests (DigiLocker e-Aadhaar, liveness
+                // selfie) — but unlike those (which swallow silently), DO log it: that silent swallow was
+                // flagged as a wart. No URL in the message; it carries AWS signature params. The parsed
+                // facts stand on their own regardless — this must never fail the bureau step. The bundled
+                // fixture's link is a fake host that will fail to fetch offline — expected, silent-but-logged.
+                log.warn("bureau report PDF ingest failed application={} exception={}", appId,
+                        ingestFailure.getClass().getSimpleName());
+            }
+        }
+        return stripReportLink(r.rawResponseJson());
+    }
+
+    private static final String REPORT_LINK_FIELD = "credit_report_link";
+    private static final String REPORT_LINK_INGESTED_MARKER = "[ingested]";
+
+    private String stripReportLink(String rawResponseJson) {
+        // Cheap pre-check: leave the string byte-for-byte untouched (matters for the un-pretty-printed
+        // fixtures other tests assert against verbatim) when there's nothing to scrub — Digitap/Signzy
+        // responses never carry this field at all.
+        if (rawResponseJson == null || rawResponseJson.isBlank() || !rawResponseJson.contains(REPORT_LINK_FIELD)) {
+            return rawResponseJson;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(rawResponseJson);
+            scrubReportLink(root);
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception malformed) {
+            return rawResponseJson;
+        }
+    }
+
+    private static void scrubReportLink(JsonNode node) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject()) {
+            ObjectNode obj = (ObjectNode) node;
+            if (obj.has(REPORT_LINK_FIELD)) {
+                obj.put(REPORT_LINK_FIELD, REPORT_LINK_INGESTED_MARKER);
+            }
+            obj.fields().forEachRemaining(e -> scrubReportLink(e.getValue()));
+        } else if (node.isArray()) {
+            node.forEach(ApplicationVerificationService::scrubReportLink);
+        }
+    }
+
+    private static String unescapeHtmlEntities(String url) {
+        if (url == null) {
+            return null;
+        }
+        return url.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&#39;", "'");
     }
 
     /**

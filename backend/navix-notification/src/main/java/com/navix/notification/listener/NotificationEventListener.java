@@ -25,6 +25,7 @@ import com.navix.notification.dispatch.NotificationContext;
 import com.navix.notification.dispatch.NotificationDispatcher;
 import com.navix.notification.email.EmailAttachment;
 import com.navix.notification.template.NotificationFormat;
+import java.time.ZoneId;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +46,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class NotificationEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationEventListener.class);
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private final NotificationDispatcher dispatcher;
     /** Base URL the staff-invite activation link is built from (same property as the reset links). */
@@ -76,7 +79,25 @@ public class NotificationEventListener {
                 .assignedExecutiveId(e.assignedExecutiveId())
                 .actorId(e.actorId())
                 .actorRole(e.actorRole())
+                .put("retryLine", retryLine(e))
                 .build());
+    }
+
+    /**
+     * The "you can apply again on …" sentence for a rejection that set a cooling-off block, ready to
+     * drop straight into a template — or an empty string when this transition set no block.
+     *
+     * <p>The DATE only: never the rule that fired and never the window's length, because 30 days
+     * (a reviewer's call) and 90 (an engine rule) would tell the borrower which one turned them
+     * away — the very thing decision 31 keeps from them. Empty rather than null: an absent model key
+     * renders as an em dash.
+     */
+    private static String retryLine(ApplicationTransitionedEvent e) {
+        if (e.retryFrom() == null) {
+            return "";
+        }
+        return " You can apply again on or after "
+                + NotificationFormat.date(e.retryFrom().atZone(IST).toLocalDate()) + ".";
     }
 
     /** Staff-triggered nudge to a borrower with outstanding verification steps (Phase 3.4). */
@@ -352,6 +373,10 @@ public class NotificationEventListener {
             case "ACTIVATE" -> NotificationType.LOAN_DISBURSED;
             case "REPAID" -> NotificationType.LOAN_CLOSED;
             case "CANCEL" -> NotificationType.APPLICATION_CANCELLED;
+            // The bureau rescore backfill's reopen (ApplicationFlowService#reopenAfterRescore) — the
+            // action would otherwise fall through to `default` and notify nobody, the exact bug this
+            // method documents above for AUTO_REJECT_*.
+            case "REOPEN_RESCORE" -> NotificationType.KYC_REOPENED_RESCORE;
             case "REVIEW_APPROVE" -> NotificationType.REBORROW_REVIEW_APPROVED;
             case "REVIEW_REJECT" -> NotificationType.REBORROW_REVIEW_REJECTED;
             // Since V45 the delinquent fork auto-rejects rather than queuing a manual review.

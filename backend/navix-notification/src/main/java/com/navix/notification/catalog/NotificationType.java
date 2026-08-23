@@ -47,6 +47,10 @@ public enum NotificationType {
     REBORROW_REVIEW_PENDING(KYC, Set.of(IN_APP), Set.of(TO_CREDIT_TEAM, TO_BORROWER)),
     REBORROW_REVIEW_APPROVED(KYC, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
     REBORROW_REVIEW_REJECTED(KYC, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+    // The bureau rescore backfill (V57+) reopened an intake-time LOW_BUREAU_SCORE auto-reject once a
+    // re-pull cleared the floor. No SMS: the DLT templates are still pending approval, same rationale
+    // as SANCTIONED_AMOUNT_REVISED/SANCTION_LETTER_SIGNED.
+    KYC_REOPENED_RESCORE(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
 
     // ---- CREDIT ----
     LOAN_APPLIED(CREDIT, Set.of(IN_APP), Set.of(TO_CREDIT_HEADS)),

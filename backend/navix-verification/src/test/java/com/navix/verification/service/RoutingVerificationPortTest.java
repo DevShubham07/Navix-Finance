@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.verification.VerificationPort.BureauCheck;
 import com.navix.common.verification.VerificationPort.EmailCheck;
 import com.navix.common.verification.VerificationPort.LivenessSession;
 import com.navix.common.verification.VerificationPort.PanCheck;
@@ -20,23 +21,33 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 /**
- * Verifies the {@link RoutingVerificationPort} chain semantics with a mocked Signzy (primary) and
- * Digitap (fallback) adapter: primary success wins, a {@link VerificationException} falls through to the
+ * Verifies the {@link RoutingVerificationPort} chain semantics with mocked Fintrix (bureau primary),
+ * Signzy and Digitap adapters: primary success wins, a {@link VerificationException} falls through to the
  * fallback, a {@link CapabilityNotSupportedException} skips to the next provider, and a capability no
  * provider can serve rethrows.
  */
 class RoutingVerificationPortTest {
 
+    private FintrixVerificationAdapter fintrix;
     private SignzyVerificationAdapter signzy;
     private DigitapVerificationAdapter digitap;
     private RoutingVerificationPort router;
 
     @BeforeEach
     void setUp() {
+        fintrix = Mockito.mock(FintrixVerificationAdapter.class);
         signzy = Mockito.mock(SignzyVerificationAdapter.class);
         digitap = Mockito.mock(DigitapVerificationAdapter.class);
-        router = new RoutingVerificationPort(signzy, digitap,
-                new VerificationChainProperties(List.of("signzy", "digitap"), null, null, null, null));
+        // Most tests below exercise capabilities Fintrix doesn't offer at all, so leave it out of the
+        // chain for those (see bureauXxx() below for the fintrix-specific chain).
+        router = new RoutingVerificationPort(fintrix, signzy, digitap,
+                new VerificationChainProperties(List.of("signzy", "digitap"), null, null, null, null, null));
+    }
+
+    private RoutingVerificationPort bureauRouter() {
+        return new RoutingVerificationPort(fintrix, signzy, digitap,
+                new VerificationChainProperties(
+                        List.of("fintrix", "signzy", "digitap"), null, null, null, null, null));
     }
 
     private static PanCheck pan(String txn) {
@@ -116,5 +127,55 @@ class RoutingVerificationPortTest {
 
         assertThat(r.accountExists()).isTrue();
         verify(digitap, never()).pennyDrop(anyString(), anyString(), anyString());
+    }
+
+    // ---- Bureau: Fintrix (primary) -> Signzy (unsupported, retired) -> Digitap (fallback) ----
+
+    private static BureauCheck bureau(String source, Integer score, boolean noRecord) {
+        return new BureauCheck("TXN", source, score, noRecord, null, null, null, null, "{}");
+    }
+
+    @Test
+    void bureauTriesFintrixFirst_signzyAndDigitapNotCalled() {
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("FINTRIX_CRIF", 799, false));
+
+        BureauCheck r = bureauRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.source()).isEqualTo("FINTRIX_CRIF");
+        verify(signzy, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(digitap, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void bureauFintrixFailureFallsThroughToDigitap_signzySkippedSilently() {
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new VerificationException("fintrix down"));
+        when(signzy.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new CapabilityNotSupportedException(
+                        "Signzy bureau retired from routing — Fintrix is now primary"));
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("DIGITAP_EXPERIAN", 700, false));
+
+        BureauCheck r = bureauRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.source()).isEqualTo("DIGITAP_EXPERIAN");
+        verify(signzy).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(digitap).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void bureauFintrixNoHitIsReturnedAsIs_doesNotFallThrough() {
+        // A Fintrix no-hit is a real answer, not a failure — the router must return it rather than
+        // trying Digitap next (the router already returns the first non-exception result; this guards
+        // that behaviour for the specific noRecord=true case).
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("FINTRIX_CRIF", null, true));
+
+        BureauCheck r = bureauRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.noRecord()).isTrue();
+        assertThat(r.score()).isNull();
+        verify(digitap, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 }

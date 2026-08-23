@@ -51,7 +51,7 @@ const EXPORT_COLUMNS: ExportColumn<RejectionView>[] = [
 
 /**
  * Admin · rejections — every rejection in one register: the self-employed auto-reject and its
- * 90-day cooling-off window, the past-delinquency engine rule, the sub-600 bureau-score auto-reject
+ * 90-day cooling-off window, the past-delinquency engine rule, the sub-550 bureau-score auto-reject
  * (also a 90-day cooling-off), and manual credit rejections.
  * The borrower is never shown any of this; they always see the same neutral message.
  */

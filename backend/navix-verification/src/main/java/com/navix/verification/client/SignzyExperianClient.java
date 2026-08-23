@@ -11,11 +11,8 @@ import com.navix.verification.config.VerificationClientConfig;
 import com.navix.verification.dto.SignzyDtos.Consent;
 import com.navix.verification.dto.SignzyDtos.ExperianRequest;
 import com.navix.verification.dto.SignzyDtos.ExperianResponse;
-import com.navix.verification.exception.VerificationException;
+import com.navix.verification.support.BureauFixtureLoader;
 import com.navix.verification.support.ExperianFactsParser;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -54,7 +51,7 @@ public class SignzyExperianClient {
 
     public ExperianResponse pull(String pan, String name, String mobile, String dob) {
         JsonNode root = (fixturePath != null && !fixturePath.isBlank())
-                ? loadFixture()
+                ? BureauFixtureLoader.load(objectMapper, fixturePath)
                 : post(signzy, ENDPOINT, buildRequest(pan, name, mobile, dob));
         return parse(root, name, pan, mobile);
     }
@@ -97,40 +94,4 @@ public class SignzyExperianClient {
         return new String[] {trimmed.substring(0, sp), trimmed.substring(sp + 1).trim()};
     }
 
-    // ---- fixture loading (mirrors the retired ExperianClient) ----
-
-    private JsonNode loadFixture() {
-        String p = fixturePath.trim();
-        try {
-            if (p.startsWith("classpath:")) {
-                return readClasspath(p.substring("classpath:".length()));
-            }
-            File f = new File(p);
-            if (f.isFile()) {
-                return objectMapper.readTree(f);
-            }
-            JsonNode cp = readClasspathOrNull(p);
-            if (cp != null) {
-                return cp;
-            }
-            throw new VerificationException("Bureau fixture not found: " + p);
-        } catch (IOException e) {
-            throw new VerificationException("Failed to read bureau fixture " + p, e);
-        }
-    }
-
-    private JsonNode readClasspath(String name) throws IOException {
-        JsonNode n = readClasspathOrNull(name);
-        if (n == null) {
-            throw new VerificationException("Bureau fixture not on classpath: " + name);
-        }
-        return n;
-    }
-
-    private JsonNode readClasspathOrNull(String name) throws IOException {
-        String resource = name.startsWith("/") ? name : "/" + name;
-        try (InputStream in = getClass().getResourceAsStream(resource)) {
-            return in == null ? null : objectMapper.readTree(in);
-        }
-    }
 }

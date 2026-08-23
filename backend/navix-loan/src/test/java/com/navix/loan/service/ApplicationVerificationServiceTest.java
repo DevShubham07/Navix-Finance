@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -385,6 +386,240 @@ class ApplicationVerificationServiceTest {
                 .path("CAIS_Account").path("CAIS_Account_DETAILS").path(0)
                 .path("Payment_History_Profile").asText()).isEqualTo("000000");
         verify(creditBriefService).generate(APP, p, facts, raw);
+    }
+
+    private CustomerProfile bureauReadyProfile() {
+        CustomerProfile p = profile();
+        p.setPan("QVEPS0901K");
+        p.setDob(LocalDate.of(1992, 8, 15));
+        return p;
+    }
+
+    private void stubConsentPassed() {
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
+                .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
+    }
+
+    @Test
+    void bureau_score540_autoRejects() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-LOW", "DIGITAP_EXPERIAN", 540, false,
+                        1, 0, 5000.0, null));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(flow).autoReject(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.LOW_BUREAU_SCORE),
+                anyString(), eq(ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS));
+    }
+
+    @Test
+    void bureau_score560_doesNotAutoReject() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-OK", "DIGITAP_EXPERIAN", 560, false,
+                        1, 0, 5000.0, null));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(flow, never()).autoReject(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void bureau_nullScore_neverAutoRejects() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-THIN", "DIGITAP_EXPERIAN", null, true,
+                        null, null, null, null));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(flow, never()).autoReject(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void bureau_panMismatch_isReview_andNeverAutoRejects() throws Exception {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        // Report PAN differs from the profile's verified PAN — a real, low, sub-floor score that must
+        // never reject OUR borrower, since the report may belong to someone else entirely.
+        String raw = "{\"canonical\":{\"data\":{\"credit_report\":{\"REQUEST\":{"
+                + "\"PAN\":\"ZZZZZ9999Z\",\"DOB\":\"15-08-1992\"}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-MISMATCH", "FINTRIX_CRIF", 540, false,
+                        1, 0, 5000.0, null, raw));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        verify(flow, never()).autoReject(any(), any(), any(), anyInt());
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(new ObjectMapper().readTree(saved.getValue().getDerived())
+                .path("identityMismatch").asText()).contains("PAN");
+    }
+
+    @Test
+    void bureau_reusesPassWithin24h_forSameCustomer_doesNotCallProvider() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        LoanApplication thisApp = new LoanApplication();
+        thisApp.setId(APP);
+        thisApp.setCustomerId(9L);
+        LoanApplication priorApp = new LoanApplication();
+        priorApp.setId(41L);
+        priorApp.setCustomerId(9L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(thisApp));
+        when(applicationRepo.findByCustomerId(9L)).thenReturn(List.of(thisApp, priorApp));
+        ApplicationVerification priorPass = row(41L, "BUREAU", "PASS");
+        priorPass.setScore(710L);
+        priorPass.setProvider("FINTRIX_CRIF");
+        priorPass.setProviderTxnId("TXN-PRIOR");
+        priorPass.setDerived("{\"noRecord\":false}");
+        priorPass.setUpdatedAt(java.time.Instant.now().minusSeconds(3600));
+        when(verificationRepo.findLatestPassed(eq("BUREAU"), eq(List.of(41L)), any()))
+                .thenReturn(List.of(priorPass));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(result.message()).contains("reused within 24h");
+        verify(verification, never()).pullBureau(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void bureau_force_bypassesReuseWindow_callsProvider() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-FORCED", "DIGITAP_EXPERIAN", 700, false,
+                        1, 0, 5000.0, null));
+
+        var result = service.pullBureau(APP, "999111", true);
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(verification).pullBureau(any(), any(), any(), any(), any(), any());
+        // force=true must never even look at siblings for reuse.
+        verify(applicationRepo, never()).findByCustomerId(any());
+    }
+
+    @Test
+    void bureau_allowAutoRejectFalse_neverRejectsEvenBelowFloor() {
+        // The bureau backfill's contract (plana.md Part B): a refresh must never reject a customer
+        // already sitting in a live queue, and it would fail outright anyway since autoReject
+        // requires the BORROWER role while a batch runs as ADMIN/system.
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-REFRESH", "FINTRIX_CRIF", 540, false,
+                        1, 0, 5000.0, null));
+
+        var result = service.pullBureau(APP, null, true, false);
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(flow, never()).autoReject(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void bureau_force_bypassesEvenAnExistingPassRow_callsProviderAgain() {
+        // force=true must mean "genuinely re-pull" — including when THIS application's own BUREAU
+        // check already sits at PASS (a sub-floor score is still a PASS on the check itself; only the
+        // application gets rejected, as a side effect). The backfill's core case: re-pulling a
+        // REJECTED application's bureau result. The stale row is stubbed as PASS so it stands in for
+        // exactly that: without the force-bypasses-passed() fix, pullBureau would short-circuit on it
+        // and never reach the provider.
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        ApplicationVerification stalePass = row("BUREAU", "PASS");
+        stalePass.setScore(540L);
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU"))
+                .thenReturn(Optional.of(stalePass));
+        stubConsentPassed();
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-REFRESH2", "FINTRIX_CRIF", 700, false,
+                        1, 0, 5000.0, null));
+
+        var result = service.pullBureau(APP, null, true, true);
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(verification).pullBureau(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void bureau_strippedRawResponse_noLongerContainsSignedUrl() throws Exception {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        String signedUrl = "https://fintrix-files.s3.amazonaws.com/report.pdf?X-Amz-Signature=SECRET123";
+        String raw = "{\"canonical\":{\"data\":{\"credit_report_link\":\"" + signedUrl + "\","
+                + "\"credit_report\":{\"REQUEST\":{\"PAN\":\"QVEPS0901K\",\"DOB\":\"15-08-1992\"}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-LINK", "FINTRIX_CRIF", 700, false,
+                        1, 0, 5000.0, null, raw, signedUrl));
+        when(storage.buildApplicationKey(eq(APP), eq("BUREAU_REPORT"), eq("pdf"))).thenReturn("applications/42/bureau_report/1.pdf");
+        when(storage.storeFromUrl(any(), any(), any())).thenReturn("applications/42/bureau_report/1.pdf");
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getRawResponse()).doesNotContain("SECRET123").contains("[ingested]");
+        // &amp; free fixture here, but confirm the ingest actually fetched the un-escaped URL below.
+        verify(storage).storeFromUrl(any(), eq(signedUrl), eq("application/pdf"));
+    }
+
+    @Test
+    void bureau_ampEscapedLink_isUnescapedBeforeFetch() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        String escapedUrl = "https://fintrix-files.s3.amazonaws.com/report.pdf?A=1&amp;B=2&amp;Signature=SECRET";
+        String unescapedUrl = "https://fintrix-files.s3.amazonaws.com/report.pdf?A=1&B=2&Signature=SECRET";
+        String raw = "{\"canonical\":{\"data\":{\"credit_report\":{\"REQUEST\":{}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-AMP", "FINTRIX_CRIF", 700, false,
+                        1, 0, 5000.0, null, raw, escapedUrl));
+        when(storage.buildApplicationKey(any(), any(), any())).thenReturn("applications/42/bureau_report/1.pdf");
+        when(storage.storeFromUrl(any(), any(), any())).thenReturn("applications/42/bureau_report/1.pdf");
+
+        service.pullBureau(APP, "999111");
+
+        verify(storage).storeFromUrl(any(), eq(unescapedUrl), any());
+    }
+
+    @Test
+    void bureau_failedPdfIngest_stillPassesWithScoreRecorded() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        String raw = "{\"canonical\":{\"data\":{\"credit_report\":{\"REQUEST\":{}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-FAILPDF", "FINTRIX_CRIF", 700, false,
+                        1, 0, 5000.0, null, raw, "https://fintrix-files.example.com/report.pdf"));
+        when(storage.buildApplicationKey(any(), any(), any())).thenReturn("applications/42/bureau_report/1.pdf");
+        when(storage.storeFromUrl(any(), any(), any()))
+                .thenThrow(new IllegalStateException("source fetch failed: HTTP 404"));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getScore()).isEqualTo(700L);
     }
 
     @Test

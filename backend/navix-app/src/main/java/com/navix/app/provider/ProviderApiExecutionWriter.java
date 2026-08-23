@@ -3,7 +3,7 @@ package com.navix.app.provider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.navix.verification.support.ProviderCall;
-import com.navix.verification.support.ProviderCallContext;
+import com.navix.common.verification.ProviderCallContext;
 import com.navix.verification.support.ProviderClientRef;
 import java.time.Duration;
 import java.time.Instant;

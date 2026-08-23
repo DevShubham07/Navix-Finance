@@ -69,8 +69,12 @@ import {
   type JourneyStageState,
 } from "@/lib/domain/journey";
 import { formatDate, humanizeCheck } from "@/lib/utils";
-import { DocPassword } from "@/components/staff/detail-parts";
-import { DelinquencySummaryBlock, EnquiryVelocityBlock } from "@/components/staff/credit/tradeline-table";
+import { DocPassword, docTypeLabel } from "@/components/staff/detail-parts";
+import {
+  DelinquencySummaryBlock,
+  EnquiryVelocityBlock,
+  ScoreTrendBlock,
+} from "@/components/staff/credit/tradeline-table";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -529,7 +533,7 @@ function DocRow({ appId, doc }: { appId: number; doc: DocumentView }) {
         <DocPassword password={doc.filePassword} />
       </span>
       <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">
-        {doc.docType}
+        {docTypeLabel(doc.docType)}
       </span>
       <button
         onClick={() => fetchAnd("view")}
@@ -602,6 +606,13 @@ function CreditSection({ app }: { app: ApplicationView }) {
 
       {detail && (
         <>
+          {/* CRIF-only — no Experian equivalent, so this renders nothing on those/pre-CRIF briefs. */}
+          {detail.scoreHistory && (
+            <section>
+              <h4 className="mb-2 font-semibold text-ink">Score trend</h4>
+              <ScoreTrendBlock h={detail.scoreHistory} />
+            </section>
+          )}
           <section>
             <h4 className="mb-2 font-semibold text-ink">Delinquency history</h4>
             <DelinquencySummaryBlock d={detail.delinquency} />

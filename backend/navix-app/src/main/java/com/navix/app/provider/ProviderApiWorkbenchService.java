@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
-import com.navix.verification.support.ProviderCallContext;
+import com.navix.common.verification.ProviderCallContext;
 import com.navix.verification.client.*;
 import java.time.Duration;
 import java.time.Instant;
@@ -31,6 +31,7 @@ public class ProviderApiWorkbenchService {
     private final SignzyExperianClient signzyExperian;
     private final SignzyCrifClient signzyCrif;
     private final SignzyBankVerificationClient signzyBank;
+    private final FintrixCrifClient fintrixCrif;
     private final DigitapPanClient digitapPan;
     private final DigitapEmailClient digitapEmail;
     private final DigitapAddressClient digitapAddress;
@@ -58,7 +59,7 @@ public class ProviderApiWorkbenchService {
             item("PAN", List.of("SIGNZY", "DIGITAP"), f("pan", "PAN", "text", true)),
             item("EMAIL", List.of("SIGNZY", "DIGITAP"), f("email", "Email", "email", true), f("individualName", "Individual name", "text", false), f("establishmentName", "Employer name", "text", false)),
             item("ADDRESS", List.of("SIGNZY", "DIGITAP"), f("latitude", "Latitude", "number", true), f("longitude", "Longitude", "number", true)),
-            item("BUREAU", List.of("SIGNZY_EXPERIAN", "SIGNZY_CRIF", "DIGITAP"), f("pan", "PAN", "text", true), f("name", "Full name", "text", true), f("mobile", "Mobile", "text", true), f("dob", "Date of birth", "date", true), f("otp", "Consent OTP", "text", false)),
+            item("BUREAU", List.of("FINTRIX", "SIGNZY_EXPERIAN", "SIGNZY_CRIF", "DIGITAP"), f("pan", "PAN", "text", true), f("name", "Full name", "text", true), f("mobile", "Mobile", "text", true), f("dob", "Date of birth", "date", true), f("otp", "Consent OTP", "text", false)),
             item("PENNY_DROP", List.of("SIGNZY"), f("accountNumber", "Account number", "text", true), f("ifsc", "IFSC", "text", true), f("beneficiaryName", "Beneficiary name", "text", true)),
             item("FACE_MATCH", List.of("DIGITAP"), f("personImage", "Selfie image URL/base64", "text", true), f("cardImage", "Document image URL/base64", "text", false)),
             item("UAN", List.of("DIGITAP"), f("pan", "PAN", "text", false), f("mobile", "Mobile", "text", false), f("dob", "Date of birth", "date", false), f("employeeName", "Employee name", "text", false), f("employerName", "Employer name", "text", false)));
@@ -122,6 +123,7 @@ public class ProviderApiWorkbenchService {
             case "EMAIL:DIGITAP" -> digitapEmail.verify(s(in,"email"), s(in,"individualName"), s(in,"establishmentName"), "admin-workbench");
             case "ADDRESS:SIGNZY" -> signzyAddress.reverseGeocode(d(in,"latitude"), d(in,"longitude"));
             case "ADDRESS:DIGITAP" -> digitapAddress.verify(d(in,"latitude"), d(in,"longitude"), "admin-workbench");
+            case "BUREAU:FINTRIX" -> fintrixCrif.pull(s(in,"name"),s(in,"mobile"),"admin-workbench");
             case "BUREAU:SIGNZY_EXPERIAN" -> signzyExperian.pull(s(in,"pan"),s(in,"name"),s(in,"mobile"),s(in,"dob"));
             case "BUREAU:SIGNZY_CRIF" -> signzyCrif.pull(s(in,"pan"),s(in,"name"),s(in,"mobile"),s(in,"dob"));
             case "BUREAU:DIGITAP" -> digitapCredit.pull(s(in,"pan"),s(in,"name"),s(in,"mobile"),s(in,"dob"),s(in,"otp"),"admin-workbench");

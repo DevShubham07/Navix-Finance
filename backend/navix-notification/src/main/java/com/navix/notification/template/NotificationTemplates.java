@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
  * Placeholders use {@code {key}} and are resolved by {@link TemplateRenderer}; an unknown key renders
  * as {@code —}. Available model keys: {@code name}, {@code role}, {@code applicationId}, {@code loanId},
  * {@code customerName}, {@code amount}, {@code netDisbursed}, {@code totalRepayable},
- * {@code outstanding}, {@code dueDate}, {@code settlementAmount}, {@code inviteLink}.
+ * {@code outstanding}, {@code dueDate}, {@code settlementAmount}, {@code inviteLink},
+ * {@code retryLine}.
  */
 @Component
 public class NotificationTemplates {
@@ -62,6 +63,13 @@ public class NotificationTemplates {
                         + "#{applicationId}: {pendingSteps}.\n\nPlease log in to complete them so we can "
                         + "proceed.\n\n— DhanBoost");
 
+        inApp(NotificationType.KYC_REOPENED_RESCORE, "Good news — your application is back in review",
+                "Your application #{applicationId} is back in review. Log in to finish submitting your KYC.");
+        email(NotificationType.KYC_REOPENED_RESCORE, "Your DhanBoost application is back in review",
+                "Hi {name},\n\nGood news — we've re-checked your credit profile and your application "
+                        + "#{applicationId} is back in review. Please log in and complete your KYC "
+                        + "submission to continue.\n\n— DhanBoost");
+
         inApp(NotificationType.REBORROW_PREAPPROVED, "You're pre-approved",
                 "Welcome back! You're pre-approved — choose your amount to continue.");
         sms(NotificationType.REBORROW_PREAPPROVED,
@@ -99,17 +107,22 @@ public class NotificationTemplates {
                 "Hi {name},\n\nLoan application #{applicationId} for {customerName} has been approved by "
                         + "the credit team and is ready for the next step (disbursement).\n\n— DhanBoost");
 
+        // {retryLine} names the date the cooling-off block lifts, so a declined borrower is not
+        // left guessing when "at this time" ends and retrying into a wall. Empty when no block was set.
         inApp(NotificationType.CREDIT_REJECTED, "Application declined",
-                "Application #{applicationId} was declined at credit review.");
+                "Application #{applicationId} was declined at credit review.{retryLine}");
+        // The SMS deliberately carries NO date: its body is DLT-registered and must match the filed
+        // template char-for-char, so adding a variable here means re-registering it. The borrower
+        // gets the date by email and in-app.
         sms(NotificationType.CREDIT_REJECTED,
                 "Dear {name}, your DhanBoost loan application {applicationId} could not be approved at "
                         + "this time. Details at https://dhanboost.com/login. - DhanBoost");
         // "After assessing" rather than "After review": this same copy is now sent for engine
-        // rejections (self-employed, sub-600 bureau), which no human reviewed. Deliberately gives
+        // rejections (self-employed, sub-550 bureau), which no human reviewed. Deliberately gives
         // no reason — decision 31: the borrower is never told which rule fired.
         email(NotificationType.CREDIT_REJECTED, "About your DhanBoost loan application",
                 "Hi {name},\n\nAfter assessing loan application #{applicationId}, we're unable to "
-                        + "approve it at this time.\n\n— DhanBoost");
+                        + "approve it at this time.{retryLine}\n\n— DhanBoost");
 
         inApp(NotificationType.LOAN_SANCTIONED, "Your loan is sanctioned",
                 "Application #{applicationId} is sanctioned — finish the remaining steps to receive it.");

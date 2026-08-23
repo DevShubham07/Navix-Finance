@@ -67,6 +67,8 @@ import {
   TradelineTable,
   DelinquencySummaryBlock,
   EnquiryVelocityBlock,
+  ScoreTrendBlock,
+  TopExposuresBlock,
 } from "@/components/staff/credit/tradeline-table";
 import {
   AssignActions,
@@ -991,6 +993,13 @@ function CreditFocus({
           "clean", which is a materially different claim from "we don't know". */}
       {detail && (
         <div className="mt-4 space-y-4 border-t border-line pt-3">
+          {/* CRIF-only — no Experian equivalent, so this renders nothing on those/pre-CRIF briefs. */}
+          {detail.scoreHistory && (
+            <div>
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Score trend</div>
+              <ScoreTrendBlock h={detail.scoreHistory} />
+            </div>
+          )}
           <div>
             <div className="mb-1.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted">
               Delinquency history
@@ -1001,6 +1010,10 @@ function CreditFocus({
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Enquiry velocity</div>
             <EnquiryVelocityBlock v={detail.enquiryVelocity} />
+          </div>
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Top exposures</div>
+            <TopExposuresBlock tradelines={detail.tradelines} />
           </div>
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Tradelines</div>

@@ -96,16 +96,25 @@ navix:
     # testing that a placeholder (0.0.0.0) is rejected with 403 "IP not allowed" regardless of the
     # caller's real network IP. aws.md §5.1's static NAT egress IP — never changes.
     device-ip: ${NAVIX_STATIC_EGRESS_IP:3.109.169.131}
+  fintrix:
+    # Bureau PRIMARY — POST /crif_combine (CRIF Highmark). Auth = Basic base64(clientId:clientSecret),
+    # same scheme as Digitap. No sandbox — every call is live and billable (see FintrixCrifClient and
+    # the "fintrix-bureau" feature_flag kill switch in FintrixVerificationAdapter).
+    base-url: ${FINTRIX_BASE_URL:https://admin.fintrix.tech/__api/api/v1/}
+    client-id: ${FINTRIX_CLIENT_ID:}
+    client-secret: ${FINTRIX_CLIENT_SECRET:}
   verification:
     # Ordered provider chain the router tries per capability (skips unsupported, falls back on failure).
-    chain: ${NAVIX_VERIFICATION_CHAIN:signzy,digitap}
+    chain: ${NAVIX_VERIFICATION_CHAIN:fintrix,signzy,digitap}
     # Outbound provider HTTP timeouts (seconds). These must stay under the ALB idle timeout in front
-    # of the service: the bureau step chains Signzy Experian -> Signzy CRIF -> Digitap, so the worst
-    # case is signzy-bureau + signzy-bureau + bureau = 12 + 12 + 90 = 114s against a 120s ALB.
+    # of the service: the bureau step is now Fintrix (primary) -> Digitap (fallback) — Signzy's bureau
+    # legs are retired from routing — so the worst case is fintrix-bureau + bureau = 45 + 60 = 105s
+    # against a 120s ALB.
     connect-timeout-seconds: ${NAVIX_VERIFICATION_CONNECT_TIMEOUT:5}
     read-timeout-seconds: ${NAVIX_VERIFICATION_READ_TIMEOUT:30}
-    bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_BUREAU_READ_TIMEOUT:90}
+    bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_BUREAU_READ_TIMEOUT:60}
     signzy-bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_SIGNZY_BUREAU_READ_TIMEOUT:12}
+    fintrix-bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_FINTRIX_BUREAU_READ_TIMEOUT:45}
   storage:
     # S3 bucket for documents/images (KYC, loan docs, payment & collections proofs).
     bucket: ${NAVIX_S3_BUCKET:navix-finance-documents-dev}

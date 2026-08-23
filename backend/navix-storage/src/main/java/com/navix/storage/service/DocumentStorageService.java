@@ -2,7 +2,9 @@ package com.navix.storage.service;
 
 import com.navix.storage.config.StorageCategory;
 import com.navix.storage.config.StorageProperties;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -111,29 +113,47 @@ public class DocumentStorageService {
     }
 
     /**
+     * Hard ceiling on a {@link #storeFromUrl} download. Remote fetches now include a
+     * multi-MB bureau report PDF alongside the existing DigiLocker/selfie payloads, and
+     * the previous {@code ofByteArray()} handler had no limit at all — an oversized or
+     * malicious response would be buffered whole into heap. 10 MB comfortably covers every
+     * known payload (report PDFs, Aadhaar images) with headroom.
+     */
+    private static final long MAX_REMOTE_DOCUMENT_BYTES = 10L * 1024 * 1024;
+
+    /**
      * Fetch the bytes at {@code sourceUrl} (e.g. a provider's short-lived presigned
      * URL) and store them at {@code key}. Bytes pass provider→app→S3 only — never to
      * the browser. Returns the stored key. Throws {@link IllegalStateException} on a
-     * non-2xx fetch or transport error.
+     * non-2xx fetch, an oversized response, or a transport error.
      */
     public String storeFromUrl(String key, String sourceUrl, String contentType) {
         try {
-            HttpResponse<byte[]> response = HttpClient.newBuilder()
+            HttpResponse<InputStream> response = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(5))
+                    // Presigned S3 URLs never redirect, but other providers (the bureau
+                    // report host included) may 302 — NORMAL was previously NEVER, which
+                    // surfaced as a confusing "source fetch failed: HTTP 302".
+                    .followRedirects(HttpClient.Redirect.NORMAL)
                     .build()
                     .send(HttpRequest.newBuilder()
                                     .uri(URI.create(sourceUrl))
                                     .timeout(Duration.ofSeconds(30))
                                     .GET()
                                     .build(),
-                            HttpResponse.BodyHandlers.ofByteArray());
+                            HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() / 100 != 2) {
                 throw new IllegalStateException("source fetch failed: HTTP " + response.statusCode());
             }
+            long declaredLength = response.headers().firstValueAsLong("content-length").orElse(-1);
+            if (declaredLength > MAX_REMOTE_DOCUMENT_BYTES) {
+                throw new IllegalStateException("source fetch failed: response exceeds " + MAX_REMOTE_DOCUMENT_BYTES + " byte cap");
+            }
+            byte[] body = readCapped(response.body(), MAX_REMOTE_DOCUMENT_BYTES);
             String resolvedType = StringUtils.hasText(contentType)
                     ? contentType
                     : response.headers().firstValue("content-type").orElse("application/octet-stream");
-            store(key, response.body(), resolvedType);
+            store(key, body, resolvedType);
             return key;
         } catch (IOException e) {
             throw new IllegalStateException("source fetch failed", e);
@@ -141,6 +161,26 @@ public class DocumentStorageService {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("source fetch interrupted", e);
         }
+    }
+
+    /**
+     * Read {@code in} fully, aborting once more than {@code maxBytes} have arrived —
+     * {@code Content-Length} is optional and can lie, so the cap must also apply to the
+     * bytes actually received, not just the declared header.
+     */
+    private static byte[] readCapped(InputStream in, long maxBytes) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        long total = 0;
+        int read;
+        while ((read = in.read(chunk)) != -1) {
+            total += read;
+            if (total > maxBytes) {
+                throw new IllegalStateException("source fetch failed: response exceeds " + maxBytes + " byte cap");
+            }
+            buffer.write(chunk, 0, read);
+        }
+        return buffer.toByteArray();
     }
 
     /**

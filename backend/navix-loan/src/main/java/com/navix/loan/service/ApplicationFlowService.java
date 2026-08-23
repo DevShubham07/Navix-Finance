@@ -124,8 +124,16 @@ public class ApplicationFlowService {
     /** Cooling-off window after a self-employed auto-reject (revamp.md decision 20). */
     public static final int SELF_EMPLOYED_BLOCK_DAYS = 90;
 
-    /** Cooling-off window after a sub-600 bureau-score auto-reject. */
+    /** Cooling-off window after a sub-550 bureau-score auto-reject. */
     public static final int LOW_BUREAU_SCORE_BLOCK_DAYS = 90;
+
+    /**
+     * Bureau score floor: a real, numeric score below this auto-rejects the application
+     * ({@code ApplicationVerificationService.pullBureau}). Do NOT confuse with
+     * {@code RiskScoringService}'s {@code (bureauScore - 300) * 50 / 600} — that 600 is the width of the
+     * 300-900 bureau-score span, a coincidental match, and stays untouched by this floor.
+     */
+    public static final int MIN_BUREAU_SCORE = 550;
 
     /**
      * Cooling-off window after a <b>manual</b> credit rejection ({@link #rejectLead}). Shorter than the
@@ -318,8 +326,13 @@ public class ApplicationFlowService {
      * {@code CreditBriefService.ensureBrief} treats as "regenerate me" — so every staff read of such a
      * customer tried to write a document. Carrying the row keeps the copied facts and the copied PDF
      * consistent, and the regeneration never fires.
+     *
+     * <p>Public because the 24h bureau-reuse path in {@code ApplicationVerificationService} needs the
+     * same carry: reusing a sibling application's pull copies the score but would otherwise leave the
+     * new application with neither facts nor PDF - a score with no stars and no verdict on the staff
+     * card, and nothing {@code ensureBrief} could rebuild from.
      */
-    private void copyCreditBriefDocument(Long sourceAppId, Long newAppId) {
+    public void copyCreditBriefDocument(Long sourceAppId, Long newAppId) {
         if (sourceAppId == null) {
             return;
         }
@@ -384,10 +397,69 @@ public class ApplicationFlowService {
     public LoanApplication autoReject(Long appId, String reasonCode, String detail, int blockDays) {
         requireRole("BORROWER");
         LoanApplication app = require(appId);
-        recordRejection(app, reasonCode, detail, true,
-                blockDays > 0 ? Instant.now().plus(Duration.ofDays(blockDays)) : null);
-        transition(app, ApplicationStatus.REJECTED, "AUTO_REJECT_" + reasonCode, detail);
+        Instant blockedUntil = blockDays > 0 ? Instant.now().plus(Duration.ofDays(blockDays)) : null;
+        recordRejection(app, reasonCode, detail, true, blockedUntil);
+        transition(app, ApplicationStatus.REJECTED, "AUTO_REJECT_" + reasonCode, detail, blockedUntil);
         return applicationRepository.save(app);
+    }
+
+    /** Outcome of {@link #reopenAfterRescore}. */
+    public enum ReopenOutcome { REOPENED, SKIPPED }
+
+    /**
+     * Undoes a sub-{@value #MIN_BUREAU_SCORE} auto-reject once the bureau backfill (V57+) re-pulls a
+     * clean score. ADMIN/system only — a batch override of a normally-terminal REJECTED status, never
+     * a borrower- or staff-facing action.
+     *
+     * <p>Only reopens a file whose ORIGINAL rejecting transition came from {@code DRAFT} — that is the
+     * intake-time auto-reject this backfill targets (the bureau pull is screen 9 of 10, before
+     * {@code submit-kyc}). A REJECTED row whose rejecting transition came from anywhere else (e.g. a
+     * later-stage staff {@code verifications/BUREAU/retry}) is left untouched, reported
+     * {@link ReopenOutcome#SKIPPED} — never forced through an illegal transition.
+     *
+     * <p>Performs the {@code DRAFT → KYC_PENDING} transition the auto-reject denied — what
+     * {@code submitKyc} would have done — by resetting the status back to {@code DRAFT} first (an
+     * explicit override; {@code REJECTED} is otherwise terminal) and then running the ordinary,
+     * already-legal DRAFT→KYC_PENDING transition, so the event trail reads DRAFT→KYC_PENDING, action
+     * {@code REOPEN_RESCORE}, and the notification engine's generic {@code ApplicationTransitionedEvent}
+     * fan-out (see {@code NotificationEventListener.mapAction}) fires without any new wiring.
+     *
+     * @param completenessNote non-null when the REQUIRED check set is still incomplete — appended to
+     *                         the event notes so the reviewer sees it rather than discovering it later
+     */
+    @Transactional
+    public ReopenOutcome reopenAfterRescore(Long appId, Long oldScore, Long newScore, String completenessNote) {
+        requireRole("ADMIN");
+        LoanApplication app = require(appId);
+        if (app.getStatus() != ApplicationStatus.REJECTED || rejectionSource(appId) != ApplicationStatus.DRAFT) {
+            return ReopenOutcome.SKIPPED;
+        }
+        clearLowBureauScoreBlock(appId);
+        app.setStatus(ApplicationStatus.DRAFT);
+        String notes = "score " + (oldScore == null ? "—" : oldScore) + " -> " + newScore
+                + (completenessNote == null || completenessNote.isBlank() ? "" : " — " + completenessNote);
+        transition(app, ApplicationStatus.KYC_PENDING, "REOPEN_RESCORE", notes);
+        applicationRepository.save(app);
+        return ReopenOutcome.REOPENED;
+    }
+
+    /** The status the most recent REJECTED-targeting transition on this application moved FROM. */
+    private ApplicationStatus rejectionSource(Long appId) {
+        return eventRepository.findByApplicationIdOrderByAtAsc(appId).stream()
+                .filter(e -> e.getToStatus() == ApplicationStatus.REJECTED)
+                .reduce((first, second) -> second) // latest
+                .map(ApplicationEvent::getFromStatus)
+                .orElse(null);
+    }
+
+    /** Clears {@code blocked_until} on the LOW_BUREAU_SCORE rejection row only — a MANUAL or
+     *  SELF_EMPLOYED block on the same mobile (assertNotBlocked takes the latest) must survive. */
+    private void clearLowBureauScoreBlock(Long appId) {
+        rejectionRepository.findByApplicationIdAndReasonCode(appId, ApplicationRejection.LOW_BUREAU_SCORE)
+                .forEach(row -> {
+                    row.setBlockedUntil(null);
+                    rejectionRepository.save(row);
+                });
     }
 
     /** Append one row to the rejection register, resolving the mobile the block is keyed on. */
@@ -543,9 +615,9 @@ public class ApplicationFlowService {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
         requireCreditOwnership(app);
-        recordRejection(app, ApplicationRejection.MANUAL, remarks, false,
-                Instant.now().plus(Duration.ofDays(MANUAL_REJECT_BLOCK_DAYS)));
-        transition(app, ApplicationStatus.REJECTED, "REJECT_LEAD", remarks);
+        Instant blockedUntil = Instant.now().plus(Duration.ofDays(MANUAL_REJECT_BLOCK_DAYS));
+        recordRejection(app, ApplicationRejection.MANUAL, remarks, false, blockedUntil);
+        transition(app, ApplicationStatus.REJECTED, "REJECT_LEAD", remarks, blockedUntil);
         return applicationRepository.save(app);
     }
 
@@ -759,6 +831,10 @@ public class ApplicationFlowService {
 
     private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
 
+    /** Same "dd MMM yyyy" shape the notification templates use, so both tell the borrower one date. */
+    private static final java.time.format.DateTimeFormatter BLOCK_DATE =
+            java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy", java.util.Locale.ENGLISH);
+
     @Transactional(readOnly = true)
     public List<LoanApplication> byStatus(ApplicationStatus status) {
         return byStatus(status, null, null);
@@ -904,17 +980,31 @@ public class ApplicationFlowService {
     // ---- internals -----------------------------------------------------------------
 
     private void transition(LoanApplication app, ApplicationStatus to, String action, String notes) {
+        transition(app, to, action, notes, null);
+    }
+
+    /**
+     * @param retryFrom when the borrower may apply again, for a transition that just set a
+     *                  cooling-off block (auto-reject / manual reject); null otherwise.
+     */
+    private void transition(LoanApplication app, ApplicationStatus to, String action, String notes,
+                            Instant retryFrom) {
         ApplicationStatus from = app.getStatus();
         if (!from.canTransitionTo(to)) {
             log.warn("illegal transition blocked app={} {} -> {} action={}", app.getId(), from, to, action);
             throw new BusinessException("ILLEGAL_TRANSITION", from + " → " + to + " is not allowed");
         }
-        logEvent(app, from, to, action, notes);
+        logEvent(app, from, to, action, notes, retryFrom);
         app.setStatus(to);
     }
 
     private void logEvent(LoanApplication app, ApplicationStatus from, ApplicationStatus to,
                           String action, String notes) {
+        logEvent(app, from, to, action, notes, null);
+    }
+
+    private void logEvent(LoanApplication app, ApplicationStatus from, ApplicationStatus to,
+                          String action, String notes, Instant retryFrom) {
         CurrentActor actor = ActorContext.get();
         ApplicationEvent event = new ApplicationEvent();
         event.setApplicationId(app.getId());
@@ -936,7 +1026,7 @@ public class ApplicationFlowService {
         eventPublisher.publishEvent(new ApplicationTransitionedEvent(
                 app.getId(), app.getCustomerId(), app.getLoanId(),
                 from != null ? from.name() : null, to != null ? to.name() : null,
-                action, app.getAssignedExecutiveId(), actor.id(), actor.role(), event.getAt()));
+                action, app.getAssignedExecutiveId(), actor.id(), actor.role(), event.getAt(), retryFrom));
     }
 
     /** Actor id who drove the transition INTO {@code status} (for SoD), or null. */
@@ -1115,7 +1205,9 @@ public class ApplicationFlowService {
     /**
      * Cooling-off gate (V44): a mobile turned away by an engine rule can't start a new application
      * until the block expires — including by re-answering the employment question. The message is
-     * deliberately the same neutral one the borrower saw when they were rejected.
+     * deliberately the same neutral one the borrower saw when they were rejected, plus the date the
+     * block lifts: the DATE only, never the rule or the window length, since 30 days (a reviewer's
+     * call) and 90 (an engine rule) would between them say which one turned the borrower away.
      */
     private void assertNotBlocked(Long customerId) {
         String mobile = latestProfileForCustomer(customerId).map(CustomerProfile::getMobile).orElse(null);
@@ -1126,7 +1218,8 @@ public class ApplicationFlowService {
                 .ifPresent(block -> {
                     log.info("blocked application start customer={} until={}", customerId, block.getBlockedUntil());
                     throw new BusinessException("NOT_ELIGIBLE",
-                            "You are not eligible at the moment. Please try again later.");
+                            "You are not eligible at the moment. You can apply again on or after "
+                                    + BLOCK_DATE.format(block.getBlockedUntil().atZone(IST)) + ".");
                 });
     }
 

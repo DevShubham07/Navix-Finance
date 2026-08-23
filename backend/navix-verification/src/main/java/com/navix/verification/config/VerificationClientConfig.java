@@ -20,6 +20,8 @@ import org.springframework.web.client.RestClient;
  *       header {@code Authorization: Basic base64(clientId:clientSecret)}.</li>
  *   <li>{@code digitapApiRestClient} — base {@code navix.digitap.api-base-url}
  *       (Credit/Location/Face-Match/OCR), same Basic auth.</li>
+ *   <li>{@code fintrixRestClient} — base {@code navix.fintrix.base-url}, HTTP Basic like Digitap. The
+ *       bureau PRIMARY ({@code /crif_combine}); Digitap Credit Analytics is now the fallback.</li>
  * </ul>
  *
  * <p>Each gets a {@link SimpleClientHttpRequestFactory} whose connect/read timeouts come from
@@ -31,7 +33,8 @@ import org.springframework.web.client.RestClient;
  */
 @Configuration
 @EnableConfigurationProperties({
-        SignzyProperties.class, DigitapProperties.class, VerificationChainProperties.class})
+        SignzyProperties.class, DigitapProperties.class, FintrixProperties.class,
+        VerificationChainProperties.class})
 public class VerificationClientConfig {
 
     public static final String SIGNZY_CLIENT = "signzyRestClient";
@@ -42,6 +45,8 @@ public class VerificationClientConfig {
     public static final String DIGITAP_CREDIT_CLIENT = "digitapCreditRestClient";
     /** Signzy Experian + CRIF — same host and auth as {@link #SIGNZY_CLIENT}, shorter read. */
     public static final String SIGNZY_BUREAU_CLIENT = "signzyBureauRestClient";
+    /** Fintrix {@code /crif_combine} — the bureau PRIMARY. HTTP Basic, like Digitap. */
+    public static final String FINTRIX_CLIENT = "fintrixRestClient";
 
     /**
      * {@link SimpleClientHttpRequestFactory} has no per-request timeout override, so a client that
@@ -120,11 +125,21 @@ public class VerificationClientConfig {
     @Bean(DIGITAP_CREDIT_CLIENT)
     public RestClient digitapCreditRestClient(DigitapProperties props, VerificationChainProperties timeouts) {
         // Identical to digitapApiRestClient apart from the read timeout. Kept separate so a hung
-        // reverse-geocode or face-match still fails at 30s instead of pinning a worker for 90s.
+        // reverse-geocode or face-match still fails at 30s instead of pinning a worker for 60s.
         return RestClient.builder()
                 .baseUrl(props.apiBaseUrl())
                 .requestFactory(timeoutRequestFactory(
                         timeouts.connectTimeout(), timeouts.bureauReadTimeout()))
+                .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
+                .build();
+    }
+
+    @Bean(FINTRIX_CLIENT)
+    public RestClient fintrixRestClient(FintrixProperties props, VerificationChainProperties timeouts) {
+        return RestClient.builder()
+                .baseUrl(props.baseUrl())
+                .requestFactory(timeoutRequestFactory(
+                        timeouts.connectTimeout(), timeouts.fintrixBureauReadTimeout()))
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
                 .build();
     }

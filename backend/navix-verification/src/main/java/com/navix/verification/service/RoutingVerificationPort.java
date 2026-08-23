@@ -26,8 +26,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>Net effect of the matrix: penny-drop + DigiLocker + the interactive liveness journey are Signzy-only;
  * the synchronous face-match ({@code faceLiveness}) and the UAN/EPFO employment lookup
- * ({@code verifyEmployment}) are Digitap-only; PAN, email, address and bureau try Signzy then fall back
- * to Digitap.
+ * ({@code verifyEmployment}) are Digitap-only; PAN, email and address try Signzy then fall back to
+ * Digitap. Bureau is the one capability with a THREE-provider chain: Fintrix (primary) → Signzy
+ * (unsupported — retired, always skipped) → Digitap (fallback); Signzy stays in the map only because
+ * the chain is global across capabilities.
  */
 @Component
 @Primary
@@ -39,10 +41,13 @@ public class RoutingVerificationPort implements VerificationPort {
     private final Map<String, VerificationPort> providers = new LinkedHashMap<>();
     private final List<String> chain;
 
-    public RoutingVerificationPort(SignzyVerificationAdapter signzy,
+    public RoutingVerificationPort(FintrixVerificationAdapter fintrix,
+                                   SignzyVerificationAdapter signzy,
                                    DigitapVerificationAdapter digitap,
                                    VerificationChainProperties props) {
-        Map<String, VerificationPort> all = Map.of("signzy", signzy, "digitap", digitap);
+        // An adapter missing from this map is silently ignored by the loop below — every adapter MUST
+        // be listed here.
+        Map<String, VerificationPort> all = Map.of("fintrix", fintrix, "signzy", signzy, "digitap", digitap);
         this.chain = props.effectiveChain();
         for (String id : chain) {
             VerificationPort p = all.get(id.trim().toLowerCase());
@@ -54,6 +59,7 @@ public class RoutingVerificationPort implements VerificationPort {
         }
         if (providers.isEmpty()) {
             // Never leave the router empty; fall back to the documented default order.
+            providers.put("fintrix", fintrix);
             providers.put("signzy", signzy);
             providers.put("digitap", digitap);
         }

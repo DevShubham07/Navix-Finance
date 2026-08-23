@@ -837,6 +837,63 @@ class ApplicationFlowServiceTest {
         assertThat(copied.getValue().getMessage()).contains("Carried over from application 10");
     }
 
+    @Test
+    void reopenAfterRescore_reopensADraftSourcedRejectAndClearsOnlyTheBureauBlock() {
+        LoanApplication app = appAt(ApplicationStatus.REJECTED);
+        actor("system", "ADMIN");
+        ApplicationEvent rejectEvent = new ApplicationEvent();
+        rejectEvent.setApplicationId(1L);
+        rejectEvent.setFromStatus(ApplicationStatus.DRAFT);
+        rejectEvent.setToStatus(ApplicationStatus.REJECTED);
+        rejectEvent.setActorId("7");
+        rejectEvent.setActorRole("BORROWER");
+        rejectEvent.setAction("AUTO_REJECT_LOW_BUREAU_SCORE");
+        rejectEvent.setAt(Instant.now().minusSeconds(60));
+        events.add(rejectEvent);
+        ApplicationRejection bureauBlock = new ApplicationRejection();
+        bureauBlock.setApplicationId(1L);
+        bureauBlock.setReasonCode(ApplicationRejection.LOW_BUREAU_SCORE);
+        bureauBlock.setBlockedUntil(Instant.now().plus(Duration.ofDays(80)));
+        when(rejectionRepository.findByApplicationIdAndReasonCode(1L, ApplicationRejection.LOW_BUREAU_SCORE))
+                .thenReturn(List.of(bureauBlock));
+
+        ApplicationFlowService.ReopenOutcome outcome = flow.reopenAfterRescore(1L, 540L, 560L, null);
+
+        assertThat(outcome).isEqualTo(ApplicationFlowService.ReopenOutcome.REOPENED);
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.KYC_PENDING);
+        // Only the LOW_BUREAU_SCORE block was cleared — a MANUAL/SELF_EMPLOYED block is a different
+        // row and was never touched (findByApplicationIdAndReasonCode is scoped to that reason code).
+        assertThat(bureauBlock.getBlockedUntil()).isNull();
+        ApplicationEvent lastEvent = events.get(events.size() - 1);
+        assertThat(lastEvent.getFromStatus()).isEqualTo(ApplicationStatus.DRAFT);
+        assertThat(lastEvent.getToStatus()).isEqualTo(ApplicationStatus.KYC_PENDING);
+        assertThat(lastEvent.getAction()).isEqualTo("REOPEN_RESCORE");
+        assertThat(lastEvent.getNotes()).contains("540").contains("560");
+    }
+
+    @Test
+    void reopenAfterRescore_skipsWhenTheOriginalRejectDidNotComeFromDraft() {
+        LoanApplication app = appAt(ApplicationStatus.REJECTED);
+        actor("system", "ADMIN");
+        // A later-stage staff verifications/BUREAU/retry reject, not the intake auto-reject.
+        ApplicationEvent rejectEvent = new ApplicationEvent();
+        rejectEvent.setApplicationId(1L);
+        rejectEvent.setFromStatus(ApplicationStatus.CREDIT_EXEC_PENDING);
+        rejectEvent.setToStatus(ApplicationStatus.REJECTED);
+        rejectEvent.setActorId("staff-9");
+        rejectEvent.setActorRole("ADMIN");
+        rejectEvent.setAction("AUTO_REJECT_LOW_BUREAU_SCORE");
+        rejectEvent.setAt(Instant.now().minusSeconds(60));
+        events.add(rejectEvent);
+
+        ApplicationFlowService.ReopenOutcome outcome = flow.reopenAfterRescore(1L, 540L, 560L, null);
+
+        assertThat(outcome).isEqualTo(ApplicationFlowService.ReopenOutcome.SKIPPED);
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        verify(rejectionRepository, org.mockito.Mockito.never())
+                .findByApplicationIdAndReasonCode(any(), any());
+    }
+
     private LoanApplication priorApp() {
         LoanApplication prior = new LoanApplication();
         prior.setId(10L);

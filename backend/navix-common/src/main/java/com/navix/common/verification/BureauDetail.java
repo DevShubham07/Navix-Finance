@@ -20,11 +20,31 @@ import java.util.List;
  * @param enquiries       every parsed {@code CAPS.CAPS_Application_Details} entry
  * @param delinquency     cross-tradeline delinquency aggregates
  * @param enquiryVelocity 7/30/90/180-day enquiry counts
+ * @param scoreHistory    the CRIF score trend + credit-age detail ({@link BureauScoreHistory}), or
+ *                        {@code null} for an Experian-sourced brief (no trend series) or one stored
+ *                        before this field existed — see the back-compat constructor below and
+ *                        {@link BureauReportFacts}'s class javadoc for why this is additive-only.
  */
 public record BureauDetail(
         List<BureauTradeline> tradelines,
         Integer tradelineCount,
         List<BureauEnquiry> enquiries,
         BureauDelinquency delinquency,
-        BureauEnquiryVelocity enquiryVelocity) {
+        BureauEnquiryVelocity enquiryVelocity,
+        BureauScoreHistory scoreHistory) {
+
+    /**
+     * Back-compat constructor for call sites/tests written before {@link #scoreHistory} existed
+     * (e.g. {@code ExperianFactsParser}, which has no trend series to populate it with) — delegates
+     * to the canonical constructor with {@code scoreHistory = null}. Mirrors
+     * {@link BureauReportFacts}'s own back-compat constructor pattern.
+     */
+    public BureauDetail(
+            List<BureauTradeline> tradelines,
+            Integer tradelineCount,
+            List<BureauEnquiry> enquiries,
+            BureauDelinquency delinquency,
+            BureauEnquiryVelocity enquiryVelocity) {
+        this(tradelines, tradelineCount, enquiries, delinquency, enquiryVelocity, null);
+    }
 }

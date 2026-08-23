@@ -21,6 +21,7 @@ import com.navix.common.verification.BureauDetail;
 import com.navix.common.verification.BureauEnquiry;
 import com.navix.common.verification.BureauEnquiryVelocity;
 import com.navix.common.verification.BureauReportFacts;
+import com.navix.common.verification.BureauScoreHistory;
 import com.navix.common.verification.BureauTradeline;
 import com.navix.loan.service.CreditRatingCalculator.Rating;
 import com.navix.common.verification.BureauCodes;
@@ -29,6 +30,7 @@ import java.io.ByteArrayOutputStream;
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
@@ -119,7 +121,15 @@ public class CreditBriefPdfRenderer {
                 addDetailSections(doc, f.detail());
             }
 
-            PdfPTable providerReport = providerReportTable(rawResponseJson);
+            // CRIF (Fintrix) is skipped from the raw appendix below — it carries ~16 address
+            // variations and 7-11+ tradelines x ~40 fields, which blows MAX_PROVIDER_FIELDS's cap and
+            // runs to many pages, defeating the "one page" goal (see that constant's javadoc). The
+            // structured sections above (delinquency / enquiries / tradelines / score trend / top
+            // exposures) plus the attached vendor PDF — the complete, untruncated report — cover it.
+            // Experian/Digitap-shaped sources keep the appendix; it's still their only route to
+            // account-level raw detail.
+            boolean skipRawAppendixForCrif = BUREAU_SOURCE_FINTRIX_CRIF.equals(bureauSource);
+            PdfPTable providerReport = skipRawAppendixForCrif ? null : providerReportTable(rawResponseJson);
             if (providerReport != null) {
                 doc.add(spaced(new Paragraph("Complete Provider Response", SECTION), 12, 3));
                 doc.add(new Paragraph(
@@ -156,6 +166,10 @@ public class CreditBriefPdfRenderer {
      * spot-check while refusing to let one borrower's file become a thousand-page document.
      */
     private static final int MAX_PROVIDER_FIELDS = 400;
+
+    /** The {@code bureauSource} value {@code CreditBriefService}/{@code ApplicationVerificationService}
+     *  record for a Fintrix CRIF Highmark pull — see the raw-appendix skip above. */
+    private static final String BUREAU_SOURCE_FINTRIX_CRIF = "FINTRIX_CRIF";
 
     private PdfPTable providerReportTable(String rawResponseJson) throws DocumentException {
         if (rawResponseJson == null || rawResponseJson.isBlank()) {
@@ -275,6 +289,13 @@ public class CreditBriefPdfRenderer {
     // -----------------------------------------------------------------------------------------
 
     private void addDetailSections(Document doc, BureauDetail detail) throws DocumentException {
+        // CRIF-only (score trend has no Experian equivalent) — see BureauScoreHistory's javadoc.
+        // Gated so a pre-Fintrix / Experian-sourced brief renders byte-identically to before this change.
+        BureauScoreHistory scoreHistory = detail.scoreHistory();
+        if (scoreHistory != null && scoreHistory.points() != null && !scoreHistory.points().isEmpty()) {
+            addScoreHistorySection(doc, scoreHistory);
+        }
+
         doc.add(spaced(new Paragraph("Delinquency History", SECTION), 12, 3));
         BureauDelinquency d = detail.delinquency();
         if (d != null) {
@@ -317,6 +338,7 @@ public class CreditBriefPdfRenderer {
             } else {
                 doc.add(tradelineTable(visible));
             }
+            addTopExposuresSection(doc, tradelines);
         }
 
         doc.add(spaced(new Paragraph("Enquiries", SECTION), 12, 3));
@@ -370,6 +392,184 @@ public class CreditBriefPdfRenderer {
     private static void kv(PdfPTable t, String label, String value) {
         t.addCell(kvCell(new Phrase(label, LABEL)));
         t.addCell(kvCell(new Phrase(value, VALUE)));
+    }
+
+    // ---- Score-trend sparkline (CRIF only) ----
+
+    /**
+     * The CRIF score-trend series plus the credit-age/velocity figures that ride alongside it in
+     * {@code TRENDS}/{@code ACCOUNTS-SUMMARY.DERIVED-ATTRIBUTES}. Drawn as vector polylines on the
+     * cell canvas — same idiom as {@link StarRowEvent}'s stars — so it needs no font-glyph/image
+     * dependency and stays crisp at any zoom.
+     */
+    private void addScoreHistorySection(Document doc, BureauScoreHistory h) throws DocumentException {
+        // Oldest -> newest, left -> right on the chart (the record itself is newest-first, matching
+        // the vendor's TRENDS ordering).
+        List<BureauScoreHistory.Point> oldestFirst = new ArrayList<>(h.points());
+        Collections.reverse(oldestFirst);
+
+        doc.add(spaced(new Paragraph("Score Trend (CRIF)", SECTION), 12, 3));
+
+        PdfPTable spark = new PdfPTable(1);
+        spark.setWidthPercentage(55);
+        spark.setHorizontalAlignment(Element.ALIGN_LEFT);
+        spark.setSpacingAfter(2f);
+        PdfPCell cell = new PdfPCell(new Phrase(" "));
+        cell.setBorder(Rectangle.NO_BORDER);
+        cell.setFixedHeight(46f);
+        cell.setCellEvent(new SparklineEvent(oldestFirst));
+        spark.addCell(cell);
+        doc.add(spark);
+
+        doc.add(kvTable(new String[][] {
+                {"Credit history length", formatMonths(h.lengthOfCreditHistoryMonths())},
+                {"Average account age", formatMonths(h.averageAccountAgeMonths())},
+                {"New accounts (6m)", formatCount(h.newAccountsLast6m())},
+                {"New delinquent accounts (6m)", formatCount(h.newDelinquentAccountsLast6m())},
+                {"Inquiries (6m)", formatCount(h.inquiriesLast6m())},
+        }));
+    }
+
+    /** {@code null} months -> "—"; else "Ny" / "Nmo" / "Ny Nmo" — no bare month count above a year. */
+    private static String formatMonths(Integer months) {
+        if (months == null) {
+            return "—";
+        }
+        int years = months / 12;
+        int rem = months % 12;
+        if (years == 0) {
+            return rem + (rem == 1 ? " month" : " months");
+        }
+        if (rem == 0) {
+            return years + (years == 1 ? " year" : " years");
+        }
+        return years + "y " + rem + "mo";
+    }
+
+    /** Compact sparkline: a NAVY polyline + GOLD dots plotting score against reporting period,
+     *  oldest -> newest left -> right, with the first/last score and the newest date labelled. */
+    private static final class SparklineEvent implements PdfPCellEvent {
+        private final List<BureauScoreHistory.Point> points;
+
+        SparklineEvent(List<BureauScoreHistory.Point> points) {
+            this.points = points;
+        }
+
+        @Override
+        public void cellLayout(PdfPCell cell, Rectangle pos, PdfContentByte[] canvases) {
+            if (points.size() < 2) {
+                return; // nothing meaningful to draw as a trend
+            }
+            List<Integer> scores = points.stream().map(BureauScoreHistory.Point::score).toList();
+            int min = scores.stream().filter(java.util.Objects::nonNull).mapToInt(Integer::intValue).min().orElse(300);
+            int max = scores.stream().filter(java.util.Objects::nonNull).mapToInt(Integer::intValue).max().orElse(900);
+            if (max == min) {
+                max = min + 1;
+            }
+
+            float padX = 4f;
+            float left = pos.getLeft() + padX;
+            float right = pos.getRight() - padX;
+            float top = pos.getTop() - 12f;
+            float bottom = pos.getBottom() + 6f;
+            float stepX = points.size() > 1 ? (right - left) / (points.size() - 1) : 0f;
+            int lo = min;
+            int hi = max;
+
+            PdfContentByte cb = canvases[PdfPTable.LINECANVAS];
+            cb.saveState();
+            cb.setLineWidth(1.1f);
+            cb.setColorStroke(NAVY);
+            boolean started = false;
+            for (int i = 0; i < points.size(); i++) {
+                Integer score = points.get(i).score();
+                if (score == null) {
+                    started = false;
+                    continue;
+                }
+                float x = left + i * stepX;
+                float y = bottom + (score - lo) * (top - bottom) / (hi - lo);
+                if (!started) {
+                    cb.moveTo(x, y);
+                    started = true;
+                } else {
+                    cb.lineTo(x, y);
+                }
+            }
+            cb.stroke();
+            for (int i = 0; i < points.size(); i++) {
+                Integer score = points.get(i).score();
+                if (score == null) {
+                    continue;
+                }
+                float x = left + i * stepX;
+                float y = bottom + (score - lo) * (top - bottom) / (hi - lo);
+                cb.circle(x, y, 1.5f);
+                cb.setColorFill(GOLD);
+                cb.fill();
+            }
+            cb.restoreState();
+
+            BureauScoreHistory.Point first = points.get(0);
+            BureauScoreHistory.Point last = points.get(points.size() - 1);
+            cb.beginText();
+            cb.setFontAndSize(sparklineLabelFont(), 7f);
+            cb.setColorFill(GREY);
+            if (first.score() != null) {
+                cb.showTextAligned(Element.ALIGN_LEFT, String.valueOf(first.score()), left, top + 3f, 0);
+            }
+            if (last.score() != null) {
+                String label = last.score()
+                        + (last.asOf() != null ? "  (" + last.asOf() + ")" : "");
+                cb.showTextAligned(Element.ALIGN_RIGHT, label, right, top + 3f, 0);
+            }
+            cb.endText();
+        }
+
+        /** {@code Font.getBaseFont()} is null until the font has been used through a writer/document —
+         *  it can't be relied on inside a raw {@code PdfContentByte} call, so resolve the base-14 font
+         *  directly (no embedding, no glyph dependency, same as {@link StarRowEvent}'s star polygons). */
+        private static com.lowagie.text.pdf.BaseFont sparklineLabelFont() {
+            try {
+                return com.lowagie.text.pdf.BaseFont.createFont(
+                        com.lowagie.text.pdf.BaseFont.HELVETICA, com.lowagie.text.pdf.BaseFont.CP1252,
+                        com.lowagie.text.pdf.BaseFont.NOT_EMBEDDED);
+            } catch (DocumentException | java.io.IOException e) {
+                throw new IllegalStateException("Failed to load base-14 Helvetica for sparkline labels", e);
+            }
+        }
+    }
+
+    // ---- Top exposures (largest live balances) ----
+
+    /** The 3-4 largest LIVE balances by lender — closed/settled excluded via
+     *  {@link #isTradelineDefaultVisible}, same judgement the Tradelines table above uses. */
+    private void addTopExposuresSection(Document doc, List<BureauTradeline> tradelines) throws DocumentException {
+        List<BureauTradeline> top = tradelines.stream()
+                .filter(CreditBriefPdfRenderer::isTradelineDefaultVisible)
+                .filter(t -> t.currentBalanceRupees() != null && t.currentBalanceRupees() > 0)
+                .sorted(Comparator.comparingLong(BureauTradeline::currentBalanceRupees).reversed())
+                .limit(4)
+                .toList();
+        if (top.isEmpty()) {
+            return;
+        }
+        doc.add(spaced(new Paragraph("Top Exposures", SECTION), 8, 3));
+        PdfPTable t = new PdfPTable(top.size());
+        t.setWidthPercentage(100);
+        t.setSpacingAfter(4f);
+        for (BureauTradeline tl : top) {
+            PdfPCell cell = new PdfPCell();
+            cell.setBorder(Rectangle.NO_BORDER);
+            cell.setBackgroundColor(new Color(245, 246, 248));
+            cell.setPadding(6f);
+            Paragraph lender = new Paragraph(safe(tl.lender(), "—"), LABEL);
+            lender.setSpacingAfter(2f);
+            cell.addElement(lender);
+            cell.addElement(new Paragraph(rs(tl.currentBalanceRupees()), VALUE));
+            t.addCell(cell);
+        }
+        doc.add(t);
     }
 
     // ---- Tradeline table ----

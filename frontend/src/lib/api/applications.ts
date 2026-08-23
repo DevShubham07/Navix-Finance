@@ -689,6 +689,31 @@ export interface EnquiryVelocity {
 }
 
 /**
+ * One reporting period's score, part of {@link BureauScoreHistory.points}.
+ */
+export interface BureauScorePoint {
+  /** YYYY-MM-DD period-end date. */
+  asOf: string | null;
+  score: number | null;
+}
+
+/**
+ * The CRIF score-trend series + credit-age/velocity figures from a Fintrix CRIF Highmark report's
+ * `TRENDS` and `ACCOUNTS-SUMMARY.DERIVED-ATTRIBUTES` blocks. Experian responses carry no equivalent
+ * trend series, so this is `null` on an Experian-sourced brief (and on any brief stored before this
+ * field existed) — mirrors the Java `BureauScoreHistory` record exactly.
+ */
+export interface BureauScoreHistory {
+  /** Newest-first, matching the vendor's TRENDS.DATES/VALUES ordering. */
+  points: BureauScorePoint[];
+  lengthOfCreditHistoryMonths: number | null;
+  averageAccountAgeMonths: number | null;
+  newAccountsLast6m: number | null;
+  newDelinquentAccountsLast6m: number | null;
+  inquiriesLast6m: number | null;
+}
+
+/**
  * The full parsed report detail — tradelines, enquiries, and derived aggregates — behind the twelve
  * curated {@link CreditBriefFacts} scalars. `null` on any brief generated before this was parsed
  * (no backfill ran); callers must render exactly what they rendered pre-`detail`, no empty tables.
@@ -702,6 +727,8 @@ export interface CreditBriefDetail {
   enquiries: Enquiry[];
   delinquency: DelinquencySummary | null;
   enquiryVelocity: EnquiryVelocity | null;
+  /** CRIF-only score trend — null for Experian or a brief stored before this field existed. */
+  scoreHistory?: BureauScoreHistory | null;
 }
 
 /** Parsed bureau facts behind the credit brief (Categories A/B/C). Amounts are rupees (bureau unit). */

@@ -9,7 +9,7 @@ import { PdfPreviewDialog } from "@/components/staff/pdf-preview-dialog";
 import { staffApi, type CreditBriefFacts, type CreditBriefDetail } from "@/lib/api/applications";
 import { flattenProviderReport, type JsonValue } from "@/lib/credit/provider-report";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
-import { TradelineTable, EnquiryTable } from "@/components/staff/credit/tradeline-table";
+import { TradelineTable, EnquiryTable, ScoreTrendBlock, TopExposuresBlock } from "@/components/staff/credit/tradeline-table";
 
 const inr = (rupees: number | null | undefined): string =>
   rupees == null
@@ -74,6 +74,17 @@ function Facts({ f }: { f: CreditBriefFacts }) {
 function ReportDetail({ detail }: { detail: CreditBriefDetail }) {
   return (
     <div className="mt-5 space-y-4">
+      {/* CRIF-only — no Experian equivalent, so this renders nothing on those/pre-CRIF briefs. */}
+      {detail.scoreHistory && (
+        <div>
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Score trend</div>
+          <ScoreTrendBlock h={detail.scoreHistory} />
+        </div>
+      )}
+      <div>
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Top exposures</div>
+        <TopExposuresBlock tradelines={detail.tradelines} />
+      </div>
       <div>
         <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Tradelines</div>
         <TradelineTable tradelines={detail.tradelines} tradelineCount={detail.tradelineCount} />

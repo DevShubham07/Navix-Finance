@@ -7,21 +7,27 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Guards the timeout budget. The bureau step is a CHAIN — Signzy Experian, then Signzy CRIF, then
- * Digitap Credit Analytics — so the sum of the three, not any single one, is what has to fit inside
- * the ALB idle timeout in front of the service.
+ * Guards the timeout budget. The bureau step is a CHAIN — Fintrix (primary), then Digitap Credit
+ * Analytics (fallback) — so the sum of the two, not any single one, is what has to fit inside the ALB
+ * idle timeout in front of the service.
  */
 class VerificationClientConfigTest {
 
     private static final Duration ALB_IDLE_TIMEOUT = Duration.ofSeconds(120);
 
     private static VerificationChainProperties defaults() {
-        return new VerificationChainProperties(List.of("signzy", "digitap"), null, null, null, null);
+        return new VerificationChainProperties(List.of("fintrix", "signzy", "digitap"),
+                null, null, null, null, null);
     }
 
     @Test
-    void digitapCreditGetsTheLongReadTimeoutThatTheThirtySecondDefaultWasCuttingOff() {
-        assertThat(defaults().bureauReadTimeout()).isEqualTo(Duration.ofSeconds(90));
+    void digitapCreditGetsTheSixtySecondReadTimeout_cutFromNinetyWhenFintrixBecamePrimary() {
+        assertThat(defaults().bureauReadTimeout()).isEqualTo(Duration.ofSeconds(60));
+    }
+
+    @Test
+    void fintrixGetsTheFortyFiveSecondReadTimeout() {
+        assertThat(defaults().fintrixBureauReadTimeout()).isEqualTo(Duration.ofSeconds(45));
     }
 
     @Test
@@ -33,24 +39,25 @@ class VerificationClientConfigTest {
     @Test
     void theWholeBureauChainFitsInsideTheAlbIdleTimeout() {
         VerificationChainProperties props = defaults();
-        Duration worstCase = props.signzyBureauReadTimeout()
-                .plus(props.signzyBureauReadTimeout())
-                .plus(props.bureauReadTimeout());
+        Duration worstCase = props.fintrixBureauReadTimeout().plus(props.bureauReadTimeout());
+        assertThat(worstCase).isEqualTo(Duration.ofSeconds(105));
         assertThat(worstCase).isLessThan(ALB_IDLE_TIMEOUT);
     }
 
     @Test
     void overridesWin_andNonsenseValuesFallBackToTheDefault() {
         VerificationChainProperties configured =
-                new VerificationChainProperties(List.of("digitap"), 3, 20, 120, 8);
+                new VerificationChainProperties(List.of("digitap"), 3, 20, 120, 8, 50);
         assertThat(configured.connectTimeout()).isEqualTo(Duration.ofSeconds(3));
         assertThat(configured.readTimeout()).isEqualTo(Duration.ofSeconds(20));
         assertThat(configured.bureauReadTimeout()).isEqualTo(Duration.ofSeconds(120));
         assertThat(configured.signzyBureauReadTimeout()).isEqualTo(Duration.ofSeconds(8));
+        assertThat(configured.fintrixBureauReadTimeout()).isEqualTo(Duration.ofSeconds(50));
 
         VerificationChainProperties nonsense =
-                new VerificationChainProperties(null, 0, -1, 0, -5);
+                new VerificationChainProperties(null, 0, -1, 0, -5, 0);
         assertThat(nonsense.connectTimeout()).isEqualTo(Duration.ofSeconds(5));
-        assertThat(nonsense.bureauReadTimeout()).isEqualTo(Duration.ofSeconds(90));
+        assertThat(nonsense.bureauReadTimeout()).isEqualTo(Duration.ofSeconds(60));
+        assertThat(nonsense.fintrixBureauReadTimeout()).isEqualTo(Duration.ofSeconds(45));
     }
 }

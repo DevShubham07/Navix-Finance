@@ -39,8 +39,9 @@ Browser ──> Frontend (Next.js, http://localhost:3000)
               ▼
         Backend (Spring Boot, http://localhost:8080)
               │
-              ├─> Fintrix     https://admin.fintrix.tech/__api/api/v1/
-              ├─> DigiLocker
+              ├─> Signzy      identity/bureau/penny-drop/DigiLocker (primary)
+              ├─> Digitap     fallback + address/employment
+              ├─> Fintrix     https://admin.fintrix.tech/__api/api/v1/ (bureau primary, CRIF `crif_combine` only)
               └─> PostgreSQL 16
 ```
 
@@ -91,7 +92,7 @@ Copy the example env values and fill in secrets (see `.env`). Key variables:
 NEXT_PUBLIC_API_BASE_URL   # frontend -> backend base URL
 BACKEND_BASE_URL
 AUTH_SECRET
-FINTRIX_BASE_URL           # https://admin.fintrix.tech/__api/api/v1/
+FINTRIX_BASE_URL           # https://admin.fintrix.tech/__api/api/v1/ (bureau only, POST /crif_combine)
 FINTRIX_CLIENT_ID
 FINTRIX_CLIENT_SECRET
 DIGILOCKER_CLIENT_ID
@@ -133,9 +134,13 @@ Runs on http://localhost:3000.
 
 ## Integrations
 
-- **Fintrix** — base URL `https://admin.fintrix.tech/__api/api/v1/`.
-  Auth: HTTP Basic `base64(client_id:client_secret)` from
-  `FINTRIX_CLIENT_ID` / `FINTRIX_CLIENT_SECRET`.
+- **Fintrix** — base URL `https://admin.fintrix.tech/__api/api/v1/`. **Bureau only**: `POST
+  /crif_combine` (CRIF Highmark), the primary bureau provider (Digitap Credit Analytics is the
+  fallback). Auth: HTTP Basic `base64(client_id:client_secret)` from
+  `FINTRIX_CLIENT_ID` / `FINTRIX_CLIENT_SECRET`. Fintrix previously fronted a broader set of
+  identity/KYC APIs (PAN, email, address, Experian, penny-drop, DigiLocker) — that integration was
+  removed; those capabilities are now served by Signzy/Digitap. See
+  `NAVIX_Fintrix_Integration_Flow.md` for the full history and the live `crif_combine` contract.
 - **DigiLocker** — auth via `X-Client-ID` / `X-Client-Secret` headers from
   `DIGILOCKER_CLIENT_ID` / `DIGILOCKER_CLIENT_SECRET`.
 

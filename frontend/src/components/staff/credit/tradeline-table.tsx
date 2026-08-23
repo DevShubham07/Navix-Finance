@@ -18,6 +18,7 @@ import type {
   Enquiry,
   DelinquencySummary,
   EnquiryVelocity,
+  BureauScoreHistory,
 } from "@/lib/api/applications";
 
 // ---------------------------------------------------------------------------
@@ -120,18 +121,62 @@ function codeToInt(code: string | null | undefined): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-/** Falls back to `Type <code>` for anything unmapped — never guesses a label. */
+/**
+ * Falls back to `Type <code>` for a numeric code with no mapping — never guesses a label. A
+ * non-numeric code (CRIF sends text, e.g. "Credit Card", where Experian sends numeric codes) is
+ * already a human label, so it is returned as-is rather than being wrapped as "Type Credit Card".
+ * Mirrors `BureauCodes` (Java) — keep both in sync.
+ */
 export function accountTypeLabel(code: string | null | undefined): string {
+  if (!code) return "—";
   const n = codeToInt(code);
-  if (n == null) return code ? `Type ${code}` : "—";
+  if (n == null) return code;
   return ACCOUNT_TYPE_LABELS[n] ?? `Type ${n}`;
 }
 
-/** Falls back to `Status <code>` for anything unmapped — never guesses a label. */
+/** Falls back to `Status <code>` for a numeric code with no mapping; a non-numeric code is already
+ *  a label and is returned as-is. Mirrors `BureauCodes` (Java) — keep both in sync. */
 export function accountStatusLabel(code: string | null | undefined): string {
+  if (!code) return "—";
   const n = codeToInt(code);
-  if (n == null) return code ? `Status ${code}` : "—";
+  if (n == null) return code;
   return ACCOUNT_STATUS_LABELS[n] ?? `Status ${n}`;
+}
+
+const ENQUIRY_REASON_LABELS: Record<number, string> = {
+  1: "Agriculture Loan",
+  2: "Auto Loan",
+  3: "Business Loan",
+  4: "Commercial Vehicle Loans",
+  5: "Construction Equipment Loan",
+  6: "Consumer Loan",
+  7: "Credit Card",
+  8: "Education Loan",
+  9: "Leasing",
+  10: "Loan Against Collateral",
+  11: "Microfinance",
+  12: "Non-Funded Credit Facility",
+  13: "Personal Loan",
+  14: "Property Loan",
+  15: "Telecom",
+  16: "Two/Three Wheeler Loan",
+  17: "Working Capital Loan",
+  18: "Consumer Loan",
+  19: "Credit Review",
+  99: "Others",
+};
+
+/**
+ * Falls back to `Reason <n>` for a numeric code with no mapping — never guesses a label. CRIF sends
+ * a text label directly ("OTHER", "Credit Card") where Experian sends a numeric code; a non-numeric
+ * code is already human-readable, so it is returned as-is (same rule as `accountTypeLabel`/
+ * `accountStatusLabel` above). Mirrors `BureauCodes.enquiryReason` (Java) — keep both in sync.
+ */
+export function enquiryReasonLabel(code: string | null | undefined): string {
+  if (!code) return "—";
+  const n = codeToInt(code);
+  if (n == null) return code;
+  return ENQUIRY_REASON_LABELS[n] ?? `Reason ${n}`;
 }
 
 export type StatusBucket = "delinquent" | "written-off" | "settled" | "restructured" | "active" | "closed" | "unknown";
@@ -409,7 +454,7 @@ export function EnquiryTable({ enquiries }: { enquiries: Enquiry[] }) {
             <tr key={i} className="border-t border-line align-top odd:bg-neutral-50/60">
               <td className="px-2 py-1.5 text-ink">{formatDateStr(e.requestedOn)}</td>
               <td className="break-words px-2 py-1.5 text-ink">{e.subscriber ?? "—"}</td>
-              <td className="px-2 py-1.5 text-ink">{e.reasonCode ?? "—"}</td>
+              <td className="px-2 py-1.5 text-ink">{enquiryReasonLabel(e.reasonCode)}</td>
               <td className="px-2 py-1.5 font-mono text-ink">{formatRupees(e.amountFinancedRupees)}</td>
               <td className="px-2 py-1.5 text-ink">
                 {e.durationMonths != null ? `${e.durationMonths} mo` : "—"}
@@ -469,5 +514,100 @@ export function EnquiryVelocityBlock({ v }: { v: EnquiryVelocity | null | undefi
       <KV k="Last 90d" v={<span className={toneFor(v.last90)}>{formatCount(v.last90)}</span>} mono />
       <KV k="Last 180d" v={<span className={toneFor(v.last180)}>{formatCount(v.last180)}</span>} mono />
     </dl>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Score trend (CRIF only) + top exposures
+// ---------------------------------------------------------------------------
+
+/** `null` months -> "—"; mirrors `formatMonths` in `CreditBriefPdfRenderer.java`. */
+function formatMonths(months: number | null | undefined): string {
+  if (months == null) return "—";
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  if (years === 0) return `${rem} month${rem === 1 ? "" : "s"}`;
+  if (rem === 0) return `${years} year${years === 1 ? "" : "s"}`;
+  return `${years}y ${rem}mo`;
+}
+
+/**
+ * The CRIF score-trend sparkline + credit-age/velocity stats — no Experian equivalent (see
+ * `BureauScoreHistory`'s doc comment on the `applications.ts` type), so this renders nothing for an
+ * Experian-sourced or pre-CRIF brief. Plotted oldest → newest left → right as a plain inline SVG
+ * polyline, mirroring `CreditBriefPdfRenderer.SparklineEvent`'s vector polyline (same axis, same
+ * first/last/newest-date labels) without a charting dependency.
+ */
+export function ScoreTrendBlock({ h }: { h: BureauScoreHistory | null | undefined }) {
+  if (!h || h.points.length === 0) return null;
+  const oldestFirst = [...h.points].reverse();
+  const scores = oldestFirst.map((p) => p.score).filter((s): s is number => s != null);
+  const min = scores.length ? Math.min(...scores) : 300;
+  const max = scores.length ? Math.max(...scores) : 900;
+  const span = max === min ? 1 : max - min;
+  const w = 260;
+  const hgt = 48;
+  const padX = 6;
+  const padY = 8;
+  const stepX = oldestFirst.length > 1 ? (w - 2 * padX) / (oldestFirst.length - 1) : 0;
+  const xy = (i: number, score: number) => [
+    padX + i * stepX,
+    hgt - padY - ((score - min) * (hgt - 2 * padY)) / span,
+  ];
+  const pts = oldestFirst
+    .map((p, i) => (p.score == null ? null : xy(i, p.score).join(",")))
+    .filter((s): s is string => s != null)
+    .join(" ");
+  const first = oldestFirst[0];
+  const last = oldestFirst[oldestFirst.length - 1];
+
+  return (
+    <div className="space-y-2">
+      <svg viewBox={`0 0 ${w} ${hgt}`} className="h-12 w-64 max-w-full" role="img" aria-label="Score trend">
+        <polyline points={pts} fill="none" stroke="#0A2540" strokeWidth={1.5} />
+        {oldestFirst.map((p, i) => {
+          if (p.score == null) return null;
+          const [cx, cy] = xy(i, p.score);
+          return <circle key={i} cx={cx} cy={cy} r={1.8} fill="#D4A017" />;
+        })}
+      </svg>
+      <div className="flex justify-between text-[10px] text-muted">
+        <span>{first.score ?? "—"}</span>
+        <span>
+          {last.score ?? "—"}
+          {last.asOf ? ` (${formatDateStr(last.asOf)})` : ""}
+        </span>
+      </div>
+      <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+        <KV k="Credit history length" v={formatMonths(h.lengthOfCreditHistoryMonths)} />
+        <KV k="Average account age" v={formatMonths(h.averageAccountAgeMonths)} />
+        <KV k="New accounts (6m)" v={formatCount(h.newAccountsLast6m)} mono />
+        <KV k="New delinquent accounts (6m)" v={formatCount(h.newDelinquentAccountsLast6m)} mono />
+        <KV k="Inquiries (6m)" v={formatCount(h.inquiriesLast6m)} mono />
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * The 3-4 largest LIVE balances by lender — mirrors `CreditBriefPdfRenderer.addTopExposuresSection`
+ * exactly: closed/settled excluded via `isDefaultVisible` (the same filter the Tradelines table
+ * above defaults to), sorted by balance desc, capped at 4.
+ */
+export function TopExposuresBlock({ tradelines }: { tradelines: Tradeline[] }) {
+  const top = [...tradelines]
+    .filter((t) => isDefaultVisible(t) && (t.currentBalanceRupees ?? 0) > 0)
+    .sort((a, b) => (b.currentBalanceRupees ?? 0) - (a.currentBalanceRupees ?? 0))
+    .slice(0, 4);
+  if (top.length === 0) return <p className="text-sm text-muted">No live exposures to show.</p>;
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {top.map((t, i) => (
+        <div key={i} className="rounded border border-line bg-neutral-50 px-2.5 py-2">
+          <div className="truncate text-xs text-muted">{t.lender ?? "—"}</div>
+          <div className="font-mono text-sm font-semibold text-ink">{formatRupees(t.currentBalanceRupees)}</div>
+        </div>
+      ))}
+    </div>
   );
 }

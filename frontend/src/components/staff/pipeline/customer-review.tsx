@@ -24,7 +24,7 @@ import {
 } from "@/lib/api/applications";
 import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import { NoAccessNotice } from "@/components/staff/pipeline/actions";
-import { DocPassword } from "@/components/staff/detail-parts";
+import { DocPassword, docTypeLabel } from "@/components/staff/detail-parts";
 
 export function CustomerReview({ applicationId }: { applicationId: number }) {
   const role = useStaffMe().data?.role;
@@ -174,7 +174,7 @@ function DocRow({ appId, doc }: { appId: number; doc: DocumentView }) {
         <span className="block truncate">{doc.fileName}</span>
         <DocPassword password={doc.filePassword} />
       </span>
-      <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">{doc.docType}</span>
+      <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">{docTypeLabel(doc.docType)}</span>
       {doc.sizeBytes != null && <span className="text-xs text-muted">{formatBytes(doc.sizeBytes)}</span>}
       <button onClick={() => fetchAnd("view")} disabled={busy != null} className="btn btn-sm btn-outline disabled:opacity-50">
         {busy === "view" ? <Loader2 size={13} className="animate-spin" /> : <ExternalLink size={13} />} View

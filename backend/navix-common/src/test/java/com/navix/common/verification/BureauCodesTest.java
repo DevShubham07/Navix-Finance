@@ -55,4 +55,21 @@ class BureauCodesTest {
         assertThat(BureauCodes.accountStatus("43")).contains("WRITTEN-OFF");
         assertThat(BureauCodes.accountStatus("64")).isEmpty();
     }
+
+    /**
+     * CRIF sends the human label directly ({@code "Credit Card"}, {@code "Active"}) where Experian
+     * sends the numeric code these tables are keyed on. A non-numeric code is already a label — it
+     * must pass through unchanged, not fall into the caller's "Type &lt;n&gt;" fallback (which would
+     * otherwise render "Type Credit Card"). Numeric lookups are unaffected.
+     */
+    @Test
+    void nonNumericCodePassesThroughUnchangedWhileNumericStillMaps() {
+        assertThat(BureauCodes.accountType("Credit Card")).contains("Credit Card");
+        assertThat(BureauCodes.accountType("OTHER")).contains("OTHER");
+        assertThat(BureauCodes.accountStatus("Active")).contains("Active");
+        assertThat(BureauCodes.enquiryReason("Credit Card")).contains("Credit Card");
+        // Numeric codes still resolve through the table, unaffected by the passthrough branch.
+        assertThat(BureauCodes.accountType("10")).contains("CREDIT CARD");
+        assertThat(BureauCodes.accountType("999")).isEmpty();
+    }
 }
