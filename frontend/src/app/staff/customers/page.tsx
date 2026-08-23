@@ -332,7 +332,7 @@ function CustomersPageInner() {
                     <td className="font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
                     <td>
                       {c.starRating != null || c.creditScore != null ? (
-                        <CreditBadge starRating={c.starRating} creditScore={c.creditScore} />
+                        <CreditBadge starRating={c.starRating} creditScore={c.creditScore} bureauSource={c.bureauSource} />
                       ) : c.bureauState === "NO_RECORD" ? (
                         <span className="text-xs text-muted">{bureauStateLabel("NO_RECORD", "long")}</span>
                       ) : (

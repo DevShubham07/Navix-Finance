@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X, Loader2, User, Landmark, Banknote, Gauge } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { CreditBadge } from "@/components/staff/credit-badge";
+import { bureauScoreLabel } from "@/lib/credit/bureau-label";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
 import { KV } from "@/components/staff/detail-parts";
 import { formatDate } from "@/lib/utils";
@@ -121,6 +122,7 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
                   starRating={briefQ.data.starRating}
                   creditScore={briefQ.data.creditScore}
                   recommendation={briefQ.data.recommendation}
+                  bureauSource={briefQ.data.bureauSource}
                 />
               )}
             </div>
@@ -167,7 +169,7 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
                 <p className="text-sm text-muted">{bureauStateLabel("NO_RECORD", "long")}.</p>
               ) : briefQ.data?.bureauState === "FOUND" ? (
                 <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-                  <KV k="Bureau score" v={briefQ.data.creditScore != null ? String(briefQ.data.creditScore) : null} mono />
+                  <KV k={bureauScoreLabel(briefQ.data.bureauSource)} v={briefQ.data.creditScore != null ? String(briefQ.data.creditScore) : null} mono />
                   <KV k="Star rating" v={briefQ.data.starRating != null ? `${briefQ.data.starRating.toFixed(1)}★` : null} />
                   <KV k="Recommendation" v={briefQ.data.recommendation} />
                   {briefQ.data.summary && (

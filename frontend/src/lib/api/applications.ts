@@ -584,6 +584,8 @@ export interface CustomerSummary {
   ownerStaffId?: number | null;
   ownerName?: string | null;
   bureauState?: BureauState | null;
+  /** Which bureau produced creditScore — labels the score in the list, as the profile does. */
+  bureauSource?: string | null;
   /** The customer's most recent application's created_at — same timestamp as the live-applications
    *  "Date" column. This is the SIGNUP date, not when the current status was entered — see
    *  statusChangedAt below. */
@@ -772,6 +774,8 @@ export interface CreditBriefView {
   /** Exact staff-only provider response, including every nested bureau field and tradeline. */
   providerResponse: JsonValue | null;
   bureauState: BureauState;
+  /** Which bureau produced creditScore — labels the score instead of a hardcoded bureau name. */
+  bureauSource?: string | null;
 }
 
 /** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */

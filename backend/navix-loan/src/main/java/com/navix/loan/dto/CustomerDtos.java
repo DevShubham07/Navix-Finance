@@ -59,6 +59,11 @@ public final class CustomerDtos {
             Long ownerStaffId,
             String ownerName,
             BureauState bureauState,
+            /** Which bureau produced {@code creditScore} (e.g. {@code FINTRIX_CRIF},
+             *  {@code DIGITAP_EXPERIAN}). The list labels the score with it, exactly as the customer
+             *  detail does — without it every row falls back to a vague "Bureau" while the profile
+             *  behind it says "Experian", which reads like two different answers. */
+            String bureauSource,
             /** The customer's most recent application's {@code created_at} (V53) — the same timestamp
              *  shown as the "Date" column on the live-applications queues, surfaced here too. */
             Instant createdAt,

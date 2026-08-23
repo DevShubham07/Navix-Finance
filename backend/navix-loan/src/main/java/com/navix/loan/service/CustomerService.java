@@ -348,6 +348,7 @@ public class CustomerService {
                     ownerStaffId,
                     ownerName,
                     bureauState,
+                    profile != null ? profile.getBureauSource() : null,
                     latestCreatedAt,
                     latestApp != null ? latestApp.getId() : null,
                     accountNumber,

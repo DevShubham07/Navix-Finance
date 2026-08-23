@@ -28,7 +28,11 @@ public final class CreditBriefDtos {
             Long documentId,
             Facts facts,
             JsonNode providerResponse,
-            BureauState bureauState) {
+            BureauState bureauState,
+        /** Which bureau produced {@code creditScore} ({@code FINTRIX_CRIF}, {@code DIGITAP_EXPERIAN},
+         *  …). Every surface labels the score with it rather than the old hardcoded "CIBIL", which
+         *  named a bureau we have never pulled from. */
+        String bureauSource) {
 
         /** Categorized facts for the card. Full PAN/mobile (staff-only); amounts in rupees (the bureau's unit). */
         public record Facts(

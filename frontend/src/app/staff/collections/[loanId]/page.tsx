@@ -148,6 +148,7 @@ function BorrowerCard({ loan }: { loan: LoanSummary | null }) {
             starRating={credit.starRating}
             creditScore={credit.creditScore}
             recommendation={credit.recommendation}
+            bureauSource={credit.bureauSource}
             className="ml-auto"
           />
         )}
