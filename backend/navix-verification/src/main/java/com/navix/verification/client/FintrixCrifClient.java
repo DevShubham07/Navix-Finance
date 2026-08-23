@@ -1,7 +1,7 @@
 package com.navix.verification.client;
 
 import static com.navix.verification.support.ProviderJson.integer;
-import static com.navix.verification.support.ProviderJson.post;
+import static com.navix.verification.support.ProviderJson.postAllowingErrorEnvelope;
 import static com.navix.verification.support.ProviderJson.text;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -10,6 +10,7 @@ import com.navix.common.verification.BureauReportFacts;
 import com.navix.verification.config.VerificationClientConfig;
 import com.navix.verification.dto.FintrixDtos.CrifRequest;
 import com.navix.verification.dto.FintrixDtos.CrifResponse;
+import com.navix.verification.exception.VerificationException;
 import com.navix.verification.support.BureauFixtureLoader;
 import com.navix.verification.support.CrifHighmarkFactsParser;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -72,9 +73,36 @@ public class FintrixCrifClient {
     public CrifResponse pull(String name, String mobile, String remark) {
         JsonNode root = (fixturePath != null && !fixturePath.isBlank())
                 ? BureauFixtureLoader.load(objectMapper, BUNDLED_FIXTURE)
-                : post(fintrix, ENDPOINT, new CrifRequest(name, mobile, remark, CONSENT));
+                : postAllowingErrorEnvelope(fintrix, ENDPOINT, new CrifRequest(name, mobile, remark, CONSENT));
+        rejectUnlessNoRecord(root);
         JsonNode data = root.path("canonical").path("data");
         return parse(data, root.toString(), name, mobile);
+    }
+
+    /**
+     * Fintrix answers a thin file with HTTP 200 and an ERROR envelope —
+     * {@code {"status":"error","success":true,"error_message":"No data found in CRIF,Please re-verify
+     * details"}} — which is a real answer, not a failure. Observed in production 2026-08-23 on the
+     * first backfill batch; it is the no-hit shape we had never captured.
+     *
+     * <p>Treating it as a failure is expensive and wrong three times over: the router burns a second
+     * billable call falling through to Digitap, the backfill records FAILED, and FAILED is exactly
+     * what a re-run retries — so a borrower with no credit history would be paid for again on every
+     * pass and could never succeed. Let it through and {@link #parse} classifies it as a no-record
+     * (no credit_report node, so noHit), which never reaches the auto-reject rule.
+     *
+     * <p>Any OTHER error envelope is still a genuine provider failure and must throw, so the chain
+     * falls through as designed.
+     */
+    private static void rejectUnlessNoRecord(JsonNode root) {
+        if (!"error".equalsIgnoreCase(text(root.path("status")))) {
+            return;
+        }
+        String message = text(root.path("error_message"));
+        if (message == null || !message.toLowerCase(java.util.Locale.ROOT).contains("no data found")) {
+            throw new VerificationException("Fintrix crif_combine error: "
+                    + (message == null || message.isBlank() ? "unspecified provider error" : message));
+        }
     }
 
     private CrifResponse parse(JsonNode data, String rawResponseJson, String name, String mobile) {

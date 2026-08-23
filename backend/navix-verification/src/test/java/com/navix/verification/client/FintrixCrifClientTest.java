@@ -1,12 +1,14 @@
 package com.navix.verification.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.verification.dto.FintrixDtos.CrifResponse;
+import com.navix.verification.exception.VerificationException;
 import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -117,5 +119,45 @@ class FintrixCrifClientTest {
         assertThat(r.noRecord()).isTrue();
         assertThat(r.score()).isNull();
         b.server().verify();
+    }
+
+    /**
+     * The production no-hit shape, captured 2026-08-23 on the first backfill batch: HTTP 200 with an
+     * ERROR envelope whose message says no data. It is a real "this person has no CRIF record" answer,
+     * so it must come back as a no-record rather than throwing — otherwise the router burns a second
+     * billable call falling through to Digitap, the backfill records FAILED, and FAILED is exactly what
+     * a re-run retries, so a borrower who can never hit is paid for on every pass.
+     */
+    @Test
+    void noDataFoundErrorEnvelopeIsANoRecordNotAFailure() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/crif_combine"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"status\":\"error\",\"success\":true,"
+                        + "\"error_message\":\"No data found in CRIF,Please re-verify details\","
+                        + "\"transaction_id\":\"TXN-PROD-x\"}", MediaType.APPLICATION_JSON));
+
+        CrifResponse r = new FintrixCrifClient(b.restClient(), new ObjectMapper(), "")
+                .pull("Sample Person", "9000000001", "app-123");
+
+        assertThat(r.noRecord()).isTrue();
+        assertThat(r.score()).isNull();
+        assertThat(r.facts()).isNull();
+        b.server().verify();
+    }
+
+    /** Any OTHER error envelope is a genuine failure and must still throw so the chain falls through. */
+    @Test
+    void anUnrecognisedErrorEnvelopeStillThrows() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/crif_combine"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"status\":\"error\",\"success\":false,"
+                        + "\"error_message\":\"Upstream bureau timeout\"}", MediaType.APPLICATION_JSON));
+
+        FintrixCrifClient client = new FintrixCrifClient(b.restClient(), new ObjectMapper(), "");
+        assertThatThrownBy(() -> client.pull("Sample Person", "9000000001", "app-123"))
+                .isInstanceOf(VerificationException.class)
+                .hasMessageContaining("Upstream bureau timeout");
     }
 }

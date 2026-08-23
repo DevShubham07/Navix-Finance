@@ -62,10 +62,32 @@ public final class ProviderJson {
      */
     public static JsonNode postTolerating(
             RestClient client, String uri, Object body, int toleratedStatus) {
-        return post(client, uri, body, toleratedStatus);
+        return post(client, uri, body, toleratedStatus, true);
+    }
+
+    /**
+     * As {@link #post}, but RETURNS an {@code status: "error"} envelope instead of throwing, so the
+     * caller can tell a provider's "no record for this person" apart from a provider failure.
+     *
+     * <p>Fintrix answers a thin file with HTTP 200 and
+     * {@code {"status":"error","success":true,"error_message":"No data found in CRIF..."}} — a real
+     * answer wearing an error envelope. Left to {@link #post} it throws, the router burns a second
+     * billable call falling through to the next bureau, and the row is recorded FAILED and retried
+     * forever on every re-run. The caller MUST still throw for envelopes it does not recognise.
+     *
+     * <p>Non-2xx, a null body and transport failures still fail closed exactly as in {@link #post},
+     * and the call is recorded to the audit trail either way.
+     */
+    public static JsonNode postAllowingErrorEnvelope(RestClient client, String uri, Object body) {
+        return post(client, uri, body, NO_TOLERATED_STATUS, false);
     }
 
     private static JsonNode post(RestClient client, String uri, Object body, int toleratedStatus) {
+        return post(client, uri, body, toleratedStatus, true);
+    }
+
+    private static JsonNode post(RestClient client, String uri, Object body, int toleratedStatus,
+                                 boolean throwOnErrorEnvelope) {
         String requestJson = rawJson(body);
         ProviderCallLog.logRequest(uri, requestJson);
         long started = System.nanoTime();
@@ -103,7 +125,7 @@ public final class ProviderJson {
         // A 2xx carrying an error envelope is still a failed call as far as the audit trail cares.
         record(uri, requestJson, node.toString(), httpStatus, started,
                 isProviderErrorEnvelope(node) ? "Provider reported an error envelope" : null);
-        if ("error".equalsIgnoreCase(node.path("status").asText(""))) {
+        if (throwOnErrorEnvelope && "error".equalsIgnoreCase(node.path("status").asText(""))) {
             throw new VerificationException("Provider reported error for " + uri);
         }
         return node;
