@@ -738,7 +738,7 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 | `POST /api/applications/{id}/send-reminder` | KYC_APPROVER/ADMIN | nudge the borrower on outstanding steps (no-op when nothing pending) |
 | `PUT /api/applications/{id}/profile/self` | BORROWER | self-edit non-identity profile fields (may invalidate the matching verification → re-verify) |
 | `GET\|PUT /api/preferences` | BORROWER | notification settings (opt-out suppresses SMS/EMAIL, never IN_APP) |
-| `GET\|PUT /api/staff/me` | staff | staff self-profile (role/status stay ADMIN-only) |
+| `GET\|PUT /api/staff/me` | staff | staff self-profile (role/status stay ADMIN-only); `PUT` also toggles `emailOptIn` (operational-email opt-out, null-guarded so a partial PUT leaves it untouched — STAFF_IAM account/security mail is never suppressible) |
 | `GET/POST/DELETE /api/admin/expenses` (+`/{id}`) | ADMIN | company-expense ledger (+ receipt S3 keys) |
 | `GET /api/applications/all` | ADMIN | full register of every application (complete + incomplete) |
 | `GET /api/feature-flags` | any authed | dev-only flag states `{key: enabled}` for UI gating — **read-only, no write path** (flags change only via SQL, §12) |

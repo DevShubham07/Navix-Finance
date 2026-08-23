@@ -119,6 +119,9 @@ public class StaffService {
         }
         staff.setDepartment(trimToNull(req.department()));
         staff.setDesignation(trimToNull(req.designation()));
+        if (req.emailOptIn() != null) {
+            staff.setEmailOptIn(req.emailOptIn());
+        }
         return StaffResponse.of(staffUserRepository.save(staff));
     }
 

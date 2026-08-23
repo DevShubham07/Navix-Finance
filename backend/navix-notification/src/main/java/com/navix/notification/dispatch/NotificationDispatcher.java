@@ -4,8 +4,9 @@ import com.navix.common.loan.BorrowerContactDirectory;
 import com.navix.common.loan.BorrowerPreferenceDirectory;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.notification.ContactInfo;
+import com.navix.common.notification.NotificationCategory;
 import com.navix.common.notification.NotificationChannel;
-import com.navix.common.notification.RecipientType;
+import com.navix.common.staff.StaffPreferenceDirectory;
 import com.navix.notification.audience.AudienceResolver;
 import com.navix.notification.catalog.NotificationType;
 import com.navix.notification.channel.ChannelSender;
@@ -45,6 +46,7 @@ public class NotificationDispatcher {
     private final NotificationDeliveryRepository deliveryRepo;
     private final LoanDirectory loanDirectory;
     private final BorrowerPreferenceDirectory borrowerPreferences;
+    private final StaffPreferenceDirectory staffPreferences;
     private final BorrowerContactDirectory borrowerContacts;
     private final Map<NotificationChannel, ChannelSender> senders = new EnumMap<>(NotificationChannel.class);
 
@@ -52,6 +54,7 @@ public class NotificationDispatcher {
                                   NotificationRepository notificationRepo,
                                   NotificationDeliveryRepository deliveryRepo,
                                   LoanDirectory loanDirectory, BorrowerPreferenceDirectory borrowerPreferences,
+                                  StaffPreferenceDirectory staffPreferences,
                                   BorrowerContactDirectory borrowerContacts,
                                   List<ChannelSender> channelSenders) {
         this.renderer = renderer;
@@ -60,6 +63,7 @@ public class NotificationDispatcher {
         this.deliveryRepo = deliveryRepo;
         this.loanDirectory = loanDirectory;
         this.borrowerPreferences = borrowerPreferences;
+        this.staffPreferences = staffPreferences;
         this.borrowerContacts = borrowerContacts;
         for (ChannelSender sender : channelSenders) {
             senders.put(sender.channel(), sender);
@@ -81,11 +85,17 @@ public class NotificationDispatcher {
             model.put("role", recipient.role());
 
             Notification saved = persistNotification(type, ctx, recipient, model);
-            // Borrowers may opt out of SMS / EMAIL (server-persisted prefs); IN_APP (the inbox row
-            // above) is never suppressed. Staff recipients are unaffected.
-            java.util.Set<NotificationChannel> optedOut = recipient.type() == RecipientType.BORROWER
-                    ? borrowerPreferences.optedOutChannels(recipient.id())
-                    : java.util.Set.of();
+            // Borrowers/staff may opt out of SMS / EMAIL (server-persisted prefs); IN_APP (the inbox
+            // row above) is never suppressed. STAFF_IAM (account/security mail — invite/created/
+            // disabled) ignores preferences entirely: those types carry no IN_APP channel, so
+            // suppressing EMAIL would delete the notification outright, and STAFF_INVITED fires
+            // before a staffer could ever have set one.
+            java.util.Set<NotificationChannel> optedOut = type.category() == NotificationCategory.STAFF_IAM
+                    ? java.util.Set.of()
+                    : switch (recipient.type()) {
+                        case BORROWER -> borrowerPreferences.optedOutChannels(recipient.id());
+                        case STAFF -> staffPreferences.optedOutChannels(recipient.id());
+                    };
             for (NotificationChannel channel : type.channels()) {
                 if (channel != NotificationChannel.IN_APP && optedOut.contains(channel)) {
                     recordSkippedOptOut(saved, channel, recipient);

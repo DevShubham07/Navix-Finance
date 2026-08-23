@@ -15,6 +15,7 @@ import com.navix.iam.domain.StaffRole;
 import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.dto.StaffDtos.CreateStaffRequest;
 import com.navix.iam.dto.StaffDtos.StaffResponse;
+import com.navix.iam.dto.StaffDtos.UpdateMyProfileRequest;
 import com.navix.iam.dto.StaffDtos.UpdateStaffRequest;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
@@ -191,5 +192,32 @@ class StaffServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("ADMIN");
         verify(staffUserRepository, never()).save(any());
+    }
+
+    @Test
+    void updateMyProfileWithNullEmailOptInLeavesTheStoredPreferenceUntouched() {
+        StaffUser existing = staff(1L, StaffRole.ADMIN, StaffStatus.ACTIVE);
+        existing.setEmailOptIn(false);
+        when(staffUserRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(staffUserRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        // A partial PUT (name only, emailOptIn omitted/null) must not silently flip the preference.
+        staffService.updateMyProfile(new UpdateMyProfileRequest("New Name", null, null, null));
+
+        assertThat(existing.getName()).isEqualTo("New Name");
+        assertThat(existing.isEmailOptIn()).isFalse();
+    }
+
+    @Test
+    void updateMyProfileWithExplicitEmailOptInSetsIt() {
+        StaffUser existing = staff(1L, StaffRole.ADMIN, StaffStatus.ACTIVE);
+        when(staffUserRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(staffUserRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        StaffResponse result = staffService.updateMyProfile(
+                new UpdateMyProfileRequest(null, null, null, false));
+
+        assertThat(existing.isEmailOptIn()).isFalse();
+        assertThat(result.emailOptIn()).isFalse();
     }
 }

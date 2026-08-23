@@ -2273,6 +2273,8 @@ export interface StaffResponse {
   /** Self-editable org fields (Phase 2.2). */
   department?: string | null;
   designation?: string | null;
+  /** Whether this staffer receives operational email; account/security email always sends regardless. */
+  emailOptIn: boolean;
 }
 
 export interface InviteResponse {
@@ -2319,7 +2321,7 @@ export const adminApi = {
   /** The calling staffer's own account (any staff role). */
   myProfile: () => bff<StaffResponse>(`${ADMIN_STAFF_BASE}/me`, "GET"),
   /** Self-edit own display name + department/designation (not role/status). */
-  updateMyProfile: (payload: { name?: string; department?: string | null; designation?: string | null }) =>
+  updateMyProfile: (payload: { name?: string; department?: string | null; designation?: string | null; emailOptIn?: boolean }) =>
     bff<StaffResponse>(`${ADMIN_STAFF_BASE}/me`, "PUT", payload),
   /** Create a staff account with an email + password so they can sign in (ADMIN only). */
   createStaff: (payload: { email: string; name: string; role: StaffRoleName; password: string }) =>

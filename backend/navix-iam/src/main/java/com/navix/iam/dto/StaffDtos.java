@@ -78,20 +78,28 @@ public final class StaffDtos {
             StaffRole role,
             StaffStatus status,
             String department,
-            String designation
+            String designation,
+            boolean emailOptIn
     ) {
 
         public static StaffResponse of(StaffUser user) {
             return new StaffResponse(user.getId(), user.getEmail(), user.getName(),
-                    user.getRole(), user.getStatus(), user.getDepartment(), user.getDesignation());
+                    user.getRole(), user.getStatus(), user.getDepartment(), user.getDesignation(),
+                    user.isEmailOptIn());
         }
     }
 
-    /** A staffer self-edits their own profile (display name + org fields). Role/status stay admin-only. */
+    /**
+     * A staffer self-edits their own profile (display name + org fields + email preference).
+     * Role/status stay admin-only. {@code emailOptIn} is boxed and applied only when non-null so a
+     * partial PUT never silently flips the stored preference (unlike department/designation below,
+     * which intentionally overwrite unconditionally).
+     */
     public record UpdateMyProfileRequest(
             String name,
             String department,
-            String designation
+            String designation,
+            Boolean emailOptIn
     ) {
     }
 

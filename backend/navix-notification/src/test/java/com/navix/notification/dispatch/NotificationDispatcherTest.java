@@ -56,6 +56,8 @@ class NotificationDispatcherTest {
     @Mock
     private com.navix.common.loan.BorrowerPreferenceDirectory borrowerPreferences;
     @Mock
+    private com.navix.common.staff.StaffPreferenceDirectory staffPreferences;
+    @Mock
     private BorrowerContactDirectory borrowerContacts;
 
     private NotificationDispatcher dispatcher;
@@ -80,12 +82,14 @@ class NotificationDispatcherTest {
         TemplateRenderer renderer = new TemplateRenderer(new NotificationTemplates());
         lenient().when(borrowerPreferences.optedOutChannels(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(java.util.Set.of());
+        lenient().when(staffPreferences.optedOutChannels(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.Set.of());
         // Defensive default: most tests never reach the customerId fallback (either no loan-money model
         // is in play, or the loan lookup already supplied customerName) — this just prevents an
         // unstubbed-mock NPE for the ones that do reach it without caring about the resolved value.
         lenient().when(borrowerContacts.borrowerContact(any())).thenReturn(Optional.empty());
         dispatcher = new NotificationDispatcher(renderer, audienceResolver, notificationRepo, deliveryRepo,
-                loanDirectory, borrowerPreferences, borrowerContacts,
+                loanDirectory, borrowerPreferences, staffPreferences, borrowerContacts,
                 List.of(okSender(NotificationChannel.IN_APP),
                         throwingSender(NotificationChannel.SMS),
                         okSender(NotificationChannel.EMAIL)));
@@ -183,6 +187,41 @@ class NotificationDispatcherTest {
         assertThat(deliveries).filteredOn(d -> d.getStatus() == DeliveryStatus.SENT).hasSize(2);
     }
 
+    @Test
+    void suppressesAChannelTheStaffMemberOptedOutOf() {
+        when(audienceResolver.resolve(any(), any())).thenReturn(List.of(staff(3)));
+        // KYC_SUBMITTED (category KYC, not STAFF_IAM) fans IN_APP + EMAIL to staff; opted out of EMAIL.
+        when(staffPreferences.optedOutChannels(3L)).thenReturn(java.util.Set.of(NotificationChannel.EMAIL));
+
+        dispatcher.dispatch(NotificationType.KYC_SUBMITTED, NotificationContext.builder().applicationId(10L).build());
+
+        ArgumentCaptor<NotificationDelivery> cap = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo, times(2)).save(cap.capture());
+        List<NotificationDelivery> deliveries = cap.getAllValues();
+        assertThat(deliveries).anySatisfy(d -> {
+            assertThat(d.getChannel()).isEqualTo(NotificationChannel.EMAIL);
+            assertThat(d.getStatus()).isEqualTo(DeliveryStatus.SKIPPED);
+            assertThat(d.getError()).isEqualTo("OPTED_OUT");
+        });
+        assertThat(deliveries).filteredOn(d -> d.getStatus() == DeliveryStatus.SENT).hasSize(1);
+    }
+
+    @Test
+    void aStaffIamEmailStillReachesAnOptedOutStaffMemberSoTheyAreNeverLockedOutOfTheirAccount() {
+        when(audienceResolver.resolve(any(), any())).thenReturn(List.of(staff(3)));
+        // STAFF_CREATED is EMAIL-only with no IN_APP channel — suppressing it would delete the
+        // notification outright. The category guard must short-circuit before ever consulting this
+        // stub (lenient: the point of the test is that it's never called).
+        lenient().when(staffPreferences.optedOutChannels(3L)).thenReturn(java.util.Set.of(NotificationChannel.EMAIL));
+
+        dispatcher.dispatch(NotificationType.STAFF_CREATED, NotificationContext.builder().actorId("1").build());
+
+        ArgumentCaptor<NotificationDelivery> cap = ArgumentCaptor.forClass(NotificationDelivery.class);
+        verify(deliveryRepo, times(1)).save(cap.capture());
+        assertThat(cap.getValue().getChannel()).isEqualTo(NotificationChannel.EMAIL);
+        assertThat(cap.getValue().getStatus()).isEqualTo(DeliveryStatus.SENT);
+    }
+
     /** An EMAIL sender that captures the rendered message instead of just acking it, for body assertions. */
     private static ChannelSender capturingEmailSender(AtomicReference<RenderedMessage> sink) {
         return new ChannelSender() {
@@ -204,7 +243,7 @@ class NotificationDispatcherTest {
         AtomicReference<RenderedMessage> captured = new AtomicReference<>();
         NotificationDispatcher localDispatcher = new NotificationDispatcher(
                 new TemplateRenderer(new NotificationTemplates()), audienceResolver, notificationRepo,
-                deliveryRepo, loanDirectory, borrowerPreferences, borrowerContacts,
+                deliveryRepo, loanDirectory, borrowerPreferences, staffPreferences, borrowerContacts,
                 List.of(okSender(NotificationChannel.IN_APP), okSender(NotificationChannel.SMS),
                         capturingEmailSender(captured)));
 
@@ -228,7 +267,7 @@ class NotificationDispatcherTest {
         AtomicReference<RenderedMessage> captured = new AtomicReference<>();
         NotificationDispatcher localDispatcher = new NotificationDispatcher(
                 new TemplateRenderer(new NotificationTemplates()), audienceResolver, notificationRepo,
-                deliveryRepo, loanDirectory, borrowerPreferences, borrowerContacts,
+                deliveryRepo, loanDirectory, borrowerPreferences, staffPreferences, borrowerContacts,
                 List.of(okSender(NotificationChannel.IN_APP), okSender(NotificationChannel.SMS),
                         capturingEmailSender(captured)));
 

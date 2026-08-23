@@ -63,4 +63,8 @@ public class StaffUser extends BaseAuditEntity {
 
     @Column(name = "active_session_at")
     private java.time.Instant activeSessionAt;
+
+    /** Opt-out of operational email notifications (V63). STAFF_IAM mail ignores this — see NotificationDispatcher. */
+    @Column(name = "email_opt_in", nullable = false)
+    private boolean emailOptIn = true;
 }

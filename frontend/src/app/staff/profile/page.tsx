@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, UserCog, Lock } from "lucide-react";
-import { Input } from "@/components/ui";
+import { Input, ToggleRow } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage } from "@/components/staff/live-pipeline";
 import { STAFF_ROLE_LABELS } from "@/lib/auth/rbac";
@@ -38,6 +38,14 @@ export default function StaffProfilePage() {
         designation: designation.trim() || null,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-my-profile"] }),
+  });
+
+  const saveEmailOptIn = useMutation({
+    mutationFn: (emailOptIn: boolean) => adminApi.updateMyProfile({ emailOptIn }),
+    onMutate: (emailOptIn) => {
+      qc.setQueryData<typeof me>(["staff-my-profile"], (prev) => (prev ? { ...prev, emailOptIn } : prev)); // optimistic
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["staff-my-profile"] }),
   });
 
   return (
@@ -80,6 +88,17 @@ export default function StaffProfilePage() {
             {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save changes
           </button>
           <p className="mt-3 text-xs text-muted">Role and status are managed by an administrator.</p>
+
+          <div className="mt-5 border-t border-line pt-4">
+            <div className="mb-1 text-sm font-semibold text-ink">Notifications</div>
+            <ToggleRow
+              label="Email notifications"
+              description="Operational and queue emails. Account and security emails — including password resets — are always sent regardless of this setting."
+              on={me.emailOptIn}
+              disabled={saveEmailOptIn.isPending}
+              onChange={(v) => saveEmailOptIn.mutate(v)}
+            />
+          </div>
 
           <div className="mt-5 border-t border-line pt-4">
             <div className="text-sm font-semibold text-ink">Security</div>
