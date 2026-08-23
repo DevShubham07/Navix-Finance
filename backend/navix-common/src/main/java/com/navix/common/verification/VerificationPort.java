@@ -111,25 +111,49 @@ public interface VerificationPort {
      * pulled out of {@code rawResponseJson} downstream — {@code VerificationPort}'s records are
      * provider-neutral, and reaching into the Fintrix envelope shape from navix-loan would hard-code
      * that provider's JSON there. Null when the provider offers no such document (Signzy/Digitap today).
+     *
+     * <p>{@code pendingChallenge} is populated instead of a score when the bureau demands the borrower
+     * answer a knowledge-based-authentication question before releasing a report that otherwise exists
+     * (Fintrix CRIF's {@code crif_combine}). It's deliberately NOT {@code noRecord} — the report is
+     * real, just gated. Null on every other outcome (success, thin-file, provider failure).
      */
     record BureauCheck(String txnId, String source, Integer score, boolean noRecord,
                        Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
-                       BureauReportFacts facts, String rawResponseJson, String reportUrl) {
+                       BureauReportFacts facts, String rawResponseJson, String reportUrl,
+                       PendingChallenge pendingChallenge) {
+
+        /** Backward-compatible constructor for providers/tests that do not yet expose a raw report. */
+        public BureauCheck(String txnId, String source, Integer score, boolean noRecord,
+                           Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
+                           BureauReportFacts facts, String rawResponseJson, String reportUrl) {
+            this(txnId, source, score, noRecord, activeAccounts, overdueAccounts, totalBalance, facts,
+                    rawResponseJson, reportUrl, null);
+        }
 
         /** Backward-compatible constructor for providers/tests that do not yet expose a raw report. */
         public BureauCheck(String txnId, String source, Integer score, boolean noRecord,
                            Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
                            BureauReportFacts facts, String rawResponseJson) {
             this(txnId, source, score, noRecord, activeAccounts, overdueAccounts, totalBalance, facts,
-                    rawResponseJson, null);
+                    rawResponseJson, null, null);
         }
 
         /** Backward-compatible constructor for providers/tests that do not yet expose a raw report. */
         public BureauCheck(String txnId, String source, Integer score, boolean noRecord,
                            Integer activeAccounts, Integer overdueAccounts, Double totalBalance,
                            BureauReportFacts facts) {
-            this(txnId, source, score, noRecord, activeAccounts, overdueAccounts, totalBalance, facts, null, null);
+            this(txnId, source, score, noRecord, activeAccounts, overdueAccounts, totalBalance, facts,
+                    null, null, null);
         }
+    }
+
+    /**
+     * A pending bureau KBA (knowledge-based-authentication) challenge — the report exists but CRIF
+     * wants the borrower to answer a question about their own credit history first. {@code orderId} is
+     * the handle a future answer-submission flow would need; answering it needs a Fintrix endpoint we
+     * have no documentation for (out of scope — see {@code FintrixCrifClient}).
+     */
+    record PendingChallenge(String question, List<String> options, String orderId) {
     }
 
     record PennyDropCheck(String txnId, String provider, boolean accountExists, String fullName,

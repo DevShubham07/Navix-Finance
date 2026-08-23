@@ -11,6 +11,7 @@ import com.navix.common.verification.VerificationPort.BureauCheck;
 import com.navix.common.verification.VerificationPort.EmailCheck;
 import com.navix.common.verification.VerificationPort.LivenessSession;
 import com.navix.common.verification.VerificationPort.PanCheck;
+import com.navix.common.verification.VerificationPort.PendingChallenge;
 import com.navix.common.verification.VerificationPort.PennyDropCheck;
 import com.navix.verification.config.VerificationChainProperties;
 import com.navix.verification.exception.CapabilityNotSupportedException;
@@ -176,6 +177,26 @@ class RoutingVerificationPortTest {
 
         assertThat(r.noRecord()).isTrue();
         assertThat(r.score()).isNull();
+        verify(digitap, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void bureauFintrixKbaChallengeIsReturnedAsIs_doesNotFallThroughToDigitap() {
+        // A pending KBA challenge is a real answer (the report exists) wearing an error envelope —
+        // exactly like the no-hit case above, it must come back as-is rather than falling through and
+        // burning a second billable Digitap call. This is the test that pins the cost fix.
+        PendingChallenge challenge = new PendingChallenge(
+                "Please choose Disbursed Amount range for the latest Loan taken",
+                List.of("0-5k", "5k-20k"), "txn-prod-b92e0254");
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(new BureauCheck("RID-1", "FINTRIX_CRIF", null, false, null, null, null, null,
+                        null, null, challenge));
+
+        BureauCheck r = bureauRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.pendingChallenge()).isNotNull();
+        assertThat(r.pendingChallenge().orderId()).isEqualTo("txn-prod-b92e0254");
+        assertThat(r.noRecord()).isFalse();
         verify(digitap, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 }

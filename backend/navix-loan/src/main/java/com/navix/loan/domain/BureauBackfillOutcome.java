@@ -13,6 +13,9 @@ public enum BureauBackfillOutcome {
     NO_BRIEF,
     /** The report's own PAN/DOB didn't match the verified KYC identity — never reopened or refreshed. */
     MISMATCH_REVIEW,
+    /** CRIF gated the (real, existing) report behind a knowledge-based-auth question — no score to act
+     *  on. Treated as a completed attempt, NOT retried, so it can't loop the same billable call. */
+    KBA_REQUIRED,
     /** The attempt failed at {@code failed_step}; the only outcome a re-run retries. */
     FAILED,
     /** A re-run found this application already terminally processed, or (REJECTS only) the reopen

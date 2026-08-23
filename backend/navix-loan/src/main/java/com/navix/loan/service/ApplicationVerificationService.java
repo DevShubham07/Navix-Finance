@@ -907,7 +907,34 @@ public class ApplicationVerificationService {
             return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
         }
 
+        if (r.pendingChallenge() != null) {
+            return bureauChallengeReview(appId, ref, r.pendingChallenge());
+        }
+
         return finishBureauPull(appId, profile, ref, r, allowAutoReject);
+    }
+
+    /**
+     * The bureau report exists but CRIF wants the borrower to answer a knowledge-based-authentication
+     * question before releasing it (Fintrix {@code crif_combine}). Not a failure and not a thin-file:
+     * record REVIEW (never PASS — there's no score; never FAIL — nothing about the borrower failed),
+     * skip the score-floor auto-reject entirely (there's no score to floor-check), and skip the credit
+     * brief / report-PDF ingest (there's no report yet). The question/options/orderId go into
+     * {@code derived} so staff can see them and a future flow has the handle it needs.
+     *
+     * <p>Actually answering the question needs a Fintrix API we have no documentation for — that flow
+     * is unimplemented and out of scope here; this only stops the retry loop and surfaces the question.
+     */
+    private StepResult bureauChallengeReview(Long appId, String ref, VerificationPort.PendingChallenge challenge) {
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("bureauChallenge", true);
+        derived.put("bureauChallengeQuestion", challenge.question());
+        derived.put("bureauChallengeOptions", challenge.options());
+        derived.put("bureauChallengeOrderId", challenge.orderId());
+        ApplicationVerification row = upsert(appId, BUREAU, REVIEW, "FINTRIX_CRIF", challenge.orderId(), ref,
+                null, null, null, derived,
+                "Bureau needs the borrower to answer a security question before the report can be released");
+        return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
     }
 
     /**

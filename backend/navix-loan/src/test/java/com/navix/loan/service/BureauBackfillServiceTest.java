@@ -245,6 +245,38 @@ class BureauBackfillServiceTest {
     }
 
     @Test
+    void kbaChallenge_recordsKbaRequired_notFailed() {
+        LoanApplication a = app(5L, 11L, ApplicationStatus.CREDIT_EXEC_PENDING);
+        when(applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.CREDIT_EXEC_PENDING))
+                .thenReturn(List.of(a));
+        when(profileRepo.findByApplicationId(5L)).thenReturn(Optional.of(profile(null, null)));
+        when(verificationRepo.findByApplicationIdAndCheckType(5L, "BUREAU"))
+                .thenReturn(Optional.of(bureauRow("REVIEW", null,
+                        "{\"bureauChallenge\":true,\"bureauChallengeOrderId\":\"txn-prod-b92e0254\"}",
+                        "Bureau needs the borrower to answer a security question before the report can be released")));
+
+        service.execute(BureauBackfillCohort.CREDIT_REVIEW, 10);
+
+        BureauBackfillRow row = savedRow().getValue();
+        assertThat(row.getOutcome()).isEqualTo(BureauBackfillOutcome.KBA_REQUIRED.name());
+    }
+
+    @Test
+    void kbaChallenge_isNotRetriedOnRerun() {
+        LoanApplication a = app(6L, 12L, ApplicationStatus.CREDIT_EXEC_PENDING);
+        when(applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.CREDIT_EXEC_PENDING))
+                .thenReturn(List.of(a));
+        BureauBackfillRow priorKba = new BureauBackfillRow();
+        priorKba.setOutcome(BureauBackfillOutcome.KBA_REQUIRED.name());
+        when(backfillRepo.findFirstByApplicationIdOrderByIdDesc(6L)).thenReturn(Optional.of(priorKba));
+
+        BackfillRunSummary summary = service.execute(BureauBackfillCohort.CREDIT_REVIEW, 10);
+
+        assertThat(summary.processed()).isZero();
+        verify(verificationService, never()).pullBureau(eq(6L), any(), anyBoolean(), anyBoolean());
+    }
+
+    @Test
     void rerun_skipsAlreadyProcessed_retriesOnlyFailed() {
         LoanApplication alreadyRefreshed = app(1L, 1L, ApplicationStatus.CREDIT_EXEC_PENDING);
         LoanApplication failed = app(2L, 2L, ApplicationStatus.CREDIT_EXEC_PENDING);

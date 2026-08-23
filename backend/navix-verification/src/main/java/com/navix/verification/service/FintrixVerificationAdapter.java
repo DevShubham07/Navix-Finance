@@ -47,11 +47,13 @@ public class FintrixVerificationAdapter implements VerificationPort {
         // reportUrl carries Fintrix's own credit_report_link neutrally onto VerificationPort (see its
         // javadoc) — ApplicationVerificationService ingests + scrubs it without ever seeing the Fintrix
         // envelope shape. Still HTML-escaped exactly as Fintrix sends it; unescaping is the caller's job.
+        PendingChallenge pendingChallenge = r.challenge() == null ? null
+                : new PendingChallenge(r.challenge().question(), r.challenge().options(), r.challenge().orderId());
         return new BureauCheck(r.txnId(), "FINTRIX_CRIF", r.score(), r.noRecord(),
                 f != null ? f.activeAccounts() : null,
                 f != null ? f.defaults() : null,
                 f != null && f.totalBalanceRupees() != null ? f.totalBalanceRupees().doubleValue() : null,
-                f, r.rawResponseJson(), r.creditReportLink());
+                f, r.rawResponseJson(), r.creditReportLink(), pendingChallenge);
     }
 
     @Override

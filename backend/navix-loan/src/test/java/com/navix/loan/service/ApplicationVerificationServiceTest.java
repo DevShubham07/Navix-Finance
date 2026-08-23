@@ -447,6 +447,28 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void bureau_pendingKbaChallenge_isReview_neverAutoRejectsAndNeverGeneratesABrief() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        VerificationPort.PendingChallenge challenge = new VerificationPort.PendingChallenge(
+                "Please choose Disbursed Amount range for the latest Loan taken",
+                List.of("0-5k", "5k-20k", "1lac-5lac"), "txn-prod-b92e0254");
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("RID-1", "FINTRIX_CRIF", null, false,
+                        null, null, null, null, null, null, challenge));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        verify(flow, never()).autoReject(any(), any(), any(), anyInt());
+        verifyNoInteractions(creditBriefService);
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getDerived()).contains("bureauChallenge").contains("txn-prod-b92e0254");
+    }
+
+    @Test
     void bureau_panMismatch_isReview_andNeverAutoRejects() throws Exception {
         CustomerProfile p = bureauReadyProfile();
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));

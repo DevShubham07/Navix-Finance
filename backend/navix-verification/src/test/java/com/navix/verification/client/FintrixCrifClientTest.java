@@ -146,6 +146,37 @@ class FintrixCrifClientTest {
         b.server().verify();
     }
 
+    /**
+     * CRIF can gate a REAL, existing report (note {@code report_id}) behind a knowledge-based-auth
+     * question instead of a failure. Must not throw (a throw burns a second billable Digitap call) and
+     * must not come back as {@code noRecord} (that would misclassify a real report as a thin file).
+     */
+    @Test
+    void kbaChallengeEnvelopeReturnsAChallengeAndDoesNotThrow() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/crif_combine"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"status\":\"error\",\"success\":true,"
+                        + "\"error_message\":\"Unable to Authenticate, Please Solve the Auth Questions\","
+                        + "\"data\":{\"question\":\"Please choose Disbursed Amount range for the latest "
+                        + "Loan taken\",\"options\":[\"0-5k \",\" 5k-20k \",\" 5lac-10lac \",\"1lac-5lac\"],"
+                        + "\"order_id\":\"txn-prod-b92e0254-3577-44c5-a71c-7a2b79df62b7\","
+                        + "\"report_id\":\"CCR260823CR417431688\",\"answer_type\":\"R\"}}",
+                        MediaType.APPLICATION_JSON));
+
+        CrifResponse r = new FintrixCrifClient(b.restClient(), new ObjectMapper(), "")
+                .pull("Sample Person", "9000000001", "app-123");
+
+        assertThat(r.noRecord()).isFalse();
+        assertThat(r.score()).isNull();
+        assertThat(r.txnId()).isEqualTo("CCR260823CR417431688");
+        assertThat(r.challenge()).isNotNull();
+        assertThat(r.challenge().orderId()).isEqualTo("txn-prod-b92e0254-3577-44c5-a71c-7a2b79df62b7");
+        assertThat(r.challenge().question()).contains("Disbursed Amount range");
+        assertThat(r.challenge().options()).hasSize(4);
+        b.server().verify();
+    }
+
     /** Any OTHER error envelope is a genuine failure and must still throw so the chain falls through. */
     @Test
     void anUnrecognisedErrorEnvelopeStillThrows() {

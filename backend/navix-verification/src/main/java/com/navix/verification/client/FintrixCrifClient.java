@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.verification.config.VerificationClientConfig;
+import com.navix.verification.dto.FintrixDtos;
 import com.navix.verification.dto.FintrixDtos.CrifRequest;
 import com.navix.verification.dto.FintrixDtos.CrifResponse;
 import com.navix.verification.exception.VerificationException;
@@ -74,9 +75,52 @@ public class FintrixCrifClient {
         JsonNode root = (fixturePath != null && !fixturePath.isBlank())
                 ? BureauFixtureLoader.load(objectMapper, BUNDLED_FIXTURE)
                 : postAllowingErrorEnvelope(fintrix, ENDPOINT, new CrifRequest(name, mobile, remark, CONSENT));
+        CrifResponse challenge = kbaChallenge(root);
+        if (challenge != null) {
+            return challenge;
+        }
         rejectUnlessNoRecord(root);
         JsonNode data = root.path("canonical").path("data");
         return parse(data, root.toString(), name, mobile);
+    }
+
+    /**
+     * CRIF can answer a real, existing report (note {@code report_id}) gated behind a
+     * knowledge-based-authentication question instead of a score:
+     * {@code {"status":"error","success":true,"error_message":"Unable to Authenticate, Please Solve
+     * the Auth Questions","data":{"question":...,"options":[...],"order_id":...}}}. This is neither a
+     * failure (don't throw — the router would burn a second billable Digitap call) nor a thin file
+     * (don't call it noRecord — that flag means "no record exists" and would misclassify the backfill
+     * row). Matched defensively on the error message AND the presence of {@code data.question} +
+     * {@code data.answer_type}, so an unrelated error envelope never gets misread as a challenge.
+     *
+     * <p>Actually answering the question needs a Fintrix endpoint we have no documentation for — out
+     * of scope. This only stops the retry loop and surfaces the question to staff.
+     */
+    private static CrifResponse kbaChallenge(JsonNode root) {
+        if (!"error".equalsIgnoreCase(text(root.path("status")))) {
+            return null;
+        }
+        String message = text(root.path("error_message"));
+        JsonNode data = root.path("data");
+        boolean looksLikeKba = message != null
+                && message.toLowerCase(java.util.Locale.ROOT).contains("auth question")
+                && !data.path("question").isMissingNode()
+                && !data.path("answer_type").isMissingNode();
+        if (!looksLikeKba) {
+            return null;
+        }
+        java.util.List<String> options = new java.util.ArrayList<>();
+        for (JsonNode option : data.path("options")) {
+            String value = text(option);
+            if (value != null) {
+                options.add(value);
+            }
+        }
+        FintrixDtos.Challenge fintrixChallenge = new FintrixDtos.Challenge(
+                text(data.path("question")), options, text(data.path("order_id")));
+        return new CrifResponse(text(data.path("report_id")), null, false, null,
+                root.toString(), null, fintrixChallenge);
     }
 
     /**

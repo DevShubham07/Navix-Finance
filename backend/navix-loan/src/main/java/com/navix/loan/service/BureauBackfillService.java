@@ -178,6 +178,11 @@ public class BureauBackfillService {
                 if (derived.containsKey("identityMismatch")) {
                     saveRow(runId, cohort, appId, customerId, BureauBackfillOutcome.MISMATCH_REVIEW,
                             oldScore, newScore, null, null, String.valueOf(derived.get("identityMismatch")));
+                } else if (Boolean.TRUE.equals(derived.get("bureauChallenge"))) {
+                    // A real, existing report gated behind a CRIF security question — not a failure, and
+                    // not retryable (that's the whole point: stop burning a billable call every re-run).
+                    saveRow(runId, cohort, appId, customerId, BureauBackfillOutcome.KBA_REQUIRED,
+                            oldScore, newScore, null, null, row.getMessage());
                 } else {
                     String code = derived.containsKey("providerErrorCode")
                             ? String.valueOf(derived.get("providerErrorCode"))
