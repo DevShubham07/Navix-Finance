@@ -1577,4 +1577,46 @@ class ApplicationVerificationServiceTest {
         row.setDerived("{\"sessionId\":\"C-1|S-1\",\"matchMode\":\"STRICT\"}");
         return row;
     }
+
+    /**
+     * A DOB discrepancy must NOT override a matching PAN. We never send a date of birth, so the
+     * report's DOB is whatever the bureau holds, and in production it is dirty - 1970-01-01
+     * placeholders, day/month defaulted to 01-01, off-by-one days. Letting it win flagged 6 of 8
+     * mismatches in the first CREDIT_REVIEW batch as wrong-person while the PAN was identical, and
+     * in the rejects cohort a mismatch suppresses the reopen.
+     */
+    @Test
+    void bureau_dobDiffersButPanMatches_isNotAMismatch() throws Exception {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        String raw = "{\"canonical\":{\"data\":{\"credit_report\":{\"REQUEST\":{\"PAN\":\"" + p.getPan() + "\",\"DOB\":\"01-01-1970\"}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-DOB-NOISE", "FINTRIX_CRIF", 700, false,
+                        1, 0, 5000.0, null, raw));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(new ObjectMapper().readTree(saved.getValue().getDerived())
+                .path("identityMismatch").isMissingNode()).isTrue();
+    }
+
+    /** With no PAN on the report, date of birth is all that is left and still decides. */
+    @Test
+    void bureau_noPanOnReport_fallsBackToDobAndStillFlags() throws Exception {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        String raw = "{\"canonical\":{\"data\":{\"credit_report\":{\"REQUEST\":{\"DOB\":\"01-01-1970\"}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-NOPAN", "FINTRIX_CRIF", 700, false,
+                        1, 0, 5000.0, null, raw));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+    }
 }

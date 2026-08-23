@@ -1097,6 +1097,24 @@ public class ApplicationVerificationService {
      * exact date. A null/blank on either side is "cannot compare", not a mismatch — this is a defensive
      * identity guard, not a fraud-detection engine. Returns a human-readable reason, or {@code null}.
      */
+    /**
+     * Does this report describe our borrower? The request is keyed on name + mobile alone, so the
+     * vendor decides who we meant and can return a stranger's file — 2 of 24 in the first
+     * CREDIT_REVIEW batch did exactly that.
+     *
+     * <p>PAN decides it. It is unique to one person and it is the borrower's OWN verified PAN, so a
+     * match settles identity and a difference condemns it. The report's DOB only gets a vote when
+     * there is no PAN to compare on one side.
+     *
+     * <p>DOB deliberately does NOT override a matching PAN. We never send a date of birth, so
+     * {@code REQUEST.DOB} is not an echo of our input — it is whatever the bureau holds, and in
+     * production it is visibly dirty: 1970-01-01 placeholders, day/month defaulted to 01-01,
+     * off-by-one days, and at least one name stored as a literal Python bytes repr. Letting it
+     * override a matching PAN flagged 6 of 8 mismatches in that batch as wrong-person when the PAN
+     * was identical. In the rejects cohort that is not cosmetic: a mismatch suppresses the reopen,
+     * so a quarter of the borrowers who had earned unblocking would have stayed blocked, with
+     * "identity mismatch" on their file.
+     */
     private String bureauIdentityMismatch(CustomerProfile profile, String rawResponseJson) {
         if (rawResponseJson == null || rawResponseJson.isBlank()) {
             return null;
@@ -1113,9 +1131,15 @@ public class ApplicationVerificationService {
         }
         String reportPan = trimToNull(request.path("PAN").asText(null));
         String profilePan = trimToNull(profile.getPan());
-        if (reportPan != null && profilePan != null && !reportPan.equalsIgnoreCase(profilePan)) {
-            return "Bureau report PAN does not match the verified profile PAN";
+        if (reportPan != null && profilePan != null) {
+            // A PAN is unique to one person, and this is the borrower's OWN verified PAN. When it
+            // matches, identity is settled and the report's other identity fields do not get a vote.
+            return reportPan.equalsIgnoreCase(profilePan)
+                    ? null
+                    : "Bureau report PAN does not match the verified profile PAN";
         }
+        // No PAN to compare on one side or the other — fall back to date of birth, which is all
+        // that is left. Same rule as ever: a null or unparseable value is "cannot compare".
         String reportDobRaw = trimToNull(request.path("DOB").asText(null));
         if (reportDobRaw != null && profile.getDob() != null) {
             try {
