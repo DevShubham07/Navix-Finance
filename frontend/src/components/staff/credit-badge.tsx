@@ -1,6 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { StarRating } from "@/components/ui/star-rating";
+import { bureauLabel } from "@/lib/credit/bureau-label";
 
 /** Tone the pill by rating: recommend → green, refer → amber, decline → red. */
 function tone(rating: number | null | undefined): string {
@@ -11,11 +12,15 @@ function tone(rating: number | null | undefined): string {
 }
 
 /**
- * Staff-only credit pill: the CIBIL/bureau score + 1–5★ rating, e.g. "CIBIL 778 · ★★★★☆ 4.0".
- * The score is always labelled "CIBIL" and shown at full contrast so it can't be missed.
+ * Staff-only credit pill: the bureau score + 1–5★ rating, e.g. "CRIF 778 · ★★★★☆ 4.0".
+ * The score is shown at full contrast so it can't be missed.
  * Renders nothing when there's no rating or score (so it can be dropped into any row safely).
  *
- * `compact` drops the "CIBIL" word and the five star glyphs for a "778 · 4.0★" pill — the stars
+ * The score is labelled with the bureau it actually came from — see {@link bureauLabel}. It used to
+ * be hardcoded "CIBIL", which was never true: scores came from Experian and now come from CRIF
+ * Highmark. Callers that do not know the source get the neutral "Bureau", which is vague but honest.
+ *
+ * `compact` drops the bureau word and the five star glyphs for a "778 · 4.0★" pill — the stars
  * cost ~70px, which is the difference between a queue row fitting its panel and the whole grid
  * scrolling sideways. The full reading still shows on hover via `title`.
  */
@@ -23,18 +28,22 @@ export function CreditBadge({
   starRating,
   creditScore,
   recommendation,
+  bureauSource,
   compact,
   className,
 }: {
   starRating?: number | null;
   creditScore?: number | null;
   recommendation?: string | null;
+  /** Which bureau produced the score (`FINTRIX_CRIF`, `DIGITAP_EXPERIAN`, …); labels the pill. */
+  bureauSource?: string | null;
   compact?: boolean;
   className?: string;
 }) {
   if (starRating == null && creditScore == null) return null;
+  const bureau = bureauLabel(bureauSource);
   const title = [
-    creditScore != null ? `CIBIL ${creditScore}` : null,
+    creditScore != null ? `${bureau} ${creditScore}` : null,
     starRating != null ? `${starRating.toFixed(1)}★` : null,
     recommendation,
   ]
@@ -71,7 +80,7 @@ export function CreditBadge({
     >
       {creditScore != null && (
         <span className="tabular-nums">
-          CIBIL <span className="font-bold">{creditScore}</span>
+          {bureau} <span className="font-bold">{creditScore}</span>
         </span>
       )}
       {starRating != null && (

@@ -33,6 +33,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { InfoTooltip } from "@/components/ui/tooltip";
 import { CreditBadge } from "@/components/staff/credit-badge";
+import { bureauScoreLabel } from "@/lib/credit/bureau-label";
 import { EventTimeline } from "@/components/staff/event-timeline";
 import { JourneyStepper } from "@/components/staff/journey-stepper";
 import { JourneyAssignee } from "@/components/staff/journey-assignee";
@@ -261,6 +262,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                     starRating={briefQ.data.starRating}
                     creditScore={briefQ.data.creditScore}
                     recommendation={briefQ.data.recommendation}
+                    bureauSource={p?.bureauSource}
                   />
                 )}
                 {app?.customerId != null && <NeedsManualReviewBadge customerId={app.customerId} />}
@@ -973,7 +975,7 @@ function CreditFocus({
         />
       )}
       <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-        <KV k="CIBIL score" v={p?.creditScore != null ? String(p.creditScore) : null} mono />
+        <KV k={bureauScoreLabel(p?.bureauSource)} v={p?.creditScore != null ? String(p.creditScore) : null} mono />
         <KV k="Star rating" v={p?.starRating != null ? `${p.starRating.toFixed(1)}★` : null} />
         <KV k="Recommendation" v={p?.recommendation} />
         <KV k="Risk category" v={p?.riskCategory} />

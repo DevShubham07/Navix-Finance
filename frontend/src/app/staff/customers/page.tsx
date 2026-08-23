@@ -254,7 +254,7 @@ function CustomersPageInner() {
                   <th>Owner</th>
                   <th>Loans</th>
                   <th>Outstanding</th>
-                  <th>CIBIL</th>
+                  <th>Bureau</th>
                   <th>Latest status</th>
                   <th title="When this customer entered their current status">Stage date</th>
                   <th className="staff-sticky-actions text-right">Open</th>

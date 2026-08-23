@@ -3,7 +3,7 @@
 /**
  * Animated speedometer-style credit-score gauge (staff-only).
  *
- * A semicircular dial split into the five CIBIL bands, with curved band labels, a needle that
+ * A semicircular dial split into the five standard bureau score bands, with curved band labels, a needle that
  * sweeps to the score and a counting-up figure. The score axis (300–900) is mapped *linearly*
  * across the 180°, and each band's wedge is drawn at its true proportional width — so the needle
  * angle is an honest reading of the score, not a decorative one.

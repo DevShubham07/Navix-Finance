@@ -3,7 +3,7 @@
 /**
  * Compact, read-only ⓘ quick-summary modal — the answer to "staff can't triage a row without
  * opening the full `ApplicationDetailDialog`". Four stacked sections (Customer & KYC basics ·
- * CIBIL/bureau · Bank account · Loan disbursement details), no action buttons at all: this is a
+ * Credit bureau · Bank account · Loan disbursement details), no action buttons at all: this is a
  * glance, not a workbench. Deliberately its own dialog rather than a slimmed-down
  * `ApplicationDetailDialog` (decision in the plan) so it stays cheap to open from every queue row.
  *
@@ -160,14 +160,14 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
               </dl>
             </InfoSection>
 
-            <InfoSection icon={Gauge} title="CIBIL / bureau">
+            <InfoSection icon={Gauge} title="Credit bureau">
               {briefQ.isPending && briefQ.fetchStatus !== "idle" ? (
                 <p className="text-sm text-muted">Loading…</p>
               ) : briefQ.data?.bureauState === "NO_RECORD" ? (
                 <p className="text-sm text-muted">{bureauStateLabel("NO_RECORD", "long")}.</p>
               ) : briefQ.data?.bureauState === "FOUND" ? (
                 <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-                  <KV k="CIBIL score" v={briefQ.data.creditScore != null ? String(briefQ.data.creditScore) : null} mono />
+                  <KV k="Bureau score" v={briefQ.data.creditScore != null ? String(briefQ.data.creditScore) : null} mono />
                   <KV k="Star rating" v={briefQ.data.starRating != null ? `${briefQ.data.starRating.toFixed(1)}★` : null} />
                   <KV k="Recommendation" v={briefQ.data.recommendation} />
                   {briefQ.data.summary && (

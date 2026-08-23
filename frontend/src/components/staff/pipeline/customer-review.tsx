@@ -11,6 +11,7 @@
  */
 
 import * as React from "react";
+import { bureauScoreLabel } from "@/lib/credit/bureau-label";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Loader2, FileText, Download, ExternalLink, User } from "lucide-react";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
@@ -96,7 +97,7 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
           <Row label="Employment" value={p.employmentStatus} />
           <Row label="Monthly salary" value={p.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null} />
           <Row label="Salary bank" value={p.salaryBank} />
-          <Row label="CIBIL score" value={p.creditScore != null ? String(p.creditScore) : null} mono />
+          <Row label={bureauScoreLabel(p.bureauSource)} value={p.creditScore != null ? String(p.creditScore) : null} mono />
           <Row label="Risk category" value={p.riskCategory} />
           <Row label="Bureau" value={p.bureauSource} />
           <Row label="Identity match" value={p.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null} />
