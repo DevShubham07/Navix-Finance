@@ -176,4 +176,52 @@ class CreditBriefServiceTest {
         verifyNoInteractions(storage);
         verify(documentRepo, never()).save(any());
     }
+
+    private CreditBriefService serviceForClearing() {
+        return new CreditBriefService(
+                new CreditRatingCalculator(), new CreditBriefPdfRenderer(),
+                new CreditBriefPdfWriter(storage, documentRepo),
+                documentRepo, profileRepo, applicationRepo, verificationRepo, new ObjectMapper(),
+                bureauStateService);
+    }
+
+    /**
+     * A pull that finds no bureau record must CLEAR an earlier pull's rating, not leave it standing.
+     * Observed in production 2026-08-23: a thin-file Fintrix answer nulled the score but left
+     * starRating 2.0 / NOT RECOMMENDED / "presents a weak credit profile (bureau score 482)" on the
+     * profile - which the application detail dialog, credit badge, pipeline row and all-applications
+     * register all read WITHOUT gating on bureauState, so a customer the bureau has no record of
+     * still displayed as a rated, not-recommended borrower quoting a score in prose.
+     */
+    @Test
+    void aNoRecordPullClearsAnEarlierRatingRatherThanLeavingItStale() {
+        CustomerProfile profile = new CustomerProfile();
+        profile.setCreditStarRating(java.math.BigDecimal.valueOf(2.0));
+        profile.setCreditRecommendation("NOT RECOMMENDED");
+        profile.setCreditBriefSummary("presents a weak credit profile (bureau score 482)");
+        profile.setCreditBriefFacts("{}");
+        profile.setCreditBriefGeneratedAt(java.time.Instant.now());
+
+        serviceForClearing().generate(123L, profile, null, "{'status':'error'}");
+
+        assertThat(profile.getCreditStarRating()).isNull();
+        assertThat(profile.getCreditRecommendation()).isNull();
+        assertThat(profile.getCreditBriefSummary()).isNull();
+        assertThat(profile.getCreditBriefFacts()).isNull();
+        assertThat(profile.getCreditBriefGeneratedAt()).isNull();
+        verify(profileRepo).save(profile);
+        // No PDF is rendered or stored for a no-record pull.
+        verifyNoInteractions(storage);
+    }
+
+    /** Nothing to clear must not churn a write. */
+    @Test
+    void aNoRecordPullOnAProfileThatNeverHadABriefWritesNothing() {
+        CustomerProfile profile = new CustomerProfile();
+
+        serviceForClearing().generate(123L, profile, null, null);
+
+        verify(profileRepo, never()).save(profile);
+        verifyNoInteractions(storage);
+    }
 }

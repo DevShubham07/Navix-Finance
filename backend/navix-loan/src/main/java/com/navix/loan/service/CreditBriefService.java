@@ -63,10 +63,43 @@ public class CreditBriefService {
         generate(appId, profile, facts, null);
     }
 
+    /**
+     * A pull that found no bureau record leaves NO rating behind — it clears whatever an earlier pull
+     * wrote. Without this the profile ends up self-contradictory: the score is nulled but the star
+     * rating, verdict and summary survive, so a customer the bureau now has no record of still shows
+     * as (say) "2.0 stars, NOT RECOMMENDED, presents a weak credit profile (bureau score 482)" with a
+     * specific score quoted in prose.
+     *
+     * <p>Fixed here rather than in the UI because the profile columns feed several staff surfaces
+     * (the application detail dialog, the credit badge, the pipeline row, the all-applications
+     * register) and only {@code CreditProfileCard} gates on {@code bureauState} — clearing at the
+     * source makes every one of them correct at once, and a new screen cannot reintroduce the bug.
+     *
+     * <p>{@code CreditBriefService.view} already short-circuits on a null star rating, so a cleared
+     * profile renders the NO_RECORD empty state rather than throwing. The CREDIT_BRIEF document row
+     * is deliberately left alone: it is a historical artefact of the earlier pull, not a claim about
+     * the customer today.
+     */
+    private void clearStaleBrief(CustomerProfile profile) {
+        if (profile.getCreditStarRating() == null && profile.getCreditBriefFacts() == null) {
+            return;
+        }
+        profile.setCreditStarRating(null);
+        profile.setCreditRecommendation(null);
+        profile.setCreditBriefSummary(null);
+        profile.setCreditBriefFacts(null);
+        profile.setCreditBriefGeneratedAt(null);
+        profileRepo.save(profile);
+    }
+
     /** Generate the summarized brief while retaining the complete provider response for its appendix. */
     @Transactional
     public void generate(Long appId, CustomerProfile profile, BureauReportFacts facts, String rawResponseJson) {
-        if (profile == null || facts == null) {
+        if (profile == null) {
+            return;
+        }
+        if (facts == null) {
+            clearStaleBrief(profile);
             return;
         }
         Rating rating = calculator.rate(facts);
