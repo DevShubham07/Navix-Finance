@@ -11,6 +11,8 @@ import com.navix.loan.domain.BureauBackfillCohort;
 import com.navix.loan.domain.BureauBackfillOutcome;
 import com.navix.loan.dto.BureauBackfillDtos.BackfillPreview;
 import com.navix.loan.dto.BureauBackfillDtos.BackfillRunSummary;
+import com.navix.loan.dto.BureauBackfillDtos.SweepCandidate;
+import com.navix.loan.dto.BureauBackfillDtos.SweepSummary;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationVerification;
@@ -74,6 +76,17 @@ public class BureauBackfillService {
     private static final CurrentActor BACKFILL_ACTOR =
             new CurrentActor("system", "Bureau Rescore Backfill", "ADMIN");
 
+    /**
+     * Ledger label for the sub-floor sweep. Not a {@link BureauBackfillCohort} value: the four cohorts
+     * name sets of applications to re-pull, and the sweep pulls nothing — it acts on scores already on
+     * file. Keeping it out of the enum stops it being passed to {@link #execute} by mistake.
+     */
+    private static final String SWEEP_COHORT = "SUB_FLOOR_SWEEP";
+
+    /** The band a bureau score has to fall in to be a credit opinion at all (CRIF/Experian both). */
+    private static final int MIN_PLAUSIBLE_SCORE = 300;
+    private static final int MAX_PLAUSIBLE_SCORE = 900;
+
     private final LoanApplicationRepository applicationRepo;
     private final ApplicationRejectionRepository rejectionRepo;
     private final CustomerProfileRepository profileRepo;
@@ -116,24 +129,118 @@ public class BureauBackfillService {
      * committed and resumable rather than rolling the whole batch back.
      */
     public BackfillRunSummary execute(BureauBackfillCohort cohort, int limit) {
+        return execute(cohort, limit, List.of());
+    }
+
+    /**
+     * As {@link #execute(BureauBackfillCohort, int)}, but when {@code ids} is non-empty it acts on
+     * <b>exactly those applications</b> instead of walking the cohort.
+     *
+     * <p>Two deliberate differences on the id path. The cohort's status filter is bypassed — the
+     * caller has already said which rows they mean — and so is the {@link #alreadyTerminal} skip,
+     * because an explicit id list <em>is</em> the deliberate instruction that guard exists to demand;
+     * without this an application whose latest row is non-{@code FAILED} could never be re-pulled, and
+     * a wrong-looking score would be stuck forever. {@code cohort} still selects the post-pull
+     * behaviour: {@code REJECTS} runs reopen-or-{@code STILL_BELOW}, anything else refreshes in place.
+     *
+     * <p>Every pull is billable, so the {@code limit} cap still applies to the id list.
+     */
+    public BackfillRunSummary execute(BureauBackfillCohort cohort, int limit, List<Long> ids) {
         requireAdmin();
         if (limit <= 0 || limit > MAX_ROWS_PER_RUN) {
             throw new BusinessException("BACKFILL_LIMIT_INVALID",
                     "limit must be between 1 and " + MAX_ROWS_PER_RUN);
         }
+        boolean targeted = ids != null && !ids.isEmpty();
+        List<LoanApplication> candidates = targeted ? applicationsByIds(ids) : cohortApplications(cohort);
         String runId = java.util.UUID.randomUUID().toString();
         int processed = 0;
-        for (LoanApplication app : cohortApplications(cohort)) {
+        for (LoanApplication app : candidates) {
             if (processed >= limit) {
                 break;
             }
-            if (alreadyTerminal(app.getId())) {
+            if (!targeted && alreadyTerminal(app.getId())) {
                 continue;
             }
             processRow(runId, cohort, app);
             processed++;
         }
         return new BackfillRunSummary(runId, cohort, processed);
+    }
+
+    /**
+     * Reject the applications sitting in a live queue on a bureau score the floor would have turned
+     * away at intake — the backlog that built up while {@code bureau-auto-reject} was suspended.
+     *
+     * <p><b>Makes no provider call.</b> These applications already carry a fresh score; re-pulling
+     * would be billable and could move the number under the borrower between the dry run an operator
+     * approved and the execution they approved it for. That is the whole difference from
+     * {@link #execute} — this acts on what we already know.
+     *
+     * <p>Only scores in the plausible 300–900 band are eligible. The lower bound is load-bearing: a
+     * handful of applications hold readings of 11 and 15 from before {@code FintrixCrifClient} started
+     * discarding out-of-range values, and rejecting someone for 90 days on a parse artefact is exactly
+     * the failure this sweep exists to clean up after. Those need a re-pull, not a rejection.
+     *
+     * <p>{@code SANCTIONED} is deliberately excluded even though it can legally reach {@code REJECTED}:
+     * an offer has already been extended there, and withdrawing one is a decision for a human.
+     *
+     * <p>No {@link #alreadyTerminal} guard — most of these carry a non-{@code FAILED} row from an
+     * earlier refresh run and would all be skipped. Idempotency comes from the selection instead: a
+     * rejected application no longer matches the live-status filter, so a second run finds nothing.
+     */
+    public SweepSummary rejectSubFloor(int limit, boolean dryRun) {
+        requireAdmin();
+        if (limit <= 0 || limit > MAX_ROWS_PER_RUN) {
+            throw new BusinessException("BACKFILL_LIMIT_INVALID",
+                    "limit must be between 1 and " + MAX_ROWS_PER_RUN);
+        }
+        List<LoanApplication> candidates = subFloorCandidates(limit);
+        List<SweepCandidate> view = candidates.stream()
+                .map(a -> new SweepCandidate(a.getId(), a.getStatus().name(), scoreOf(a.getId())))
+                .toList();
+        if (dryRun) {
+            return new SweepSummary(null, true, 0, 0, view);
+        }
+        String runId = java.util.UUID.randomUUID().toString();
+        int rejected = 0;
+        int failed = 0;
+        for (LoanApplication app : candidates) {
+            if (sweepOne(runId, app)) {
+                rejected++;
+            } else {
+                failed++;
+            }
+        }
+        return new SweepSummary(runId, false, rejected, failed, view);
+    }
+
+    /** One sweep rejection; true when the application actually moved to REJECTED. */
+    private boolean sweepOne(String runId, LoanApplication app) {
+        Long appId = app.getId();
+        Long customerId = app.getCustomerId();
+        Long score = scoreOf(appId);
+        CurrentActor original = ActorContext.get();
+        ActorContext.set(BACKFILL_ACTOR);
+        try {
+            // autoReject guards on requireRole("BORROWER"), but ADMIN passes every role check, so the
+            // backfill actor is already sufficient. Reusing the AUTO_REJECT_LOW_BUREAU_SCORE action is
+            // load-bearing, not laziness: NotificationEventListener routes on that prefix, so a novel
+            // action string here would silently notify nobody.
+            flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
+                    "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
+                    ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS);
+        } catch (RuntimeException e) {
+            // An illegal transition (a status that can't reach REJECTED) must not abort the batch.
+            saveRow(runId, null, appId, customerId, BureauBackfillOutcome.FAILED, score, score,
+                    "SWEEP_REJECT", errorCode(e), errorDetail(e));
+            return false;
+        } finally {
+            ActorContext.set(original);
+        }
+        saveRow(runId, null, appId, customerId, BureauBackfillOutcome.SWEPT_REJECTED, score, score,
+                null, null, null);
+        return true;
     }
 
     // ---- per-application attempt -----------------------------------------------------
@@ -250,7 +357,7 @@ public class BureauBackfillService {
         row.setRunId(runId);
         row.setApplicationId(appId);
         row.setCustomerId(customerId);
-        row.setCohort(cohort.name());
+        row.setCohort(cohort == null ? SWEEP_COHORT : cohort.name());
         row.setOutcome(outcome.name());
         row.setOldScore(oldScore);
         row.setNewScore(newScore);
@@ -261,7 +368,7 @@ public class BureauBackfillService {
         row.setAttemptedAt(Instant.now());
         backfillRepo.save(row);
         log.info("bureau backfill run={} cohort={} application={} outcome={} failedStep={}",
-                runId, cohort, appId, outcome, failedStep);
+                runId, cohort == null ? SWEEP_COHORT : cohort, appId, outcome, failedStep);
     }
 
     // ---- cohort selection --------------------------------------------------------------
@@ -279,6 +386,46 @@ public class BureauBackfillService {
                     applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.PRE_APPROVED),
                     applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.SANCTIONED));
         };
+    }
+
+    /**
+     * Live applications holding a valid sub-floor score, newest first.
+     *
+     * <p>{@code SANCTIONED} is out of scope on purpose (an offer already went out), and so is any
+     * score outside {@link #MIN_PLAUSIBLE_SCORE}–{@link #MAX_PLAUSIBLE_SCORE} — an 11 or a 15 is a
+     * parse artefact, not a credit opinion, and must never cost someone a 90-day block.
+     */
+    private List<LoanApplication> subFloorCandidates(int limit) {
+        return concat(
+                applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.KYC_PENDING),
+                applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.REVIEW_PENDING),
+                applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.CREDIT_EXEC_PENDING))
+                .stream()
+                .filter(a -> isSubFloor(scoreOf(a.getId())))
+                .limit(limit)
+                .toList();
+    }
+
+    /** A real bureau opinion that sits under the floor — not a missing score, not a parse artefact. */
+    private boolean isSubFloor(Long score) {
+        return score != null
+                && score >= MIN_PLAUSIBLE_SCORE
+                && score <= MAX_PLAUSIBLE_SCORE
+                && score < ApplicationFlowService.MIN_BUREAU_SCORE;
+    }
+
+    private Long scoreOf(Long appId) {
+        return profileRepo.findByApplicationId(appId).map(CustomerProfile::getBureauScore).orElse(null);
+    }
+
+    /** Explicitly named applications, in the order given, skipping ids that don't resolve. */
+    private List<LoanApplication> applicationsByIds(List<Long> ids) {
+        return ids.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(applicationRepo::findById)
+                .flatMap(Optional::stream)
+                .toList();
     }
 
     /** REJECTED applications with a LOW_BUREAU_SCORE rejection row — excludes MANUAL/SELF_EMPLOYED. */

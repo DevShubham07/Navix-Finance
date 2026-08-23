@@ -16,6 +16,10 @@ public enum BureauBackfillOutcome {
     /** CRIF gated the (real, existing) report behind a knowledge-based-auth question — no score to act
      *  on. Treated as a completed attempt, NOT retried, so it can't loop the same billable call. */
     KBA_REQUIRED,
+    /** The sub-floor sweep rejected an application on the score it already held — no provider call was
+     *  made. Distinct from a live intake auto-reject only in how it was triggered: the borrower gets
+     *  the same {@code AUTO_REJECT_LOW_BUREAU_SCORE} event, rejection row and 90-day block. */
+    SWEPT_REJECTED,
     /** The attempt failed at {@code failed_step}; the only outcome a re-run retries. */
     FAILED,
     /** A re-run found this application already terminally processed, or (REJECTS only) the reopen

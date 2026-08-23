@@ -20,6 +20,7 @@ import com.navix.loan.domain.BureauBackfillCohort;
 import com.navix.loan.domain.BureauBackfillOutcome;
 import com.navix.loan.dto.BureauBackfillDtos.BackfillPreview;
 import com.navix.loan.dto.BureauBackfillDtos.BackfillRunSummary;
+import com.navix.loan.dto.BureauBackfillDtos.SweepSummary;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationVerification;
@@ -328,5 +329,156 @@ class BureauBackfillServiceTest {
         assertThat(preview.counts().get(BureauBackfillCohort.REJECTS)).isZero();
         verifyNoInteractions(verificationService);
         verify(applicationRepo, never()).findById(anyLong());
+    }
+
+    // ---- the sub-floor sweep ---------------------------------------------------------------
+    //
+    // Rejects live applications on the score they already hold, for the backlog that built up while
+    // bureau-auto-reject was suspended. Makes no provider call — that is the whole point.
+
+    /** Stubs the three live queues the sweep reads; pass the applications that should be found. */
+    private void liveQueues(List<LoanApplication> kycPending, List<LoanApplication> reviewPending,
+                            List<LoanApplication> creditPending) {
+        when(applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.KYC_PENDING))
+                .thenReturn(kycPending);
+        when(applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.REVIEW_PENDING))
+                .thenReturn(reviewPending);
+        when(applicationRepo.findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus.CREDIT_EXEC_PENDING))
+                .thenReturn(creditPending);
+    }
+
+    @Test
+    void sweep_rejectsLiveApplicationsUnderTheFloor() {
+        LoanApplication kyc = app(1L, 7L, ApplicationStatus.KYC_PENDING);
+        LoanApplication credit = app(2L, 8L, ApplicationStatus.CREDIT_EXEC_PENDING);
+        liveQueues(List.of(kyc), List.of(), List.of(credit));
+        when(profileRepo.findByApplicationId(1L)).thenReturn(Optional.of(profile(510L, null)));
+        when(profileRepo.findByApplicationId(2L)).thenReturn(Optional.of(profile(533L, null)));
+
+        SweepSummary summary = service.rejectSubFloor(10, false);
+
+        assertThat(summary.dryRun()).isFalse();
+        assertThat(summary.rejected()).isEqualTo(2);
+        assertThat(summary.failed()).isZero();
+        // The action string is load-bearing: the notification listener routes on the AUTO_REJECT_ prefix.
+        verify(flow).autoReject(1L, ApplicationRejection.LOW_BUREAU_SCORE,
+                "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
+                ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS);
+        verify(flow).autoReject(eq(2L), eq(ApplicationRejection.LOW_BUREAU_SCORE), any(),
+                eq(ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS));
+        // No provider call, ever — these scores are already on file.
+        verifyNoInteractions(verificationService);
+
+        ArgumentCaptor<BureauBackfillRow> captor = ArgumentCaptor.forClass(BureauBackfillRow.class);
+        verify(backfillRepo, org.mockito.Mockito.times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).allSatisfy(row -> {
+            assertThat(row.getOutcome()).isEqualTo(BureauBackfillOutcome.SWEPT_REJECTED.name());
+            assertThat(row.getCohort()).isEqualTo("SUB_FLOOR_SWEEP");
+        });
+    }
+
+    /**
+     * The regression that matters most: a handful of applications hold scores of 11/15 from before
+     * FintrixCrifClient started discarding out-of-range readings. Those are parse artefacts, and
+     * rejecting someone for 90 days on one is exactly what this sweep exists to clean up after.
+     */
+    @Test
+    void sweep_neverRejectsOnAnImplausibleScore() {
+        liveQueues(List.of(app(1L, 7L, ApplicationStatus.KYC_PENDING)), List.of(),
+                List.of(app(2L, 8L, ApplicationStatus.CREDIT_EXEC_PENDING)));
+        when(profileRepo.findByApplicationId(1L)).thenReturn(Optional.of(profile(11L, null)));
+        when(profileRepo.findByApplicationId(2L)).thenReturn(Optional.of(profile(15L, null)));
+
+        SweepSummary summary = service.rejectSubFloor(10, false);
+
+        assertThat(summary.candidates()).isEmpty();
+        assertThat(summary.rejected()).isZero();
+        verify(flow, never()).autoReject(anyLong(), any(), any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void sweep_leavesScoresAtOrAboveTheFloorAlone() {
+        liveQueues(List.of(app(1L, 7L, ApplicationStatus.KYC_PENDING),
+                        app(3L, 9L, ApplicationStatus.KYC_PENDING)), List.of(),
+                List.of(app(2L, 8L, ApplicationStatus.CREDIT_EXEC_PENDING)));
+        when(profileRepo.findByApplicationId(1L)).thenReturn(Optional.of(profile(550L, null)));
+        when(profileRepo.findByApplicationId(3L)).thenReturn(Optional.of(profile(585L, null)));
+        when(profileRepo.findByApplicationId(2L)).thenReturn(Optional.of(profile(null, null)));
+
+        SweepSummary summary = service.rejectSubFloor(10, false);
+
+        assertThat(summary.candidates()).isEmpty();
+        verify(flow, never()).autoReject(anyLong(), any(), any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void sweep_dryRun_reportsCandidatesButChangesNothing() {
+        liveQueues(List.of(app(1L, 7L, ApplicationStatus.KYC_PENDING)), List.of(), List.of());
+        when(profileRepo.findByApplicationId(1L)).thenReturn(Optional.of(profile(510L, null)));
+
+        SweepSummary summary = service.rejectSubFloor(10, true);
+
+        assertThat(summary.dryRun()).isTrue();
+        assertThat(summary.runId()).isNull();
+        assertThat(summary.rejected()).isZero();
+        assertThat(summary.candidates()).singleElement().satisfies(c -> {
+            assertThat(c.applicationId()).isEqualTo(1L);
+            assertThat(c.status()).isEqualTo("KYC_PENDING");
+            assertThat(c.score()).isEqualTo(510L);
+        });
+        verify(flow, never()).autoReject(anyLong(), any(), any(), org.mockito.ArgumentMatchers.anyInt());
+        verifyNoInteractions(backfillRepo);
+    }
+
+    /** One application that can't legally reach REJECTED must not abort the batch. */
+    @Test
+    void sweep_illegalTransition_recordsFailedAndKeepsGoing() {
+        liveQueues(List.of(app(1L, 7L, ApplicationStatus.KYC_PENDING),
+                app(2L, 8L, ApplicationStatus.KYC_PENDING)), List.of(), List.of());
+        when(profileRepo.findByApplicationId(1L)).thenReturn(Optional.of(profile(510L, null)));
+        when(profileRepo.findByApplicationId(2L)).thenReturn(Optional.of(profile(520L, null)));
+        when(flow.autoReject(eq(1L), any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenThrow(new BusinessException("ILLEGAL_TRANSITION", "cannot reject"));
+
+        SweepSummary summary = service.rejectSubFloor(10, false);
+
+        assertThat(summary.rejected()).isEqualTo(1);
+        assertThat(summary.failed()).isEqualTo(1);
+        ArgumentCaptor<BureauBackfillRow> captor = ArgumentCaptor.forClass(BureauBackfillRow.class);
+        verify(backfillRepo, org.mockito.Mockito.times(2)).save(captor.capture());
+        BureauBackfillRow failed = captor.getAllValues().get(0);
+        assertThat(failed.getOutcome()).isEqualTo(BureauBackfillOutcome.FAILED.name());
+        assertThat(failed.getFailedStep()).isEqualTo("SWEEP_REJECT");
+        assertThat(failed.getErrorCode()).isEqualTo("ILLEGAL_TRANSITION");
+    }
+
+    /**
+     * An explicit id list is itself the deliberate instruction the already-processed guard exists to
+     * demand, so it bypasses both that guard and the cohort's status filter — otherwise a file whose
+     * latest row is non-FAILED could never be re-pulled.
+     */
+    @Test
+    void execute_withIds_skipsCohortSelectionAndTheAlreadyProcessedGuard() {
+        LoanApplication a = app(5L, 7L, ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findById(5L)).thenReturn(Optional.of(a));
+        when(profileRepo.findByApplicationId(5L))
+                .thenReturn(Optional.of(profile(510L, null)))
+                .thenReturn(Optional.of(profile(620L, Instant.now())));
+        when(verificationRepo.findByApplicationIdAndCheckType(5L, "BUREAU"))
+                .thenReturn(Optional.of(bureauRow("PASS", 620L, "{}", "Bureau pulled")));
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(5L, "BUREAU_REPORT"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(doc(3L)));
+
+        BackfillRunSummary summary =
+                service.execute(BureauBackfillCohort.PENDING_REVIEW, 10, List.of(5L));
+
+        assertThat(summary.processed()).isEqualTo(1);
+        verify(verificationService).pullBureau(5L, null, true, false);
+        verify(backfillRepo, never()).findFirstByApplicationIdOrderByIdDesc(anyLong());
+        verify(applicationRepo, never())
+                .findByStatusOrderByCreatedAtDescIdDesc(any(ApplicationStatus.class));
+        assertThat(savedRow().getValue().getOutcome())
+                .isEqualTo(BureauBackfillOutcome.REFRESHED.name());
     }
 }

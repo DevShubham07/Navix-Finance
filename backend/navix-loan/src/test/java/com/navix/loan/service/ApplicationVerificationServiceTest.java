@@ -24,6 +24,7 @@ import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.CustomerProfileRepository;
@@ -1691,5 +1692,28 @@ class ApplicationVerificationServiceTest {
 
         assertThat(result.status()).isEqualTo("PASS");
         verify(flow, never()).autoReject(any(), any(), any(), anyInt());
+    }
+
+    /**
+     * The mirror of the test above: with the flag switched back on the floor is armed again. 510 is
+     * CRIF's genuine model floor (no score exists below it), so a reading there is a real credit
+     * opinion and rejecting on it is the intended behaviour — the suspension was only ever about not
+     * acting on a number we had not yet characterised.
+     */
+    @Test
+    void bureau_subFloorScore_autoRejectsOnceTheRuleIsArmed() {
+        when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(true);
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        String raw = "{\"canonical\":{\"data\":{\"credit_report\":{\"REQUEST\":{\"PAN\":\"" + p.getPan() + "\"}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-ARMED", "FINTRIX_CRIF", 510, false,
+                        1, 0, 5000.0, null, raw));
+
+        service.pullBureau(APP, "999111");
+
+        verify(flow).autoReject(eq(APP), eq(ApplicationRejection.LOW_BUREAU_SCORE), any(),
+                eq(ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS));
     }
 }
