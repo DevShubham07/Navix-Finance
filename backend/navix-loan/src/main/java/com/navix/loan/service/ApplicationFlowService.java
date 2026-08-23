@@ -1189,6 +1189,11 @@ public class ApplicationFlowService {
         copy.setPanVerified(prior.getPanVerified());
         copy.setAadhaarLinked(prior.getAadhaarLinked());
         copy.setEmailVerified(prior.getEmailVerified());
+        // Inbox control does not become untrue between advances, and JourneyService.derive now reads
+        // both flags — without these two lines every returning borrower is sent back to screen 6 to
+        // re-prove addresses they already proved. V65 repairs the rows cloned before this.
+        copy.setPersonalEmailVerified(prior.getPersonalEmailVerified());
+        copy.setOfficialEmailOtpVerified(prior.getOfficialEmailOtpVerified());
         copy.setAddressVerified(prior.getAddressVerified());
         copy.setPennyDropVerified(prior.getPennyDropVerified());
         copy.setNameMatchScore(prior.getNameMatchScore());

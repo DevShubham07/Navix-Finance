@@ -45,6 +45,17 @@ class EmailOtpServiceTest {
         return new EmailOtpService(emailClient, enabledLogProperties(), suppression, new AttemptLimiter());
     }
 
+    /** Every code sent so far, in order — for the tests that mint more than one. */
+    private java.util.List<String> codes() {
+        ArgumentCaptor<EmailMessage> captor = ArgumentCaptor.forClass(EmailMessage.class);
+        verify(emailClient, org.mockito.Mockito.atLeastOnce()).send(captor.capture());
+        return captor.getAllValues().stream().map(m -> {
+            Matcher matcher = CODE_PATTERN.matcher(m.body());
+            assertThat(matcher.find()).as("email body should contain a 6-digit code").isTrue();
+            return matcher.group(1);
+        }).toList();
+    }
+
     private String sentCode() {
         ArgumentCaptor<EmailMessage> captor = ArgumentCaptor.forClass(EmailMessage.class);
         verify(emailClient).send(captor.capture());
@@ -64,6 +75,27 @@ class EmailOtpServiceTest {
         assertThat(req.devCode()).isNull(); // never revealed in the response
         String code = sentCode();
         assertThat(service.verify(EMAIL, code, EmailOtpPort.PERSONAL_EMAIL)).isTrue();
+    }
+
+    /**
+     * A borrower may type the same address into both the personal and the work field. Codes are keyed
+     * on purpose + address, so the two must be independent: consuming one must not invalidate the
+     * other, and a code minted for one purpose must not verify against the other.
+     */
+    @Test
+    void purposesAreIndependentForTheSameAddress() {
+        when(emailClient.send(any())).thenReturn(EmailResult.ok("ref-1"));
+        EmailOtpService service = service();
+
+        service.request(EMAIL, EmailOtpPort.PERSONAL_EMAIL);
+        String personalCode = codes().get(0);
+        service.request(EMAIL, EmailOtpPort.OFFICIAL_EMAIL);
+        String officialCode = codes().get(1);
+
+        assertThat(service.verify(EMAIL, personalCode, EmailOtpPort.OFFICIAL_EMAIL)).isFalse();
+        assertThat(service.verify(EMAIL, personalCode, EmailOtpPort.PERSONAL_EMAIL)).isTrue();
+        // Consuming the personal one left the official one intact.
+        assertThat(service.verify(EMAIL, officialCode, EmailOtpPort.OFFICIAL_EMAIL)).isTrue();
     }
 
     @Test

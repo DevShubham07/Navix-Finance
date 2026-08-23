@@ -1,10 +1,12 @@
 package com.navix.loan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.exception.BusinessException;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.CustomerProfile;
@@ -62,13 +64,81 @@ class JourneyServiceTest {
             p.setPreviousSalaryDate(LocalDate.of(2026, 7, 25));
             p.setMonthlySalaryPaise(5_000_000L);
         }
-        if (step.ordinal() > JourneyService.Step.EMAIL.ordinal()) p.setOfficialEmail("a@acme.com");
+        if (step.ordinal() > JourneyService.Step.EMAIL.ordinal()) {
+            p.setOfficialEmail("a@acme.com");
+            // Screen 6 is finished only when both inboxes are proven — see JourneyService.emailsSettled.
+            p.setPersonalEmailVerified(true);
+            p.setOfficialEmailOtpVerified(true);
+        }
         if (step.ordinal() > JourneyService.Step.BANK.ordinal()) {
             p.setSalaryAccountNumber("123456789");
             p.setSalaryIfsc("HDFC0001234");
         }
         when(profileRepository.findByApplicationId(APP)).thenReturn(Optional.of(p));
         return p;
+    }
+
+    @Test
+    void heldAtEmailUntilBothInboxesAreProven() {
+        CustomerProfile p = through(JourneyService.Step.BANK);
+
+        p.setPersonalEmailVerified(null);
+        assertThat(journey.current(APP).step()).isEqualTo("EMAIL");
+
+        p.setPersonalEmailVerified(true);
+        p.setOfficialEmailOtpVerified(null);
+        assertThat(journey.current(APP).step()).isEqualTo("EMAIL");
+
+        p.setOfficialEmailOtpVerified(true);
+        assertThat(journey.current(APP).step()).isEqualTo("BANK");
+    }
+
+    @Test
+    void anUndeliverableWorkEmailSettlesTheStepWithoutBeingVerified() {
+        // The credit team picks it up from the REVIEW row; the borrower is not dead-ended on a code
+        // box that will never arrive (revamp.md decision 10).
+        CustomerProfile p = through(JourneyService.Step.BANK);
+        p.setOfficialEmailOtpVerified(null);
+        assertThat(journey.current(APP).step()).isEqualTo("EMAIL");
+
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(APP))
+                .thenReturn(List.of(check(ApplicationVerificationService.OFFICIAL_EMAIL_OTP)));
+        assertThat(journey.current(APP).step()).isEqualTo("BANK");
+    }
+
+    @Test
+    void anUnreachablePersonalEmailIsNeverWavedThrough() {
+        // Asymmetric on purpose: the personal address carries the sanction letter and statements, so
+        // an undeliverable-work-email row must not settle it.
+        CustomerProfile p = through(JourneyService.Step.BANK);
+        p.setPersonalEmailVerified(null);
+        // Never even consulted: the personal flag short-circuits, which is exactly the asymmetry.
+        lenient().when(verificationRepository.findByApplicationIdOrderByIdAsc(APP))
+                .thenReturn(List.of(check(ApplicationVerificationService.OFFICIAL_EMAIL_OTP)));
+
+        assertThat(journey.current(APP).step()).isEqualTo("EMAIL");
+    }
+
+    @Test
+    void advanceRefusesToRecordProgressPastEmailUntilItIsSettled() {
+        CustomerProfile p = through(JourneyService.Step.BANK);
+        p.setPersonalEmailVerified(null);
+
+        // Guarded on >= EMAIL, so skipping screen 6's own call and jumping to BANK does not slip past.
+        assertThatThrownBy(() -> journey.advance(APP, JourneyService.Step.BANK))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Verify both");
+        assertThatThrownBy(() -> journey.advance(APP, JourneyService.Step.EMAIL))
+                .isInstanceOf(BusinessException.class);
+        assertThat(app.getJourneyStep()).isNull();
+
+        // Earlier steps are unaffected.
+        journey.advance(APP, JourneyService.Step.EMPLOYER);
+        assertThat(app.getJourneyStep()).isEqualTo("EMPLOYER");
+
+        p.setPersonalEmailVerified(true);
+        journey.advance(APP, JourneyService.Step.EMAIL);
+        assertThat(app.getJourneyStep()).isEqualTo("EMAIL");
     }
 
     @Test
@@ -119,6 +189,7 @@ class JourneyServiceTest {
 
     @Test
     void advanceOnlyMovesForward() {
+        through(JourneyService.Step.CONSENT);   // past screen 6, so the email gate is satisfied
         app.setJourneyStep("BANK");
         journey.advance(APP, JourneyService.Step.OTP);
         assertThat(app.getJourneyStep()).isEqualTo("BANK");

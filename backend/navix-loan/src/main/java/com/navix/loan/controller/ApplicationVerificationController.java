@@ -72,6 +72,21 @@ public class ApplicationVerificationController {
         return ApiResponse.ok(verification.verifyPersonalEmailOtp(id, req.otp()));
     }
 
+    /** Sends the official/work-email OTP — inbox control, separate from the employer check above. */
+    @PostMapping("/official-email/otp")
+    public ApiResponse<OtpVerifierPort.OtpRequestResult> requestOfficialEmailOtp(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.requestOfficialEmailOtp(id));
+    }
+
+    /** OTP-verified ownership of the borrower's official/work email. */
+    @PostMapping("/official-email/otp/confirm")
+    public ApiResponse<StepResult> confirmOfficialEmailOtp(
+            @PathVariable Long id, @Valid @RequestBody EmailOtpVerifyRequest req) {
+        authorize(id);
+        return ApiResponse.ok(verification.verifyOfficialEmailOtp(id, req.otp()));
+    }
+
     @PostMapping("/address")
     public ApiResponse<StepResult> address(@PathVariable Long id, @RequestBody AddressVerifyRequest req) {
         authorize(id);

@@ -130,6 +130,16 @@ public class ApplicationVerificationService {
      * OFFICIAL email — untouched by this.
      */
     public static final String EMAIL_OTP = "EMAIL_OTP";
+    /**
+     * The borrower's OTP-proven ownership of their OFFICIAL/work email. Same contract as
+     * {@link #EMAIL_OTP} — kept out of {@link #REQUIRED} (non-blocking; a corporate mail filter that
+     * drops external senders must not be able to block a submission) and out of {@link #KNOWN_CHECKS}
+     * (staff must not be able to manually assert that a borrower controls an inbox).
+     *
+     * <p>Distinct from {@link #EMAIL}, which runs against the <em>same address</em> but answers a
+     * different question: {@link #EMAIL} corroborates the employer, this proves inbox control.
+     */
+    public static final String OFFICIAL_EMAIL_OTP = "OFFICIAL_EMAIL_OTP";
 
     // ---- statuses ----
     public static final String PASS = "PASS";
@@ -2301,6 +2311,60 @@ public class ApplicationVerificationService {
         derived.put("email", email);
         return view(upsert(appId, EMAIL_OTP, PASS, "DhanBoost", null, ref(appId, EMAIL_OTP),
                 null, null, null, derived, "Personal email verified (OTP)"));
+    }
+
+    /**
+     * Send the OTP proving the borrower controls their OFFICIAL/work email — additive to (and
+     * separate from) {@link #verifyEmail}, the provider deliverability/employer-match check that runs
+     * against the same address on the consent screen. Resolved server-side from the saved profile for
+     * the same reason the personal one is: a caller must not be able to verify a code sent to an
+     * inbox they don't control.
+     */
+    @Transactional
+    public OtpVerifierPort.OtpRequestResult requestOfficialEmailOtp(Long appId) {
+        CustomerProfile profile = profile(appId);
+        String email = profile.getOfficialEmail();
+        if (email == null || email.isBlank()) {
+            throw new BusinessException("EMAIL_MISSING",
+                    "No official email on file — save your work email first");
+        }
+        OtpVerifierPort.OtpRequestResult result = emailOtp.request(email, EmailOtpPort.OFFICIAL_EMAIL);
+        if (!result.sent()) {
+            // Corporate mail filters routinely drop external senders, and the address may also be on
+            // the bounce/complaint suppression list. Record the undeliverability instead of silently
+            // dead-ending the borrower on a code box that will never arrive: the file goes to the
+            // credit team flagged, which is revamp.md decision 10 applied to this check. A later
+            // successful verify upserts over this row with PASS.
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("channel", "OTP");
+            derived.put("email", email);
+            derived.put("delivered", false);
+            upsert(appId, OFFICIAL_EMAIL_OTP, REVIEW, "DhanBoost", null,
+                    ref(appId, OFFICIAL_EMAIL_OTP), null, null, null, derived,
+                    "Verification code could not be delivered to the work email");
+        }
+        return result;
+    }
+
+    /** Confirm the official-email OTP and flag the profile as OTP-verified. */
+    @Transactional
+    public StepResult verifyOfficialEmailOtp(Long appId, String otp) {
+        CustomerProfile profile = profile(appId);
+        String email = profile.getOfficialEmail();
+        if (email == null || email.isBlank()) {
+            throw new BusinessException("EMAIL_MISSING", "No official email on file");
+        }
+        if (!emailOtp.verify(email, otp, EmailOtpPort.OFFICIAL_EMAIL)) {
+            throw new BusinessException("INVALID_OTP", "Invalid or expired code");
+        }
+        profile.setOfficialEmailOtpVerified(Boolean.TRUE);
+        profileRepo.save(profile);
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("channel", "OTP");
+        derived.put("email", email);
+        return view(upsert(appId, OFFICIAL_EMAIL_OTP, PASS, "DhanBoost", null,
+                ref(appId, OFFICIAL_EMAIL_OTP), null, null, null, derived,
+                "Official email verified (OTP)"));
     }
 
     // ---------------------------------------------------------------- gating + summary

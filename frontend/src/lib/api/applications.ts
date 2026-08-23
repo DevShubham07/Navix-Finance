@@ -423,6 +423,9 @@ export interface ProfileView {
   /** OTP-proven ownership of the PERSONAL email — distinct from `emailVerified` (the official-email
    *  deliverability/employer-match check). */
   personalEmailVerified?: boolean | null;
+  /** OTP-proven ownership of the OFFICIAL/work email. Same address as `emailVerified`, different
+   *  question: that one corroborates the employer, this one proves inbox control. */
+  officialEmailOtpVerified?: boolean | null;
   addressVerified?: boolean | null;
   pennyDropVerified?: boolean | null;
   nameMatchScore?: number | null;
@@ -1184,6 +1187,18 @@ export const verificationApi = {
   /** Confirm the personal-email OTP. */
   confirmPersonalEmailOtp: (id: number, otp: string) =>
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/email/otp/confirm`, "POST", { otp }),
+
+  /**
+   * Send the OTP proving the borrower controls their OFFICIAL/work email. Additive to `email` above:
+   * that call asks the provider whether the address is deliverable and matches the employer, this
+   * asks the borrower to open the inbox. Address resolved server-side, same as the personal one.
+   */
+  requestOfficialEmailOtp: (id: number) =>
+    bff<OtpRequestResult>(`${BORROWER_BASE}/${id}/verify/official-email/otp`, "POST"),
+
+  /** Confirm the official-email OTP. */
+  confirmOfficialEmailOtp: (id: number, otp: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/official-email/otp/confirm`, "POST", { otp }),
 
   /** Address: either live geolocation (lat/long) or a typed manual address. */
   address: (

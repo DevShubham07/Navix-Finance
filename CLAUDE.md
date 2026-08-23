@@ -620,6 +620,15 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 >   email,address,digilocker/init,bureau,salary,penny-drop,selfie,agreement,presign-upload}`,
 >   `POST …/verify/digilocker/complete`, `GET …/verify/{digilocker/status,summary}`; `submit-kyc` is gated
 >   (`KYC_INCOMPLETE`). Staff-readable `GET /api/applications/{id}/verifications`, `GET …/documents/{docId}/url`.
+> - **Email OTP (both addresses).** `POST …/verify/email/otp` + `…/verify/email/otp/confirm` (PERSONAL)
+>   and `POST …/verify/official-email/otp` + `…/verify/official-email/otp/confirm` (OFFICIAL/work).
+>   Inbox control, distinct from `…/verify/email`, the provider deliverability + employer-match check
+>   that runs against the *same* work address. Both write their own check type (`EMAIL_OTP` /
+>   `OFFICIAL_EMAIL_OTP`), both deliberately outside `REQUIRED` and `KNOWN_CHECKS`, and the address is
+>   always resolved server-side from the saved profile. Screen 6 is gated on them in
+>   `JourneyService.emailsSettled`, **not** in `submit-kyc` — a work address we could not deliver to is
+>   recorded `REVIEW` and waved through to the credit team (revamp.md decision 10), while an
+>   unreachable personal address must be replaced.
 > - **Payment block:** `GET /api/payment-settings` (any authed; presigned QR/PDF URLs), `PUT` (ADMIN).
 
 | Method + path | Role | Purpose |

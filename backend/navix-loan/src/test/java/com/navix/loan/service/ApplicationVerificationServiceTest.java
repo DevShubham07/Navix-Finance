@@ -803,6 +803,92 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void officialEmailOtp_isNotAmongTheRequiredIntakeChecks() {
+        // Same contract as EMAIL_OTP: a corporate mail filter that drops outside senders must not be
+        // able to block a submission, and staff must not be able to assert inbox control by hand.
+        assertThat(ApplicationVerificationService.REQUIRED)
+                .doesNotContain(ApplicationVerificationService.OFFICIAL_EMAIL_OTP);
+        assertThat(ApplicationVerificationService.KNOWN_CHECKS)
+                .doesNotContain(ApplicationVerificationService.OFFICIAL_EMAIL_OTP);
+        // And distinct from EMAIL, the provider employer-match check on the same address.
+        assertThat(ApplicationVerificationService.OFFICIAL_EMAIL_OTP)
+                .isNotEqualTo(ApplicationVerificationService.EMAIL);
+    }
+
+    @Test
+    void officialEmailOtp_verifiesAgainstTheWorkAddressAndFlagsTheProfile() {
+        CustomerProfile p = profile();
+        p.setEmail("borrower@example.com");
+        p.setOfficialEmail("borrower@acme.com");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(emailOtp.verify(eq("borrower@acme.com"), eq("123456"),
+                eq(EmailOtpPort.OFFICIAL_EMAIL))).thenReturn(true);
+
+        var result = service.verifyOfficialEmailOtp(APP, "123456");
+
+        assertThat(result.status()).isEqualTo(ApplicationVerificationService.PASS);
+        assertThat(result.derived()).containsEntry("email", "borrower@acme.com");
+        assertThat(p.getOfficialEmailOtpVerified()).isTrue();
+        // The personal flag is a separate proof and must not be set as a side effect.
+        assertThat(p.getPersonalEmailVerified()).isNull();
+    }
+
+    @Test
+    void officialEmailOtp_wrongCodeThrowsInvalidOtp() {
+        CustomerProfile p = profile();
+        p.setOfficialEmail("borrower@acme.com");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(emailOtp.verify(anyString(), anyString(), anyString())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.verifyOfficialEmailOtp(APP, "000000"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Invalid or expired code");
+        assertThat(p.getOfficialEmailOtpVerified()).isNull();
+    }
+
+    @Test
+    void officialEmailOtp_blankWorkAddressIsRejectedBeforeAnyCodeIsSent() {
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+
+        assertThatThrownBy(() -> service.requestOfficialEmailOtp(APP))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("No official email on file");
+        verify(emailOtp, never()).request(anyString(), anyString());
+    }
+
+    @Test
+    void officialEmailOtp_undeliverableCodeIsRecordedForReviewRatherThanDeadEnding() {
+        CustomerProfile p = profile();
+        p.setOfficialEmail("borrower@acme.com");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(emailOtp.request(eq("borrower@acme.com"), eq(EmailOtpPort.OFFICIAL_EMAIL)))
+                .thenReturn(new com.navix.common.verification.OtpVerifierPort.OtpRequestResult(false, null, 600));
+
+        service.requestOfficialEmailOtp(APP);
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getCheckType())
+                .isEqualTo(ApplicationVerificationService.OFFICIAL_EMAIL_OTP);
+        assertThat(saved.getValue().getStatus()).isEqualTo(ApplicationVerificationService.REVIEW);
+        // Not a claim that the address is his — only that we could not reach it.
+        assertThat(p.getOfficialEmailOtpVerified()).isNull();
+    }
+
+    @Test
+    void officialEmailOtp_deliveredCodeWritesNothingUntilItIsEntered() {
+        CustomerProfile p = profile();
+        p.setOfficialEmail("borrower@acme.com");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(emailOtp.request(anyString(), anyString()))
+                .thenReturn(new com.navix.common.verification.OtpVerifierPort.OtpRequestResult(true, null, 600));
+
+        service.requestOfficialEmailOtp(APP);
+
+        verify(verificationRepo, never()).save(any());
+    }
+
+    @Test
     void allRequiredPassed_gatesOnAttemptedNotPassed() {
         // Nothing run yet.
         assertThat(service.allRequiredPassed(APP)).isFalse();

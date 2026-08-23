@@ -506,6 +506,36 @@ class ApplicationFlowServiceTest {
      * put every reborrow in the facts-without-PDF state that makes CreditBriefService try to
      * regenerate on read, which 500s any read-only caller.
      */
+    /**
+     * Inbox control does not become untrue between advances, and JourneyService.derive now reads both
+     * flags to decide whether screen 6 is finished. Without the carry-forward every returning
+     * borrower is sent back to /signup/email to re-prove addresses they already proved.
+     */
+    @Test
+    void reborrowCarriesBothEmailVerificationFlagsOntoTheNewProfile() {
+        actor("7", "BORROWER");
+        LoanApplication prior = priorApp();
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
+        CustomerProfile priorProfile = priorProfile();
+        priorProfile.setEmail("borrower@example.com");
+        priorProfile.setOfficialEmail("borrower@acme.com");
+        priorProfile.setPersonalEmailVerified(true);
+        priorProfile.setOfficialEmailOtpVerified(true);
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of());
+
+        flow.reborrow();
+
+        ArgumentCaptor<CustomerProfile> captor = ArgumentCaptor.forClass(CustomerProfile.class);
+        verify(profileRepository).save(captor.capture());
+        CustomerProfile copy = captor.getValue();
+        assertThat(copy.getPersonalEmailVerified()).isTrue();
+        assertThat(copy.getOfficialEmailOtpVerified()).isTrue();
+        assertThat(copy.getOfficialEmail()).isEqualTo("borrower@acme.com");
+    }
+
     @Test
     void reborrowCarriesTheCreditBriefDocumentOntoTheNewApplication() {
         actor("7", "BORROWER");

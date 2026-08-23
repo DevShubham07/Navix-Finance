@@ -1,7 +1,7 @@
 package com.navix.common.verification;
 
 /**
- * Verifies a borrower's PERSONAL email by OTP — sibling of {@link OtpVerifierPort} (mobile/SMS-
+ * Verifies a borrower's email addresses by OTP — sibling of {@link OtpVerifierPort} (mobile/SMS-
  * shaped), same purpose-scoped, single-use, rate-limited contract, delivered by email instead of SMS.
  *
  * <p>This exists as a port for the same reason {@link OtpVerifierPort} does: the module holding the
@@ -9,7 +9,9 @@ package com.navix.common.verification;
  * domain modules, so {@code navix-loan} cannot inject the service directly.
  *
  * <p>Deliberately SEPARATE from the Signzy/Digitap deliverability + employer-match check on the
- * OFFICIAL email ({@code VerificationPort.verifyEmail}), which this does not touch.
+ * OFFICIAL email ({@code VerificationPort.verifyEmail}), which this does not touch. Both now run
+ * against that same address, and they answer different questions: the provider check corroborates
+ * the EMPLOYER, an OTP proves the borrower can OPEN the inbox. Neither substitutes for the other.
  */
 public interface EmailOtpPort {
 
@@ -17,7 +19,14 @@ public interface EmailOtpPort {
     String PERSONAL_EMAIL = "PERSONAL_EMAIL";
 
     /**
-     * @param email   the borrower's personal email — resolve this SERVER-SIDE from stored profile
+     * The borrower's official/work-email ownership proof taken during onboarding. Codes are keyed on
+     * purpose + address, so this and {@link #PERSONAL_EMAIL} stay independent even when a borrower
+     * types the same address into both fields.
+     */
+    String OFFICIAL_EMAIL = "OFFICIAL_EMAIL";
+
+    /**
+     * @param email   the address being verified — resolve this SERVER-SIDE from stored profile
      *                data, never from the request body, or a caller can verify a code that was sent
      *                to an inbox they don't control.
      * @param code    the code the borrower entered

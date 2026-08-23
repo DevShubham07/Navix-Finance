@@ -1,5 +1,6 @@
 package com.navix.loan.service;
 
+import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.ApplicationVerification;
@@ -165,6 +166,7 @@ public class JourneyService {
     @Transactional
     public void advance(Long appId, Step step) {
         applicationRepository.findById(appId).ifPresent(app -> {
+            requireEmailsVerified(app, step);
             if (parse(app.getJourneyStep()).map(prev -> step.ordinal() > prev.ordinal()).orElse(true)) {
                 app.setJourneyStep(step.name());
                 applicationRepository.save(app);
@@ -196,6 +198,56 @@ public class JourneyService {
     public void advance(Long appId, String stepName) {
         parse(stepName).ifPresent(step -> advance(appId, step));
         parseOffer(stepName).ifPresent(step -> advance(appId, step));
+    }
+
+    /**
+     * The one precondition the pointer enforces: both email addresses must be OTP-verified before the
+     * borrower can be recorded at or past {@link Step#EMAIL}.
+     *
+     * <p>This is the server side of a gate the client has always shown. Without it the disabled
+     * Continue button on {@code /signup/email} was the only thing holding anyone — so a stale client
+     * or a resume on a second device walked straight past a screen the UI presents as mandatory.
+     *
+     * <p><b>This throws, unlike the rest of this class.</b> {@link #advance(Long, String)} ignores an
+     * unrecognised step name rather than rejecting it, because a stale client must not hard-fail on a
+     * pointer that is only advisory. That reasoning does not extend to a <em>known</em> step whose
+     * precondition is unmet: silently declining to move would let the caller believe it had advanced.
+     * Do not "fix" this back to silent.
+     *
+     * <p>Guarded on {@code >= EMAIL} rather than {@code == EMAIL} so skipping the call for screen 6
+     * and advancing straight to {@link Step#BANK} does not slip through.
+     */
+    private void requireEmailsVerified(LoanApplication app, Step step) {
+        if (step.ordinal() < Step.EMAIL.ordinal()) {
+            return;
+        }
+        CustomerProfile p = profileRepository.findByApplicationId(app.getId()).orElse(null);
+        if (p == null || !emailsSettled(p, app.getId())) {
+            throw new BusinessException("EMAIL_NOT_VERIFIED",
+                    "Verify both your personal and work email addresses to continue");
+        }
+    }
+
+    /**
+     * Whether screen 6 is finished: the personal address is OTP-verified, and the work address is
+     * either OTP-verified or has been recorded as undeliverable.
+     *
+     * <p>The two are deliberately asymmetric. The personal address is the contact channel for the
+     * sanction letter and every statement, so an unreachable one has to be replaced — there is no way
+     * to service that borrower otherwise. The work address only corroborates the employer, and
+     * corporate mail filters routinely drop outside senders, so
+     * {@code ApplicationVerificationService.requestOfficialEmailOtp} writes an {@code
+     * OFFICIAL_EMAIL_OTP} row in REVIEW when the send fails and the file goes to the credit team
+     * flagged instead (revamp.md decision 10). A row in <em>any</em> terminal status therefore
+     * settles it — which is also why the flag is checked first: a re-apply carries the flag forward
+     * (ApplicationFlowService.copyProfileForReborrow) but not the verification row.
+     */
+    private boolean emailsSettled(CustomerProfile p, Long appId) {
+        if (!Boolean.TRUE.equals(p.getPersonalEmailVerified())) {
+            return false;
+        }
+        return Boolean.TRUE.equals(p.getOfficialEmailOtpVerified())
+                || attemptedChecks(appId).contains(ApplicationVerificationService.OFFICIAL_EMAIL_OTP);
     }
 
     private Step currentStep(LoanApplication app) {
@@ -282,7 +334,11 @@ public class JourneyService {
         if (blank(p.getEmployer()) || p.getPreviousSalaryDate() == null || p.getMonthlySalaryPaise() == null) {
             return Step.EMPLOYER;
         }
-        if (blank(p.getOfficialEmail())) {
+        // Held here until both addresses are settled, not merely typed in. derive() and
+        // requireEmailsVerified() must agree: currentStep takes max(derived, stored + 1), so a
+        // pointer that had been allowed past EMAIL would carry the borrower forward regardless of
+        // what this returns.
+        if (blank(p.getOfficialEmail()) || !emailsSettled(p, app.getId())) {
             return Step.EMAIL;
         }
         if (blank(p.getSalaryAccountNumber()) || blank(p.getSalaryIfsc())) {

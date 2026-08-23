@@ -75,7 +75,7 @@ The customer-first CRM landed mid-planning. Everything below is folded into the 
 | 12 | **Name and DOB come from PAN-206** at screen 9 — no name/DOB fields anywhere in the intake. |
 | 13 | "Previous salary date" is a **full date**; `salary_credit_day` is derived from it. |
 | 14 | Monthly salary = **net / in-hand**, taken as declared, no automated cross-check. |
-| 15 | **Personal email = contact address** (approvals, resets, statements). **Only the work email is API-verified.** |
+| 15 | **Personal email = contact address** (approvals, resets, statements). **Only the work email is API-verified** (provider employer-match). *Superseded in part (2026-08):* **both** addresses are now also OTP-verified for inbox control, and screen 6 is gated on that server-side in `JourneyService.emailsSettled`. An undeliverable *work* address is recorded `REVIEW` and passes through per decision 10; an undeliverable *personal* address must be replaced, since it carries the sanction letter and statements. |
 | 16 | Bank account number + IFSC are **stored in full and visible to all staff**. |
 | 17 | **Exactly 3 payslips**, PDF/JPG/PNG, no exceptions. |
 | 18 | Screen 10's extra documents are an **optional accelerator**. |
@@ -214,7 +214,7 @@ policy), but any staff password *reset* must now be ≤10 characters.
 | 4 | `signup/set-password` | Optional, **Skip** allowed. 6–10 chars, alnum + special | `borrower_credential` |
 | 5a | `signup/employer` *(salaried)* | Company name · **previous salary date** (full date picker) · monthly salary (**net/in-hand**) | profile; `salary_credit_day` derived |
 | 5b | `signup/self-employed` | Name · date of birth · annual income → Submit | profile + **auto-reject + 90-day block** |
-| 6 | `signup/email` | Personal email + official work email | `email` = personal/contact, `official_email` = work |
+| 6 | `signup/email` | Personal email + official work email, **both OTP-verified** | `email` = personal/contact, `official_email` = work; `EMAIL_OTP` + `OFFICIAL_EMAIL_OTP` rows |
 | 7 | `signup/bank` | Salary bank · account number · IFSC · mobile linked to that account | profile — **stored in full**, no penny drop here |
 | 8 | `signup/payslips` | **Exactly 3** payslips, PDF/JPG/PNG | `SALARY` check + S3 documents |
 | 9 | `signup/consent` | Re-enter OTP + tick "I consent to a credit bureau enquiry" → **fires PAN-206, work-email verification, bureau** | `BUREAU_CONSENT`, `PAN`, `EMAIL`, `BUREAU` rows; **name + DOB land here** |

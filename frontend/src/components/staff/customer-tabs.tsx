@@ -218,8 +218,9 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
         <KV k="PAN verified" v={<Bool on={p?.panVerified} />} />
         <KV k="Aadhaar (DigiLocker)" v={<Bool on={p?.aadhaarVerified} />} />
         <KV k="Aadhaar linked" v={<Bool on={p?.aadhaarLinked} />} />
-        <KV k="Email verified" v={<Bool on={p?.emailVerified} />} />
-        <KV k="Email OTP verified" v={<Bool on={p?.personalEmailVerified} />} />
+        <KV k="Work email (employer match)" v={<Bool on={p?.emailVerified} />} />
+        <KV k="Personal email (OTP)" v={<Bool on={p?.personalEmailVerified} />} />
+        <KV k="Work email (OTP)" v={<Bool on={p?.officialEmailOtpVerified} />} />
         <KV k="Address verified" v={<Bool on={p?.addressVerified} />} />
         <KV k="Penny drop" v={<Bool on={p?.pennyDropVerified} />} />
         <KV
