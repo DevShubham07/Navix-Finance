@@ -59,6 +59,7 @@ class ApplicationVerificationServiceTest {
     @Mock private ProfileChangeLogger changeLogger;
     @Mock private ApplicationFlowService flow;
     @Mock private PennyDropGuard pennyDropGuard;
+    @Mock private com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     private ApplicationVerificationService service;
 
@@ -68,7 +69,10 @@ class ApplicationVerificationServiceTest {
     void setUp() {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk, new ObjectMapper(),
-                creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard);
+                creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags);
+        // The score-floor auto-reject is SUSPENDED in production (see autoRejectEnabled). These tests
+        // exercise the rule itself, so switch it on explicitly rather than depending on the default.
+        lenient().when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(true);
         // save() echoes its argument
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(profileRepo.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -1665,5 +1669,27 @@ class ApplicationVerificationServiceTest {
         verify(verificationRepo).save(saved.capture());
         assertThat(new ObjectMapper().readTree(saved.getValue().getDerived())
                 .path("identityMismatch").isMissingNode()).isTrue();
+    }
+
+    /**
+     * With the flag off, a sub-floor score records a PASS and goes to a human - it must NOT decline
+     * the borrower. Suspended in production on 2026-08-23: 550 was calibrated on Experian, and on
+     * CRIF's distribution it rejected 60% of live applicants, each with a 90-day block.
+     */
+    @Test
+    void bureau_subFloorScore_doesNotAutoRejectWhileTheRuleIsSuspended() {
+        when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(false);
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        String raw = "{\"canonical\":{\"data\":{\"credit_report\":{\"REQUEST\":{\"PAN\":\"" + p.getPan() + "\"}}}}}";
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("TXN-SUSPENDED", "FINTRIX_CRIF", 510, false,
+                        1, 0, 5000.0, null, raw));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(flow, never()).autoReject(any(), any(), any(), anyInt());
     }
 }

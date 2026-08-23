@@ -149,9 +149,30 @@ public class FintrixCrifClient {
         }
     }
 
+    /**
+     * CRIF scores live on a 300-900 scale. Anything outside it is not a score, whatever the field is
+     * called - production returned {@code "15"} for two applications on 2026-08-23, alongside a full
+     * report. Treated as a number it would have been compared against the reject floor and would have
+     * declined those borrowers outright.
+     *
+     * <p>Out-of-range becomes {@code null}, which every downstream rule already reads as "no score"
+     * and never rejects on. The parsed report itself is kept - the tradelines are still real and the
+     * credit team can still read the file.
+     */
+    private static Integer plausibleScore(Integer raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (raw < 300 || raw > 900) {
+            log.warn("Fintrix crif_combine returned an out-of-range score {} - treating as no score", raw);
+            return null;
+        }
+        return raw;
+    }
+
     private CrifResponse parse(JsonNode data, String rawResponseJson, String name, String mobile) {
         JsonNode report = data.path("credit_report");
-        Integer score = integer(report.path("SCORES").path("SCORE").path("SCORE-VALUE"));
+        Integer score = plausibleScore(integer(report.path("SCORES").path("SCORE").path("SCORE-VALUE")));
         String link = text(data.path("credit_report_link"));
 
         // No-hit rule: a missing/blank/non-numeric score, or no credit_report at all, is a real "no

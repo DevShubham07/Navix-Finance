@@ -195,6 +195,7 @@ public class ApplicationVerificationService {
     // The 3-strikes/12-hour penny-drop lock. Injected so a manual PASS override can lift it —
     // see manualDecision. Safe edge: PennyDropGuard depends only on its two repositories.
     private final PennyDropGuard pennyDropGuard;
+    private final com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     /**
@@ -998,7 +999,7 @@ public class ApplicationVerificationService {
         // behavior, deliberately — and neither does an identity mismatch (see above). The bureau check
         // itself still reports PASS when there's no mismatch (the pull succeeded); it's the application
         // that gets rejected as a side effect.
-        if (allowAutoReject && mismatch == null && bureauScore != null
+        if (autoRejectEnabled() && allowAutoReject && mismatch == null && bureauScore != null
                 && bureauScore < ApplicationFlowService.MIN_BUREAU_SCORE) {
             flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
                     "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
@@ -1072,7 +1073,7 @@ public class ApplicationVerificationService {
         carryCreditBrief(source.getApplicationId(), appId, profile);
         profileRepo.save(profile);
 
-        if (allowAutoReject && mismatch == null && score != null
+        if (autoRejectEnabled() && allowAutoReject && mismatch == null && score != null
                 && score < ApplicationFlowService.MIN_BUREAU_SCORE) {
             flow.autoReject(appId, ApplicationRejection.LOW_BUREAU_SCORE,
                     "Rejected because credit score is under " + ApplicationFlowService.MIN_BUREAU_SCORE,
@@ -1158,6 +1159,26 @@ public class ApplicationVerificationService {
         } catch (Exception malformed) {
             return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
         }
+    }
+
+    /**
+     * Is the score-floor auto-reject switched on?
+     *
+     * <p>Suspended in production on 2026-08-23. The floor was moved 600 -> 550 as part of switching
+     * the primary bureau from Experian to CRIF Highmark, on the assumption that a lower number is a
+     * looser rule. It is not: a score means different things on different bureaus. On the live CRIF
+     * distribution the median sat at 510 and 60% of pulls fell under 550, so the "looser" rule
+     * tripled the live rejection rate from roughly 15% to 45-60% and blocked each of those borrowers
+     * for 90 days.
+     *
+     * <p>Until the floor is recalibrated against CRIF's own distribution and default behaviour, every
+     * bureau result goes to a human instead. Defaults OFF when the row is absent: this rule takes
+     * money-affecting, 90-day-blocking action automatically, so it must be switched ON deliberately
+     * rather than switch itself on because a row is missing. Re-enable with SQL against
+     * {@code feature_flag} once a threshold is chosen.
+     */
+    private boolean autoRejectEnabled() {
+        return featureFlags.isEnabled("bureau-auto-reject", false);
     }
 
     /**
