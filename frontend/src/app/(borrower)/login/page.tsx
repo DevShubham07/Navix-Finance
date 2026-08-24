@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,7 +22,9 @@ const KYC_DONE = new Set<ApplicationStatus>([
   "DISBURSEMENT_FAILED", "DISBURSED", "ACTIVE", "OVERDUE", "DEFAULTED", "CLOSED", "WRITTEN_OFF",
 ]);
 
-export default function LoginPage() {
+// useSearchParams() (for the ?next= deep link) forces a client-side bailout, which fails the
+// prerender unless it sits under a Suspense boundary. Same split as reset-password/page.tsx.
+function LoginInner() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [method, setMethod] = React.useState<"otp" | "password">("otp");
@@ -295,5 +298,13 @@ export default function LoginPage() {
         <div className="mt-6"><Reassurance /></div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginInner />
+    </Suspense>
   );
 }

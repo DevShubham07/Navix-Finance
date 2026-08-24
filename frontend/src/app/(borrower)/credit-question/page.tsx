@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Loader2, ShieldQuestion } from "lucide-react";
@@ -71,7 +72,9 @@ function readChallenge(row: StepResult | undefined): Challenge | null {
   };
 }
 
-export default function CreditQuestionPage() {
+// useSearchParams() forces a client-side bailout, which fails the prerender unless it sits under
+// a Suspense boundary. Same inner-component split as reset-password/page.tsx and staff/activate.
+function CreditQuestionInner() {
   const searchParams = useSearchParams();
   const [appId, setAppId] = React.useState<number | null>(null);
   const [phase, setPhase] = React.useState<Phase>("loading");
@@ -242,6 +245,20 @@ export default function CreditQuestionPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function CreditQuestionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container max-w-content py-16 text-center">
+          <Loader2 size={28} className="mx-auto animate-spin text-navy" />
+        </div>
+      }
+    >
+      <CreditQuestionInner />
+    </Suspense>
   );
 }
 
