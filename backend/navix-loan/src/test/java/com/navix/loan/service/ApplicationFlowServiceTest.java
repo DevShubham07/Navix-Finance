@@ -312,6 +312,37 @@ class ApplicationFlowServiceTest {
         assertThat(app.getLoanId()).isEqualTo(99L);
     }
 
+    /** A disbursement reject with no reason gives staff no record of why — refused, same as {@code
+     *  rejectLead} and {@code adminForceDisbursementPending}. */
+    @Test
+    void disbursementRejectWithABlankNoteThrowsNoteRequired() {
+        appAt(ApplicationStatus.DISBURSEMENT_PENDING);
+        actor("disb1", "DISBURSEMENT_HEAD");
+
+        assertThatThrownBy(() -> flow.disbursementDecision(1L, false, null, "   "))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOTE_REQUIRED");
+    }
+
+    /** A non-blank disbursement reject closes the old asymmetry: it now writes a MANUAL register row
+     *  with the same 30-day cooling-off block as a credit {@code rejectLead}. */
+    @Test
+    void disbursementRejectWithAReasonRecordsAManualRegisterRowWithA30DayBlock() {
+        LoanApplication app = appAt(ApplicationStatus.DISBURSEMENT_PENDING);
+        actor("disb1", "DISBURSEMENT_HEAD");
+
+        flow.disbursementDecision(1L, false, null, "bank rejected the beneficiary details");
+
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        ArgumentCaptor<ApplicationRejection> captor = ArgumentCaptor.forClass(ApplicationRejection.class);
+        verify(rejectionRepository).save(captor.capture());
+        assertThat(captor.getValue().getReasonCode()).isEqualTo(ApplicationRejection.MANUAL);
+        assertThat(captor.getValue().getAuto()).isFalse();
+        assertThat(captor.getValue().getBlockedUntil())
+                .isCloseTo(Instant.now().plus(Duration.ofDays(ApplicationFlowService.MANUAL_REJECT_BLOCK_DAYS)),
+                        within(1, java.time.temporal.ChronoUnit.MINUTES));
+    }
+
     /**
      * The transaction id is the evidence that the transfer happened. Accepting without one used to
      * park the file with an accountant; with that hop gone (V47) it would release money on nothing

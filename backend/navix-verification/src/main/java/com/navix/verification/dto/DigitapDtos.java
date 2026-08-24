@@ -117,7 +117,9 @@ public final class DigitapDtos {
             @JsonProperty("mobile") String mobile,
             @JsonProperty("dob") String dob,
             @JsonProperty("employee_name") String employeeName,
-            @JsonProperty("employer_name") String employerName) {
+            @JsonProperty("employer_name") String employerName,
+            /** Lookup method 3 (direct, docs/digitap/UAN_EMPLOYMENT.md §2) — 12 digits, when known. */
+            @JsonProperty("uan") String uan) {
     }
 
     /**

@@ -93,7 +93,9 @@ public class ApplicationController {
     /** Stage queue, e.g. ?status=KYC_PENDING / DISBURSEMENT_PENDING / ACCOUNTANT_PENDING. Staff-only:
      *  rows are enriched with the customer's credit score + 1–5★ rating (never exposed to borrowers).
      *  Optional {@code from}/{@code to} narrow to applications CREATED in that inclusive window
-     *  (V53's {@code created_at}), for the live-applications Today/Yesterday/Custom filter. */
+     *  (V53's {@code created_at}), for the live-applications Today/Yesterday/Custom filter. Optional
+     *  {@code q} further narrows to rows matching an application id/loan id/name/mobile/PAN — see
+     *  {@code ApplicationFlowService.filterByQuery}. */
     @GetMapping
     public ApiResponse<List<ApplicationView>> queue(
             @RequestParam ApplicationStatus status,
@@ -102,15 +104,16 @@ public class ApplicationController {
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
             @RequestParam(required = false)
             @org.springframework.format.annotation.DateTimeFormat(
-                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to) {
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(required = false) String q) {
         requireStaff();
-        return ApiResponse.ok(enrich(flow.byStatus(status, from, to)));
+        return ApiResponse.ok(enrich(flow.byStatus(status, from, to, q)));
     }
 
     /** Credit Head queue: KYC-approved applications the borrower has applied on (credit-enriched).
      *  Optional {@code from}/{@code to} narrow to applications CREATED in that inclusive window
      *  (V53's {@code created_at}), same as {@link #queue}, so the live-applications Today/Yesterday/
-     *  Custom filter applies to this tab too. */
+     *  Custom filter applies to this tab too. Optional {@code q} narrows the same way as {@link #queue}. */
     @GetMapping("/credit-queue")
     public ApiResponse<List<ApplicationView>> creditQueue(
             @RequestParam(required = false)
@@ -118,9 +121,10 @@ public class ApplicationController {
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
             @RequestParam(required = false)
             @org.springframework.format.annotation.DateTimeFormat(
-                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to) {
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(required = false) String q) {
         requireStaff();
-        return ApiResponse.ok(enrich(flow.creditHeadQueue(from, to)));
+        return ApiResponse.ok(enrich(flow.creditHeadQueue(from, to, q)));
     }
 
     /**

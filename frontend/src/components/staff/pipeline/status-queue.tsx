@@ -18,8 +18,9 @@ import { errMessage } from "@/components/staff/pipeline/hooks";
 import { AppRow } from "@/components/staff/pipeline/app-row";
 import { AssignActions, CreditDecisionActions } from "@/components/staff/pipeline/actions";
 import { useStaffMe } from "@/components/staff/pipeline/hooks";
-import { useQueueRange } from "@/components/staff/pipeline/queue-date-filter";
+import { useQueueRange, useQueueQuery } from "@/components/staff/pipeline/queue-date-filter";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { useBulkQueue, BulkActionBar, type QueueSelection, type RejectMode } from "@/components/staff/pipeline/bulk-actions";
 
 export function StatusQueue({
   title,
@@ -29,6 +30,7 @@ export function StatusQueue({
   filter,
   withLoanHistory,
   hideWhenEmpty,
+  bulk,
 }: {
   title: string;
   status: ApplicationStatus;
@@ -46,30 +48,46 @@ export function StatusQueue({
    * will never receive work again is just noise.
    */
   hideWhenEmpty?: boolean;
+  /**
+   * Enable bulk select + assign/reject (see `pipeline/bulk-actions.tsx`). Omit for a queue that
+   * offers neither — the table then renders exactly as it did before bulk actions existed.
+   */
+  bulk?: { rejectMode?: RejectMode; allowAssign?: boolean };
 }) {
   const range = useQueueRange();
+  const query = useQueueQuery();
   const q = useQuery({
-    queryKey: ["staff-queue", status, range.from ?? "", range.to ?? ""],
-    queryFn: () => staffApi.listByStatus(status, range),
+    queryKey: ["staff-queue", status, range.from ?? "", range.to ?? "", query],
+    queryFn: () => staffApi.listByStatus(status, range, query || undefined),
     refetchInterval: 8000,
   });
 
-  const apps = filter ? (q.data ?? []).filter(filter) : q.data ?? [];
+  const apps = React.useMemo(() => (filter ? (q.data ?? []).filter(filter) : q.data ?? []), [q.data, filter]);
+  // Hook order must not depend on `bulk` being passed — call unconditionally with an empty config
+  // when the caller opted out, which resolves to `selection: undefined` (no checkbox column).
+  const { selection, dialogs } = useBulkQueue(
+    React.useMemo(() => apps.map((a) => a.id), [apps]),
+    bulk ?? {},
+  );
 
   if (hideWhenEmpty && !q.isLoading && !q.error && apps.length === 0) return null;
 
   return (
-    <QueuePanel
-      title={title}
-      countBadge={status}
-      apps={apps}
-      isLoading={q.isLoading}
-      error={q.error}
-      onRefresh={() => q.refetch()}
-      actions={actions ?? (() => null)}
-      info={info}
-      withLoanHistory={withLoanHistory}
-    />
+    <>
+      <QueuePanel
+        title={title}
+        countBadge={status}
+        apps={apps}
+        isLoading={q.isLoading}
+        error={q.error}
+        onRefresh={() => q.refetch()}
+        actions={actions ?? (() => null)}
+        info={info}
+        withLoanHistory={withLoanHistory}
+        selection={selection}
+      />
+      {dialogs}
+    </>
   );
 }
 
@@ -97,14 +115,15 @@ export function CreditQueuePanel() {
 export function CreditWorkbench() {
   const me = useStaffMe();
   const range = useQueueRange();
+  const query = useQueueQuery();
   const unallocatedQ = useQuery({
-    queryKey: ["staff-queue", "credit-queue", range.from ?? "", range.to ?? ""],
-    queryFn: () => staffApi.creditQueue(range),
+    queryKey: ["staff-queue", "credit-queue", range.from ?? "", range.to ?? "", query],
+    queryFn: () => staffApi.creditQueue(range, query || undefined),
     refetchInterval: 8000,
   });
   const assignedQ = useQuery({
-    queryKey: ["staff-queue", "CREDIT_EXEC_PENDING", range.from ?? "", range.to ?? ""],
-    queryFn: () => staffApi.listByStatus("CREDIT_EXEC_PENDING", range),
+    queryKey: ["staff-queue", "CREDIT_EXEC_PENDING", range.from ?? "", range.to ?? "", query],
+    queryFn: () => staffApi.listByStatus("CREDIT_EXEC_PENDING", range, query || undefined),
     refetchInterval: 8000,
   });
   const execQ = useQuery({
@@ -139,19 +158,63 @@ export function CreditWorkbench() {
   return (
     <div className="space-y-5">
       {groups.map((group) => (
-        <QueuePanel
+        <CreditGroupPanel
           key={group.key}
           title={group.title}
-          countBadge={group.title}
           apps={group.apps}
           isLoading={unallocatedQ.isLoading || assignedQ.isLoading || execQ.isLoading}
           error={unallocatedQ.error || assignedQ.error || execQ.error}
           onRefresh={refresh}
           actions={group.actions}
-          info="Credit review remains one stage. The Credit Head may decide any file or reassign it; executives can decide only their own files."
+          // Only the unallocated group is an assignment queue — the other groups are already
+          // assigned, so bulk-assign there would just be a confusing reassign-in-bulk.
+          allowAssign={group.key === "unallocated"}
         />
       ))}
     </div>
+  );
+}
+
+/**
+ * One {@link CreditWorkbench} group, wrapped so each gets its own `useBulkQueue` (hooks can't run
+ * inside the `.map` above — the group list's length itself changes as executives come and go).
+ */
+function CreditGroupPanel({
+  title,
+  apps,
+  isLoading,
+  error,
+  onRefresh,
+  actions,
+  allowAssign,
+}: {
+  title: string;
+  apps: ApplicationView[];
+  isLoading: boolean;
+  error: unknown;
+  onRefresh: () => void;
+  actions: (app: ApplicationView) => React.ReactNode;
+  allowAssign: boolean;
+}) {
+  const { selection, dialogs } = useBulkQueue(
+    React.useMemo(() => apps.map((a) => a.id), [apps]),
+    { rejectMode: "credit", allowAssign },
+  );
+  return (
+    <>
+      <QueuePanel
+        title={title}
+        countBadge={title}
+        apps={apps}
+        isLoading={isLoading}
+        error={error}
+        onRefresh={onRefresh}
+        actions={actions}
+        info="Credit review remains one stage. The Credit Head may decide any file or reassign it; executives can decide only their own files."
+        selection={selection}
+      />
+      {dialogs}
+    </>
   );
 }
 
@@ -165,6 +228,7 @@ export function QueuePanel({
   actions,
   info,
   withLoanHistory,
+  selection,
 }: {
   title: string;
   countBadge: string;
@@ -175,22 +239,29 @@ export function QueuePanel({
   actions: (app: ApplicationView) => React.ReactNode;
   info?: string;
   withLoanHistory?: boolean;
+  /** Bulk select + assign/reject — see `pipeline/bulk-actions.tsx`. Omit for the plain table. */
+  selection?: QueueSelection;
 }) {
   return (
     <section className="rounded border border-line bg-white shadow-sm">
-      <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
         <div className="flex items-center gap-2">
           <h2 className="font-serif text-lg font-semibold text-navy">{title}</h2>
           {info && <InfoTooltip content={info} />}
           {isLoading && <Loader2 size={15} className="animate-spin text-muted" />}
           <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{apps.length}</span>
         </div>
-        <button
-          onClick={onRefresh}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
-        >
-          <RefreshCw size={13} /> Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {selection && (
+            <BulkActionBar count={selection.selected.size} onAssign={selection.onAssign} onReject={selection.onReject} />
+          )}
+          <button
+            onClick={onRefresh}
+            className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
+          >
+            <RefreshCw size={13} /> Refresh
+          </button>
+        </div>
       </header>
 
       {error ? (
@@ -200,7 +271,7 @@ export function QueuePanel({
           Nothing in the <code className="text-xs">{countBadge}</code> queue.
         </p>
       ) : (
-        <QueueTable apps={apps} actions={actions} withLoanHistory={withLoanHistory} />
+        <QueueTable apps={apps} actions={actions} withLoanHistory={withLoanHistory} selection={selection} />
       )}
     </section>
   );
@@ -218,11 +289,15 @@ export function QueueTable({
   actions,
   withLoanHistory,
   showJourney = true,
+  selection,
 }: {
   apps: ApplicationView[];
   actions: (app: ApplicationView) => React.ReactNode;
   withLoanHistory?: boolean;
   showJourney?: boolean;
+  /** Bulk select + assign/reject — see `pipeline/bulk-actions.tsx`. Omitted, this table renders
+   *  byte-identical to before bulk actions existed: no checkbox column, no layout shift. */
+  selection?: QueueSelection;
 }) {
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(apps);
 
@@ -233,7 +308,17 @@ export function QueueTable({
           <thead>
             <tr>
               <th>S.No.</th>
-              <th className="staff-sticky-identity">Application</th>
+              {selection && (
+                <th className="staff-sticky-identity">
+                  <input
+                    type="checkbox"
+                    checked={selection.allSelected}
+                    onChange={selection.toggleAll}
+                    aria-label="Select all"
+                  />
+                </th>
+              )}
+              <th className={selection ? undefined : "staff-sticky-identity"}>Application</th>
               <th>Customer ID</th>
               <th>Date</th>
               <th>Customer</th>
@@ -257,6 +342,8 @@ export function QueueTable({
                 withLoanHistory={withLoanHistory}
                 showJourney={showJourney}
                 index={(page - 1) * pageSize + i}
+                selected={selection?.selected.has(app.id)}
+                onToggleSelect={selection ? () => selection.toggle(app.id) : undefined}
               />
             ))}
           </tbody>

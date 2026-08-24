@@ -46,9 +46,12 @@ public interface VerificationPort {
      *
      * <p>This carries <b>no salary figure</b>: the whole EPFO employment family reports employment, not
      * pay. Wage data needs the separate passbook/TDS APIs.
+     *
+     * <p>{@code uan}, when the borrower has supplied it, is lookup method 3 (direct by UAN) — the exact
+     * match, tried ahead of the PAN/mobile/dob/name fallback.
      */
     EmploymentCheck verifyEmployment(String pan, String mobile, String dob, String employeeName,
-                                     String employerName, String clientRef);
+                                     String employerName, String uan, String clientRef);
 
     /**
      * Selfie face check — Digitap Face Match. Matches the uploaded selfie ({@code imageUrl}) against a

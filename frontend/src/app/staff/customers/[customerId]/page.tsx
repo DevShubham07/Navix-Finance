@@ -8,7 +8,13 @@ import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gaug
 import { Input, Select } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { PermissionGate, NoAccessNotice, errMessage, AdminForceDisbursementAction } from "@/components/staff/live-pipeline";
+import {
+  PermissionGate,
+  NoAccessNotice,
+  errMessage,
+  AdminForceDisbursementAction,
+  SanctionedRejectAction,
+} from "@/components/staff/live-pipeline";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
@@ -88,7 +94,10 @@ export default function CustomerDetailPage() {
               <PermissionGate permission="customer:manage">
                 {sanctionedApp && (
                   <Card title="Force to disbursement (admin)" icon={<Send size={16} />}>
-                    <AdminForceDisbursementAction app={sanctionedApp} />
+                    <div className="flex flex-wrap items-start gap-2">
+                      <AdminForceDisbursementAction app={sanctionedApp} />
+                      <SanctionedRejectAction app={sanctionedApp} />
+                    </div>
                   </Card>
                 )}
                 {sanctionedApp && (

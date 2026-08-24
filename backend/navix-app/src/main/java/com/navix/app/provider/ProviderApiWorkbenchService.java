@@ -129,7 +129,7 @@ public class ProviderApiWorkbenchService {
             case "BUREAU:DIGITAP" -> digitapCredit.pull(s(in,"pan"),s(in,"name"),s(in,"mobile"),s(in,"dob"),s(in,"otp"),"admin-workbench");
             case "PENNY_DROP:SIGNZY" -> signzyBank.verify(s(in,"accountNumber"),s(in,"ifsc"),s(in,"beneficiaryName"));
             case "FACE_MATCH:DIGITAP" -> digitapFace.match(s(in,"personImage"),s(in,"cardImage"),"admin-workbench");
-            case "UAN:DIGITAP" -> digitapUan.verify(s(in,"pan"),s(in,"mobile"),s(in,"dob"),s(in,"employeeName"),s(in,"employerName"),"admin-workbench");
+            case "UAN:DIGITAP" -> digitapUan.verify(s(in,"pan"),s(in,"mobile"),s(in,"dob"),s(in,"employeeName"),s(in,"employerName"),s(in,"uan"),"admin-workbench");
             default -> throw new BusinessException("UNSUPPORTED_PROVIDER", "Unsupported provider operation");
         });
     }

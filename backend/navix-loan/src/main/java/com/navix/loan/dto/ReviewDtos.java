@@ -70,7 +70,9 @@ public final class ReviewDtos {
             String email,
             String emergencyContactName,
             String emergencyContactPhone,
-            String emergencyContactRelation) {
+            String emergencyContactRelation,
+            /** Optional EPFO UAN (12 digits) — gives the employment lookup its direct method (V66). */
+            String uan) {
     }
 
     /**
@@ -120,7 +122,9 @@ public final class ReviewDtos {
             LocalDate previousSalaryDate,
             String termsVersion,
             Instant termsAcceptedAt,
-            Instant pepDeclaredAt) {
+            Instant pepDeclaredAt,
+            /** Optional EPFO UAN (12 digits, V66) — staff-visible, same as {@code employer}. */
+            String uan) {
 
         public static ProfileView of(CustomerProfile p) {
             return new ProfileView(
@@ -140,7 +144,7 @@ public final class ReviewDtos {
                     p.getCreditBriefSummary(), p.getCreditBriefGeneratedAt(),
                     p.getOfficialEmail(), p.getSalaryAccountNumber(), p.getSalaryIfsc(),
                     p.getSalaryAccountMobile(), p.getPreviousSalaryDate(),
-                    p.getTermsVersion(), p.getTermsAcceptedAt(), p.getPepDeclaredAt());
+                    p.getTermsVersion(), p.getTermsAcceptedAt(), p.getPepDeclaredAt(), p.getUan());
         }
 
         /**
@@ -157,7 +161,7 @@ public final class ReviewDtos {
                     addressVerified, pennyDropVerified,
                     null, null, null,
                     officialEmail, salaryAccountNumber, salaryIfsc, salaryAccountMobile, previousSalaryDate,
-                    termsVersion, termsAcceptedAt, pepDeclaredAt);
+                    termsVersion, termsAcceptedAt, pepDeclaredAt, uan);
         }
     }
 

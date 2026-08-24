@@ -16,6 +16,7 @@
  *  - customer-review — CustomerReview
  *  - loan-history    — LoanHistory
  *  - review-lookup   — ReviewLookup
+ *  - bulk-actions    — useQueueSelection / useBulkQueue / RejectDialog / AssignDialog / BulkActionBar
  */
 
 export * from "./pipeline/hooks";
@@ -25,3 +26,4 @@ export * from "./pipeline/app-row";
 export * from "./pipeline/customer-review";
 export * from "./pipeline/loan-history";
 export * from "./pipeline/review-lookup";
+export * from "./pipeline/bulk-actions";

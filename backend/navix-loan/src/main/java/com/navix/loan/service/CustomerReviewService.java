@@ -280,6 +280,12 @@ public class CustomerReviewService {
         p.setEmergencyContactName(trimToNull(req.emergencyContactName()));
         p.setEmergencyContactPhone(trimToNull(req.emergencyContactPhone()));
         p.setEmergencyContactRelation(trimToNull(req.emergencyContactRelation()));
+        // UAN isn't itself verified (no invalidation) — it just sharpens the employment lookup.
+        String uan = trimToNull(req.uan());
+        if (uan != null && !uan.equals(p.getUan())) {
+            logChange(customerId, appId, "uan", p.getUan(), uan);
+            p.setUan(uan);
+        }
 
         CustomerProfile saved = profileRepository.save(p);
         // Re-verification + eligibility side effects.

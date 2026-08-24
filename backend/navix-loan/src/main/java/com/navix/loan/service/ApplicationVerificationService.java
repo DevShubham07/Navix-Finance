@@ -1443,19 +1443,23 @@ public class ApplicationVerificationService {
 
         String pan = profile.getPan();
         String mobile = profile.getMobile();
-        if (isBlank(pan) && isBlank(mobile)) {
-            // Lookup needs at least one identifier; without either there is nothing to ask.
+        // A borrower-supplied UAN (lookup method 3, docs/digitap/UAN_EMPLOYMENT.md §2) is the exact
+        // match, so it alone is enough to satisfy the identifier gate below — the PAN/mobile/dob/name
+        // path stays byte-for-byte unchanged when it's absent.
+        String uan = isBlank(profile.getUan()) ? null : profile.getUan();
+        if (isBlank(pan) && isBlank(mobile) && uan == null) {
+            // Lookup needs at least one identifier; without any there is nothing to ask.
             Map<String, Object> derived = new LinkedHashMap<>();
             derived.put("found", false);
             derived.put("reason", "NO_IDENTIFIER");
             return view(upsert(appId, EMPLOYMENT, REVIEW, null, null, ref, null, null, null, derived,
-                    "Employment not checked — no PAN or mobile on file"));
+                    "Employment not checked — no PAN, mobile or UAN on file"));
         }
 
         VerificationPort.EmploymentCheck r;
         try {
             r = verification.verifyEmployment(pan, mobile, isoDob(profile.getDob()),
-                    nz(profile.getFullName()), nz(profile.getEmployer()), ref);
+                    nz(profile.getFullName()), nz(profile.getEmployer()), uan, ref);
         } catch (RuntimeException providerFailure) {
             return providerUnavailable(appId, EMPLOYMENT,
                     "Employment check unavailable — pending manual review");

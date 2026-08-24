@@ -64,13 +64,13 @@ public class DigitapUanClient {
     }
 
     public UanLookupResponse verify(String pan, String mobile, String dob, String employeeName,
-                                      String employerName, String clientRef) {
+                                      String employerName, String knownUan, String clientRef) {
         // The provider rejects employer_name unless employee_name rides along, so drop it rather than
         // send a request we know is invalid.
         String employer = isBlank(employeeName) ? null : blankToNull(employerName);
         UanLookupRequest request = new UanLookupRequest(
                 ref(clientRef), blankToNull(pan), blankToNull(mobile), blankToNull(dob),
-                blankToNull(employeeName), employer);
+                blankToNull(employeeName), employer, blankToNull(knownUan));
 
         JsonNode root = post(digitapSvc, ENDPOINT, request);
         Integer resultCode = integer(root.path("result_code"));

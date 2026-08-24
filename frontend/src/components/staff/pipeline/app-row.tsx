@@ -16,11 +16,13 @@ import { AmountCell, DueCell } from "./cells";
  *
  * The console is a triage grid. The row always carries the identifiers a staffer needs to recognise
  * a file at a glance — application id, customer name, mobile, customer id, and the loan number once
- * one exists — plus amount, stage and credit. Every *control* that needs typing or picking (assign
- * an executive, reject with a reason, mark pending, enter a transaction id) lives in
- * {@link ApplicationDetailDialog}, which `Open` and the id both raise and which already renders the
- * full stage cluster. Long values truncate with an ellipsis and keep the full text in `title`, so
- * nothing is lost and the table never scrolls sideways.
+ * one exists — plus amount, stage and credit. The rule is now "no typing *in the row*": Assign and
+ * Reject are back as row-level buttons (they raise the same dialogs `pipeline/bulk-actions.tsx`
+ * uses for the bulk case, single-id), but anything that still needs a field typed inline — mark
+ * pending, enter a transaction id — lives in {@link ApplicationDetailDialog}, which `Open` and the
+ * id both raise and which already renders the full stage cluster. Long values truncate with an
+ * ellipsis and keep the full text in `title`, so nothing is lost and the table never scrolls
+ * sideways.
  */
 export function AppRow({
   app,
@@ -28,6 +30,8 @@ export function AppRow({
   withLoanHistory,
   showJourney = true,
   index,
+  selected,
+  onToggleSelect,
 }: {
   app: ApplicationView;
   actions: (app: ApplicationView) => React.ReactNode;
@@ -35,6 +39,9 @@ export function AppRow({
   showJourney?: boolean;
   /** Page-adjusted 0-based row index, rendered as a leading S.No. column. */
   index: number;
+  /** Bulk-selection checkbox state — both omitted together (see `QueueTable`'s `selection` prop). */
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const [journeyOpen, setJourneyOpen] = React.useState(false);
   const [showDetail, setShowDetail] = React.useState(false);
@@ -49,7 +56,17 @@ export function AppRow({
     <>
       <tr>
         <td className="text-muted">{index + 1}</td>
-        <td className="staff-sticky-identity">
+        {onToggleSelect && (
+          <td className="staff-sticky-identity">
+            <input
+              type="checkbox"
+              checked={selected ?? false}
+              onChange={onToggleSelect}
+              aria-label={`Select application #${app.id}`}
+            />
+          </td>
+        )}
+        <td className={onToggleSelect ? undefined : "staff-sticky-identity"}>
           <button
             type="button"
             onClick={() => setShowDetail(true)}
@@ -150,7 +167,7 @@ export function AppRow({
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={14} className="bg-grey-50">
+          <td colSpan={onToggleSelect ? 15 : 14} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

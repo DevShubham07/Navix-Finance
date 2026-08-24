@@ -54,6 +54,11 @@ public class CustomerProfile extends BaseAuditEntity {
     @Column(name = "employment_status", length = 64)
     private String employmentStatus;
 
+    /** Optional borrower-supplied EPFO UAN (12 digits) — gives the Digitap employment lookup its
+     *  direct method (method 3) instead of the PAN/mobile fallback (V66). */
+    @Column(name = "uan", length = 12)
+    private String uan;
+
     @Column(name = "monthly_salary_paise")
     private Long monthlySalaryPaise;
 

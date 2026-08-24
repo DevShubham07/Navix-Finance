@@ -26,8 +26,12 @@ export default function SignupSubmittedPage() {
   const { mounted, appId } = useOnboarding();
   const [submitted, setSubmitted] = React.useState(false);
   const [uploaded, setUploaded] = React.useState<Record<string, string>>({});
+  const [uan, setUan] = React.useState("");
+  const [uanSaving, setUanSaving] = React.useState(false);
+  const [uanSaved, setUanSaved] = React.useState(false);
   const [error, setError] = React.useState<string>();
   const done = React.useRef(false);
+  const uanValid = uan === "" || /^\d{12}$/.test(uan);
 
   React.useEffect(() => {
     if (!mounted) return;
@@ -62,6 +66,24 @@ export default function SignupSubmittedPage() {
       setUploaded((prev) => ({ ...prev, [docType]: f.name }));
     } catch (err) {
       setError(formatApiError(err, "Upload failed — please try again."));
+    }
+  };
+
+  // UAN is another optional accelerator, same deal as the extra documents above: it just sharpens the
+  // employment check (Digitap's exact UAN lookup instead of fuzzy PAN/mobile/name matching), never gates.
+  const saveUan = async () => {
+    if (appId == null || uan === "" || !uanValid) return;
+    setUanSaving(true);
+    setError(undefined);
+    try {
+      await borrowerApi.editProfile(appId, { uan });
+      setUanSaved(true);
+      // Fire-and-forget re-check, same pattern as signup/consent — never blocks, never surfaces here.
+      await verificationApi.employment(appId).catch(() => {});
+    } catch (err) {
+      setError(formatApiError(err, "Couldn't save that — please try again."));
+    } finally {
+      setUanSaving(false);
     }
   };
 
@@ -105,6 +127,48 @@ export default function SignupSubmittedPage() {
             </label>
           ))}
         </div>
+
+        <div className="mt-4 border-t border-line pt-4">
+          <label className="field">
+            <span>EPFO UAN (optional)</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="12-digit number, printed on your payslip"
+              value={uan}
+              maxLength={12}
+              onChange={(e) => {
+                setUan(e.target.value.replace(/\D/g, "").slice(0, 12));
+                setUanSaved(false);
+              }}
+              disabled={uanSaving}
+            />
+          </label>
+          {uan !== "" && !uanValid ? (
+            <p className="mt-1 text-sm text-error-600">That&apos;s not 12 digits — or just leave it blank.</p>
+          ) : (
+            <p className="mt-1 text-xs text-muted">
+              Sharing your Universal Account Number helps us confirm your employment faster. Skipping it changes nothing.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={saveUan}
+            disabled={uanSaving || uan === "" || !uanValid || uanSaved}
+            className="btn btn-outline btn-sm mt-2"
+          >
+            {uanSaved ? (
+              <span className="flex items-center gap-1.5">
+                <FileCheck2 size={16} className="text-success-600" /> Saved
+              </span>
+            ) : uanSaving ? (
+              "Saving…"
+            ) : (
+              "Save"
+            )}
+          </button>
+        </div>
+
         {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
       </div>
 

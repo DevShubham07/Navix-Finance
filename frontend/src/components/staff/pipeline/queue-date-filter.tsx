@@ -1,10 +1,13 @@
 "use client";
 
 /**
- * One global Today/Yesterday/Custom/All-time date filter for the live-applications page —
- * narrows every stage panel at once (product decision: a single page-wide control, not one per
- * panel). {@link QueueRangeProvider} holds the current range; {@link useQueueRange} reads it from
- * any panel/query; {@link QueueDateFilter} is the control itself.
+ * One global Today/Yesterday/Custom/All-time date filter, plus the page-wide search box, for the
+ * live-applications page — both narrow every stage panel at once (product decision: page-wide
+ * controls, not one per panel). {@link QueueRangeProvider} holds the current `{ range, query }`;
+ * {@link useQueueRange}/{@link useQueueQuery} read their half from any panel/query — kept as two
+ * hooks (rather than one that returns the whole object) so the many existing `range.from`/`range.to`
+ * call sites didn't have to change shape when `query` was added. {@link QueueDateFilter} is the date
+ * control itself; the search `<input>` lives on the page (`app/staff/applications/page.tsx`).
  */
 
 import * as React from "react";
@@ -17,19 +20,32 @@ export interface QueueRange {
   to?: string;
 }
 
-const Ctx = React.createContext<QueueRange>({});
+/** The page-wide filter: the date window plus the (already-debounced) search term. */
+export interface QueueFilter {
+  range: QueueRange;
+  /** Narrows WITHIN `range` — name/mobile/PAN/application/loan #. Must never bypass the date filter. */
+  query: string;
+}
+
+const Ctx = React.createContext<QueueFilter>({ range: {}, query: "" });
 
 /** Read the current global date range — include `range.from`/`range.to` in any query key that
  *  consumes it, or stale results get served across a filter change. */
 export function useQueueRange(): QueueRange {
-  return React.useContext(Ctx);
+  return React.useContext(Ctx).range;
+}
+
+/** Read the current global search term — fold it into any query key that consumes it, same as
+ *  `range.from`/`range.to`, or a filter change serves stale rows. */
+export function useQueueQuery(): string {
+  return React.useContext(Ctx).query;
 }
 
 export function QueueRangeProvider({
   value,
   children,
 }: {
-  value: QueueRange;
+  value: QueueFilter;
   children: React.ReactNode;
 }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

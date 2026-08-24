@@ -28,6 +28,11 @@ function LoginInner() {
   // unblocked rather than leaving a dead button — the backend still decides.
   const [captchaBroken, setCaptchaBroken] = React.useState(false);
 
+  // captchaBroken must not outlive the challenge that tripped it — otherwise one stalled widget
+  // (e.g. hidden behind the conflict dialog, see below) permanently downgrades every future submit
+  // to an empty token, which the backend always rejects.
+  React.useEffect(() => setCaptchaBroken(false), [captchaKey]);
+
   // Unset site key = no widget rendered, so the gate must not block dev / e2e / the demo stack.
   const captchaReady = !config.turnstileSiteKey || !!captcha || captchaBroken;
   const canSubmit = email.trim().length > 0 && password.length > 0 && !busy && captchaReady;
@@ -105,12 +110,17 @@ function LoginInner() {
               Forgot password?
             </Link>
           </div>
-          <Turnstile
-                action="staff-login"
-                onToken={setCaptcha}
-                onError={() => setCaptchaBroken(true)}
-                resetKey={captchaKey}
-              />
+          {/* Single widget instance: while the conflict dialog is open, it renders there instead (a
+              re-challenge can escalate to an interactive checkbox, which must not sit behind the
+              dialog's full-screen overlay, unreachable) — see the copy in the dialog below. */}
+          {!conflict && (
+            <Turnstile
+              action="staff-login"
+              onToken={setCaptcha}
+              onError={() => setCaptchaBroken(true)}
+              resetKey={captchaKey}
+            />
+          )}
           <button type="submit" disabled={!canSubmit} className="btn btn-navy btn-block">
             {busy ? "Signing in…" : "Sign in"}
           </button>
@@ -129,6 +139,17 @@ function LoginInner() {
             signed in.
           </p>
         </DialogHeader>
+        {/* Re-challenge lives here, not in the form, while this dialog is open — the doLogin catch
+            below always burns the previous token and mounts a fresh widget, and it must be visible
+            and clickable in case Cloudflare escalates it to an interactive checkbox. */}
+        {conflict && (
+          <Turnstile
+            action="staff-login"
+            onToken={setCaptcha}
+            onError={() => setCaptchaBroken(true)}
+            resetKey={captchaKey}
+          />
+        )}
         <DialogFooter>
           <button type="button" className="btn btn-outline" onClick={() => setConflict(false)} disabled={busy}>
             Continue there

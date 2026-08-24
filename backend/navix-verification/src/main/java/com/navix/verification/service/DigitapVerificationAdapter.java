@@ -86,9 +86,9 @@ public class DigitapVerificationAdapter implements VerificationPort {
 
     @Override
     public EmploymentCheck verifyEmployment(String pan, String mobile, String dob, String employeeName,
-                                            String employerName, String clientRef) {
+                                            String employerName, String uan, String clientRef) {
         DigitapDtos.UanLookupResponse r =
-                uanClient.verify(pan, mobile, dob, employeeName, employerName, clientRef);
+                uanClient.verify(pan, mobile, dob, employeeName, employerName, uan, clientRef);
         boolean found = r.resultCode() != null && r.resultCode() == UAN_RESULT_OK;
         boolean tooMany = r.resultCode() != null && r.resultCode() == UAN_RESULT_TOO_MANY;
         return new EmploymentCheck(r.txnId(), "DIGITAP", found, tooMany, r.message(),

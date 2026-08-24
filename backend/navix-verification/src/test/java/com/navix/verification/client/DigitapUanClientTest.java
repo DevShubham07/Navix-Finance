@@ -70,7 +70,7 @@ class DigitapUanClientTest {
                 """);
 
         UanLookupResponse r = new DigitapUanClient(b.restClient())
-                .verify("AAAPA0000A", "9000000000", "2000-01-31", "Firstname Lastname", "Example Employer", "ref-1");
+                .verify("AAAPA0000A", "9000000000", "2000-01-31", "Firstname Lastname", "Example Employer", null, "ref-1");
 
         assertThat(r.txnId()).isEqualTo("REQ-UAN-1");
         assertThat(r.resultCode()).isEqualTo(101);
@@ -111,7 +111,7 @@ class DigitapUanClientTest {
                 """);
 
         UanLookupResponse r = new DigitapUanClient(b.restClient())
-                .verify("AAAPA0000A", null, null, null, null, "ref-2");
+                .verify("AAAPA0000A", null, null, null, null, null, "ref-2");
 
         assertThat(r.isEmployed()).isTrue();
         assertThat(r.isRecent()).isNull();
@@ -133,7 +133,7 @@ class DigitapUanClientTest {
                 """);
 
         UanLookupResponse r = new DigitapUanClient(b.restClient())
-                .verify("AAAPA0000A", null, null, null, null, "ref-3");
+                .verify("AAAPA0000A", null, null, null, null, null, "ref-3");
 
         assertThat(r.resultCode()).isEqualTo(103);
         assertThat(r.message()).isEqualTo("No record(s) found");
@@ -152,7 +152,7 @@ class DigitapUanClientTest {
                 """);
 
         UanLookupResponse r = new DigitapUanClient(b.restClient())
-                .verify(null, "9000000000", null, null, null, "ref-4");
+                .verify(null, "9000000000", null, null, null, null, "ref-4");
 
         assertThat(r.resultCode()).isEqualTo(104);
         assertThat(r.message()).isEqualTo("Too many responses");
@@ -177,7 +177,7 @@ class DigitapUanClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         new DigitapUanClient(b.restClient())
-                .verify("AAAPA0000A", null, null, null, "Example Employer", "ref-5");
+                .verify("AAAPA0000A", null, null, null, "Example Employer", null, "ref-5");
 
         b.server().verify();
     }
@@ -195,7 +195,7 @@ class DigitapUanClientTest {
                 """);
 
         UanLookupResponse r = new DigitapUanClient(b.restClient())
-                .verify(null, "9000000000", null, null, null, "ref-6");
+                .verify(null, "9000000000", null, null, null, null, "ref-6");
 
         assertThat(r.uan()).isEqualTo("100000000002");
         assertThat(r.nameOnRecord()).isEqualTo("SECOND PERSON");
@@ -220,7 +220,7 @@ class DigitapUanClientTest {
                 """);
 
         UanLookupResponse r = new DigitapUanClient(b.restClient())
-                .verify("AAAPA0000A", null, null, null, null, "ref-7");
+                .verify("AAAPA0000A", null, null, null, null, null, "ref-7");
 
         assertThat(r.isEmployed()).isFalse();
         assertThat(r.dateOfExit()).isEqualTo("2026-03-31");

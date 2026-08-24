@@ -109,7 +109,7 @@ public class SignzyVerificationAdapter implements VerificationPort {
 
     @Override
     public EmploymentCheck verifyEmployment(String pan, String mobile, String dob, String employeeName,
-                                            String employerName, String clientRef) {
+                                            String employerName, String uan, String clientRef) {
         throw new CapabilityNotSupportedException("Signzy has no UAN/EPFO employment lookup");
     }
 

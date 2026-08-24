@@ -36,6 +36,8 @@ class AuthControllerTest {
 
     /** The exact hash seeded in V17 for password "Admin@12345". */
     private static final String SEEDED_HASH = "$2a$10$exssI9R9G/cJdEzsk0Apmemf5x7pUWRYlrwVWsb3WOKoq4R31pq/W";
+    /** Matches {@code navix.auth.ttl-seconds}'s default (1 day). */
+    private static final long STAFF_TTL_SECONDS = 86400L;
 
     @Mock private StaffUserRepository staffRepository;
     @Mock private BorrowerOtpService otpService;
@@ -55,7 +57,7 @@ class AuthControllerTest {
         PasswordEncoder encoder = new BCryptPasswordEncoder();
         controller = new AuthController(staffRepository, jwt, encoder, otpService, profileRepository,
                 credentialRepository, passwordResetService, inviteService, mobileRepository,
-                new AttemptLimiter(), new CaptchaVerifier("", ""), staffSessionRegistry);
+                new AttemptLimiter(), new CaptchaVerifier("", ""), staffSessionRegistry, STAFF_TTL_SECONDS);
     }
 
     @AfterEach
@@ -108,6 +110,7 @@ class AuthControllerTest {
     void staffLogin_rejectsSecondSessionWithSessionConflict() {
         StaffUser admin = admin();
         admin.setActiveSessionId("existing-session");
+        admin.setActiveSessionAt(java.time.Instant.now());
         when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin));
 
         assertThatThrownBy(() -> controller.staffLogin(
@@ -118,9 +121,39 @@ class AuthControllerTest {
     }
 
     @Test
+    void staffLogin_allowsLoginWhenStoredSessionIsOlderThanTheStaffTtl() {
+        // A closed browser / cleared cookie / expired token leaves active_session_id set forever;
+        // once active_session_at is older than the token's own TTL it can no longer back a live
+        // session, so the conflict must NOT fire even without `force`.
+        StaffUser admin = admin();
+        admin.setActiveSessionId("stale-session");
+        admin.setActiveSessionAt(java.time.Instant.now().minusSeconds(STAFF_TTL_SECONDS + 60));
+        when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin));
+
+        var resp = controller.staffLogin(
+                new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", null, null));
+
+        assertThat(resp.isSuccess()).isTrue();
+    }
+
+    @Test
+    void staffLogin_rejectsSecondSessionWhenStoredSessionIsStillWithinTheStaffTtl() {
+        StaffUser admin = admin();
+        admin.setActiveSessionId("recent-session");
+        admin.setActiveSessionAt(java.time.Instant.now().minusSeconds(60));
+        when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> controller.staffLogin(
+                new StaffLoginRequest("meera.krishnan@navix.example", "Admin@12345", null, null)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("already signed in");
+    }
+
+    @Test
     void staffLogin_forceOverwritesTheSession() {
         StaffUser admin = admin();
         admin.setActiveSessionId("existing-session");
+        admin.setActiveSessionAt(java.time.Instant.now());
         when(staffRepository.findByEmail("meera.krishnan@navix.example")).thenReturn(Optional.of(admin));
 
         var resp = controller.staffLogin(

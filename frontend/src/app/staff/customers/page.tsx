@@ -4,11 +4,22 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
+import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon } from "lucide-react";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { PermissionGate, NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
+import {
+  PermissionGate,
+  NoAccessNotice,
+  errMessage,
+  useStaffMe,
+  useQueueSelection,
+  useBulkRoleFlags,
+  RejectDialog,
+  AssignDialog,
+  BulkActionBar,
+  type RejectMode,
+} from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
@@ -34,8 +45,48 @@ import {
 import { isMine, decidedCustomerIds } from "@/lib/customers/mine";
 
 /**
+ * Statuses the backend's transition map allows REJECTED from (mirrors `ApplicationStatus.
+ * canTransitionTo` — see CLAUDE.md §5/§11). Anything else (ACTIVE/CLOSED/REJECTED/CANCELLED/
+ * OVERDUE/DEFAULTED/WRITTEN_OFF/DISBURSED/…) has nothing left to reject.
+ */
+const REJECTABLE_STATUSES = new Set<ApplicationStatus>([
+  "DRAFT",
+  "KYC_PENDING",
+  "KYC_APPROVED",
+  "REVIEW_PENDING",
+  "CREDIT_EXEC_PENDING",
+  "SANCTIONED",
+  "DISBURSEMENT_PENDING",
+]);
+
+/** DISBURSEMENT_PENDING rejects through the disbursement-decision call; every other rejectable
+ *  stage (credit review, KYC, reborrow review, sanctioned) rejects through reject-lead. */
+function rejectModeFor(status: string | null | undefined): RejectMode | null {
+  if (!status || !REJECTABLE_STATUSES.has(status as ApplicationStatus)) return null;
+  return status === "DISBURSEMENT_PENDING" ? "disbursement" : "credit";
+}
+
+/** Why a row's checkbox/actions are disabled — surfaced as the checkbox `title`. */
+function notActionableReason(c: CustomerSummary): string | null {
+  if (c.latestApplicationId == null) return "No application on this customer to act on";
+  if (rejectModeFor(c.latestStatus) != null) return null;
+  switch (c.latestStatus) {
+    case "REJECTED":
+      return "Already rejected";
+    case "CANCELLED":
+      return "Application already cancelled";
+    case "CLOSED":
+      return "Loan is closed — nothing to reject";
+    case "KYC_REJECTED":
+      return "Already rejected";
+    default:
+      return "Loan is active — nothing to reject";
+  }
+}
+
+/**
  * Customers — a borrower-centric roll-up across the loan aggregate. Segment chips filter
- * client-side (?seg=); search matches name, PAN, mobile or customer id (server-side).
+ * client-side (?seg=); search matches name, PAN, mobile, customer or application id (server-side).
  */
 export default function CustomersPage() {
   return (
@@ -130,6 +181,47 @@ function CustomersPageInner() {
     return list;
   }, [pageRows]);
 
+  // --- Bulk assign / bulk reject (Task 1/2) ---------------------------------------------------
+  // The bulk-action target is each row's LATEST application, not the customer id — matching the
+  // pipeline queues, which act on applications. Only rows whose latest application is still in a
+  // rejectable stage are selectable at all, so select-all can never sweep an already-decided or
+  // live-loan row into a reject/assign run.
+  const { canBulkReject, canBulkAssign } = useBulkRoleFlags();
+  const actionableRows = React.useMemo(
+    () => filtered.filter((c) => c.latestApplicationId != null && notActionableReason(c) == null),
+    [filtered],
+  );
+  const actionableIds = React.useMemo(
+    () => actionableRows.map((c) => c.latestApplicationId as number),
+    [actionableRows],
+  );
+  const modeById = React.useMemo(() => {
+    const m = new Map<number, RejectMode>();
+    for (const c of actionableRows) {
+      const mode = rejectModeFor(c.latestStatus);
+      if (c.latestApplicationId != null && mode) m.set(c.latestApplicationId, mode);
+    }
+    return m;
+  }, [actionableRows]);
+  const sel = useQueueSelection(actionableIds);
+  const selectedIds = React.useMemo(() => [...sel.selected], [sel.selected]);
+  const selectedModes = React.useMemo(
+    () => new Set(selectedIds.map((id) => modeById.get(id)).filter((m): m is RejectMode => m != null)),
+    [selectedIds, modeById],
+  );
+  // A bulk reject run loops exactly one endpoint (rejectLead vs. disbursementDecision — see
+  // `RejectDialog`). Mixing a DISBURSEMENT_PENDING row into the same selection as a credit-stage
+  // row leaves no single mode to run it under, so rather than silently splitting one click into
+  // two separate reason prompts, the bulk Reject action just requires a single-mode selection —
+  // the bar disables Reject with a tooltip when the selection spans both.
+  const mixedRejectModes = selectedModes.size > 1;
+  const bulkRejectMode: RejectMode | undefined = selectedModes.size === 1 ? [...selectedModes][0] : undefined;
+
+  const [pendingReject, setPendingReject] = React.useState<{ ids: number[]; mode: RejectMode } | null>(null);
+  const [pendingAssign, setPendingAssign] = React.useState<number[] | null>(null);
+  const showBulkColumn = canBulkReject || canBulkAssign;
+  const colCount = showBulkColumn ? 18 : 17;
+
   function setSeg(next: CustomerSegment) {
     const p = new URLSearchParams(searchParams.toString());
     if (next === "all") p.delete("seg");
@@ -203,7 +295,7 @@ function CustomersPageInner() {
             aria-label="Search customers"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name, PAN, mobile or customer ID"
+            placeholder="Name, PAN, mobile, customer or application ID"
             leftIcon={<Search size={15} />}
             className="!mb-0"
             inputClassName="w-72"
@@ -212,6 +304,25 @@ function CustomersPageInner() {
           {mine && (
             <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
               My customers
+            </span>
+          )}
+          {showBulkColumn && sel.selected.size > 0 && (
+            <BulkActionBar
+              count={sel.selected.size}
+              onAssign={canBulkAssign ? () => setPendingAssign(selectedIds) : undefined}
+              onReject={
+                canBulkReject && !mixedRejectModes && bulkRejectMode
+                  ? () => setPendingReject({ ids: selectedIds, mode: bulkRejectMode })
+                  : undefined
+              }
+            />
+          )}
+          {canBulkReject && mixedRejectModes && (
+            <span
+              className="text-xs text-warning-700"
+              title="Selected applications span both credit-stage and disbursement-pending rejects — select rows of only one kind to bulk reject."
+            >
+              Select one stage at a time to bulk reject
             </span>
           )}
         </div>
@@ -242,7 +353,17 @@ function CustomersPageInner() {
                     application; the roll-up columns (Owner/Loans/Outstanding) are customer-only. */}
                 <tr>
                   <th>S.No.</th>
-                  <th className="staff-sticky-identity">Customer</th>
+                  {showBulkColumn && (
+                    <th className="staff-sticky-identity">
+                      <input
+                        type="checkbox"
+                        checked={actionableIds.length > 0 && sel.selected.size === actionableIds.length}
+                        onChange={sel.toggleAll}
+                        aria-label="Select all"
+                      />
+                    </th>
+                  )}
+                  <th className={showBulkColumn ? undefined : "staff-sticky-identity"}>Customer</th>
                   <th title="Signup / application start date">Date</th>
                   <th>Mobile</th>
                   <th>PAN</th>
@@ -272,7 +393,7 @@ function CustomersPageInner() {
                     return (
                       <React.Fragment key={group.key}>
                         <tr>
-                          <td colSpan={17} className="bg-grey-50 px-3 py-2">
+                          <td colSpan={colCount} className="bg-grey-50 px-3 py-2">
                             <button
                               type="button"
                               onClick={() => toggleDate(group.key)}
@@ -288,7 +409,24 @@ function CustomersPageInner() {
                           groupRows.map(({ c, sno }) => (
                   <tr key={c.customerId} className="hover:bg-grey-50">
                     <td className="text-muted">{sno}</td>
-                    <td className="staff-cell staff-sticky-identity">
+                    {showBulkColumn && (
+                      <td className="staff-sticky-identity">
+                        {(() => {
+                          const reason = notActionableReason(c);
+                          return (
+                            <input
+                              type="checkbox"
+                              checked={c.latestApplicationId != null && sel.selected.has(c.latestApplicationId)}
+                              onChange={() => c.latestApplicationId != null && sel.toggle(c.latestApplicationId)}
+                              disabled={reason != null}
+                              title={reason ?? undefined}
+                              aria-label={`Select ${c.name ?? `customer #${c.customerId}`}`}
+                            />
+                          );
+                        })()}
+                      </td>
+                    )}
+                    <td className={`staff-cell${showBulkColumn ? "" : " staff-sticky-identity"}`}>
                       <button
                         onClick={() => setOpenId(c.customerId)}
                         className="flex max-w-full items-center gap-2 text-left"
@@ -351,6 +489,31 @@ function CustomersPageInner() {
                     </td>
                     <td className="staff-sticky-actions text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        {canBulkAssign && c.latestApplicationId != null && notActionableReason(c) == null && (
+                          <button
+                            onClick={() => setPendingAssign([c.latestApplicationId as number])}
+                            className="btn btn-sm btn-outline btn-icon"
+                            aria-label="Assign"
+                            title="Assign"
+                          >
+                            <UserPlus size={14} />
+                          </button>
+                        )}
+                        {canBulkReject && c.latestApplicationId != null && rejectModeFor(c.latestStatus) != null && (
+                          <button
+                            onClick={() =>
+                              setPendingReject({
+                                ids: [c.latestApplicationId as number],
+                                mode: rejectModeFor(c.latestStatus) as RejectMode,
+                              })
+                            }
+                            className="btn btn-sm btn-outline btn-icon"
+                            aria-label="Reject"
+                            title="Reject"
+                          >
+                            <XIcon size={14} />
+                          </button>
+                        )}
                         <button
                           onClick={() => setInfoCustomerId(c.customerId)}
                           className="btn btn-sm btn-outline btn-icon"
@@ -386,6 +549,18 @@ function CustomersPageInner() {
 
       <CustomerDetailDialog customerId={openId} onClose={() => setOpenId(null)} />
       <ApplicationInfoDialog customerId={infoCustomerId} onClose={() => setInfoCustomerId(null)} />
+      {pendingReject && (
+        <RejectDialog
+          ids={pendingReject.ids}
+          mode={pendingReject.mode}
+          open
+          onClose={() => setPendingReject(null)}
+          onDone={sel.clear}
+        />
+      )}
+      {pendingAssign && (
+        <AssignDialog ids={pendingAssign} open onClose={() => setPendingAssign(null)} onDone={sel.clear} />
+      )}
     </div>
   );
 }

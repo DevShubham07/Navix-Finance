@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Lock, Loader2, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Receipt } from "lucide-react";
+import { Lock, Loader2, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Receipt, Search } from "lucide-react";
 import { PageHeader, RefreshButton } from "@/components/staff/staff-ui";
 import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
 import { staffApi, isLoanOverdue, type ApplicationView } from "@/lib/api/applications";
@@ -30,10 +30,11 @@ import {
   QueueRangeProvider,
   rangeFor,
   useQueueRange,
+  useQueueQuery,
   type QueuePeriod,
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
-import { InfoTooltip } from "@/components/ui";
+import { Input, InfoTooltip } from "@/components/ui";
 
 /** Roles that don't drive the credit/disbursement pipeline but do need the repayment/closed
  * back-office panels (see `RoleQueues`) — previously left with "no application-pipeline queue". */
@@ -46,6 +47,17 @@ export default function StaffApplicationsPage() {
   const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
+
+  // The page-wide search box — debounced 300ms (mirrors `app/staff/customers/page.tsx`). Narrows
+  // WITHIN the date window above; folded into `QueueRangeProvider` alongside `range` rather than a
+  // second provider, so every panel already reading `useQueueRange()` picks up `useQueueQuery()` the
+  // same way.
+  const [search, setSearch] = React.useState("");
+  const [query, setQuery] = React.useState("");
+  React.useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   if (me.isLoading) {
     return <div className="h-64 rounded border border-line bg-white" />;
@@ -71,7 +83,20 @@ export default function StaffApplicationsPage() {
       >
         <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>
         {isPipeline && (
-          <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
+          <>
+            <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+              <Input
+                aria-label="Search applications"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, mobile, PAN, application or loan #"
+                className="!mb-0"
+                inputClassName="!pl-8 !w-72"
+              />
+            </div>
+          </>
         )}
         <RefreshButton
           queryKeys={[["staff-queue"], ["staff-dashboard-stats"], ["staff-dashboard-queue"], ["staff-pending-repayments"]]}
@@ -93,7 +118,7 @@ export default function StaffApplicationsPage() {
         <ReviewLookup />
 
         {isPipeline ? (
-          <QueueRangeProvider value={range}>
+          <QueueRangeProvider value={{ range, query }}>
             <RoleQueues role={role} />
           </QueueRangeProvider>
         ) : (
@@ -157,6 +182,7 @@ function RoleQueues({ role }: { role: StaffRole }) {
             filter={(app) => app.fastTrack === true}
             actions={(app) => <DisbursementActions app={app} compact />}
             info="Returning borrowers pre-approved on a clean repayment history — these skipped credit review and came straight to you. Release the funds as usual."
+            bulk={{ rejectMode: "disbursement" }}
           />
           <StatusQueue
             title="Standard disbursement"
@@ -164,12 +190,14 @@ function RoleQueues({ role }: { role: StaffRole }) {
             filter={(app) => app.fastTrack !== true}
             actions={(app) => <DisbursementActions app={app} compact />}
             info="Credit-approved loans awaiting release. Make the transfer, then enter its bank/UPI transaction id here — that releases and activates the loan straight away. There is no accountant step behind you."
+            bulk={{ rejectMode: "disbursement" }}
           />
           <StatusQueue
             title="Disbursement failed — retry"
             status="DISBURSEMENT_FAILED"
             actions={(app) => <DisbursementActions app={app} compact />}
             info="Transfers that were marked failed. Re-release them here once the bank issue is resolved."
+            bulk={{ rejectMode: "disbursement" }}
           />
         </>
       )}
@@ -204,14 +232,15 @@ function RoleQueues({ role }: { role: StaffRole }) {
  */
 function AwaitingRepaymentPanel() {
   const range = useQueueRange();
+  const query = useQueueQuery();
   const activeQ = useQuery({
-    queryKey: ["staff-queue", "ACTIVE", range.from ?? "", range.to ?? ""],
-    queryFn: () => staffApi.listByStatus("ACTIVE", range),
+    queryKey: ["staff-queue", "ACTIVE", range.from ?? "", range.to ?? "", query],
+    queryFn: () => staffApi.listByStatus("ACTIVE", range, query || undefined),
     refetchInterval: 8000,
   });
   const overdueQ = useQuery({
-    queryKey: ["staff-queue", "OVERDUE", range.from ?? "", range.to ?? ""],
-    queryFn: () => staffApi.listByStatus("OVERDUE", range),
+    queryKey: ["staff-queue", "OVERDUE", range.from ?? "", range.to ?? "", query],
+    queryFn: () => staffApi.listByStatus("OVERDUE", range, query || undefined),
     refetchInterval: 8000,
   });
 
@@ -329,9 +358,10 @@ function RepaymentColumn({
 function ClosedPanel() {
   const [open, setOpen] = React.useState(false);
   const range = useQueueRange();
+  const query = useQueueQuery();
   const q = useQuery({
-    queryKey: ["staff-queue", "CLOSED", range.from ?? "", range.to ?? ""],
-    queryFn: () => staffApi.listByStatus("CLOSED", range),
+    queryKey: ["staff-queue", "CLOSED", range.from ?? "", range.to ?? "", query],
+    queryFn: () => staffApi.listByStatus("CLOSED", range, query || undefined),
     refetchInterval: open ? 8000 : false,
     enabled: open,
   });

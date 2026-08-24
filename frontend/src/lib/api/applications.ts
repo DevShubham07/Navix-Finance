@@ -428,6 +428,8 @@ export interface ProfileView {
   officialEmailOtpVerified?: boolean | null;
   addressVerified?: boolean | null;
   pennyDropVerified?: boolean | null;
+  /** EPFO/UAN number (Digitap employment verification) — advisory, may be null (§14 UAN caveats). */
+  uan?: string | null;
   nameMatchScore?: number | null;
   /** Phase 1 intake — also what the wizard re-hydrates from on another device (revamp.md C1). */
   officialEmail?: string | null;
@@ -513,6 +515,9 @@ export interface EditProfileInput {
   address?: string | null;
   employer?: string | null;
   employmentStatus?: string | null;
+  /** EPFO Universal Account Number (12 digits). Optional and never gating — with one on file the
+   *  employment check switches to Digitap's exact UAN lookup instead of fuzzy PAN/mobile matching. */
+  uan?: string | null;
   monthlySalaryPaise?: number | null;
   salaryBank?: string | null;
   email?: string | null;
@@ -1460,22 +1465,26 @@ export const staffApi = {
   /**
    * List applications by status, e.g. KYC_PENDING. Optional `range.from`/`range.to` (yyyy-mm-dd)
    * narrow to applications CREATED in that inclusive window — the live-applications
-   * Today/Yesterday/Custom filter.
+   * Today/Yesterday/Custom filter. Optional `q` narrows further, WITHIN that status + date window
+   * (name/mobile/PAN/application/loan #) — it must never bypass the date filter, so it's just
+   * another query param alongside `from`/`to`, not a separate search endpoint.
    */
-  listByStatus: (status: ApplicationStatus, range?: { from?: string; to?: string }) => {
+  listByStatus: (status: ApplicationStatus, range?: { from?: string; to?: string }, q?: string) => {
     const qs = new URLSearchParams({ status });
     if (range?.from) qs.set("from", range.from);
     if (range?.to) qs.set("to", range.to);
+    if (q) qs.set("q", q);
     return bff<ApplicationView[]>(`${STAFF_BASE}?${qs.toString()}`, "GET");
   },
 
   /** The credit head's assignment queue (KYC_APPROVED + applied). Optional `range.from`/`range.to`
    *  narrows to applications CREATED in that inclusive window (the live-applications Today/Yesterday/
-   *  Custom filter). */
-  creditQueue: (range?: { from?: string; to?: string }) => {
+   *  Custom filter); optional `q` narrows further within that window (see {@link listByStatus}). */
+  creditQueue: (range?: { from?: string; to?: string }, q?: string) => {
     const qs = new URLSearchParams();
     if (range?.from) qs.set("from", range.from);
     if (range?.to) qs.set("to", range.to);
+    if (q) qs.set("q", q);
     const suffix = qs.toString();
     return bff<ApplicationView[]>(`${STAFF_BASE}/credit-queue${suffix ? `?${suffix}` : ""}`, "GET");
   },

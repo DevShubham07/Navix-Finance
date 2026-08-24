@@ -247,7 +247,10 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
     case "ADMIN": {
       const [lists, repayments, settlements] = await Promise.all([
         Promise.all(
-          (["KYC_PENDING", "CREDIT_EXEC_PENDING", "SANCTIONED", "DISBURSEMENT_PENDING"] as ApplicationStatus[]).map(
+          // Deliberately NOT alphabetical/lifecycle order: files waiting on money
+          // (DISBURSEMENT_PENDING) lead, and SANCTIONED trails last — it's still moving inside the
+          // borrower's own journey (e-sign/penny-drop/transfer) with nobody on staff blocking it.
+          (["DISBURSEMENT_PENDING", "KYC_PENDING", "CREDIT_EXEC_PENDING", "SANCTIONED"] as ApplicationStatus[]).map(
             (s) => safe(staffApi.listByStatus(s)),
           ),
         ),
@@ -763,7 +766,11 @@ function DecisionsSection({
               info="Files sitting with you right now — a live snapshot, not scoped to the period picker."
             />
             <StatCard label="Avg turnaround" value={mins(stats?.avgTurnaroundMinutes)} info="Mean time from a file being assigned to you until you acted on it." />
-            <StatCard label="Value moved" value={paiseToINR(stats?.valuePaise ?? null)} />
+            <StatCard
+              label="Value moved"
+              value={paiseToINR(stats?.valuePaise ?? null)}
+              hint="Sanctioned/disbursed value of the files you moved forward in this period."
+            />
             <StatCard
               label="Active days"
               value={num(stats?.activeDays)}
@@ -841,10 +848,6 @@ function OutcomesSection({ stats, loading }: { stats: ReturnType<typeof outcomeS
             label="Avg bureau score"
             value={`${score(stats.avgScoreApproved)} approved`}
             hint={`vs ${score(stats.avgScoreRejected)} rejected`}
-          />
-          <StatCard
-            label="★ mix (approved)"
-            value={([5, 4, 3, 2, 1] as const).map((s) => `${s}★ ${stats.starMix[s]}`).join(" · ")}
           />
         </div>
       )}

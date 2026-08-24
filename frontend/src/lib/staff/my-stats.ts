@@ -155,7 +155,6 @@ export interface OutcomeStats {
   avgSanctionedPaise: number | null;
   avgScoreApproved: number | null;
   avgScoreRejected: number | null;
-  starMix: Record<1 | 2 | 3 | 4 | 5, number>;
 }
 
 function decidedCustomers(
@@ -203,13 +202,6 @@ export function outcomeStats(decisions: DecisionView[], book: CustomerSummary[])
     .filter((c) => c.creditScore != null)
     .map((c) => c.creditScore as number);
 
-  const starMix: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  for (const c of approvedCustomers) {
-    if (c.starRating != null && c.starRating >= 1 && c.starRating <= 5) {
-      starMix[c.starRating as 1 | 2 | 3 | 4 | 5]++;
-    }
-  }
-
   return {
     approvedCount: approvedCustomers.length,
     nowOverdue: overdue.length,
@@ -222,7 +214,6 @@ export function outcomeStats(decisions: DecisionView[], book: CustomerSummary[])
     avgSanctionedPaise: mean(sanctioned),
     avgScoreApproved: mean(scoresApproved),
     avgScoreRejected: mean(scoresRejected),
-    starMix,
   };
 }
 

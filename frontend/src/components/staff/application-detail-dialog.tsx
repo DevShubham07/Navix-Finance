@@ -76,6 +76,7 @@ import {
   CreditDecisionActions,
   DisbursementActions,
   AdminForceDisbursementAction,
+  SanctionedRejectAction,
   NoAccessNotice,
 } from "@/components/staff/live-pipeline";
 
@@ -118,9 +119,16 @@ function actionFor(app: ApplicationView): React.ReactNode {
     case "CREDIT_EXEC_PENDING":
       return <CreditDecisionActions app={app} />;
     case "SANCTIONED":
-      // ADMIN-only escape hatch — normally this stage waits on the borrower's own offer
-      // journey (accept-offer), so every other role sees "Not your step" here.
-      return <AdminForceDisbursementAction app={app} />;
+      // "Reject with a reason" sits beside the ADMIN-only "force with disbursement" escape hatch —
+      // normally this stage just waits on the borrower's own offer journey (accept-offer), so every
+      // other role sees "Not your step" on the force button (SanctionedRejectAction is credit-role
+      // gated separately, via loan:review).
+      return (
+        <>
+          <SanctionedRejectAction app={app} />
+          <AdminForceDisbursementAction app={app} />
+        </>
+      );
     case "DISBURSEMENT_PENDING":
     case "DISBURSEMENT_FAILED":
       return <DisbursementActions app={app} />;

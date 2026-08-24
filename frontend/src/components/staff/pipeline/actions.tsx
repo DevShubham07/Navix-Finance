@@ -18,6 +18,7 @@ import { hasPermission, type Permission } from "@/lib/auth/rbac";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
 import { SanctionDialog } from "@/components/staff/sanction-dialog";
 import { useStaffMe, useRefreshAfterAction, errMessage } from "@/components/staff/pipeline/hooks";
+import { RejectDialog, AssignDialog } from "@/components/staff/pipeline/bulk-actions";
 
 function ApproveRejectButtons({
   onApprove,
@@ -129,6 +130,8 @@ function ProofDecisionActions({
   requireProofOnApprove = true,
   proofPlaceholder = "Transaction id / reference",
   hint,
+  rejectApplicationId,
+  rejectMode,
 }: {
   compact?: boolean;
   permission: Permission;
@@ -141,10 +144,30 @@ function ProofDecisionActions({
   requireProofOnApprove?: boolean;
   proofPlaceholder?: string;
   hint?: string;
+  /**
+   * The row's application id + the `RejectDialog` mode to loop it through — required to render the
+   * compact Reject button (approve stays dialog-only there; it needs a per-file txn id).
+   */
+  rejectApplicationId?: number;
+  rejectMode?: "credit" | "disbursement";
 }) {
   const [proof, setProof] = React.useState("");
+  const [rejecting, setRejecting] = React.useState(false);
   const proofMissing = requireProofOnApprove && proof.trim().length === 0;
-  if (compact) return null;
+  if (compact) {
+    if (rejectApplicationId == null || rejectMode == null) return null;
+    return (
+      <ActionGate permission={permission}>
+        <button
+          onClick={() => setRejecting(true)}
+          className="btn btn-sm bg-error-600 border-error-600 text-white hover:bg-error-700"
+        >
+          <X size={14} /> {rejectLabel}
+        </button>
+        <RejectDialog ids={[rejectApplicationId]} mode={rejectMode} open={rejecting} onClose={() => setRejecting(false)} />
+      </ActionGate>
+    );
+  }
   return (
     <ActionGate permission={permission}>
       <div className="flex flex-col gap-1">
@@ -165,8 +188,8 @@ function ProofDecisionActions({
             {pending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {approveLabel}
           </button>
           <button
-            onClick={() => onReject(proof.trim() || undefined)}
-            disabled={pending}
+            onClick={() => onReject(proof.trim())}
+            disabled={pending || proof.trim().length === 0}
             className="btn btn-sm bg-error-600 border-error-600 text-white hover:bg-error-700 disabled:opacity-50"
           >
             <X size={14} /> {rejectLabel}
@@ -318,6 +341,8 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
   const refresh = useRefreshAfterAction();
   const me = useStaffMe();
   const [sanctioning, setSanctioning] = React.useState(false);
+  const [assigning, setAssigning] = React.useState(false);
+  const [rejecting, setRejecting] = React.useState(false);
   const [prompt, setPrompt] = React.useState<"reject" | "pending" | null>(null);
   const [reason, setReason] = React.useState("");
 
@@ -340,14 +365,29 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
   const busy = reject.isPending || pending.isPending;
   const canAssign = me.data?.role === "CREDIT_HEAD" || me.data?.role === "ADMIN";
 
-  // On a queue row: the one decision that needs no typing. Everything else is behind `Open`.
+  // On a queue row: Accept needs no typing at all; Assign and Reject are buttons that raise the
+  // same single-id dialogs the bulk toolbar uses (bulk-actions.tsx) — "no typing *in the row*",
+  // not "no controls in the row".
   if (compact) {
     return (
       <ActionGate permission="loan:review">
         <button onClick={() => setSanctioning(true)} className="btn btn-sm btn-gold">
           <Check size={14} /> Accept
         </button>
+        {canAssign && (
+          <button onClick={() => setAssigning(true)} className="btn btn-sm btn-outline">
+            Assign
+          </button>
+        )}
+        <button
+          onClick={() => setRejecting(true)}
+          className="btn btn-sm bg-error-600 border-error-600 text-white hover:bg-error-700"
+        >
+          <X size={14} /> Reject
+        </button>
         <SanctionDialog app={app} open={sanctioning} onClose={() => setSanctioning(false)} />
+        {canAssign && <AssignDialog ids={[app.id]} open={assigning} onClose={() => setAssigning(false)} />}
+        <RejectDialog ids={[app.id]} mode="credit" open={rejecting} onClose={() => setRejecting(false)} />
       </ActionGate>
     );
   }
@@ -373,7 +413,9 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
             />
             <button
               onClick={() => (prompt === "reject" ? reject.mutate() : pending.mutate())}
-              disabled={busy || (prompt === "pending" && !reason.trim())}
+              // The backend now rejects a blank reason with NOTE_REQUIRED on either transition —
+              // gate reject the same way "mark pending" already was.
+              disabled={busy || !reason.trim()}
               className="btn btn-sm btn-navy disabled:opacity-50"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : null} Confirm
@@ -427,7 +469,33 @@ export function DisbursementActions({ app, compact }: { app: ApplicationView; co
       hint="Enter the transaction id of the transfer you made. Releasing activates the loan immediately."
       onApprove={(proof) => m.mutate({ decision: true, txnRef: proof || undefined, notes: proof ? `Txn/ref: ${proof}` : undefined })}
       onReject={(proof) => m.mutate({ decision: false, notes: proof })}
+      rejectApplicationId={app.id}
+      rejectMode="disbursement"
     />
+  );
+}
+
+/**
+ * Reject a SANCTIONED file with a reason — the credit team's decision stands as final (V45, no Head
+ * counter-approval), but a file can still go wrong after acceptance (the borrower turns out
+ * ineligible, a duplicate surfaces, fraud signals appear) before the borrower has accepted the
+ * offer. Loops the same `staffApi.rejectLead` maker-checker reject every other credit-stage reject
+ * uses, via the shared single-id `RejectDialog` (bulk-actions.tsx) — mode "credit", so the borrower
+ * is notified and blocked from re-applying for the usual 30-day cooling-off.
+ */
+export function SanctionedRejectAction({ app }: { app: ApplicationView }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <ActionGate permission="loan:review">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="btn btn-sm bg-error-600 border-error-600 text-white hover:bg-error-700"
+      >
+        <X size={14} /> Reject
+      </button>
+      <RejectDialog ids={[app.id]} mode="credit" open={open} onClose={() => setOpen(false)} />
+    </ActionGate>
   );
 }
 

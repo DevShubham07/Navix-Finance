@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -1060,7 +1061,7 @@ class ApplicationVerificationServiceTest {
         CustomerProfile p = profile();
         p.setPan("AAAPA0000A");
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
-        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(), anyString()))
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(), any(), anyString()))
                 .thenReturn(check);
 
         service.verifyEmployment(APP);
@@ -1082,6 +1083,37 @@ class ApplicationVerificationServiceTest {
         assertThat(row.getDerived()).contains("\"uanSource\"" + ":" + "\"pan and mobile\"");
         // The declared employer is stored beside the EPFO one so the card can compare the two.
         assertThat(row.getDerived()).contains("\"declaredEmployer\"" + ":" + "\"Digitap.ai\"");
+    }
+
+    @Test
+    void verifyEmployment_sendsTheBorrowerSuppliedUanWhenPresent() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        p.setUan("100000000000");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                eq("100000000000"), anyString()))
+                .thenReturn(employmentCheck(true, false, true, "Digitap.ai", "2024-07-29", null, Boolean.TRUE));
+
+        service.verifyEmployment(APP);
+
+        verify(verification).verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                eq("100000000000"), anyString());
+    }
+
+    @Test
+    void verifyEmployment_fallsBackToPanAndMobileWithoutAUan() {
+        // No UAN on the profile — verified above the pan/mobile/dob/name path is unchanged (`any()`
+        // there matches null, which is exactly what a blank uan must produce).
+        ApplicationVerification row = runEmployment(employmentCheck(
+                true, false, true, "Digitap.ai", "2024-07-29", null, Boolean.TRUE));
+
+        verify(verification).verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                isNull(), anyString());
+        assertThat(row.getStatus()).isEqualTo("PASS");
     }
 
     @Test
@@ -1206,7 +1238,7 @@ class ApplicationVerificationServiceTest {
         CustomerProfile p = profile();
         p.setPan("AAAPA0000A");
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
-        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(), anyString()))
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(), any(), anyString()))
                 .thenThrow(new RuntimeException("provider down"));
 
         service.verifyEmployment(APP);

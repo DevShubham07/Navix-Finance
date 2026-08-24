@@ -37,9 +37,11 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -600,7 +602,7 @@ public class ApplicationFlowService {
     /**
      * "Reject lead" — a staff credit rejection. The borrower is notified but <b>never told why</b>
      * (decision 31); the executive's remarks go to the staff-only rejection register tagged
-     * {@code MANUAL}.
+     * {@code MANUAL}. The reason is now <b>required</b> — see {@link #rejectWithBlock}.
      *
      * <p><b>Carries a {@value #MANUAL_REJECT_BLOCK_DAYS}-day cooling-off block.</b> A reject is meant
      * to be final for a while: this is the door closing, not a request for better paperwork. When the
@@ -609,15 +611,33 @@ public class ApplicationFlowService {
      * rejected borrower who can re-apply minutes later makes the rejection meaningless. Until this
      * block was added that is exactly what happened: a reject at 11:04 was undone by a reborrow at
      * 11:08, which sailed past KYC and credit as a pre-approved returning borrower.
+     *
+     * <p>Works from {@code SANCTIONED} too (ADMIN bypasses {@link #requireCreditOwnership} there) —
+     * {@code SANCTIONED → REJECTED} is already legal in {@link ApplicationStatus#canTransitionTo}, and
+     * nothing here narrows that.
      */
     @Transactional
     public LoanApplication rejectLead(Long appId, String remarks) {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
         requireCreditOwnership(app);
+        return rejectWithBlock(app, "REJECT_LEAD", remarks);
+    }
+
+    /**
+     * Shared "manual reject, with a cooling-off block" path for both {@link #rejectLead} and the
+     * {@link #disbursementDecision} reject branch: requires a non-blank reason (a reject with no
+     * reason gave staff no record of why, and {@code adminForceDisbursementPending} already treats a
+     * missing note the same way — {@code NOTE_REQUIRED}), writes one row to the rejection register,
+     * and transitions to REJECTED carrying the {@value #MANUAL_REJECT_BLOCK_DAYS}-day block.
+     */
+    private LoanApplication rejectWithBlock(LoanApplication app, String action, String remarks) {
+        if (remarks == null || remarks.isBlank()) {
+            throw new BusinessException("NOTE_REQUIRED", "A reason is required to reject this application");
+        }
         Instant blockedUntil = Instant.now().plus(Duration.ofDays(MANUAL_REJECT_BLOCK_DAYS));
         recordRejection(app, ApplicationRejection.MANUAL, remarks, false, blockedUntil);
-        transition(app, ApplicationStatus.REJECTED, "REJECT_LEAD", remarks, blockedUntil);
+        transition(app, ApplicationStatus.REJECTED, action, remarks, blockedUntil);
         return applicationRepository.save(app);
     }
 
@@ -725,14 +745,20 @@ public class ApplicationFlowService {
      * {@code txnRef} is an error rather than a hand-off — the transfer either happened, in which
      * case it has a reference, or it didn't, in which case there is nothing to accept yet.
      *
-     * @throws BusinessException {@code TXN_REF_REQUIRED} when accepting without a transaction id
+     * <p>A reject now goes through {@link #rejectWithBlock} — same as a credit reject: {@code notes}
+     * is required, and it writes a rejection-register row + the {@value #MANUAL_REJECT_BLOCK_DAYS}-day
+     * cooling-off block. This closes an old asymmetry: a disbursement reject used to leave no register
+     * row and no cooling-off, so a rejected-at-disbursement borrower could reborrow straight back in.
+     *
+     * @throws BusinessException {@code TXN_REF_REQUIRED} when accepting without a transaction id,
+     *     {@code NOTE_REQUIRED} when rejecting without a reason
      */
     @Transactional
     public LoanApplication disbursementDecision(Long appId, boolean accept, String txnRef, String notes) {
         requireRole("DISBURSEMENT_HEAD");
         LoanApplication app = require(appId);
         if (!accept) {
-            transition(app, ApplicationStatus.REJECTED, "DISB_REJECT", notes);
+            return rejectWithBlock(app, "DISB_REJECT", notes);
         } else if (txnRef != null && !txnRef.isBlank()) {
             finalizeDisbursal(app, txnRef, notes);
         } else {
@@ -874,6 +900,13 @@ public class ApplicationFlowService {
         return applicationRepository.findAll(spec, sort);
     }
 
+    /** Same as {@link #byStatus(ApplicationStatus, LocalDate, LocalDate)}, further narrowed to rows
+     *  matching the free-text {@code q} (id/loan id/name/mobile/PAN) — see {@link #filterByQuery}. */
+    @Transactional(readOnly = true)
+    public List<LoanApplication> byStatus(ApplicationStatus status, LocalDate from, LocalDate to, String q) {
+        return filterByQuery(byStatus(status, from, to), q);
+    }
+
     /**
      * Credit Head queue: submitted intakes awaiting assignment. Since V45 the queue is driven by
      * KYC_PENDING (the borrower no longer names an amount, so the old "has applied" filter would
@@ -902,6 +935,53 @@ public class ApplicationFlowService {
                 .sorted(Comparator.comparing(LoanApplication::getCreatedAt)
                         .thenComparing(LoanApplication::getId).reversed())
                 .toList();
+    }
+
+    /** Same as {@link #creditHeadQueue(LocalDate, LocalDate)}, further narrowed to rows matching the
+     *  free-text {@code q} — see {@link #filterByQuery}. */
+    @Transactional(readOnly = true)
+    public List<LoanApplication> creditHeadQueue(LocalDate from, LocalDate to, String q) {
+        return filterByQuery(creditHeadQueue(from, to), q);
+    }
+
+    /**
+     * Narrows an already status+date-filtered queue page to rows matching {@code q}: an
+     * exact/prefix match on the application id or loan id (decimal string), or a case-insensitive
+     * substring match on the customer's name / mobile / PAN. Blank/null {@code q} is a no-op — the
+     * queue behaves exactly as before this param existed.
+     *
+     * // ponytail: in-memory id/loan-id/name/mobile/PAN match over the status+date window (no JPA
+     * // relation from LoanApplication to CustomerProfile to push name/PAN/mobile into the
+     * // Specification); push into SQL if a queue outgrows one page-fetch.
+     */
+    private List<LoanApplication> filterByQuery(List<LoanApplication> rows, String q) {
+        if (q == null || q.isBlank() || rows.isEmpty()) {
+            return rows;
+        }
+        String needle = q.trim().toLowerCase(Locale.ROOT);
+        Map<Long, CustomerProfile> profileByAppId = profileRepository
+                .findByApplicationIdIn(rows.stream().map(LoanApplication::getId).toList()).stream()
+                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
+        return rows.stream().filter(a -> matchesQuery(a, profileByAppId.get(a.getId()), needle)).toList();
+    }
+
+    private boolean matchesQuery(LoanApplication app, CustomerProfile profile, String needle) {
+        if (String.valueOf(app.getId()).startsWith(needle)) {
+            return true;
+        }
+        if (app.getLoanId() != null && String.valueOf(app.getLoanId()).startsWith(needle)) {
+            return true;
+        }
+        if (profile == null) {
+            return false;
+        }
+        return containsIgnoreCase(profile.getFullName(), needle)
+                || containsIgnoreCase(profile.getMobile(), needle)
+                || containsIgnoreCase(profile.getPan(), needle);
+    }
+
+    private boolean containsIgnoreCase(String value, String needle) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
     }
 
     /** The calling borrower's own applications, newest first (for the "my loans/transactions" views). */
@@ -1165,6 +1245,7 @@ public class ApplicationFlowService {
         copy.setDob(prior.getDob());
         copy.setAddress(prior.getAddress());
         copy.setEmployer(prior.getEmployer());
+        copy.setUan(prior.getUan());
         copy.setEmploymentStatus(prior.getEmploymentStatus());
         copy.setMonthlySalaryPaise(prior.getMonthlySalaryPaise());
         copy.setSalaryBank(prior.getSalaryBank());

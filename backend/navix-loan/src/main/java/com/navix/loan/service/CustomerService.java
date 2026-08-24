@@ -359,7 +359,7 @@ public class CustomerService {
                     latestLoan != null ? latestLoan.getDueDate() : null,
                     latestApp != null ? latestApp.getMarkedPendingAt() : null,
                     statusChangedAt);
-            if (matches(cs, needle)) {
+            if (matches(cs, apps, needle)) {
                 out.add(cs);
             }
         }
@@ -1060,7 +1060,11 @@ public class CustomerService {
                 .orElse(null);
     }
 
-    private static boolean matches(CustomerSummary cs, String needle) {
+    /**
+     * {@code apps} is the customer's full application list (not just the row's latest one) so a
+     * search by an OLDER application's id still finds the customer.
+     */
+    private static boolean matches(CustomerSummary cs, List<LoanApplication> apps, String needle) {
         if (needle.isEmpty()) {
             return true;
         }
@@ -1073,7 +1077,10 @@ public class CustomerService {
         if (cs.mobile() != null && cs.mobile().contains(needle)) {
             return true;
         }
-        return String.valueOf(cs.customerId()).contains(needle);
+        if (String.valueOf(cs.customerId()).contains(needle)) {
+            return true;
+        }
+        return apps.stream().anyMatch(a -> String.valueOf(a.getId()).contains(needle));
     }
 
     /**

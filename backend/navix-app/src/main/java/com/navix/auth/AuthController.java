@@ -64,6 +64,12 @@ public class AuthController {
     private final AttemptLimiter limiter;
     private final CaptchaVerifier captcha;
     private final com.navix.config.StaffSessionRegistry staffSessionRegistry;
+    /**
+     * Same TTL {@link JwtService} issues staff tokens with — used to decide whether a stored
+     * {@code active_session_id} could still back a live token (see {@link #staffLogin}).
+     */
+    @org.springframework.beans.factory.annotation.Value("${navix.auth.ttl-seconds:86400}")
+    private final long staffTtlSeconds;
 
     /**
      * Turnstile {@code action} per surface — must match the {@code action} the widget is rendered
@@ -133,7 +139,16 @@ public class AuthController {
         // operator gets an explicit "continue there / continue here" choice instead of silently
         // kicking their other tab. `force` is that choice, sent only after the UI has shown it.
         boolean force = Boolean.TRUE.equals(req.force());
-        if (staff.getActiveSessionId() != null && !force) {
+        // active_session_id is cleared ONLY by a matching-sid logout; a closed browser, a cleared
+        // cookie, or an expired token leaves it set forever, so a stale row would show this dialog
+        // to a staffer for the rest of time (and to a freshly-invited one on their very first
+        // sign-in, since accept-invite mints a sid). A token that could no longer be valid can't be a
+        // live session, so treat the stamp as stale once it's older than the token's own TTL.
+        boolean sessionLive = staff.getActiveSessionId() != null
+                && staff.getActiveSessionAt() != null
+                && staff.getActiveSessionAt().isAfter(
+                        java.time.Instant.now().minusSeconds(staffTtlSeconds));
+        if (sessionLive && !force) {
             log.warn("staff login blocked reason=SESSION_CONFLICT staffId={} email={}", staff.getId(), maskedEmail);
             throw new BusinessException("SESSION_CONFLICT",
                     "You're already signed in on another device or browser.");

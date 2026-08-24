@@ -100,7 +100,7 @@ class CustomerReviewServiceTest {
 
         // Change address + salary; identity fields are not part of EditProfileRequest (locked).
         service.editOwnProfile(APP_ID, new EditProfileRequest(
-                "New address", null, null, 6_000_000L, null, null, "Mom", "9990001111", "Mother"));
+                "New address", null, null, 6_000_000L, null, null, "Mom", "9990001111", "Mother", null));
 
         assertThat(existing.getAddress()).isEqualTo("New address");
         assertThat(existing.getMonthlySalaryPaise()).isEqualTo(6_000_000L);
