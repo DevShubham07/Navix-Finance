@@ -223,7 +223,7 @@ navix:
   # by BRAND.grievanceOfficer in the frontend. Regulatory copy: change both together.
   grievance:
     officer-name: ${NAVIX_GRIEVANCE_NAME:Lalit Kumar}
-    officer-phone: ${NAVIX_GRIEVANCE_PHONE:9716760246}
+    officer-phone: ${NAVIX_GRIEVANCE_PHONE:8510028510}
     officer-email: ${NAVIX_GRIEVANCE_EMAIL:grievance@dhanboost.com}
   # SES bounce/complaint ingestion (SES config-set -> SNS -> SQS -> SesEventSqsListener). Off by
   # default so the app boots without an SQS queue; flip on in AWS environments.

@@ -74,7 +74,7 @@ public class OfferService {
     @Value("${navix.grievance.officer-name:Lalit Kumar}")
     private String grievanceOfficerName;
 
-    @Value("${navix.grievance.officer-phone:9716760246}")
+    @Value("${navix.grievance.officer-phone:8510028510}")
     private String grievanceOfficerPhone;
 
     @Value("${navix.grievance.officer-email:grievance@dhanboost.com}")
