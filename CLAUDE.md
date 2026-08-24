@@ -87,75 +87,26 @@ This is a monorepo:
 
 ---
 
-## 2. Current state (verified 2026-07-01)
+## 2. Current state
 
-NAVIX runs the **full loan lifecycle end-to-end** — a single `loan_application` aggregate (§5) wired to
-a polished frontend through a BFF (§8), on **real JWT + Spring Security** (§7), with real
-**Signzy (primary) + Digitap (fallback)** verification clients (§14), **S3-backed** documents, and a
-**9-step verified onboarding**. It is
-deployed (Vercel frontend → AWS ALB → ECS Fargate → RDS/S3/SSM; see `aws.md`). This section is the
-at-a-glance map of what's live (the blow-by-blow history is in git); detail on the lifecycle, roles,
-math, schema and endpoints lives once in §5/§7/§9/§10/§11.
+DhanBoost runs the **full loan lifecycle end-to-end** — a single `loan_application` aggregate (§5)
+wired to a Next.js frontend through a BFF (§8), on real JWT + Spring Security (§7), with real
+verification providers (Fintrix bureau · Signzy · Digitap), S3-backed documents, and a two-phase
+borrower journey (intake → credit sanction → offer journey, §6). It is deployed (Vercel → ALB → ECS
+Fargate → RDS/S3/SSM; see `aws.md`), and CI deploys on every push to `main`.
 
-**Lifecycle & money**
-- **Lifecycle engine** — `ApplicationFlowService` walks the canonical state machine (§5), enforcing
-  transitions, role-per-step, and maker-checker SoD, with an append-only `application_event` audit
-  trail. At activation it mints the loan with a salary-linked due date.
-- **Loan math** — `LoanMath` is the canonical integer-paise engine (§9); the outstanding is
-  penalty/prepayment-aware on **every** read (`RepaymentService.outstandingAsOf`), and a loan closes
-  only when that balance reaches 0.
+> **What is live, feature by feature, and what remains before go-live: [`docs/STATE.md`](docs/STATE.md).**
+> The blow-by-blow history is in git; the roadmap is [`FUTURE.md`](FUTURE.md) and
+> [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
 
-**KYC, credit & disbursement**
-- **9-step verified onboarding** — PAN · email · address · DigiLocker · bureau · salary · penny-drop ·
-  selfie · agreement, each a real verification (§11); `submit-kyc` is gated on completeness
-  (`KYC_INCOMPLETE`). Documents are S3-backed (presigned).
-- **KYC verification dashboard** — staff progress tracker + manual PASS/FAIL override + a cross-app
-  overview + borrower reminders, at `/staff/verifications`.
-- **Bureau credit brief** — the Experian pull yields a **1–5★ "recommend" rating** + a NAVIX-branded
-  one-page PDF (OpenPDF, stored to S3), shown on every staff detail surface and **never to the
-  borrower**; the brief's identity comes from the KYC profile, not the bureau copy.
-- **Disbursement** — the Disbursement Head may finalize directly with a txn id (fast-path, skips the
-  accountant) or route to the Accountant to validate the transfer (§5).
-
-**Collections, repay & reborrow**
-- **Collections** — `collection_case` / `settlement` on the real bigint loan id; DPD buckets, officer
-  assignment, and settlements with a **propose → approve / reject** maker-checker (proposer ≠ approver).
-- **Repay** — the borrower records a payment (→ PENDING_VERIFICATION); the Accountant **verifies or
-  rejects** it; at zero the loan + application close. An approved settlement caps the payable.
-- **Reborrow** — returning borrowers reuse their saved KYC (salary day carried over, never re-asked);
-  routed on **past delinquency only** (clean → `PRE_APPROVED`, ever-overdue → `REVIEW_PENDING` cleared
-  by a KYC approver). One live loan at a time; top-up against headroom while a loan is active.
-
-**Back-office & platform**
-- **Staff console** — role-aware queues (`components/staff/live-pipeline.tsx`) across
-  kyc-approvals / credit / disbursement / accounting, a live dashboard, a **Customers** roll-up, the
-  company-wide **transactions ledger**, plus ADMIN-only **company-expense ledger** and a full
-  **all-applications register**; branded CSV / PDF export throughout.
-- **Editable profiles & settings** — borrowers self-edit non-identity profile fields (an edit can
-  **invalidate** the matching verification and trigger re-verify) and toggle server-persisted
-  notification preferences; staff have a self-profile.
-- **Salary management** — ADMIN edits a customer's salary data with a `profile_change_log` audit; a
-  monthly-salary change recomputes the eligible limit.
-- **Notifications** — an event-driven, non-blocking in-app + SMS + email engine (`navix-notification`),
-  surfaced to both audiences by a shared `NotificationBell` (§11/§12). Email delivers via a pluggable
-  `EmailClient` (`log` default · `smtp` · **AWS `ses`** · `resend`), each message carrying a plain-text
-  body + an optional branded **HTML** alternative; SES **bounce/complaint feedback** is ingested
-  over SNS→SQS into an `email_suppression` list that the sender skips on future sends (§14).
-- **Payment reminders** — a daily `@Scheduled` sweep (`PaymentReminderScheduler`, navix-app; the app's only
-  `@EnableScheduling`) nudges every live loan: **due-soon** (`PAYMENT_DUE_SOON`, from 7 days before due through
-  the day-after-salary grace — "due in N days", penalty-free) then **overdue** (`PAYMENT_OVERDUE`, the 7 days
-  past grace — "₹Y overdue, pay now or credit-score + penalty"), stopping the moment the penalty-aware
-  outstanding hits 0. Single-instance only (no distributed lock — TODO before scaling out).
-- **Feature flags** — dev-only **DB-backed** flags (`feature_flag`, read-only API), changed via SQL with
-  no redeploy; first used as a kill-switch for the referral program (§11/§12).
-- **Referral** — refer-a-friend (codes, rewards, staff payout settlement), gated by the feature flag.
-- **Design system** — one unified 2026 "calendar" visual language across marketing + app (§8); the
-  borrower states their salary date on a compact day-of-month field at `/loan/apply` (the
-  `<SalaryCalendar>` month grid lives on the reborrow `/loan/salary` page + marketing `/calculator`).
-
-**Verification:** Postgres 16 (Docker) for local; Flyway applies all migrations on boot (§10). The
-backend unit suite + a Testcontainers integration test are green; frontend `tsc` + ESLint clean. Demo
-logins and seed data are in §4. Remaining go-live work is in §13 / `PRODUCTION_READINESS.md`.
+Two live landmines worth knowing before you deploy anything:
+- **The backend image carries the OTP SMS template.** Only the old NAVIX-worded `NAVIX_OTP_LOGIN_V2`
+  is DLT-approved, so ECS task-def **revision 4 pins `NAVIX_SMS_OTP_TEMPLATE`** to that wording.
+  Redeploying from `application.yml` defaults swaps in unapproved text and every send fails
+  `006 Invalid template text`. All 15 `DHANBOOST_*_V1` templates are still awaiting operator approval.
+- **The credit-score auto-reject is suspended** (`bureau-auto-reject` flag, V64). Every bureau result
+  goes to a human until the floor is recalibrated against CRIF's distribution — see §12 and
+  [`docs/STATE.md`](docs/STATE.md).
 
 ---
 
@@ -176,15 +127,16 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V31 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V65 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
 │       ├── app/
 │       │   ├── (marketing)/      # public landing page
 │       │   ├── (borrower)/       # borrower routes: login, signup wizard, kyc, loan, dashboard…
-│       │   ├── staff/            # staff routes: login, dashboard, applications, kyc-approvals,
-│       │   │                     #   credit, disbursement, accounting, collections, admin…
+│       │   ├── staff/            # staff routes: login, dashboard, applications (the one stage
+│       │   │                     #   console), customers, loans, verifications, performance,
+│       │   │                     #   collections, telecalling, leads, dsa, admin/*…
 │       │   └── api/              # ★ the BFF: auth/{staff,borrower}, staff/{applications,collections,
 │       │                         #   users,invites}, admin/blocklist, borrower/*…
 │       ├── lib/
@@ -234,8 +186,8 @@ The BFF route handlers reach the backend via **`BACKEND_BASE_URL`** (server-only
   `navix.sms.otp-template` in `application.yml`), so real OTP works once the gateway env is set (see
   §14). For demo/testing without a handset, run the backend with **`NAVIX_SMS_MOCK=true`** → the fixed
   code **`123456`** always works (also shown as "Dev code"). Issues a real **borrower JWT** in the
-  `navix_borrower` httpOnly cookie. Every "Apply now" CTA → `/signup/mobile-otp` starts the 9-step
-  verified onboarding.
+  `navix_borrower` httpOnly cookie. Every "Apply now" CTA → `/signup/otp` starts the Phase-1 intake
+  (§6).
 - **Staff/Admin:** `/staff/login` → **pick a role** → the BFF authenticates for real against
   `POST /api/auth/staff/login` (role → seeded `*.navix.example` email + default password
   **`Admin@12345`**, BCrypt) and stores a **staff JWT**. The role decides which live queues have data.
@@ -304,11 +256,20 @@ active Credit Executive and may reassign without clearing review data or pending
 decide any file; an Executive can see and decide only files assigned to them; ADMIN keeps oversight.
 Accepting sanctions directly into `SANCTIONED`; there is no second Credit Head approval stage.
 
-**Disbursement fast-path:** the Disbursement Head's accept normally goes
-`DISBURSEMENT_PENDING → ACCOUNTANT_PENDING`, but when they supply a **transaction id** the flow
-service finalizes the release directly (`DISBURSEMENT_PENDING → DISBURSED → ACTIVE`, recording
-`loan.disbursal_txn_ref`), skipping the accountant — a deliberate **relaxation** of the
-Disbursement-Head ≠ Accountant SoD (product decision); the no-txn-id path keeps the accountant gate.
+**Disbursement (no accountant hop — V47/V48):** the Disbursement Head makes the transfer and records
+its id: `DISBURSEMENT_PENDING → DISBURSED → ACTIVE`, writing `loan.disbursal_txn_ref`. Accepting
+**without** a `txnRef` is an error (`TXN_REF_REQUIRED`), not a hand-off — the transfer either happened
+and has a reference, or there is nothing to accept. `accountantValidate` and its endpoint are gone;
+`ACCOUNTANT_PENDING` stays in the enum + CHECK for historical `application_event` rows only, and V48
+moved every file parked there back onto the Head's desk. A failed transfer is retried by the same
+Head (`retry-disbursement`). ADMIN may force `SANCTIONED → DISBURSEMENT_PENDING`
+(`force-disbursement-pending`).
+
+**Offer journey (`SANCTIONED`):** a sanction is an amount + repayment date, and the borrower then
+walks `JourneyService.OfferStep` (amount → repayment-date → DigiLocker → references → summary →
+selfie → address → sanction letter → eSign → 🎉 → disbursal account) under `/api/applications/{id}/
+offer/*`. Confirming the disbursal account is what routes the file to `DISBURSEMENT_PENDING`. A
+sanction never expires.
 
 **Repay → close:** repayments are recorded by the borrower (PENDING_VERIFICATION) and confirmed by
 the Accountant (`…/repayments/{pid}/verify`); when Σ verified payments ≥ total the loan closes and
@@ -317,13 +278,16 @@ the Accountant (`…/repayments/{pid}/verify`); when Σ verified payments ≥ to
 **Reborrow (returning borrower):** `ApplicationFlowService.reborrow` mints a **new** application for an
 existing borrower, reusing their saved profile (no re-collection — **salary day carried over from the
 prior loan and never re-asked**, prior penny-drop carried over; eligible limit recomputed from the
-stored salary). Standing is computed from loan history (`hasPastDelinquency` — any loan ever
-OVERDUE/IN_COLLECTIONS, or a verified repayment made after its due date) and is the **only** gate
-(credit score does **not** gate reborrow): clean → `DRAFT → PRE_APPROVED`, flagged → `DRAFT → REVIEW_PENDING`. A `KYC_APPROVER` clears a review (`REVIEW_PENDING → PRE_APPROVED`)
-or rejects it. From `PRE_APPROVED`, the borrower's `apply` routes **straight to `DISBURSEMENT_PENDING`**
-(skips the credit maker-checker — a deliberate relaxation for pre-approved repeat borrowers, surfaced
-to the Disbursement Head as a separate fast-track section via `ApplicationView.fastTrack`). Reborrow is
-blocked while a live application/loan exists.
+stored salary). Standing is computed from loan history (`isDisqualifiedByHistory` — repaid more than
+`LATE_REPAYMENT_TOLERANCE_DAYS` late, or a prior advance never fully repaid) and is the **only** gate
+(credit score does **not** gate reborrow): disqualified → an outright **auto-reject** into the
+rejection register (V45 retired the `REVIEW_PENDING` manual queue — there is no review desk behind
+it); clean → `DRAFT → PRE_APPROVED`, and if a prior sanction exists `carryOverForReapply` copies it
+forward → `SANCTIONED`, so the borrower re-walks only the short offer journey (amount → locked date →
+summary → sanction letter → eSign → 🎉 → account). Carried over: KYC profile, sanctioned ceiling,
+salary day, DigiLocker/selfie/address evidence, references, disbursal account. **Not** carried: the
+eSign — every advance is signed afresh against its own Key Fact Statement. The repayment date is
+recomputed from the carried salary day. Reborrow is blocked while a live application/loan exists.
 
 **Invariants:**
 - Every credit assignment/reassignment and decision is appended to `application_event`; reassignment
@@ -339,42 +303,44 @@ blocked while a live application/loan exists.
 How a real applicant moves through the product — this is now the **designed, backend-wired** path
 (the single seam is `lib/api/live-journey.ts`, which the polished pages call):
 
-1. **Login** — `/login`, mobile + demo OTP `123456`. Sets the `navix_borrower` cookie (separate from
-   staff); identity = a numeric `applicantId` derived from the mobile. (The signup wizard's
-   mobile-OTP step establishes the same session early.)
-2. **Apply (signup wizard)** — the borrower fills the polished wizard (PAN, employment, salary, bank,
-   address…). On **review → submit**, the frontend runs the real chain: `create` DRAFT → save KYC
-   `profile` → upload `documents` → `submit-kyc` → `KYC_PENDING`.
-3. **Verification & KYC** — the onboarding steps (DigiLocker, selfie, penny-drop, bureau, salary…) are
-   **real verifications** (§11), S3-backed; `submit-kyc` is gated on completeness, then a staff
-   `KYC_APPROVER` approves (→ `KYC_APPROVED`).
-4. **Choose amount** — on `/loan/apply` the borrower first **states their salary date on a compact
-   day-of-month select** (1–31, which sets the real `salaryCreditDay`; the helper text previews the
-   salary-linked due date computed with the exact backend rule), then picks an amount within the
-   eligible limit (25% of salary) on the `AmountChooser` — the due date and full cost update live. Submitting `apply` (amount + salary-credit
-   day) keeps the app `KYC_APPROVED`, now flagged "applied" (`amountRequested != null`), and enters the
-   Credit Head's queue.
+1. **Login** — `/login`, mobile + OTP (or password). Sets the `navix_borrower` cookie (separate from
+   staff); identity = a numeric `customerId` derived from the mobile. (The signup wizard's mobile-OTP
+   step establishes the same session early.) With `NAVIX_SMS_MOCK=true` the code is `123456`.
+2. **Phase-1 intake (`/signup/*`, application `DRAFT`)** — `JourneyService.Step` in order: `otp` →
+   `set-password` (optional) → `employment` → `employer` → `email` → `bank` → `payslips` → `consent` →
+   `submitted`. **Where the borrower is is answered server-side** (`GET …/journey`, the max of what
+   their saved data proves and the `journey_step` pointer), so a second device resumes on the right
+   screen. The `email` screen is a real gate: both the personal and the official address must be
+   OTP-confirmed (`emailsSettled`, V52/V65) — distinct from the provider deliverability/employer-match
+   check that runs against the same work address. Self-employed applicants are turned away at intake
+   (`/self-employed`, 90-day block).
+3. **Verification & credit** — `submit-kyc` is gated on completeness (`KYC_INCOMPLETE`) →
+   `KYC_PENDING`. The Credit Head assigns the file; the assigned **Credit Executive's decision is
+   final** — `sanction` (amount + repayment date → `SANCTIONED`), `reject-lead` (30-day cooling-off),
+   or `mark-pending` (park it and ask for a document). There is no separate KYC-approver desk.
+4. **Phase-3 offer journey (`/loan/*`, application `SANCTIONED`)** — `OfferStep` in order: `amount`
+   (within the sanctioned ceiling) → `repayment-date` → `digilocker` → `references` → `summary` →
+   `selfie` → `address` → `sanction-letter` (Key Fact Statement PDF) → `esign` (Aadhaar eSign, §14) →
+   🎉 → `disbursal-account`. Confirming the account routes the file to `DISBURSEMENT_PENDING`.
 5. **Track live** — `/loan/status` polls `GET …/{id}` and renders the live state-machine status +
-   audit trail; no more client-side "simulate decision".
-6. **Active loan** — after the staff chain completes (`ACTIVE`), `/dashboard` shows the real loan from
-   `borrowerApi.loan`: **net disbursed**, **due date** (salary-linked), **total repayable**.
-7. **Repay / prepay** — **live**: `/repay` reads the real loan and records a manual payment
-   (`borrowerApi.recordRepayment` → PENDING_VERIFICATION); the Accountant verifies it, which reduces the
-   outstanding and closes the loan + application at zero. The page shows the prepayment-aware "pay today"
-   amount (interest only to the day paid).
-8. **Reborrow** — **live**: a returning borrower taps "Borrow again" on `/reloan`, which calls
-   `borrowerApi.reborrow()`. With a clean history they're **pre-approved** (reuse profile, skip KYC +
-   credit, **salary day carried over — no re-pick**) and land **straight on `/loan/apply`** → choosing an
-   amount routes **straight to the Disbursement Head**; if they **ever had an overdue** they're sent to a
-   KYC-approver **review** (`/staff/kyc-review`) first. See §5 (`PRE_APPROVED`/`REVIEW_PENDING`) and §11
-   (`/reborrow`, `/review-decision`).
+   audit trail.
+6. **Active loan** — after the Disbursement Head releases the money (`ACTIVE`), `/dashboard` shows the
+   real loan: **net disbursed**, **due date** (salary-linked), **total repayable**.
+7. **Repay / prepay** — `/repay` reads the real loan and records a manual payment with a **screenshot
+   proof** (→ PENDING_VERIFICATION); the Accountant verifies it, which reduces the outstanding and
+   closes the loan + application at zero. The page shows the prepayment-aware "pay today" amount
+   (interest only to the day paid).
+8. **Reborrow** — "Borrow again" on `/reloan` calls `borrowerApi.reborrow()`. A clean history is
+   **pre-approved** and lands on the shortened offer journey with the prior sanction carried over
+   (salary day never re-asked); a disqualifying history is **auto-rejected** outright. See §5.
 
 The borrower can only call **borrower** actions (`requireRole("BORROWER")`); `apply` is rejected
-unless the application is `KYC_APPROVED`, the amount is ≥ ₹1,000, and (if an eligible limit is set)
-within it.
+unless the application is `KYC_APPROVED` or `PRE_APPROVED`, the amount is ≥ ₹1,000, and (if an
+eligible limit is set) within it.
 
-> Post-migration the onboarding steps are **real** (DigiLocker, selfie, penny-drop, bureau, salary are
-> live verifications, S3-backed) — they no longer run on the old cosmetic mock layer.
+> Manual fallbacks exist for the two checks that can hard-fail: an **Aadhaar card upload** when
+> DigiLocker won't connect, and a **cancelled cheque / passbook** when the penny drop can't pass —
+> both land in one staff review path (see the §13 raw-Aadhaar note).
 
 > **Account menu (live):** the app-shell header's avatar dropdown gives the signed-in borrower **Past
 > loans** (`/loans`) and **Past transactions** (`/transactions`) — built from `GET /api/applications/mine`
@@ -410,15 +376,15 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 | Role | Does (state transition) |
 |---|---|
-| `KYC_APPROVER` | approve/reject KYC → `KYC_APPROVED` / `KYC_REJECTED`; **reborrow reviews** for returning borrowers with a past overdue (`REVIEW_PENDING` → `PRE_APPROVED` / `REJECTED`) on the separate `/staff/kyc-review` queue |
-| `CREDIT_HEAD` | assign/reassign a credit file to self or an active Credit Executive; accept/sanction, reject, or park any file in `CREDIT_EXEC_PENDING` |
-| `CREDIT_EXECUTIVE` | accept/sanction, reject, or park only files assigned to them in `CREDIT_EXEC_PENDING` |
-| `DISBURSEMENT_HEAD` | accept for disbursal (→ `ACCOUNTANT_PENDING`); **or finalize directly with a txn id** (→ `DISBURSED`→`ACTIVE`); retry on failure; **settle referral payouts** (`referral:payout`) |
-| `ACCOUNTANT` | validate bank transfer → `DISBURSED`→`ACTIVE` (mints loan) / `DISBURSEMENT_FAILED`; **verify or reject borrower repayments**; **view the transactions ledger** |
-| `COLLECTION_HEAD` | collections management + settlements (**approve / reject**) |
+| `CREDIT_HEAD` | assign/reassign a credit file to self or an active Credit Executive; sanction, reject, or park any file in `CREDIT_EXEC_PENDING`; approve/reject KYC |
+| `CREDIT_EXECUTIVE` | **the final credit decision** — sanction (amount + repayment date), reject, or park files assigned to them in `CREDIT_EXEC_PENDING`; absorbed the deleted `KYC_APPROVER` (V45), so it also holds `kyc:approve` |
+| `DISBURSEMENT_HEAD` | make the transfer and release it with a **txn id** (→ `DISBURSED`→`ACTIVE`; an accept without one is `TXN_REF_REQUIRED`); retry on failure; **settle referral payouts** (`referral:payout`) |
+| `ACCOUNTANT` | **verify or reject borrower repayments**; **view the transactions ledger**. No longer part of disbursement (V47/V48 retired the accountant hop) |
+| `COLLECTION_HEAD` | collections management + settlements (**approve / reject**); the **Loans register** (`loan:register`) |
 | `COLLECTION_EXECUTIVE` | borrower collections interactions |
+| `TELECALLER` | calls the lead list and logs the outcome (V42). **No lifecycle authority** — views customers, writes leads + call logs + remarks, self-assigns chase-up work; never in maker-checker or SoD |
 | `DSA` | **external commission agent** (V55). Enters leads and earns **3.5% of net disbursed** on their lead's *first* loan, payable only once that loan is fully repaid. Holds **no** lifecycle authority and is **firewalled from all customer data** — see the note below |
-| `ADMIN` | oversight — **bypasses role checks**; also exempt from the credit SoD + active-executive `assign`, so may walk a loan KYC→ACTIVE **solo, per-step** (credit queue shows an **"Assign to me"** button); edits salary/profile data; manages company expenses + blocklist |
+| `ADMIN` | oversight — **bypasses role checks**; also exempt from the credit SoD + active-executive `assign`, so may walk a loan KYC→ACTIVE **solo, per-step** (credit queue shows an **"Assign to me"** button); OTP-gated mobile/sanctioned-amount corrections; edits salary/profile data; force `SANCTIONED → DISBURSEMENT_PENDING`; bureau backfill/rescore; manages company expenses, blocklist and the DSA program |
 
 > **A credit reject (`REJECT_LEAD`) carries a 30-day cooling-off.** `MANUAL_REJECT_BLOCK_DAYS = 30`
 > is written to `application_rejection.blocked_until`, and `assertNotBlocked` (mobile-keyed) then
@@ -429,8 +395,11 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 > Role names are `COLLECTION_HEAD` / `COLLECTION_EXECUTIVE` (not the old
 > COLLECTIONS_HEAD / COLLECTION_OFFICER). Reconciled in Flyway **V8**.
-> `TELECALLER` was added in **V42**, `DSA` in **V55**. `DEVELOPER` (added in V8) was **dropped in
-> V61** — its holders were deactivated, not deleted.
+> `TELECALLER` was added in **V42**, `DSA` in **V55**. `KYC_APPROVER` was **deleted in V45** (holders
+> became `CREDIT_EXECUTIVE`s, which absorbed the duty); `DEVELOPER` (added in V8) was **dropped in
+> V61** — its holders were deactivated, not deleted. The live roster is exactly: `CREDIT_EXECUTIVE`,
+> `CREDIT_HEAD`, `DISBURSEMENT_HEAD`, `ACCOUNTANT`, `COLLECTION_HEAD`, `COLLECTION_EXECUTIVE`,
+> `TELECALLER`, `DSA`, `ADMIN`.
 
 > **⚠ `DSA` is the one staff role that is an authz *exclusion*, not just an absence of permissions.**
 > Every other staff role holds the broad `customer:view`, and several controllers gate with a
@@ -441,22 +410,27 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 > staff-open surface, add the DSA rejection too** — `hasRole("STAFF")` in `SecurityConfig` is
 > audience-level and a DSA token satisfies it.
 
-**Permission tokens** (`frontend/src/lib/auth/rbac.ts`, mirrored by service-level guards): `kyc:approve`,
-`loan:review`, `loan:approve`, `loan:disburse`, `loan:activate`, `collections:manage`,
-`collections:interact`, `staff:manage`, `customer:view` (granted to **all** roles —
-every staff member can view the Customers pane incl. PII), `customer:manage` (ADMIN — correct KYC,
-cancel, blocklist), `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER + ADMIN),
-`dsa:portal` (**DSA only** — and it is the *only* token a DSA holds), `dsa:manage` (ADMIN).
+**Permission tokens** (`frontend/src/lib/auth/rbac.ts`, mirrored by service-level guards): `kyc:approve`
+(the credit roles + ADMIN — the sanction *is* the credit decision, so `loan:approve` now gates
+**assignment**, not a second sign-off), `loan:review`, `loan:approve`, `loan:disburse`,
+`loan:activate`, `loan:pipeline`, `loan:register` (Loans register — COLLECTION_HEAD + ADMIN),
+`collections:manage`, `collections:interact`, `staff:manage`, `customer:view` (every staff role
+except **DSA** — see the note above), `customer:view:all`, `customer:assign` (Heads + TELECALLER +
+ADMIN), `customer:manage` (ADMIN — correct KYC, cancel, blocklist), `document:upload`,
+`verification:retry`, `referral:payout` (DISBURSEMENT_HEAD + ADMIN), `leads:manage` (TELECALLER +
+ADMIN), `dsa:portal` (**DSA only** — the *only* token a DSA holds, and deliberately **not** granted to
+ADMIN, whose oversight goes through `dsa:manage`), `dsa:manage` (ADMIN).
 
 All staff pages are now **live and role-aware**. The shared machinery lives in
 `components/staff/live-pipeline.tsx` (status-backed queues + the per-stage maker-checker action
-clusters + the on-demand applicant review); the `/staff/applications` console composes it, and the
-dedicated pages reuse it: `kyc-approvals`, `credit/queue` (+ `credit/{id}` detail), `disbursement`,
-`accounting`. `/staff/dashboard` shows live counts/queues per role. Collections (`buckets`,
-`settlements`, case detail) and Admin (`staff`, `invites`, `blocklist`) + `activate` are wired via
-`collectionsApi` / `adminApi`. Settlement approval enforces **SoD** (proposer ≠ approver) server-side.
-The `accounting` page also carries the **repayment-verify queue** and links the **transactions
-ledger** (`accounting/transactions`). Staff screens carry small **ⓘ info-tooltips**
+clusters + the on-demand applicant review). **`/staff/applications` is the one console** that composes
+every stage queue (credit, disbursement, accounting) — there is no separate `credit/` or
+`kyc-approvals/` page any more. `/staff/dashboard` shows live counts/queues per role. Alongside it:
+`customers` (+ `[customerId]`), `loans`, `verifications`, `performance`, `my-decisions`,
+`telecalling`, `leads`, `accounting/transactions`, `disbursement/referrals`, `collections`
+(`settlements`, `[loanId]`), `dsa/{leads,earnings}`, and `admin/*` (`staff`, `invites`, `blocklist`,
+`expenses`, `all-applications`, `rejections`, `leads`, `dsa`, `api-dashboard`, `payment-settings`).
+Settlement approval enforces **SoD** (proposer ≠ approver) server-side. Staff screens carry small **ⓘ info-tooltips**
 (`components/ui/tooltip.tsx`) on dashboard cards / queue / DPD-bucket headers so a newly-added staffer
 knows what each section does.
 
@@ -504,8 +478,8 @@ knows what each section does.
   repay, reborrow, collections, admin). The demo Zustand mock layer no longer gates any real flow.
 - **Cross-cutting UI:** a shared `NotificationBell` (`components/notifications/`) polls the inbox for
   both audiences; the staff shell hides a nav item when its feature flag is off (`navVisible` in
-  `components/staff/staff-shell.tsx`); the borrower states their salary date on a day-of-month field
-  at `/loan/apply` and self-edits on the `/profile` + `/settings` pages.
+  `components/staff/staff-shell.tsx`); the borrower picks their repayment date on
+  `/loan/repayment-date` and self-edits on the `/profile` + `/settings` pages.
 
 ---
 
@@ -547,41 +521,21 @@ Disbursed 2026-06-24, salary day 30 → due **2026-07-30** (36 days) → total *
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
 navix-common). Applied on every boot:
 
-| Migration | What |
-|---|---|
-| `V1__init.sql` | no-op placeholder |
-| `V2__core_schema.sql` | 21 tables + indexes + enum CHECK constraints (the real base schema) |
-| `V3__loan_money_to_paise.sql` | loan money columns → `BIGINT` paise |
-| `V4__money_to_paise_rest.sql` | remaining money columns → `BIGINT` paise |
-| `V5__application_state_machine.sql` | `loan_application.status` → `ApplicationStatus`; add `purpose`, `assigned_executive_id`, `loan_id`; create `application_event` audit table |
-| `V6__loan_application_amount_nullable.sql` | `amount_requested` nullable (DRAFT has no amount yet) |
-| `V7__loan_application_salary_credit_day.sql` | add `salary_credit_day` |
-| `V8__staff_roles_rename.sql` | role check-constraint + data: COLLECTION_HEAD / COLLECTION_EXECUTIVE / +DEVELOPER (DEVELOPER dropped in **V61**) |
-| `V9__applicant_profile_and_documents.sql` | `applicant_profile` (1:1 KYC snapshot) + `application_document` (uploaded docs, `bytea`) for staff review |
-| `V10__seed_demo_staff.sql` | seed demo staff users (one ACTIVE per role) so role-pick login resolves to a **real** staff id |
-| `V11__collection_case_real_loan_and_staff_ids.sql` | retype `collection_case.loan_id`/`assigned_officer_id` + `settlement.proposed_by`/`approved_by` to **bigint** (real loan + staff ids) |
-| `V12__applicant_profile_unique_identity.sql` | add `aadhaar` + `mobile` to `applicant_profile`; partial **unique** indexes on pan/aadhaar/mobile |
-| `V13__loan_disbursal_txn_ref.sql` | add `loan.disbursal_txn_ref` (the outgoing disbursal's transaction id) |
-| `V14__application_reborrow_states.sql` | extend the `status` CHECK with `PRE_APPROVED` / `REVIEW_PENDING` (returning-borrower reborrow); no new column/table |
-| `V15`–`V19` | the **P0–P8 production-migration** set: **V15** `application_verification` + `application_document.s3_object_key`, **V16** applicant-profile derived verification fields, **V17** `staff_user.password_hash` (BCrypt login seed), **V18** singleton `payment_settings`, **V19** admin/staff seed |
-| `V20__applicant_profile_credit_brief.sql` | add `applicant_profile.{credit_star_rating, credit_recommendation, credit_brief_summary, credit_brief_generated_at, credit_brief_facts jsonb}` (the bureau credit brief; credit **score reuses `bureau_score`**) |
-| `V21__notification_core.sql` | `notification` (per-recipient in-app inbox) + `notification_delivery` (per-channel send audit); partial unread index `where in_app and read_at is null` |
-| `V22__applicant_profile_email.sql` | add `applicant_profile.email` (the borrower's contact email — gates the EMAIL channel) |
-| `V23__applicant_profile_drop_global_identity_unique.sql` | drop V12's **global** unique indexes on pan/aadhaar/mobile → identity uniqueness is now **applicant-scoped** / app-layer, so a returning borrower can re-onboard without `DUPLICATE_MOBILE` |
-| `V24__company_expense.sql` | `company_expense` ledger (ADMIN-managed operational expenses) |
-| `V25__company_expense_receipt.sql` | add `company_expense.receipt_object_key` (S3 key for an uploaded receipt) |
-| `V26__salary_management.sql` | add `applicant_profile.{annual_salary_paise, salary_percentage, increment_percentage}` + append-only `profile_change_log` (audited profile edits) |
-| `V27__profile_editing_and_preferences.sql` | add `applicant_profile.emergency_contact_*`; new `borrower_preferences` (notification settings); `staff_user.{department, designation}` |
-| `V28__referral.sql` | `referral_code` / `referral` / `referral_payout` (refer-a-friend program) |
-| `V29__applicant_profile_aadhaar_verified.sql` | add `applicant_profile.aadhaar_verified` (mirrors pan/address verified; set on DigiLocker completion) |
-| `V30__settlement_status.sql` | add `settlement.{status, rejected_by, rejected_at}` (maker-checker **reject** for settlements + repayments) |
-| `V31__feature_flag.sql` | `feature_flag` — dev-only DB feature flags (SQL-controlled, read-only API; no write path) |
-| `V32__email_suppression.sql` | `email_suppression` (bounced/complained addresses, unique on `lower(email)`) — fed by the SES SNS→SQS listener; the email sender skips suppressed addresses (§14) |
-| `V33__rename_applicant_to_customer.sql` | **rename `applicant` → `customer` across the schema**: `applicant_id → customer_id` (9 tables), `applicant_profile → customer_profile`, all embedded-name indexes/constraints. The id **value** is unchanged (still mobile-derived); only names change. The guarantor `co_applicant` is deliberately **untouched**. |
-| `V34__auth_passwords_and_reset.sql` | password auth: `borrower_credential` (first durable per-customer row, keyed by `customer_id`), `staff_user.mobile` (+ demo backfill `9000000000` for the email+mobile reset gate), `password_reset_token` (one-time, SHA-256-hashed, single-use, 30-min) |
-| `V35`–`V54` | *(not yet catalogued here — read the migration directory; notable ones are **V42** `TELECALLER` role, **V43** `lead`, **V45** drops `KYC_APPROVER` + the Phase-2 credit workbench, **V50** `loan.closed_on`, **V53** `loan_application.created_at`, **V54** staff session registry)* |
-| `V55__dsa_role_and_commission.sql` | **DSA** role (+ CHECK constraints + demo persona) · `lead.{owner_dsa_id, pan}` with a PAN-format CHECK and a **partial unique index on `pan` where `owner_dsa_id is not null`** (the cross-DSA duplicate guard) · `dsa_commission` (unique on `lead_id` → one commission per lead, i.e. first loan only) · `dsa_commission_event` (ADMIN override audit) · `dsa_lead_rejection` (PAN-enumeration audit) · `lead_outreach` (SMS/email send audit) |
-| `V56__application_document_password.sql` | `application_document.file_password` — the borrower's optional key for a password-protected upload (bank statements / payslips), captured on the two signup upload screens and shown plainly to reviewing staff. Not a credential; never logged. |
+Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
+navix-common) and are applied on every boot — **V1..V65** today. Each file carries a header comment
+explaining *why* it exists; that is the source of truth. The index is
+[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
+
+The handful of schema decisions worth knowing without opening anything:
+- **Historical migrations are immutable**, even where their comments describe a retired workflow.
+  Statuses and roles they retired (`ACCOUNTANT_PENDING`, `CREDIT_HEAD_*`, `REVIEW_PENDING`,
+  `KYC_APPROVER`, `DEVELOPER`) stay in the enum/CHECK so historical `application_event` rows parse.
+- **All money is `BIGINT` paise** (V3/V4).
+- The per-person key is **`customer_id`** (renamed from `applicant_id` in V33); code uses
+  `customerId` / `CustomerProfile`. Only `co_applicant`/`CoApplicant` (the guarantor) keeps the old
+  name, and external bureau-API JSON keys (`Current_Applicant_Details`, …) are not ours to rename.
+- Identity uniqueness on `customer_profile` is **customer-scoped**, not global (V12 → relaxed by V23),
+  so a returning borrower can re-onboard.
 
 **The aggregate** `loan_application`: `id`, `customer_id` (was `applicant_id`, renamed in V33), `amount_requested` (paise, nullable),
 `eligible_limit`, `purpose`, `assigned_executive_id`, `loan_id`, `salary_credit_day`, `status`.
@@ -601,156 +555,21 @@ navix-common). Applied on every boot:
 
 ---
 
-## 11. Backend API surface (`/api/applications`)
+## 11. Backend API surface
 
-All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `ActorContext`) and enforce
-`requireRole`. Maker-checker actions return `FORBIDDEN_ROLE`, `SOD_VIOLATION`, or `ILLEGAL_TRANSITION`
-(422) on violation; a missing/invalid bearer on a protected route → plain **401**.
+**The controllers are the source of truth.** The endpoint map — `/api/applications` and its offer
+journey, customers, loan/repayments/transactions, collections, IAM/admin, DSA, notifications,
+referral, verification dashboard, preferences and registers — lives in
+[`docs/API_SURFACE.md`](docs/API_SURFACE.md).
 
-> **Migration-added endpoints (full list in `QA_CHECKLIST.md` §B):**
-> - **Auth:** `POST /api/auth/staff/login`, `POST /api/auth/borrower/otp/request`, `POST /api/auth/borrower/login`.
-> - **Password auth (V34):** borrowers sign in by **password OR OTP** — `POST /api/auth/borrower/password-login`
->   (mobile+password), `POST …/borrower/set-password` (authed; optional signup step / profile). **Forgot-password**
->   for both audiences — `POST /api/auth/{borrower,staff}/forgot-password` (email+mobile gate, generic ack, no
->   enumeration) emails a **one-time reset link** (30-min, single-use, hashed at rest; surfaced in the backend
->   log when `NAVIX_EMAIL_PROVIDER=log`), redeemed at `POST /api/auth/{borrower,staff}/reset-password`
->   (token+new password; ≥10-char alnum policy; `subjectType` guards cross-audience reuse). Borrower JWT TTL is
->   **7 days** (`navix.auth.borrower-ttl-seconds`); staff stays 1 day.
-> - **Onboarding verification** (BORROWER, ownership-checked): `POST /api/applications/{id}/verify/{pan,
->   email,address,digilocker/init,bureau,salary,penny-drop,selfie,agreement,presign-upload}`,
->   `POST …/verify/digilocker/complete`, `GET …/verify/{digilocker/status,summary}`; `submit-kyc` is gated
->   (`KYC_INCOMPLETE`). Staff-readable `GET /api/applications/{id}/verifications`, `GET …/documents/{docId}/url`.
-> - **Email OTP (both addresses).** `POST …/verify/email/otp` + `…/verify/email/otp/confirm` (PERSONAL)
->   and `POST …/verify/official-email/otp` + `…/verify/official-email/otp/confirm` (OFFICIAL/work).
->   Inbox control, distinct from `…/verify/email`, the provider deliverability + employer-match check
->   that runs against the *same* work address. Both write their own check type (`EMAIL_OTP` /
->   `OFFICIAL_EMAIL_OTP`), both deliberately outside `REQUIRED` and `KNOWN_CHECKS`, and the address is
->   always resolved server-side from the saved profile. Screen 6 is gated on them in
->   `JourneyService.emailsSettled`, **not** in `submit-kyc` — a work address we could not deliver to is
->   recorded `REVIEW` and waved through to the credit team (revamp.md decision 10), while an
->   unreachable personal address must be replaced.
-> - **Payment block:** `GET /api/payment-settings` (any authed; presigned QR/PDF URLs), `PUT` (ADMIN).
-
-| Method + path | Role | Purpose |
-|---|---|---|
-| `POST /` | borrower | create DRAFT |
-| `POST /reborrow` | borrower | returning borrower: new advance reusing saved profile → `PRE_APPROVED` (clean) / `REVIEW_PENDING` (past overdue) |
-| `GET /?status=` | staff | list by status (stage queues); `ApplicationView.fastTrack` flags a pre-approved reborrow at disbursement |
-| `GET /credit-queue` | CREDIT_HEAD | KYC-approved **applied** applications |
-| `GET /{id}` · `GET /{id}/events` | any | read application / audit trail |
-| `GET /mine` | BORROWER | the caller's own applications, newest-first (backs the account-menu `/loans` + `/transactions`) |
-| `POST /{id}/submit-kyc` | BORROWER | DRAFT → KYC_PENDING |
-| `POST /{id}/kyc-decision` | KYC_APPROVER | approve/reject |
-| `POST /{id}/review-decision` | KYC_APPROVER | reborrow review: `REVIEW_PENDING` → `PRE_APPROVED` / `REJECTED` |
-| `POST /{id}/apply` | BORROWER | set amount/purpose/salaryDay (KYC_APPROVED stays; **PRE_APPROVED → DISBURSEMENT_PENDING**, skipping credit) |
-| `POST /{id}/assign` | CREDIT_HEAD | assign executive → CREDIT_EXEC_PENDING |
-| `POST /{id}/exec-decision` | CREDIT_EXECUTIVE | recommend/reject |
-| `POST /{id}/head-decision` | CREDIT_HEAD | final approve (SoD) / reject |
-| `POST /{id}/disbursement-decision` | DISBURSEMENT_HEAD | accept → ACCOUNTANT_PENDING, **or with `txnRef` → DISBURSED→ACTIVE** / reject |
-| `POST /{id}/accountant-validate` | ACCOUNTANT | success → DISBURSED→ACTIVE (records `txnRef`) / fail |
-| `POST /{id}/retry-disbursement` | DISBURSEMENT_HEAD | failed → ACCOUNTANT_PENDING |
-| `POST /{id}/cancel` | borrower/staff | → CANCELLED (pre-disbursement) |
-| `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read; the staff-only credit score/★ rating are **stripped** for a borrower reading their own profile) |
-| `POST /{id}/documents` · `GET /{id}/documents` · `GET /{id}/documents/{docId}` | borrower uploads · any reads | documents (base64; metadata list + content for view/download) — the auto-generated `CREDIT_BRIEF` PDF rides this list |
-| `GET /{id}/credit-brief` | staff only | bureau credit brief: 1–5★ rating + categorized facts (A/B/C) + summary + the `CREDIT_BRIEF` PDF doc id (`CreditBriefView`); borrower/anonymous → `FORBIDDEN_ROLE` |
-
-### Customers (`/api/customers`) — borrower-centric roll-up
-
-| Method + path | Role | Purpose |
-|---|---|---|
-| `GET /?q=` | staff (all roles) | list/search distinct applicants (name / applicant id); each row rolls up counts + total outstanding |
-| `GET /{customerId}` | staff (all roles) | one customer's full history: latest profile + all applications + loans + payments |
-| `PUT /{customerId}/profile` | ADMIN | correct KYC + salary data (non-identity fields; PAN/Aadhaar/mobile locked) — a monthly-salary change recomputes the eligible limit |
-| `GET /{customerId}/changes` | staff (all roles) | audited profile-change history (`profile_change_log`, previous→new per field) |
-
-### Loan ledger, repayments & transactions (`/api/loan`)
-
-| Method + path | Role | Purpose |
-|---|---|---|
-| `GET /{id}` · `GET /{id}/outstanding?asOf=` | any | disbursed-loan view · **prepayment-aware** balance (interest only to `asOf`) |
-| `POST /{id}/repayments` · `GET /{id}/repayments` | borrower writes · any reads | record a manual repayment (→ PENDING_VERIFICATION) · list a loan's repayments |
-| `POST /{id}/repayments/{pid}/verify` · `POST …/{pid}/reject` | ACCOUNTANT | confirm proof → reduce outstanding, close at zero · **reject** a pending payment (no recompute; can't reject a VERIFIED one) |
-| `GET /pending-repayments` | ACCOUNTANT | repayments awaiting verification (company-wide queue) |
-| `GET /transactions?q=&direction=&from=&to=` | ACCOUNTANT/ADMIN | company-wide ledger (OUTGOING disbursals + INCOMING repayments), searchable + server-side date range |
-
-### DSA portal (`/api/dsa`) and DSA administration (`/api/admin/dsa`)
-
-`/api/dsa/**` is gated to the **`DSA` role only** (ADMIN oversight goes through `/api/admin/dsa`, so
-the portal's "owner comes from the JWT" rule has no exception). Ownership is **always** resolved from
-`ActorContext`, never from a request parameter, and a foreign lead id returns `LEAD_NOT_FOUND` rather
-than `FORBIDDEN` so the endpoint is not an existence oracle. Attribution is by **PAN**.
-
-| Method + path | Purpose |
-|---|---|
-| `POST /api/dsa/leads` | add a lead (PAN + name + mobile required). A PAN already held by another DSA **or** by an existing customer → a single generic `LEAD_ALREADY_KNOWN` (the two cases are indistinguishable); the attempt is logged to `dsa_lead_rejection` |
-| `GET /api/dsa/leads` · `GET /{id}` · `PUT /{id}` | only the caller's own leads. The view echoes back what the DSA typed + a **coarse** conversion status (`NOT_APPLIED/APPLIED/IN_PROGRESS/DISBURSED/REPAID/DECLINED`) + net disbursed + commission — nothing read out of KYC, and **never a second loan** |
-| `POST /api/dsa/leads/{id}/outreach` | SMS (fixed DLT template) or email (DSA-authored subject/body); rate-limited, every send audited to `lead_outreach` |
-| `GET /api/dsa/commissions` · `GET /api/dsa/earnings` | own commission rows · totals |
-| `GET /api/admin/dsa` (+ `/leads`, `/commissions`, `/outreach`) | ADMIN registers and roll-ups |
-| `POST /api/admin/dsa/commissions/{id}/{pay,void,reassign}` · `POST /commissions` | ADMIN settles (txn id), voids, reassigns on dispute, or creates one manually — all appended to `dsa_commission_event` |
-
-**Commission lifecycle:** `ACCRUED` at disbursal (`ApplicationFlowService.finalizeDisbursal`, beside
-the referral hook) → `PAYABLE` when the loan fully repays (`RepaymentService.recomputeOutstanding`) →
-`PAID` by ADMIN. It goes **`VOID`** instead on an approved settlement (a
-`@TransactionalEventListener` on the existing `SettlementApprovedEvent`), a default, or a write-off.
-Rate is `DSA_COMMISSION_RATE_BPS = 350`, **snapshotted per row** so changing it never rewrites history.
-
-> ⚠️ **SMS outreach does not deliver yet.** No `DHANBOOST_DSA_LEAD_INVITE_V1` DLT template is
-> registered, so live sends fail `006 Invalid template text` and are recorded `FAILED`. Email works.
-
-### Collections (`/api/collections`) and IAM/Admin (`/api/staff`, `/api/admin`)
-
-Authz is enforced **server-side in the services** off the JWT actor (the BFF forwards `Bearer <jwt>`,
-not headers): settlement approve/reject enforces **SoD** (proposer ≠ approver) via `ActorContext`, and
-**`/api/staff*` + `/api/admin/blocklist` are ADMIN-only** (`requireAdmin`, RBAC Wave 1).
-
-| Method + path | Purpose |
-|---|---|
-| `GET/POST /api/collections/cases` · `GET /cases/{id}` | list/open/read a case (real **bigint** loan id; open flips the loan → IN_COLLECTIONS) |
-| `GET /api/collections/loans` · `GET /api/collections/officers` | collectible loans (ACTIVE/OVERDUE, due ≤ today) · ACTIVE collection officers (assignee picker) |
-| `POST /cases/{id}/assign` · `GET/POST /cases/{id}/interactions` | assign officer (real staff id) · log/list interactions |
-| `POST /cases/{id}/settlements` · `GET /settlements` · `POST /settlements/{id}/{approve,reject}` | propose · list · **approve / reject** (SoD; COLLECTION_HEAD/ADMIN) |
-| `GET /api/collections/dpd?dueDate=&asOf=` | days-past-due + bucket helper |
-| `GET/PUT/DELETE /api/staff` (+`/{id}`) | ADMIN — staff users: list · update role/status · disable |
-| `GET/POST /api/staff/invites` · `POST /accept` | ADMIN — list/create invites (one-time token) · activate |
-| `GET/POST/DELETE /api/admin/blocklist` (+`/{id}`) | ADMIN — fraud blocklist: list · add · remove |
-
-### Notifications (`/api/notifications`) — the caller's in-app inbox
-
-All four endpoints are **scoped to the authenticated caller** (`NotificationService` resolves the
-recipient from the JWT — `BORROWER` → applicant inbox, else staff inbox); a cross-recipient id → 404.
-The borrower/staff BFF namespaces both proxy to the same backend path.
-
-| Method + path | Role | Purpose |
-|---|---|---|
-| `GET /?page=&size=` | any authed | the caller's notifications, newest-first |
-| `GET /unread-count` | any authed | unread in-app count for the bell badge |
-| `POST /{id}/read` | any authed | mark one read (idempotent) → fresh unread count |
-| `POST /read-all` | any authed | mark all read → fresh unread count (0) |
-
-### Referral (`/api/referral`) — refer-a-friend
-
-All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISABLED`).
-
-| Method + path | Role | Purpose |
-|---|---|---|
-| `GET /me` · `POST /apply` · `GET /validate?code=` | BORROWER | the caller's code + reward + earnings (`enabled` mirrors the flag) · redeem a code at signup · live preview |
-| `GET /payouts?status=` · `POST /payouts/{id}/pay` · `GET /expenses` | DISBURSEMENT_HEAD/ADMIN | payout queue · settle one (logs a txn id, credits the beneficiary) · expense totals |
-
-### KYC verification dashboard, profiles, preferences & admin registers
-
-| Method + path | Role | Purpose |
-|---|---|---|
-| `GET /api/applications/{id}/verification-progress` | staff | per-application completion snapshot |
-| `POST /api/applications/{id}/verifications/{checkType}/decision` | KYC_APPROVER/ADMIN | manual PASS/FAIL override (provider MANUAL, audited) |
-| `GET /api/applications/verifications/overview` | staff | cross-application rows + status tallies |
-| `POST /api/applications/{id}/send-reminder` | KYC_APPROVER/ADMIN | nudge the borrower on outstanding steps (no-op when nothing pending) |
-| `PUT /api/applications/{id}/profile/self` | BORROWER | self-edit non-identity profile fields (may invalidate the matching verification → re-verify) |
-| `GET\|PUT /api/preferences` | BORROWER | notification settings (opt-out suppresses SMS/EMAIL, never IN_APP) |
-| `GET\|PUT /api/staff/me` | staff | staff self-profile (role/status stay ADMIN-only); `PUT` also toggles `emailOptIn` (operational-email opt-out, null-guarded so a partial PUT leaves it untouched — STAFF_IAM account/security mail is never suppressible) |
-| `GET/POST/DELETE /api/admin/expenses` (+`/{id}`) | ADMIN | company-expense ledger (+ receipt S3 keys) |
-| `GET /api/applications/all` | ADMIN | full register of every application (complete + incomplete) |
-| `GET /api/feature-flags` | any authed | dev-only flag states `{key: enabled}` for UI gating — **read-only, no write path** (flags change only via SQL, §12) |
+What holds across all of it, and does not belong in that file:
+- Every action resolves the actor from the **JWT bearer** (`JwtAuthFilter` → `ActorContext`) and
+  enforces `requireRole`. A missing/invalid bearer on a protected route → plain **401**.
+- Maker-checker violations return `FORBIDDEN_ROLE`, `SOD_VIOLATION` or `ILLEGAL_TRANSITION` (422).
+- Responses are wrapped in the `ApiResponse<T>` envelope; the typed client unwraps it and throws
+  `ApplicationApiError` carrying `error.code`.
+- Anything a borrower can read is ownership-checked, and staff-only fields (credit score, ★ rating)
+  are **stripped** when a borrower reads their own profile.
 
 ---
 
@@ -777,7 +596,10 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   (proposer ≠ rejecter) and audited; don't add an approve-only flow.
 - **Feature flags are dev-only & read-only.** The `feature_flag` table is changed **only by SQL** — there
   is no write API and no admin UI (not even ADMIN). Code reads `FeatureFlagService.isEnabled(key)`
-  (navix-common, no cache → instant, no redeploy); gate a feature by adding a row + the check.
+  (navix-common, no cache → instant, no redeploy); gate a feature by adding a row + the check. Live
+  flags: `referral` (kill switch), `fintrix-bureau` (bureau primary; off falls back to Digitap),
+  `bureau-auto-reject` (**suspended in V64**, read with `defaultWhenMissing = FALSE` so deleting the
+  row leaves it off — it takes money-affecting, 90-day-blocking action without a human).
 - **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `BORROWER_AUTH_TTL_SECONDS`
   (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
@@ -807,235 +629,44 @@ multiple accounts (kartikjindal, meetzy-india). If push fails on OAuth scope, ru
 
 ---
 
-## 13. Deferred (go-live backlog)
+## 13. Deferred, and 14. External integrations
 
-> **The full roadmap is in [`FUTURE.md`](FUTURE.md); the go/no-go production checklist is
-> [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).** Most of the original deferred set **shipped**
-> (real auth, S3, verification clients, notifications, reborrow, referral, expenses);
-> the bullets below are what genuinely **remains**.
+- **Go-live backlog** → [`docs/STATE.md`](docs/STATE.md) (＋ [`FUTURE.md`](FUTURE.md),
+  [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md)).
+- **Providers — who does what, auth, hosts, live-test status, per-API gotchas** →
+  [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md), plus the API catalogs in `docs/signzy/`,
+  `docs/digitap/`, `docs/fintrix/`, `docs/sms-dlt/` and `NAVIX_Fintrix_Integration_Flow.md`.
 
-- ✅ **Done in the migration:** real auth (JWT + Spring Security, `JwtAuthFilter` replaced
-  `DemoActorFilter`, staff BCrypt login); real verification clients (**Signzy primary + Digitap fallback** —
-  §14; superseded the earlier Fintrix/DigiLocker layer, now removed); **S3** documents
-  (presign + `s3_object_key`); bank **penny-drop**; SSM secrets; the 9-step verified onboarding; the
-  admin payment block; mock-layer removal; and a **test suite** (`QA_CHECKLIST.md`, ~136 backend tests,
-  Playwright `frontend/e2e/*`, `.github/workflows/ci.yml`).
-- 🟡 **SMS/DLT — the whole batch was re-filed under the DhanBoost brand on 2026-07-31.** The rebrand
-  changed the brand string, the sender (`NAVIXF` → **`DHANBT`**, Active) and the URL in every body,
-  which invalidated all 15 previously-registered `NAVIX_*_V2` ids (now **blacklisted** on the portal —
-  do not send against them). All 15 `DHANBOOST_*_V1` templates are **submitted and awaiting operator
-  approval** (1 Active, 14 Work In Progress); **no new DLT Template IDs have been issued yet**, so the
-  `NAVIX_SMS_DLT_*` env vars stay unset and the notification engine keeps no-op'ing the SMS channel.
-  > **The full state + the next-steps runbook is `docs/sms-dlt/DLT_SUBMISSION_TRACKER.md` → "▶ NEXT
-  > SESSION"** — how to collect the ids, wire them in, and handle rejections. Do **not** re-run
-  > `docs/sms-dlt/CHROME_AGENT_PROMPT.md`; it would duplicate the registrations.
-- 🔴 **Borrower OTP is currently NOT sending.** The only DLT-approved template is the old
-  NAVIX-worded `NAVIX_OTP_LOGIN_V2` (`1707178366195230667`), so ECS task-def **revision 4 pins
-  `NAVIX_SMS_OTP_TEMPLATE` to the NAVIX Finance wording** while `application.yml`'s default is the
-  DhanBoost wording. **Any backend redeploy must be built from rev 4** — building from defaults swaps
-  the live OTP text to unapproved wording and every send fails `006 Invalid template text`. The
-  gateway also still rejects the SSM demo credentials for sender `NAVIXF`. `NAVIX_SMS_MOCK=true` →
-  `123456` remains the local/demo path (it is **off** in prod as of 2026-07-30).
-- 🟡 Staff **emailed invites** + ADMIN-gated invite create; middleware **JWT-signature verify** (still a
-  presence check). Rotate the seeded `Admin@12345` + set a strong `AUTH_SECRET` for prod.
-- 🔴 Real bank **payout** (NEFT/IMPS) at the accountant step. (Sanction-letter/agreement generation → S3
-  **shipped** — `SanctionLetterPdfRenderer` renders the Key Fact Statement via OpenPDF and `OfferService`
-  stores it as the `SANCTION_LETTER` document; **Aadhaar eSign of it shipped 2026-08-11**, see §14.)
-- 🔴 DB cleanup: **FK constraints**; drop the legacy `bytea` doc column (still on the live borrower
-  document upload/read path — migrate that write path to S3 first); unify applicant identity
-  (`applicant_profile` ↔ onboarding `Borrower`); PII-at-rest encryption.
-- 🔴 Persisted `borrower_standing` table (standing is recomputed from loan history today); design-system
-  polish; full-Aadhaar masking; compliance/regulatory alignment (NBFC/DLG, reporting, product copy).
-- ⚠️ **Known exception to "never store the raw Aadhaar number".** The manual-proof fallbacks store
-  borrower-uploaded images of identity and bank instruments: `AADHAAR_FRONT` / `AADHAAR_BACK` (the
-  DigiLocker alternative) and `BANK_PROOF` (a cancelled cheque or passbook, the penny-drop
-  alternative). An Aadhaar card image necessarily carries the **full** Aadhaar number, so these
-  documents are a deliberate, product-approved exception to the masking rule stated in the security
-  guidance — not an oversight. They are handled exactly like every other KYC document (S3, SSE-KMS,
-  short-lived presigned GETs, never logged, never exported), and are readable by any staff role that
-  can already open a document. Two consequences to weigh before an audit or a masking pass: the
-  images are **not** redacted at rest, and the presigned-URL route is **not** narrowed to the roles
-  that actually review them. Revisit both alongside full-Aadhaar masking above.
-
----
-
-## 14. External integrations (when un-mocked)
-
-### Verification providers — Signzy (primary) + Digitap (fallback)
-
-NAVIX's identity/bureau/penny-drop/DigiLocker verification runs behind the provider-neutral
-`VerificationPort` seam via `RoutingVerificationPort` (`@Primary`, `navix-verification`), which routes **per
-capability: Signzy first, Digitap as fallback; where Signzy lacks a capability, Digitap directly** — **except
-`pullBureau`, which is Fintrix first, Digitap as fallback (Signzy no longer does bureau at all)**. The old
-Fintrix + Fintrix-DigiLocker integration was **removed** (`git` history has it) — **Fintrix later came back
-as the bureau primary only**, via a single new endpoint unrelated to the old multi-API integration (see
-`NAVIX_Fintrix_Integration_Flow.md` §3.5 for the full history + the live contract). Three per-provider
-adapters (`SignzyVerificationAdapter`, `DigitapVerificationAdapter`, `FintrixVerificationAdapter`) map
-provider clients → the neutral records; `FintrixVerificationAdapter` offers **only** the bureau capability —
-every other method throws `CapabilityNotSupportedException` so the router falls straight through to Signzy/
-Digitap for everything else. A `CapabilityNotSupportedException` tells the router "skip to the next
-provider" vs a `VerificationException` "tried and failed, fall through". Full API catalogs + field/sample
-specs: **`docs/signzy/`** (11 APIs) and **`docs/digitap/`** (43 APIs).
-
-| Capability (`VerificationPort`) | Provider used | Endpoint |
-|---|---|---|
-| `verifyPan` | **Signzy** → Digitap | Signzy `/api/v3/pan/compliance-206-individual-search` → Digitap `/validation/kyc/v1/pan_details_plus` |
-| `pullBureau` | **Fintrix** → Digitap | Fintrix `POST /crif_combine` (CRIF Highmark; PRIMARY) → Digitap `/credit_analytics/request`. Signzy's `experian-lite`/`crif` legs are **retired from routing** (`SignzyVerificationAdapter.pullBureau` now throws `CapabilityNotSupportedException`) — `SignzyExperianClient`/`SignzyCrifClient` are kept only for the ADMIN provider workbench. Gated by the `fintrix-bureau` feature flag (on by default; off falls through to Digitap). See `NAVIX_Fintrix_Integration_Flow.md` §3.5 |
-| `livenessInit` / `livenessResult` (selfie) | **Signzy** | Signzy `/api/v3/liveness-secure/createUrl` + `/getData` (prod acct) — **interactive video journey**: passive liveness + 1:1 face-match vs the DigiLocker Aadhaar photo, embedded in an iframe (`allow="camera"`), polled to completion (our DB authoritative). Two-step async, mirrors DigiLocker |
-| `faceLiveness` (selfie fallback) | **Digitap** | Digitap `/fmfl/v2/face-match` — synchronous 1:1 face-match of an uploaded selfie vs the Aadhaar photo (no live camera). **Fallback** used only when Signzy liveness init is unavailable (`selfieLivenessInit` → `derived.fallback=true`) |
-| `pennyDrop` | **Signzy only** | Signzy `/api/v3/bankaccountverification/bankaccountverifications` (Digitap has no penny-drop) |
-| `digilocker*` | **Signzy only** (prod acct) | Signzy **v2** `/api/v3/digilocker-v2/createUrl` + `/geteAadhaar` (Digitap has no consent flow). Migrated 2026-07-29: v2 is entitled on the **production** account only — the preprod account is out of API credits and prod is not entitled for the retired v1 pair |
-| `verifyEmail` | **Signzy** → Digitap | Signzy `/api/v3/email/verificationV2` (prod acct; deliverability + person/company enrichment) → Digitap `/cv/email_verification/v1` |
-| `verifyAddress` | **Digitap only** | Digitap `/ent/v1/address-verification` (Signzy has no address API) |
-| `verifyEmployment` | **Digitap only** | Digitap `/cv/v3/uan_basic/sync` — EPFO/UAN employment (Signzy has no UAN API). **Basic V3, not Advanced V4**: every Advanced variant answers `412` (product not provisioned), so the PF-filing cross-check (`is_recent`, `has_pf_filings_details`) and `employer_confidence_score` are permanently null. Advisory — absent from `REQUIRED`, never blocks KYC, never returns FAIL. Full probe table + wiring in `docs/digitap/UAN_EMPLOYMENT.md` |
-
-**Aadhaar eSign of the sanction letter** sits on its own seam — `EsignPort` (navix-common), *not*
-`VerificationPort`/the router, because it is one provider and a legal act rather than a check.
-`SignzyEsignAdapter` (`navix-verification`) drives Signzy's Contract API via `SignzyContractClient`:
-`POST /api/v3/contract/initiate` mints a contract + a hosted eMudhra `esignUrl`, `POST
-/api/v3/contract/pullData` resolves it. **Production account only** — preproduction answers `403 "You
-cannot consume this service"`. Selected by `navix.esign.provider` (`signzy` default; `mock` signs inline
-and is set only by the demo seed script and tests). Specs + verified corrections in
-`docs/signzy/initiatecontact.md` and `docs/signzy/pullcontact.md`; live-test with
-`docs/signzy/test-contract-esign.sh`.
-- **Flow** (offer-journey screen 8, `/loan/sanction-letter`): `esignInit` presigns the stored
-  `SANCTION_LETTER` and returns `derived.url` → the borrower is **redirected** (eMudhra refuses framing,
-  so this follows DigiLocker, not the liveness iframe) → returns to `/kyc/esign/callback`, which polls
-  `esignStatus` until terminal. **Our row is the source of truth**; the mandatory `callbackUrl`
-  (`POST /api/webhooks/signzy/contract`, shared-secret) only accelerates the closed-tab case.
-- **Identity match:** `nameMatchThreshold` + YOB + gender, taken from the `AADHAAR` verification row's
-  `derived` (gender and the Aadhaar last-4 live nowhere else). DigiLocker is non-blocking, so when that
-  data is absent we send the name threshold alone — `derived.matchMode` records which was used.
-- **Fallback:** if init fails, `derived.fallback=true` and the borrower draws a signature instead
-  (`recordManualEsign`, unchanged). That path deliberately never calls `EsignPort` — it must work when
-  the provider does not, and each call would otherwise mint a billable contract.
-- ⚠️ **Every initiate is a real, billable, legally binding contract; there is no sandbox.** The re-mint
-  on expiry is deliberately narrow (provider 404 **and** nothing signed) so a poll loop cannot cycle.
-  `contractTtl` is echoed but appears unhonoured (~7 days regardless).
-
-- **Auth & hosts (env-driven, PREPRODUCTION by default).** Signzy = raw opaque token in `Authorization`
-  **plus** the account id in the `x-client-unique-id` header (`SIGNZY_TOKEN` + `SIGNZY_CLIENT_UNIQUE_ID`,
-  base `SIGNZY_BASE_URL` default `https://api-preproduction.signzy.app`). Digitap = HTTP
-  Basic `base64(client_id:client_secret)` (`DIGITAP_CLIENT_ID`/`DIGITAP_CLIENT_SECRET`) over **two** hosts —
-  `DIGITAP_SVC_BASE_URL` (default `https://svcdemo.digitap.work`, KYC/Email) + `DIGITAP_API_BASE_URL`
-  (default `https://apidemo.digitap.work`, Credit/Address/Face-Match). Routing order via
-  `NAVIX_VERIFICATION_CHAIN` (default `signzy,digitap`). Switch to prod by overriding the `*_BASE_URL` vars
-  (`api.signzy.app`, `svc.digitap.ai`, `api.digitap.ai`). **Keys load from `backend/.env`** (auto-loaded by
-  `spring-dotenv` — see `.env.example`) or SSM; never committed.
-- **Bureau consent gotcha:** Signzy's `experian-lite`/`crif` require `consent.consentTimestamp` as a JSON
-  **number** (epoch millis) — a string returns `400 "must be a number"`. `SignzyDtos.Consent.consentTimestamp`
-  is a `long` for this reason.
-- **DigiLocker (Signzy)** — consent flow unchanged in shape (init consent URL → user authorizes →
-  **redirect-driven** completion, DB `AADHAAR` row is the source of truth); PASS gates on
-  `x509Data.validAadhaarDSC == "yes"`. On completion NAVIX also ingests the Aadhaar **face photo** to S3 as an
-  `AADHAAR_PHOTO` document, which the **selfie step face-matches against** (`ApplicationVerificationService`).
-  The gotchas below still apply.
-- **Selfie = Signzy liveness (primary), Digitap face-match (fallback).** Primary path is an **interactive
-  video journey**: `selfieLivenessInit` (presigns the stored `AADHAAR_PHOTO` as Signzy's `matchImage` for a
-  1:1 face-match, mints the token + `videoUrl`) → the borrower completes the passive-liveness video in an
-  **iframe** (`allow="camera"`, `signup/selfie/page.tsx`) → `selfieLivenessResult` polls Signzy `getData`
-  (404 "not completed" = keep polling; on completion it ingests the captured frame to S3 as `SELFIE` and
-  maps **PASS** when live + face-matched, else **REVIEW**). Signzy Liveness runs on the **prod** account
-  (`SignzyLivenessClient` → `SIGNZY_PROD_CLIENT`). If Signzy liveness init is unavailable
-  (`derived.fallback=true`), the page degrades to the legacy **camera-capture** selfie → `verifySelfie`
-  presigns the selfie **and** the `AADHAAR_PHOTO` and calls `faceLiveness(selfieUrl, referenceUrl, ref)` →
-  Digitap Face Match (`is_same_face` + confidence ≥ 0.60; no Aadhaar photo → single-image quality check).
-  Neither path ever hard-blocks — a KYC approver makes the final call.
-- **Bureau fixture** — `NAVIX_BUREAU_FIXTURE` (any non-blank value) still yields a rich local credit brief
-  offline. Since Fintrix is now the bureau primary, the fixture is read by `FintrixCrifClient`, which
-  ignores the property's value and always serves its own bundled `docs/fintrix/crif-combine-sample.json`
-  (CRIF-shaped); `SignzyExperianClient`/`DigitapCreditClient` still honour the same property for their own
-  Experian-shaped `classpath:samplepan.json` when reached (workbench / fallback paths).
-- **Live-test status (verified 2026-07-14, preproduction/production).** ✅ Signzy PAN, **penny-drop**, CRIF
-  (score 799), DigiLocker init; ✅ Digitap **Address** (200, prod host). ⚠️ **Account-side blockers, not code:**
-  Digitap **Email** → `412` (product not provisioned), Digitap **Face Match** → `402` (needs account balance),
-  Digitap **PAN/Credit fallback** → `403` IP-not-allowed (whitelist the caller IP; not critical since Signzy is
-  primary). Signzy **Experian** may `409` on a thin/no-match identity → CRIF fallback covers it.
-  **Config caveat:** the current Digitap keys are **production** but the app defaults to Digitap **preprod**
-  hosts (which `401` prod keys) — set the `DIGITAP_*_BASE_URL` vars to the prod hosts to use them, or get a
-  Digitap UAT key pair. Live-test scripts: `docs/signzy/test-all-signzy.sh`, `docs/digitap/test-all-digitap.sh`;
-  ready-to-run curls in `docs/signzy/SIGNZY_LIVE_CURLS.md` + `docs/signzy/SIGNZY_CURLS_DIRECT.md`.
-- **UltronSMS** (borrower OTP + lifecycle SMS) — `GET https://ultronsms.com/api/mt/SendSMS`, params
-  `user/password/senderid/channel/DCS/flashsms/number/text/route/peid/DLTTemplateId`; success envelope
-  `{ErrorCode:"0"|"000", JobId}`. Sent by `UltronSmsClient` (`navix-app`), bound from `navix.sms.*`.
-  The **PEID is entity-level and constant** across all templates (verified working value
-  `1701178039634361131`, sender `NAVIXF`, route `02`). Live-test **without** the app:
-  `docs/sms-dlt/test-send-sms.sh <number> [text] [dltTemplateId]` (one send) and
-  `docs/sms-dlt/test-all-templates.sh [number]` (sweeps every `_V2` template → a pass/fail tracker at
-  `docs/sms-dlt/TEMPLATE_TEST_RESULTS.md`). The 15 template ids + exact content are in
-  `docs/sms-dlt/SMSULTRON.md`; the sent text must match the registered template **char-for-char** (only
-  variable slots filled), use `Rs.` not `₹` (₹ forces costly UCS-2), and any URL must be portal-
-  whitelisted. **Status (2026-07-10):** `NAVIX_OTP_LOGIN_V2` approved & live; the other 14 pending
-  (return `006 Invalid template text`).
-
-**Bureau report → credit brief:** the PRIMARY path is now Fintrix — `FintrixCrifClient` (`POST
-/crif_combine`) unwraps the envelope to `canonical.data.credit_report` and hands it to
-`support/CrifHighmarkFactsParser`, which parses the **full** CRIF Highmark report (accounts summary,
-tradelines, inquiry history, score trend) into `BureauReportFacts` — the **same shape**
-`support/ExperianFactsParser` produces for the Digitap fallback (`DigitapCreditClient`,
-`result.result_json.INProfileResponse`), so the credit-brief PDF/rating stay bureau-agnostic regardless of
-which provider answered (`SignzyExperianClient`/`SignzyCrifClient` are retained only for the ADMIN provider
-workbench, no longer in the routed path). A **thin-file** response (no tradeline/summary detail → `facts ==
-null`) is score-only, no brief; a rich
-response yields the brief. For local end-to-end demos set **`NAVIX_BUREAU_FIXTURE`** (any non-blank value —
-`FintrixCrifClient` treats it as an on/off toggle, not a path, and always serves its own bundled
-`docs/fintrix/crif-combine-sample.json`, a redacted real capture; the Digitap/Signzy clients still honour
-the same property name for their own `classpath:samplepan.json` Experian-shaped fixture) — every pull then
-returns a real report, yielding a brief + PDF without a live (billable) call. The rating math + field map
-live in `CreditRatingCalculator`
-(see §2); the PDF needs **OpenPDF** (`com.github.librepdf:openpdf`, in the parent BOM + `navix-loan`).
-The bureau facts drive the **rating + credit-health + exposure** numbers, but the brief's **displayed
-identity** (name/PAN/mobile/DOB) is overridden from the borrower's `ApplicantProfile`
-(`CreditBriefService.displayFacts`) — never the report's copy — so it can't show the fixture person;
-the on-screen brief is always recomputed from the profile.
-
-**DigiLocker live-flow gotchas** (touch points
-`ApplicationVerificationService.{digilockerStatus,digilockerComplete}`, `signup/digilocker/page.tsx`,
-`kyc/digilocker/callback/page.tsx`):
-- **`digilocker_initialize` caches the consent session by `redirect_url`** and re-serves a stale,
-  expired token on reuse (→ SDK "Access Denied"). **Fix:** make `redirect_url` unique per attempt
-  (append `?app=<id>&sid=<nonce>`; the callback resolves the app from `localStorage`).
-- **Completion is redirect-driven, not poll-driven.** The `digilocker_status` poll routinely stalls at
-  `client_initiated`, so the **redirect to `/kyc/digilocker/callback`** is the completion signal and our
-  **own DB is the source of truth**: the callback tab finalises via `digilockerComplete` (bounded retry
-  on `DIGILOCKER_NOT_READY`, which the backend now throws instead of persisting a bogus PASS), and
-  `digilockerStatus` short-circuits to PASS once the `AADHAAR` row exists. The signup tab polls until
-  PASS with a ~3-min fallback to staff manual review.
-
-**AWS SES — email delivery + bounce/complaint suppression (live, 2026-07-01):** the email channel's
-`EmailClient` port (`navix-notification`) has four impls selected by `navix.email.provider`:
-`log` (default, masked-log no-send), `smtp` (Boot `JavaMailSender`), **`ses`** (`SesEmailClient` over
-the SES v2 SDK, reusing the **same region + default credential chain as S3** — no separate SMTP creds),
-and `resend` (`ResendEmailClient` over the Resend HTTP API — interim while SES is sandbox-limited). Each
-message carries a plain-text body + an optional branded **HTML** alternative (`EmailMessage.html`,
-built by `EmailHtmlRenderer`).
-When `navix.email.configuration-set` is set, sends are tagged with a SES **configuration set**
-(`navix-notifications`) so deliverability events fire.
-
-- **Bounce/complaint loop:** SES config-set → **SNS topic `navix-ses-events`** → **SQS queue
-  `navix-ses-events`** (raw delivery, + DLQ) → `SesEventSqsListener` (`@SqsListener`, gated by
-  `navix.ses.events.enabled`). A **permanent** bounce or any complaint adds the address to the
-  `email_suppression` table (`EmailSuppressionService`, idempotent) and flips the originating
-  `notification_delivery` row to `BOUNCED`/`COMPLAINED` (matched by the SES messageId in `provider_ref`).
-  `EmailSender` then **skips** suppressed addresses (`SKIPPED("SUPPRESSED")`). Transient bounces are
-  logged, not suppressed. SES account-level suppression is also on, so this is belt-and-suspenders +
-  app-side visibility.
-- **Run it (sandbox):** `AWS_PROFILE=navix-dev NAVIX_EMAIL_PROVIDER=ses
-  NAVIX_EMAIL_FROM="NAVIX Finance <noreply@navixfinance.com>" NAVIX_SES_CONFIG_SET=navix-notifications
-  NAVIX_SES_EVENTS_ENABLED=true`. The verified identity is the **domain** `navixfinance.com`, so any
-  alias on it (e.g. `noreply@`) is a valid `From`. Test bounce/complaint/success without verifying
-  recipients via the SES mailbox simulator (`{bounce,complaint,success}@simulator.amazonses.com`).
-- **Caveats (both environmental, not code):** (1) with `NAVIX_SES_EVENTS_ENABLED=true` the app needs
-  working AWS credentials **at startup** — the SQS listener resolves the queue URL eagerly and the boot
-  **fails** without them (in prod that's the task role; locally pass `AWS_PROFILE=navix-dev`).
-  (2) With those creds the SSM import succeeds and points the app at **RDS**, not local Docker — know
-  which DB you're hitting when you test. The account is still in the **SES sandbox** (production access
-  pending); real recipients need that approval.
+The rules that survive outside that file:
+- **Go through the seam, never a provider client.** Identity/bureau/penny-drop/DigiLocker run behind
+  `VerificationPort` via `RoutingVerificationPort` (`@Primary`), which routes **per capability**:
+  bureau = Fintrix → Digitap; everything else = Signzy → Digitap. The one exception is
+  `answerBureauChallenge` (the CRIF KBA answer), which bypasses the chain entirely and goes straight
+  to Fintrix — an `order_id` belongs to one vendor. Throw
+  `CapabilityNotSupportedException` for "skip to the next provider", `VerificationException` for
+  "tried and failed, fall through". Aadhaar eSign is its own seam (`EsignPort`) — one provider, and a
+  legal act rather than a check.
+- ⚠️ **Every eSign initiate is a real, billable, legally binding contract; there is no sandbox.** The
+  drawn-signature fallback deliberately never calls `EsignPort`.
+- **Our DB row is the source of truth** for every redirect/poll flow (DigiLocker, liveness, eSign);
+  the provider callback only accelerates the closed-tab case.
+- **No verification hard-blocks a borrower.** A failed check is `REVIEW` for a human, not a decline.
+- Set **`NAVIX_BUREAU_FIXTURE`** (any non-blank value) for an offline, non-billable credit brief.
+- SMS text must match the registered DLT template char-for-char, use `Rs.` not `₹` (₹ forces UCS-2),
+  and any URL must be portal-whitelisted.
 
 ---
 
 ## 15. Reference
 
+**Split out of this file (read on demand, not every session):**
+- **[`docs/STATE.md`](docs/STATE.md)** — what is live feature by feature, and the go-live backlog.
+- **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
+- **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
+  capability routing, auth, hosts, live-test status, per-API gotchas.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V65 Flyway catalog.
+
+**Everything else:**
 - **`aws.md`** — the live cloud deployment (Vercel → ALB → ECS → RDS/S3/SSM): every resource id, the
   redeploy recipe, and the smoke tests.
 - **`PRODUCTION_READINESS.md`** — go/no-go checklist for real production exposure.
