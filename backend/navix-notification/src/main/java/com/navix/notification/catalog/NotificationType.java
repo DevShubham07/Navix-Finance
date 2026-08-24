@@ -52,6 +52,16 @@ public enum NotificationType {
     // as SANCTIONED_AMOUNT_REVISED/SANCTION_LETTER_SIGNED.
     KYC_REOPENED_RESCORE(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
 
+    /**
+     * The bureau withheld the report behind a KBA question only the borrower can answer.
+     *
+     * <p>No SMS - and this one is not about DLT approval timing. Every registered borrower SMS body is
+     * operator-locked to the static {@code https://dhanboost.com/login}, so an SMS physically cannot
+     * carry the deep link this notification exists to deliver. IN_APP + EMAIL only until a template
+     * with a variable URL slot is registered.
+     */
+    BUREAU_QUESTION_PENDING(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
+
     // ---- CREDIT ----
     LOAN_APPLIED(CREDIT, Set.of(IN_APP), Set.of(TO_CREDIT_HEADS)),
     CREDIT_ASSIGNED(CREDIT, Set.of(IN_APP), Set.of(TO_ASSIGNED_EXECUTIVE)),

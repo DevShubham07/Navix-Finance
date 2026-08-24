@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Smartphone, CheckCircle2, Lock, Loader2 } from "lucide-react";
 import { Input, Turnstile } from "@/components/ui";
@@ -43,6 +43,16 @@ export default function LoginPage() {
   // skips the login form entirely. We check this once on mount; show nothing until it resolves.
   const [checking, setChecking] = React.useState(true);
 
+  // Where to land after a successful sign-in. Notification deep links (e.g. the bureau question
+  // screen) arrive as /login?next=/credit-question%3FappId%3D123; without this they would all be
+  // swallowed by the hardcoded /dashboard below and the campaign would fail silently.
+  // Only same-site paths are honoured — an absolute URL or protocol-relative "//evil.com" would turn
+  // this into an open redirect.
+  const searchParams = useSearchParams();
+  const nextParam = searchParams.get("next");
+  const destination =
+    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/dashboard";
+
   const mobileOk = mobile.length === 10;
   const MAX_RESENDS = 3;
 
@@ -55,7 +65,7 @@ export default function LoginPage() {
         if (me?.session) {
           const apps = await borrowerApi.myApplications().catch(() => []);
           if (apps.some((a) => KYC_DONE.has(a.status)) && !cancelled) {
-            router.replace("/dashboard");
+            router.replace(destination);
             return;
           }
         }
@@ -67,7 +77,7 @@ export default function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, destination]);
 
   const send = async () => {
     if (!mobileOk) { setError("Enter a valid 10-digit mobile number"); return; }
@@ -113,8 +123,9 @@ export default function LoginPage() {
       // different user can sign in without the previous one ever signing out.)
       clearBorrowerClientState();
       queryClient.clear();
-      // The dashboard reflects the live application state (start / in-progress / active).
-      router.push("/dashboard");
+      // The dashboard reflects the live application state (start / in-progress / active),
+      // unless a deep link asked for somewhere specific.
+      router.push(destination);
     } catch {
       setError("Something went wrong — please try again.");
       setBusy(false);
@@ -141,7 +152,7 @@ export default function LoginPage() {
       }
       clearBorrowerClientState();
       queryClient.clear();
-      router.push("/dashboard");
+      router.push(destination);
     } catch {
       setError("Something went wrong — please try again.");
       setBusy(false);

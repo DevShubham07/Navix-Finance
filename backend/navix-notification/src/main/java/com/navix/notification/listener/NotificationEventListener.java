@@ -6,6 +6,7 @@ import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.notification.event.CollectionCaseOpenedEvent;
 import com.navix.common.notification.event.CollectionPaymentDecidedEvent;
 import com.navix.common.notification.event.CollectionPaymentRaisedEvent;
+import com.navix.common.notification.event.BureauQuestionPendingEvent;
 import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
@@ -108,6 +109,21 @@ public class NotificationEventListener {
                 .customerId(e.customerId())
                 .applicationId(e.applicationId())
                 .put("pendingSteps", e.pendingSteps())
+                .build());
+    }
+
+    /**
+     * Links straight to the live question screen, via {@code /login?next=} so a logged-out borrower
+     * lands back on it after signing in rather than on the dashboard.
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onBureauQuestionPending(BureauQuestionPendingEvent e) {
+        dispatcher.dispatch(NotificationType.BUREAU_QUESTION_PENDING, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("questionLink",
+                        frontendBaseUrl + "/login?next=/credit-question%3FappId%3D" + e.applicationId())
                 .build());
     }
 

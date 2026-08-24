@@ -42,13 +42,37 @@ public class FintrixVerificationAdapter implements VerificationPort {
             throw new CapabilityNotSupportedException(
                     "Fintrix bureau disabled by feature flag '" + KILL_SWITCH_FLAG + "'");
         }
-        FintrixDtos.CrifResponse r = crifClient.pull(name, mobile, ref(clientRef));
+        return toBureauCheck(crifClient.pull(name, mobile, ref(clientRef)));
+    }
+
+    /**
+     * Answering is billable exactly like a pull, so it sits behind the SAME kill switch. Unlike
+     * {@code pullBureau} this is never reached via the provider chain — {@code RoutingVerificationPort}
+     * delegates it straight here, because an {@code orderId} is meaningless to another bureau.
+     */
+    @Override
+    public BureauCheck answerBureauChallenge(String orderId, String reportId, String answer,
+                                             String name, String mobile, String clientRef) {
+        if (!featureFlags.isEnabled(KILL_SWITCH_FLAG, true)) {
+            throw new CapabilityNotSupportedException(
+                    "Fintrix bureau disabled by feature flag '" + KILL_SWITCH_FLAG + "'");
+        }
+        return toBureauCheck(
+                crifClient.answerChallenge(orderId, reportId, answer, ref(clientRef), name, mobile));
+    }
+
+    /**
+     * One mapping for both entry points. {@code reportUrl} carries Fintrix's own credit_report_link
+     * neutrally onto VerificationPort (see its javadoc) — ApplicationVerificationService ingests +
+     * scrubs it without ever seeing the Fintrix envelope shape. Still HTML-escaped exactly as Fintrix
+     * sends it; unescaping is the caller's job. It is always null on the answer path, whose envelope
+     * carries no link.
+     */
+    private static BureauCheck toBureauCheck(FintrixDtos.CrifResponse r) {
         BureauReportFacts f = r.facts();
-        // reportUrl carries Fintrix's own credit_report_link neutrally onto VerificationPort (see its
-        // javadoc) — ApplicationVerificationService ingests + scrubs it without ever seeing the Fintrix
-        // envelope shape. Still HTML-escaped exactly as Fintrix sends it; unescaping is the caller's job.
         PendingChallenge pendingChallenge = r.challenge() == null ? null
-                : new PendingChallenge(r.challenge().question(), r.challenge().options(), r.challenge().orderId());
+                : new PendingChallenge(r.challenge().question(), r.challenge().options(),
+                        r.challenge().orderId(), r.challenge().reportId());
         return new BureauCheck(r.txnId(), "FINTRIX_CRIF", r.score(), r.noRecord(),
                 f != null ? f.activeAccounts() : null,
                 f != null ? f.defaults() : null,

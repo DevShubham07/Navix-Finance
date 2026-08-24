@@ -31,6 +31,26 @@ public interface VerificationPort {
      */
     BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef);
 
+    /**
+     * Answer a pending bureau KBA challenge (see {@link PendingChallenge}) and collect the report it
+     * was gating. Fintrix {@code POST /bureau_ch_user_auth} is the only implementation — hence the
+     * {@code default} body: Signzy and Digitap have no such endpoint and are never asked, because
+     * {@code RoutingVerificationPort} delegates this capability straight to Fintrix rather than
+     * walking the provider chain. An {@code orderId} belongs to exactly one vendor; falling through
+     * to another bureau with it would be meaningless and would burn a billable call.
+     *
+     * <p>{@code answer} MUST be one of the challenge's option strings VERBATIM, including any leading
+     * or trailing whitespace — CRIF returns them space-padded and compares literally. Never trim it
+     * anywhere on the path from the browser to the provider.
+     *
+     * <p>Returns a normal {@link BureauCheck}: a score + facts on success, or a fresh
+     * {@code pendingChallenge} if the bureau answered with another question.
+     */
+    default BureauCheck answerBureauChallenge(String orderId, String reportId, String answer,
+                                              String name, String mobile, String clientRef) {
+        throw new UnsupportedOperationException("This provider has no bureau KBA answer endpoint");
+    }
+
     /** Penny-drop bank account verify + name-at-bank — Signzy only (Digitap lacks it). */
     PennyDropCheck pennyDrop(String accountNumber, String ifsc, String clientRef);
 
@@ -153,10 +173,16 @@ public interface VerificationPort {
     /**
      * A pending bureau KBA (knowledge-based-authentication) challenge — the report exists but CRIF
      * wants the borrower to answer a question about their own credit history first. {@code orderId} is
-     * the handle a future answer-submission flow would need; answering it needs a Fintrix endpoint we
-     * have no documentation for (out of scope — see {@code FintrixCrifClient}).
+     * the handle the answer submission needs, and {@code reportId} identifies the withheld report —
+     * BOTH are required by {@link #answerBureauChallenge}, so both must be persisted when a challenge
+     * is parked. Answering is implemented against Fintrix {@code /bureau_ch_user_auth}.
      */
-    record PendingChallenge(String question, List<String> options, String orderId) {
+    record PendingChallenge(String question, List<String> options, String orderId, String reportId) {
+
+        /** Back-compat for callers/tests predating the answer flow, which had no {@code reportId}. */
+        public PendingChallenge(String question, List<String> options, String orderId) {
+            this(question, options, orderId, null);
+        }
     }
 
     record PennyDropCheck(String txnId, String provider, boolean accountExists, String fullName,

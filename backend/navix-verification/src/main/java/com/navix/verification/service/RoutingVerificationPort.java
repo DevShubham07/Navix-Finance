@@ -40,6 +40,8 @@ public class RoutingVerificationPort implements VerificationPort {
     /** Provider id → adapter, in the configured order. */
     private final Map<String, VerificationPort> providers = new LinkedHashMap<>();
     private final List<String> chain;
+    /** Held directly for {@link #answerBureauChallenge}, which bypasses the chain — see its javadoc. */
+    private final FintrixVerificationAdapter fintrix;
 
     public RoutingVerificationPort(FintrixVerificationAdapter fintrix,
                                    SignzyVerificationAdapter signzy,
@@ -47,6 +49,7 @@ public class RoutingVerificationPort implements VerificationPort {
                                    VerificationChainProperties props) {
         // An adapter missing from this map is silently ignored by the loop below — every adapter MUST
         // be listed here.
+        this.fintrix = fintrix;
         Map<String, VerificationPort> all = Map.of("fintrix", fintrix, "signzy", signzy, "digitap", digitap);
         this.chain = props.effectiveChain();
         for (String id : chain) {
@@ -115,6 +118,18 @@ public class RoutingVerificationPort implements VerificationPort {
     @Override
     public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
         return route("bureau", p -> p.pullBureau(pan, name, mobile, dob, otp, clientRef));
+    }
+
+    /**
+     * The one capability that deliberately does NOT walk the chain. A KBA {@code orderId} is minted by
+     * — and only meaningful to — the provider that issued it, so falling through to Digitap with it
+     * would be nonsense AND would burn a billable call. Fintrix is the only issuer, so go straight
+     * there; its own feature-flag kill switch still applies.
+     */
+    @Override
+    public BureauCheck answerBureauChallenge(String orderId, String reportId, String answer,
+                                             String name, String mobile, String clientRef) {
+        return fintrix.answerBureauChallenge(orderId, reportId, answer, name, mobile, clientRef);
     }
 
     @Override

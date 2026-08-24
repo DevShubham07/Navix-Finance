@@ -45,10 +45,31 @@ public final class FintrixDtos {
     }
 
     /**
-     * A pending CRIF knowledge-based-authentication challenge — {@code order_id} is the handle a future
-     * answer-submission flow would need. Answering it needs a Fintrix endpoint we have no docs for
-     * (out of scope here); this just carries the question through so a human can see it.
+     * A pending CRIF knowledge-based-authentication challenge. {@code orderId} and {@code reportId}
+     * are BOTH required to answer it via {@code /bureau_ch_user_auth}, so both must be persisted when
+     * the challenge is parked — dropping {@code reportId} is what left the first production cohort
+     * unanswerable without a fresh (billable) pull.
      */
-    public record Challenge(String question, java.util.List<String> options, String orderId) {
+    public record Challenge(String question, java.util.List<String> options, String orderId,
+                           String reportId) {
+    }
+
+    /**
+     * Request for {@code POST /bureau_ch_user_auth} — answers a pending KBA challenge and releases the
+     * report it was gating. Verified live 2026-08-24.
+     *
+     * <p><b>{@code authAnswers} is the chosen option VERBATIM</b>, including its leading/trailing
+     * spaces (CRIF returns options space-padded, e.g. {@code " PAYU FINANCE INDIA PRIVATE LIMITED "},
+     * and compares literally). Do not trim it here or anywhere upstream.
+     *
+     * <p>Note this endpoint authenticates with {@code X-Client-ID}/{@code X-Client-Secret} headers
+     * rather than the {@code Authorization: Basic} that {@code /crif_combine} uses — see
+     * {@code VerificationClientConfig}.
+     */
+    public record CrifAuthAnswerRequest(
+            @JsonProperty("remark") String remark,
+            @JsonProperty("order_id") String orderId,
+            @JsonProperty("report_id") String reportId,
+            @JsonProperty("auth_answers") String authAnswers) {
     }
 }

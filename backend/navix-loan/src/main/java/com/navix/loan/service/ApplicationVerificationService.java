@@ -25,6 +25,7 @@ import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.time.LocalDate;
@@ -919,7 +920,7 @@ public class ApplicationVerificationService {
         }
 
         if (r.pendingChallenge() != null) {
-            return bureauChallengeReview(appId, ref, r.pendingChallenge());
+            return bureauChallengeReview(appId, ref, r);
         }
 
         return finishBureauPull(appId, profile, ref, r, allowAutoReject);
@@ -936,16 +937,208 @@ public class ApplicationVerificationService {
      * <p>Actually answering the question needs a Fintrix API we have no documentation for — that flow
      * is unimplemented and out of scope here; this only stops the retry loop and surfaces the question.
      */
-    private StepResult bureauChallengeReview(Long appId, String ref, VerificationPort.PendingChallenge challenge) {
-        Map<String, Object> derived = new LinkedHashMap<>();
+    private StepResult bureauChallengeReview(Long appId, String ref, VerificationPort.BureauCheck r) {
+        VerificationPort.PendingChallenge challenge = r.pendingChallenge();
+        Map<String, Object> derived = new LinkedHashMap<>(carriedChallengeCounters(appId));
         derived.put("bureauChallenge", true);
         derived.put("bureauChallengeQuestion", challenge.question());
         derived.put("bureauChallengeOptions", challenge.options());
         derived.put("bureauChallengeOrderId", challenge.orderId());
+        // BOTH ids are needed to answer. Dropping reportId is what left the first production cohort
+        // unanswerable: 39 rows held an orderId and nothing else, so every one of them needed a fresh
+        // (billable) pull before it could be answered at all.
+        derived.put("bureauChallengeReportId", challenge.reportId());
+        // 12-arg upsert: keep the provider's own envelope. It carries no signed link, so unlike a
+        // scored pull there is nothing to scrub.
         ApplicationVerification row = upsert(appId, BUREAU, REVIEW, "FINTRIX_CRIF", challenge.orderId(), ref,
                 null, null, null, derived,
-                "Bureau needs the borrower to answer a security question before the report can be released");
-        return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
+                "Bureau needs the borrower to answer a security question before the report can be released",
+                r.rawResponseJson());
+        // Return the derived map, NOT Map.of(): the signup consent step reads bureauChallenge off this
+        // result to decide whether to route the borrower to the question screen, and the question
+        // screen reads the options off it. An empty map here is why this was invisible to the frontend.
+        return new StepResult(BUREAU, REVIEW, row.getMessage(), derived);
+    }
+
+    /**
+     * Attempt counters survive a re-mint, so a borrower cannot reset their own budget by asking for a
+     * fresh question. Everything else about the old challenge is deliberately discarded — it is stale.
+     */
+    private Map<String, Object> carriedChallengeCounters(Long appId) {
+        Map<String, Object> previous = derivedFor(appId, BUREAU);
+        Map<String, Object> carried = new LinkedHashMap<>();
+        for (String key : List.of("bureauChallengeAttempts", "bureauChallengeNotifiedAt")) {
+            Object value = previous.get(key);
+            if (value != null) {
+                carried.put(key, value);
+            }
+        }
+        return carried;
+    }
+
+    /** Most attempts a borrower gets against one challenge before they must mint a fresh question. */
+    private static final int MAX_CHALLENGE_ATTEMPTS = 3;
+
+    /** Minimum gap between two mints on one application. Every mint is a billable provider call. */
+    private static final Duration CHALLENGE_MINT_COOLDOWN = Duration.ofSeconds(60);
+
+    /**
+     * Answer a pending bureau KBA challenge and, on success, collect the report it was gating.
+     *
+     * <p>Three cheap guards run BEFORE the provider is touched, because every call is billable with no
+     * sandbox and this path is borrower-triggered: the row must hold an open challenge with both ids,
+     * the answer must be one of the stored options verbatim, and the attempt budget must not be spent.
+     * None of them cost anything; all of them stop a wasted call.
+     *
+     * <p>On success this hands straight to {@link #finishBureauPull}, so score, risk grade, identity
+     * cross-check, report ingest, credit brief and the (suspended) score-floor rule are the exact same
+     * code a normal pull runs - there is no second, divergent "answered" path.
+     *
+     * <p>The borrower's answer text is never persisted. It is an identity credential; we record only
+     * that an attempt happened.
+     */
+    @Transactional
+    public StepResult answerBureauChallenge(Long appId, String answer) {
+        String ref = ref(appId, BUREAU);
+        Map<String, Object> derived = derivedFor(appId, BUREAU);
+        if (!Boolean.TRUE.equals(derived.get("bureauChallenge"))) {
+            throw new BusinessException("BUREAU_CHALLENGE_NONE", "There is no bureau question to answer.");
+        }
+        String orderId = trimToNull(String.valueOf(derived.getOrDefault("bureauChallengeOrderId", "")));
+        Object reportIdRaw = derived.get("bureauChallengeReportId");
+        String reportId = reportIdRaw == null ? null : trimToNull(String.valueOf(reportIdRaw));
+        if (orderId == null || reportId == null) {
+            // The pre-answer-flow rows (39 in production) hold an orderId and no reportId. They cannot
+            // be answered at all - the borrower has to mint a fresh question first.
+            throw new BusinessException("BUREAU_CHALLENGE_STALE",
+                    "This question has expired - please get a new one.");
+        }
+        if (!storedOptions(derived).contains(answer)) {
+            // Exact match, no trim: CRIF pads its options and compares literally, so a trimmed answer
+            // IS a wrong answer. Checking here also stops an arbitrary string burning a billable call.
+            throw new BusinessException("BUREAU_CHALLENGE_ANSWER_INVALID",
+                    "Please pick one of the listed options.");
+        }
+        int attempts = intValue(derived.get("bureauChallengeAttempts"));
+        if (attempts >= MAX_CHALLENGE_ATTEMPTS) {
+            return new StepResult(BUREAU, REVIEW,
+                    "You have tried this question a few times - please get a new question.", derived);
+        }
+
+        CustomerProfile profile = profile(appId);
+        VerificationPort.BureauCheck r;
+        try {
+            r = verification.answerBureauChallenge(orderId, reportId, answer,
+                    nz(profile.getFullName()), nz(resolveMobile(appId, profile)), ref);
+        } catch (RuntimeException providerFailure) {
+            // A wrong answer and a lapsed order look identical from here: an error envelope. Record the
+            // attempt, keep the challenge open, let the borrower retry or re-mint. Never a 500 - the
+            // same "never stop the borrower at this step" policy as the pull path above.
+            Map<String, Object> retry = new LinkedHashMap<>(derived);
+            retry.put("bureauChallengeAttempts", attempts + 1);
+            retry.put("bureauChallengeLastAttemptAt", Instant.now().toString());
+            log.warn("bureau challenge answer rejected application={} ref={} errorCode={} exception={}",
+                    appId, ref, providerErrorCode(providerFailure),
+                    providerFailure.getClass().getSimpleName());
+            ApplicationVerification row = upsert(appId, BUREAU, REVIEW, "FINTRIX_CRIF", orderId, ref,
+                    null, null, null, retry,
+                    "That answer wasn't accepted - you can try again or get a new question.");
+            return new StepResult(BUREAU, REVIEW, row.getMessage(), retry);
+        }
+
+        if (r.pendingChallenge() != null) {
+            // CRIF answered with ANOTHER question rather than the report. Re-park it.
+            return bureauChallengeReview(appId, ref, r);
+        }
+        return finishBureauPull(appId, profile, ref, r, true);
+    }
+
+    /**
+     * Mint a fresh KBA question. THE ONLY BILLABLE PATH the borrower can trigger, so it carries a
+     * cooldown as well as the frontend button latch - a render loop or a double-click must not be able
+     * to spend twice. {@code force=true} bypasses both the 24h reuse window and this application's own
+     * row, which is what makes a genuine re-mint possible.
+     */
+    @Transactional
+    public StepResult refreshBureauChallenge(Long appId) {
+        ApplicationVerification row = verificationRepo.findByApplicationIdAndCheckType(appId, BUREAU)
+                .orElseThrow(() -> new BusinessException("BUREAU_CHALLENGE_NONE",
+                        "There is no bureau question to refresh."));
+        if (PASS.equals(row.getStatus())) {
+            // Already scored - minting again would be pure spend for no gain.
+            return view(row);
+        }
+        Instant updatedAt = row.getUpdatedAt();
+        if (updatedAt != null && updatedAt.isAfter(Instant.now().minus(CHALLENGE_MINT_COOLDOWN))) {
+            return view(row);
+        }
+        return pullBureau(appId, null, true);
+    }
+
+    /**
+     * The borrower does not recognise any of the options. Recorded as a durable flag so the credit team
+     * knows the file is blind BY CHOICE rather than by oversight, and so nothing keeps asking. No
+     * provider call. Status stays REVIEW, which already counts as {@code attempted}, so this never
+     * blocks {@code submit-kyc}.
+     */
+    @Transactional
+    public StepResult skipBureauChallenge(Long appId) {
+        Map<String, Object> derived = new LinkedHashMap<>(derivedFor(appId, BUREAU));
+        if (!Boolean.TRUE.equals(derived.get("bureauChallenge"))) {
+            throw new BusinessException("BUREAU_CHALLENGE_NONE", "There is no bureau question to skip.");
+        }
+        derived.put("bureauChallengeSkipped", true);
+        derived.put("bureauChallengeSkippedAt", Instant.now().toString());
+        ApplicationVerification row = upsert(appId, BUREAU, REVIEW, "FINTRIX_CRIF",
+                trimToNull(String.valueOf(derived.getOrDefault("bureauChallengeOrderId", ""))),
+                ref(appId, BUREAU), null, null, null, derived,
+                "Borrower could not answer the bureau security question - credit team to review.");
+        return new StepResult(BUREAU, REVIEW, row.getMessage(), derived);
+    }
+
+    /**
+     * The stored option strings, verbatim - never trimmed, see {@link #answerBureauChallenge}.
+     *
+     * <p>Handles BOTH shapes this map can arrive in. Freshly built in memory (the challenge we just
+     * parked) the value is a real {@code List}; read back from the row it is a JSON <em>string</em>,
+     * because {@link #fromJson} renders every non-scalar node with {@code toString()}. Missing the
+     * second case rejects every answer AND makes the borrower's page think it has no options, which
+     * would push it into an avoidable billable re-mint.
+     */
+    private List<String> storedOptions(Map<String, Object> derived) {
+        Object raw = derived.get("bureauChallengeOptions");
+        List<String> out = new ArrayList<>();
+        if (raw instanceof List<?> list) {
+            for (Object o : list) {
+                if (o != null) {
+                    out.add(String.valueOf(o));
+                }
+            }
+            return out;
+        }
+        if (raw instanceof String json && !json.isBlank()) {
+            try {
+                for (JsonNode node : objectMapper.readTree(json)) {
+                    if (node.isTextual()) {
+                        out.add(node.textValue());
+                    }
+                }
+            } catch (Exception malformed) {
+                return List.of();
+            }
+        }
+        return out;
+    }
+
+    private static int intValue(Object raw) {
+        if (raw instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return raw == null ? 0 : Integer.parseInt(String.valueOf(raw).trim());
+        } catch (NumberFormatException notANumber) {
+            return 0;
+        }
     }
 
     /**
@@ -1160,15 +1353,29 @@ public class ApplicationVerificationService {
         }
     }
 
-    /** The PERSONAL-INFO-VARIATION block, or a missing node when the envelope has none. */
-    private JsonNode objectMapperNode(String rawResponseJson) {
+    /**
+     * The {@code credit_report} node, from EITHER Fintrix envelope. {@code /crif_combine} nests it at
+     * {@code canonical.data.credit_report}; {@code /bureau_ch_user_auth} (the KBA answer) returns the
+     * same report FLAT under {@code data}. Resolved in one place so every consumer — the identity
+     * cross-check, the variation block, and the 24h reuse path that replays a stored envelope —
+     * tolerates both shapes rather than each learning the difference.
+     */
+    private JsonNode creditReport(String rawResponseJson) {
+        if (rawResponseJson == null || rawResponseJson.isBlank()) {
+            return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        }
         try {
-            return objectMapper.readTree(rawResponseJson)
-                    .path("canonical").path("data").path("credit_report")
-                    .path("PERSONAL-INFO-VARIATION");
+            JsonNode root = objectMapper.readTree(rawResponseJson);
+            JsonNode wrapped = root.path("canonical").path("data").path("credit_report");
+            return wrapped.isMissingNode() ? root.path("data") : wrapped;
         } catch (Exception malformed) {
             return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
         }
+    }
+
+    /** The PERSONAL-INFO-VARIATION block, or a missing node when the envelope has none. */
+    private JsonNode objectMapperNode(String rawResponseJson) {
+        return creditReport(rawResponseJson).path("PERSONAL-INFO-VARIATION");
     }
 
     /**
@@ -1220,13 +1427,7 @@ public class ApplicationVerificationService {
         if (rawResponseJson == null || rawResponseJson.isBlank()) {
             return null;
         }
-        JsonNode request;
-        try {
-            request = objectMapper.readTree(rawResponseJson)
-                    .path("canonical").path("data").path("credit_report").path("REQUEST");
-        } catch (Exception malformed) {
-            return null;
-        }
+        JsonNode request = creditReport(rawResponseJson).path("REQUEST");
         if (request.isMissingNode()) {
             return null;
         }
@@ -2633,12 +2834,14 @@ public class ApplicationVerificationService {
         String trimmed = notes != null ? notes.trim() : "";
         String message = (pass ? "Manually approved" : "Manually rejected") + " by " + actor
                 + (trimmed.isEmpty() ? "" : " — " + trimmed);
-        // Most checks carry nothing worth keeping once a human has ruled on them. Two do: PENNY_DROP,
+        // Most checks carry nothing worth keeping once a human has ruled on them. Three do: PENNY_DROP,
         // whose derived names the account the override blesses (see acceptDisbursalAccountManually),
-        // and EMPLOYMENT, whose derived IS the EPFO record the staff card renders — wiping it would
-        // blank the very evidence the reviewer just acted on.
+        // EMPLOYMENT, whose derived IS the EPFO record the staff card renders, and BUREAU, whose
+        // derived holds the score aggregates, any identityMismatch, and the KBA question + its
+        // order/report ids — wiping any of them would blank the very evidence the reviewer just acted
+        // on, and for BUREAU would also destroy the handles needed to ever answer that challenge.
         Map<String, Object> derived = Map.of();
-        if (PENNY_DROP.equals(type) || EMPLOYMENT.equals(type)) {
+        if (PENNY_DROP.equals(type) || EMPLOYMENT.equals(type) || BUREAU.equals(type)) {
             derived = new LinkedHashMap<>(derivedFor(appId, type));
             derived.put("manualOverride", true);
             derived.put("manualBy", actor);

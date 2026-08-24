@@ -23,6 +23,9 @@ public interface ApplicationVerificationRepository extends JpaRepository<Applica
      * which know their transaction and nothing else. A prefix match because a handle may pack more than
      * one provider id (the eSign row stores {@code contractId|signerId}).
      */
+    /** Every row of one check type in one status — the bureau KBA outreach cohort. */
+    List<ApplicationVerification> findByCheckTypeAndStatus(String checkType, String status);
+
     List<ApplicationVerification> findByCheckTypeAndProviderTxnIdStartingWith(
             String checkType, String providerTxnIdPrefix);
 

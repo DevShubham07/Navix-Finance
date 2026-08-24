@@ -48,6 +48,8 @@ public class FintrixCrifClient {
 
     private static final Logger log = LoggerFactory.getLogger(FintrixCrifClient.class);
     private static final String ENDPOINT = "/crif_combine";
+    /** Answers a pending KBA challenge and releases the report it gated. Verified live 2026-08-24. */
+    private static final String ANSWER_ENDPOINT = "/bureau_ch_user_auth";
     private static final String CONSENT = "yes";
     private static final String BUNDLED_FIXTURE = "classpath:crif-combine-sample.json";
 
@@ -117,9 +119,10 @@ public class FintrixCrifClient {
                 options.add(value);
             }
         }
+        String reportId = text(data.path("report_id"));
         FintrixDtos.Challenge fintrixChallenge = new FintrixDtos.Challenge(
-                text(data.path("question")), options, text(data.path("order_id")));
-        return new CrifResponse(text(data.path("report_id")), null, false, null,
+                text(data.path("question")), options, text(data.path("order_id")), reportId);
+        return new CrifResponse(reportId, null, false, null,
                 root.toString(), null, fintrixChallenge);
     }
 
@@ -170,10 +173,52 @@ public class FintrixCrifClient {
         return raw;
     }
 
+    /**
+     * Answer a pending KBA challenge — {@code POST /bureau_ch_user_auth} — and return the report it
+     * was gating. The response envelope is FLATTER than {@code /crif_combine}'s:
+     * {@code {timestamp, transaction_id, status:"success", data:{HEADER,…}, request_id}}, where
+     * {@code data} IS the {@code credit_report} node and there is no {@code credit_report_link}.
+     *
+     * <p>{@code answer} goes to the provider verbatim (see {@link FintrixDtos.CrifAuthAnswerRequest}).
+     * A wrong answer or a lapsed order comes back as an error envelope and
+     * {@link #rejectUnlessNoRecord} throws — the caller re-mints rather than retrying blind. CRIF may
+     * also answer with ANOTHER question, which re-parks through the same {@link #kbaChallenge} branch.
+     */
+    public CrifResponse answerChallenge(String orderId, String reportId, String answer,
+                                        String remark, String name, String mobile) {
+        JsonNode root = (fixturePath != null && !fixturePath.isBlank())
+                ? BureauFixtureLoader.load(objectMapper, BUNDLED_FIXTURE)
+                : postAllowingErrorEnvelope(fintrix, ANSWER_ENDPOINT,
+                        new FintrixDtos.CrifAuthAnswerRequest(remark, orderId, reportId, answer));
+        // Fixture mode serves the /crif_combine-shaped bundle, so unwrap it the wrapped way; a live
+        // answer is flat. Both converge on parseReport.
+        if (fixturePath != null && !fixturePath.isBlank()) {
+            return parse(root.path("canonical").path("data"), root.toString(), name, mobile);
+        }
+        CrifResponse challenge = kbaChallenge(root);
+        if (challenge != null) {
+            return challenge;
+        }
+        rejectUnlessNoRecord(root);
+        return parseReport(root.path("data"), null, root.toString(), name, mobile);
+    }
+
+    /** The {@code /crif_combine} shape: the report is wrapped, with a sibling report link. */
     private CrifResponse parse(JsonNode data, String rawResponseJson, String name, String mobile) {
-        JsonNode report = data.path("credit_report");
+        return parseReport(data.path("credit_report"), text(data.path("credit_report_link")),
+                rawResponseJson, name, mobile);
+    }
+
+    /**
+     * Shared by both envelopes. {@code /crif_combine} nests the report under
+     * {@code canonical.data.credit_report} beside a {@code credit_report_link};
+     * {@code /bureau_ch_user_auth} returns that same report FLAT under {@code data}, with no link.
+     * Everything downstream of this point — the 300-900 clamp, the no-hit rule, the facts parse — is
+     * identical, so the two paths must never diverge into separate parsers.
+     */
+    private CrifResponse parseReport(JsonNode report, String link, String rawResponseJson,
+                                     String name, String mobile) {
         Integer score = plausibleScore(integer(report.path("SCORES").path("SCORE").path("SCORE-VALUE")));
-        String link = text(data.path("credit_report_link"));
 
         // No-hit rule: a missing/blank/non-numeric score, or no credit_report at all, is a real "no
         // record" answer — never let a null score reach the auto-reject rule downstream.

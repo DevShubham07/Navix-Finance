@@ -102,12 +102,19 @@ export default function SignupConsentPage() {
       const pan = saved?.pan ?? "";
       if (pan) await verificationApi.pan(appId, pan).catch(() => {});
       if (saved?.officialEmail) await verificationApi.email(appId, saved.officialEmail).catch(() => {});
-      await verificationApi.bureau(appId, otp).catch(() => {});
+      // Keep the result: a KBA challenge here is the freshest order we will ever have (minted
+      // seconds ago), so answering it right now costs no extra provider call.
+      const bureau = await verificationApi.bureau(appId, otp).catch(() => null);
       // EPFO employment, alongside the bureau pull: both need only PAN/mobile/name/DOB, all of which
       // are on the profile by now, and both are read by the same credit reviewer. Advisory — it is
       // absent from the submit-kyc REQUIRED set, so a no-record result cannot trap the borrower here.
       await verificationApi.employment(appId).catch(() => {});
-      await completeStep(appId, "CONSENT", router, "/signup/submitted");
+      // CONSENT is recorded either way, so the journey pointer moves to SUBMITTED and a borrower who
+      // abandons the question resumes normally instead of being bounced back to it forever.
+      const challenged = Boolean(
+        (bureau?.derived as Record<string, unknown> | undefined)?.bureauChallenge,
+      );
+      await completeStep(appId, "CONSENT", router, challenged ? "/credit-question" : "/signup/submitted");
     } catch (err) {
       setVerifying(false);
       setError(formatApiError(err, "Incorrect or expired code — please try again."));

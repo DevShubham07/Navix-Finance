@@ -1,0 +1,142 @@
+{
+  "_comment": "REDACTED capture of a real Fintrix POST /bureau_ch_user_auth response (2026-08-24). Identity, account numbers and amounts are fabricated. Note the shape: `data` IS the credit_report node - there is no `canonical` wrapper and no `credit_report_link`, unlike /crif_combine (see crif-combine-sample.json).",
+  "timestamp": "2026-08-24T14:52:22.131Z",
+  "transaction_id": "TXN-PROD-00000000-0000-0000-0000-000000000000",
+  "status": "success",
+  "data": {
+    "HEADER": {
+      "DATE-OF-REQUEST": "24-08-2026",
+      "DATE-OF-ISSUE": "24-08-2026",
+      "REPORT-ID": "CCR260824CR000000001",
+      "BATCH-ID": "0000000000260824",
+      "STATUS": "SUCCESS"
+    },
+    "REQUEST": {
+      "NAME": "SAMPLE PERSON",
+      "DOB": "01-06-1982",
+      "PAN": "AAAPS0000A",
+      "UID": "",
+      "GENDER": "",
+      "EMAIL-1": "sample.person@example.com",
+      "ADDRESS-1": "SAMPLE ADDRESS, SAMPLE CITY, SAMPLE STATE 272124 UP",
+      "PHONE-1": "9000000001"
+    },
+    "PERSONAL-INFO-VARIATION": {
+      "NAME-VARIATIONS": {
+        "VARIATION": [{ "VALUE": "SAMPLE PERSON", "REPORTED-DATE": "31-07-2026" }]
+      },
+      "ADDRESS-VARIATIONS": {
+        "VARIATION": [
+          { "VALUE": "SAMPLE ADDRESS SAMPLECITY 272124 UP", "REPORTED-DATE": "31-07-2026" }
+        ]
+      },
+      "PAN-VARIATIONS": {
+        "VARIATION": [{ "VALUE": "AAAPS0000A", "REPORTED-DATE": "31-07-2026" }]
+      },
+      "DATE-OF-BIRTH-VARIATIONS": {
+        "VARIATION": [
+          { "VALUE": "01-06-1999", "REPORTED-DATE": "30-06-2023" },
+          { "VALUE": "01-06-1982", "REPORTED-DATE": "31-07-2026" }
+        ]
+      }
+    },
+    "SECONDARY-MATCHES": "",
+    "ACCOUNTS-SUMMARY": {
+      "DERIVED-ATTRIBUTES": {
+        "INQURIES-IN-LAST-SIX-MONTHS": "7",
+        "LENGTH-OF-CREDIT-HISTORY-YEAR": "5",
+        "LENGTH-OF-CREDIT-HISTORY-MONTH": "2",
+        "AVERAGE-ACCOUNT-AGE-YEAR": "1",
+        "AVERAGE-ACCOUNT-AGE-MONTH": "7",
+        "NEW-ACCOUNTS-IN-LAST-SIX-MONTHS": "0",
+        "NEW-DELINQ-ACCOUNT-IN-LAST-SIX-MONTHS": "0"
+      },
+      "PRIMARY-ACCOUNTS-SUMMARY": {
+        "PRIMARY-NUMBER-OF-ACCOUNTS": "2",
+        "PRIMARY-ACTIVE-NUMBER-OF-ACCOUNTS": "1",
+        "PRIMARY-OVERDUE-NUMBER-OF-ACCOUNTS": "1",
+        "PRIMARY-SECURED-NUMBER-OF-ACCOUNTS": "0",
+        "PRIMARY-UNSECURED-NUMBER-OF-ACCOUNTS": "2",
+        "PRIMARY-CURRENT-BALANCE": "0"
+      },
+      "SECONDARY-ACCOUNTS-SUMMARY": {
+        "SECONDARY-NUMBER-OF-ACCOUNTS": "0",
+        "SECONDARY-ACTIVE-NUMBER-OF-ACCOUNTS": "0",
+        "SECONDARY-CURRENT-BALANCE": "0"
+      }
+    },
+    "EMPLOYMENT-DETAILS": {
+      "EMPLOYMENT-DETAIL": { "ACCT-TYPE": "", "DATE-REPORTED": "", "OCCUPATION": "" }
+    },
+    "RESPONSES": {
+      "RESPONSE": [
+        {
+          "LOAN-DETAILS": {
+            "ACCT-NUMBER": "SAMPLE0000001",
+            "CREDIT-GUARANTOR": "SAMPLE FINANCE LIMITED",
+            "CREDIT-GRANTOR-TYPE": "NBF",
+            "ACCT-TYPE": "Personal Loan",
+            "DATE-REPORTED": "30-09-2022",
+            "OWNERSHIP-IND": "Individual",
+            "ACCOUNT-STATUS": "Closed",
+            "DISBURSED-AMT": "3,000",
+            "DISBURSED-DT": "10-06-2021",
+            "CLOSED-DATE": "15-06-2021",
+            "OVERDUE-AMT": "",
+            "WRITE-OFF-AMT": "0",
+            "CURRENT-BAL": "0",
+            "COMBINED-PAYMENT-HISTORY": "Jun:2021,000/XXX|",
+            "SECURITY-STATUS": "Un-Secured"
+          }
+        },
+        {
+          "LOAN-DETAILS": {
+            "ACCT-NUMBER": "SAMPLE0000002",
+            "CREDIT-GUARANTOR": "SAMPLE CONSUMER FINANCE PRIVATE LIMITED",
+            "CREDIT-GRANTOR-TYPE": "NBF",
+            "ACCT-TYPE": "Consumer Loan",
+            "DATE-REPORTED": "16-08-2026",
+            "OWNERSHIP-IND": "Individual",
+            "ACCOUNT-STATUS": "Active",
+            "DISBURSED-AMT": "0",
+            "DISBURSED-DT": "05-04-2022",
+            "OVERDUE-AMT": "884",
+            "WRITE-OFF-AMT": "0",
+            "CURRENT-BAL": "672",
+            "COMBINED-PAYMENT-HISTORY": "Aug:2026,900/XXX|Jul:2026,900/XXX|",
+            "SECURITY-STATUS": "Un-Secured",
+            "INTEREST-RATE": "36.0"
+          }
+        }
+      ]
+    },
+    "INQUIRY-HISTORY": {
+      "HISTORY": [
+        {
+          "MEMBER-NAME": "SAMPLE LENDER PRIVATE LIMITED",
+          "PURPOSE": "OTHER",
+          "AMOUNT": "3,000",
+          "REMARK": "—",
+          "INQUIRY-DATE": "23-08-2026"
+        }
+      ]
+    },
+    "TRENDS": {
+      "NAME": "SCORE-HISTORY",
+      "DATES": "31-03-2026|31-12-2025|30-09-2025",
+      "VALUES": "510|510|510",
+      "RESERVED1": "PERFORM CONSUMER V2.2"
+    },
+    "SCORES": {
+      "SCORE": {
+        "SCORE-TYPE": "PERFORM CONSUMER 2.2",
+        "SCORE-VALUE": "510",
+        "SCORE-FACTORS": "SF02|SF04|SF06|"
+      }
+    },
+    "PRINTABLE-REPORT": { "TYPE": "", "FILE-NAME": "", "CONTENT": "" },
+    "enhanceProCcirFlag": "false",
+    "ccirFlag": "false"
+  },
+  "request_id": "TXN-PROD-00000000000000000000000000"
+}

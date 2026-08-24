@@ -1241,6 +1241,27 @@ export const verificationApi = {
     bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau`, "POST", otp ? { otp } : undefined),
 
   /**
+   * Answer the bureau's knowledge-based-authentication question.
+   *
+   * `answer` MUST be one of `derived.bureauChallengeOptions` VERBATIM — CRIF returns them
+   * space-padded and compares literally, so never `.trim()` it here, in the component, or anywhere
+   * between. A trimmed answer is a wrong answer, and a wrong answer costs a billable re-mint.
+   */
+  bureauChallengeAnswer: (id: number, answer: string) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau/challenge/answer`, "POST", { answer }),
+
+  /**
+   * Mint a fresh bureau question. The ONLY billable call the borrower can trigger — keep it bound to
+   * an explicit click, never a render or a poll.
+   */
+  bureauChallengeRefresh: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau/challenge/refresh`, "POST"),
+
+  /** Borrower recognises none of the options — flag it for the credit team and move on. */
+  bureauChallengeSkip: (id: number) =>
+    bff<StepResult>(`${BORROWER_BASE}/${id}/verify/bureau/challenge/skip`, "POST"),
+
+  /**
    * EPFO/UAN employment lookup. Takes no body — every input (PAN, mobile, DOB, name, declared
    * employer) is read off the stored profile, so it can only run once those are saved. Advisory:
    * it never gates KYC, and a borrower with no EPFO record (a first job, a cash employer, a non-PF

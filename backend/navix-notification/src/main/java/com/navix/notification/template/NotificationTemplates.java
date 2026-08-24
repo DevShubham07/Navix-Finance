@@ -53,6 +53,16 @@ public class NotificationTemplates {
                 "Hi {name},\n\nWe weren't able to verify your KYC for application #{applicationId} this "
                         + "time. Please log in to review your details and resubmit.\n\n— DhanBoost");
 
+        // No sms(...) registered on purpose - see NotificationType.BUREAU_QUESTION_PENDING.
+        inApp(NotificationType.BUREAU_QUESTION_PENDING, "One quick question to finish your check",
+                "The credit bureau asked us a security question that only you can answer. "
+                        + "It takes about 20 seconds.");
+        email(NotificationType.BUREAU_QUESTION_PENDING, "One quick question to finish your DhanBoost check",
+                "Hi {name},\n\nTo finish the credit check on your application #{applicationId}, the "
+                        + "credit bureau needs you to answer one security question about your own "
+                        + "borrowing history. Only you can answer it, and it takes about 20 seconds:"
+                        + "\n{questionLink}\n\nIf none of the options look familiar, you can say so on "
+                        + "that page and our team will take it from there.\n\n- DhanBoost");
         inApp(NotificationType.KYC_REMINDER, "Finish your verification",
                 "You still have pending verification steps: {pendingSteps}. Log in to complete them.");
         sms(NotificationType.KYC_REMINDER,

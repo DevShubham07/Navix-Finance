@@ -7,6 +7,7 @@ import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.VerificationDtos.AddressVerifyRequest;
 import com.navix.loan.dto.VerificationDtos.AgreementRequest;
 import com.navix.loan.dto.VerificationDtos.BureauConsentRequest;
+import com.navix.loan.dto.VerificationDtos.BureauChallengeAnswerRequest;
 import com.navix.loan.dto.VerificationDtos.BureauPullRequest;
 import com.navix.loan.dto.VerificationDtos.DigilockerInitRequest;
 import com.navix.loan.dto.VerificationDtos.EmailOtpVerifyRequest;
@@ -120,6 +121,35 @@ public class ApplicationVerificationController {
                                           @RequestBody(required = false) BureauPullRequest req) {
         authorize(id);
         return ApiResponse.ok(verification.pullBureau(id, req == null ? null : req.otp()));
+    }
+
+    /**
+     * Answer the pending bureau KBA question. Guarded exactly like every other borrower verify call
+     * (owns-the-application or ADMIN). The heavy lifting - and the billing guards - live in the
+     * service; see {@code ApplicationVerificationService.answerBureauChallenge}.
+     */
+    @PostMapping("/bureau/challenge/answer")
+    public ApiResponse<StepResult> bureauChallengeAnswer(
+            @PathVariable Long id, @Valid @RequestBody BureauChallengeAnswerRequest req) {
+        authorize(id);
+        return ApiResponse.ok(verification.answerBureauChallenge(id, req.answer()));
+    }
+
+    /**
+     * Mint a fresh bureau KBA question. THE ONLY borrower-reachable billable call in this flow - it
+     * must stay bound to an explicit user action, never a page load or a poll.
+     */
+    @PostMapping("/bureau/challenge/refresh")
+    public ApiResponse<StepResult> bureauChallengeRefresh(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.refreshBureauChallenge(id));
+    }
+
+    /** The borrower cannot answer - flag it for the credit team and let them continue. */
+    @PostMapping("/bureau/challenge/skip")
+    public ApiResponse<StepResult> bureauChallengeSkip(@PathVariable Long id) {
+        authorize(id);
+        return ApiResponse.ok(verification.skipBureauChallenge(id));
     }
 
     @PostMapping("/salary")

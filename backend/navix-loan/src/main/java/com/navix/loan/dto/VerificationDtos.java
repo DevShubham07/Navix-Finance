@@ -1,6 +1,7 @@
 package com.navix.loan.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Positive;
 import java.util.List;
@@ -65,6 +66,17 @@ public final class VerificationDtos {
      * manual pull (or a request made before consent exists) simply omits it, which degrades the pull to
      * {@code REVIEW} rather than proceeding without consent.
      */
+    /**
+     * The borrower's chosen option for a bureau KBA challenge.
+     *
+     * <p>{@code @NotNull}, deliberately NOT {@code @NotBlank}: CRIF returns its options space-padded
+     * (e.g. {@code " PAYU FINANCE INDIA PRIVATE LIMITED "}) and compares them literally, so the answer
+     * travels verbatim end to end. A validator that trims — or rejects a value for being blank after
+     * trimming — would corrupt a legitimate answer.
+     */
+    public record BureauChallengeAnswerRequest(@NotNull String answer) {
+    }
+
     public record BureauPullRequest(String otp) {
     }
 

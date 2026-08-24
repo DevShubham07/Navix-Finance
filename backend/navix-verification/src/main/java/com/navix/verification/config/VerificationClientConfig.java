@@ -141,6 +141,15 @@ public class VerificationClientConfig {
                 .requestFactory(timeoutRequestFactory(
                         timeouts.connectTimeout(), timeouts.fintrixBureauReadTimeout()))
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
+                // Fintrix authenticates its two endpoints DIFFERENTLY: /crif_combine was verified
+                // working on Basic, /bureau_ch_user_auth on these two headers. We send the superset so
+                // each endpoint receives the scheme it was verified with, rather than maintaining a
+                // second RestClient bean for one extra route.
+                // NOT verified: whether Basic alone also satisfies /bureau_ch_user_auth, or whether
+                // these headers are inert on /crif_combine. Watch the first live call on each after a
+                // deploy (ADMIN Provider API dashboard); if /crif_combine regresses, split the bean.
+                .defaultHeader("X-Client-ID", props.clientId() == null ? "" : props.clientId())
+                .defaultHeader("X-Client-Secret", props.clientSecret() == null ? "" : props.clientSecret())
                 .build();
     }
 }
