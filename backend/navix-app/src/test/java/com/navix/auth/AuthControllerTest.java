@@ -57,7 +57,10 @@ class AuthControllerTest {
         PasswordEncoder encoder = new BCryptPasswordEncoder();
         controller = new AuthController(staffRepository, jwt, encoder, otpService, profileRepository,
                 credentialRepository, passwordResetService, inviteService, mobileRepository,
-                new AttemptLimiter(), new CaptchaVerifier("", ""), staffSessionRegistry, STAFF_TTL_SECONDS);
+                new AttemptLimiter(), new CaptchaVerifier("", ""), staffSessionRegistry);
+        // @Value-injected field, so there is no constructor slot for it — set what Spring would.
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                controller, "staffTtlSeconds", STAFF_TTL_SECONDS);
     }
 
     @AfterEach

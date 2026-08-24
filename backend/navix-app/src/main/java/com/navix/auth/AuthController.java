@@ -67,9 +67,14 @@ public class AuthController {
     /**
      * Same TTL {@link JwtService} issues staff tokens with — used to decide whether a stored
      * {@code active_session_id} could still back a live token (see {@link #staffLogin}).
+     *
+     * <p>Deliberately NOT {@code final}: {@code @RequiredArgsConstructor} would then put it in the
+     * constructor, where Spring resolves parameters by TYPE and asks for "a bean of type long" —
+     * which does not exist, so every context in the app fails to start. Field injection is the
+     * boring way to hand a primitive to a Lombok-constructed bean.
      */
     @org.springframework.beans.factory.annotation.Value("${navix.auth.ttl-seconds:86400}")
-    private final long staffTtlSeconds;
+    private long staffTtlSeconds;
 
     /**
      * Turnstile {@code action} per surface — must match the {@code action} the widget is rendered
