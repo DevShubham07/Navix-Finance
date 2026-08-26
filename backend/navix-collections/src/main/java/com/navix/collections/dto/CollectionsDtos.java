@@ -66,6 +66,27 @@ public final class CollectionsDtos {
     }
 
     /**
+     * A row in the collections pre-due watchlist: a live loan whose repayment date has not arrived.
+     *
+     * <p>Deliberately NOT a {@link CaseView}. There is no case behind one of these and so no case
+     * id, and handing back a {@code CaseView} with a null {@code id} would let a caseless loan pass
+     * for a case everywhere the worklist is consumed -- including the assign control on
+     * /staff/applications, which matches cases to rows by {@code loanId}.
+     *
+     * <p>{@code daysToDue} is always positive (the query only returns loans still ahead of their
+     * due date) and, like the DPD bucket, is computed on read and never stored.
+     */
+    public record UpcomingLoanView(
+            Long loanId,
+            Long customerId,
+            String borrowerName,
+            Long outstandingPaise,
+            LocalDate dueDate,
+            int daysToDue,
+            String loanStatus) {
+    }
+
+    /**
      * Full case detail: the case, live DPD/bucket, the resolved officer name, and
      * the complete {@link LoanSummary} (loan figures + borrower). {@code loan} is
      * null only if the linked loan no longer resolves.

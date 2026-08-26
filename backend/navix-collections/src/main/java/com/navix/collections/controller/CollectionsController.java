@@ -11,6 +11,7 @@ import com.navix.collections.dto.CollectionsDtos.OpenCaseRequest;
 import com.navix.collections.dto.CollectionsDtos.ProposeSettlementRequest;
 import com.navix.collections.dto.CollectionsDtos.RaiseCollectionPaymentRequest;
 import com.navix.collections.dto.CollectionsDtos.SettlementView;
+import com.navix.collections.dto.CollectionsDtos.UpcomingLoanView;
 import com.navix.collections.dto.CollectionsDtos.ValidateCollectionPaymentRequest;
 import com.navix.collections.entity.CollectionPaymentKind;
 import com.navix.collections.entity.CollectionPaymentStatus;
@@ -58,6 +59,17 @@ public class CollectionsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBy) {
         LocalDate asOf = dueBy != null ? dueBy : LocalDate.now();
         return ApiResponse.ok(collectionsService.collectibleLoans(asOf));
+    }
+
+    /**
+     * The pre-due watchlist for the UPCOMING DPD bucket: live loans not yet due, soonest first.
+     * Read-only -- unlike {@link #collectibleLoans}, which feeds a picker that opens cases, nothing
+     * reached from here writes or moves a loan into collections.
+     */
+    @GetMapping("/upcoming")
+    public ApiResponse<List<UpcomingLoanView>> upcoming(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return ApiResponse.ok(collectionsService.upcomingWatchlist(asOf));
     }
 
     /** ACTIVE collections officers, for the assignee picker. */

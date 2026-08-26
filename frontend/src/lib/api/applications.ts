@@ -2719,10 +2719,34 @@ export interface DpdView {
   bucket: DpdBucket;
 }
 
+/**
+ * A row in the collections pre-due watchlist (mirrors backend UpcomingLoanView).
+ *
+ * Deliberately not a `CaseView`: there is no collection case behind one of these, so no case id —
+ * which is what keeps a caseless loan from passing for a case anywhere the worklist is consumed.
+ */
+export interface UpcomingLoanView {
+  loanId: number;
+  customerId: number | null;
+  borrowerName: string | null;
+  outstandingPaise: number | null;
+  dueDate: string;
+  /** Always positive: the backend only returns loans still ahead of their due date. */
+  daysToDue: number;
+  loanStatus: string | null;
+}
+
 const COLLECTIONS_BASE = "/api/staff/collections";
 
 export const collectionsApi = {
   listCases: () => bff<CaseView[]>(`${COLLECTIONS_BASE}/cases`, "GET"),
+
+  /**
+   * The pre-due watchlist behind the UPCOMING DPD bucket: live loans whose repayment date has not
+   * arrived yet, soonest first. Read-only and case-free — these are loans nobody has started
+   * collecting on, so they carry no case id and there is nothing to act on yet.
+   */
+  listUpcoming: () => bff<UpcomingLoanView[]>(`${COLLECTIONS_BASE}/upcoming`, "GET"),
   getCase: (caseId: string) => bff<CaseDetailView>(`${COLLECTIONS_BASE}/cases/${caseId}`, "GET"),
 
   /**

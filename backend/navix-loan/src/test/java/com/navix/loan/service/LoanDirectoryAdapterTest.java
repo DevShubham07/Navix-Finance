@@ -147,4 +147,57 @@ class LoanDirectoryAdapterTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).loanId()).isEqualTo(2L);
     }
+
+    @Test
+    void listUpcomingMapsTheNotYetDueFinder() {
+        when(loanRepository.findByStatusInAndDueDateGreaterThanOrderByDueDateAsc(any(), any()))
+                .thenReturn(List.of(loan(2L, LoanStatus.ACTIVE)));
+        when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of());
+        when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of(2L, 999L));
+
+        List<LoanSummary> result = adapter.listUpcoming(LocalDate.now());
+
+        assertThat(result).singleElement().satisfies(s -> {
+            assertThat(s.loanId()).isEqualTo(2L);
+            assertThat(s.outstandingPaise()).isEqualTo(999L);
+        });
+    }
+
+    @Test
+    void listUpcomingBatchesInsteadOfResolvingPerLoan() {
+        // The guard against the N+1 this method exists to avoid: "not yet due" is effectively the
+        // whole live book, so the per-loan finders must never be touched however many rows come back.
+        when(loanRepository.findByStatusInAndDueDateGreaterThanOrderByDueDateAsc(any(), any()))
+                .thenReturn(List.of(loan(2L, LoanStatus.ACTIVE), loan(3L, LoanStatus.ACTIVE),
+                        loan(4L, LoanStatus.ACTIVE)));
+        LoanApplication app = new LoanApplication();
+        app.setId(11L);
+        app.setLoanId(2L);
+        when(applicationRepository.findByLoanIdIn(List.of(2L, 3L, 4L))).thenReturn(List.of(app));
+        CustomerProfile profile = new CustomerProfile();
+        profile.setApplicationId(11L);
+        profile.setFullName("Asha Verma");
+        when(profileRepository.findByApplicationIdIn(List.of(11L))).thenReturn(List.of(profile));
+        when(repaymentService.outstandingForAll(any(), any()))
+                .thenReturn(java.util.Map.of(2L, 1L, 3L, 2L, 4L, 3L));
+
+        List<LoanSummary> result = adapter.listUpcoming(LocalDate.now());
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0).borrowerName()).isEqualTo("Asha Verma");
+        // Loans 3 and 4 have no application, so no profile -- and still no per-row query.
+        assertThat(result.get(1).borrowerName()).isNull();
+        verify(applicationRepository, never()).findByLoanId(any());
+        verify(profileRepository, never()).findByApplicationId(any());
+        verify(repaymentService, never()).outstandingAsOf(any(), any());
+    }
+
+    @Test
+    void listUpcomingSkipsTheBulkFindersWhenThereAreNoLoans() {
+        when(loanRepository.findByStatusInAndDueDateGreaterThanOrderByDueDateAsc(any(), any()))
+                .thenReturn(List.of());
+
+        assertThat(adapter.listUpcoming(LocalDate.now())).isEmpty();
+        verify(applicationRepository, never()).findByLoanIdIn(any());
+    }
 }

@@ -2,6 +2,7 @@ package com.navix.collections.service;
 
 import com.navix.collections.dto.CollectionsDtos.CaseDetailView;
 import com.navix.collections.dto.CollectionsDtos.CaseView;
+import com.navix.collections.dto.CollectionsDtos.UpcomingLoanView;
 import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.InteractionLog;
 import com.navix.collections.repository.CollectionCaseRepository;
@@ -22,10 +23,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Core collections operations: opening cases for collectible loans, assigning
@@ -154,6 +157,45 @@ public class CollectionsService {
     @Transactional(readOnly = true)
     public List<LoanSummary> collectibleLoans(LocalDate asOf) {
         return loanDirectory.listCollectible(asOf);
+    }
+
+    /**
+     * The pre-due watchlist behind the UPCOMING DPD bucket: live loans whose repayment date has not
+     * arrived yet, soonest first.
+     *
+     * <p>This exists because UPCOMING was otherwise unreachable. The worklist in
+     * {@link #listCaseViews()} renders {@code collection_case} rows and nothing else, and a case is
+     * only ever opened against a loan that is already due -- so a loan still ahead of its due date
+     * could never appear in the bucket named for exactly that state.
+     *
+     * <p><b>Strictly read-only.</b> It deliberately does not call {@link #openCase(Long)}: opening a
+     * case flips the loan into IN_COLLECTIONS, which is a statement that the loan is being chased.
+     * A current loan is watched, not chased, and nothing here writes.
+     *
+     * <p>Loans that already have a case are dropped -- they surface through {@link #listCaseViews()}
+     * with a real case id, and listing them here too would double them inside one bucket.
+     *
+     * @throws BusinessException {@code FORBIDDEN_ROLE} if the caller is not staff (or is a DSA)
+     */
+    @Transactional(readOnly = true)
+    public List<UpcomingLoanView> upcomingWatchlist(LocalDate asOf) {
+        requireStaff();
+        LocalDate on = asOf != null ? asOf : LocalDate.now();
+        List<LoanSummary> loans = loanDirectory.listUpcoming(on);
+        if (loans.isEmpty()) {
+            // Short-circuit: findByLoanIdIn is not valid SQL against an empty collection.
+            return List.of();
+        }
+        Set<Long> withCase = caseRepository
+                .findByLoanIdIn(loans.stream().map(LoanSummary::loanId).toList()).stream()
+                .map(CollectionCase::getLoanId)
+                .collect(Collectors.toSet());
+        return loans.stream()
+                .filter(l -> !withCase.contains(l.loanId()))
+                .map(l -> new UpcomingLoanView(l.loanId(), l.customerId(), l.borrowerName(),
+                        l.outstandingPaise(), l.dueDate(),
+                        (int) ChronoUnit.DAYS.between(on, l.dueDate()), l.status()))
+                .toList();
     }
 
     /** ACTIVE collections officers, for the assignee picker (activation gating). */
