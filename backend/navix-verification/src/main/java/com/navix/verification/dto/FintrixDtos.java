@@ -4,10 +4,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.navix.common.verification.BureauReportFacts;
 
 /**
- * Request/response records for Fintrix {@code POST /crif_combine} — the PRIMARY bureau pull (CRIF
- * Highmark). Fintrix's envelope is {@code {success, canonical:{timestamp, transaction_id, status,
+ * Request/response records for the Fintrix APIs: {@code POST /crif_combine} — the PRIMARY bureau pull
+ * (CRIF Highmark) — and {@code POST /pan_comprehensive}, the PAN fallback behind Signzy.
+ *
+ * <p>The bureau envelope is {@code {success, canonical:{timestamp, transaction_id, status,
  * data:{name, mobile, credit_report, credit_report_link}}, is_sandbox, request_id, transaction_id}}.
- * Only {@code name}/{@code mobile} are sent — Fintrix has no PAN input on this endpoint; it decides who
+ * Only {@code name}/{@code mobile} are sent — Fintrix has no PAN input on that endpoint; it decides who
  * you meant and hands back a PAN/DOB in the report for the caller to cross-check.
  */
 public final class FintrixDtos {
@@ -71,5 +73,33 @@ public final class FintrixDtos {
             @JsonProperty("order_id") String orderId,
             @JsonProperty("report_id") String reportId,
             @JsonProperty("auth_answers") String authAnswers) {
+    }
+
+    /** Request for {@code POST /pan_comprehensive}. {@code remark} carries our clientRef for traceability. */
+    public record PanRequest(
+            @JsonProperty("id_number") String idNumber,
+            @JsonProperty("remark") String remark) {
+    }
+
+    /**
+     * Response of {@code POST /pan_comprehensive}, flattened out of {@code data} (and {@code
+     * data.address}). Unlike Signzy's 206AB search this DOES return DOB/gender/address, but it does NOT
+     * return the 206AB {@code compliant}/{@code isSpecified} flags — those stay null on this provider.
+     *
+     * <p>{@code status} is the raw provider verdict ({@code "valid"}); turning it into the boolean
+     * {@code PanCheck.valid} is the adapter's job, matching how Signzy/Digitap split it.
+     */
+    public record PanResponse(
+            String txnId,
+            String status,
+            String fullName,
+            String dob,
+            String gender,
+            Boolean aadhaarLinked,
+            String maskedAadhaar,
+            String panNumber,
+            String allotmentDate,
+            String addressState,
+            String addressZip) {
     }
 }

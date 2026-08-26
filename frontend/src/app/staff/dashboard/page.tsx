@@ -767,7 +767,7 @@ function DecisionsSection({
             />
             <StatCard label="Avg turnaround" value={mins(stats?.avgTurnaroundMinutes)} info="Mean time from a file being assigned to you until you acted on it." />
             <StatCard
-              label="Value moved"
+              label="Disbursement Pending Total Amount"
               value={paiseToINR(stats?.valuePaise ?? null)}
               hint="Sanctioned/disbursed value of the files you moved forward in this period."
             />

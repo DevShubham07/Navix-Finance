@@ -51,6 +51,13 @@ class RoutingVerificationPortTest {
                         List.of("fintrix", "signzy", "digitap"), null, null, null, null, null));
     }
 
+    /** The REAL production order — see application.yml and {@code effectiveChain()}. */
+    private RoutingVerificationPort liveRouter() {
+        return new RoutingVerificationPort(fintrix, signzy, digitap,
+                new VerificationChainProperties(
+                        List.of("signzy", "fintrix", "digitap"), null, null, null, null, null));
+    }
+
     private static PanCheck pan(String txn) {
         return new PanCheck(txn, txn, true, "NAME", null, null, true, null, "ABCPE1234Z", null, null,
                 "operative", null, true, null);
@@ -76,6 +83,47 @@ class RoutingVerificationPortTest {
 
         assertThat(r.txnId()).isEqualTo("DIGITAP");
         verify(digitap).verifyPan(anyString(), anyString());
+    }
+
+    /**
+     * Fintrix serves PAN too, so the ONLY thing keeping it a fallback rather than the primary is that
+     * signzy precedes it in the chain. The other PAN tests use a signzy,digitap chain and would not
+     * notice if that order flipped — this one would.
+     */
+    @Test
+    void panPrimaryIsSignzy_fintrixNeverCalledOnSuccess() {
+        when(signzy.verifyPan(anyString(), anyString())).thenReturn(pan("SIGNZY"));
+
+        PanCheck r = liveRouter().verifyPan("ABCPE1234Z", "ref");
+
+        assertThat(r.txnId()).isEqualTo("SIGNZY");
+        verify(fintrix, never()).verifyPan(anyString(), anyString());
+        verify(digitap, never()).verifyPan(anyString(), anyString());
+    }
+
+    /** Signzy down → Fintrix serves, and Digitap is never reached. */
+    @Test
+    void panFallsThroughSignzyToFintrixBeforeDigitap() {
+        when(signzy.verifyPan(anyString(), anyString()))
+                .thenThrow(new VerificationException("signzy down"));
+        when(fintrix.verifyPan(anyString(), anyString())).thenReturn(pan("FINTRIX"));
+
+        PanCheck r = liveRouter().verifyPan("ABCPE1234Z", "ref");
+
+        assertThat(r.txnId()).isEqualTo("FINTRIX");
+        verify(digitap, never()).verifyPan(anyString(), anyString());
+    }
+
+    /** Both upstream providers down → Digitap is still the last resort. */
+    @Test
+    void panFallsAllTheWayToDigitapWhenSignzyAndFintrixFail() {
+        when(signzy.verifyPan(anyString(), anyString()))
+                .thenThrow(new VerificationException("signzy down"));
+        when(fintrix.verifyPan(anyString(), anyString()))
+                .thenThrow(new VerificationException("fintrix down"));
+        when(digitap.verifyPan(anyString(), anyString())).thenReturn(pan("DIGITAP"));
+
+        assertThat(liveRouter().verifyPan("ABCPE1234Z", "ref").txnId()).isEqualTo("DIGITAP");
     }
 
     @Test
@@ -178,6 +226,26 @@ class RoutingVerificationPortTest {
         assertThat(r.noRecord()).isTrue();
         assertThat(r.score()).isNull();
         verify(digitap, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    /**
+     * Signzy leading the live chain must NOT disturb bureau: its bureau leg is retired and skips itself,
+     * so Fintrix stays the bureau primary exactly as it was before Fintrix also gained PAN. This is the
+     * other half of the reorder's safety argument.
+     */
+    @Test
+    void bureauPrimaryStaysFintrixUnderTheLiveChain() {
+        when(signzy.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new CapabilityNotSupportedException(
+                        "Signzy bureau retired from routing — Fintrix is now primary"));
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("FINTRIX_CRIF", 780, false));
+
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.source()).isEqualTo("FINTRIX_CRIF");
+        verify(digitap, never())
+                .pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test

@@ -77,8 +77,12 @@ public record VerificationChainProperties(
         return Duration.ofSeconds(configured == null || configured <= 0 ? fallback : configured);
     }
 
-    /** The effective chain, defaulting to Fintrix → Signzy → Digitap when unset/blank. */
+    /**
+     * The effective chain, defaulting to Signzy → Fintrix → Digitap when unset/blank. Kept in step with
+     * {@code application.yml}: tests have no verification block and fall through to this default, so a
+     * divergence here would silently exercise a different provider order than production.
+     */
     public List<String> effectiveChain() {
-        return (chain == null || chain.isEmpty()) ? List.of("fintrix", "signzy", "digitap") : chain;
+        return (chain == null || chain.isEmpty()) ? List.of("signzy", "fintrix", "digitap") : chain;
     }
 }

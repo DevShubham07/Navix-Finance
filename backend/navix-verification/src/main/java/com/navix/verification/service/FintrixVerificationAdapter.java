@@ -6,6 +6,7 @@ import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.common.verification.VerificationPort;
 import com.navix.verification.client.FintrixCrifClient;
+import com.navix.verification.client.FintrixPanClient;
 import com.navix.verification.dto.FintrixDtos;
 import com.navix.verification.exception.CapabilityNotSupportedException;
 import java.util.List;
@@ -13,10 +14,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * Maps {@link FintrixCrifClient} onto the provider-neutral {@link VerificationPort}. Fintrix is the
- * bureau PRIMARY (see {@code RoutingVerificationPort}) and offers ONLY the bureau capability — every
- * other method throws {@link CapabilityNotSupportedException} so the router skips straight to the next
- * provider for PAN/email/penny-drop/DigiLocker/liveness/address/employment.
+ * Maps the Fintrix clients onto the provider-neutral {@link VerificationPort}. Fintrix serves two
+ * capabilities: bureau PRIMARY ({@link FintrixCrifClient}) and PAN FALLBACK behind Signzy
+ * ({@link FintrixPanClient}) — see the chain order in {@code RoutingVerificationPort}. Every other
+ * method throws {@link CapabilityNotSupportedException} so the router skips straight to the next
+ * provider for email/penny-drop/DigiLocker/liveness/address/employment.
  */
 @Component
 @RequiredArgsConstructor
@@ -29,6 +31,7 @@ public class FintrixVerificationAdapter implements VerificationPort {
     private static final String KILL_SWITCH_FLAG = "fintrix-bureau";
 
     private final FintrixCrifClient crifClient;
+    private final FintrixPanClient panClient;
     private final FeatureFlagService featureFlags;
 
     @Override
@@ -80,9 +83,24 @@ public class FintrixVerificationAdapter implements VerificationPort {
                 f, r.rawResponseJson(), r.creditReportLink(), pendingChallenge);
     }
 
+    /**
+     * PAN FALLBACK behind Signzy — see the chain order in {@code RoutingVerificationPort}. Deliberately
+     * NOT behind {@link #KILL_SWITCH_FLAG}: that flag names the bureau, and PAN is reverted instead by
+     * dropping fintrix from {@code NAVIX_VERIFICATION_CHAIN}, which needs no redeploy either.
+     *
+     * <p>{@code compliant}/{@code isSpecified} stay null: they are Signzy 206AB concepts and Fintrix
+     * returns no equivalent. Both are display-only downstream, so nothing gates on them. (Fintrix does
+     * send a {@code tax} boolean, deliberately not mapped here — it is not confirmed to mean 206AB
+     * compliance, and mis-stating a tax status is worse than omitting it.)
+     */
     @Override
     public PanCheck verifyPan(String pan, String clientRef) {
-        throw new CapabilityNotSupportedException("Fintrix has no PAN API in this package");
+        FintrixDtos.PanResponse r = panClient.verify(pan, ref(clientRef));
+        return new PanCheck(r.txnId(), "FINTRIX", "valid".equalsIgnoreCase(r.status()),
+                r.fullName(), r.dob(), r.gender(),
+                Boolean.TRUE.equals(r.aadhaarLinked()), r.maskedAadhaar(), r.panNumber(),
+                r.addressState(), r.addressZip(),
+                r.status(), r.allotmentDate(), null, null);
     }
 
     @Override

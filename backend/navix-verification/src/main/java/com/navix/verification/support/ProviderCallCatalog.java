@@ -31,6 +31,7 @@ public final class ProviderCallCatalog {
         // as DIGITAP (it doesn't start with the Signzy prefix, so the fallback defaults to Digitap).
         ROUTES.put("/crif_combine", new Route("BUREAU", "FINTRIX"));
         ROUTES.put("/bureau_ch_user_auth", new Route("BUREAU", "FINTRIX"));
+        ROUTES.put("/pan_comprehensive", new Route("PAN", "FINTRIX"));
         // Digitap
         ROUTES.put("/credit_analytics/request", new Route("BUREAU", "DIGITAP"));
         ROUTES.put("/validation/kyc/v1/pan_details_plus", new Route("PAN", "DIGITAP"));

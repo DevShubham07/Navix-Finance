@@ -105,11 +105,16 @@ navix:
     client-secret: ${FINTRIX_CLIENT_SECRET:}
   verification:
     # Ordered provider chain the router tries per capability (skips unsupported, falls back on failure).
-    chain: ${NAVIX_VERIFICATION_CHAIN:fintrix,signzy,digitap}
+    # The order is GLOBAL, not per-capability — a provider "opts out" of a capability by throwing
+    # CapabilityNotSupportedException. Signzy leads so it stays the PAN primary now that Fintrix serves
+    # PAN too; bureau is unaffected because Signzy's bureau leg is retired and skips itself, leaving
+    # Fintrix primary there exactly as before. Dropping fintrix from this list is the PAN rollback.
+    chain: ${NAVIX_VERIFICATION_CHAIN:signzy,fintrix,digitap}
     # Outbound provider HTTP timeouts (seconds). These must stay under the ALB idle timeout in front
     # of the service: the bureau step is now Fintrix (primary) -> Digitap (fallback) — Signzy's bureau
     # legs are retired from routing — so the worst case is fintrix-bureau + bureau = 45 + 60 = 105s
-    # against a 120s ALB.
+    # against a 120s ALB. PAN's worst case is the same 105s (30 Signzy + 45 Fintrix + 30 Digitap),
+    # because the Fintrix PAN call shares the bureau client's 45s read timeout.
     connect-timeout-seconds: ${NAVIX_VERIFICATION_CONNECT_TIMEOUT:5}
     read-timeout-seconds: ${NAVIX_VERIFICATION_READ_TIMEOUT:30}
     bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_BUREAU_READ_TIMEOUT:60}
