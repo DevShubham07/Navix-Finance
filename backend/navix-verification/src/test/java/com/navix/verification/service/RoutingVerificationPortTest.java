@@ -42,20 +42,20 @@ class RoutingVerificationPortTest {
         // Most tests below exercise capabilities Fintrix doesn't offer at all, so leave it out of the
         // chain for those (see bureauXxx() below for the fintrix-specific chain).
         router = new RoutingVerificationPort(fintrix, signzy, digitap,
-                new VerificationChainProperties(List.of("signzy", "digitap"), null, null, null, null, null));
+                new VerificationChainProperties(List.of("signzy", "digitap"), null, null, null, null, null, null));
     }
 
     private RoutingVerificationPort bureauRouter() {
         return new RoutingVerificationPort(fintrix, signzy, digitap,
                 new VerificationChainProperties(
-                        List.of("fintrix", "signzy", "digitap"), null, null, null, null, null));
+                        List.of("fintrix", "signzy", "digitap"), null, null, null, null, null, null));
     }
 
     /** The REAL production order — see application.yml and {@code effectiveChain()}. */
     private RoutingVerificationPort liveRouter() {
         return new RoutingVerificationPort(fintrix, signzy, digitap,
                 new VerificationChainProperties(
-                        List.of("signzy", "fintrix", "digitap"), null, null, null, null, null));
+                        List.of("signzy", "fintrix", "digitap"), null, null, null, null, null, null));
     }
 
     private static PanCheck pan(String txn) {

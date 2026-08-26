@@ -1,17 +1,22 @@
 package com.navix.verification.service;
 
+import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.common.verification.VerificationPort;
 import com.navix.verification.client.DigitapAddressClient;
 import com.navix.verification.client.DigitapCreditClient;
+import com.navix.verification.client.DigitapCrifClient;
 import com.navix.verification.client.DigitapEmailClient;
 import com.navix.verification.client.DigitapFaceMatchClient;
 import com.navix.verification.client.DigitapPanClient;
 import com.navix.verification.client.DigitapUanClient;
 import com.navix.verification.dto.DigitapDtos;
 import com.navix.verification.exception.CapabilityNotSupportedException;
+import com.navix.verification.exception.VerificationException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,12 +40,25 @@ public class DigitapVerificationAdapter implements VerificationPort {
     /** UAN Advanced {@code result_code}: identity maps to more than five UANs — nothing resolved. */
     private static final int UAN_RESULT_TOO_MANY = 104;
 
+    /**
+     * DB-backed switch for the Digitap CRIF leg (see {@code feature_flag}). Read with
+     * {@code defaultWhenMissing=FALSE} — deliberately the opposite of {@code fintrix-bureau} — because
+     * the endpoint has not authenticated yet (401 from Digitap, entitlement unconfirmed). Default-on
+     * would put a guaranteed failing call in front of the Experian fallback that currently rescues most
+     * Fintrix failures. Insert an {@code enabled=true} row to switch it on with no redeploy.
+     */
+    private static final String CRIF_FLAG = "digitap-crif";
+
+    private static final Logger log = LoggerFactory.getLogger(DigitapVerificationAdapter.class);
+
     private final DigitapPanClient panClient;
     private final DigitapEmailClient emailClient;
     private final DigitapAddressClient addressClient;
+    private final DigitapCrifClient crifClient;
     private final DigitapCreditClient creditClient;
     private final DigitapFaceMatchClient faceMatchClient;
     private final DigitapUanClient uanClient;
+    private final FeatureFlagService featureFlags;
 
     @Override
     public PanCheck verifyPan(String pan, String clientRef) {
@@ -67,8 +85,35 @@ public class DigitapVerificationAdapter implements VerificationPort {
                 r.pincode(), r.state(), r.district(), r.country(), null);
     }
 
+    /**
+     * Two bureau tries, in order: Digitap CRIF then Digitap Experian. Fintrix (CRIF) is the primary and
+     * sits ahead of both in {@code RoutingVerificationPort}, so the full chain a borrower can walk is
+     * Fintrix CRIF → Digitap CRIF → Digitap Experian.
+     *
+     * <p>Both legs live inside this one method because the router's provider list is global and maps
+     * each id to exactly one adapter — "digitap" cannot appear in the chain twice. Signzy's bureau used
+     * to chain {@code experian-lite} → {@code crif} the same way, for the same reason.
+     *
+     * <p>Why CRIF first: it is the same bureau as the primary, so a Fintrix <i>vendor</i> outage still
+     * yields the score the primary would have returned. Experian stays behind it as a genuinely
+     * different data source, which is what rescues a thin-file borrower CRIF has never heard of —
+     * dropping it would silently start declining files Experian can currently see.
+     *
+     * <p>A CRIF no-hit is RETURNED, not retried: the bureau answered, and falling through would burn a
+     * second billable pull on every thin-file borrower.
+     */
     @Override
     public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
+        if (featureFlags.isEnabled(CRIF_FLAG, false)) {
+            try {
+                DigitapDtos.CrifResponse c = crifClient.pull(pan, name, mobile, dob, clientRef);
+                return new BureauCheck(c.txnId(), "DIGITAP_CRIF", c.creditScore(), c.noRecord(),
+                        null, null, null, null, c.rawResponseJson());
+            } catch (VerificationException crifFailed) {
+                log.warn("Digitap CRIF leg failed ({}) — falling through to Experian",
+                        crifFailed.safeDetail() == null ? crifFailed.getMessage() : crifFailed.safeDetail());
+            }
+        }
         DigitapDtos.CreditResponse r = creditClient.pull(pan, name, mobile, dob, otp, clientRef);
         BureauReportFacts f = r.facts();
         return new BureauCheck(r.txnId(), "DIGITAP_EXPERIAN", r.creditScore(),

@@ -599,7 +599,10 @@ What holds across all of it, and does not belong in that file:
   (navix-common, no cache → instant, no redeploy); gate a feature by adding a row + the check. Live
   flags: `referral` (kill switch), `fintrix-bureau` (bureau primary; off falls back to Digitap),
   `bureau-auto-reject` (**suspended in V64**, read with `defaultWhenMissing = FALSE` so deleting the
-  row leaves it off — it takes money-affecting, 90-day-blocking action without a human).
+  row leaves it off — it takes money-affecting, 90-day-blocking action without a human),
+  `digitap-crif` (the middle bureau leg, Digitap's CRIF product; also `defaultWhenMissing = FALSE` —
+  the endpoint still 401s, so the implemented leg stays inert until Digitap enables it and a row is
+  inserted; see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)).
 - **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `BORROWER_AUTH_TTL_SECONDS`
   (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
