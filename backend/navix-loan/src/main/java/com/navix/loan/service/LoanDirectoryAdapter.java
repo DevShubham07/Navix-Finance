@@ -16,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Loan-module implementation of the {@link LoanDirectory} port: resolves a real
@@ -54,6 +56,42 @@ public class LoanDirectoryAdapter implements LoanDirectory {
                 .stream().map(this::toSummary).toList();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Batched deliberately. {@link #listCollectible} only ever sees the overdue tail, so mapping
+     * it through the per-loan {@code toSummary} is fine; this list is effectively the entire live
+     * book (every advance runs to at most {@code LoanMath.MAX_TERM_DAYS}, so almost everything
+     * outstanding is "not yet due"), and per-row resolution would cost four queries each. The bulk
+     * finders and {@link RepaymentService#outstandingForAll} already exist for exactly this shape --
+     * see {@code LoanRegisterService.list}, which enriches the loan register the same way.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<LoanSummary> listUpcoming(LocalDate asOf) {
+        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now();
+        List<Loan> loans = loanRepository
+                .findByStatusInAndDueDateGreaterThanOrderByDueDateAsc(COLLECTIBLE, effectiveAsOf);
+        if (loans.isEmpty()) {
+            // Short-circuit: the *In finders below are not valid SQL against an empty collection.
+            return List.of();
+        }
+        List<Long> loanIds = loans.stream().map(Loan::getId).toList();
+        Map<Long, LoanApplication> appByLoanId = applicationRepository.findByLoanIdIn(loanIds).stream()
+                .filter(a -> a.getLoanId() != null)
+                .collect(Collectors.toMap(LoanApplication::getLoanId, a -> a, (a, b) -> a));
+        List<Long> appIds = appByLoanId.values().stream().map(LoanApplication::getId).toList();
+        Map<Long, CustomerProfile> profileByAppId = appIds.isEmpty() ? Map.of()
+                : profileRepository.findByApplicationIdIn(appIds).stream()
+                        .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
+        Map<Long, Long> owedByLoanId = repaymentService.outstandingForAll(loans, effectiveAsOf);
+        return loans.stream().map(loan -> {
+            LoanApplication app = appByLoanId.get(loan.getId());
+            CustomerProfile profile = app != null ? profileByAppId.get(app.getId()) : null;
+            return toSummary(loan, app, profile, owedByLoanId.getOrDefault(loan.getId(), 0L));
+        }).toList();
+    }
+
     @Override
     @Transactional
     public void markInCollections(Long loanId) {
@@ -89,18 +127,26 @@ public class LoanDirectoryAdapter implements LoanDirectory {
     /** Build the snapshot, resolving the borrower via the application's KYC profile (both nullable). */
     private LoanSummary toSummary(Loan loan) {
         LoanApplication app = applicationRepository.findByLoanId(loan.getId()).orElse(null);
-        Long applicationId = app != null ? app.getId() : null;
-        CustomerProfile profile = applicationId != null
-                ? profileRepository.findByApplicationId(applicationId).orElse(null)
+        CustomerProfile profile = app != null
+                ? profileRepository.findByApplicationId(app.getId()).orElse(null)
                 : null;
+        return toSummary(loan, app, profile, repaymentService.outstandingAsOf(loan.getId(), null));
+    }
+
+    /**
+     * The snapshot builder proper, over collaborators the caller has already resolved. Split out so
+     * a caller holding a whole page of loans ({@link #listUpcoming}) can batch those lookups once
+     * instead of paying for them per row, while single-loan callers keep the convenience overload
+     * above. Both paths therefore produce a byte-identical {@link LoanSummary}.
+     */
+    private LoanSummary toSummary(Loan loan, LoanApplication app, CustomerProfile profile, long owed) {
         // Effective status (ACTIVE → OVERDUE past due) and the penalty/prepayment-aware balance, so
         // collections shows the same "amount owed" the borrower sees on the repay page.
         LoanStatus effective = loan.effectiveStatus(LocalDate.now());
-        long owed = repaymentService.outstandingAsOf(loan.getId(), null);
         return new LoanSummary(
                 loan.getId(),
                 loan.getCustomerId(),
-                applicationId,
+                app != null ? app.getId() : null,
                 effective != null ? effective.name() : null,
                 loan.getPrincipal(),
                 loan.getNetDisbursed(),

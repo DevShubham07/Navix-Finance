@@ -3,11 +3,13 @@ package com.navix.collections.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.collections.domain.DpdBucket;
 import com.navix.collections.dto.CollectionsDtos.CaseDetailView;
+import com.navix.collections.dto.CollectionsDtos.UpcomingLoanView;
 import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.InteractionLog;
 import com.navix.collections.repository.CollectionCaseRepository;
@@ -20,6 +22,7 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -242,5 +245,65 @@ class CollectionsServiceTest {
         CaseDetailView detail = service.getCaseDetailByLoanId(2L);
 
         assertThat(detail.loanId()).isEqualTo(2L);
+    }
+
+    // --- upcomingWatchlist (the pre-due watchlist behind the UPCOMING bucket) -------------------
+
+    @Test
+    void upcomingWatchlistDropsLoansThatAlreadyHaveACase() {
+        // Loan 2 has a case (it surfaces through listCaseViews with a real case id); loan 3 does not.
+        // Listing both would double loan 2 inside a single bucket.
+        when(loanDirectory.listUpcoming(any())).thenReturn(List.of(
+                loanSummary(2L, LocalDate.now().plusDays(5)),
+                loanSummary(3L, LocalDate.now().plusDays(9))));
+        when(caseRepository.findByLoanIdIn(List.of(2L, 3L))).thenReturn(List.of(existingCase()));
+
+        List<UpcomingLoanView> rows = service.upcomingWatchlist(LocalDate.now());
+
+        assertThat(rows).extracting(UpcomingLoanView::loanId).containsExactly(3L);
+    }
+
+    @Test
+    void upcomingWatchlistComputesDaysToDueFromTheAsOfDate() {
+        LocalDate on = LocalDate.of(2026, 8, 26);
+        when(loanDirectory.listUpcoming(on)).thenReturn(List.of(loanSummary(3L, LocalDate.of(2026, 9, 2))));
+        when(caseRepository.findByLoanIdIn(List.of(3L))).thenReturn(List.of());
+
+        List<UpcomingLoanView> rows = service.upcomingWatchlist(on);
+
+        assertThat(rows).singleElement()
+                .satisfies(r -> {
+                    assertThat(r.daysToDue()).isEqualTo(7);
+                    assertThat(r.borrowerName()).isEqualTo("Asha Verma");
+                    assertThat(r.customerId()).isEqualTo(7L);
+                });
+    }
+
+    @Test
+    void upcomingWatchlistShortCircuitsWithoutQueryingCasesWhenThereAreNoLoans() {
+        // findByLoanIdIn against an empty collection is not valid SQL, so it must never be reached.
+        when(loanDirectory.listUpcoming(any())).thenReturn(List.of());
+
+        assertThat(service.upcomingWatchlist(LocalDate.now())).isEmpty();
+        verify(caseRepository, never()).findByLoanIdIn(any());
+    }
+
+    @Test
+    void upcomingWatchlistRejectsABorrower() {
+        ActorContext.set(new CurrentActor("7", "A Borrower", "BORROWER"));
+
+        assertThatThrownBy(() -> service.upcomingWatchlist(LocalDate.now()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Staff role required");
+    }
+
+    @Test
+    void upcomingWatchlistRejectsDsa() {
+        // A DSA is staff but is firewalled from all borrower-identifying data.
+        ActorContext.set(new CurrentActor("77", "An Agent", "DSA"));
+
+        assertThatThrownBy(() -> service.upcomingWatchlist(LocalDate.now()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSAs cannot view collections cases");
     }
 }

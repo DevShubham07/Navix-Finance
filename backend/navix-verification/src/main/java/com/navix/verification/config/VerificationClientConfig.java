@@ -43,6 +43,8 @@ public class VerificationClientConfig {
     public static final String DIGITAP_API_CLIENT = "digitapApiRestClient";
     /** Digitap Credit Analytics — same host and auth as {@link #DIGITAP_API_CLIENT}, longer read. */
     public static final String DIGITAP_CREDIT_CLIENT = "digitapCreditRestClient";
+    /** Digitap Credit Analytics CRIF — the SVC host (not api), same auth, its own tighter read. */
+    public static final String DIGITAP_CRIF_CLIENT = "digitapCrifRestClient";
     /** Signzy Experian + CRIF — same host and auth as {@link #SIGNZY_CLIENT}, shorter read. */
     public static final String SIGNZY_BUREAU_CLIENT = "signzyBureauRestClient";
     /** Fintrix {@code /crif_combine} — the bureau PRIMARY. HTTP Basic, like Digitap. */
@@ -118,6 +120,19 @@ public class VerificationClientConfig {
         return RestClient.builder()
                 .baseUrl(props.apiBaseUrl())
                 .requestFactory(timeoutRequestFactory(timeouts.connectTimeout(), timeouts.readTimeout()))
+                .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
+                .build();
+    }
+
+    @Bean(DIGITAP_CRIF_CLIENT)
+    public RestClient digitapCrifRestClient(DigitapProperties props, VerificationChainProperties timeouts) {
+        // NOTE the SVC base URL: the CRIF product lives on svc.digitap.ai, while the Experian one
+        // (digitapCreditRestClient below) is on api.digitap.ai. Same credentials, different host — so
+        // this cannot just reuse the credit client.
+        return RestClient.builder()
+                .baseUrl(props.svcBaseUrl())
+                .requestFactory(timeoutRequestFactory(
+                        timeouts.connectTimeout(), timeouts.digitapCrifReadTimeout()))
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
                 .build();
     }

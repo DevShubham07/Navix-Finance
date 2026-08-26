@@ -105,14 +105,22 @@ navix:
     client-secret: ${FINTRIX_CLIENT_SECRET:}
   verification:
     # Ordered provider chain the router tries per capability (skips unsupported, falls back on failure).
-    chain: ${NAVIX_VERIFICATION_CHAIN:fintrix,signzy,digitap}
+    # The order is GLOBAL, not per-capability — a provider "opts out" of a capability by throwing
+    # CapabilityNotSupportedException. Signzy leads so it stays the PAN primary now that Fintrix serves
+    # PAN too; bureau is unaffected because Signzy's bureau leg is retired and skips itself, leaving
+    # Fintrix primary there exactly as before. Dropping fintrix from this list is the PAN rollback.
+    chain: ${NAVIX_VERIFICATION_CHAIN:signzy,fintrix,digitap}
     # Outbound provider HTTP timeouts (seconds). These must stay under the ALB idle timeout in front
-    # of the service: the bureau step is now Fintrix (primary) -> Digitap (fallback) — Signzy's bureau
-    # legs are retired from routing — so the worst case is fintrix-bureau + bureau = 45 + 60 = 105s
-    # against a 120s ALB.
+    # of the service (120s), because each chain is walked sequentially:
+    #   bureau: Fintrix CRIF 45 + Digitap CRIF 20 + Digitap Experian 45 = 110s  (10s headroom)
+    #   PAN:    Signzy 30 + Fintrix 45 + Digitap 30                     = 105s
+    # Adding the Digitap CRIF leg is what forced Experian down from 60s — the old two-leg bureau
+    # budget (45 + 60 = 105s) had no room for a third call. Signzy's bureau legs are retired from
+    # routing and workbench-only, so they are outside both budgets.
     connect-timeout-seconds: ${NAVIX_VERIFICATION_CONNECT_TIMEOUT:5}
     read-timeout-seconds: ${NAVIX_VERIFICATION_READ_TIMEOUT:30}
-    bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_BUREAU_READ_TIMEOUT:60}
+    bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_BUREAU_READ_TIMEOUT:45}
+    digitap-crif-read-timeout-seconds: ${NAVIX_VERIFICATION_DIGITAP_CRIF_READ_TIMEOUT:20}
     signzy-bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_SIGNZY_BUREAU_READ_TIMEOUT:12}
     fintrix-bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_FINTRIX_BUREAU_READ_TIMEOUT:45}
   storage:

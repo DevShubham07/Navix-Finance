@@ -24,7 +24,8 @@ public record VerificationChainProperties(
         Integer readTimeoutSeconds,
         Integer bureauReadTimeoutSeconds,
         Integer signzyBureauReadTimeoutSeconds,
-        Integer fintrixBureauReadTimeoutSeconds
+        Integer fintrixBureauReadTimeoutSeconds,
+        Integer digitapCrifReadTimeoutSeconds
 ) {
 
     /**
@@ -35,12 +36,12 @@ public record VerificationChainProperties(
     private static final int DEFAULT_CONNECT_SECONDS = 5;
     private static final int DEFAULT_READ_SECONDS = 30;
     /**
-     * Fintrix is now the bureau PRIMARY, tried first; Digitap Credit Analytics is the fallback, reached
-     * only when Fintrix is down. The bureau chain is sequential and the ALB idle timeout in front of the
-     * service is 120s, so 45 (Fintrix) + 60 (Digitap) = 105s worst case keeps both inside the budget —
-     * which is why Digitap's own default was cut from 90s to 60s in the same change.
+     * The bureau chain is sequential and the ALB idle timeout in front of the service is 120s, so every
+     * leg has to fit inside that budget together: Fintrix (CRIF, primary) 45 + Digitap CRIF 20 + Digitap
+     * Experian 45 = <b>110s</b> worst case, leaving 10s of headroom. Adding the Digitap CRIF leg is what
+     * forced Experian down from 60s — the old two-leg budget (45 + 60 = 105s) had no room for a third.
      */
-    private static final int DEFAULT_BUREAU_READ_SECONDS = 60;
+    private static final int DEFAULT_BUREAU_READ_SECONDS = 45;
     /**
      * Signzy's bureau legs (Experian, CRIF) are retired from the routing chain — Fintrix replaced them —
      * but the clients stay live for the ADMIN provider workbench, so this default is kept short as before.
@@ -48,6 +49,14 @@ public record VerificationChainProperties(
     private static final int DEFAULT_SIGNZY_BUREAU_READ_SECONDS = 12;
     /** Fintrix {@code /crif_combine} read timeout — see the class-level worst-case budget above. */
     private static final int DEFAULT_FINTRIX_BUREAU_READ_SECONDS = 45;
+    /**
+     * Digitap {@code /credit_analytics/v2/cf} read timeout — the middle bureau leg. Deliberately the
+     * tightest of the three: it sits between two legs that must still get their full budget, and it is
+     * the one we have never measured (the endpoint has not authenticated yet). Re-tune from observed
+     * latency once it is live; if it needs more than 20s, raise the ALB idle timeout rather than
+     * squeezing Experian further.
+     */
+    private static final int DEFAULT_DIGITAP_CRIF_READ_SECONDS = 20;
 
     public Duration connectTimeout() {
         return seconds(connectTimeoutSeconds, DEFAULT_CONNECT_SECONDS);
@@ -58,9 +67,14 @@ public record VerificationChainProperties(
         return seconds(readTimeoutSeconds, DEFAULT_READ_SECONDS);
     }
 
-    /** Read timeout for Digitap Credit Analytics. */
+    /** Read timeout for Digitap Credit Analytics (Experian) — the last-resort bureau leg. */
     public Duration bureauReadTimeout() {
         return seconds(bureauReadTimeoutSeconds, DEFAULT_BUREAU_READ_SECONDS);
+    }
+
+    /** Read timeout for Digitap Credit Analytics CRIF — the middle bureau leg. */
+    public Duration digitapCrifReadTimeout() {
+        return seconds(digitapCrifReadTimeoutSeconds, DEFAULT_DIGITAP_CRIF_READ_SECONDS);
     }
 
     /** Read timeout for the two Signzy bureau legs (workbench-only; retired from routing). */
@@ -77,8 +91,12 @@ public record VerificationChainProperties(
         return Duration.ofSeconds(configured == null || configured <= 0 ? fallback : configured);
     }
 
-    /** The effective chain, defaulting to Fintrix → Signzy → Digitap when unset/blank. */
+    /**
+     * The effective chain, defaulting to Signzy → Fintrix → Digitap when unset/blank. Kept in step with
+     * {@code application.yml}: tests have no verification block and fall through to this default, so a
+     * divergence here would silently exercise a different provider order than production.
+     */
     public List<String> effectiveChain() {
-        return (chain == null || chain.isEmpty()) ? List.of("fintrix", "signzy", "digitap") : chain;
+        return (chain == null || chain.isEmpty()) ? List.of("signzy", "fintrix", "digitap") : chain;
     }
 }

@@ -29,6 +29,16 @@ public interface LoanRepository extends JpaRepository<Loan, Long> {
             Collection<LoanStatus> statuses, LocalDate asOf);
 
     /**
+     * Live loans NOT yet due as of {@code asOf}, soonest first — the collections pre-due watchlist
+     * behind the UPCOMING DPD bucket. The mirror of
+     * {@link #findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc}: same statuses, opposite side
+     * of the due date. Loans with a null {@code due_date} drop out on their own (SQL comparison
+     * against null is never true), which is what keeps the day-count arithmetic downstream safe.
+     */
+    List<Loan> findByStatusInAndDueDateGreaterThanOrderByDueDateAsc(
+            Collection<LoanStatus> statuses, LocalDate asOf);
+
+    /**
      * Every loan (any status), optionally windowed by {@code disbursed_on}. Backs the staff loan
      * register ({@code LoanRegisterService}), which does status/search filtering itself after
      * enrichment (name/PAN live on the customer profile, not the loan). Both bounds are optional and

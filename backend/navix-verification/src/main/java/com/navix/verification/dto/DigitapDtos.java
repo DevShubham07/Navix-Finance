@@ -67,6 +67,47 @@ public final class DigitapDtos {
     ) {
     }
 
+    // ---- Credit Analytics CRIF : /credit_analytics/v2/cf (svc host) ----
+
+    /**
+     * Request for the CRIF product. Unrelated to {@link CreditRequest}: a different endpoint, a
+     * different host, and — notably — <b>no OTP/consent block</b>, no {@code device_ip} and no
+     * {@code consent_message}, all of which the Experian endpoint demands.
+     *
+     * <p>{@code prefillLookup} is {@code "0"} — we pass the identity ourselves rather than having
+     * Digitap resolve it from the mobile ({@code "1"}), which needs their separately-licensed Mobile
+     * to Prefill service. The fields here are exactly the identity columns Digitap's own UAT dataset
+     * supplies (mobile, first/last name, PAN); the spec also lists address/city/state/pincode/email/
+     * gender as conditionally mandatory, but {@code VerificationPort.pullBureau} does not carry them
+     * and Digitap's test data omits them too. If live calls come back
+     * {@code "One or more parameters format is wrong or missing"}, that is the first thing to revisit.
+     *
+     * <p>{@code dateOfBirth} is passed through verbatim, as {@link CreditRequest} does. The spec asks
+     * for {@code DD-MM-YYYY}.
+     */
+    public record CrifRequest(
+            @JsonProperty("client_ref_num") String clientRefNum,
+            @JsonProperty("mobile_no") String mobileNo,
+            @JsonProperty("prefill_lookup") String prefillLookup,
+            @JsonProperty("first_name") String firstName,
+            @JsonProperty("last_name") String lastName,
+            @JsonProperty("pan") String pan,
+            @JsonProperty("date_of_birth") String dateOfBirth) {
+    }
+
+    /**
+     * Response of the CRIF product. {@code facts} is deliberately absent: the report is CRIF's
+     * {@code B2C-REPORT} envelope, a different layout from both Experian and Fintrix's CRIF, so no
+     * categorized brief facts are produced — the same call {@code SignzyCrifClient} makes.
+     */
+    public record CrifResponse(
+            String txnId,
+            Integer creditScore,
+            boolean noRecord,
+            String rawResponseJson
+    ) {
+    }
+
     // ---- Face Match : /fmfl/v2/face-match (api host) ----
     public record FaceMatchRequest(
             @JsonProperty("person") String person,

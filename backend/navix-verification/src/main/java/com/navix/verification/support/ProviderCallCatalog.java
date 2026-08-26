@@ -31,8 +31,12 @@ public final class ProviderCallCatalog {
         // as DIGITAP (it doesn't start with the Signzy prefix, so the fallback defaults to Digitap).
         ROUTES.put("/crif_combine", new Route("BUREAU", "FINTRIX"));
         ROUTES.put("/bureau_ch_user_auth", new Route("BUREAU", "FINTRIX"));
+        ROUTES.put("/pan_comprehensive", new Route("PAN", "FINTRIX"));
         // Digitap
         ROUTES.put("/credit_analytics/request", new Route("BUREAU", "DIGITAP"));
+        // Digitap's OTHER bureau product (CRIF, svc host). Must stay distinguishable from the Experian
+        // row above or the audit table cannot tell which bureau actually answered a fallback.
+        ROUTES.put("/credit_analytics/v2/cf", new Route("BUREAU", "DIGITAP_CRIF"));
         ROUTES.put("/validation/kyc/v1/pan_details_plus", new Route("PAN", "DIGITAP"));
         ROUTES.put("/cv/email_verification/v1", new Route("EMAIL", "DIGITAP"));
         ROUTES.put("/ent/v1/address-verification", new Route("ADDRESS", "DIGITAP"));

@@ -28,6 +28,21 @@ public interface LoanDirectory {
     List<LoanSummary> listCollectible(LocalDate asOf);
 
     /**
+     * Live loans whose due date is still AHEAD of {@code asOf}, soonest first — the pre-due
+     * watchlist behind the collections UPCOMING bucket. The counterpart to
+     * {@link #listCollectible(LocalDate)}, which covers loans already due.
+     *
+     * <p>Strictly read-only: the UPCOMING bucket watches these loans, it does not work them, so
+     * nothing here opens a case or flips a loan into IN_COLLECTIONS. A loan that already has a
+     * case is not filtered out at this level — that is the caller's business.
+     *
+     * <p>Implementations MUST batch: because every advance runs to at most
+     * {@code LoanMath.MAX_TERM_DAYS}, "not yet due" is effectively the whole live book, so this
+     * has to cost a fixed number of queries rather than a handful per row.
+     */
+    List<LoanSummary> listUpcoming(LocalDate asOf);
+
+    /**
      * Move a loan into collections: flip ACTIVE/OVERDUE → IN_COLLECTIONS. Idempotent
      * and a no-op for any other status. Called when a collection case is opened.
      */

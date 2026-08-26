@@ -15,16 +15,36 @@ Fintrix + Fintrix-DigiLocker integration was **removed** (`git` history has it) 
 as the bureau primary only**, via a single new endpoint unrelated to the old multi-API integration (see
 `NAVIX_Fintrix_Integration_Flow.md` §3.5 for the full history + the live contract). Three per-provider
 adapters (`SignzyVerificationAdapter`, `DigitapVerificationAdapter`, `FintrixVerificationAdapter`) map
-provider clients → the neutral records; `FintrixVerificationAdapter` offers **only** the bureau capability —
-every other method throws `CapabilityNotSupportedException` so the router falls straight through to Signzy/
-Digitap for everything else. A `CapabilityNotSupportedException` tells the router "skip to the next
-provider" vs a `VerificationException` "tried and failed, fall through". Full API catalogs + field/sample
+provider clients → the neutral records; `FintrixVerificationAdapter` offers **two** capabilities — bureau
+(primary) and PAN (fallback behind Signzy) — and every other method throws
+`CapabilityNotSupportedException` so the router falls straight through to Signzy/Digitap for everything
+else. A `CapabilityNotSupportedException` tells the router "skip to the next
+provider" vs a `VerificationException` "tried and failed, fall through".
+
+⚠️ **`digitap-crif` is OFF by default and the endpoint is not yet usable.** Digitap's Credit Analytics
+CRIF (`/credit_analytics/v2/cf`) returns **401 Client Authentication Failed** with our production
+credentials on both `svc.digitap.ai` and `svcdemo.digitap.work`. It is unconfirmed whether that is an
+entitlement gap or the IP allow-list (Digitap allow-lists our NAT egress `3.109.169.131`; from any
+other network every Digitap endpoint returns `403 IP not allowed`, yet this one answered 401 and
+echoed our `client_ref_num` — i.e. it reached their application layer). The client, adapter leg,
+routing and tests are all implemented and green, but the flag is read with
+`defaultWhenMissing = FALSE` so the leg is **inert** until Digitap enables it — a default-on flag
+would put a guaranteed-failing call in front of the Experian fallback that currently rescues most
+Fintrix failures. To switch on: confirm with a probe from the allow-listed IP, then
+`INSERT` an `enabled=true` row for `digitap-crif` — no redeploy needed.
+
+⚠️ **The chain order is GLOBAL, not per-capability** — `RoutingVerificationPort.route()` uses the
+capability string for logging only. A provider opts out of a capability by throwing, not by ordering. That
+is why the chain leads with **`signzy`**: it keeps Signzy the PAN primary now that Fintrix also serves PAN,
+while bureau is unaffected because Signzy's bureau leg is retired and skips itself, leaving Fintrix primary
+there exactly as before. Adding a capability to an adapter therefore silently changes who serves it —
+check the chain position before you do. Full API catalogs + field/sample
 specs: **`docs/signzy/`** (11 APIs) and **`docs/digitap/`** (43 APIs).
 
 | Capability (`VerificationPort`) | Provider used | Endpoint |
 |---|---|---|
-| `verifyPan` | **Signzy** → Digitap | Signzy `/api/v3/pan/compliance-206-individual-search` → Digitap `/validation/kyc/v1/pan_details_plus` |
-| `pullBureau` | **Fintrix** → Digitap | Fintrix `POST /crif_combine` (CRIF Highmark; PRIMARY) → Digitap `/credit_analytics/request`. Signzy's `experian-lite`/`crif` legs are **retired from routing** (`SignzyVerificationAdapter.pullBureau` now throws `CapabilityNotSupportedException`) — `SignzyExperianClient`/`SignzyCrifClient` are kept only for the ADMIN provider workbench. Gated by the `fintrix-bureau` feature flag (on by default; off falls through to Digitap). See `NAVIX_Fintrix_Integration_Flow.md` §3.5 |
+| `verifyPan` | **Signzy** → Fintrix → Digitap | Signzy `/api/v3/pan/compliance-206-individual-search` → Fintrix `POST /pan_comprehensive` → Digitap `/validation/kyc/v1/pan_details_plus`. Fintrix returns DOB/gender/masked-Aadhaar/address (which Signzy's 206AB search does not) but carries **no 206AB flags**, so `compliant`/`isSpecified` are null on the Fintrix leg — both are display-only and gate nothing. Not behind the `fintrix-bureau` flag; drop `fintrix` from `NAVIX_VERIFICATION_CHAIN` to revert |
+| `pullBureau` | **Fintrix** → Digitap CRIF → Digitap Experian | Fintrix `POST /crif_combine` (CRIF Highmark; PRIMARY) → Digitap `POST /credit_analytics/v2/cf` (**CRIF**, svc host) → Digitap `/credit_analytics/request` (**Experian**, api host). The two Digitap legs both live inside `DigitapVerificationAdapter.pullBureau` because the router's chain is global and maps `digitap` to one adapter — the same reason Signzy's bureau used to chain `experian-lite`→`crif` internally. CRIF sits first so a Fintrix *vendor* outage still returns the same bureau's score; Experian stays behind it as a genuinely different data source for thin-file borrowers CRIF has never seen. A CRIF **no-hit is returned, not retried** — falling through would burn a second billable pull. Signzy's `experian-lite`/`crif` legs are **retired from routing** (`SignzyVerificationAdapter.pullBureau` throws `CapabilityNotSupportedException`) — `SignzyExperianClient`/`SignzyCrifClient` are kept only for the ADMIN provider workbench. Gated by `fintrix-bureau` (on by default) and `digitap-crif` (**off** by default — see below). See `NAVIX_Fintrix_Integration_Flow.md` §3.5 |
 | `answerBureauChallenge` | **Fintrix only** | Fintrix `POST /bureau_ch_user_auth` — answers a CRIF KBA question and releases the withheld report. Verified live 2026-08-24. **Does NOT walk the provider chain** (`RoutingVerificationPort` delegates straight to Fintrix): an `order_id` is meaningless to another bureau and falling through would burn a billable call. See the KBA note below |
 | `livenessInit` / `livenessResult` (selfie) | **Signzy** | Signzy `/api/v3/liveness-secure/createUrl` + `/getData` (prod acct) — **interactive video journey**: passive liveness + 1:1 face-match vs the DigiLocker Aadhaar photo, embedded in an iframe (`allow="camera"`), polled to completion (our DB authoritative). Two-step async, mirrors DigiLocker |
 | `faceLiveness` (selfie fallback) | **Digitap** | Digitap `/fmfl/v2/face-match` — synchronous 1:1 face-match of an uploaded selfie vs the Aadhaar photo (no live camera). **Fallback** used only when Signzy liveness init is unavailable (`selfieLivenessInit` → `derived.fallback=true`) |
@@ -64,7 +84,7 @@ and is set only by the demo seed script and tests). Specs + verified corrections
   Basic `base64(client_id:client_secret)` (`DIGITAP_CLIENT_ID`/`DIGITAP_CLIENT_SECRET`) over **two** hosts —
   `DIGITAP_SVC_BASE_URL` (default `https://svcdemo.digitap.work`, KYC/Email) + `DIGITAP_API_BASE_URL`
   (default `https://apidemo.digitap.work`, Credit/Address/Face-Match). Routing order via
-  `NAVIX_VERIFICATION_CHAIN` (default **`fintrix,signzy,digitap`**). Switch to prod by overriding the `*_BASE_URL` vars
+  `NAVIX_VERIFICATION_CHAIN` (default **`signzy,fintrix,digitap`**). Switch to prod by overriding the `*_BASE_URL` vars
   (`api.signzy.app`, `svc.digitap.ai`, `api.digitap.ai`). **Keys load from `backend/.env`** (auto-loaded by
   `spring-dotenv` — see `.env.example`) or SSM; never committed.
 - **Bureau consent gotcha:** Signzy's `experian-lite`/`crif` require `consent.consentTimestamp` as a JSON
