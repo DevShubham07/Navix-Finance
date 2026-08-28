@@ -3,6 +3,7 @@ package com.navix.loan.controller;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.web.ApiResponse;
+import com.navix.loan.dto.LoanDtos.AdminRepaymentRequest;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.LoanDtos.RejectRepaymentRequest;
 import com.navix.loan.dto.LoanDtos.RepaymentRequest;
@@ -36,6 +37,27 @@ public class RepaymentController {
         return ApiResponse.ok(repaymentService.view(repaymentService.recordPayment(
                 loanId, request.amountPaise(), request.method(), request.txnRef(),
                 request.proofUrl(), request.paidOn())));
+    }
+
+    /**
+     * ADMIN-only: record a payment that already happened, on the date it happened, and verify it in
+     * the same call.
+     *
+     * <p>Deliberately not open to the ACCOUNTANT. This path collapses the record→verify maker-checker
+     * into one actor, which only ADMIN (who bypasses role checks anyway, and whose corrections are
+     * already an accepted oversight power) may do. An Accountant wanting the same outcome still
+     * records and verifies as two steps, leaving the two-actor trail intact.
+     *
+     * <p>The closure that follows — and the borrower's LOAN_CLOSED notification — is the ordinary
+     * verify path; nothing here is special-cased.
+     */
+    @PostMapping("/admin-record")
+    public ApiResponse<PaymentView> adminRecord(@PathVariable Long loanId,
+                                                @Valid @RequestBody AdminRepaymentRequest request) {
+        requireRole("ADMIN");
+        var payment = repaymentService.recordPayment(loanId, request.amountPaise(), request.method(),
+                request.txnRef(), request.proofUrl(), request.paidOn());
+        return ApiResponse.ok(repaymentService.view(repaymentService.verifyPayment(payment.getId())));
     }
 
     /** List repayments recorded against the loan. */

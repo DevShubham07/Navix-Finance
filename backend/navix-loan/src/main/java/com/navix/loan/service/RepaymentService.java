@@ -18,6 +18,7 @@ import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.repository.PaymentRepository;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
@@ -39,6 +40,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class RepaymentService {
+
+    /**
+     * Every date in this class is an <em>Indian</em> calendar date. The server clock runs UTC in ECS,
+     * so a bare {@code LocalDate.now(IST)} reports yesterday between 00:00 and 05:30 IST — one wrong day
+     * of interest, and a wrong DPD/due boundary. Matches {@code OfferService}/{@code DashboardService}.
+     */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /** How far back a BORROWER may date their own payment. Staff (and ADMIN) are not bound by it. */
+    private static final int BORROWER_BACKDATE_DAYS = 3;
 
     private final PaymentRepository paymentRepository;
     private final LoanRepository loanRepository;
@@ -79,9 +90,9 @@ public class RepaymentService {
                 return existing.get();
             }
         }
+        LocalDate effectivePaidOn = requireSanePaidOn(loan, paidOn);
         // Penalty-aware remaining as of the payment date, so a short payment on an overdue loan is
         // correctly flagged partial (the stored total excludes the accruing late penalty).
-        LocalDate effectivePaidOn = paidOn != null ? paidOn : LocalDate.now();
         long remaining = outstandingAsOf(loanId, effectivePaidOn);
 
         Payment payment = new Payment();
@@ -97,6 +108,43 @@ public class RepaymentService {
         eventPublisher.publishEvent(new RepaymentRecordedEvent(
                 loanId, loan.getCustomerId(), saved.getId(), amountPaise, Instant.now()));
         return saved;
+    }
+
+    /**
+     * The payment date decides how much interest was owed (see {@link #recomputeOutstanding}), so it
+     * is a money input and validated like one — it was previously accepted unchecked from every
+     * caller, including the borrower's own app.
+     *
+     * <p>Two rules bind everybody: a payment cannot be made in the future, and it cannot predate the
+     * disbursal that created the debt. On top of that a BORROWER may only date a payment within the
+     * last few days — self-service backdating is how an overdue borrower would erase their own
+     * penalty. Staff backdate legitimately (a branch walk-in, a reconciled bank line, collections'
+     * validated payments), so the window is borrower-only, not a blanket rule.
+     */
+    private LocalDate requireSanePaidOn(Loan loan, LocalDate paidOn) {
+        LocalDate today = LocalDate.now(IST);
+        LocalDate effective = paidOn != null ? paidOn : today;
+        // One day of slack, not zero: the borrower's app sends its own LOCAL date, so a handset in a
+        // timezone ahead of IST (or one with a skewed clock) legitimately posts tomorrow's date for
+        // a payment made right now. Rejecting on the nose would turn that into an unexplainable
+        // failure on a real payment; a day beyond that is not a clock, it is a claim.
+        if (effective.isAfter(today.plusDays(1))) {
+            throw new BusinessException("INVALID_PAID_ON", "Payment date cannot be in the future");
+        }
+        // Never let a future date drive the interest arithmetic, whatever the handset said.
+        if (effective.isAfter(today)) {
+            effective = today;
+        }
+        if (loan.getDisbursedOn() != null && effective.isBefore(loan.getDisbursedOn())) {
+            throw new BusinessException("INVALID_PAID_ON",
+                    "Payment date cannot be before the loan was disbursed");
+        }
+        if ("BORROWER".equals(ActorContext.get().role())
+                && effective.isBefore(today.minusDays(BORROWER_BACKDATE_DAYS))) {
+            throw new BusinessException("INVALID_PAID_ON",
+                    "Payment date is too far in the past — contact support to record an older payment.");
+        }
+        return effective;
     }
 
     /** Confirm proof for a payment; recomputes the loan balance and closes it at zero. */
@@ -242,7 +290,7 @@ public class RepaymentService {
     @Transactional(readOnly = true)
     public OutstandingBreakdown outstandingBreakdownAsOf(Long loanId, LocalDate asOf) {
         Loan loan = requireLoan(loanId);
-        LocalDate at = asOf != null ? asOf : LocalDate.now();
+        LocalDate at = asOf != null ? asOf : LocalDate.now(IST);
         // A closed loan's balance is frozen at the day it closed — otherwise a loan closed months ago
         // keeps accruing late penalty against "today" and reports a phantom balance.
         if (loan.getClosedOn() != null && at.isAfter(loan.getClosedOn())) {
@@ -292,7 +340,7 @@ public class RepaymentService {
         if (loans.isEmpty()) {
             return Map.of();
         }
-        LocalDate at = asOf != null ? asOf : LocalDate.now();
+        LocalDate at = asOf != null ? asOf : LocalDate.now(IST);
         List<Long> loanIds = loans.stream().map(Loan::getId).toList();
         Map<Long, Long> verifiedByLoanId = paymentRepository
                 .sumAmountByLoanIdInAndStatus(loanIds, PaymentStatus.VERIFIED).stream()
@@ -330,33 +378,64 @@ public class RepaymentService {
         return settlementDirectory.approvedSettlementAmount(loanId);
     }
 
-    private void recomputeOutstanding(Long loanId) {
+    /**
+     * Recompute the cached balance and close the loan at zero.
+     *
+     * <p><b>Settlement is evaluated as of the payment date, never the verification date.</b> The
+     * accountant's confirmation is bookkeeping, not an economic event: a borrower who paid in full on
+     * the 5th owes nothing further because it was verified on the 7th. Evaluating at "now" charged
+     * two extra days of interest (and late penalty), which could leave a fully-paid loan open and
+     * accruing forever — every subsequent recompute moved the goalposts by another day. So the
+     * closure question is asked as of the latest VERIFIED payment's {@code paidOn}.
+     *
+     * <p>A REJECTED payment is never summed, so rejecting one leaves accrual running normally — which
+     * is the intended asymmetry: a failed payment costs the borrower the days, a slow verifier does not.
+     *
+     * <p>When the loan does <em>not</em> clear (a partial payment, or nothing verified yet) the cached
+     * balance keeps tracking today, because that is still what the borrower owes if they pay now.
+     */
+    @Transactional
+    public void recomputeOutstanding(Long loanId) {
         Loan loan = requireLoan(loanId);
+        LocalDate settledOn = latestVerifiedPaidOn(loanId).orElse(LocalDate.now(IST));
         // Use the authoritative penalty-aware balance: an overdue loan must not close just because
         // the borrower paid the no-penalty stored total — the accrued late penalty is still owed.
-        long owed = outstandingAsOf(loanId, LocalDate.now());
-        loan.setOutstanding(owed);
-        if (owed == 0L) {
-            loan.setStatus(LoanStatus.CLOSED);
-            // Freeze the balance as of the day it actually closed: the latest VERIFIED payment's
-            // paidOn (falling back to today, though a verified payment should always exist here since
-            // owed just hit zero) — so outstandingBreakdownAsOf never keeps accruing penalty past this
-            // date for a long-closed loan.
-            LocalDate closingDate = paymentRepository.findByLoanId(loanId).stream()
-                    .filter(p -> p.getStatus() == PaymentStatus.VERIFIED && p.getPaidOn() != null)
-                    .map(Payment::getPaidOn)
-                    .max(LocalDate::compareTo)
-                    .orElse(LocalDate.now());
-            loan.setClosedOn(closingDate);
+        long owedAtPayment = outstandingAsOf(loanId, settledOn);
+
+        if (owedAtPayment > 0L) {
+            loan.setOutstanding(outstandingAsOf(loanId, LocalDate.now(IST)));
+            loanRepository.save(loan);
+            return;
         }
+        loan.setOutstanding(0L);
+        loan.setStatus(LoanStatus.CLOSED);
+        // Freeze the balance as of the day it actually closed — the same date the closure was judged
+        // on — so outstandingBreakdownAsOf never keeps accruing penalty past it for a closed loan.
+        loan.setClosedOn(settledOn);
         loanRepository.save(loan);
         // Mirror full repayment onto the application aggregate (ACTIVE/OVERDUE → CLOSED).
-        if (owed == 0L) {
-            applicationFlowService.closeForLoan(loanId);
-            // DSA commission maturity: flip ACCRUED -> PAYABLE (or VOID on an approved settlement /
-            // default / write-off). A no-op when this loan has no DSA commission.
-            dsaCommissionService.onLoanClosed(loanId);
-        }
+        applicationFlowService.closeForLoan(loanId);
+        // DSA commission maturity: flip ACCRUED -> PAYABLE (or VOID on an approved settlement /
+        // default / write-off). A no-op when this loan has no DSA commission.
+        dsaCommissionService.onLoanClosed(loanId);
+    }
+
+    /**
+     * The figure the closure decision is made on: the balance as of the day the borrower last
+     * actually paid. Zero means the loan is settled, however late the verification was. Exposed
+     * read-only so the ADMIN maintenance sweep can report what a recompute would do before doing it.
+     */
+    @Transactional(readOnly = true)
+    public long settlementBalance(Long loanId) {
+        return outstandingAsOf(loanId, latestVerifiedPaidOn(loanId).orElse(LocalDate.now(IST)));
+    }
+
+    /** The date the borrower last actually paid, over VERIFIED payments only. */
+    private java.util.Optional<LocalDate> latestVerifiedPaidOn(Long loanId) {
+        return paymentRepository.findByLoanId(loanId).stream()
+                .filter(p -> p.getStatus() == PaymentStatus.VERIFIED && p.getPaidOn() != null)
+                .map(Payment::getPaidOn)
+                .max(LocalDate::compareTo);
     }
 
     /**

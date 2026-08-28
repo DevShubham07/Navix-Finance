@@ -6,6 +6,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.entity.CustomerProfile;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -115,14 +117,32 @@ class LoanDirectoryAdapterTest {
     }
 
     @Test
-    void markInCollectionsFlipsActiveLoan() {
+    void markInCollectionsFlipsPastDueActiveLoan() {
         Loan loan = loan(2L, LoanStatus.ACTIVE);
+        loan.setDueDate(LocalDate.now().minusDays(1));
         when(loanRepository.findById(2L)).thenReturn(Optional.of(loan));
 
         adapter.markInCollections(2L);
 
         assertThat(loan.getStatus()).isEqualTo(LoanStatus.IN_COLLECTIONS);
         verify(loanRepository).save(loan);
+    }
+
+    /**
+     * A case can now be opened pre-emptively, days before the due date, to take an update from the
+     * borrower. That must not brand an on-time borrower as in-collections — every overdue segment,
+     * queue and dashboard count keys off this status.
+     */
+    @Test
+    void markInCollectionsLeavesANotYetDueLoanActive() {
+        Loan loan = loan(2L, LoanStatus.ACTIVE);
+        loan.setDueDate(LocalDate.now().plusDays(5));
+        when(loanRepository.findById(2L)).thenReturn(Optional.of(loan));
+
+        adapter.markInCollections(2L);
+
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.ACTIVE);
+        verify(loanRepository, never()).save(any());
     }
 
     @Test
@@ -140,7 +160,8 @@ class LoanDirectoryAdapterTest {
     void listCollectibleMapsTheFinder() {
         when(loanRepository.findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc(any(), any()))
                 .thenReturn(List.of(loan(2L, LoanStatus.ACTIVE)));
-        when(applicationRepository.findByLoanId(2L)).thenReturn(Optional.empty());
+        when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of());
+        when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of(2L, 999L));
 
         List<LoanSummary> result = adapter.listCollectible(LocalDate.now());
 
@@ -199,5 +220,33 @@ class LoanDirectoryAdapterTest {
 
         assertThat(adapter.listUpcoming(LocalDate.now())).isEmpty();
         verify(applicationRepository, never()).findByLoanIdIn(any());
+    }
+
+    /** The worklist reaches a week past today, so an officer can chase before salary day. */
+    @Test
+    void listCollectibleLooksAheadByThePreDueWindow() {
+        LocalDate asOf = LocalDate.of(2026, 8, 29);
+        when(loanRepository.findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc(any(), any()))
+                .thenReturn(List.of());
+
+        adapter.listCollectible(asOf);
+
+        ArgumentCaptor<LocalDate> horizon = ArgumentCaptor.forClass(LocalDate.class);
+        verify(loanRepository)
+                .findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc(any(), horizon.capture());
+        assertThat(horizon.getValue()).isEqualTo(asOf.plusDays(LoanDirectory.PRE_DUE_WINDOW_DAYS));
+    }
+
+    /** A loan still running to term is workable but must not be reported as a delinquency. */
+    @Test
+    void listCollectibleFlagsNotYetDueLoansAsPreDue() {
+        Loan loan = loan(2L, LoanStatus.ACTIVE);
+        loan.setDueDate(LocalDate.now().plusDays(3));
+        when(loanRepository.findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc(any(), any()))
+                .thenReturn(List.of(loan));
+        when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of());
+        when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of());
+
+        assertThat(adapter.listCollectible(LocalDate.now()).get(0).preDue()).isTrue();
     }
 }

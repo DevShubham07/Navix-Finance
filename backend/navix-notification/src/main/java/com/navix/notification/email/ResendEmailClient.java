@@ -2,6 +2,7 @@ package com.navix.notification.email;
 
 import com.navix.common.util.Masking;
 import com.navix.notification.config.EmailProperties;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,21 +44,8 @@ public class ResendEmailClient implements EmailClient {
         if (props.resendApiKey() == null) {
             return EmailResult.fail("RESEND_API_KEY not configured");
         }
-        if (message.attachments() != null && !message.attachments().isEmpty()) {
-            // Attachments aren't wired for Resend yet (interim provider while SES is sandbox-limited).
-            log.warn("EMAIL [resend] {} attachment(s) requested but not supported by this client — "
-                            + "sending without them (to={})",
-                    message.attachments().size(), Masking.maskEmail(message.to()));
-        }
         try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("from", props.from());
-            body.put("to", List.of(message.to()));
-            body.put("subject", message.subject() == null ? "DhanBoost" : message.subject());
-            body.put("text", message.body() == null ? "" : message.body());
-            if (message.html() != null && !message.html().isBlank()) {
-                body.put("html", message.html());
-            }
+            Map<String, Object> body = buildBody(message);
 
             @SuppressWarnings("unchecked")
             Map<String, Object> resp = http.post()
@@ -73,5 +61,31 @@ public class ResendEmailClient implements EmailClient {
             log.warn("EMAIL [resend] send failed to={}: {}", Masking.maskEmail(message.to()), e.getMessage());
             return EmailResult.fail(e.getMessage());
         }
+    }
+
+    /**
+     * The JSON Resend expects. Attachments go as base64 {@code content} alongside a {@code filename},
+     * which is the whole reason this is a separate method — it used to log a warning and drop them,
+     * so a borrower on this provider received the signed sanction letter email with no letter in it.
+     *
+     * <p>Package-private so the body shape (and the base64 round-trip) is testable without an HTTP call.
+     */
+    Map<String, Object> buildBody(EmailMessage message) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("from", props.from());
+        body.put("to", List.of(message.to()));
+        body.put("subject", message.subject() == null ? "DhanBoost" : message.subject());
+        body.put("text", message.body() == null ? "" : message.body());
+        if (message.html() != null && !message.html().isBlank()) {
+            body.put("html", message.html());
+        }
+        if (message.attachments() != null && !message.attachments().isEmpty()) {
+            body.put("attachments", message.attachments().stream()
+                    .map(a -> Map.of(
+                            "filename", a.filename(),
+                            "content", Base64.getEncoder().encodeToString(a.content())))
+                    .toList());
+        }
+        return body;
     }
 }

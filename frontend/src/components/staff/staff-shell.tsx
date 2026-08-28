@@ -249,9 +249,11 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
   const searchParams = useSearchParams();
   const currentSeg = searchParams.get("seg");
   const currentBucket = searchParams.get("bucket");
+  // The same worklist the bucket pages render, so a sidebar badge can never disagree with the page
+  // it links to (it used to count cases, while the page now counts loans).
   const collectionCases = useQuery({
-    queryKey: ["collection-cases"],
-    queryFn: collectionsApi.listCases,
+    queryKey: ["collections-worklist"],
+    queryFn: collectionsApi.worklist,
     enabled: role === "COLLECTION_HEAD" || role === "COLLECTION_EXECUTIVE" || role === "ADMIN",
     refetchInterval: 8000,
   });

@@ -113,6 +113,15 @@ export function AppRow({
             recommendation={app.recommendation}
           />
         </td>
+        <td className="staff-cell text-muted" title={app.creditDecidedByName || undefined}>
+          {app.creditDecidedByName || "—"}
+        </td>
+        <td className="staff-cell text-muted" title={app.disbursedByName || undefined}>
+          {app.disbursedByName || "—"}
+        </td>
+        <td className="staff-cell text-muted" title={app.collectionOfficerName || undefined}>
+          {app.collectionOfficerName || "—"}
+        </td>
         <td className="staff-sticky-actions">
           <div className="flex items-center gap-1.5">
             <button
@@ -167,7 +176,7 @@ export function AppRow({
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={onToggleSelect ? 15 : 14} className="bg-grey-50">
+          <td colSpan={onToggleSelect ? 18 : 17} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

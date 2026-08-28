@@ -22,6 +22,7 @@ import { Select } from "@/components/ui";
 import { hasPermission } from "@/lib/auth/rbac";
 import { collectionsApi, type ApplicationView, type CaseView } from "@/lib/api/applications";
 import { useStaffMe, errMessage } from "@/components/staff/pipeline/hooks";
+import { WorklistAssignActions } from "@/components/staff/collections-assign";
 
 /** Shared across every row on the page — one request, deduped by React Query's key. */
 export function useCollectionCases() {
@@ -80,6 +81,27 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
   // but the row renders for any application, so fail closed rather than crash on a null loanId.)
   if (app.loanId == null || !canInteract) return null;
 
+  // On a queue ROW the picker used to be hidden entirely (a full-width <select> forces the register
+  // to scroll sideways), which left a Head able to SEE the assignment but never change it — the
+  // reason there was no way to put a collections executive on a loan that was still ACTIVE. The
+  // shared control opens the same picker in a dialog instead.
+  if (compact) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <WorklistAssignActions
+          loanId={app.loanId}
+          assignedOfficerName={kase?.assignedOfficerName}
+          compact
+        />
+        {kase && (
+          <Link href={`/staff/collections/${app.loanId}`} className="btn btn-sm btn-outline">
+            Case <ArrowRight size={14} />
+          </Link>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-1.5">
       {kase?.assignedOfficerName && (
@@ -103,7 +125,7 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
       )}
 
       {kase && (
-        <Link href={`/staff/collections/${kase.id}`} className="btn btn-sm btn-outline">
+        <Link href={`/staff/collections/${app.loanId}`} className="btn btn-sm btn-outline">
           Case <ArrowRight size={14} />
         </Link>
       )}

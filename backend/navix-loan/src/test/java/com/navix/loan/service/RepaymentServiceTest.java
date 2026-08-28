@@ -208,6 +208,170 @@ class RepaymentServiceTest {
         verify(applicationFlowService).closeForLoan(1L);
     }
 
+    /**
+     * The bug this guards: closure used to be judged at {@code LocalDate.now()} — the moment the
+     * accountant clicked verify. A borrower who paid the full amount on the due date but was verified
+     * two days later was charged two more days of interest, so the balance never reached zero, the
+     * loan stayed open, and every later recompute moved the target another day out.
+     */
+    @Test
+    void verifyClosesAsOfThePaymentDateNotTheVerificationDate() {
+        Loan loan = activeLoan();
+        loan.setDueDate(LocalDate.now().minusDays(2));
+        loan.setDisbursedOn(loan.getDueDate().minusDays(27));
+        LocalDate paidOn = loan.getDueDate(); // paid on the due date; verified two days later
+        Payment payment = verifiedPayment(1_270_000L, paidOn);
+        when(paymentRepository.findById(99L)).thenReturn(Optional.of(payment));
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        when(paymentRepository.findByLoanId(1L)).thenReturn(java.util.List.of(payment));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(1_270_000L);
+        lenient().when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        repaymentService.verifyPayment(99L);
+
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.CLOSED);
+        assertThat(loan.getOutstanding()).isZero();
+        // Frozen on the day the money moved — not the day the paperwork caught up.
+        assertThat(loan.getClosedOn()).isEqualTo(paidOn);
+        verify(applicationFlowService).closeForLoan(1L);
+    }
+
+    /** Several verified payments settle the debt as of the last one. */
+    @Test
+    void verifyClosesAsOfTheLatestVerifiedPaymentDate() {
+        Loan loan = activeLoan();
+        loan.setDueDate(LocalDate.now().minusDays(3));
+        loan.setDisbursedOn(loan.getDueDate().minusDays(27));
+        Payment first = verifiedPayment(270_000L, loan.getDueDate().minusDays(5));
+        Payment last = verifiedPayment(1_000_000L, loan.getDueDate());
+        when(paymentRepository.findById(99L)).thenReturn(Optional.of(last));
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        when(paymentRepository.findByLoanId(1L)).thenReturn(java.util.List.of(first, last));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(1_270_000L);
+        lenient().when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        repaymentService.verifyPayment(99L);
+
+        assertThat(loan.getClosedOn()).isEqualTo(last.getPaidOn());
+    }
+
+    /** A part payment settles nothing: the loan stays open and keeps accruing to today. */
+    @Test
+    void verifyPartialPaymentLeavesTheLoanOpenAndAccruingToToday() {
+        Loan loan = activeLoan();
+        loan.setDueDate(LocalDate.now().minusDays(2));
+        loan.setDisbursedOn(loan.getDueDate().minusDays(27));
+        Payment payment = verifiedPayment(500_000L, loan.getDueDate());
+        when(paymentRepository.findById(99L)).thenReturn(Optional.of(payment));
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        when(paymentRepository.findByLoanId(1L)).thenReturn(java.util.List.of(payment));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(500_000L);
+        lenient().when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        when(loanRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        repaymentService.verifyPayment(99L);
+
+        assertThat(loan.getStatus()).isEqualTo(LoanStatus.ACTIVE);
+        assertThat(loan.getClosedOn()).isNull();
+        // Today's figure, including the late penalty that has run since the due date.
+        assertThat(loan.getOutstanding())
+                .isEqualTo(repaymentService.outstandingAsOf(1L, LocalDate.now()));
+        verify(applicationFlowService, never()).closeForLoan(anyLong());
+    }
+
+    /** A payment date is a money input: it cannot be in the future, for anyone. */
+    @Test
+    void recordRejectsAFuturePaymentDate() {
+        withActor("9", "ADMIN", () -> {
+            when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+            assertThatThrownBy(() -> repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
+                    "T1", "proof", LocalDate.now().plusDays(5)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("future");
+        });
+    }
+
+    /**
+     * The borrower's app sends its own local date, so a handset ahead of IST posts tomorrow for a
+     * payment made now. That must not fail — but it must not buy a free day of interest either, so
+     * the date is clamped back to today rather than trusted.
+     */
+    @Test
+    void aDayOfClockSkewIsClampedRatherThanRejected() {
+        withActor("7", "BORROWER", () -> {
+            when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+            when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            Payment saved = repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
+                    "T1", "proof", LocalDate.now().plusDays(1));
+
+            assertThat(saved.getPaidOn()).isEqualTo(LocalDate.now());
+        });
+    }
+
+    /** Nor before the disbursal that created the debt. */
+    @Test
+    void recordRejectsAPaymentDatedBeforeDisbursal() {
+        withActor("9", "ADMIN", () -> {
+            Loan loan = activeLoan();
+            when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+            assertThatThrownBy(() -> repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
+                    "T1", "proof", loan.getDisbursedOn().minusDays(1)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("disbursed");
+        });
+    }
+
+    /** Self-service backdating is how an overdue borrower would erase their own late penalty. */
+    @Test
+    void borrowerCannotBackdateBeyondTheRecentWindow() {
+        withActor("7", "BORROWER", () -> {
+            when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
+            assertThatThrownBy(() -> repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
+                    "T1", "proof", LocalDate.now().minusDays(20)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("too far in the past");
+        });
+    }
+
+    /** ADMIN backdates legitimately — a walk-in, a bank line reconciled days later. */
+    @Test
+    void adminMayBackdateBeyondTheBorrowerWindow() {
+        withActor("9", "ADMIN", () -> {
+            Loan loan = activeLoan();
+            when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+            when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+            LocalDate paidOn = LocalDate.now().minusDays(20);
+            Payment saved = repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
+                    "T1", null, paidOn);
+
+            assertThat(saved.getPaidOn()).isEqualTo(paidOn);
+            assertThat(saved.getStatus()).isEqualTo(PaymentStatus.PENDING_VERIFICATION);
+        });
+    }
+
+    private Payment verifiedPayment(long amountPaise, LocalDate paidOn) {
+        Payment payment = new Payment();
+        payment.setLoanId(1L);
+        payment.setAmount(amountPaise);
+        payment.setPaidOn(paidOn);
+        payment.setStatus(PaymentStatus.VERIFIED);
+        return payment;
+    }
+
+    private void withActor(String id, String role, Runnable body) {
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor(id, "Test Actor", role));
+        try {
+            body.run();
+        } finally {
+            com.navix.common.security.ActorContext.clear();
+        }
+    }
+
     @Test
     void rejectPaymentSetsRejectedAndLeavesBalanceUnchanged() {
         Payment payment = new Payment();

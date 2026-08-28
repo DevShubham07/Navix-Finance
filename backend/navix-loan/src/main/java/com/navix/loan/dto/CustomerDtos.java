@@ -93,7 +93,14 @@ public final class CustomerDtos {
              *  {@link #createdAt} when no such event exists (a row whose status was set outside the
              *  flow service). Pairs with {@code latestStatus}; contrast {@link #createdAt}, which is
              *  the signup date. */
-            Instant statusChangedAt) {
+            Instant statusChangedAt,
+            /** Who handled the latest application: the credit executive who DECIDED it (distinct
+             *  from {@code ownerName}, which is who the customer is assigned to), the staffer who
+             *  released the money, and the collections executive on the newest loan. Read from the
+             *  {@code application_event} trail and the collection case; null until each happens. */
+            String creditDecidedByName,
+            String disbursedByName,
+            String collectionOfficerName) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */

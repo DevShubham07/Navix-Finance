@@ -220,7 +220,7 @@ function CustomersPageInner() {
   const [pendingReject, setPendingReject] = React.useState<{ ids: number[]; mode: RejectMode } | null>(null);
   const [pendingAssign, setPendingAssign] = React.useState<number[] | null>(null);
   const showBulkColumn = canBulkReject || canBulkAssign;
-  const colCount = showBulkColumn ? 18 : 17;
+  const colCount = showBulkColumn ? 21 : 20;
 
   function setSeg(next: CustomerSegment) {
     const p = new URLSearchParams(searchParams.toString());
@@ -258,6 +258,9 @@ function CustomersPageInner() {
             { header: "Outstanding (₹)", value: (c) => (c.totalOutstandingPaise / 100).toFixed(2) },
             { header: "Credit score", value: (c) => c.creditScore ?? "" },
             { header: "Credit rating", value: (c) => (c.starRating != null ? c.starRating.toFixed(1) : "") },
+            { header: "Credit exec", value: (c) => c.creditDecidedByName ?? "" },
+            { header: "Disbursed by", value: (c) => c.disbursedByName ?? "" },
+            { header: "Collections exec", value: (c) => c.collectionOfficerName ?? "" },
           ]}
           rows={filtered}
         />
@@ -378,6 +381,11 @@ function CustomersPageInner() {
                   <th>Bureau</th>
                   <th>Latest status</th>
                   <th title="When this customer entered their current status">Stage date</th>
+                  {/* Who worked the file. "Credit exec" is who DECIDED it, which on a reassigned or
+                      Head-decided file is not the same person as Owner. Blank until it happens. */}
+                  <th title="The credit executive who decided the latest application">Credit exec</th>
+                  <th title="Who released the money">Disbursed by</th>
+                  <th title="The assigned collections executive">Collections exec</th>
                   <th className="staff-sticky-actions text-right">Open</th>
                 </tr>
               </thead>
@@ -486,6 +494,15 @@ function CustomersPageInner() {
                     </td>
                     <td className="whitespace-nowrap text-muted">
                       {c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "—"}
+                    </td>
+                    <td className="staff-cell text-muted" title={c.creditDecidedByName || undefined}>
+                      {c.creditDecidedByName || "—"}
+                    </td>
+                    <td className="staff-cell text-muted" title={c.disbursedByName || undefined}>
+                      {c.disbursedByName || "—"}
+                    </td>
+                    <td className="staff-cell text-muted" title={c.collectionOfficerName || undefined}>
+                      {c.collectionOfficerName || "—"}
                     </td>
                     <td className="staff-sticky-actions text-right">
                       <div className="flex items-center justify-end gap-1.5">

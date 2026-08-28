@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CasePaymentsCard, RecordPaymentCard } from "@/components/staff/collection-payments";
+import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { collectionsApi, customersApi, paiseToINR, rupeesToPaise, type InteractionView, type LoanSummary } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
@@ -22,15 +23,35 @@ const OUTCOMES = ["CONNECTED", "NO_ANSWER", "PROMISE_TO_PAY", "PAID", "DISPUTED"
  * staff log interactions, assign an officer, and propose a settlement.
  */
 export default function CollectionsCasePage() {
-  const { loanId } = useParams<{ loanId: string }>(); // value is the case UUID
-  const caseId = loanId;
+  const { loanId } = useParams<{ loanId: string }>();
   const qc = useQueryClient();
 
-  const caseQ = useQuery({ queryKey: ["collections-case", caseId], queryFn: () => collectionsApi.getCase(caseId), enabled: !!caseId });
+  /**
+   * Keyed by the real LOAN id, not the case UUID (which is what this route carried before, despite
+   * the param name). The worklist lists loans — many with no case yet — so the workspace resolves
+   * the case for the loan and creates one if this is the first time anyone has worked it. Opening
+   * the workspace IS the first action; there is no separate "open a case" step for a human.
+   */
+  const caseQ = useQuery({
+    queryKey: ["collections-case-by-loan", loanId],
+    queryFn: async () => {
+      // This route used to carry the case UUID, so a bookmark or a pasted link from before the
+      // change still arrives with one — Number() on it is NaN. Resolve those the old way instead
+      // of 500ing on someone's saved link.
+      if (!/^\d+$/.test(loanId)) {
+        return collectionsApi.getCase(loanId);
+      }
+      const existing = await collectionsApi.caseByLoan(Number(loanId));
+      return existing ?? (await collectionsApi.openCase(Number(loanId)));
+    },
+    enabled: !!loanId,
+  });
+  const caseId = caseQ.data?.id ?? "";
   const interQ = useQuery({ queryKey: ["collections-interactions", caseId], queryFn: () => collectionsApi.listInteractions(caseId), enabled: !!caseId });
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["collections-case", caseId] });
+    qc.invalidateQueries({ queryKey: ["collections-case-by-loan", loanId] });
+    qc.invalidateQueries({ queryKey: ["collections-worklist"] });
     qc.invalidateQueries({ queryKey: ["collections-interactions", caseId] });
   };
 
@@ -92,6 +113,11 @@ export default function CollectionsCasePage() {
               <AssignCard caseId={caseId} currentOfficerName={c.assignedOfficerName} onAssigned={invalidate} />
             </PermissionGate>
             <RecordPaymentCard caseId={caseId} onRaised={invalidate} />
+            {/* ADMIN shortcut for money already received: recorded and verified in one step, on the
+                date it actually moved. The officer's maker-checker path above is unchanged. */}
+            <div className="rounded border border-line bg-white p-4 shadow-sm">
+              <AdminLogPaymentButton loanId={c.loanId} loanStatus={c.loan?.status} />
+            </div>
             <SettlementCard caseId={caseId} />
           </div>
         </div>

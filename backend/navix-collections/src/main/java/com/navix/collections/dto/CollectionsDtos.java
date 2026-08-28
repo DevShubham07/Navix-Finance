@@ -87,6 +87,33 @@ public final class CollectionsDtos {
     }
 
     /**
+     * A row on the collections worklist — <b>one per live loan</b>, not per case.
+     *
+     * <p>The worklist is loan-driven on purpose. It used to list {@code collection_case} rows, and
+     * nothing created those automatically, so a borrower ten days past due whom nobody had clicked
+     * "Open case" on appeared in no DPD bucket at all. The case is now an internal bookkeeping row
+     * created behind the first real action (assign, log an interaction, propose a settlement); the
+     * worklist shows the debt whether or not one exists yet, which is why every case field here is
+     * nullable.
+     *
+     * <p>{@code loan} carries the full borrower + money snapshot so the register can render name,
+     * masked PAN, employer, salary, principal and outstanding without a second call.
+     */
+    public record WorklistRow(
+            Long loanId,
+            int dpd,
+            DpdBucket bucket,
+            boolean preDue,
+            UUID caseId,
+            Long assignedOfficerId,
+            String assignedOfficerName,
+            Instant caseOpenedAt,
+            String creditDecidedByName,
+            String disbursedByName,
+            LoanSummary loan) {
+    }
+
+    /**
      * Full case detail: the case, live DPD/bucket, the resolved officer name, and
      * the complete {@link LoanSummary} (loan figures + borrower). {@code loan} is
      * null only if the linked loan no longer resolves.

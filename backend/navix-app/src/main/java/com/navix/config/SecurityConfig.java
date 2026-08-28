@@ -64,7 +64,13 @@ public class SecurityConfig {
                     // needs no edit here. Both path forms are listed on purpose: the bare path is a
                     // runtime-only footgun otherwise. Services keep their own requireRole/SoD checks;
                     // this is the namespace boundary those checks assumed but nothing enforced.
-                    .requestMatchers("/api/staff", "/api/staff/**", "/api/admin/**", "/api/dsa/**").hasRole("STAFF")
+                    // /api/collections is here for the same reason: it carries borrower name, masked
+                    // PAN, employer and salary for the whole live book, and was reachable by ANY
+                    // authenticated token — a borrower's own JWT included — because it fell through
+                    // to anyRequest().authenticated(). The audience gate stops that; DSA still
+                    // satisfies ROLE_STAFF, so the service rejects that role explicitly.
+                    .requestMatchers("/api/staff", "/api/staff/**", "/api/admin/**", "/api/dsa/**",
+                            "/api/collections", "/api/collections/**").hasRole("STAFF")
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))

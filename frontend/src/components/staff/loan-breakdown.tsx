@@ -6,6 +6,7 @@ import {
   type OutstandingView,
 } from "@/lib/api/applications";
 import { buildCostBreakdown, dueDateFromSalary, daysBetween } from "@/lib/calc/loan-math";
+import { formatDate } from "@/lib/utils";
 
 /**
  * The shared loan cost-breakdown `<dl>` — principal → fee/GST → net disbursed →
@@ -61,14 +62,35 @@ export function LoanBreakdown({
       {out?.settledAmountPaise != null && (
         <Row label="Settlement (full & final)" value={paiseToINR(out.settledAmountPaise)} />
       )}
+      {/* The two dates the money hangs off. Every figure above is "as of" one of them — reading a
+          balance without knowing when it falls due is guesswork. */}
+      <Row label="Disbursed on" value={loan.disbursedOn ? formatDate(loan.disbursedOn) : "—"} />
+      <Row
+        label="Repayment due"
+        value={loan.dueDate ? formatDate(loan.dueDate) : "—"}
+        hint="On the borrower's salary day"
+      />
     </dl>
   );
 }
 
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function Row({
+  label,
+  value,
+  strong,
+  hint,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  hint?: string;
+}) {
   return (
     <div className="flex items-center justify-between">
-      <dt className="text-muted">{label}</dt>
+      <dt className="text-muted">
+        {label}
+        {hint && <span className="block text-xs text-muted/80">{hint}</span>}
+      </dt>
       <dd className={strong ? "font-semibold text-navy" : "text-ink"}>{value}</dd>
     </div>
   );

@@ -237,7 +237,7 @@ class NotificationDispatcherTest {
     void loanScopedContextWithNoApplicationIdPicksItUpFromLoanSummary() {
         when(audienceResolver.resolve(any(), any())).thenReturn(List.of(borrower(7)));
         LoanSummary loan = new LoanSummary(2L, 7L, 55L, "ACTIVE", 1_000_000L, 882_000L, 1_270_000L,
-                1_270_000L, null, null, "Priya Singh", "ABCDE1234F", null, null, null, null);
+                1_270_000L, null, null, "Priya Singh", "ABCDE1234F", null, null, null, null, false);
         when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loan));
 
         AtomicReference<RenderedMessage> captured = new AtomicReference<>();

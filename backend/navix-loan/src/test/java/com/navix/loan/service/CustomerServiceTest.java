@@ -60,6 +60,8 @@ class CustomerServiceTest {
     @Mock private com.navix.loan.repository.ApplicationReferenceRepository referenceRepository;
     @Mock private com.navix.common.verification.OtpVerifierPort otpVerifier;
     @Mock private com.navix.common.security.BorrowerIdentityPort borrowerIdentity;
+    @Mock private com.navix.common.loan.ApplicationActorDirectory applicationActorDirectory;
+    @Mock private com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
     @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private CustomerService service;
@@ -69,7 +71,8 @@ class CustomerServiceTest {
         service = new CustomerService(applicationRepository, loanRepository, profileRepository,
                 paymentRepository, repaymentService, changeLogRepository,
                 applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
-                staffDirectory, risk, jdbc, creditBriefService, documentRepository, bureauStateService,
+                staffDirectory, applicationActorDirectory, collectionCaseDirectory,
+                risk, jdbc, creditBriefService, documentRepository, bureauStateService,
                 verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
         // No collision by default — the handful of tests that DO care about this stub it explicitly.

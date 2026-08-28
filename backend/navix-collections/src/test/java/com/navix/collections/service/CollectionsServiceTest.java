@@ -46,6 +46,9 @@ class CollectionsServiceTest {
     @Mock
     private StaffDirectory staffDirectory;
 
+    @Mock
+    private com.navix.common.loan.ApplicationActorDirectory applicationActorDirectory;
+
     private CollectionsService service;
 
     private final UUID caseId = UUID.randomUUID();
@@ -53,7 +56,8 @@ class CollectionsServiceTest {
     @BeforeEach
     void setUp() {
         service = new CollectionsService(caseRepository, interactionRepository,
-                loanDirectory, staffDirectory, new DpdCalculator(), event -> {});
+                loanDirectory, staffDirectory, new DpdCalculator(), applicationActorDirectory,
+                event -> {});
         // Default actor is a Collection Head (allowed to assign); tests override where needed.
         ActorContext.set(new CurrentActor("100", "Head", "COLLECTION_HEAD"));
     }
@@ -74,7 +78,55 @@ class CollectionsServiceTest {
         return new LoanSummary(loanId, 7L, 1L, "ACTIVE",
                 800_000L, 705_600L, 1_040_000L, 1_040_000L,
                 LocalDate.now().minusDays(30), dueDate,
-                "Asha Verma", "ABXXXXX34F", "Acme Corp", "SALARIED", 3_200_000L, "HDFC");
+                "Asha Verma", "ABXXXXX34F", "Acme Corp", "SALARIED", 3_200_000L, "HDFC",
+                dueDate != null && dueDate.isAfter(LocalDate.now()));
+    }
+
+    /**
+     * The point of the rebuild: the worklist is driven by LOANS, not by hand-opened cases. A borrower
+     * past due whom nobody has opened a case for used to appear in no DPD bucket at all — the register
+     * showed the bookkeeping instead of the debt.
+     */
+    @Test
+    void worklistIncludesALoanThatHasNoCaseYet() {
+        LoanSummary overdue = loanSummary(2L, LocalDate.now().minusDays(9));
+        when(loanDirectory.listCollectible(any())).thenReturn(java.util.List.of(overdue));
+        when(caseRepository.findByLoanIdIn(java.util.List.of(2L))).thenReturn(java.util.List.of());
+        when(applicationActorDirectory.byLoanId(java.util.List.of(2L))).thenReturn(java.util.Map.of());
+
+        var rows = service.worklist(LocalDate.now());
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).caseId()).isNull();
+        assertThat(rows.get(0).assignedOfficerName()).isNull();
+        assertThat(rows.get(0).bucket()).isEqualTo(DpdBucket.T8_T30);
+        assertThat(rows.get(0).dpd()).isEqualTo(9);
+    }
+
+    /** A loan still running to term is workable, and flagged so the UI never calls it delinquent. */
+    @Test
+    void worklistFlagsANotYetDueLoanAsPreDueInTheUpcomingBucket() {
+        LoanSummary soon = loanSummary(3L, LocalDate.now().plusDays(4));
+        when(loanDirectory.listCollectible(any())).thenReturn(java.util.List.of(soon));
+        when(caseRepository.findByLoanIdIn(java.util.List.of(3L))).thenReturn(java.util.List.of());
+        when(applicationActorDirectory.byLoanId(java.util.List.of(3L))).thenReturn(java.util.Map.of());
+
+        var rows = service.worklist(LocalDate.now());
+
+        assertThat(rows.get(0).preDue()).isTrue();
+        assertThat(rows.get(0).bucket()).isEqualTo(DpdBucket.UPCOMING);
+        assertThat(rows.get(0).dpd()).isZero();
+    }
+
+    /** A settled loan drops off the worklist — there is nothing left to collect. */
+    @Test
+    void worklistDropsSettledLoans() {
+        LoanSummary closed = new LoanSummary(4L, 7L, 1L, "CLOSED", 800_000L, 705_600L, 1_040_000L, 0L,
+                LocalDate.now().minusDays(30), LocalDate.now().minusDays(2),
+                "Asha Verma", "ABXXXXX34F", "Acme Corp", "SALARIED", 3_200_000L, "HDFC", false);
+        when(loanDirectory.listCollectible(any())).thenReturn(java.util.List.of(closed));
+
+        assertThat(service.worklist(LocalDate.now())).isEmpty();
     }
 
     @Test

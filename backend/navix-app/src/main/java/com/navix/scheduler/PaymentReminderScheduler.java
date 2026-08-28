@@ -3,6 +3,7 @@ package com.navix.scheduler;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.entity.Loan;
+import com.navix.common.loan.LoanDirectory;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.service.RepaymentService;
 import java.time.LocalDate;
@@ -41,25 +42,35 @@ public class PaymentReminderScheduler {
     /** Keep nudging for this many days after the grace day, then collections owns it (T0–T7). */
     private static final int OVERDUE_BUCKET_DAYS = 7;
 
+    /** Dates are Indian calendar dates; the server clock is UTC in ECS. */
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+
     private final LoanRepository loanRepository;
     private final RepaymentService repaymentService;
+    private final LoanDirectory loanDirectory;
     private final ApplicationEventPublisher events;
 
     public PaymentReminderScheduler(LoanRepository loanRepository, RepaymentService repaymentService,
-                                    ApplicationEventPublisher events) {
+                                    LoanDirectory loanDirectory, ApplicationEventPublisher events) {
         this.loanRepository = loanRepository;
         this.repaymentService = repaymentService;
+        this.loanDirectory = loanDirectory;
         this.events = events;
     }
 
     /** Runs daily at 09:00 (override with {@code navix.reminders.cron}). */
     @Scheduled(cron = "${navix.reminders.cron:0 0 9 * * *}")
     public void sendDueAndOverdueReminders() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(IST);
         List<Loan> live = loanRepository.findByStatusIn(List.of(LoanStatus.ACTIVE, LoanStatus.OVERDUE));
         int sent = 0;
         for (Loan loan : live) {
             try {
+                // Move a loan into collections the day it goes past due. Opening a case no longer
+                // does this: a case can now be opened pre-emptively, days before the due date, and
+                // flipping the status there would brand an on-time borrower delinquent. The gate
+                // lives inside markInCollections, so this call is a no-op until DPD > 0.
+                loanDirectory.markInCollections(loan.getId());
                 if (sendReminderFor(loan, today)) {
                     sent++;
                 }

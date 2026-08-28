@@ -29,6 +29,20 @@ public final class LoanDtos {
     }
 
     /**
+     * ADMIN records a payment that already happened — a branch walk-in, a bank line reconciled days
+     * later, a transfer the borrower never uploaded. Recorded and verified in one step (ADMIN already
+     * holds the verify right, so queueing it for themselves is theatre), which is why {@code paidOn}
+     * is mandatory here: the whole point of the call is to state the date the money actually moved.
+     */
+    public record AdminRepaymentRequest(
+            @Positive long amountPaise,
+            @NotNull PaymentMethod method,
+            String txnRef,
+            String proofUrl,
+            @NotNull LocalDate paidOn) {
+    }
+
+    /**
      * Reject a recorded payment. {@code reason} is required and must be one of the fixed picklist
      * codes ({@code WRONG_REFERENCE}, {@code AMOUNT_MISMATCH}, {@code NOT_RECEIVED},
      * {@code UNREADABLE_PROOF}, {@code OTHER}); {@code note} is optional free text.

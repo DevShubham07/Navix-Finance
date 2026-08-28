@@ -98,6 +98,8 @@ public class CustomerService {
     private final CustomerOwnerRepository ownerRepository;
     private final CustomerCallLogRepository callLogRepository;
     private final StaffDirectory staffDirectory;
+    private final com.navix.common.loan.ApplicationActorDirectory applicationActorDirectory;
+    private final com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
     private final RiskPort risk;
     private final JdbcTemplate jdbc;
     private final CreditBriefService creditBriefService;
@@ -289,6 +291,12 @@ public class CustomerService {
             }
         }
 
+        // Who handled each customer's latest file, batched over the same application ids the stage
+        // dates were resolved from, plus the collections officer keyed by loan.
+        Map<Long, com.navix.common.loan.ApplicationActorDirectory.HandledBy> handledByApp =
+                applicationActorDirectory.byApplicationId(latestAppIdByCustomerForEvents.values());
+        Map<Long, String> collectionOfficerNameByLoanId = collectionOfficerNames(byCustomer.keySet());
+
         LocalDate today = LocalDate.now();
         List<CustomerSummary> out = new ArrayList<>();
         for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
@@ -331,6 +339,12 @@ public class CustomerService {
                     : (amountIsRequested ? latestApp.getAmountRequested() : latestApp.getEligibleLimit());
             Instant statusChangedAt = latestApp == null ? null
                     : statusChangedAtByAppId.getOrDefault(latestApp.getId(), latestApp.getCreatedAt());
+            var handled = latestApp == null
+                    ? com.navix.common.loan.ApplicationActorDirectory.HandledBy.NONE
+                    : handledByApp.getOrDefault(latestApp.getId(),
+                            com.navix.common.loan.ApplicationActorDirectory.HandledBy.NONE);
+            String collectionOfficerName = latestLoan == null ? null
+                    : collectionOfficerNameByLoanId.get(latestLoan.getId());
             CustomerSummary cs = new CustomerSummary(
                     customerId,
                     profile != null ? profile.getFullName() : null,
@@ -358,7 +372,10 @@ public class CustomerService {
                     amountIsRequested,
                     latestLoan != null ? latestLoan.getDueDate() : null,
                     latestApp != null ? latestApp.getMarkedPendingAt() : null,
-                    statusChangedAt);
+                    statusChangedAt,
+                    handled.creditDecidedByName(),
+                    handled.disbursedByName(),
+                    collectionOfficerName);
             if (matches(cs, apps, needle)) {
                 out.add(cs);
             }
@@ -370,6 +387,32 @@ public class CustomerService {
                 Comparator.nullsLast(Comparator.reverseOrder())));
         return out;
     }
+
+    /**
+     * Loan id → assigned collections officer's name, for every loan these customers hold. One query
+     * across the whole page via the collections seam, then one name lookup per distinct officer.
+     */
+    private Map<Long, String> collectionOfficerNames(Collection<Long> customerIds) {
+        List<Long> loanIds = customerIds.stream()
+                .flatMap(id -> loanRepository.findByCustomerId(id).stream())
+                .map(Loan::getId)
+                .toList();
+        if (loanIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> officerIdByLoanId = collectionCaseDirectory.assignedOfficerByLoanId(loanIds);
+        Map<Long, String> nameByStaffId = new HashMap<>();
+        Map<Long, String> result = new HashMap<>();
+        officerIdByLoanId.forEach((loanId, staffId) -> {
+            if (staffId == null) {
+                return;
+            }
+            result.put(loanId, nameByStaffId.computeIfAbsent(staffId,
+                    id -> staffDirectory.findStaff(id).map(StaffSummary::name).orElse(null)));
+        });
+        return result;
+    }
+
 
     /**
      * Inclusive {@code [from, to)} membership. A customer with no application has no date, so they

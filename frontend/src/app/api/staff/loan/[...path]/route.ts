@@ -31,8 +31,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
   const { path } = await ctx.params;
   const suffix = joinPath(path);
-  // Record a repayment or verify/reject one; nothing else under /api/loan is a POST.
-  if (!/^\d+\/repayments(\/\d+\/(verify|reject))?$/.test(suffix)) {
+  // Record a repayment, log one on the borrower's behalf (ADMIN, backdated), or verify/reject one;
+  // nothing else under /api/loan is a POST.
+  if (!/^\d+\/repayments(\/(admin-record|\d+\/(verify|reject)))?$/.test(suffix)) {
     return forbidden("Unsupported loan action.");
   }
 

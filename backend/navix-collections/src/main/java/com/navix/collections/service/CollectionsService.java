@@ -3,12 +3,15 @@ package com.navix.collections.service;
 import com.navix.collections.dto.CollectionsDtos.CaseDetailView;
 import com.navix.collections.dto.CollectionsDtos.CaseView;
 import com.navix.collections.dto.CollectionsDtos.UpcomingLoanView;
+import com.navix.collections.dto.CollectionsDtos.WorklistRow;
 import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.InteractionLog;
 import com.navix.collections.repository.CollectionCaseRepository;
 import com.navix.collections.repository.InteractionLogRepository;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.loan.ApplicationActorDirectory;
+import com.navix.common.loan.ApplicationActorDirectory.HandledBy;
 import com.navix.common.loan.LoanDirectory;
 import com.navix.common.loan.LoanSummary;
 import com.navix.common.notification.event.CollectionCaseOpenedEvent;
@@ -24,7 +27,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -58,6 +64,7 @@ public class CollectionsService {
     private final LoanDirectory loanDirectory;
     private final StaffDirectory staffDirectory;
     private final DpdCalculator dpdCalculator;
+    private final ApplicationActorDirectory applicationActorDirectory;
     private final ApplicationEventPublisher eventPublisher;
 
     /**
@@ -146,11 +153,68 @@ public class CollectionsService {
      */
     @Transactional(readOnly = true)
     public List<CaseView> listCaseViews() {
+        requireCollectionsStaff();
         return caseRepository.findAll(org.springframework.data.domain.Sort.by(
                         org.springframework.data.domain.Sort.Direction.DESC, "createdAt")).stream()
                 .map(this::toListView)
                 .filter(v -> v.loanStatus() == null || !TERMINAL_LOAN_STATUSES.contains(v.loanStatus()))
                 .toList();
+    }
+
+    /**
+     * The collections worklist: one row per live loan, past due or falling due within the next week.
+     *
+     * <p>Loan-driven, not case-driven. The DPD buckets used to list {@code collection_case} rows and
+     * nothing created those automatically, so an overdue borrower nobody had clicked "Open case" on
+     * appeared in no bucket at all — the register showed the bookkeeping, not the debt. A case is now
+     * an implementation detail created behind the first real action, so every case field here is
+     * simply null until then.
+     *
+     * <p>Four batched reads for the whole page (loans, cases, officer names, handled-by), never a
+     * lookup per row: the previous per-case {@code findLoan} alone cost three queries each.
+     */
+    @Transactional(readOnly = true)
+    public List<WorklistRow> worklist(LocalDate asOf) {
+        requireCollectionsStaff();
+        LocalDate at = asOf != null ? asOf : LocalDate.now();
+        List<LoanSummary> loans = loanDirectory.listCollectible(at).stream()
+                .filter(loan -> loan.status() == null || !TERMINAL_LOAN_STATUSES.contains(loan.status()))
+                .toList();
+        if (loans.isEmpty()) {
+            return List.of();
+        }
+        List<Long> loanIds = loans.stream().map(LoanSummary::loanId).filter(Objects::nonNull).toList();
+
+        Map<Long, CollectionCase> caseByLoanId = new LinkedHashMap<>();
+        for (CollectionCase c : caseRepository.findByLoanIdIn(loanIds)) {
+            caseByLoanId.putIfAbsent(c.getLoanId(), c);
+        }
+        Map<Long, String> officerNames = officerNames(caseByLoanId.values().stream()
+                .map(CollectionCase::getAssignedOfficerId).filter(Objects::nonNull).distinct().toList());
+        Map<Long, HandledBy> handledBy = applicationActorDirectory.byLoanId(loanIds);
+
+        return loans.stream().map(loan -> {
+            CollectionCase c = caseByLoanId.get(loan.loanId());
+            HandledBy handled = handledBy.getOrDefault(loan.loanId(), HandledBy.NONE);
+            int dpd = dpd(loan);
+            return new WorklistRow(
+                    loan.loanId(), dpd, dpdCalculator.bucket(dpd), loan.preDue(),
+                    c == null ? null : c.getId(),
+                    c == null ? null : c.getAssignedOfficerId(),
+                    c == null ? null : officerNames.get(c.getAssignedOfficerId()),
+                    c == null ? null : c.getCreatedAt(),
+                    handled.creditDecidedByName(), handled.disbursedByName(),
+                    loan);
+        }).toList();
+    }
+
+    /** Batched id → name for a page of officers; one {@link StaffDirectory} hit per distinct staffer. */
+    private Map<Long, String> officerNames(List<Long> officerIds) {
+        Map<Long, String> names = new LinkedHashMap<>();
+        for (Long id : officerIds) {
+            names.put(id, staffDirectory.findStaff(id).map(StaffSummary::name).orElse(null));
+        }
+        return names;
     }
 
     /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before {@code asOf}). */
@@ -297,6 +361,22 @@ public class CollectionsService {
                 loan != null ? loan.borrowerName() : null,
                 loan != null ? loan.outstandingPaise() : null,
                 loan != null ? loan.dueDate() : null);
+    }
+
+    /**
+     * The collections worklist carries borrower name, masked PAN, employer and salary for every live
+     * loan, so it is customer data in the sense the DSA firewall means. A DSA token satisfies
+     * {@code hasRole("STAFF")} at the namespace boundary — the audience is staff — so the role has to
+     * be rejected here, exactly as {@code CustomerController.requireStaff} does.
+     */
+    private void requireCollectionsStaff() {
+        String role = ActorContext.get().role();
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+        if ("DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view customer data");
+        }
     }
 
     private int dpd(LoanSummary loan) {

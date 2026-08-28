@@ -3,6 +3,7 @@ package com.navix.collections.controller;
 import com.navix.collections.dto.CollectionsDtos.AssignOfficerRequest;
 import com.navix.collections.dto.CollectionsDtos.CaseDetailView;
 import com.navix.collections.dto.CollectionsDtos.CaseView;
+import com.navix.collections.dto.CollectionsDtos.WorklistRow;
 import com.navix.collections.dto.CollectionsDtos.CollectionPaymentView;
 import com.navix.collections.dto.CollectionsDtos.DpdView;
 import com.navix.collections.dto.CollectionsDtos.InteractionView;
@@ -52,6 +53,16 @@ public class CollectionsController {
     private final SettlementService settlementService;
     private final CollectionPaymentService collectionPaymentService;
     private final DpdCalculator dpdCalculator;
+
+    /**
+     * The collections worklist — one row per live loan, past due or due within the next week,
+     * whether or not a case has been opened on it. This is what the DPD bucket pages render.
+     */
+    @GetMapping("/worklist")
+    public ApiResponse<List<WorklistRow>> worklist(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return ApiResponse.ok(collectionsService.worklist(asOf));
+    }
 
     /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before {@code dueBy}). */
     @GetMapping("/loans")

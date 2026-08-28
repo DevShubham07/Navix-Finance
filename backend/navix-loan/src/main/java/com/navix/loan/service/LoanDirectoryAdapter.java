@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,8 +31,16 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class LoanDirectoryAdapter implements LoanDirectory {
 
-    /** Statuses a loan can be in to still be eligible for a fresh collections case. */
-    private static final List<LoanStatus> COLLECTIBLE = List.of(LoanStatus.ACTIVE, LoanStatus.OVERDUE);
+    /**
+     * Statuses a loan can be in to appear on the collections worklist. IN_COLLECTIONS belongs here
+     * too: the worklist is now driven by loans rather than by hand-opened cases, so a loan already
+     * flipped into collections must keep showing up in its DPD bucket.
+     */
+    private static final List<LoanStatus> COLLECTIBLE =
+            List.of(LoanStatus.ACTIVE, LoanStatus.OVERDUE, LoanStatus.IN_COLLECTIONS);
+
+    /** Every date here is an Indian calendar date; the server clock is UTC in ECS. */
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
 
     private final LoanRepository loanRepository;
     private final LoanApplicationRepository applicationRepository;
@@ -50,28 +59,42 @@ public class LoanDirectoryAdapter implements LoanDirectory {
     @Override
     @Transactional(readOnly = true)
     public List<LoanSummary> listCollectible(LocalDate asOf) {
-        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now();
-        return loanRepository
-                .findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc(COLLECTIBLE, effectiveAsOf)
-                .stream().map(this::toSummary).toList();
+        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now(IST);
+        // Past due PLUS the next week: an officer chasing a borrower before salary day is the whole
+        // point of the UPCOMING bucket, and until now a not-yet-due loan appeared nowhere.
+        LocalDate horizon = effectiveAsOf.plusDays(PRE_DUE_WINDOW_DAYS);
+        // Batched for the same reason listUpcoming is: this now reaches a week past today, so it is
+        // no longer the short overdue tail that made per-row resolution acceptable, and it backs a
+        // polled register.
+        return enrich(loanRepository
+                .findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc(COLLECTIBLE, horizon),
+                effectiveAsOf);
     }
 
     /**
      * {@inheritDoc}
      *
-     * <p>Batched deliberately. {@link #listCollectible} only ever sees the overdue tail, so mapping
-     * it through the per-loan {@code toSummary} is fine; this list is effectively the entire live
-     * book (every advance runs to at most {@code LoanMath.MAX_TERM_DAYS}, so almost everything
-     * outstanding is "not yet due"), and per-row resolution would cost four queries each. The bulk
-     * finders and {@link RepaymentService#outstandingForAll} already exist for exactly this shape --
-     * see {@code LoanRegisterService.list}, which enriches the loan register the same way.
+     * <p>Batched deliberately: this list is effectively the entire live book (every advance runs to
+     * at most {@code LoanMath.MAX_TERM_DAYS}, so almost everything outstanding is "not yet due"),
+     * and per-row resolution would cost four queries each. The bulk finders and
+     * {@link RepaymentService#outstandingForAll} already exist for exactly this shape -- see
+     * {@code LoanRegisterService.list}, which enriches the loan register the same way.
      */
     @Override
     @Transactional(readOnly = true)
     public List<LoanSummary> listUpcoming(LocalDate asOf) {
-        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now();
-        List<Loan> loans = loanRepository
-                .findByStatusInAndDueDateGreaterThanOrderByDueDateAsc(COLLECTIBLE, effectiveAsOf);
+        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now(IST);
+        return enrich(loanRepository
+                .findByStatusInAndDueDateGreaterThanOrderByDueDateAsc(COLLECTIBLE, effectiveAsOf),
+                effectiveAsOf);
+    }
+
+    /**
+     * Resolve a page of loans into snapshots in a fixed number of queries: the applications, their
+     * KYC profiles, and one {@link RepaymentService#outstandingForAll} pass — rather than the three
+     * queries per row the single-loan {@link #findLoan} path costs.
+     */
+    private List<LoanSummary> enrich(List<Loan> loans, LocalDate asOf) {
         if (loans.isEmpty()) {
             // Short-circuit: the *In finders below are not valid SQL against an empty collection.
             return List.of();
@@ -84,7 +107,7 @@ public class LoanDirectoryAdapter implements LoanDirectory {
         Map<Long, CustomerProfile> profileByAppId = appIds.isEmpty() ? Map.of()
                 : profileRepository.findByApplicationIdIn(appIds).stream()
                         .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
-        Map<Long, Long> owedByLoanId = repaymentService.outstandingForAll(loans, effectiveAsOf);
+        Map<Long, Long> owedByLoanId = repaymentService.outstandingForAll(loans, asOf);
         return loans.stream().map(loan -> {
             LoanApplication app = appByLoanId.get(loan.getId());
             CustomerProfile profile = app != null ? profileByAppId.get(app.getId()) : null;
@@ -99,7 +122,12 @@ public class LoanDirectoryAdapter implements LoanDirectory {
             return;
         }
         loanRepository.findById(loanId).ifPresent(loan -> {
-            if (loan.getStatus() == LoanStatus.ACTIVE || loan.getStatus() == LoanStatus.OVERDUE) {
+            // Only once the loan is genuinely past due. A pre-emptive case on a loan that is still
+            // running to term is a courtesy call, not a delinquency: flipping the status would show
+            // an on-time borrower as in-collections in every segment, queue and dashboard count.
+            // Called unconditionally by the daily reminder sweep, so the flip lands the day it is due.
+            boolean pastDue = loan.getDueDate() != null && LocalDate.now(IST).isAfter(loan.getDueDate());
+            if (pastDue && (loan.getStatus() == LoanStatus.ACTIVE || loan.getStatus() == LoanStatus.OVERDUE)) {
                 loan.setStatus(LoanStatus.IN_COLLECTIONS);
                 loanRepository.save(loan);
             }
@@ -135,14 +163,14 @@ public class LoanDirectoryAdapter implements LoanDirectory {
 
     /**
      * The snapshot builder proper, over collaborators the caller has already resolved. Split out so
-     * a caller holding a whole page of loans ({@link #listUpcoming}) can batch those lookups once
+     * a caller holding a whole page of loans ({@link #enrich}) can batch those lookups once
      * instead of paying for them per row, while single-loan callers keep the convenience overload
      * above. Both paths therefore produce a byte-identical {@link LoanSummary}.
      */
     private LoanSummary toSummary(Loan loan, LoanApplication app, CustomerProfile profile, long owed) {
         // Effective status (ACTIVE → OVERDUE past due) and the penalty/prepayment-aware balance, so
         // collections shows the same "amount owed" the borrower sees on the repay page.
-        LoanStatus effective = loan.effectiveStatus(LocalDate.now());
+        LoanStatus effective = loan.effectiveStatus(LocalDate.now(IST));
         return new LoanSummary(
                 loan.getId(),
                 loan.getCustomerId(),
@@ -159,6 +187,7 @@ public class LoanDirectoryAdapter implements LoanDirectory {
                 profile != null ? profile.getEmployer() : null,
                 profile != null ? profile.getEmploymentStatus() : null,
                 profile != null ? profile.getMonthlySalaryPaise() : null,
-                profile != null ? profile.getSalaryBank() : null);
+                profile != null ? profile.getSalaryBank() : null,
+                loan.getDueDate() != null && loan.getDueDate().isAfter(LocalDate.now(IST)));
     }
 }

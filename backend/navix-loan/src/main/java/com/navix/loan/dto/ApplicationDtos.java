@@ -99,7 +99,15 @@ public final class ApplicationDtos {
             Instant currentStageEnteredAt,
             /** When the borrower started this application (V53) — the true creation date, distinct
              *  from {@code currentStageEnteredAt}, which resets on every status transition. */
-            Instant createdAt) {
+            Instant createdAt,
+            /** Who actually made the credit call, and who released the money — read from the event
+             *  trail by {@code ApplicationActorResolver} on the same batched staff paths as
+             *  {@code assignedExecutiveName}, and null everywhere else. Distinct from the assignee:
+             *  on a reassigned or Head-decided file they are different people. */
+            String creditDecidedByName,
+            String disbursedByName,
+            /** The collections executive working this loan, when a case has been assigned. */
+            String collectionOfficerName) {
 
         public static ApplicationView of(LoanApplication a) {
             return of(a, null, null);
@@ -149,7 +157,7 @@ public final class ApplicationDtos {
                     a.getMarkedPendingAt(), a.getPendingReason(),
                     a.getDisbursalAccountNumber(), a.getDisbursalIfsc(), a.getDisbursalHolderName(),
                     a.getDisbursalBank(), a.getDisbursalAccountChanged(),
-                    a.getDisbursalAccountVerified(), null, null, a.getCreatedAt());
+                    a.getDisbursalAccountVerified(), null, null, a.getCreatedAt(), null, null, null);
         }
 
         /**
@@ -166,7 +174,26 @@ public final class ApplicationDtos {
                     sanctionTenureDays, sanctionRemarks, sanctionedAt, markedPendingAt, pendingReason,
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
-                    currentStageEnteredAt, createdAt);
+                    currentStageEnteredAt, createdAt,
+                    creditDecidedByName, disbursedByName, collectionOfficerName);
+        }
+
+        /**
+         * Wither for the three "who handled this" names. Separate from {@link #withAssignment} for
+         * the same reason that one is separate from {@code of(...)}: they cost extra batched reads
+         * (the event trail, the collections case table) that only the staff registers need.
+         */
+        public ApplicationView withHandledBy(String creditDecidedByName, String disbursedByName,
+                                             String collectionOfficerName) {
+            return new ApplicationView(id, customerId, status, amountRequestedPaise, eligibleLimitPaise,
+                    purpose, assignedExecutiveId, loanId, salaryCreditDay, fastTrack, creditScore,
+                    starRating, recommendation, customerName, customerMobile, pan, salaryAccountNumber,
+                    salaryIfsc, loanStatus, loanDueDate, sanctionedAmountPaise, approvedRepaymentDate,
+                    sanctionTenureDays, sanctionRemarks, sanctionedAt, markedPendingAt, pendingReason,
+                    disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
+                    disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
+                    currentStageEnteredAt, createdAt,
+                    creditDecidedByName, disbursedByName, collectionOfficerName);
         }
     }
 

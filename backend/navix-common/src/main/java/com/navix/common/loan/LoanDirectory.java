@@ -20,21 +20,27 @@ public interface LoanDirectory {
     /** The loan + borrower snapshot for {@code loanId}, or empty if no such loan. */
     Optional<LoanSummary> findLoan(Long loanId);
 
+
     /**
-     * Loans eligible for collections as of {@code asOf}: ACTIVE or OVERDUE with a
-     * due date on or before {@code asOf}. Drives the "open a case" picker. Loans
-     * already moved to IN_COLLECTIONS are excluded (they have a case).
+     * The collections worklist as of {@code asOf}: every live loan (ACTIVE / OVERDUE /
+     * IN_COLLECTIONS) already past due, <b>plus</b> those falling due within the next
+     * {@link #PRE_DUE_WINDOW_DAYS} days so an officer can chase the borrower before salary day.
+     * Sorted by due date, soonest first.
+     *
+     * <p>Loans further out are excluded on purpose — without a window this returns the entire live
+     * book from the day of disbursal and the UPCOMING bucket stops meaning anything.
      */
     List<LoanSummary> listCollectible(LocalDate asOf);
+
+    /** How far ahead of the due date a loan becomes workable by collections. */
+    int PRE_DUE_WINDOW_DAYS = 7;
 
     /**
      * Live loans whose due date is still AHEAD of {@code asOf}, soonest first — the pre-due
      * watchlist behind the collections UPCOMING bucket. The counterpart to
      * {@link #listCollectible(LocalDate)}, which covers loans already due.
      *
-     * <p>Strictly read-only: the UPCOMING bucket watches these loans, it does not work them, so
-     * nothing here opens a case or flips a loan into IN_COLLECTIONS. A loan that already has a
-     * case is not filtered out at this level — that is the caller's business.
+     * <p>Strictly read-only: nothing here opens a case or flips a loan into IN_COLLECTIONS.
      *
      * <p>Implementations MUST batch: because every advance runs to at most
      * {@code LoanMath.MAX_TERM_DAYS}, "not yet due" is effectively the whole live book, so this
@@ -43,8 +49,11 @@ public interface LoanDirectory {
     List<LoanSummary> listUpcoming(LocalDate asOf);
 
     /**
-     * Move a loan into collections: flip ACTIVE/OVERDUE → IN_COLLECTIONS. Idempotent
-     * and a no-op for any other status. Called when a collection case is opened.
+     * Move a loan into collections: flip ACTIVE/OVERDUE → IN_COLLECTIONS <b>once it is actually past
+     * due</b>. Idempotent, and a no-op for any other status — and, deliberately, for a loan that has
+     * not reached its due date: a pre-emptive case is a courtesy call, and flipping the status would
+     * report a borrower who has done nothing wrong as delinquent across every queue, segment and
+     * dashboard count.
      */
     void markInCollections(Long loanId);
 

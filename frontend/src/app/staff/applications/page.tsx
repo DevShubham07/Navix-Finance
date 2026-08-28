@@ -25,6 +25,7 @@ import {
   CollectionPaymentValidationQueue,
 } from "@/components/staff/collection-payments";
 import { CollectionAssignActions } from "@/components/staff/pipeline/collection-actions";
+import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import {
   QueueDateFilter,
   QueueRangeProvider,
@@ -343,7 +344,18 @@ function RepaymentColumn({
       {apps.length === 0 ? (
         <p className="px-5 py-6 text-center text-sm text-muted">{emptyText}</p>
       ) : (
-        <QueueTable apps={apps} actions={(a) => <CollectionAssignActions app={a} compact />} />
+        <QueueTable
+          apps={apps}
+          actions={(a) => (
+            <>
+              {/* ADMIN-only, and only on a live loan: log money that already came in, on the date it
+                  came in. Sits beside the collections cluster because this is the same row a Head
+                  works when chasing the borrower. */}
+              <AdminLogPaymentButton loanId={a.loanId} loanStatus={a.loanStatus} compact />
+              <CollectionAssignActions app={a} compact />
+            </>
+          )}
+        />
       )}
     </div>
   );

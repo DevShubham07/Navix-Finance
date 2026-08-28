@@ -26,6 +26,15 @@ public interface ApplicationEventRepository extends JpaRepository<ApplicationEve
     List<ApplicationEvent> findByApplicationIdInOrderByAtDesc(List<Long> applicationIds);
 
     /**
+     * Newest-first events for a page of applications, narrowed to a set of action labels — backs
+     * {@code ApplicationActorResolver} ("who decided this file", "who released the money"). Newest
+     * first so the caller keeps the first hit per application and ignores the rest. Callers MUST
+     * short-circuit on an empty collection; {@code in ()} is not valid SQL.
+     */
+    List<ApplicationEvent> findByApplicationIdInAndActionInOrderByAtDesc(
+            java.util.Collection<Long> applicationIds, java.util.Collection<String> actions);
+
+    /**
      * Every event by any of {@code actorIds} in the half-open window {@code [from, to)} — backs the
      * staff-performance summary.
      *

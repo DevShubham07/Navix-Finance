@@ -2,6 +2,7 @@ package com.navix.loan.controller;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
+import com.navix.common.loan.ApplicationActorDirectory;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import com.navix.common.web.ApiResponse;
@@ -73,6 +74,8 @@ public class ApplicationController {
     private final JourneyService journey;
     private final OfferService offer;
     private final StaffDirectory staffDirectory;
+    private final ApplicationActorDirectory applicationActorDirectory;
+    private final com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
     private final LoanRepository loanRepository;
     private final ApplicationEventRepository eventRepository;
 
@@ -473,12 +476,39 @@ public class ApplicationController {
         Map<Long, String> nameByExecutiveId = resolveExecutiveNames(apps);
         Map<Long, java.time.Instant> stageEnteredAtByAppId = latestEventAtByAppId(
                 apps.stream().map(LoanApplication::getId).toList());
+        // Who actually handled the file: the credit decider and the disburser from the event trail,
+        // and the collections officer from the case table. Two more batched reads for the page —
+        // a register that shows a queue without naming who worked it is guesswork for the next
+        // person who picks it up.
+        Map<Long, ApplicationActorDirectory.HandledBy> handledBy =
+                applicationActorDirectory.byApplicationId(apps.stream().map(LoanApplication::getId).toList());
+        Map<Long, String> officerByLoanId = collectionOfficerNames(loanIds);
         return apps.stream()
-                .map(a -> ApplicationView.of(a, byApp.get(a.getId()),
-                        a.getLoanId() != null ? byLoan.get(a.getLoanId()) : null)
-                        .withAssignment(nameByExecutiveId.get(a.getAssignedExecutiveId()),
-                                stageEnteredAtByAppId.get(a.getId())))
+                .map(a -> {
+                    var handled = handledBy.getOrDefault(a.getId(), ApplicationActorDirectory.HandledBy.NONE);
+                    return ApplicationView.of(a, byApp.get(a.getId()),
+                            a.getLoanId() != null ? byLoan.get(a.getLoanId()) : null)
+                            .withAssignment(nameByExecutiveId.get(a.getAssignedExecutiveId()),
+                                    stageEnteredAtByAppId.get(a.getId()))
+                            .withHandledBy(handled.creditDecidedByName(), handled.disbursedByName(),
+                                    a.getLoanId() == null ? null : officerByLoanId.get(a.getLoanId()));
+                })
                 .toList();
+    }
+
+    /** Loan id → assigned collections officer's name, batched via the existing collections seam. */
+    private Map<Long, String> collectionOfficerNames(List<Long> loanIds) {
+        if (loanIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> officerIdByLoanId = collectionCaseDirectory.assignedOfficerByLoanId(loanIds);
+        Map<Long, String> nameByStaffId = new java.util.LinkedHashMap<>();
+        for (Long staffId : officerIdByLoanId.values().stream().filter(Objects::nonNull).distinct().toList()) {
+            nameByStaffId.put(staffId, resolveExecutiveName(staffId));
+        }
+        Map<Long, String> result = new java.util.LinkedHashMap<>();
+        officerIdByLoanId.forEach((loanId, staffId) -> result.put(loanId, nameByStaffId.get(staffId)));
+        return result;
     }
 
     private String resolveExecutiveName(Long executiveId) {

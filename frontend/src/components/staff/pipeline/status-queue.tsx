@@ -330,6 +330,11 @@ export function QueueTable({
               <th>Amount</th>
               <th>Due</th>
               <th>Credit</th>
+              {/* Who worked the file. "Credit exec" is who DECIDED it — on a reassigned or
+                  Head-decided file that is not the assignee. Blank until the stage happens. */}
+              <th title="The credit executive who decided this file">Credit exec</th>
+              <th title="Who released the money">Disbursed by</th>
+              <th title="The assigned collections executive">Collections exec</th>
               <th className="staff-sticky-actions">Actions</th>
             </tr>
           </thead>

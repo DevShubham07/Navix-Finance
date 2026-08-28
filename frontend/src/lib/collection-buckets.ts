@@ -1,4 +1,4 @@
-import type { CaseView, DpdBucket } from "@/lib/api/applications";
+import type { DpdBucket } from "@/lib/api/applications";
 
 export const COLLECTION_BUCKETS: ReadonlyArray<{ bucket: DpdBucket; label: string }> = [
   { bucket: "UPCOMING", label: "Upcoming" },
@@ -9,9 +9,10 @@ export const COLLECTION_BUCKETS: ReadonlyArray<{ bucket: DpdBucket; label: strin
   { bucket: "T90_PLUS", label: "90+ DPD" },
 ];
 
-export function collectionBucketCounts(cases: CaseView[]): Record<DpdBucket, number> {
+/** Rows per bucket. Takes anything carrying a `bucket` — worklist rows today, cases historically. */
+export function collectionBucketCounts(rows: ReadonlyArray<{ bucket: DpdBucket }>): Record<DpdBucket, number> {
   const counts = Object.fromEntries(COLLECTION_BUCKETS.map(({ bucket }) => [bucket, 0])) as Record<DpdBucket, number>;
-  for (const item of cases) counts[item.bucket] += 1;
+  for (const item of rows) counts[item.bucket] += 1;
   return counts;
 }
 

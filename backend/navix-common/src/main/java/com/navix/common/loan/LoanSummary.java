@@ -11,6 +11,10 @@ import java.time.LocalDate;
  * status name (kept as a {@code String} so this record stays free of the loan
  * enum). Borrower fields are sourced from the customer KYC snapshot; the PAN is
  * already masked. Any borrower field may be {@code null} when no profile exists.
+ *
+ * <p>{@code preDue} is true while the due date is still in the future: collections can work such a
+ * loan (a courtesy call before salary day), but it is not a delinquency and must never be presented
+ * or counted as one.
  */
 public record LoanSummary(
         Long loanId,
@@ -28,5 +32,6 @@ public record LoanSummary(
         String employer,
         String employmentStatus,
         Long monthlySalaryPaise,
-        String salaryBank) {
+        String salaryBank,
+        boolean preDue) {
 }

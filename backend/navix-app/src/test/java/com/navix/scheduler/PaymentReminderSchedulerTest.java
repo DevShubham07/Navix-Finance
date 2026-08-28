@@ -31,6 +31,7 @@ class PaymentReminderSchedulerTest {
 
     @Mock private LoanRepository loanRepository;
     @Mock private RepaymentService repaymentService;
+    @Mock private com.navix.common.loan.LoanDirectory loanDirectory;
     @Mock private ApplicationEventPublisher events;
 
     private final LocalDate today = LocalDate.now();
@@ -44,7 +45,25 @@ class PaymentReminderSchedulerTest {
     }
 
     private PaymentReminderScheduler scheduler() {
-        return new PaymentReminderScheduler(loanRepository, repaymentService, events);
+        return new PaymentReminderScheduler(loanRepository, repaymentService, loanDirectory, events);
+    }
+
+    /**
+     * The daily sweep is what moves a loan into collections now that opening a case no longer does
+     * (a case can be opened pre-emptively, before the due date). The DPD gate lives inside
+     * markInCollections, so the sweep calls it for every live loan and lets it decide.
+     */
+    @Test
+    void sweepsEveryLiveLoanIntoCollectionsOnceDue() {
+        Loan due = loan(1L, 7L, today.minusDays(2));
+        Loan notDue = loan(2L, 8L, today.plusDays(10));
+        when(loanRepository.findByStatusIn(any())).thenReturn(List.of(due, notDue));
+        when(repaymentService.outstandingAsOf(anyLong(), any())).thenReturn(1_270_000L);
+
+        scheduler().sendDueAndOverdueReminders();
+
+        verify(loanDirectory).markInCollections(1L);
+        verify(loanDirectory).markInCollections(2L);
     }
 
     @Test

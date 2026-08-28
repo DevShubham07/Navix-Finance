@@ -114,6 +114,12 @@ export interface ApplicationView {
   /** When the borrower started this application (V53) — the true creation date, distinct from
    *  `currentStageEnteredAt`, which resets on every status transition. */
   createdAt?: string | null;
+  /** Who handled the file — from the audit trail (credit decision, disbursal) and the collections
+   *  case. Blank when the stage has not happened. `creditDecidedByName` is who DECIDED it, which on
+   *  a reassigned or Head-decided file is not the same person as `assignedExecutiveName`. */
+  creditDecidedByName?: string | null;
+  disbursedByName?: string | null;
+  collectionOfficerName?: string | null;
 }
 
 /**
@@ -615,6 +621,12 @@ export interface CustomerSummary {
   /** yyyy-mm-dd. DPD is derived from this on the client, never sent. */
   loanDueDate?: string | null;
   markedPendingAt?: string | null;
+  /** Who handled the file — from the audit trail (credit decision, disbursal) and the collections
+   *  case. Blank when the stage has not happened. `creditDecidedByName` is who DECIDED it, which on
+   *  a reassigned or Head-decided file is not the same person as `assignedExecutiveName`. */
+  creditDecidedByName?: string | null;
+  disbursedByName?: string | null;
+  collectionOfficerName?: string | null;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -1615,6 +1627,22 @@ export const staffApi = {
       "GET",
     ),
 
+  /**
+   * ADMIN-only: log a payment that already happened, on the date it happened. Recorded AND verified
+   * in one call, so the loan closes (and the borrower is notified) immediately when it clears.
+   * `paidOn` may be today or any past date on/after disbursal — the backend rejects the rest.
+   */
+  adminRecordRepayment: (
+    loanId: number,
+    payload: {
+      amountPaise: number;
+      method: PaymentMethodName;
+      paidOn: string;
+      txnRef?: string;
+      proofUrl?: string;
+    },
+  ) => bff<PaymentView>(`${STAFF_LOAN_BASE}/${loanId}/repayments/admin-record`, "POST", payload),
+
   // --- repayment verification (accountant maker-checker) ---
   /** Repayments awaiting proof verification, across all loans (accountant queue). */
   pendingRepayments: () => bff<PaymentView[]>(`${STAFF_LOAN_BASE}/pending-repayments`, "GET"),
@@ -2600,6 +2628,8 @@ export interface LoanSummary {
   employmentStatus: string | null;
   monthlySalaryPaise: number | null;
   salaryBank: string | null;
+  /** The due date has not arrived yet — workable by collections, but NOT a delinquency. */
+  preDue: boolean;
 }
 
 /** Staff snapshot for assignee pickers / name rendering (mirrors backend StaffSummary). */
@@ -2626,6 +2656,27 @@ export interface CaseView {
 }
 
 /** Full case detail: case + live DPD + the complete loan/borrower snapshot. */
+/**
+ * A row on the collections worklist — one per live loan, whether or not a case exists on it yet.
+ *
+ * The DPD buckets used to list collection cases, and nothing created those automatically, so an
+ * overdue borrower nobody had opened a case for showed up in no bucket at all. The case is now
+ * created implicitly behind the first action, which is why every case field here is nullable.
+ */
+export interface WorklistRow {
+  loanId: number;
+  dpd: number;
+  bucket: DpdBucket;
+  preDue: boolean;
+  caseId: string | null;
+  assignedOfficerId: number | null;
+  assignedOfficerName: string | null;
+  caseOpenedAt: string | null;
+  creditDecidedByName: string | null;
+  disbursedByName: string | null;
+  loan: LoanSummary | null;
+}
+
 export interface CaseDetailView {
   id: string;
   loanId: number;
@@ -2739,6 +2790,8 @@ export interface UpcomingLoanView {
 const COLLECTIONS_BASE = "/api/staff/collections";
 
 export const collectionsApi = {
+  /** The DPD-bucket worklist: every live loan due within the week or already past due. */
+  worklist: () => bff<WorklistRow[]>(`${COLLECTIONS_BASE}/worklist`, "GET"),
   listCases: () => bff<CaseView[]>(`${COLLECTIONS_BASE}/cases`, "GET"),
 
   /**
