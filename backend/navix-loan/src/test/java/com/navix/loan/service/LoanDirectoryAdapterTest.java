@@ -39,6 +39,18 @@ class LoanDirectoryAdapterTest {
 
     private LoanDirectoryAdapter adapter;
 
+    /**
+     * The service reasons in IST (the ledger's calendar), so the fixtures must too. Anchoring them
+     * to the JVM default instead made this suite pass in India and fail on a UTC CI runner every
+     * evening after 18:30 IST — the two clocks are on different dates in that window, which is the
+     * exact drift the IST switch exists to remove.
+     */
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+
+    private static LocalDate today() {
+        return LocalDate.now(IST);
+    }
+
     @BeforeEach
     void setUp() {
         adapter = new LoanDirectoryAdapter(loanRepository, applicationRepository, profileRepository,
@@ -55,8 +67,8 @@ class LoanDirectoryAdapterTest {
         loan.setNetDisbursed(705_600L);
         loan.setTotalRepayable(1_040_000L);
         loan.setOutstanding(1_040_000L);
-        loan.setDisbursedOn(LocalDate.now().minusDays(30));
-        loan.setDueDate(LocalDate.now());
+        loan.setDisbursedOn(today().minusDays(30));
+        loan.setDueDate(today());
         loan.setStatus(status);
         return loan;
     }
@@ -119,7 +131,7 @@ class LoanDirectoryAdapterTest {
     @Test
     void markInCollectionsFlipsPastDueActiveLoan() {
         Loan loan = loan(2L, LoanStatus.ACTIVE);
-        loan.setDueDate(LocalDate.now().minusDays(1));
+        loan.setDueDate(today().minusDays(1));
         when(loanRepository.findById(2L)).thenReturn(Optional.of(loan));
 
         adapter.markInCollections(2L);
@@ -136,7 +148,7 @@ class LoanDirectoryAdapterTest {
     @Test
     void markInCollectionsLeavesANotYetDueLoanActive() {
         Loan loan = loan(2L, LoanStatus.ACTIVE);
-        loan.setDueDate(LocalDate.now().plusDays(5));
+        loan.setDueDate(today().plusDays(5));
         when(loanRepository.findById(2L)).thenReturn(Optional.of(loan));
 
         adapter.markInCollections(2L);
@@ -163,7 +175,7 @@ class LoanDirectoryAdapterTest {
         when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of());
         when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of(2L, 999L));
 
-        List<LoanSummary> result = adapter.listCollectible(LocalDate.now());
+        List<LoanSummary> result = adapter.listCollectible(today());
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).loanId()).isEqualTo(2L);
@@ -176,7 +188,7 @@ class LoanDirectoryAdapterTest {
         when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of());
         when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of(2L, 999L));
 
-        List<LoanSummary> result = adapter.listUpcoming(LocalDate.now());
+        List<LoanSummary> result = adapter.listUpcoming(today());
 
         assertThat(result).singleElement().satisfies(s -> {
             assertThat(s.loanId()).isEqualTo(2L);
@@ -202,7 +214,7 @@ class LoanDirectoryAdapterTest {
         when(repaymentService.outstandingForAll(any(), any()))
                 .thenReturn(java.util.Map.of(2L, 1L, 3L, 2L, 4L, 3L));
 
-        List<LoanSummary> result = adapter.listUpcoming(LocalDate.now());
+        List<LoanSummary> result = adapter.listUpcoming(today());
 
         assertThat(result).hasSize(3);
         assertThat(result.get(0).borrowerName()).isEqualTo("Asha Verma");
@@ -218,7 +230,7 @@ class LoanDirectoryAdapterTest {
         when(loanRepository.findByStatusInAndDueDateGreaterThanOrderByDueDateAsc(any(), any()))
                 .thenReturn(List.of());
 
-        assertThat(adapter.listUpcoming(LocalDate.now())).isEmpty();
+        assertThat(adapter.listUpcoming(today())).isEmpty();
         verify(applicationRepository, never()).findByLoanIdIn(any());
     }
 
@@ -241,12 +253,12 @@ class LoanDirectoryAdapterTest {
     @Test
     void listCollectibleFlagsNotYetDueLoansAsPreDue() {
         Loan loan = loan(2L, LoanStatus.ACTIVE);
-        loan.setDueDate(LocalDate.now().plusDays(3));
+        loan.setDueDate(today().plusDays(3));
         when(loanRepository.findByStatusInAndDueDateLessThanEqualOrderByDueDateAsc(any(), any()))
                 .thenReturn(List.of(loan));
         when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of());
         when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of());
 
-        assertThat(adapter.listCollectible(LocalDate.now()).get(0).preDue()).isTrue();
+        assertThat(adapter.listCollectible(today()).get(0).preDue()).isTrue();
     }
 }

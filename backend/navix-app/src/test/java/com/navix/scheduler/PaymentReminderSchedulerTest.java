@@ -34,7 +34,13 @@ class PaymentReminderSchedulerTest {
     @Mock private com.navix.common.loan.LoanDirectory loanDirectory;
     @Mock private ApplicationEventPublisher events;
 
-    private final LocalDate today = LocalDate.now();
+    /**
+     * IST, matching the sweep. Anchoring to the JVM default made this pass in India and fail on a
+     * UTC CI runner after 18:30 IST, when the two clocks are on different dates.
+     */
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+
+    private final LocalDate today = LocalDate.now(IST);
 
     private Loan loan(long id, long customerId, LocalDate due) {
         Loan l = new Loan();

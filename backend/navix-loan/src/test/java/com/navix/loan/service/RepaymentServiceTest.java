@@ -46,6 +46,18 @@ class RepaymentServiceTest {
 
     private RepaymentService repaymentService;
 
+    /**
+     * The service reasons in IST (the ledger's calendar), so the fixtures must too. Anchoring them
+     * to the JVM default instead made this suite pass in India and fail on a UTC CI runner every
+     * evening after 18:30 IST — the two clocks are on different dates in that window, which is the
+     * exact drift the IST switch exists to remove.
+     */
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
+
+    private static LocalDate today() {
+        return LocalDate.now(IST);
+    }
+
     @BeforeEach
     void setUp() {
         repaymentService = new RepaymentService(paymentRepository, loanRepository, new LoanMath(),
@@ -60,7 +72,7 @@ class RepaymentServiceTest {
      * exceeds totalRepayable, and the "fully paid closes the loan" test fails for a reason that has
      * nothing to do with the code under test. Anchor to now() and the tenure stays 27 days forever.
      */
-    private static final LocalDate DUE = LocalDate.now();
+    private static final LocalDate DUE = today();
     private static final LocalDate DISBURSED = DUE.minusDays(27);
 
     private Loan activeLoan() {
@@ -209,7 +221,7 @@ class RepaymentServiceTest {
     }
 
     /**
-     * The bug this guards: closure used to be judged at {@code LocalDate.now()} — the moment the
+     * The bug this guards: closure used to be judged at {@code today()} — the moment the
      * accountant clicked verify. A borrower who paid the full amount on the due date but was verified
      * two days later was charged two more days of interest, so the balance never reached zero, the
      * loan stayed open, and every later recompute moved the target another day out.
@@ -217,7 +229,7 @@ class RepaymentServiceTest {
     @Test
     void verifyClosesAsOfThePaymentDateNotTheVerificationDate() {
         Loan loan = activeLoan();
-        loan.setDueDate(LocalDate.now().minusDays(2));
+        loan.setDueDate(today().minusDays(2));
         loan.setDisbursedOn(loan.getDueDate().minusDays(27));
         LocalDate paidOn = loan.getDueDate(); // paid on the due date; verified two days later
         Payment payment = verifiedPayment(1_270_000L, paidOn);
@@ -241,7 +253,7 @@ class RepaymentServiceTest {
     @Test
     void verifyClosesAsOfTheLatestVerifiedPaymentDate() {
         Loan loan = activeLoan();
-        loan.setDueDate(LocalDate.now().minusDays(3));
+        loan.setDueDate(today().minusDays(3));
         loan.setDisbursedOn(loan.getDueDate().minusDays(27));
         Payment first = verifiedPayment(270_000L, loan.getDueDate().minusDays(5));
         Payment last = verifiedPayment(1_000_000L, loan.getDueDate());
@@ -261,7 +273,7 @@ class RepaymentServiceTest {
     @Test
     void verifyPartialPaymentLeavesTheLoanOpenAndAccruingToToday() {
         Loan loan = activeLoan();
-        loan.setDueDate(LocalDate.now().minusDays(2));
+        loan.setDueDate(today().minusDays(2));
         loan.setDisbursedOn(loan.getDueDate().minusDays(27));
         Payment payment = verifiedPayment(500_000L, loan.getDueDate());
         when(paymentRepository.findById(99L)).thenReturn(Optional.of(payment));
@@ -277,7 +289,7 @@ class RepaymentServiceTest {
         assertThat(loan.getClosedOn()).isNull();
         // Today's figure, including the late penalty that has run since the due date.
         assertThat(loan.getOutstanding())
-                .isEqualTo(repaymentService.outstandingAsOf(1L, LocalDate.now()));
+                .isEqualTo(repaymentService.outstandingAsOf(1L, today()));
         verify(applicationFlowService, never()).closeForLoan(anyLong());
     }
 
@@ -287,7 +299,7 @@ class RepaymentServiceTest {
         withActor("9", "ADMIN", () -> {
             when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
             assertThatThrownBy(() -> repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
-                    "T1", "proof", LocalDate.now().plusDays(5)))
+                    "T1", "proof", today().plusDays(5)))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("future");
         });
@@ -305,9 +317,9 @@ class RepaymentServiceTest {
             when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
             Payment saved = repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
-                    "T1", "proof", LocalDate.now().plusDays(1));
+                    "T1", "proof", today().plusDays(1));
 
-            assertThat(saved.getPaidOn()).isEqualTo(LocalDate.now());
+            assertThat(saved.getPaidOn()).isEqualTo(today());
         });
     }
 
@@ -330,7 +342,7 @@ class RepaymentServiceTest {
         withActor("7", "BORROWER", () -> {
             when(loanRepository.findById(1L)).thenReturn(Optional.of(activeLoan()));
             assertThatThrownBy(() -> repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
-                    "T1", "proof", LocalDate.now().minusDays(20)))
+                    "T1", "proof", today().minusDays(20)))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("too far in the past");
         });
@@ -344,7 +356,7 @@ class RepaymentServiceTest {
             when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
             when(paymentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-            LocalDate paidOn = LocalDate.now().minusDays(20);
+            LocalDate paidOn = today().minusDays(20);
             Payment saved = repaymentService.recordPayment(1L, 100_000L, PaymentMethod.UPI,
                     "T1", null, paidOn);
 
@@ -511,7 +523,7 @@ class RepaymentServiceTest {
 
     /**
      * The phantom-penalty bug (work item 3a): without the {@code closedOn} clamp, a loan closed long
-     * ago keeps accruing 2%/day late penalty against {@code LocalDate.now()} — a loan closed 90 days
+     * ago keeps accruing 2%/day late penalty against {@code today()} — a loan closed 90 days
      * ago would report ~60% of principal owed even though it's fully repaid. With the clamp, the
      * working date never advances past the day it actually closed, so it reports zero.
      */
@@ -519,7 +531,7 @@ class RepaymentServiceTest {
     void closedLoanReportsZeroOutstandingRegardlessOfHowLongAgoItClosed() {
         // Disbursed 120 days ago, 27-day tenure (due 93 days ago), closed 90 days ago (3 days late:
         // 28 interest days [tenure + 1 grace] + 2 penalty days [3 DPD − 1 grace]).
-        LocalDate disbursed = LocalDate.now().minusDays(120);
+        LocalDate disbursed = today().minusDays(120);
         LocalDate due = disbursed.plusDays(27);
         LocalDate closedOn = due.plusDays(3);
         Loan loan = new Loan();
@@ -538,7 +550,7 @@ class RepaymentServiceTest {
         // Without the clamp this would keep accruing 2%/day penalty against "today" (90 days of
         // penalty, capped at 30) and report a large phantom balance instead of zero.
         assertThat(repaymentService.outstandingAsOf(1L, null)).isZero();
-        assertThat(repaymentService.outstandingAsOf(1L, LocalDate.now())).isZero();
+        assertThat(repaymentService.outstandingAsOf(1L, today())).isZero();
     }
 
     @Test
