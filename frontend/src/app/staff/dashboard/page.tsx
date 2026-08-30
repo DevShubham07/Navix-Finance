@@ -597,7 +597,7 @@ export default function StaffDashboardPage() {
             counts={segmentCounts(customersQuery.data ?? [])}
             loading={customersQuery.isLoading}
           />
-          <SalaryDaysPanel rows={customersQ.data ?? []} loading={customersQ.isLoading} />
+          <SalaryDaysPanel rows={customersQuery.data ?? []} loading={customersQuery.isLoading} />
 
           <details className="group mt-8 rounded border border-line bg-white shadow-sm">
             {/* No interactive children inside <summary> — it is itself a disclosure control. */}
