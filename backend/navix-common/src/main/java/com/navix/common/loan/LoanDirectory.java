@@ -1,7 +1,9 @@
 package com.navix.common.loan;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -19,6 +21,15 @@ public interface LoanDirectory {
 
     /** The loan + borrower snapshot for {@code loanId}, or empty if no such loan. */
     Optional<LoanSummary> findLoan(Long loanId);
+
+    /**
+     * Batched lookup: loan id → snapshot for every id in {@code loanIds} that resolves (an id that
+     * does not resolve is simply absent — never mapped to {@code null}). Produces the same
+     * {@link LoanSummary} as {@link #findLoan(Long)} would per id, but in a fixed number of queries
+     * for the whole page rather than one {@link #findLoan(Long)} per row — for list views (a
+     * settlements/payments/cases register) that each render a borrower name or loan figure per row.
+     */
+    Map<Long, LoanSummary> findLoans(Collection<Long> loanIds);
 
 
     /**

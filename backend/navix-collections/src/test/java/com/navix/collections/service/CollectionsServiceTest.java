@@ -3,12 +3,15 @@ package com.navix.collections.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.collections.domain.DpdBucket;
 import com.navix.collections.dto.CollectionsDtos.CaseDetailView;
+import com.navix.collections.dto.CollectionsDtos.CaseView;
 import com.navix.collections.dto.CollectionsDtos.UpcomingLoanView;
 import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.InteractionLog;
@@ -297,6 +300,49 @@ class CollectionsServiceTest {
         CaseDetailView detail = service.getCaseDetailByLoanId(2L);
 
         assertThat(detail.loanId()).isEqualTo(2L);
+    }
+
+    // --- listCaseViews (the batched list-view path) -----------------------------------------
+
+    @Test
+    void listCaseViewsResolvesLoansAndOfficerNamesInOneBatchedCallEach() {
+        CollectionCase assigned = existingCase(); // loanId 2, no officer yet — exercises the null id
+        CollectionCase withOfficer = new CollectionCase();
+        withOfficer.setId(UUID.randomUUID());
+        withOfficer.setLoanId(3L);
+        withOfficer.setAssignedOfficerId(9L);
+        when(caseRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(assigned, withOfficer));
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of(
+                2L, loanSummary(2L, LocalDate.now().minusDays(5)),
+                3L, loanSummary(3L, LocalDate.now().minusDays(2))));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(9L, "Sana Khan"));
+
+        List<CaseView> views = service.listCaseViews();
+
+        assertThat(views).hasSize(2);
+        assertThat(views).filteredOn(v -> v.loanId() == 2L).singleElement()
+                .satisfies(v -> assertThat(v.assignedOfficerName()).isNull());
+        assertThat(views).filteredOn(v -> v.loanId() == 3L).singleElement()
+                .satisfies(v -> assertThat(v.assignedOfficerName()).isEqualTo("Sana Khan"));
+        verify(loanDirectory, times(1)).findLoans(any());
+        verify(staffDirectory, times(1)).namesFor(any());
+        verify(loanDirectory, never()).findLoan(anyLong());
+        verify(staffDirectory, never()).findStaff(anyLong());
+    }
+
+    @Test
+    void listCaseViewsDropsSettledLoans() {
+        CollectionCase c = existingCase();
+        LoanSummary closed = new LoanSummary(2L, 7L, 1L, "CLOSED", 800_000L, 705_600L, 1_040_000L, 0L,
+                LocalDate.now().minusDays(30), LocalDate.now().minusDays(2),
+                "Asha Verma", "ABXXXXX34F", "Acme Corp", "SALARIED", 3_200_000L, "HDFC", false);
+        when(caseRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(c));
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of(2L, closed));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of());
+
+        assertThat(service.listCaseViews()).isEmpty();
     }
 
     // --- upcomingWatchlist (the pre-due watchlist behind the UPCOMING bucket) -------------------

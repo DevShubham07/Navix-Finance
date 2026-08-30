@@ -21,7 +21,11 @@ import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -196,20 +200,39 @@ public class CollectionPaymentService {
 
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listForCase(UUID caseId) {
-        return paymentRepository.findByCollectionCaseIdOrderByRaisedAtDesc(caseId).stream()
-                .map(this::toView).toList();
+        return toViews(paymentRepository.findByCollectionCaseIdOrderByRaisedAtDesc(caseId));
     }
 
     /** The Accountant's validation queue, or the Collection Head's approval queue. */
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listByStatus(CollectionPaymentStatus status) {
-        return paymentRepository.findByStatusOrderByRaisedAtAsc(status).stream()
-                .map(this::toView).toList();
+        return toViews(paymentRepository.findByStatusOrderByRaisedAtAsc(status));
     }
 
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listAll() {
-        return paymentRepository.findAllByOrderByRaisedAtDesc().stream().map(this::toView).toList();
+        return toViews(paymentRepository.findAllByOrderByRaisedAtDesc());
+    }
+
+    /**
+     * Batched view-building for a page of payments: one {@link StaffDirectory#namesFor} for every
+     * raiser/validator and one {@link LoanDirectory#findLoans} for every loan (the borrower name),
+     * rather than the two {@code findStaff} calls plus a {@code findLoan} the single-row
+     * {@link #toView(CollectionPayment)} costs per row.
+     */
+    private List<CollectionPaymentView> toViews(List<CollectionPayment> payments) {
+        Set<Long> staffIds = new HashSet<>();
+        Set<Long> loanIds = new HashSet<>();
+        for (CollectionPayment p : payments) {
+            staffIds.add(p.getRaisedBy());
+            staffIds.add(p.getValidatedBy());
+            loanIds.add(p.getLoanId());
+        }
+        staffIds.removeIf(Objects::isNull);
+        loanIds.removeIf(Objects::isNull);
+        Map<Long, String> names = staffDirectory.namesFor(staffIds);
+        Map<Long, LoanSummary> loansById = loanDirectory.findLoans(loanIds);
+        return payments.stream().map(p -> toView(p, names, loansById)).toList();
     }
 
     // ---- helpers ------------------------------------------------------------------------
@@ -257,6 +280,24 @@ public class CollectionPaymentService {
                 p.getValidatedBy(), staffName(p.getValidatedBy()), p.getValidatedAt(),
                 p.getRemarks(), p.getLedgerPaymentId(),
                 borrowerName(p.getLoanId()));
+    }
+
+    /** Batched variant of {@link #toView(CollectionPayment)} for the list reads — reads
+     *  pre-resolved names/loans instead of hitting {@link StaffDirectory} and {@link LoanDirectory}
+     *  per row. */
+    private CollectionPaymentView toView(CollectionPayment p, Map<Long, String> names,
+                                         Map<Long, LoanSummary> loansById) {
+        LoanSummary loan = p.getLoanId() == null ? null : loansById.get(p.getLoanId());
+        return new CollectionPaymentView(
+                p.getId(), p.getCollectionCaseId(), p.getLoanId(),
+                p.getKind().name(), p.getAmountPaise(), p.getPaidOn(),
+                p.getTxnRef(), p.getProofRef(), p.getSettlementId(),
+                p.getStatus().name(),
+                p.getRaisedBy(), p.getRaisedBy() == null ? null : names.get(p.getRaisedBy()), p.getRaisedAt(),
+                p.getValidatedBy(), p.getValidatedBy() == null ? null : names.get(p.getValidatedBy()),
+                p.getValidatedAt(),
+                p.getRemarks(), p.getLedgerPaymentId(),
+                loan == null ? null : loan.borrowerName());
     }
 
     private String borrowerName(Long loanId) {

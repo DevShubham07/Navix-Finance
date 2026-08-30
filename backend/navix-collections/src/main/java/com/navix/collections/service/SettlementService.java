@@ -22,7 +22,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -190,12 +194,26 @@ public class SettlementService {
                 .orElseThrow(() -> new ResourceNotFoundException("Settlement", String.valueOf(settlementId)));
     }
 
-    /** All settlements (pending + approved), for the collections settlements worklist. */
+    /**
+     * All settlements (pending + approved), for the collections settlements worklist.
+     *
+     * <p>One {@link StaffDirectory#namesFor} batches every proposer/approver/rejecter name for the
+     * whole page, rather than the up-to-three {@code findStaff} calls per row the single-row
+     * {@link #toView(Settlement)} costs.
+     */
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {
-        return settlementRepository.findAll(org.springframework.data.domain.Sort.by(
-                        org.springframework.data.domain.Sort.Direction.DESC, "createdAt"))
-                .stream().map(this::toView).toList();
+        List<Settlement> settlements = settlementRepository.findAll(org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+        Set<Long> staffIds = new HashSet<>();
+        for (Settlement s : settlements) {
+            staffIds.add(s.getProposedBy());
+            staffIds.add(s.getApprovedBy());
+            staffIds.add(s.getRejectedBy());
+        }
+        staffIds.removeIf(Objects::isNull);
+        Map<Long, String> names = staffDirectory.namesFor(staffIds);
+        return settlements.stream().map(s -> toView(s, names)).toList();
     }
 
     private SettlementView toView(Settlement s) {
@@ -205,6 +223,19 @@ public class SettlementService {
                 s.getProposedBy(), staffName(s.getProposedBy()),
                 s.getApprovedBy(), staffName(s.getApprovedBy()),
                 s.getRejectedBy(), staffName(s.getRejectedBy()),
+                status.name(),
+                s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt());
+    }
+
+    /** Batched variant of {@link #toView(Settlement)} for {@link #listAll()} — reads pre-resolved
+     *  names instead of hitting {@link StaffDirectory#findStaff} up to three times per row. */
+    private SettlementView toView(Settlement s, Map<Long, String> names) {
+        SettlementStatus status = s.getStatus() != null ? s.getStatus() : SettlementStatus.PROPOSED;
+        return new SettlementView(
+                s.getId(), s.getCollectionCaseId(), s.getSettlementAmount(),
+                s.getProposedBy(), s.getProposedBy() == null ? null : names.get(s.getProposedBy()),
+                s.getApprovedBy(), s.getApprovedBy() == null ? null : names.get(s.getApprovedBy()),
+                s.getRejectedBy(), s.getRejectedBy() == null ? null : names.get(s.getRejectedBy()),
                 status.name(),
                 s.getCreatedAt(), s.getApprovedAt(), s.getRejectedAt());
     }

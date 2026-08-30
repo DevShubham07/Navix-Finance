@@ -249,6 +249,78 @@ class LoanDirectoryAdapterTest {
         assertThat(horizon.getValue()).isEqualTo(asOf.plusDays(LoanDirectory.PRE_DUE_WINDOW_DAYS));
     }
 
+    // ---- findLoans (batched, for list-view callers like the collections registers) --------------
+
+    @Test
+    void findLoansProducesTheSameSummaryAsFindLoan() {
+        LoanApplication app = new LoanApplication();
+        app.setId(1L);
+        app.setCustomerId(7L);
+        app.setLoanId(2L);
+        CustomerProfile profile = new CustomerProfile();
+        profile.setApplicationId(1L);
+        profile.setFullName("Asha Verma");
+        profile.setPan("ABCDE1234F");
+
+        // findLoan's collaborator calls (single-row path).
+        when(loanRepository.findById(2L)).thenReturn(Optional.of(loan(2L, LoanStatus.ACTIVE)));
+        when(applicationRepository.findByLoanId(2L)).thenReturn(Optional.of(app));
+        when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(profile));
+        when(repaymentService.outstandingAsOf(2L, null)).thenReturn(1_040_000L);
+
+        // findLoans' collaborator calls (batched path).
+        when(loanRepository.findAllById(List.of(2L))).thenReturn(List.of(loan(2L, LoanStatus.ACTIVE)));
+        when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of(app));
+        when(profileRepository.findByApplicationIdIn(List.of(1L))).thenReturn(List.of(profile));
+        when(repaymentService.outstandingForAll(any(), any()))
+                .thenReturn(java.util.Map.of(2L, 1_040_000L));
+
+        LoanSummary single = adapter.findLoan(2L).orElseThrow();
+        LoanSummary batched = adapter.findLoans(List.of(2L)).get(2L);
+
+        assertThat(batched).isEqualTo(single);
+    }
+
+    @Test
+    void findLoansOmitsIdsThatDoNotResolve() {
+        // 404 does not exist, so findAllById (like the real JPA method) simply omits it from the result.
+        when(loanRepository.findAllById(List.of(2L, 404L))).thenReturn(List.of(loan(2L, LoanStatus.ACTIVE)));
+        when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of());
+        when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of());
+
+        java.util.Map<Long, LoanSummary> result = adapter.findLoans(List.of(2L, 404L));
+
+        assertThat(result).containsOnlyKeys(2L);
+    }
+
+    @Test
+    void findLoansOnEmptyIdsReturnsEmptyMutableMapWithoutQuerying() {
+        java.util.Map<Long, LoanSummary> result = adapter.findLoans(List.of());
+
+        assertThat(result).isEmpty();
+        assertThat(result.get(null)).isNull(); // never Map.of() — must tolerate get(null)
+        verify(loanRepository, never()).findAllById(any());
+    }
+
+    @Test
+    void findLoansOnNullReturnsEmptyMutableMap() {
+        java.util.Map<Long, LoanSummary> result = adapter.findLoans(null);
+
+        assertThat(result).isEmpty();
+        assertThat(result.get(null)).isNull();
+    }
+
+    @Test
+    void findLoansCallsFindAllByIdExactlyOnceWithDistinctNonNullIds() {
+        when(loanRepository.findAllById(List.of(2L))).thenReturn(List.of(loan(2L, LoanStatus.ACTIVE)));
+        when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of());
+        when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of());
+
+        adapter.findLoans(java.util.Arrays.asList(2L, 2L, null, 2L));
+
+        verify(loanRepository, org.mockito.Mockito.times(1)).findAllById(List.of(2L));
+    }
+
     /** A loan still running to term is workable but must not be reported as a delinquency. */
     @Test
     void listCollectibleFlagsNotYetDueLoansAsPreDue() {
