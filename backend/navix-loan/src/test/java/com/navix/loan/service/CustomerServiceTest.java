@@ -110,9 +110,8 @@ class CustomerServiceTest {
         when(applicationRepository.findAll()).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.CLOSED),
                 app(2, 9000001L, ApplicationStatus.ACTIVE)));
-        when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(profile(2, "Asha Rao", "ABCDE1234F")));
-        lenient().when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(profile(1, "Old Name", "ABCDE1234F")));
-        when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
+                profile(1, "Old Name", "ABCDE1234F"), profile(2, "Asha Rao", "ABCDE1234F")));
 
         List<CustomerSummary> rows = service.list(null);
 
@@ -134,9 +133,8 @@ class CustomerServiceTest {
                 app(2, 9000002L, ApplicationStatus.ACTIVE)));
         CustomerProfile asha = profile(1, "Asha Rao", "AAAAA1111A");
         asha.setMobile("9876543210");
-        lenient().when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(asha));
-        lenient().when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(profile(2, "Bhavya Reddy", "BBBBB2222B")));
-        lenient().when(loanRepository.findByCustomerId(any())).thenReturn(List.of());
+        when(profileRepository.findByApplicationIdIn(any()))
+                .thenReturn(List.of(asha, profile(2, "Bhavya Reddy", "BBBBB2222B")));
 
         assertThat(service.list("asha")).extracting(CustomerSummary::customerId).containsExactly(9000001L);
         assertThat(service.list("aaaaa1111a")).extracting(CustomerSummary::customerId).containsExactly(9000001L);
@@ -167,8 +165,7 @@ class CustomerServiceTest {
         LoanApplication a = app(1, 9000001L, ApplicationStatus.REJECTED);
         java.time.Instant rejectedAt = java.time.Instant.parse("2026-08-01T10:00:00Z");
         when(applicationRepository.findAll()).thenReturn(List.of(a));
-        lenient().when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.empty());
-        when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
         // The map iterated to build the query's argument is a HashMap-backed Collection, not a
         // List, so match structurally rather than on List.of(1L) (List.equals rejects non-Lists).
         when(applicationEventRepository.findCurrentStatusEnteredAt(any()))
@@ -188,8 +185,7 @@ class CustomerServiceTest {
         java.time.Instant createdAt = java.time.Instant.parse("2026-07-01T09:00:00Z");
         a.setCreatedAt(createdAt);
         when(applicationRepository.findAll()).thenReturn(List.of(a));
-        lenient().when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.empty());
-        when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
         // Unstubbed findCurrentStatusEnteredAt returns Mockito's default empty list — the intended
         // fallback path, no stub needed — but stub it explicitly here to make the case unambiguous.
         when(applicationEventRepository.findCurrentStatusEnteredAt(any())).thenReturn(List.of());
@@ -206,8 +202,7 @@ class CustomerServiceTest {
         LoanApplication newer = app(2, 9000002L, ApplicationStatus.REJECTED);
         LoanApplication undated = app(3, 9000003L, ApplicationStatus.DRAFT); // no createdAt, no event
         when(applicationRepository.findAll()).thenReturn(List.of(older, newer, undated));
-        lenient().when(profileRepository.findByApplicationId(any())).thenReturn(Optional.empty());
-        lenient().when(loanRepository.findByCustomerId(any())).thenReturn(List.of());
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
         when(applicationEventRepository.findCurrentStatusEnteredAt(any())).thenReturn(List.of(
                 statusEnteredAt(1L, java.time.Instant.parse("2026-08-01T00:00:00Z")),
                 statusEnteredAt(2L, java.time.Instant.parse("2026-08-05T00:00:00Z"))));
@@ -623,11 +618,9 @@ class CustomerServiceTest {
         when(applicationRepository.findAll()).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.ACTIVE),
                 app(2, 9000002L, ApplicationStatus.ACTIVE)));
-        lenient().when(profileRepository.findByApplicationId(1L))
-                .thenReturn(Optional.of(profile(1, "Asha Rao", "AAAAA1111A")));
-        lenient().when(profileRepository.findByApplicationId(2L))
-                .thenReturn(Optional.of(profile(2, "Bhavya Reddy", "BBBBB2222B")));
-        lenient().when(loanRepository.findByCustomerId(any())).thenReturn(List.of());
+        // Some scoped tests filter every customer out before the batched profile query would run.
+        lenient().when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
+                profile(1, "Asha Rao", "AAAAA1111A"), profile(2, "Bhavya Reddy", "BBBBB2222B")));
     }
 
     @Test
@@ -752,14 +745,58 @@ class CustomerServiceTest {
         late.setCreatedAt(java.time.LocalDateTime.of(2026, 8, 19, 23, 30)
                 .atZone(java.time.ZoneId.of("Asia/Kolkata")).toInstant());
         when(applicationRepository.findAll()).thenReturn(List.of(late));
-        lenient().when(profileRepository.findByApplicationId(1L))
-                .thenReturn(Optional.of(profile(1, "Asha Rao", "AAAAA1111A")));
-        lenient().when(loanRepository.findByCustomerId(any())).thenReturn(List.of());
+        when(profileRepository.findByApplicationIdIn(any()))
+                .thenReturn(List.of(profile(1, "Asha Rao", "AAAAA1111A")));
 
         java.time.LocalDate d19 = java.time.LocalDate.of(2026, 8, 19);
         java.time.LocalDate d20 = java.time.LocalDate.of(2026, 8, 20);
         assertThat(service.list(null, d19, d19)).hasSize(1);
         assertThat(service.list(null, d20, d20)).isEmpty();
+    }
+
+    @Test
+    void listPricesEveryLoanInOneBatchedPass() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        when(applicationRepository.findAll()).thenReturn(List.of(
+                app(1, 9000001L, ApplicationStatus.ACTIVE),
+                app(2, 9000002L, ApplicationStatus.ACTIVE)));
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
+                profile(1, "Asha Rao", "AAAAA1111A"), profile(2, "Bhavya Reddy", "BBBBB2222B")));
+        com.navix.loan.entity.Loan l1 = loan(500L, 9000001L);
+        com.navix.loan.entity.Loan l2 = loan(501L, 9000001L);
+        com.navix.loan.entity.Loan l3 = loan(502L, 9000002L);
+        l1.setStatus(com.navix.loan.domain.LoanStatus.ACTIVE);
+        l2.setStatus(com.navix.loan.domain.LoanStatus.ACTIVE);
+        l3.setStatus(com.navix.loan.domain.LoanStatus.ACTIVE);
+        when(loanRepository.findAll()).thenReturn(List.of(l1, l2, l3));
+        when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of(
+                500L, 10_000L, 501L, 5_000L, 502L, 20_000L));
+
+        List<CustomerSummary> rows = service.list(null);
+
+        assertThat(rows).hasSize(2);
+        CustomerSummary c1 = rows.stream().filter(r -> r.customerId() == 9000001L).findFirst().orElseThrow();
+        CustomerSummary c2 = rows.stream().filter(r -> r.customerId() == 9000002L).findFirst().orElseThrow();
+        assertThat(c1.totalOutstandingPaise()).isEqualTo(15_000L);
+        assertThat(c2.totalOutstandingPaise()).isEqualTo(20_000L);
+        verify(repaymentService, org.mockito.Mockito.never()).outstandingAsOf(any(), any());
+        verify(loanRepository, org.mockito.Mockito.never()).findByCustomerId(any());
+        verify(loanRepository, org.mockito.Mockito.times(1)).findAll();
+    }
+
+    @Test
+    void listResolvesProfilesInOneQuery() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        when(applicationRepository.findAll()).thenReturn(List.of(
+                app(1, 9000001L, ApplicationStatus.CLOSED),
+                app(2, 9000001L, ApplicationStatus.ACTIVE)));
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
+                profile(1, "Old Name", "ABCDE1234F"), profile(2, "Asha Rao", "ABCDE1234F")));
+
+        service.list(null);
+
+        verify(profileRepository, org.mockito.Mockito.times(1)).findByApplicationIdIn(any());
+        verify(profileRepository, org.mockito.Mockito.never()).findByApplicationId(any());
     }
 
     // --- Call log loan tagging (WP2) ----------------------------------------------------------
