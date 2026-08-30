@@ -253,9 +253,27 @@ public class CustomerService {
                 .filter(a -> scope == null || scope.permits(a.getCustomerId()))
                 .collect(Collectors.groupingBy(LoanApplication::getCustomerId));
 
+        // ponytail: whole-table load, same altitude as applicationRepository.findAll() above; switch both to an
+        // id-bounded finder when customers are paged.
+        List<Loan> allLoans = loanRepository.findAll().stream()
+                .filter(l -> l.getCustomerId() != null && byCustomer.containsKey(l.getCustomerId()))
+                .toList();
+        Map<Long, List<Loan>> loansByCustomer = allLoans.stream()
+                .collect(Collectors.groupingBy(Loan::getCustomerId));
+        Map<Long, Long> owedByLoanId = repaymentService.outstandingForAll(allLoans, null);
+
         Map<Long, CustomerOwner> owners = ownerRepository.findAll().stream()
                 .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
         Map<Long, String> staffNames = new HashMap<>();
+
+        // Every profile these applications could resolve to, batched in one query instead of one
+        // findByApplicationId per application — latestProfile(apps, profileByAppId) below just picks
+        // among them.
+        List<Long> allAppIds = byCustomer.values().stream().flatMap(List::stream)
+                .map(LoanApplication::getId).toList();
+        Map<Long, CustomerProfile> profileByAppId = allAppIds.isEmpty() ? new HashMap<>()
+                : profileRepository.findByApplicationIdIn(allAppIds).stream()
+                    .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
 
         // Pass 1: resolve each customer's profile + the application id whose bureau pull should be
         // reflected (the profile's own application when present, else the newest application — so a
@@ -266,7 +284,7 @@ public class CustomerService {
         Map<Long, Long> latestAppIdByCustomerForEvents = new HashMap<>();
         for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
             List<LoanApplication> apps = e.getValue();
-            CustomerProfile profile = latestProfile(apps);
+            CustomerProfile profile = latestProfile(apps, profileByAppId);
             profileByCustomer.put(e.getKey(), profile);
             Long latestAppId = apps.stream().max(Comparator.comparing(LoanApplication::getId))
                     .map(LoanApplication::getId).orElse(null);
@@ -295,7 +313,7 @@ public class CustomerService {
         // dates were resolved from, plus the collections officer keyed by loan.
         Map<Long, com.navix.common.loan.ApplicationActorDirectory.HandledBy> handledByApp =
                 applicationActorDirectory.byApplicationId(latestAppIdByCustomerForEvents.values());
-        Map<Long, String> collectionOfficerNameByLoanId = collectionOfficerNames(byCustomer.keySet());
+        Map<Long, String> collectionOfficerNameByLoanId = collectionOfficerNames(allLoans);
 
         LocalDate today = LocalDate.now();
         List<CustomerSummary> out = new ArrayList<>();
@@ -303,9 +321,9 @@ public class CustomerService {
             Long customerId = e.getKey();
             List<LoanApplication> apps = e.getValue();
             CustomerProfile profile = profileByCustomer.get(customerId);
-            List<Loan> loans = loanRepository.findByCustomerId(customerId);
+            List<Loan> loans = loansByCustomer.getOrDefault(customerId, List.of());
             long totalOutstanding = loans.stream()
-                    .mapToLong(l -> repaymentService.outstandingAsOf(l.getId(), null))
+                    .mapToLong(l -> owedByLoanId.getOrDefault(l.getId(), 0L))
                     .sum();
             // One latest application + one latest loan for the whole row, so every column below
             // describes the SAME file rather than a mix of several.
@@ -389,14 +407,11 @@ public class CustomerService {
     }
 
     /**
-     * Loan id → assigned collections officer's name, for every loan these customers hold. One query
-     * across the whole page via the collections seam, then one name lookup per distinct officer.
+     * Loan id → assigned collections officer's name, for every loan passed in. One query across the
+     * whole page via the collections seam, then one name lookup per distinct officer.
      */
-    private Map<Long, String> collectionOfficerNames(Collection<Long> customerIds) {
-        List<Long> loanIds = customerIds.stream()
-                .flatMap(id -> loanRepository.findByCustomerId(id).stream())
-                .map(Loan::getId)
-                .toList();
+    private Map<Long, String> collectionOfficerNames(Collection<Loan> loans) {
+        List<Long> loanIds = loans.stream().map(Loan::getId).toList();
         if (loanIds.isEmpty()) {
             return Map.of();
         }
@@ -1100,6 +1115,20 @@ public class CustomerService {
                 .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
                 .filter(Objects::nonNull)
                 .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Batched twin of {@link #latestProfile(List)}: same "newest application with a saved profile
+     * wins" rule, but resolved against a pre-fetched application-id → profile map instead of one
+     * {@code findByApplicationId} per application.
+     */
+    private CustomerProfile latestProfile(List<LoanApplication> apps, Map<Long, CustomerProfile> profileByAppId) {
+        return apps.stream()
+                .map(LoanApplication::getId)
+                .filter(profileByAppId::containsKey)
+                .max(Comparator.naturalOrder())
+                .map(profileByAppId::get)
                 .orElse(null);
     }
 
