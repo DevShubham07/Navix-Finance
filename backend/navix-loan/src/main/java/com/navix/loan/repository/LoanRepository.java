@@ -53,4 +53,7 @@ public interface LoanRepository extends JpaRepository<Loan, Long> {
     @Query("select l from Loan l where (cast(:from as date) is null or l.disbursedOn >= :from) "
             + "and (cast(:to as date) is null or l.disbursedOn <= :to)")
     List<Loan> findAllForRegister(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /** Loans disbursed at or after {@code since} — backs the dashboard trend window. */
+    List<Loan> findByDisbursedOnGreaterThanEqual(LocalDate since);
 }
