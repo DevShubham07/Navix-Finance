@@ -37,7 +37,6 @@ import {
   type TransactionView,
   type TrendPoint,
   type TrendResponse,
-  type CaseView,
   type CustomerSummary,
 } from "@/lib/api/applications";
 import { segmentCounts, SEGMENT_LABEL, SEGMENTS, type CustomerSegment } from "@/lib/customers/segments";
@@ -51,7 +50,9 @@ import {
 import { useMounted } from "@/hooks/use-mounted";
 import { formatDate } from "@/lib/utils";
 
-const REFRESH_MS = 10_000;
+const REFRESH_MS = 10_000;   // small, actionable queues
+// ponytail: two tiers, not per-query tuning — revisit when the backend lists are paged.
+const SLOW_MS = 60_000;      // whole-book lists and rollups
 
 // ---------------------------------------------------------------------------
 // Formatting helpers — a null metric is unmeasurable, never a fabricated 0.
@@ -149,12 +150,6 @@ type RoleQueue = { apps: ApplicationView[]; extras: QueueExtra[] };
 const safe = (p: Promise<ApplicationView[]>) => p.catch(() => [] as ApplicationView[]);
 const countOf = <T,>(p: Promise<T[]>): Promise<number> => p.then((r) => r.length).catch(() => 0);
 
-/** Mirrors /staff/collections/settlements: proposed settlements awaiting approval. */
-const pendingSettlementCount = () =>
-  collectionsApi.listSettlements()
-    .then((r) => r.filter((s) => s.status === "PROPOSED").length)
-    .catch(() => 0);
-
 /** Mirrors the accountant's repayment-verify queue on /staff/applications. */
 const pendingRepaymentCount = () => countOf(staffApi.pendingRepayments());
 
@@ -174,12 +169,12 @@ const settlementsExtra = (count: number): QueueExtra =>
  * page(s) actually list. Every source is individually fault-tolerant (`.catch`) so one
  * failing call can never zero the whole count.
  *
- * After the role switch, every role also gets "My customers" extras filtered by ownership.
+ * "My customers"/"my-overdue"/settlements/cases extras are derived in the component from their
+ * own queries (Steps 1.1-1.3), not fetched again here.
  * // ponytail: whole-table rollup + client-side segmenting. Move to a paged indexed query when the
  * // list stops fitting one response — same change as adding server-side segment filters.
  */
-async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promise<RoleQueue> {
-  const sid = staffId != null && staffId !== "" && Number.isFinite(Number(staffId)) ? Number(staffId) : undefined;
+async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
   let base: RoleQueue;
   switch (role) {
     case "CREDIT_EXECUTIVE":
@@ -224,28 +219,16 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
       base = { apps: [], extras };
       break;
     }
-    case "COLLECTION_HEAD": {
-      const pending = await pendingSettlementCount();
-      base = { apps: [], extras: pending > 0 ? [settlementsExtra(pending)] : [] };
+    case "COLLECTION_HEAD":
+      // Settlements count now comes from settlementsQuery alone (Step 1.2) — no separate fetch.
+      base = { apps: [], extras: [] };
       break;
-    }
-    case "COLLECTION_EXECUTIVE": {
-      // Headline bug fix: this used to count every open case company-wide. An executive only acts
-      // on cases assigned to them.
-      // Fail CLOSED without a resolvable staff id — showing every company case is the bug, so an
-      // unknown actor gets nothing. Same convention as ApplicationFlowService.byStatus (returns
-      // List.of() when the executive id is missing) and CustomerService.scope().
-      const allCases = sid == null ? [] : await collectionsApi.listCases().catch(() => [] as CaseView[]);
-      const mine = allCases.filter((c) => c.assignedOfficerId === sid);
-      const extras: QueueExtra[] = [];
-      if (mine.length > 0) {
-        extras.push({ key: "cases", label: "Your open collection cases", count: mine.length, href: "/staff/applications" });
-      }
-      base = { apps: [], extras };
+    case "COLLECTION_EXECUTIVE":
+      // "Your open collection cases" now derives from casesQuery alone (Step 1.3) — no separate fetch.
+      base = { apps: [], extras: [] };
       break;
-    }
     case "ADMIN": {
-      const [lists, repayments, settlements] = await Promise.all([
+      const [lists, repayments] = await Promise.all([
         Promise.all(
           // Deliberately NOT alphabetical/lifecycle order: files waiting on money
           // (DISBURSEMENT_PENDING) lead, and SANCTIONED trails last — it's still moving inside the
@@ -255,11 +238,10 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
           ),
         ),
         pendingRepaymentCount(),
-        pendingSettlementCount(),
       ]);
       const extras: QueueExtra[] = [];
       if (repayments > 0) extras.push(repaymentsExtra(repayments));
-      if (settlements > 0) extras.push(settlementsExtra(settlements));
+      // Settlements count now comes from settlementsQuery alone (Step 1.2) — no separate fetch.
       base = { apps: lists.flat(), extras };
       break;
     }
@@ -270,30 +252,6 @@ async function fetchRoleQueue(role: StaffRole, staffId?: string | number): Promi
       break;
   }
 
-  if (sid != null) {
-    try {
-      const mine = (await customersApi.list()).filter((c) => c.ownerStaffId === sid);
-      const overdue = mine.filter(
-        (c) => c.loanStatus === "OVERDUE" || c.loanStatus === "IN_COLLECTIONS",
-      );
-      base.extras.push({
-        key: "my-customers",
-        label: "Customers allocated to you",
-        count: mine.length,
-        href: "/staff/customers?mine=1",
-      });
-      if (overdue.length > 0) {
-        base.extras.push({
-          key: "my-overdue",
-          label: "Your customers now overdue",
-          count: overdue.length,
-          href: "/staff/customers?seg=overdue&mine=1",
-        });
-      }
-    } catch {
-      // customers list is best-effort; don't zero the pipeline queue
-    }
-  }
   return base;
 }
 
@@ -312,10 +270,11 @@ export default function StaffDashboardPage() {
   const [custom, setCustom] = React.useState<Range>({});
   const range: Range = React.useMemo(() => decisionRangeFor(preset, custom), [preset, custom]);
 
-  // Layer 1+2 — the signed-in role's action queue (+ book-of-business extras).
+  // Layer 1+2 — the signed-in role's action queue (application rows only; the non-application
+  // extras — customers/settlements/cases — are derived below from their own queries).
   const queueQuery = useQuery({
     queryKey: ["staff-dashboard-queue", role, session?.id],
-    queryFn: () => fetchRoleQueue(role as StaffRole, session?.id),
+    queryFn: () => fetchRoleQueue(role as StaffRole),
     enabled: mounted && !!role && has("work"),
     refetchInterval: REFRESH_MS,
   });
@@ -343,44 +302,66 @@ export default function StaffDashboardPage() {
     queryKey: ["staff-dashboard-decisions-all"],
     queryFn: () => staffApi.decisions(),
     enabled: mounted && !!role && has("borrowers"),
-    refetchInterval: REFRESH_MS,
+    refetchInterval: SLOW_MS,
+    staleTime: SLOW_MS,
   });
 
   // "Your borrowers" — company list, scoped server-side for most roles already; narrowed further by
-  // isMine for the roles (Head/ADMIN) whose server scope is broader.
-  const myBookQuery = useQuery({
-    queryKey: ["staff-dashboard-book"],
+  // isMine for the roles (Head/ADMIN) whose server scope is broader. Also feeds the admin segment
+  // strip and the "my customers"/"my overdue" queue extras below — one fetch for all three (Step 1.1).
+  const customersQuery = useQuery({
+    queryKey: ["staff-dashboard-customers"],
     queryFn: () => customersApi.list(),
-    enabled: mounted && !!role && has("borrowers"),
-    refetchInterval: REFRESH_MS,
+    enabled: mounted && !!role && role !== "DSA" && (has("work") || has("borrowers") || isAdmin),
+    refetchInterval: SLOW_MS,
+    staleTime: SLOW_MS,
   });
   const book: CustomerSummary[] = React.useMemo(() => {
-    const rows = myBookQuery.data ?? [];
+    const rows = customersQuery.data ?? [];
     // Fail CLOSED: without a resolvable staff id an ADMIN/Head would read the whole company book
     // under a "your borrowers" heading — the precise mislabelling this dashboard exists to remove.
     if (sid == null) return [];
     const decided = decidedCustomerIds(allDecisionsQuery.data ?? []);
     return rows.filter((c) => isMine(c, sid, decided));
-  }, [myBookQuery.data, allDecisionsQuery.data, sid]);
+  }, [customersQuery.data, allDecisionsQuery.data, sid]);
+
+  // "My customers"/"my-overdue" queue extras — mirrors the old fetchRoleQueue best-effort block:
+  // empty when there's no resolvable staff id, or the customers fetch hasn't resolved yet (error or
+  // still loading), same as the old try/catch swallowing a failure.
+  const myCustomerExtras: QueueExtra[] = React.useMemo(() => {
+    if (sid == null || customersQuery.data == null) return [];
+    const mine = customersQuery.data.filter((c) => c.ownerStaffId === sid);
+    const overdue = mine.filter((c) => c.loanStatus === "OVERDUE" || c.loanStatus === "IN_COLLECTIONS");
+    const out: QueueExtra[] = [
+      { key: "my-customers", label: "Customers allocated to you", count: mine.length, href: "/staff/customers?mine=1" },
+    ];
+    if (overdue.length > 0) {
+      out.push({ key: "my-overdue", label: "Your customers now overdue", count: overdue.length, href: "/staff/customers?seg=overdue&mine=1" });
+    }
+    return out;
+  }, [customersQuery.data, sid]);
 
   // Collections desk — only for the two collections roles (+ ADMIN).
   const casesQuery = useQuery({
     queryKey: ["staff-dashboard-cases"],
     queryFn: () => collectionsApi.listCases(),
     enabled: mounted && !!role && has("collections"),
-    refetchInterval: REFRESH_MS,
+    refetchInterval: SLOW_MS,
+    staleTime: SLOW_MS,
   });
   const settlementsQuery = useQuery({
     queryKey: ["staff-dashboard-settlements"],
     queryFn: () => collectionsApi.listSettlements(),
     enabled: mounted && !!role && has("collections"),
-    refetchInterval: REFRESH_MS,
+    refetchInterval: SLOW_MS,
+    staleTime: SLOW_MS,
   });
   const collectionPaymentsQuery = useQuery({
     queryKey: ["staff-dashboard-collection-payments"],
     queryFn: () => collectionsApi.listPayments(),
     enabled: mounted && !!role && has("collections"),
-    refetchInterval: REFRESH_MS,
+    refetchInterval: SLOW_MS,
+    staleTime: SLOW_MS,
   });
 
   // Admin oversight only — company-wide pipeline / trend / segment / ledger rollups.
@@ -394,20 +375,32 @@ export default function StaffDashboardPage() {
     queryKey: ["staff-dashboard-trends"],
     queryFn: () => dashboardApi.trends(30),
     enabled: mounted && isAdmin,
-    refetchInterval: REFRESH_MS,
-  });
-  const customersQ = useQuery({
-    queryKey: ["staff-dashboard-customers"],
-    queryFn: () => customersApi.list(),
-    enabled: mounted && isAdmin,
-    refetchInterval: REFRESH_MS,
+    refetchInterval: SLOW_MS,
+    staleTime: SLOW_MS,
   });
   const txns = useQuery({
     queryKey: ["admin-dashboard-txns"],
     queryFn: () => staffApi.transactions(),
     enabled: mounted && isAdmin,
-    refetchInterval: REFRESH_MS,
+    refetchInterval: SLOW_MS,
+    staleTime: SLOW_MS,
   });
+
+  // Settlements/cases queue extras — mirror the old fetchRoleQueue best-effort counts, now derived
+  // from settlementsQuery/casesQuery instead of a separate fetch (Steps 1.2/1.3).
+  const pendingSettlements = (settlementsQuery.data ?? []).filter((s) => s.status === "PROPOSED").length;
+  const settlementExtras: QueueExtra[] =
+    (role === "COLLECTION_HEAD" || isAdmin) && pendingSettlements > 0 ? [settlementsExtra(pendingSettlements)] : [];
+  // Role-gated like settlementExtras: casesQuery is enabled for has("collections") (COLLECTION_HEAD
+  // + COLLECTION_EXECUTIVE + ADMIN too), but this extra existed only in the COLLECTION_EXECUTIVE
+  // branch of fetchRoleQueue. Fail CLOSED without a resolvable staff id — showing every company case
+  // is the bug, so an unknown actor gets nothing. Same convention as ApplicationFlowService.byStatus
+  // (returns List.of() when the executive id is missing) and CustomerService.scope().
+  const myCases = role !== "COLLECTION_EXECUTIVE" || sid == null
+    ? []
+    : (casesQuery.data ?? []).filter((c) => c.assignedOfficerId === sid);
+  const caseExtras: QueueExtra[] =
+    myCases.length > 0 ? [{ key: "cases", label: "Your open collection cases", count: myCases.length, href: "/staff/applications" }] : [];
 
   if (!mounted || !session || !role) {
     return <div className="h-64 rounded border border-line bg-white" />;
@@ -422,12 +415,21 @@ export default function StaffDashboardPage() {
   const queue = QUEUE[role];
   const queueData = queueQuery.data ?? { apps: [], extras: [] };
   const myApps = queueData.apps;
-  const extras = queueData.extras;
+  // Extras order MUST match fetchRoleQueue's old push order: queue's own extras (repayments /
+  // referral payouts), then settlements, then cases, then my-customers/my-overdue.
+  const extras = [...queueData.extras, ...settlementExtras, ...caseExtras, ...myCustomerExtras];
   const activeExtras = extras.filter((e) => e.count > 0);
   // Headline count = the union of everything the role's queue page(s) list: application
   // rows + non-application actionable sources (repayments, payouts, settlements, cases).
   const headlineCount = myApps.length + activeExtras.reduce((s, e) => s + e.count, 0);
   const actingHref = ROLE_HREF[role];
+  // Today's queue promise resolves only after every source it awaited, so the headline never
+  // renders half-populated. Preserve that with the queries that now feed the extras above.
+  const queueLoading =
+    queueQuery.isLoading ||
+    (sid != null && customersQuery.isLoading) ||
+    ((role === "COLLECTION_HEAD" || isAdmin) && settlementsQuery.isLoading) ||
+    (role === "COLLECTION_EXECUTIVE" && casesQuery.isLoading);
 
   const decisions = performanceQuery.data ? decisionStats(performanceQuery.data, range.from) : null;
   const outcomes = has("outcomes") && windowedDecisionsQuery.data
@@ -447,18 +449,18 @@ export default function StaffDashboardPage() {
     performanceQuery.isFetching ||
     windowedDecisionsQuery.isFetching ||
     allDecisionsQuery.isFetching ||
-    myBookQuery.isFetching ||
+    customersQuery.isFetching ||
     casesQuery.isFetching ||
     settlementsQuery.isFetching ||
     collectionPaymentsQuery.isFetching ||
-    (isAdmin && (stats.isFetching || trends.isFetching || txns.isFetching || customersQ.isFetching));
+    (isAdmin && (stats.isFetching || trends.isFetching || txns.isFetching));
 
   const refreshAll = () => {
     queueQuery.refetch();
     performanceQuery.refetch();
     windowedDecisionsQuery.refetch();
     allDecisionsQuery.refetch();
-    myBookQuery.refetch();
+    customersQuery.refetch();
     casesQuery.refetch();
     settlementsQuery.refetch();
     collectionPaymentsQuery.refetch();
@@ -466,7 +468,6 @@ export default function StaffDashboardPage() {
       stats.refetch();
       trends.refetch();
       txns.refetch();
-      customersQ.refetch();
     }
   };
 
@@ -491,7 +492,7 @@ export default function StaffDashboardPage() {
           count={headlineCount}
           items={myApps}
           extras={activeExtras}
-          loading={queueQuery.isLoading}
+          loading={queueLoading}
           actingHref={actingHref}
         />
       )}
@@ -508,7 +509,7 @@ export default function StaffDashboardPage() {
             </span>
           </div>
 
-          {queueQuery.isLoading ? (
+          {queueLoading ? (
             <div className="h-40 animate-pulse rounded border border-line bg-white" />
           ) : headlineCount ? (
             <div className="space-y-3">
@@ -550,13 +551,13 @@ export default function StaffDashboardPage() {
       {has("outcomes") && (
         <OutcomesSection
           stats={outcomes}
-          loading={windowedDecisionsQuery.isLoading || myBookQuery.isLoading}
+          loading={windowedDecisionsQuery.isLoading || customersQuery.isLoading}
         />
       )}
 
       {/* Section 4 — Your borrowers */}
       {has("borrowers") && (
-        <BorrowersSection stats={books} loading={myBookQuery.isLoading || allDecisionsQuery.isLoading} />
+        <BorrowersSection stats={books} loading={customersQuery.isLoading || allDecisionsQuery.isLoading} />
       )}
 
       {/* Section 5 — Collections desk */}
@@ -592,8 +593,8 @@ export default function StaffDashboardPage() {
           </section>
 
           <SegmentBar
-            counts={segmentCounts(customersQ.data ?? [])}
-            loading={customersQ.isLoading}
+            counts={segmentCounts(customersQuery.data ?? [])}
+            loading={customersQuery.isLoading}
           />
 
           <details className="group mt-8 rounded border border-line bg-white shadow-sm">
