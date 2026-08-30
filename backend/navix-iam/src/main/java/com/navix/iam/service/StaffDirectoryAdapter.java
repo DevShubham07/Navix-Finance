@@ -10,7 +10,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -41,6 +45,23 @@ public class StaffDirectoryAdapter implements StaffDirectory {
             return Optional.empty();
         }
         return staffUserRepository.findById(staffId).map(StaffDirectoryAdapter::toSummary);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, StaffSummary> findStaffByIds(Collection<Long> staffIds) {
+        if (staffIds == null || staffIds.isEmpty()) {
+            return new HashMap<>();
+        }
+        Map<Long, StaffSummary> result = new HashMap<>();
+        List<Long> ids = staffIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return result;
+        }
+        for (StaffUser s : staffUserRepository.findAllById(ids)) {
+            result.put(s.getId(), toSummary(s));
+        }
+        return result;
     }
 
     @Override

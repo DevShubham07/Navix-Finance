@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -154,9 +155,14 @@ public class CollectionsService {
     @Transactional(readOnly = true)
     public List<CaseView> listCaseViews() {
         requireCollectionsStaff();
-        return caseRepository.findAll(org.springframework.data.domain.Sort.by(
-                        org.springframework.data.domain.Sort.Direction.DESC, "createdAt")).stream()
-                .map(this::toListView)
+        List<CollectionCase> cases = caseRepository.findAll(org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+        List<Long> loanIds = cases.stream().map(CollectionCase::getLoanId).filter(Objects::nonNull).toList();
+        Map<Long, LoanSummary> loanById = loanDirectory.findLoans(loanIds);
+        Map<Long, String> officerNames = officerNames(cases.stream()
+                .map(CollectionCase::getAssignedOfficerId).filter(Objects::nonNull).distinct().toList());
+        return cases.stream()
+                .map(c -> toListView(c, loanById, officerNames))
                 .filter(v -> v.loanStatus() == null || !TERMINAL_LOAN_STATUSES.contains(v.loanStatus()))
                 .toList();
     }
@@ -208,13 +214,15 @@ public class CollectionsService {
         }).toList();
     }
 
-    /** Batched id → name for a page of officers; one {@link StaffDirectory} hit per distinct staffer. */
+    /**
+     * Batched id → name for a page of officers, one {@link StaffDirectory#namesFor} call for the
+     * whole page. An id that does not resolve is simply absent from the map rather than mapped to
+     * {@code null} the way the old per-id loop left it — equivalent for every caller here, since
+     * they all read it with {@code .get(id)}, which returns {@code null} either way. Left as a
+     * standalone comment so nobody "fixes" this back into a {@code containsKey} check later.
+     */
     private Map<Long, String> officerNames(List<Long> officerIds) {
-        Map<Long, String> names = new LinkedHashMap<>();
-        for (Long id : officerIds) {
-            names.put(id, staffDirectory.findStaff(id).map(StaffSummary::name).orElse(null));
-        }
-        return names;
+        return new HashMap<>(staffDirectory.namesFor(officerIds));
     }
 
     /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before {@code asOf}). */
@@ -356,6 +364,23 @@ public class CollectionsService {
         int dpd = dpd(loan);
         return new CaseView(c.getId(), c.getLoanId(), c.getAssignedOfficerId(),
                 officerName(c.getAssignedOfficerId()), c.getCreatedAt(),
+                dpd, dpdCalculator.bucket(dpd),
+                loan != null ? loan.status() : null,
+                loan != null ? loan.borrowerName() : null,
+                loan != null ? loan.outstandingPaise() : null,
+                loan != null ? loan.dueDate() : null);
+    }
+
+    /** Batched variant of {@link #toListView(CollectionCase)} for {@link #listCaseViews()} — reads
+     *  pre-resolved loans/officer names instead of hitting {@link LoanDirectory#findLoan} and
+     *  {@link StaffDirectory#findStaff} per row. */
+    private CaseView toListView(CollectionCase c, Map<Long, LoanSummary> loanById,
+                                Map<Long, String> officerNames) {
+        LoanSummary loan = c.getLoanId() == null ? null : loanById.get(c.getLoanId());
+        int dpd = dpd(loan);
+        Long officerId = c.getAssignedOfficerId();
+        return new CaseView(c.getId(), c.getLoanId(), officerId,
+                officerId == null ? null : officerNames.get(officerId), c.getCreatedAt(),
                 dpd, dpdCalculator.bucket(dpd),
                 loan != null ? loan.status() : null,
                 loan != null ? loan.borrowerName() : null,

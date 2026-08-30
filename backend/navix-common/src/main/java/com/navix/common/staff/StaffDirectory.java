@@ -1,6 +1,9 @@
 package com.navix.common.staff;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -22,6 +25,27 @@ public interface StaffDirectory {
 
     /** The staff member with {@code staffId}, or empty if none. For rendering names. */
     Optional<StaffSummary> findStaff(Long staffId);
+
+    /**
+     * Batched lookup: id → summary for every id in {@code staffIds} that resolves (an id that does
+     * not resolve is simply absent — never mapped to {@code null}). For a page of rows that each
+     * need a staff name (an assignee, a proposer, an officer…) so the caller pays one query instead
+     * of one per row. Named distinctly from {@link #findStaff(Long)} rather than overloaded: a
+     * {@code findStaff(Collection<Long>)} overload would make {@code findStaff(any())} ambiguous in
+     * existing test stubs.
+     */
+    Map<Long, StaffSummary> findStaffByIds(Collection<Long> staffIds);
+
+    /**
+     * Batched id → name for every id in {@code staffIds} that resolves. A mutable {@link HashMap}
+     * so callers may safely {@code .get(null)} (a row with no assignee) without an NPE, unlike
+     * {@code Map.of()}.
+     */
+    default Map<Long, String> namesFor(Collection<Long> staffIds) {
+        Map<Long, String> names = new HashMap<>();
+        findStaffByIds(staffIds).forEach((id, s) -> names.put(id, s.name()));
+        return names;
+    }
 
     /**
      * All ACTIVE staff holding {@code role} (a {@code StaffRole} name), for assignee

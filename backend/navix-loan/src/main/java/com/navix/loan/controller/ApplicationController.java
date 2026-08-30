@@ -496,16 +496,15 @@ public class ApplicationController {
                 .toList();
     }
 
-    /** Loan id → assigned collections officer's name, batched via the existing collections seam. */
+    /** Loan id → assigned collections officer's name, batched via the existing collections seam and
+     *  one {@link StaffDirectory#namesFor} for every distinct officer on the page. */
     private Map<Long, String> collectionOfficerNames(List<Long> loanIds) {
         if (loanIds.isEmpty()) {
             return Map.of();
         }
         Map<Long, Long> officerIdByLoanId = collectionCaseDirectory.assignedOfficerByLoanId(loanIds);
-        Map<Long, String> nameByStaffId = new java.util.LinkedHashMap<>();
-        for (Long staffId : officerIdByLoanId.values().stream().filter(Objects::nonNull).distinct().toList()) {
-            nameByStaffId.put(staffId, resolveExecutiveName(staffId));
-        }
+        Map<Long, String> nameByStaffId = staffDirectory.namesFor(officerIdByLoanId.values().stream()
+                .filter(Objects::nonNull).distinct().toList());
         Map<Long, String> result = new java.util.LinkedHashMap<>();
         officerIdByLoanId.forEach((loanId, staffId) -> result.put(loanId, nameByStaffId.get(staffId)));
         return result;
@@ -518,30 +517,28 @@ public class ApplicationController {
         return staffDirectory.findStaff(executiveId).map(StaffSummary::name).orElse(null);
     }
 
-    /** Batched name resolution for a page of applications — one lookup per distinct assignee, not per row.
-     *  Built with a plain loop (not {@code Collectors.toMap}, which NPEs on a null value) since a stale
-     *  assignee id that no longer resolves to a staff member is expected, not exceptional. */
+    /** Batched name resolution for a page of applications — one {@link StaffDirectory#namesFor}
+     *  call for every distinct assignee, not one lookup per row. A stale assignee id that no
+     *  longer resolves to a staff member is simply absent from the result (expected, not
+     *  exceptional) rather than mapped to {@code null} — every caller reads it with {@code .get}. */
     private Map<Long, String> resolveExecutiveNames(List<LoanApplication> apps) {
-        Map<Long, String> result = new java.util.LinkedHashMap<>();
-        for (Long executiveId : apps.stream().map(LoanApplication::getAssignedExecutiveId)
-                .filter(Objects::nonNull).distinct().toList()) {
-            result.put(executiveId, resolveExecutiveName(executiveId));
-        }
-        return result;
+        return staffDirectory.namesFor(apps.stream().map(LoanApplication::getAssignedExecutiveId)
+                .filter(Objects::nonNull).distinct().toList());
     }
 
     private java.time.Instant latestEventAt(Long applicationId) {
         return latestEventAtByAppId(List.of(applicationId)).get(applicationId);
     }
 
-    /** Newest-first per row, so the first hit per applicationId in iteration order is that row's latest event. */
+    /** The newest event's timestamp per application, resolved in the database as {@code max(at)}
+     *  rather than by loading every event row and keeping the first hit per app. */
     private Map<Long, java.time.Instant> latestEventAtByAppId(List<Long> applicationIds) {
         if (applicationIds.isEmpty()) {
             return Map.of();
         }
         Map<Long, java.time.Instant> result = new java.util.LinkedHashMap<>();
-        for (var event : eventRepository.findByApplicationIdInOrderByAtDesc(applicationIds)) {
-            result.putIfAbsent(event.getApplicationId(), event.getAt());
+        for (var row : eventRepository.findLatestEventAt(applicationIds)) {
+            result.put(row.getApplicationId(), row.getAt());
         }
         return result;
     }

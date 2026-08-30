@@ -79,6 +79,21 @@ public interface ApplicationEventRepository extends JpaRepository<ApplicationEve
             """)
     List<StatusEnteredAt> findCurrentStatusEnteredAt(@Param("applicationIds") Collection<Long> applicationIds);
 
+    /**
+     * Newest event per application: {@code max(at)} across every event row for each id in
+     * {@code applicationIds}, reused by {@link com.navix.loan.controller.ApplicationController} in
+     * place of loading every event row for the page and keeping the first hit per app.
+     * {@code at} is {@code NOT NULL}, so this is exactly the {@code at} of the row that would be
+     * first under {@code ORDER BY at DESC} for that application — <b>not</b> the same thing as
+     * {@link #findCurrentStatusEnteredAt}, which is stage-entry time (the newest transition INTO the
+     * application's current status), not simply the newest event of any kind.
+     *
+     * <p>Callers MUST short-circuit on an empty collection; {@code in ()} is not valid SQL.
+     */
+    @Query("select e.applicationId as applicationId, max(e.at) as at from ApplicationEvent e "
+         + "where e.applicationId in :applicationIds group by e.applicationId")
+    List<StatusEnteredAt> findLatestEventAt(@Param("applicationIds") Collection<Long> applicationIds);
+
     /** Projection for {@link #findCurrentStatusEnteredAt} — one application and its stage-entry time. */
     interface StatusEnteredAt {
         Long getApplicationId();

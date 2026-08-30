@@ -3,6 +3,10 @@ package com.navix.collections.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.collections.dto.CollectionsDtos.SettlementView;
@@ -188,6 +192,31 @@ class SettlementServiceTest {
         assertThatThrownBy(() -> service.reject(settlementId))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("COLLECTION_HEAD");
+    }
+
+    // ---- listAll (the batched list-view path) --------------------------------------------------
+
+    @Test
+    void listAllResolvesNamesInOneBatchedCall() {
+        Settlement proposedOnly = proposedByOfficer(); // PROPOSED — approvedBy/rejectedBy are null
+        Settlement approved = proposedByOfficer();
+        approved.setId(UUID.randomUUID());
+        approved.setStatus(SettlementStatus.APPROVED);
+        approved.setApprovedBy(8L);
+        when(settlementRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(java.util.List.of(proposedOnly, approved));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(
+                9L, "Sana Khan", 8L, "Arjun Patel"));
+
+        java.util.List<SettlementView> views = service.listAll();
+
+        assertThat(views).hasSize(2);
+        assertThat(views).extracting(SettlementView::proposedByName)
+                .containsExactly("Sana Khan", "Sana Khan");
+        assertThat(views.get(0).approvedByName()).isNull(); // still-PROPOSED row: null id -> null name, no NPE
+        assertThat(views.get(1).approvedByName()).isEqualTo("Arjun Patel");
+        verify(staffDirectory, times(1)).namesFor(any());
+        verify(staffDirectory, never()).findStaff(anyLong());
     }
 
     @Test
