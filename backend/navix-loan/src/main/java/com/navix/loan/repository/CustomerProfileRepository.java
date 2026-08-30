@@ -69,4 +69,15 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "order by a.createdAt asc, a.id asc")
     List<com.navix.loan.entity.LoanApplication> findApplicationsAfterByPan(
             @Param("pan") String pan, @Param("after") java.time.Instant after);
+
+    /**
+     * Which of {@code pans} already belong to a customer — the CSV lead import's "already a
+     * customer" check. Distinct, non-null values only.
+     */
+    @Query("select distinct p.pan from CustomerProfile p where p.pan in :pans")
+    List<String> findPansIn(@Param("pans") Collection<String> pans);
+
+    /** Same as {@link #findPansIn}, on mobile. */
+    @Query("select distinct p.mobile from CustomerProfile p where p.mobile in :mobiles")
+    List<String> findMobilesIn(@Param("mobiles") Collection<String> mobiles);
 }

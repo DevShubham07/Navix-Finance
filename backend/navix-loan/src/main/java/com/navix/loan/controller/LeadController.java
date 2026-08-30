@@ -3,9 +3,13 @@ package com.navix.loan.controller;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
+import com.navix.loan.dto.LeadDtos.ImportPreview;
+import com.navix.loan.dto.LeadDtos.ImportRequest;
+import com.navix.loan.dto.LeadDtos.ImportResult;
 import com.navix.loan.dto.LeadDtos.LeadStats;
 import com.navix.loan.dto.LeadDtos.LeadView;
 import com.navix.loan.dto.LeadDtos.UpdateLeadRequest;
+import com.navix.loan.service.LeadImportService;
 import com.navix.loan.service.LeadService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
@@ -23,7 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Telecaller leads API — create/list/update/disposition for TELECALLER+ADMIN;
- * {@code /stats} tracker aggregates for ADMIN.
+ * {@code /stats} tracker aggregates for ADMIN; {@code /import*} the ADMIN CSV lead import
+ * (guards live in the services, not here).
  */
 @RestController
 @RequestMapping("/api/leads")
@@ -31,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class LeadController {
 
     private final LeadService leadService;
+    private final LeadImportService leadImportService;
 
     @PostMapping
     public ApiResponse<LeadView> create(@Valid @RequestBody CreateLeadRequest req) {
@@ -74,5 +80,15 @@ public class LeadController {
     public ApiResponse<LeadView> disposition(
             @PathVariable Long id, @Valid @RequestBody DispositionRequest req) {
         return ApiResponse.ok(leadService.disposition(id, req));
+    }
+
+    @PostMapping("/import/preview")
+    public ApiResponse<ImportPreview> importPreview(@Valid @RequestBody ImportRequest req) {
+        return ApiResponse.ok(leadImportService.preview(req));
+    }
+
+    @PostMapping("/import")
+    public ApiResponse<ImportResult> importCommit(@Valid @RequestBody ImportRequest req) {
+        return ApiResponse.ok(leadImportService.commit(req));
     }
 }

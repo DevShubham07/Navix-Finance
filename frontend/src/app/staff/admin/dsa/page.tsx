@@ -7,6 +7,7 @@ import { Input, Select } from "@/components/ui";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
+import { LeadCsvImport } from "@/components/staff/lead-csv-import";
 import { hasPermission } from "@/lib/auth/rbac";
 import { formatDateTime } from "@/lib/utils";
 import {
@@ -167,6 +168,7 @@ function RosterTab({
 }
 
 function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
+  const qc = useQueryClient();
   const [dsaId, setDsaId] = React.useState<string>("");
   const [q, setQ] = React.useState("");
   const [from, setFrom] = React.useState("");
@@ -214,6 +216,13 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
             { header: "Created", value: (l) => formatDateTime(l.createdAt) },
           ]}
           rows={rows}
+        />
+        <LeadCsvImport
+          onImported={() => {
+            qc.invalidateQueries({ queryKey: ["admin-leads"] });
+            qc.invalidateQueries({ queryKey: ["lead-stats"] });
+            qc.invalidateQueries({ queryKey: ["admin-dsa-leads"] });
+          }}
         />
       </div>
 
