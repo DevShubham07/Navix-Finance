@@ -16,8 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -54,6 +56,32 @@ public class LoanDirectoryAdapter implements LoanDirectory {
             return Optional.empty();
         }
         return loanRepository.findById(loanId).map(this::toSummary);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Reuses {@link #enrich}, the same batched resolution behind {@link #listCollectible} and
+     * {@link #listUpcoming}, so a list-view caller (settlements, payments, cases) pays a fixed
+     * number of queries for the whole page instead of the three per-row queries {@link #findLoan}
+     * costs.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, LoanSummary> findLoans(Collection<Long> loanIds) {
+        if (loanIds == null || loanIds.isEmpty()) {
+            return new HashMap<>();
+        }
+        List<Long> ids = loanIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return new HashMap<>();
+        }
+        List<Loan> loans = loanRepository.findAllById(ids);
+        Map<Long, LoanSummary> result = new HashMap<>();
+        for (LoanSummary s : enrich(loans, LocalDate.now(IST))) {
+            result.put(s.loanId(), s);
+        }
+        return result;
     }
 
     @Override

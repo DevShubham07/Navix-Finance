@@ -60,6 +60,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -110,6 +111,7 @@ public class CustomerService {
     private final OtpVerifierPort otpVerifier;
     private final BorrowerIdentityPort borrowerIdentity;
     private final ApplicationEventPublisher eventPublisher;
+    private final LoanMath loanMath;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -253,9 +255,27 @@ public class CustomerService {
                 .filter(a -> scope == null || scope.permits(a.getCustomerId()))
                 .collect(Collectors.groupingBy(LoanApplication::getCustomerId));
 
+        // ponytail: whole-table load, same altitude as applicationRepository.findAll() above; switch both to an
+        // id-bounded finder when customers are paged.
+        List<Loan> allLoans = loanRepository.findAll().stream()
+                .filter(l -> l.getCustomerId() != null && byCustomer.containsKey(l.getCustomerId()))
+                .toList();
+        Map<Long, List<Loan>> loansByCustomer = allLoans.stream()
+                .collect(Collectors.groupingBy(Loan::getCustomerId));
+        Map<Long, Long> owedByLoanId = repaymentService.outstandingForAll(allLoans, null);
+
         Map<Long, CustomerOwner> owners = ownerRepository.findAll().stream()
                 .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
         Map<Long, String> staffNames = new HashMap<>();
+
+        // Every profile these applications could resolve to, batched in one query instead of one
+        // findByApplicationId per application — latestProfile(apps, profileByAppId) below just picks
+        // among them.
+        List<Long> allAppIds = byCustomer.values().stream().flatMap(List::stream)
+                .map(LoanApplication::getId).toList();
+        Map<Long, CustomerProfile> profileByAppId = allAppIds.isEmpty() ? new HashMap<>()
+                : profileRepository.findByApplicationIdIn(allAppIds).stream()
+                    .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
 
         // Pass 1: resolve each customer's profile + the application id whose bureau pull should be
         // reflected (the profile's own application when present, else the newest application — so a
@@ -266,7 +286,7 @@ public class CustomerService {
         Map<Long, Long> latestAppIdByCustomerForEvents = new HashMap<>();
         for (Map.Entry<Long, List<LoanApplication>> e : byCustomer.entrySet()) {
             List<LoanApplication> apps = e.getValue();
-            CustomerProfile profile = latestProfile(apps);
+            CustomerProfile profile = latestProfile(apps, profileByAppId);
             profileByCustomer.put(e.getKey(), profile);
             Long latestAppId = apps.stream().max(Comparator.comparing(LoanApplication::getId))
                     .map(LoanApplication::getId).orElse(null);
@@ -295,7 +315,7 @@ public class CustomerService {
         // dates were resolved from, plus the collections officer keyed by loan.
         Map<Long, com.navix.common.loan.ApplicationActorDirectory.HandledBy> handledByApp =
                 applicationActorDirectory.byApplicationId(latestAppIdByCustomerForEvents.values());
-        Map<Long, String> collectionOfficerNameByLoanId = collectionOfficerNames(byCustomer.keySet());
+        Map<Long, String> collectionOfficerNameByLoanId = collectionOfficerNames(allLoans);
 
         LocalDate today = LocalDate.now();
         List<CustomerSummary> out = new ArrayList<>();
@@ -303,9 +323,9 @@ public class CustomerService {
             Long customerId = e.getKey();
             List<LoanApplication> apps = e.getValue();
             CustomerProfile profile = profileByCustomer.get(customerId);
-            List<Loan> loans = loanRepository.findByCustomerId(customerId);
+            List<Loan> loans = loansByCustomer.getOrDefault(customerId, List.of());
             long totalOutstanding = loans.stream()
-                    .mapToLong(l -> repaymentService.outstandingAsOf(l.getId(), null))
+                    .mapToLong(l -> owedByLoanId.getOrDefault(l.getId(), 0L))
                     .sum();
             // One latest application + one latest loan for the whole row, so every column below
             // describes the SAME file rather than a mix of several.
@@ -375,7 +395,8 @@ public class CustomerService {
                     statusChangedAt,
                     handled.creditDecidedByName(),
                     handled.disbursedByName(),
-                    collectionOfficerName);
+                    collectionOfficerName,
+                    latestApp != null ? latestApp.getSalaryCreditDay() : null);
             if (matches(cs, apps, needle)) {
                 out.add(cs);
             }
@@ -389,14 +410,11 @@ public class CustomerService {
     }
 
     /**
-     * Loan id → assigned collections officer's name, for every loan these customers hold. One query
-     * across the whole page via the collections seam, then one name lookup per distinct officer.
+     * Loan id → assigned collections officer's name, for every loan passed in. One query across the
+     * whole page via the collections seam, then one name lookup per distinct officer.
      */
-    private Map<Long, String> collectionOfficerNames(Collection<Long> customerIds) {
-        List<Long> loanIds = customerIds.stream()
-                .flatMap(id -> loanRepository.findByCustomerId(id).stream())
-                .map(Loan::getId)
-                .toList();
+    private Map<Long, String> collectionOfficerNames(Collection<Loan> loans) {
+        List<Long> loanIds = loans.stream().map(Loan::getId).toList();
         if (loanIds.isEmpty()) {
             return Map.of();
         }
@@ -694,6 +712,44 @@ public class CustomerService {
         eventPublisher.publishEvent(new SanctionedAmountRevisedEvent(
                 customerId, app.getId(), previousAmountPaise, newAmountPaise, Instant.now()));
         return view;
+    }
+
+    // ---------------------------------------------------------------- salary-credit-day correction
+
+    /**
+     * ADMIN-only: correct the salary-credit day (1–31) on the customer's <b>latest</b> application —
+     * the one {@code ApplicationFlowService.latestSalaryCreditDay} reads for the next reborrow, and
+     * the one {@code LoanService.disburse} reads at disbursal to compute {@code loan.due_date}.
+     *
+     * <p>When that application is still {@code SANCTIONED} with no loan yet ({@code loanId == null}),
+     * the borrower has a pending offer whose repayment date was projected from the OLD day — so this
+     * also recomputes {@code approvedRepaymentDate}/{@code sanctionTenureDays} with the same
+     * {@link LoanMath#dueDateFromSalary} formula {@code sanction()}/{@code carryOverForReapply()} use
+     * (evaluated in IST here, unlike those two, which is out of scope to change). A
+     * {@code DISBURSEMENT_PENDING} application is deliberately left alone — the borrower already
+     * eSigned the Key Fact Statement carrying that date — and a disbursed loan's stored
+     * {@code due_date} is never touched; only the stored day changes for those.
+     */
+    @Transactional
+    public ApplicationView changeSalaryCreditDay(Long customerId, int day) {
+        requireAdmin();
+        if (day < 1 || day > 31) {
+            throw new BusinessException("INVALID_SALARY_DAY", "Salary credit day must be between 1 and 31");
+        }
+        LoanApplication app = applicationRepository.findByCustomerId(customerId).stream()
+                .max(Comparator.comparing(LoanApplication::getId))
+                .orElseThrow(() -> new BusinessException("NO_APPLICATION", "This customer has no application"));
+        logIfChanged(customerId, app.getId(), "salaryCreditDay", str(app.getSalaryCreditDay()), str(day));
+        app.setSalaryCreditDay(day);
+        if (app.getStatus() == ApplicationStatus.SANCTIONED && app.getLoanId() == null) {
+            LocalDate today = LocalDate.now(IST);
+            LocalDate due = loanMath.dueDateFromSalary(today, day);
+            logIfChanged(customerId, app.getId(), "approvedRepaymentDate",
+                    str(app.getApprovedRepaymentDate()), due.toString());
+            app.setApprovedRepaymentDate(due);
+            app.setSanctionTenureDays((int) ChronoUnit.DAYS.between(today, due));
+        }
+        return ApplicationView.of(applicationRepository.save(app));
     }
 
     /** The customer's KYC profile, or {@code CUSTOMER_NOT_FOUND} if they have none. */
@@ -1100,6 +1156,20 @@ public class CustomerService {
                 .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
                 .filter(Objects::nonNull)
                 .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Batched twin of {@link #latestProfile(List)}: same "newest application with a saved profile
+     * wins" rule, but resolved against a pre-fetched application-id → profile map instead of one
+     * {@code findByApplicationId} per application.
+     */
+    private CustomerProfile latestProfile(List<LoanApplication> apps, Map<Long, CustomerProfile> profileByAppId) {
+        return apps.stream()
+                .map(LoanApplication::getId)
+                .filter(profileByAppId::containsKey)
+                .max(Comparator.naturalOrder())
+                .map(profileByAppId::get)
                 .orElse(null);
     }
 

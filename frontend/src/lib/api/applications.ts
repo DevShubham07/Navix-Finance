@@ -627,6 +627,8 @@ export interface CustomerSummary {
   creditDecidedByName?: string | null;
   disbursedByName?: string | null;
   collectionOfficerName?: string | null;
+  /** `salary_credit_day` (1-31) on the customer's latest application — null until collected. */
+  salaryCreditDay?: number | null;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -1778,6 +1780,14 @@ export const customersApi = {
   changeSanctionedAmount: (customerId: number, applicationId: number, newAmountPaise: number) =>
     bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/sanctioned-amount`, "POST", { applicationId, newAmountPaise }),
 
+  /**
+   * ADMIN — correct the salary-credit day (1-31) on the customer's latest application. When that
+   * application is a pending SANCTIONED offer, the projected repayment date moves with it; a live
+   * loan keeps its already-disbursed due date.
+   */
+  changeSalaryDay: (customerId: number, day: number) =>
+    bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/salary-day`, "POST", { salaryCreditDay: day }),
+
   /** One customer's audited profile/salary change history (newest first). */
   changes: (customerId: number) =>
     bff<ProfileChangeView[]>(`${CUSTOMERS_BASE}/${customerId}/changes`, "GET"),
@@ -1928,6 +1938,7 @@ export interface LeadView {
   createdByStaffName: string | null;
   createdAt: string;
   updatedAt: string | null;
+  pincode?: string | null;
 }
 
 export interface CreateLeadInput {
@@ -1984,6 +1995,71 @@ export interface LeadStats {
   avgQualityRating: number | null;
 }
 
+// --- Admin CSV lead import ---------------------------------------------------------------
+
+export interface ImportRow {
+  name: string;
+  mobile: string;
+  pan: string | null;
+  pincode: string | null;
+  email: string | null;
+}
+
+export interface ImportIssue {
+  row: number;
+  field: string;
+  message: string;
+}
+
+export interface ImportDuplicate {
+  row: number;
+  name: string;
+  mobile: string;
+  pan: string | null;
+  matchedOn: "MOBILE" | "PAN" | "MOBILE_AND_PAN";
+  existingLeadId: number;
+  existingName: string;
+  existingMobile: string;
+  existingSource: string | null;
+  fillableFields: string[];
+}
+
+export interface ImportInFileDuplicate {
+  row: number;
+  duplicateOfRow: number;
+  matchedOn: "MOBILE" | "PAN" | "MOBILE_AND_PAN";
+}
+
+export interface ImportExistingCustomer {
+  row: number;
+  name: string;
+  mobile: string;
+  panMasked: string | null;
+}
+
+export interface ImportPreview {
+  totalRows: number;
+  newRows: number;
+  duplicates: ImportDuplicate[];
+  inFileDuplicates: ImportInFileDuplicate[];
+  existingCustomers: ImportExistingCustomer[];
+  issues: ImportIssue[];
+}
+
+export interface ImportResult {
+  inserted: number;
+  merged: number;
+  skippedDuplicates: number;
+  skippedCustomers: number;
+  insertedIds: number[];
+}
+
+export interface ImportRequest {
+  fileName: string;
+  rows: ImportRow[];
+  merge: boolean;
+}
+
 const LEADS_BASE = "/api/staff/leads";
 
 function leadsQuery(params?: LeadListParams): string {
@@ -2023,6 +2099,12 @@ export const leadsApi = {
     const s = sp.toString();
     return bff<LeadStats>(`${LEADS_BASE}/stats${s ? `?${s}` : ""}`, "GET");
   },
+
+  importPreview: (body: ImportRequest) =>
+    bff<ImportPreview>(`${LEADS_BASE}/import/preview`, "POST", body),
+
+  importCommit: (body: ImportRequest) =>
+    bff<ImportResult>(`${LEADS_BASE}/import`, "POST", body),
 };
 
 // ---------------------------------------------------------------------------

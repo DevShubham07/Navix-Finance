@@ -2,6 +2,7 @@ package com.navix.loan.repository;
 
 import com.navix.loan.entity.Lead;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -26,4 +27,10 @@ public interface LeadRepository extends JpaRepository<Lead, Long>, JpaSpecificat
 
     /** Backs the daily lead-creation rate limit (successful creates only). */
     long countByOwnerDsaIdAndCreatedAtAfter(Long ownerDsaId, Instant after);
+
+    /** Batch duplicate lookup for CSV import — the admin upload's "matches an existing lead" check. */
+    List<Lead> findByMobileIn(Collection<String> mobiles);
+
+    /** Batch duplicate lookup for CSV import, PAN side. */
+    List<Lead> findByPanIn(Collection<String> pans);
 }

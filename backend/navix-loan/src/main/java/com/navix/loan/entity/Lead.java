@@ -33,6 +33,9 @@ public class Lead extends BaseAuditEntity {
     @Column(length = 120)
     private String city;
 
+    @Column(length = 6)
+    private String pincode;
+
     @Column(length = 160)
     private String employer;
 

@@ -7,13 +7,14 @@ import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.OutstandingView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.LoanDtos.TransactionView;
+import com.navix.loan.entity.Payment;
 import com.navix.loan.service.LoanService;
 import com.navix.loan.service.RepaymentService;
 import com.navix.loan.service.TransactionService;
+import com.navix.loan.service.TransactionService.BorrowerRef;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,14 +52,16 @@ public class LoanController {
     @GetMapping("/pending-repayments")
     public ApiResponse<List<PaymentView>> pendingRepayments() {
         // Reuse the staff-only ledger's loan → customer enrichment so the verifier can identify the
-        // borrower before accepting a transfer. Borrower repayment endpoints still use PaymentView.of(payment).
-        Map<String, TransactionView> byPaymentId = transactionService.listTransactions(null, "INCOMING").stream()
-                .collect(Collectors.toMap(TransactionView::id, t -> t, (a, b) -> a));
-        return ApiResponse.ok(repaymentService.listPending().stream().map(payment -> {
-            TransactionView transaction = byPaymentId.get("P-" + payment.getId());
+        // borrower before accepting a transfer, without rebuilding the whole ledger for a handful of
+        // rows. Borrower repayment endpoints still use PaymentView.of(payment).
+        List<Payment> pending = repaymentService.listPending();
+        Map<Long, BorrowerRef> byLoan = transactionService.borrowersByLoanId(
+                pending.stream().map(Payment::getLoanId).distinct().toList());
+        return ApiResponse.ok(pending.stream().map(payment -> {
+            BorrowerRef ref = byLoan.get(payment.getLoanId());
             return repaymentService.view(payment,
-                    transaction != null ? transaction.customerId() : null,
-                    transaction != null ? transaction.borrowerName() : null);
+                    ref != null ? ref.customerId() : null,
+                    ref != null ? ref.borrowerName() : null);
         }).toList());
     }
 

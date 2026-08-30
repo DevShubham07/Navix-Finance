@@ -3,12 +3,15 @@ package com.navix.collections.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.collections.dto.CollectionsDtos.CollectionPaymentView;
+import com.navix.common.loan.LoanSummary;
 import com.navix.collections.entity.CollectionCase;
 import com.navix.collections.entity.CollectionPayment;
 import com.navix.collections.entity.CollectionPaymentKind;
@@ -249,7 +252,78 @@ class CollectionPaymentServiceTest {
                 .hasMessageContaining("ACCOUNTANT");
     }
 
+    // ---- listAll / listByStatus / listForCase (the batched list-view path) --------------------
+
+    @Test
+    void listAllResolvesNamesAndBorrowerNamesInOneBatchedCallEach() {
+        CollectionPayment validated = pending(CollectionPaymentStatus.PENDING_ACCOUNTANT);
+        validated.setValidatedBy(5L);
+        // An un-validated row so the null validatedBy id is exercised too and must not NPE.
+        CollectionPayment unvalidated = pending(CollectionPaymentStatus.PENDING_ACCOUNTANT);
+        unvalidated.setId(UUID.randomUUID());
+        when(paymentRepository.findAllByOrderByRaisedAtDesc())
+                .thenReturn(List.of(validated, unvalidated));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(
+                9L, "Sana Khan", 5L, "Neha Gupta"));
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of(
+                2L, loanSummary(2L, "Asha Verma")));
+
+        List<CollectionPaymentView> views = service.listAll();
+
+        assertThat(views).hasSize(2);
+        assertThat(views).allSatisfy(v -> {
+            assertThat(v.raisedByName()).isEqualTo("Sana Khan");
+            assertThat(v.borrowerName()).isEqualTo("Asha Verma");
+        });
+        assertThat(views.get(0).validatedByName()).isEqualTo("Neha Gupta");
+        assertThat(views.get(1).validatedByName()).isNull();
+        verify(staffDirectory, times(1)).namesFor(any());
+        verify(loanDirectory, times(1)).findLoans(any());
+        verify(staffDirectory, never()).findStaff(anyLong());
+        verify(loanDirectory, never()).findLoan(anyLong());
+    }
+
+    @Test
+    void listByStatusUsesTheBatchedPathToo() {
+        when(paymentRepository.findByStatusOrderByRaisedAtAsc(CollectionPaymentStatus.PENDING_HEAD))
+                .thenReturn(List.of(pending(CollectionPaymentStatus.PENDING_HEAD)));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(9L, "Sana Khan"));
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of());
+
+        List<CollectionPaymentView> views = service.listByStatus(CollectionPaymentStatus.PENDING_HEAD);
+
+        assertThat(views).hasSize(1);
+        assertThat(views.get(0).raisedByName()).isEqualTo("Sana Khan");
+        assertThat(views.get(0).borrowerName()).isNull();
+        verify(staffDirectory, never()).findStaff(anyLong());
+        verify(loanDirectory, never()).findLoan(anyLong());
+    }
+
+    @Test
+    void listForCaseUsesTheBatchedPathToo() {
+        when(paymentRepository.findByCollectionCaseIdOrderByRaisedAtDesc(caseId))
+                .thenReturn(List.of(pending(CollectionPaymentStatus.PENDING_ACCOUNTANT)));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(9L, "Sana Khan"));
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of(
+                2L, loanSummary(2L, "Asha Verma")));
+
+        List<CollectionPaymentView> views = service.listForCase(caseId);
+
+        assertThat(views).singleElement().satisfies(v -> {
+            assertThat(v.raisedByName()).isEqualTo("Sana Khan");
+            assertThat(v.borrowerName()).isEqualTo("Asha Verma");
+        });
+        verify(staffDirectory, never()).findStaff(anyLong());
+        verify(loanDirectory, never()).findLoan(anyLong());
+    }
+
     // ---- fixtures -----------------------------------------------------------------------
+
+    private LoanSummary loanSummary(long loanId, String borrowerName) {
+        return new LoanSummary(loanId, 7L, 1L, "ACTIVE", 800_000L, 705_600L, 1_040_000L, 1_040_000L,
+                LocalDate.now().minusDays(30), LocalDate.now(), borrowerName, "ABXXXXX34F",
+                "Acme Corp", "SALARIED", 3_200_000L, "HDFC", false);
+    }
 
     private CollectionCase openCase() {
         CollectionCase c = new CollectionCase();

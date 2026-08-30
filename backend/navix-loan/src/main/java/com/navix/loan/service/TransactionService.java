@@ -12,6 +12,7 @@ import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -58,57 +59,54 @@ public class TransactionService {
      */
     @Transactional(readOnly = true)
     public List<TransactionView> listTransactions(String q, String direction, LocalDate from, LocalDate to) {
+        String dir = direction != null ? direction.trim().toUpperCase() : null;
+
         Map<Long, Loan> loanById = new HashMap<>();
         for (Loan l : loanRepository.findAll()) {
             loanById.put(l.getId(), l);
         }
 
         // loanId -> the borrower's profile (loan → application → customer_profile).
-        Map<Long, CustomerProfile> profileByAppId = profileRepository.findAll().stream()
-                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
-        Map<Long, CustomerProfile> profileByLoanId = new HashMap<>();
-        for (LoanApplication a : applicationRepository.findAll()) {
-            if (a.getLoanId() != null) {
-                CustomerProfile p = profileByAppId.get(a.getId());
-                if (p != null) {
-                    profileByLoanId.put(a.getLoanId(), p);
-                }
-            }
-        }
+        Map<Long, CustomerProfile> profileByLoanId = profilesByLoanId(loanById.keySet());
 
         List<TransactionView> out = new ArrayList<>();
 
-        // Outgoing: each loan is one disbursal.
-        for (Loan loan : loanById.values()) {
-            CustomerProfile p = profileByLoanId.get(loan.getId());
-            out.add(new TransactionView(
-                    "D-" + loan.getId(), "DISBURSAL", "OUTGOING",
-                    loan.getId(), loan.getCustomerId(),
-                    p != null ? p.getFullName() : null,
-                    p != null ? p.getPan() : null,
-                    loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
-                    loan.getDisbursalTxnRef(),
-                    loan.getStatus() != null ? loan.getStatus().name() : null,
-                    loan.getDisbursedOn(), null));
+        // Outgoing: each loan is one disbursal. Skipped entirely when the caller only wants INCOMING.
+        if (!"INCOMING".equals(dir)) {
+            for (Loan loan : loanById.values()) {
+                CustomerProfile p = profileByLoanId.get(loan.getId());
+                out.add(new TransactionView(
+                        "D-" + loan.getId(), "DISBURSAL", "OUTGOING",
+                        loan.getId(), loan.getCustomerId(),
+                        p != null ? p.getFullName() : null,
+                        p != null ? p.getPan() : null,
+                        loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
+                        loan.getDisbursalTxnRef(),
+                        loan.getStatus() != null ? loan.getStatus().name() : null,
+                        loan.getDisbursedOn(), null));
+            }
         }
 
-        // Incoming: each payment is one repayment.
-        for (Payment pay : paymentRepository.findAll()) {
-            Loan loan = loanById.get(pay.getLoanId());
-            CustomerProfile p = profileByLoanId.get(pay.getLoanId());
-            out.add(new TransactionView(
-                    "P-" + pay.getId(), "REPAYMENT", "INCOMING",
-                    pay.getLoanId(),
-                    loan != null ? loan.getCustomerId() : null,
-                    p != null ? p.getFullName() : null,
-                    p != null ? p.getPan() : null,
-                    pay.getAmount() != null ? pay.getAmount() : 0L,
-                    pay.getTxnRef(),
-                    pay.getStatus() != null ? pay.getStatus().name() : null,
-                    pay.getPaidOn(), presignedProof(pay.getProofUrl())));
+        // Incoming: each payment is one repayment. Skipped entirely when the caller only wants OUTGOING.
+        // proofUrl carries the raw S3 key here — presigning happens once, after filtering, below.
+        if (!"OUTGOING".equals(dir)) {
+            for (Payment pay : paymentRepository.findAll()) {
+                Loan loan = loanById.get(pay.getLoanId());
+                CustomerProfile p = profileByLoanId.get(pay.getLoanId());
+                out.add(new TransactionView(
+                        "P-" + pay.getId(), "REPAYMENT", "INCOMING",
+                        pay.getLoanId(),
+                        loan != null ? loan.getCustomerId() : null,
+                        p != null ? p.getFullName() : null,
+                        p != null ? p.getPan() : null,
+                        pay.getAmount() != null ? pay.getAmount() : 0L,
+                        pay.getTxnRef(),
+                        pay.getStatus() != null ? pay.getStatus().name() : null,
+                        pay.getPaidOn(), pay.getProofUrl()));
+            }
         }
 
-        String dir = direction != null ? direction.trim().toUpperCase() : null;
+        // Already narrowed above when dir is INCOMING/OUTGOING; kept as a no-op safety net.
         if ("INCOMING".equals(dir) || "OUTGOING".equals(dir)) {
             out.removeIf(t -> !t.direction().equals(dir));
         }
@@ -129,12 +127,68 @@ public class TransactionService {
         // Most recent first; rows without a date sort to the end.
         out.sort(Comparator.comparing(TransactionView::date,
                 Comparator.nullsLast(Comparator.<LocalDate>reverseOrder())));
+
+        // Presign only the survivors' proofs — the expensive part, done once per row that's actually
+        // returned instead of once per payment in the table.
+        List<TransactionView> result = new ArrayList<>(out.size());
+        for (TransactionView t : out) {
+            result.add(withProof(t, presignedProof(t.proofUrl())));
+        }
+        return result;
+    }
+
+    /**
+     * loanId → the borrower's KYC profile (loan → application → customer_profile), two indexed
+     * queries instead of a full scan of applications and profiles.
+     */
+    public Map<Long, CustomerProfile> profilesByLoanId(Collection<Long> loanIds) {
+        Map<Long, CustomerProfile> profileByLoanId = new HashMap<>();
+        if (loanIds == null || loanIds.isEmpty()) {
+            return profileByLoanId;
+        }
+        List<LoanApplication> apps = applicationRepository.findByLoanIdIn(loanIds);
+        List<Long> appIds = apps.stream().map(LoanApplication::getId).toList();
+        Map<Long, CustomerProfile> profileByAppId = appIds.isEmpty() ? new HashMap<>()
+                : profileRepository.findByApplicationIdIn(appIds).stream()
+                        .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
+        for (LoanApplication a : apps) { // last application (that has a profile) wins — same as before.
+            if (a.getLoanId() != null) {
+                CustomerProfile p = profileByAppId.get(a.getId());
+                if (p != null) {
+                    profileByLoanId.put(a.getLoanId(), p);
+                }
+            }
+        }
+        return profileByLoanId;
+    }
+
+    /** loanId → the borrower's customerId (from the loan) and full name (from the profile). */
+    public record BorrowerRef(Long customerId, String borrowerName) {
+    }
+
+    /** Batch loan → borrower lookup for the pending-repayments queue — no ledger build required. */
+    public Map<Long, BorrowerRef> borrowersByLoanId(Collection<Long> loanIds) {
+        Map<Long, BorrowerRef> out = new HashMap<>();
+        if (loanIds == null || loanIds.isEmpty()) {
+            return out;
+        }
+        Map<Long, CustomerProfile> profiles = profilesByLoanId(loanIds);
+        for (Loan loan : loanRepository.findAllById(loanIds)) {
+            CustomerProfile p = profiles.get(loan.getId());
+            out.put(loan.getId(), new BorrowerRef(loan.getCustomerId(), p != null ? p.getFullName() : null));
+        }
         return out;
     }
 
     /** Resolve a stored S3 key to a short-lived presigned GET; null in, null out. */
     private String presignedProof(String key) {
         return key == null || key.isBlank() ? null : storage.presignDownload(key);
+    }
+
+    /** {@code t} with every field the same except {@code proofUrl}, replaced by {@code presignedUrl}. */
+    private static TransactionView withProof(TransactionView t, String presignedUrl) {
+        return new TransactionView(t.id(), t.type(), t.direction(), t.loanId(), t.customerId(),
+                t.borrowerName(), t.pan(), t.amountPaise(), t.txnRef(), t.status(), t.date(), presignedUrl);
     }
 
     /** Match the search needle against borrower name, mobile, or loan id. */

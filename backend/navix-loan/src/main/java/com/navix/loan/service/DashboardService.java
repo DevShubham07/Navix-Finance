@@ -9,6 +9,7 @@ import com.navix.loan.entity.Payment;
 import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -45,19 +46,20 @@ public class DashboardService {
             byDay.put(start.plusDays(i), new long[3]);
         }
 
-        for (ApplicationEvent e : eventRepository.findByAction("CREATE")) {
+        Instant sinceInstant = start.atStartOfDay(IST).toInstant();
+        for (ApplicationEvent e : eventRepository.findByActionAndAtGreaterThanEqual("CREATE", sinceInstant)) {
             if (e.getAt() == null) continue;
             LocalDate d = e.getAt().atZone(IST).toLocalDate();
             long[] slot = byDay.get(d);
             if (slot != null) slot[0]++;
         }
-        for (Loan l : loanRepository.findAll()) {
+        for (Loan l : loanRepository.findByDisbursedOnGreaterThanEqual(start)) {
             LocalDate d = l.getDisbursedOn();
             if (d == null) continue;
             long[] slot = byDay.get(d);
             if (slot != null) slot[1]++;
         }
-        for (Payment p : paymentRepository.findAll()) {
+        for (Payment p : paymentRepository.findByStatusAndPaidOnGreaterThanEqual(PaymentStatus.VERIFIED, start)) {
             if (p.getStatus() != PaymentStatus.VERIFIED || p.getPaidOn() == null) continue;
             long[] slot = byDay.get(p.getPaidOn());
             if (slot != null) slot[2]++;

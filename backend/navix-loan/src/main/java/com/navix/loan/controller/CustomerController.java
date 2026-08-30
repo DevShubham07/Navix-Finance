@@ -18,6 +18,7 @@ import com.navix.loan.dto.CustomerDtos.CustomerSummary;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.RemarkView;
 import com.navix.loan.dto.CustomerDtos.RequestMobileChangeRequest;
+import com.navix.loan.dto.CustomerDtos.SalaryDayRequest;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.service.CustomerService;
@@ -110,6 +111,18 @@ public class CustomerController {
         requireStaff();
         return ApiResponse.ok(customerService.changeSanctionedAmount(
                 customerId, req.applicationId(), req.newAmountPaise()));
+    }
+
+    /**
+     * ADMIN — correct the salary-credit day (1–31) on the customer's latest application. When that
+     * application is a pending SANCTIONED offer, the projected repayment date is recomputed too; a
+     * live/closed loan keeps its already-disbursed due date.
+     */
+    @PostMapping("/{customerId}/salary-day")
+    public ApiResponse<ApplicationView> changeSalaryDay(
+            @PathVariable Long customerId, @Valid @RequestBody SalaryDayRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.changeSalaryCreditDay(customerId, req.salaryCreditDay()));
     }
 
     /** Every document across ALL of this customer's applications, grouped by application (newest
