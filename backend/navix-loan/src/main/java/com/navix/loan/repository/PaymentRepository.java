@@ -3,6 +3,7 @@ package com.navix.loan.repository;
 import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.entity.Payment;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -56,4 +57,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             + "where p.decidedBy in :staffIds and p.decidedAt >= :from and p.decidedAt < :to")
     List<Payment> findDecidedByInWindow(@Param("staffIds") Collection<Long> staffIds,
                                         @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Payments with a given status paid at or after {@code since} — backs the dashboard trend window. */
+    List<Payment> findByStatusAndPaidOnGreaterThanEqual(PaymentStatus status, LocalDate since);
 }

@@ -69,8 +69,10 @@ public class SecurityConfig {
                     // authenticated token — a borrower's own JWT included — because it fell through
                     // to anyRequest().authenticated(). The audience gate stops that; DSA still
                     // satisfies ROLE_STAFF, so the service rejects that role explicitly.
+                    // /api/dashboard is company-wide aggregate counts, staff-only.
                     .requestMatchers("/api/staff", "/api/staff/**", "/api/admin/**", "/api/dsa/**",
-                            "/api/collections", "/api/collections/**").hasRole("STAFF")
+                            "/api/collections", "/api/collections/**",
+                            "/api/dashboard", "/api/dashboard/**").hasRole("STAFF")
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
