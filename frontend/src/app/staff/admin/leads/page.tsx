@@ -110,6 +110,7 @@ export default function AdminLeadsPage() {
           columns={[
             { header: "Name", value: (r: LeadView) => r.name },
             { header: "Mobile", value: (r) => r.mobile },
+            { header: "Pincode", value: (r) => r.pincode ?? "" },
             { header: "Email", value: (r) => r.email ?? "" },
             { header: "City", value: (r) => r.city ?? "" },
             { header: "Employer", value: (r) => r.employer ?? "" },
@@ -235,6 +236,7 @@ export default function AdminLeadsPage() {
                 <th>S.No.</th>
                 <th>Name</th>
                 <th>Mobile</th>
+                <th>Pincode</th>
                 <th>Source</th>
                 <th>Status</th>
                 <th>★</th>
@@ -246,7 +248,7 @@ export default function AdminLeadsPage() {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center text-navy/40">
+                  <td colSpan={10} className="text-center text-navy/40">
                     {list.isLoading ? "Loading…" : "No leads in this filter."}
                   </td>
                 </tr>
@@ -256,6 +258,7 @@ export default function AdminLeadsPage() {
                   <td className="text-navy/50">{(page - 1) * pageSize + i + 1}</td>
                   <td className="font-medium text-navy">{row.name}</td>
                   <td className="font-mono text-xs">{row.mobile}</td>
+                  <td className="font-mono text-xs">{row.pincode ?? "—"}</td>
                   <td>
                     {row.source ?? "—"}
                     {row.sourceDetail ? ` · ${row.sourceDetail}` : ""}

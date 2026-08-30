@@ -1938,6 +1938,7 @@ export interface LeadView {
   createdByStaffName: string | null;
   createdAt: string;
   updatedAt: string | null;
+  pincode?: string | null;
 }
 
 export interface CreateLeadInput {
@@ -1994,6 +1995,71 @@ export interface LeadStats {
   avgQualityRating: number | null;
 }
 
+// --- Admin CSV lead import ---------------------------------------------------------------
+
+export interface ImportRow {
+  name: string;
+  mobile: string;
+  pan: string | null;
+  pincode: string | null;
+  email: string | null;
+}
+
+export interface ImportIssue {
+  row: number;
+  field: string;
+  message: string;
+}
+
+export interface ImportDuplicate {
+  row: number;
+  name: string;
+  mobile: string;
+  pan: string | null;
+  matchedOn: "MOBILE" | "PAN" | "MOBILE_AND_PAN";
+  existingLeadId: number;
+  existingName: string;
+  existingMobile: string;
+  existingSource: string | null;
+  fillableFields: string[];
+}
+
+export interface ImportInFileDuplicate {
+  row: number;
+  duplicateOfRow: number;
+  matchedOn: "MOBILE" | "PAN" | "MOBILE_AND_PAN";
+}
+
+export interface ImportExistingCustomer {
+  row: number;
+  name: string;
+  mobile: string;
+  panMasked: string | null;
+}
+
+export interface ImportPreview {
+  totalRows: number;
+  newRows: number;
+  duplicates: ImportDuplicate[];
+  inFileDuplicates: ImportInFileDuplicate[];
+  existingCustomers: ImportExistingCustomer[];
+  issues: ImportIssue[];
+}
+
+export interface ImportResult {
+  inserted: number;
+  merged: number;
+  skippedDuplicates: number;
+  skippedCustomers: number;
+  insertedIds: number[];
+}
+
+export interface ImportRequest {
+  fileName: string;
+  rows: ImportRow[];
+  merge: boolean;
+}
+
 const LEADS_BASE = "/api/staff/leads";
 
 function leadsQuery(params?: LeadListParams): string {
@@ -2033,6 +2099,12 @@ export const leadsApi = {
     const s = sp.toString();
     return bff<LeadStats>(`${LEADS_BASE}/stats${s ? `?${s}` : ""}`, "GET");
   },
+
+  importPreview: (body: ImportRequest) =>
+    bff<ImportPreview>(`${LEADS_BASE}/import/preview`, "POST", body),
+
+  importCommit: (body: ImportRequest) =>
+    bff<ImportResult>(`${LEADS_BASE}/import`, "POST", body),
 };
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import com.navix.loan.entity.Lead;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -65,7 +66,8 @@ public final class LeadDtos {
             Long createdByStaffId,
             String createdByStaffName,
             Instant createdAt,
-            Instant updatedAt) {
+            Instant updatedAt,
+            String pincode) {
 
         public static LeadView of(Lead l, String staffName) {
             return new LeadView(
@@ -86,8 +88,57 @@ public final class LeadDtos {
                     l.getCreatedByStaffId(),
                     staffName,
                     l.getCreatedAt(),
-                    l.getUpdatedAt());
+                    l.getUpdatedAt(),
+                    l.getPincode());
         }
+    }
+
+    public record ImportRow(String name, String mobile, String pan, String pincode, String email) {
+    }
+
+    public record ImportRequest(
+            @NotBlank @Size(max = 200) String fileName,
+            @NotNull @Size(max = 2000) List<ImportRow> rows,
+            boolean merge) {
+    }
+
+    public record ImportIssue(int row, String field, String message) {
+    }
+
+    public record ImportDuplicate(
+            int row,
+            String name,
+            String mobile,
+            String pan,
+            String matchedOn,
+            Long existingLeadId,
+            String existingName,
+            String existingMobile,
+            String existingSource,
+            List<String> fillableFields) {
+    }
+
+    public record ImportInFileDuplicate(int row, int duplicateOfRow, String matchedOn) {
+    }
+
+    public record ImportExistingCustomer(int row, String name, String mobile, String panMasked) {
+    }
+
+    public record ImportPreview(
+            int totalRows,
+            int newRows,
+            List<ImportDuplicate> duplicates,
+            List<ImportInFileDuplicate> inFileDuplicates,
+            List<ImportExistingCustomer> existingCustomers,
+            List<ImportIssue> issues) {
+    }
+
+    public record ImportResult(
+            int inserted,
+            int merged,
+            int skippedDuplicates,
+            int skippedCustomers,
+            List<Long> insertedIds) {
     }
 
     public record StatusCount(String status, long count) {
