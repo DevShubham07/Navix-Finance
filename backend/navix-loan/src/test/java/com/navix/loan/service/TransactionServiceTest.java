@@ -1,7 +1,10 @@
 package com.navix.loan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.storage.DocumentStoragePort;
@@ -19,6 +22,7 @@ import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -91,9 +95,11 @@ class TransactionServiceTest {
 
     private void stubAll(List<Loan> loans, List<LoanApplication> apps, List<CustomerProfile> profiles, List<Payment> payments) {
         when(loanRepository.findAll()).thenReturn(loans);
-        when(applicationRepository.findAll()).thenReturn(apps);
-        when(profileRepository.findAll()).thenReturn(profiles);
-        when(paymentRepository.findAll()).thenReturn(payments);
+        // A direction=OUTGOING/INCOMING query now short-circuits the other side entirely (no
+        // findAll on payments, and no profile lookup at all when there are no loans), so these are lenient.
+        lenient().when(applicationRepository.findByLoanIdIn(any())).thenReturn(apps);
+        lenient().when(profileRepository.findByApplicationIdIn(any())).thenReturn(profiles);
+        lenient().when(paymentRepository.findAll()).thenReturn(payments);
     }
 
     @Test
@@ -153,5 +159,73 @@ class TransactionServiceTest {
         // Inclusive bounds → both days included; an out-of-range window → empty.
         assertThat(service.listTransactions(null, null, LocalDate.of(2026, 5, 20), LocalDate.of(2026, 6, 20))).hasSize(2);
         assertThat(service.listTransactions(null, null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31))).isEmpty();
+    }
+
+    @Test
+    void presignsOnlyRowsThatSurviveTheFilter() {
+        Payment p1 = payment1(); // paidOn 2026-06-20, proof loan/repayment-proof/1.jpg (stubbed in setUp)
+        Payment p2 = new Payment();
+        p2.setId(2L);
+        p2.setLoanId(2L);
+        p2.setAmount(50_000L);
+        p2.setMethod(PaymentMethod.UPI);
+        p2.setStatus(PaymentStatus.VERIFIED);
+        p2.setPaidOn(LocalDate.of(2026, 7, 1));
+        p2.setProofUrl("loan/repayment-proof/2.jpg");
+        Payment p3 = new Payment();
+        p3.setId(3L);
+        p3.setLoanId(2L);
+        p3.setAmount(60_000L);
+        p3.setMethod(PaymentMethod.UPI);
+        p3.setStatus(PaymentStatus.VERIFIED);
+        p3.setPaidOn(LocalDate.of(2026, 8, 1));
+        p3.setProofUrl("loan/repayment-proof/3.jpg");
+        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(p1, p2, p3));
+
+        // Window keeps only p1 (June); p2/p3 (July/August) are excluded before presigning ever runs.
+        List<TransactionView> txns = service.listTransactions(
+                null, "INCOMING", LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+
+        assertThat(txns).hasSize(1);
+        verify(storage, times(1)).presignDownload(any());
+    }
+
+    @Test
+    void borrowersByLoanIdUsesLoanCustomerIdAndProfileName() {
+        when(loanRepository.findAllById(List.of(2L))).thenReturn(List.of(loan2()));
+        when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of(app5()));
+        when(profileRepository.findByApplicationIdIn(List.of(5L))).thenReturn(List.of(profile5()));
+
+        Map<Long, TransactionService.BorrowerRef> refs = service.borrowersByLoanId(List.of(2L));
+
+        assertThat(refs).hasSize(1);
+        TransactionService.BorrowerRef ref = refs.get(2L);
+        assertThat(ref.customerId()).isEqualTo(7L); // from the loan
+        assertThat(ref.borrowerName()).isEqualTo("Aman"); // from the profile
+    }
+
+    @Test
+    void profilesByLoanIdKeepsTheLastApplicationWithAProfile() {
+        LoanApplication appNoProfile = new LoanApplication();
+        appNoProfile.setId(10L);
+        appNoProfile.setLoanId(2L);
+        appNoProfile.setCustomerId(7L);
+
+        LoanApplication appWithProfile = new LoanApplication();
+        appWithProfile.setId(11L);
+        appWithProfile.setLoanId(2L);
+        appWithProfile.setCustomerId(7L);
+
+        CustomerProfile profile = new CustomerProfile();
+        profile.setApplicationId(11L);
+        profile.setFullName("Rita");
+
+        when(applicationRepository.findByLoanIdIn(List.of(2L))).thenReturn(List.of(appNoProfile, appWithProfile));
+        when(profileRepository.findByApplicationIdIn(List.of(10L, 11L))).thenReturn(List.of(profile));
+
+        Map<Long, CustomerProfile> result = service.profilesByLoanId(List.of(2L));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(2L).getFullName()).isEqualTo("Rita");
     }
 }
