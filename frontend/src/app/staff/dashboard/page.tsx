@@ -50,6 +50,7 @@ import {
 } from "@/lib/staff/my-stats";
 import { useMounted } from "@/hooks/use-mounted";
 import { formatDate } from "@/lib/utils";
+import { SalaryDaysPanel } from "@/components/staff/salary-days-panel";
 
 const REFRESH_MS = 10_000;
 
@@ -595,6 +596,7 @@ export default function StaffDashboardPage() {
             counts={segmentCounts(customersQ.data ?? [])}
             loading={customersQ.isLoading}
           />
+          <SalaryDaysPanel rows={customersQ.data ?? []} loading={customersQ.isLoading} />
 
           <details className="group mt-8 rounded border border-line bg-white shadow-sm">
             {/* No interactive children inside <summary> — it is itself a disclosure control. */}

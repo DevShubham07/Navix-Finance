@@ -10,6 +10,8 @@ import com.navix.loan.entity.CustomerCallLog;
 import com.navix.loan.entity.CustomerRemark;
 import com.navix.loan.entity.ProfileChangeLog;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
@@ -100,7 +102,11 @@ public final class CustomerDtos {
              *  {@code application_event} trail and the collection case; null until each happens. */
             String creditDecidedByName,
             String disbursedByName,
-            String collectionOfficerName) {
+            String collectionOfficerName,
+            /** {@code salary_credit_day} (1–31) on the customer's latest application — the day the
+             *  next reborrow inherits and disbursal reads to compute {@code loan.due_date}. Null
+             *  until it has been collected. */
+            Integer salaryCreditDay) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */
@@ -157,6 +163,14 @@ public final class CustomerDtos {
      * immediately; the borrower is notified afterwards (email + in-app), not asked to consent via OTP.
      */
     public record ChangeSanctionedAmountRequest(@NotNull Long applicationId, long newAmountPaise) {
+    }
+
+    /**
+     * ADMIN correcting the salary-credit day (1–31) on a customer's latest application — see
+     * {@code CustomerService.changeSalaryCreditDay}'s javadoc for the SANCTIONED-only repayment-date
+     * recompute this can trigger.
+     */
+    public record SalaryDayRequest(@NotNull @Min(1) @Max(31) Integer salaryCreditDay) {
     }
 
     /** One audited profile/salary change for the customer detail history pane (Phase 2.1). */
