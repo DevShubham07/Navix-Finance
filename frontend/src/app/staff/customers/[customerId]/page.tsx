@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send, Phone, IndianRupee } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send, Phone, IndianRupee, Calendar } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -24,7 +24,10 @@ import {
   rupeesToPaise,
   type CustomerDetail,
   type BlocklistType,
+  type ApplicationView,
 } from "@/lib/api/applications";
+import { dueDateFromSalary } from "@/lib/calc/loan-math";
+import { formatDate } from "@/lib/utils";
 
 /** Loan statuses that mean the loan is still live (vs. a past/closed loan). */
 const OPEN_LOAN = new Set(["ACTIVE", "OVERDUE", "IN_COLLECTIONS", "DISBURSED", "DEFAULTED"]);
@@ -102,6 +105,9 @@ export default function CustomerDetailPage() {
                 )}
                 {sanctionedApp && (
                   <SanctionedAmountCard customerId={id} app={sanctionedApp} onSaved={invalidate} />
+                )}
+                {c.applications.length > 0 && (
+                  <SalaryDayCard customerId={id} app={c.applications[0]} onSaved={invalidate} />
                 )}
                 <AdminEditCard detail={c} onSaved={invalidate} />
                 <MobileChangeCard detail={c} onSaved={invalidate} />
@@ -367,6 +373,63 @@ function SanctionedAmountCard({
       <button
         onClick={() => save.mutate()}
         disabled={save.isPending || newAmountPaise <= 0}
+        className="btn btn-sm btn-navy btn-block disabled:opacity-50"
+      >
+        {save.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save
+      </button>
+    </Card>
+  );
+}
+
+/**
+ * ADMIN correcting the salary-credit day (1-31) on the customer's latest application — the day the
+ * next reborrow inherits and disbursal reads to compute the loan's due date. Shown whenever the
+ * customer has an application at all (not just a live SANCTIONED offer): a closed/active loan's
+ * stored day can still be corrected, it just won't move an already-disbursed due date.
+ */
+function SalaryDayCard({
+  customerId,
+  app,
+  onSaved,
+}: {
+  customerId: number;
+  app: ApplicationView;
+  onSaved: () => void;
+}) {
+  const [day, setDay] = React.useState(String(app.salaryCreditDay ?? 1));
+  const hasPendingOffer = app.status === "SANCTIONED" && app.loanId == null;
+  const projectedDue = dueDateFromSalary({ disbursedOn: new Date(), salaryDay: Number(day) });
+
+  const save = useMutation({
+    mutationFn: () => customersApi.changeSalaryDay(customerId, Number(day)),
+    onSuccess: () => onSaved(),
+  });
+
+  return (
+    <Card title="Correct salary credit day (admin)" icon={<Calendar size={16} />}>
+      <p className="mb-3 text-xs text-muted">
+        Currently on file: <span className="font-mono text-ink">{app.salaryCreditDay ?? "—"}</span>.
+        Carried over to a reborrow and read by disbursal to set the loan&apos;s due date.
+      </p>
+      <Select
+        label="Salary credit day"
+        value={day}
+        onChange={(e) => setDay(e.target.value)}
+        helperText={`Projected next due date: ${formatDate(projectedDue)}.`}
+        className="!mb-2"
+      >
+        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+          <option key={d} value={d}>{d}</option>
+        ))}
+      </Select>
+      <p className="mb-3 text-xs text-muted">
+        {hasPendingOffer ? "Also moves the pending offer's repayment date. " : null}
+        Active loans keep their existing due date.
+      </p>
+      {save.error && <p className="mb-2 text-sm text-error-700">{errMessage(save.error)}</p>}
+      <button
+        onClick={() => save.mutate()}
+        disabled={save.isPending || Number(day) === (app.salaryCreditDay ?? 0)}
         className="btn btn-sm btn-navy btn-block disabled:opacity-50"
       >
         {save.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save

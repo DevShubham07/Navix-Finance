@@ -627,6 +627,8 @@ export interface CustomerSummary {
   creditDecidedByName?: string | null;
   disbursedByName?: string | null;
   collectionOfficerName?: string | null;
+  /** `salary_credit_day` (1-31) on the customer's latest application — null until collected. */
+  salaryCreditDay?: number | null;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -1777,6 +1779,14 @@ export const customersApi = {
   /** ADMIN — set the sanctioned amount directly; the backend emails the customer the revised figure. */
   changeSanctionedAmount: (customerId: number, applicationId: number, newAmountPaise: number) =>
     bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/sanctioned-amount`, "POST", { applicationId, newAmountPaise }),
+
+  /**
+   * ADMIN — correct the salary-credit day (1-31) on the customer's latest application. When that
+   * application is a pending SANCTIONED offer, the projected repayment date moves with it; a live
+   * loan keeps its already-disbursed due date.
+   */
+  changeSalaryDay: (customerId: number, day: number) =>
+    bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/salary-day`, "POST", { salaryCreditDay: day }),
 
   /** One customer's audited profile/salary change history (newest first). */
   changes: (customerId: number) =>

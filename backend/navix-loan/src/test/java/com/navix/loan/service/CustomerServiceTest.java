@@ -63,6 +63,7 @@ class CustomerServiceTest {
     @Mock private com.navix.common.loan.ApplicationActorDirectory applicationActorDirectory;
     @Mock private com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
     @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock private LoanMath loanMath;
 
     private CustomerService service;
 
@@ -73,7 +74,8 @@ class CustomerServiceTest {
                 applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
                 staffDirectory, applicationActorDirectory, collectionCaseDirectory,
                 risk, jdbc, creditBriefService, documentRepository, bureauStateService,
-                verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher);
+                verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher,
+                loanMath);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
         // No collision by default — the handful of tests that DO care about this stub it explicitly.
         lenient().when(borrowerIdentity.wouldCollideWithAnotherCustomer(anyString(), any())).thenReturn(false);
@@ -870,5 +872,95 @@ class CustomerServiceTest {
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(application));
         when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(customerProfile));
         when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+    }
+
+    // ---------------------------------------------------------------- salary-credit-day correction
+
+    @Test
+    void changeSalaryCreditDayRejectedForNonAdmin() {
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+        assertThatThrownBy(() -> service.changeSalaryCreditDay(9000001L, 15))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ADMIN");
+    }
+
+    @Test
+    void changeSalaryCreditDayRejectsOutOfRange() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        assertThatThrownBy(() -> service.changeSalaryCreditDay(9000001L, 0))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("INVALID_SALARY_DAY");
+        assertThatThrownBy(() -> service.changeSalaryCreditDay(9000001L, 32))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("INVALID_SALARY_DAY");
+    }
+
+    @Test
+    void changeSalaryCreditDayRejectsCustomerWithoutApplications() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.changeSalaryCreditDay(9000001L, 15))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("NO_APPLICATION");
+    }
+
+    @Test
+    void changeSalaryCreditDayUpdatesLatestApplicationAndLogsTheChange() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        LoanApplication older = app(5, 9000001L, ApplicationStatus.CLOSED);
+        // KYC_APPROVED (not SANCTIONED), so this exercises only the plain-day-update path.
+        LoanApplication newer = app(9, 9000001L, ApplicationStatus.KYC_APPROVED);
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(older, newer));
+        when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        var view = service.changeSalaryCreditDay(9000001L, 15);
+
+        assertThat(view.id()).isEqualTo(9L);               // the higher id is saved, not the older one
+        assertThat(newer.getSalaryCreditDay()).isEqualTo(15);
+        assertThat(older.getSalaryCreditDay()).isNull();    // the older application is left alone
+
+        org.mockito.ArgumentCaptor<com.navix.loan.entity.ProfileChangeLog> captor =
+                org.mockito.ArgumentCaptor.forClass(com.navix.loan.entity.ProfileChangeLog.class);
+        verify(changeLogRepository).save(captor.capture());
+        assertThat(captor.getValue().getField()).isEqualTo("salaryCreditDay");
+        assertThat(captor.getValue().getNewValue()).isEqualTo("15");
+    }
+
+    @Test
+    void changeSalaryCreditDayRecomputesPendingOfferRepaymentDate() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        LoanApplication a = app(2, 9000001L, ApplicationStatus.SANCTIONED); // loanId null = pending offer
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
+        when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        java.time.LocalDate stubbedDue = java.time.LocalDate.of(2026, 9, 20);
+        when(loanMath.dueDateFromSalary(any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(stubbedDue);
+
+        service.changeSalaryCreditDay(9000001L, 20);
+
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        assertThat(a.getApprovedRepaymentDate()).isEqualTo(stubbedDue);
+        assertThat(a.getSanctionTenureDays())
+                .isEqualTo((int) java.time.temporal.ChronoUnit.DAYS.between(today, stubbedDue));
+    }
+
+    @Test
+    void changeSalaryCreditDayLeavesDisbursedApplicationDatesAlone() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        LoanApplication a = app(2, 9000001L, ApplicationStatus.ACTIVE);
+        a.setLoanId(77L);
+        a.setApprovedRepaymentDate(java.time.LocalDate.of(2026, 6, 30));
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
+        when(applicationRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        service.changeSalaryCreditDay(9000001L, 12);
+
+        assertThat(a.getSalaryCreditDay()).isEqualTo(12);
+        assertThat(a.getApprovedRepaymentDate()).isEqualTo(java.time.LocalDate.of(2026, 6, 30)); // unchanged
+        verify(loanMath, org.mockito.Mockito.never())
+                .dueDateFromSalary(any(), org.mockito.ArgumentMatchers.anyInt());
     }
 }

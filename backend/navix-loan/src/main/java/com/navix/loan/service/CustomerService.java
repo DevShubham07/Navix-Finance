@@ -60,6 +60,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -110,6 +111,7 @@ public class CustomerService {
     private final OtpVerifierPort otpVerifier;
     private final BorrowerIdentityPort borrowerIdentity;
     private final ApplicationEventPublisher eventPublisher;
+    private final LoanMath loanMath;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -393,7 +395,8 @@ public class CustomerService {
                     statusChangedAt,
                     handled.creditDecidedByName(),
                     handled.disbursedByName(),
-                    collectionOfficerName);
+                    collectionOfficerName,
+                    latestApp != null ? latestApp.getSalaryCreditDay() : null);
             if (matches(cs, apps, needle)) {
                 out.add(cs);
             }
@@ -709,6 +712,44 @@ public class CustomerService {
         eventPublisher.publishEvent(new SanctionedAmountRevisedEvent(
                 customerId, app.getId(), previousAmountPaise, newAmountPaise, Instant.now()));
         return view;
+    }
+
+    // ---------------------------------------------------------------- salary-credit-day correction
+
+    /**
+     * ADMIN-only: correct the salary-credit day (1–31) on the customer's <b>latest</b> application —
+     * the one {@code ApplicationFlowService.latestSalaryCreditDay} reads for the next reborrow, and
+     * the one {@code LoanService.disburse} reads at disbursal to compute {@code loan.due_date}.
+     *
+     * <p>When that application is still {@code SANCTIONED} with no loan yet ({@code loanId == null}),
+     * the borrower has a pending offer whose repayment date was projected from the OLD day — so this
+     * also recomputes {@code approvedRepaymentDate}/{@code sanctionTenureDays} with the same
+     * {@link LoanMath#dueDateFromSalary} formula {@code sanction()}/{@code carryOverForReapply()} use
+     * (evaluated in IST here, unlike those two, which is out of scope to change). A
+     * {@code DISBURSEMENT_PENDING} application is deliberately left alone — the borrower already
+     * eSigned the Key Fact Statement carrying that date — and a disbursed loan's stored
+     * {@code due_date} is never touched; only the stored day changes for those.
+     */
+    @Transactional
+    public ApplicationView changeSalaryCreditDay(Long customerId, int day) {
+        requireAdmin();
+        if (day < 1 || day > 31) {
+            throw new BusinessException("INVALID_SALARY_DAY", "Salary credit day must be between 1 and 31");
+        }
+        LoanApplication app = applicationRepository.findByCustomerId(customerId).stream()
+                .max(Comparator.comparing(LoanApplication::getId))
+                .orElseThrow(() -> new BusinessException("NO_APPLICATION", "This customer has no application"));
+        logIfChanged(customerId, app.getId(), "salaryCreditDay", str(app.getSalaryCreditDay()), str(day));
+        app.setSalaryCreditDay(day);
+        if (app.getStatus() == ApplicationStatus.SANCTIONED && app.getLoanId() == null) {
+            LocalDate today = LocalDate.now(IST);
+            LocalDate due = loanMath.dueDateFromSalary(today, day);
+            logIfChanged(customerId, app.getId(), "approvedRepaymentDate",
+                    str(app.getApprovedRepaymentDate()), due.toString());
+            app.setApprovedRepaymentDate(due);
+            app.setSanctionTenureDays((int) ChronoUnit.DAYS.between(today, due));
+        }
+        return ApplicationView.of(applicationRepository.save(app));
     }
 
     /** The customer's KYC profile, or {@code CUSTOMER_NOT_FOUND} if they have none. */
