@@ -273,7 +273,7 @@ export default function StaffDashboardPage() {
   // Layer 1+2 — the signed-in role's action queue (application rows only; the non-application
   // extras — customers/settlements/cases — are derived below from their own queries).
   const queueQuery = useQuery({
-    queryKey: ["staff-dashboard-queue", role],
+    queryKey: ["staff-dashboard-queue", role, session?.id],
     queryFn: () => fetchRoleQueue(role as StaffRole),
     enabled: mounted && !!role && has("work"),
     refetchInterval: REFRESH_MS,
@@ -391,10 +391,14 @@ export default function StaffDashboardPage() {
   const pendingSettlements = (settlementsQuery.data ?? []).filter((s) => s.status === "PROPOSED").length;
   const settlementExtras: QueueExtra[] =
     (role === "COLLECTION_HEAD" || isAdmin) && pendingSettlements > 0 ? [settlementsExtra(pendingSettlements)] : [];
-  // Fail CLOSED without a resolvable staff id — showing every company case is the bug, so an
-  // unknown actor gets nothing. Same convention as ApplicationFlowService.byStatus (returns
-  // List.of() when the executive id is missing) and CustomerService.scope().
-  const myCases = sid == null ? [] : (casesQuery.data ?? []).filter((c) => c.assignedOfficerId === sid);
+  // Role-gated like settlementExtras: casesQuery is enabled for has("collections") (COLLECTION_HEAD
+  // + COLLECTION_EXECUTIVE + ADMIN too), but this extra existed only in the COLLECTION_EXECUTIVE
+  // branch of fetchRoleQueue. Fail CLOSED without a resolvable staff id — showing every company case
+  // is the bug, so an unknown actor gets nothing. Same convention as ApplicationFlowService.byStatus
+  // (returns List.of() when the executive id is missing) and CustomerService.scope().
+  const myCases = role !== "COLLECTION_EXECUTIVE" || sid == null
+    ? []
+    : (casesQuery.data ?? []).filter((c) => c.assignedOfficerId === sid);
   const caseExtras: QueueExtra[] =
     myCases.length > 0 ? [{ key: "cases", label: "Your open collection cases", count: myCases.length, href: "/staff/applications" }] : [];
 
