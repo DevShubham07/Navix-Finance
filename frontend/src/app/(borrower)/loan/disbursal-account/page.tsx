@@ -167,11 +167,11 @@ export default function DisbursalAccountPage() {
               <p className="mt-3 flex items-center gap-1.5 text-sm text-success-700">
                 <CheckCircle2 size={15} /> We&apos;ll reuse the successful verification for this account.
               </p>
-            ) : (
+            ) : !isLocked && saved.attemptsLeft > 0 ? (
               <p className="mt-3 text-sm text-muted">
                 Confirming will perform a ₹1 account check. {saved.attemptsLeft} attempt{saved.attemptsLeft === 1 ? "" : "s"} remaining.
               </p>
-            )}
+            ) : null}
             <button
               type="button"
               onClick={() => setChanging(true)}

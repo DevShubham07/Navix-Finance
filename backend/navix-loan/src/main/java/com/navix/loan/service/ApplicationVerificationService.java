@@ -1963,7 +1963,7 @@ public class ApplicationVerificationService {
         derived.put("accountNumber", accountNumber);
         derived.put("ifsc", ifsc);
         upsert(appId, PENNY_DROP, REVIEW, "MANUAL_PROOF", null, ref(appId, PENNY_DROP), null, null, null,
-                derived, "Bank proof uploaded — awaiting Disbursement Head verification");
+                derived, "Bank proof uploaded — awaiting manual verification");
     }
 
     /**
@@ -1992,7 +1992,7 @@ public class ApplicationVerificationService {
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("aadhaarProofPending", true);
         ApplicationVerification row = upsert(appId, AADHAAR, REVIEW, "MANUAL_PROOF", null, ref(appId, AADHAAR),
-                null, null, null, derived, "Aadhaar card uploaded — awaiting Disbursement Head verification");
+                null, null, null, derived, "Aadhaar card uploaded — awaiting manual verification");
         return view(row);
     }
 
