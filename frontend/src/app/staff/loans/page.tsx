@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage, useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
+import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { loansApi, paiseToINR, type LoanRegisterRow } from "@/lib/api/applications";
 import {
   QueueDateFilter,
@@ -339,9 +340,12 @@ function LoansPageInner() {
                               </td>
                               <td className="staff-cell text-ink">{l.assignedOfficerName ?? <span className="text-muted">Unallocated</span>}</td>
                               <td className="staff-sticky-actions text-right">
-                                <button onClick={() => setOpenLoanId(l.loanId)} className="inline-flex items-center gap-1 text-navy hover:underline">
-                                  Open <ArrowRight size={14} />
-                                </button>
+                                <span className="inline-flex items-center gap-2">
+                                  <AdminLogPaymentButton loanId={l.loanId} loanStatus={l.status} compact />
+                                  <button onClick={() => setOpenLoanId(l.loanId)} className="inline-flex items-center gap-1 text-navy hover:underline">
+                                    Open <ArrowRight size={14} />
+                                  </button>
+                                </span>
                               </td>
                             </tr>
                           ))}

@@ -22,6 +22,7 @@ import { LoanBreakdown } from "@/components/staff/loan-breakdown";
 import { errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
 import {
   staffApi,
+  storageApi,
   paiseToINR,
   rupeesToPaise,
   type LoanView,
@@ -75,6 +76,7 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
   const [amount, setAmount] = React.useState("");
   const [method, setMethod] = React.useState<PaymentMethodName>("UPI");
   const [txnRef, setTxnRef] = React.useState("");
+  const [proof, setProof] = React.useState<File | null>(null);
   const [touchedAmount, setTouchedAmount] = React.useState(false);
 
   const loanQ = useQuery({ queryKey: ["staff-loan", loanId], queryFn: () => staffApi.loan(loanId) });
@@ -98,16 +100,31 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
   }, [dueOnDate, touchedAmount]);
 
   const record = useMutation({
-    mutationFn: () =>
-      staffApi.adminRecordRepayment(loanId, {
+    mutationFn: async () => {
+      // Optional for admin (the backend mandates proof only for borrowers), but uploaded the same
+      // way as the borrower's repay screen: presign → direct browser→S3 PUT, key sent as proofUrl.
+      let proofUrl: string | undefined;
+      if (proof) {
+        const up = await storageApi.presignUpload({
+          category: "REPAYMENT_PROOF",
+          filename: proof.name,
+          contentType: proof.type || "application/octet-stream",
+        });
+        await storageApi.putToPresignedUrl(up.url, proof);
+        proofUrl = up.key;
+      }
+      return staffApi.adminRecordRepayment(loanId, {
         amountPaise: rupeesToPaise(Number(amount)),
         method,
         paidOn,
         txnRef: txnRef.trim() || undefined,
-      }),
+        proofUrl,
+      });
+    },
     onSuccess: () => {
       for (const key of [
         ["staff-loan", loanId],
+        ["staff-loans"],
         ["staff-outstanding-asof", loanId],
         ["staff-queue"],
         ["staff-dashboard-queue"],
@@ -172,6 +189,12 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
             label="Transaction reference (optional)"
             value={txnRef}
             onChange={(e) => setTxnRef(e.target.value)}
+          />
+          <Input
+            label="Payment screenshot (optional)"
+            type="file"
+            accept="image/*,.pdf"
+            onChange={(e) => setProof(e.target.files?.[0] ?? null)}
           />
         </div>
 

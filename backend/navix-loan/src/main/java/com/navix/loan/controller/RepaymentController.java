@@ -30,10 +30,16 @@ public class RepaymentController {
 
     private final RepaymentService repaymentService;
 
-    /** Record a repayment (full, partial or prepayment) against the loan. */
+    /**
+     * Record a repayment (full, partial or prepayment) against the loan. Borrower (own loan only —
+     * the service checks ownership), Accountant (two-step record→verify) or Admin. Collections roles
+     * are excluded on purpose: their payments go through the maker-checker
+     * {@code CollectionPaymentService} path instead.
+     */
     @PostMapping
     public ApiResponse<PaymentView> record(@PathVariable Long loanId,
                                            @Valid @RequestBody RepaymentRequest request) {
+        requireRole("BORROWER", "ACCOUNTANT", "ADMIN");
         return ApiResponse.ok(repaymentService.view(repaymentService.recordPayment(
                 loanId, request.amountPaise(), request.method(), request.txnRef(),
                 request.proofUrl(), request.paidOn())));
