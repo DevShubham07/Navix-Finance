@@ -11,6 +11,7 @@ import { offerApi, verificationApi } from "@/lib/api/applications";
 import { useOffer } from "@/lib/offer";
 import { formatDateTime } from "@/lib/utils";
 import { formatApiError } from "@/lib/api/errors";
+import { compressImage } from "@/lib/compress-image";
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
@@ -117,13 +118,14 @@ export default function DisbursalAccountPage() {
     setBankProofBusy(true);
     setBankProofError(undefined);
     try {
-      const contentType = bankProofFile.type || "application/octet-stream";
+      const upload = await compressImage(bankProofFile);
+      const contentType = upload.type || "application/octet-stream";
       const { key, url } = await verificationApi.presignUpload(appId, {
         docType: "BANK_PROOF",
-        fileName: bankProofFile.name,
+        fileName: upload.name,
         contentType,
       });
-      await verificationApi.putToPresignedUrl(url, bankProofFile, contentType);
+      await verificationApi.putToPresignedUrl(url, upload, contentType);
       await verificationApi.uploadedDocuments(appId, { docType: "BANK_PROOF", objectKeys: [key] });
       await offerApi.confirmDisbursalAccount(appId, {
         accountNumber: changing ? account : (saved.accountNumber ?? ""),

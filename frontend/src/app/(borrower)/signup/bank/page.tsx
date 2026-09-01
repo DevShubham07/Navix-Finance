@@ -9,6 +9,7 @@ import { Reassurance } from "@/components/borrower/reassurance";
 import { useOnboarding, saveProfileSlice, completeStep, useSavedProfile } from "@/lib/onboarding";
 import { verificationApi } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
+import { compressImage } from "@/lib/compress-image";
 import { INDIAN_BANKS } from "@/lib/indian-banks";
 import { normalizeMobile } from "@/lib/utils";
 
@@ -97,13 +98,14 @@ export default function SignupBankPage() {
       });
       const keys: string[] = [];
       for (const f of statements) {
-        const contentType = f.type || "application/octet-stream";
+        const upload = await compressImage(f);
+        const contentType = upload.type || "application/octet-stream";
         const { key, url } = await verificationApi.presignUpload(appId, {
           docType: "BANK_STATEMENT",
-          fileName: f.name,
+          fileName: upload.name,
           contentType,
         });
-        await verificationApi.putToPresignedUrl(url, f, contentType);
+        await verificationApi.putToPresignedUrl(url, upload, contentType);
         keys.push(key);
       }
       await verificationApi.uploadedDocuments(appId, {

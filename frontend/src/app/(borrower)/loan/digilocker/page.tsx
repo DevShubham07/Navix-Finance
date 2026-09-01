@@ -8,6 +8,7 @@ import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOffer, nextOfferRoute, prevOfferRoute, completeOfferStep } from "@/lib/offer";
 import { verificationApi, type StepResult } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
+import { compressImage } from "@/lib/compress-image";
 
 type Phase = "idle" | "connecting" | "polling" | "done" | "failed" | "manual";
 const POLL_MS = 4000;
@@ -206,13 +207,14 @@ export default function LoanDigiLockerPage() {
         ["AADHAAR_FRONT", aadhaarFront],
         ["AADHAAR_BACK", aadhaarBack],
       ] as const) {
-        const contentType = file.type || "application/octet-stream";
+        const upload = await compressImage(file);
+        const contentType = upload.type || "application/octet-stream";
         const { key, url } = await verificationApi.presignUpload(appId, {
           docType,
-          fileName: file.name,
+          fileName: upload.name,
           contentType,
         });
-        await verificationApi.putToPresignedUrl(url, file, contentType);
+        await verificationApi.putToPresignedUrl(url, upload, contentType);
         await verificationApi.uploadedDocuments(appId, { docType, objectKeys: [key] });
       }
       await verificationApi.aadhaarManual(appId);

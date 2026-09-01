@@ -22,6 +22,7 @@ import {
   type PaymentView,
 } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
+import { compressImage } from "@/lib/compress-image";
 import { formatDate } from "@/lib/utils";
 import { daysBetween } from "@/lib/calc/loan-math";
 import { addIsoCalendarDays } from "@/lib/borrower-flow";
@@ -92,12 +93,13 @@ export default function RepayPage() {
       // Direct browser -> S3 PUT via a presigned URL, same pattern as every other upload in the app —
       // the bytes never pass through the BFF. Uploaded only now (not on file-select) so switching the
       // amount/method after picking a screenshot never re-uploads it for nothing.
+      const upload = await compressImage(proof);
       const up = await storageApi.presignUpload({
         category: "REPAYMENT_PROOF",
-        filename: proof.name,
-        contentType: proof.type || "application/octet-stream",
+        filename: upload.name,
+        contentType: upload.type || "application/octet-stream",
       });
-      await storageApi.putToPresignedUrl(up.url, proof);
+      await storageApi.putToPresignedUrl(up.url, upload);
       return borrowerApi.recordRepayment(loanId as number, { ...payload, proofUrl: up.key, paidOn: todayISO() });
     },
     onSuccess: () => {

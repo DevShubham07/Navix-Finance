@@ -998,7 +998,19 @@ async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> 
 
 /** PUT raw bytes (File or Blob) straight to a presigned S3 URL — never through the BFF. */
 async function putToPresignedUrl(url: string, body: Blob, contentType: string): Promise<void> {
-  const res = await fetch(url, { method: "PUT", body, headers: { "Content-Type": contentType } });
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "PUT", body, headers: { "Content-Type": contentType } });
+  } catch {
+    // The direct-to-S3 PUT died at the network layer (slow/dropped mobile connection, mid-upload
+    // reset). Without this, the raw browser TypeError ("Failed to fetch") reached the UI with no
+    // code for support to trace.
+    throw new ApplicationApiError(
+      "Upload failed — check your connection and try again.",
+      "UPLOAD_NETWORK_ERROR",
+      0,
+    );
+  }
   if (!res.ok) {
     throw new ApplicationApiError(`Upload failed (status ${res.status}).`, `UPLOAD_FAILED_${res.status}`, res.status);
   }
@@ -2657,13 +2669,22 @@ export const storageApi = {
     filename: string;
     contentType: string;
   }): Promise<PresignUpload> => {
-    const res = await fetch("/api/storage/presign-upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body),
-      credentials: "same-origin",
-      cache: "no-store",
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/storage/presign-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(body),
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+    } catch {
+      throw new ApplicationApiError(
+        "Upload could not be prepared — check your connection and try again.",
+        "UPLOAD_NETWORK_ERROR",
+        0,
+      );
+    }
     const text = await res.text();
     if (!res.ok) {
       // BFF/backend error paths return the ApiResponse envelope.

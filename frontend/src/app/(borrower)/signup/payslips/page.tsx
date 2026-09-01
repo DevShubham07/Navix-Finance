@@ -10,6 +10,7 @@ import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOnboarding, completeStep, useSavedProfile } from "@/lib/onboarding";
 import { verificationApi, type StepResult } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
+import { compressImage } from "@/lib/compress-image";
 
 const LABELS = ["Most recent month", "Previous month", "Month before that"] as const;
 const ACCEPT = "application/pdf,image/jpeg,image/png";
@@ -66,13 +67,14 @@ export default function SignupPayslipsPage() {
       const keys: string[] = [];
       for (const f of files) {
         if (!f) continue;
-        const contentType = f.type || "application/octet-stream";
+        const upload = await compressImage(f);
+        const contentType = upload.type || "application/octet-stream";
         const { key, url } = await verificationApi.presignUpload(appId, {
           docType: "SALARY_SLIP",
-          fileName: f.name,
+          fileName: upload.name,
           contentType,
         });
-        await verificationApi.putToPresignedUrl(url, f, contentType);
+        await verificationApi.putToPresignedUrl(url, upload, contentType);
         keys.push(key);
       }
       const r = await verificationApi.salary(appId, saved.monthlySalaryPaise, keys, undefined,

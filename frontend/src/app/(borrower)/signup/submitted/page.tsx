@@ -7,6 +7,7 @@ import { CheckCircle2, FileCheck2, Phone, UploadCloud } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding";
 import { borrowerApi, journeyApi, verificationApi } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
+import { compressImage } from "@/lib/compress-image";
 import { BRAND } from "@/lib/brand";
 
 const ACCEPT = "application/pdf,image/jpeg,image/png";
@@ -60,9 +61,10 @@ export default function SignupSubmittedPage() {
     }
     setError(undefined);
     try {
-      const contentType = f.type || "application/octet-stream";
-      const { url } = await verificationApi.presignUpload(appId, { docType, fileName: f.name, contentType });
-      await verificationApi.putToPresignedUrl(url, f, contentType);
+      const upload = await compressImage(f);
+      const contentType = upload.type || "application/octet-stream";
+      const { url } = await verificationApi.presignUpload(appId, { docType, fileName: upload.name, contentType });
+      await verificationApi.putToPresignedUrl(url, upload, contentType);
       setUploaded((prev) => ({ ...prev, [docType]: f.name }));
     } catch (err) {
       setError(formatApiError(err, "Upload failed — please try again."));
