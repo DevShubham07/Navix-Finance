@@ -25,11 +25,37 @@ public class CreditRatingCalculator {
 
     private static final NumberFormat INR = NumberFormat.getInstance(new Locale("en", "IN"));
 
+    /**
+     * Recommendation stamped on a report we cannot rate. Never persisted — {@code CreditBriefService}
+     * stores a null recommendation for these; it exists so the record is always well-formed.
+     */
+    static final String UNRATED = "SCORE UNAVAILABLE";
+
     /** Outcome of a rating run: 1–5★, a verdict band, and a 2–3 sentence underwriter summary. */
     public record Rating(double stars, String recommendation, String summary) {
+
+        /**
+         * False when the bureau returned a report but no usable score.
+         *
+         * <p>Callers MUST NOT persist or render stars for an unrated report: {@code stars} is 0.0
+         * only as a placeholder, and "0.0 / 5" reads as the worst possible borrower rather than
+         * "not scored". Kept a primitive so the PDF renderer's {@code StarRowEvent(double)} and every
+         * {@code %.1f} format string stay as they are.
+         */
+        public boolean rated() {
+            return stars > 0;
+        }
     }
 
     public Rating rate(BureauReportFacts f) {
+        // A report with no usable score is NOT a zero-score borrower. nz() below would turn a null
+        // into 0, drop it into the "< 650" band and stamp a fabricated 2.0★ "NOT RECOMMENDED" on a
+        // file whose tradelines are perfectly real — which is exactly what CRIF sends when SCORE-VALUE
+        // comes back outside 300-900. Rate nothing, summarise what we do know, and let the credit
+        // team read the accounts.
+        if (f.creditScore() == null) {
+            return new Rating(0.0, UNRATED, summarizeUnscored(f));
+        }
         int score = nz(f.creditScore());
         int defaults = nz(f.defaults());
         long total = nz(f.totalBalanceRupees());
@@ -122,6 +148,31 @@ public class CreditRatingCalculator {
             sb.append("Recent enquiry activity is low; ");
         }
         sb.append(verdictSentence(stars)).append(".");
+        return sb.toString();
+    }
+
+    /**
+     * The summary for a report we cannot rate. Deliberately mentions neither a score nor a verdict:
+     * {@link #summarize} hardcodes "(bureau score N)" and closes with a recommendation sentence, and
+     * with a null score both would be fiction — "a weak credit profile (bureau score 0)" for a
+     * borrower whose file we simply could not score.
+     */
+    private String summarizeUnscored(BureauReportFacts f) {
+        String name = (f.name() != null && !f.name().isBlank()) ? titleCase(f.name()) : "The customer";
+        int defaults = nz(f.defaults());
+        StringBuilder sb = new StringBuilder();
+        sb.append(name).append(" has a bureau record, but the bureau returned no usable credit score");
+        if (f.totalAccounts() != null) {
+            sb.append(". The report covers ").append(f.totalAccounts())
+                    .append(f.totalAccounts() == 1 ? " account" : " accounts");
+            if (f.activeAccounts() != null) {
+                sb.append(" (").append(f.activeAccounts()).append(" active)");
+            }
+        }
+        sb.append(". Total outstanding exposure is ").append(inr(nz(f.totalBalanceRupees())))
+                .append(" with ").append(defaults)
+                .append(defaults == 1 ? " reported default" : " reported defaults")
+                .append(". Underwrite from the account history rather than a score.");
         return sb.toString();
     }
 

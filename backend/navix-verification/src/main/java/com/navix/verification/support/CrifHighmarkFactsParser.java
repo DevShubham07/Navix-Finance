@@ -55,17 +55,34 @@ public final class CrifHighmarkFactsParser {
      * @param mobile caller-known mobile (Category A).
      * @return categorized facts, or {@code null} on a thin-file report.
      */
+    /**
+     * Is there anything in this report to brief on? The exact rule {@link #parse} uses to decide it
+     * has a thin file — neither an account summary nor any tradeline detail.
+     *
+     * <p><b>Exposed so {@code FintrixCrifClient} can classify "no record" with the SAME rule.</b>
+     * The two must never be written twice. If the client believed a report had substance while
+     * {@code parse} returned {@code null}, the pull would come back as neither a hit nor a no-hit —
+     * {@code noRecord:false} with {@code facts == null} — and {@code CreditBriefService.generate}
+     * reads exactly that combination as a thin file and CLEARS the borrower's existing credit brief.
+     */
+    public static boolean hasSubstance(JsonNode report) {
+        if (report == null || report.isMissingNode() || report.isNull()) {
+            return false;
+        }
+        return !(report.path("ACCOUNTS-SUMMARY").isMissingNode()
+                && report.path("RESPONSES").isMissingNode());
+    }
+
     public static BureauReportFacts parse(JsonNode report, Integer score,
                                           String name, String pan, String mobile) {
         if (report == null || report.isMissingNode() || report.isNull()) {
             return null;
         }
-        JsonNode accountsSummary = report.path("ACCOUNTS-SUMMARY");
-        JsonNode responses = report.path("RESPONSES");
-        // Thin-file: neither an account summary nor any tradeline detail to brief on.
-        if (accountsSummary.isMissingNode() && responses.isMissingNode()) {
+        if (!hasSubstance(report)) {
             return null;
         }
+        JsonNode accountsSummary = report.path("ACCOUNTS-SUMMARY");
+        JsonNode responses = report.path("RESPONSES");
         List<JsonNode> tradelineNodes = asList(responses.path("RESPONSE")).stream()
                 .map(node -> node.path("LOAN-DETAILS"))
                 .toList();

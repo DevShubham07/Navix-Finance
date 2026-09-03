@@ -3,12 +3,16 @@ package com.navix.verification.config;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -61,6 +65,41 @@ public class VerificationClientConfig {
         return factory;
     }
 
+    /**
+     * Every provider client shares one lenient JSON converter.
+     *
+     * <p>Spring's default Jackson converter accepts {@code application/json} only, so whenever
+     * Signzy, Fintrix or Digitap labelled an otherwise-perfect JSON body
+     * {@code application/octet-stream}, {@code ProviderJson}'s {@code .toEntity(JsonNode.class)}
+     * threw before we ever saw the content. The audit row for those calls holds
+     * {@code httpStatus: null} and {@code response: null} — the answer was lost on OUR side of the
+     * wire, not the provider's. All eight beans were built identically with default converters, so
+     * this is fixed once here rather than eight times.
+     *
+     * <p><b>{@link MediaType#APPLICATION_JSON} MUST stay element 0.</b>
+     * {@code AbstractHttpMessageConverter.getDefaultContentType()} returns the first supported type
+     * and {@code DefaultRestClient} writes the request body with a null contentType — so putting
+     * octet-stream or text/plain first would silently change the {@code Content-Type} of every
+     * outbound provider POST, and every provider would start rejecting us with 400/415.
+     *
+     * <p>Deliberately <b>not</b> {@link MediaType#ALL}: these clients only ever read a
+     * {@code JsonNode}, and a converter claiming everything would start intercepting reads it cannot
+     * parse. The list is mutated in place, so the default byte[]/String/Resource converters survive —
+     * do not switch to the {@code Iterable} overload of {@code messageConverters}, which replaces
+     * the whole list.
+     */
+    private static void lenientJson(List<HttpMessageConverter<?>> converters) {
+        converters.removeIf(MappingJackson2HttpMessageConverter.class::isInstance);
+        MappingJackson2HttpMessageConverter json = new MappingJackson2HttpMessageConverter();
+        json.setSupportedMediaTypes(List.of(
+                MediaType.APPLICATION_JSON,
+                MediaType.valueOf("application/*+json"),
+                MediaType.APPLICATION_OCTET_STREAM,
+                MediaType.TEXT_PLAIN,
+                MediaType.valueOf("text/json")));
+        converters.add(json);
+    }
+
     private static String basic(String clientId, String clientSecret) {
         String token = Base64.getEncoder().encodeToString(
                 (clientId + ":" + clientSecret).getBytes(StandardCharsets.UTF_8));
@@ -72,6 +111,7 @@ public class VerificationClientConfig {
         return RestClient.builder()
                 .baseUrl(props.baseUrl())
                 .requestFactory(timeoutRequestFactory(timeouts.connectTimeout(), timeouts.readTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
                 // Signzy expects the RAW opaque token in Authorization (no "Basic"/"Bearer" prefix)
                 // plus the account's unique id in x-client-unique-id.
                 .defaultHeader(HttpHeaders.AUTHORIZATION, props.token() == null ? "" : props.token())
@@ -87,6 +127,7 @@ public class VerificationClientConfig {
         return RestClient.builder()
                 .baseUrl(props.prodBaseUrl())
                 .requestFactory(timeoutRequestFactory(timeouts.connectTimeout(), timeouts.readTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, props.prodToken() == null ? "" : props.prodToken())
                 .defaultHeader("x-client-unique-id",
                         props.clientUniqueId() == null ? "" : props.clientUniqueId())
@@ -98,6 +139,7 @@ public class VerificationClientConfig {
         return RestClient.builder()
                 .baseUrl(props.svcBaseUrl())
                 .requestFactory(timeoutRequestFactory(timeouts.connectTimeout(), timeouts.readTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
                 .build();
     }
@@ -109,6 +151,7 @@ public class VerificationClientConfig {
                 .baseUrl(props.baseUrl())
                 .requestFactory(timeoutRequestFactory(
                         timeouts.connectTimeout(), timeouts.signzyBureauReadTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, props.token() == null ? "" : props.token())
                 .defaultHeader("x-client-unique-id",
                         props.clientUniqueId() == null ? "" : props.clientUniqueId())
@@ -120,6 +163,7 @@ public class VerificationClientConfig {
         return RestClient.builder()
                 .baseUrl(props.apiBaseUrl())
                 .requestFactory(timeoutRequestFactory(timeouts.connectTimeout(), timeouts.readTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
                 .build();
     }
@@ -133,6 +177,7 @@ public class VerificationClientConfig {
                 .baseUrl(props.svcBaseUrl())
                 .requestFactory(timeoutRequestFactory(
                         timeouts.connectTimeout(), timeouts.digitapCrifReadTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
                 .build();
     }
@@ -145,6 +190,7 @@ public class VerificationClientConfig {
                 .baseUrl(props.apiBaseUrl())
                 .requestFactory(timeoutRequestFactory(
                         timeouts.connectTimeout(), timeouts.bureauReadTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
                 .build();
     }
@@ -155,6 +201,7 @@ public class VerificationClientConfig {
                 .baseUrl(props.baseUrl())
                 .requestFactory(timeoutRequestFactory(
                         timeouts.connectTimeout(), timeouts.fintrixBureauReadTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
                 // Fintrix authenticates its two endpoints DIFFERENTLY: /crif_combine was verified
                 // working on Basic, /bureau_ch_user_auth on these two headers. We send the superset so

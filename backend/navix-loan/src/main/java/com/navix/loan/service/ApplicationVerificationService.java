@@ -14,6 +14,7 @@ import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.OtpVerifierPort;
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.CustomerProfile;
@@ -270,7 +271,8 @@ public class ApplicationVerificationService {
             // The provider couldn't be reached. Record it and let the borrower through — a technical
             // failure must not wedge an application on the last screen (revamp.md decision 10); the
             // credit team sees the flag and decides. Mirrors verifyEmail below.
-            return providerUnavailable(appId, PAN, "PAN check unavailable — pending manual review");
+            return providerUnavailable(appId, PAN, providerFailure,
+                    "PAN check unavailable — pending manual review");
         }
         CustomerProfile profile = profile(appId);
         profile.setPanVerified(r.valid());
@@ -895,6 +897,26 @@ public class ApplicationVerificationService {
             }
         }
 
+        // Fintrix keys /crif_combine on name + mobile and rejects a blank name with an HTTP-200
+        // envelope carrying statusCode 400 (see FintrixCrifClient.rejectUnlessNoRecord) — a billable
+        // call that can never succeed. The intake deliberately never asks for a name (revamp.md
+        // decision 12): it arrives from the PAN record, so a PAN outage — or a PAN that PASSES while
+        // returning no name — leaves the profile nameless and every bureau attempt doomed. 44
+        // applications in the Sep-2026 audit died this way. Park it as an actionable REVIEW instead:
+        // an ADMIN can supply the name and re-run.
+        //
+        // Placement is deliberate. This sits AFTER the reuse check, not up with the DOB guard:
+        // CustomerProfile is per-application, so a returning borrower's fresh profile is nameless
+        // until PAN succeeds, and guarding earlier would throw away the FREE reuse of a sibling
+        // application's valid PASS and force a needless review. (The DOB guard above has exactly that
+        // latent bug — left alone rather than copied.)
+        if (nz(profile.getFullName()).isBlank()) {
+            ApplicationVerification row = upsert(appId, BUREAU, REVIEW, null, null, ref,
+                    null, null, null, Map.of("missingProfileField", "name"),
+                    "We need the name from your PAN record before we can run the credit check.");
+            return new StepResult(BUREAU, REVIEW, row.getMessage(), Map.of());
+        }
+
         VerificationPort.BureauCheck r;
         try {
             r = verification.pullBureau(
@@ -1512,6 +1534,14 @@ public class ApplicationVerificationService {
         return stripReportLink(r.rawResponseJson());
     }
 
+    /**
+     * Prefix of the message {@code ProviderJson} puts on a wrapped transport failure. Matched rather
+     * than imported because {@code navix-loan} cannot see {@code navix-verification} — the two must
+     * be kept in step by hand, and {@code providerErrorCode} degrades to
+     * {@code UNEXPECTED_PROVIDER_FAILURE} rather than misreporting if they ever drift.
+     */
+    private static final String TRANSPORT_FAILURE_MESSAGE_PREFIX = "Transport failure calling";
+
     private static final String REPORT_LINK_FIELD = "credit_report_link";
     private static final String REPORT_LINK_INGESTED_MARKER = "[ingested]";
 
@@ -1662,7 +1692,7 @@ public class ApplicationVerificationService {
             r = verification.verifyEmployment(pan, mobile, isoDob(profile.getDob()),
                     nz(profile.getFullName()), nz(profile.getEmployer()), uan, ref);
         } catch (RuntimeException providerFailure) {
-            return providerUnavailable(appId, EMPLOYMENT,
+            return providerUnavailable(appId, EMPLOYMENT, providerFailure,
                     "Employment check unavailable — pending manual review");
         }
 
@@ -2603,10 +2633,23 @@ public class ApplicationVerificationService {
     /**
      * Record a check the provider couldn't run at all, as REVIEW. The borrower continues and staff
      * pick it up — a provider outage is not the applicant's fault and must not strand them.
+     *
+     * <p>{@code failure} is what makes the row diagnosable. Before it was threaded through, every
+     * PAN failure in the system looked identical from the database — {@code providerError: true} and
+     * a generic sentence, with no status, no exception class and no log line, so a 404 "PAN not
+     * issued", a 409 upstream wobble and an unreadable response were indistinguishable months later.
+     * Stores the same {@code providerErrorCode} the bureau path stores, so one classifier reads both.
      */
-    private StepResult providerUnavailable(Long appId, String checkType, String message) {
+    private StepResult providerUnavailable(Long appId, String checkType, RuntimeException failure,
+                                           String message) {
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("providerError", true);
+        String providerErrorCode = providerErrorCode(failure);
+        derived.put("providerErrorCode", providerErrorCode);
+        // Category only — response bodies and request values (PAN, mobile, DOB) stay out of the log,
+        // exactly as the bureau catch does. The unredacted exchange lives in provider_api_execution.
+        log.warn("{} check failed application={} errorCode={} exception={}", checkType, appId,
+                providerErrorCode, failure.getClass().getSimpleName());
         return view(upsert(appId, checkType, REVIEW, null, null, ref(appId, checkType),
                 null, null, null, derived, message));
     }
@@ -3082,9 +3125,29 @@ public class ApplicationVerificationService {
     /**
      * Converts an upstream failure into a PII-safe diagnostic category. Provider response bodies,
      * request values, and OTPs must never enter application logs or the verification audit JSON.
+     *
+     * <p>Structured first. {@code ProviderJson} already parsed the HTTP status off the failed call
+     * and hung it on the exception, so {@link ProviderFailureDetails} is an exact answer where the
+     * message match was only ever a guess at an English sentence we happened to write.
+     *
+     * <p><b>The message matching below is not dead code — do not delete it.</b> The eSign path
+     * throws through {@code EsignPort}, whose adapters raise plain {@code RuntimeException} /
+     * {@code IllegalStateException} carrying the same {@code "HTTP <status> from <uri>"} text and
+     * never implement {@link ProviderFailureDetails}. Three tests pin exactly that.
+     *
+     * <p>The value is persisted to {@code bureau_backfill_row.error_code varchar(64)} and read by
+     * the failure classifier, so keep every branch short and stable.
      */
     private static String providerErrorCode(RuntimeException failure) {
+        if (failure instanceof ProviderFailureDetails details && details.httpStatus() != null) {
+            return "HTTP_" + details.httpStatus();
+        }
         String message = failure.getMessage();
+        if (message != null && message.startsWith(TRANSPORT_FAILURE_MESSAGE_PREFIX)) {
+            // ProviderJson could not complete the call at all — a timeout, a reset, or a body it
+            // could not read. Distinct from any HTTP code because there was never a response.
+            return "TRANSPORT_FAILURE";
+        }
         if (message != null && message.matches("HTTP [1-5]\\d{2}(?: from .+)?")) {
             return "HTTP_" + message.substring(5, 8);
         }

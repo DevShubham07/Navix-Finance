@@ -777,6 +777,19 @@ public class CreditBriefPdfRenderer {
         t.setWidthPercentage(100);
         t.setSpacingBefore(10);
 
+        // A report the bureau returned without a usable score gets no star row and no verdict line —
+        // printing "0.0 / 5" would tell an underwriter this is the worst borrower they will ever see,
+        // when the truth is simply that CRIF sent no score. The categorized facts below carry the
+        // whole brief in that case.
+        if (!rating.rated()) {
+            PdfPCell unrated = new PdfPCell(new Phrase(
+                    "NO BUREAU SCORE RETURNED — assess from the account history below", RATING));
+            unrated.setBorder(Rectangle.NO_BORDER);
+            unrated.setPaddingTop(2);
+            t.addCell(unrated);
+            return t;
+        }
+
         PdfPCell stars = new PdfPCell(new Phrase(" "));
         stars.setBorder(Rectangle.NO_BORDER);
         stars.setFixedHeight(26);
