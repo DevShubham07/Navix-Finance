@@ -413,7 +413,9 @@ table.data td strong { color: var(--navy); }
    widths that no longer fits without crushing the existing columns, so give the table a floor and
    let `.staff-table-scroll` do its job (the sticky identity/actions columns still pin correctly
    against a scrolling middle, since they're independently `position: sticky`). */
-.staff-data-table { min-width: 78rem; }
+/* Widened for the Failure column — at 78rem a 21st column crowded the sticky identity and
+   actions cells instead of scrolling. */
+.staff-data-table { min-width: 84rem; }
 .staff-data-table th,
 .staff-data-table td { border-bottom: 1px solid var(--line); padding: 8px 14px; text-align: left; }
 .staff-data-table thead th { background: var(--navy); color: #fff; font-size: 0.576rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }

@@ -18,3 +18,13 @@ export function bureauStateLabel(state: BureauState, variant: "long" | "short" |
   }
   return "";
 }
+
+/**
+ * A `"FOUND"` bureau state can still carry no usable score — a full, readable report with real
+ * tradelines but nothing scoreable is a different situation from never having asked (`NOT_FETCHED`)
+ * or genuinely having no record (`NO_RECORD`), so it doesn't extend `BureauState`. Callers combine
+ * this with `state === "FOUND"` themselves (e.g. credit-profile-card.tsx, credit-score-gauge.tsx).
+ */
+export function reportWithoutScoreLabel(variant: "long" | "short"): string {
+  return variant === "long" ? "Report available, no score" : "No score";
+}

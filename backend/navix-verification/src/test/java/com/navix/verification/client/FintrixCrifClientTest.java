@@ -191,4 +191,62 @@ class FintrixCrifClientTest {
                 .isInstanceOf(VerificationException.class)
                 .hasMessageContaining("Upstream bureau timeout");
     }
+
+    /**
+     * A missing score is NOT on its own a no-hit (see {@link #blankScoreValueIsNoHit} for the case where
+     * it genuinely is). CRIF answered 47 applications in the Sep-2026 pending-queue audit with an
+     * out-of-range {@code SCORE-VALUE} ("15") alongside a full {@code RESPONSES.RESPONSE} array of real
+     * tradelines — {@link com.navix.verification.support.CrifHighmarkFactsParser#plausibleScore} nulls the
+     * bogus score, but the report itself has substance
+     * ({@link com.navix.verification.support.CrifHighmarkFactsParser#hasSubstance}) and must be kept, not
+     * discarded as a thin file.
+     */
+    @Test
+    void outOfRangeScoreIsDroppedButAReportWithSubstanceIsKept() {
+        Bound b = bind();
+        String populatedResponsesOutOfBandScore = """
+                {"success":true,"canonical":{"data":{"name":"N","mobile":"9000000004",
+                "credit_report":{"HEADER":{"REPORT-ID":"RID-15","DATE-OF-ISSUE":"01-01-2026"},
+                "SCORES":{"SCORE":{"SCORE-VALUE":"15"}},
+                "RESPONSES":{"RESPONSE":[{"LOAN-DETAILS":{"ACCT-NUMBER":"123456","CURRENT-BAL":"5000",
+                "ACCOUNT-STATUS":"Active"}}]}}}}}
+                """;
+        b.server().expect(requestTo(BASE + "/crif_combine"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(populatedResponsesOutOfBandScore, MediaType.APPLICATION_JSON));
+
+        CrifResponse r = new FintrixCrifClient(b.restClient(), new ObjectMapper(), "")
+                .pull("N", "9000000004", "app-126");
+
+        assertThat(r.noRecord()).isFalse();
+        assertThat(r.score()).isNull();
+        assertThat(r.facts()).isNotNull();
+        b.server().verify();
+    }
+
+    /**
+     * Fintrix answers a REJECTED REQUEST with HTTP 200 and an envelope that carries no {@code "status"}
+     * key at all — {@code {"error":"Bad Request","message":"Missing required field name","success":true,
+     * "statusCode":400}}. Without the {@code statusCode} check in {@code rejectUnlessNoRecord}, the
+     * status-only guard reads a missing node, concludes "not an error", and falls into {@code parse()},
+     * which finds no {@code credit_report} node and silently records the borrower as a thin file — 44
+     * applications in the Sep-2026 pending-queue audit carried this exact envelope while CRIF had never
+     * run a search at all.
+     */
+    @Test
+    void rejectedRequestEnvelopeWithNoStatusFieldStillThrows() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/crif_combine"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(
+                        "{\"error\":\"Bad Request\",\"message\":\"Missing required field name\","
+                                + "\"success\":true,\"statusCode\":400}",
+                        MediaType.APPLICATION_JSON));
+
+        FintrixCrifClient client = new FintrixCrifClient(b.restClient(), new ObjectMapper(), "");
+        assertThatThrownBy(() -> client.pull("Sample Person", "9000000001", "app-123"))
+                .isInstanceOf(VerificationException.class)
+                .hasMessageContaining("Missing required field name");
+        b.server().verify();
+    }
 }

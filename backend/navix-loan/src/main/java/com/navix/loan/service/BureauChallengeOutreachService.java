@@ -81,6 +81,42 @@ public class BureauChallengeOutreachService {
         return collect(limit, false);
     }
 
+    /**
+     * Nudge ONE borrower, from the Customers page's failure dialog.
+     *
+     * <p>The cohort run above is the right shape for clearing a backlog and the wrong shape for a
+     * button on a row: a staffer looking at one stuck file must not fire a send at up to 200 other
+     * people. Same eligibility rules, same idempotency — an application already stamped
+     * {@code bureauChallengeNotifiedAt} is reported as skipped rather than re-mailed.
+     */
+    public OutreachSummary notifyApplication(Long applicationId) {
+        requireAdmin();
+        ApplicationVerification row = verificationRepo
+                .findByApplicationIdAndCheckType(applicationId, ApplicationVerificationService.BUREAU)
+                .orElseThrow(() -> new BusinessException("BUREAU_CHALLENGE_NONE",
+                        "This application has no bureau check to chase"));
+        Map<String, Object> derived = derived(row);
+        if (!Boolean.TRUE.equals(derived.get("bureauChallenge"))) {
+            throw new BusinessException("BUREAU_CHALLENGE_NONE",
+                    "This application is not waiting on a bureau security question");
+        }
+        LoanApplication app = applicationRepo.findById(applicationId).orElse(null);
+        if (app == null || app.getStatus() != ELIGIBLE_STATUS) {
+            throw new BusinessException("BUREAU_CHALLENGE_NOT_ELIGIBLE",
+                    "Only an application still awaiting review can be chased");
+        }
+        boolean alreadyNotified = derived.get("bureauChallengeNotifiedAt") != null;
+        List<OutreachRow> rows = List.of(new OutreachRow(app.getId(), app.getCustomerId(), alreadyNotified));
+        if (alreadyNotified) {
+            return new OutreachSummary(1, 0, 1, false, rows);
+        }
+        eventPublisher.publishEvent(
+                new BureauQuestionPendingEvent(app.getCustomerId(), app.getId(), Instant.now()));
+        stampNotified(row, derived);
+        log.info("bureau challenge outreach single application={}", applicationId);
+        return new OutreachSummary(1, 1, 0, false, rows);
+    }
+
     private OutreachSummary collect(int limit, boolean dryRun) {
         requireAdmin();
         if (limit <= 0 || limit > MAX_ROWS_PER_RUN) {

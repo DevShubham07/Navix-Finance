@@ -159,14 +159,18 @@ public class VerificationFailureService {
                     : CaseFailureReason.BUREAU_CONSENT_PENDING, BUREAU);
         }
 
-        // A PAN problem only matters once the bureau is not itself the blocker: a failed PAN is how a
-        // profile ends up nameless, and BUREAU_MISSING_NAME above is the more useful thing to say.
-        if (pan != null && FAIL.equals(pan.getStatus())) {
+        // A PAN problem is only worth reporting while the file still has no usable credit answer.
+        // Once the bureau has come back with a score the decision is unblocked, and leaving
+        // "PAN not recognised" on a file that has since been sanctioned and disbursed would be noise
+        // on every row for the rest of that customer's life. A failed PAN is also how a profile ends
+        // up nameless, and BUREAU_MISSING_NAME above says that more usefully.
+        boolean bureauScored = bureau != null && PASS.equals(bureau.getStatus())
+                && bureau.getScore() != null;
+        if (!bureauScored && pan != null && FAIL.equals(pan.getStatus())) {
             return new CaseFailure(CaseFailureReason.PAN_INVALID, PAN);
         }
-        if (pan != null && REVIEW.equals(pan.getStatus())
-                && Boolean.TRUE.equals(derivedOf(pan).get("providerError"))
-                && (bureau == null || !PASS.equals(bureau.getStatus()))) {
+        if (!bureauScored && pan != null && REVIEW.equals(pan.getStatus())
+                && Boolean.TRUE.equals(derivedOf(pan).get("providerError"))) {
             return new CaseFailure(CaseFailureReason.PAN_UNVERIFIED, PAN);
         }
 

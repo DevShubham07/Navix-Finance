@@ -86,6 +86,30 @@ class RoutingVerificationPortTest {
     }
 
     /**
+     * {@code ProviderJson.post} now wraps a raw transport failure (read/connect timeout, connection
+     * reset, an unreadable body) in a {@link VerificationException} rather than letting the underlying
+     * {@code RestClientException} escape — this is what a provider adapter actually throws when its HTTP
+     * call blows up below the response-envelope layer. Before that fix the raw exception propagated PAST
+     * this router's {@code catch (VerificationException | CapabilityNotSupportedException)} and aborted
+     * the whole chain (25 applications in the Sep-2026 pending-queue audit, Signzy leg 1, Digitap/Fintrix
+     * never called). This pins that such a wrapped failure — httpStatus/providerCode both null, exactly
+     * as {@code ProviderJson.post} constructs it — falls through like any other {@code VerificationException}.
+     */
+    @Test
+    void transportFailureWrappedByProviderJsonFallsThroughToNextProvider() {
+        VerificationException transportWrapped = new VerificationException(
+                "Transport failure calling /pan", new java.net.SocketTimeoutException("Read timed out"),
+                null, "/pan", null, null);
+        when(signzy.verifyPan(anyString(), anyString())).thenThrow(transportWrapped);
+        when(digitap.verifyPan(anyString(), anyString())).thenReturn(pan("DIGITAP"));
+
+        PanCheck r = router.verifyPan("ABCPE1234Z", "ref");
+
+        assertThat(r.txnId()).isEqualTo("DIGITAP");
+        verify(digitap).verifyPan(anyString(), anyString());
+    }
+
+    /**
      * Fintrix serves PAN too, so the ONLY thing keeping it a fallback rather than the primary is that
      * signzy precedes it in the chain. The other PAN tests use a signzy,digitap chain and would not
      * notice if that order flipped — this one would.
