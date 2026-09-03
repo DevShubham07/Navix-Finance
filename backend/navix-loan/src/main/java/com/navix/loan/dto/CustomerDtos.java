@@ -106,7 +106,45 @@ public final class CustomerDtos {
             /** {@code salary_credit_day} (1–31) on the customer's latest application — the day the
              *  next reborrow inherits and disbursal reads to compute {@code loan.due_date}. Null
              *  until it has been collected. */
-            Integer salaryCreditDay) {
+            Integer salaryCreditDay,
+            /** Why this customer's latest file has no usable credit decision — the normalized
+             *  {@code CaseFailureReason} name, its severity, and whether re-running the credit check
+             *  could plausibly change the answer. Every human-readable string for these lives in the
+             *  frontend's {@code case-failure.ts}; nothing here carries provider or exception text.
+             *  {@code NONE} means there is nothing outstanding. Appended at the end deliberately —
+             *  this is a positional record built positionally in {@code CustomerService.list}. */
+            String failureReason,
+            String failureSeverity,
+            boolean failureRetryable) {
+    }
+
+    /**
+     * Why one customer's file has no usable credit decision, with the provider chain behind it — the
+     * Customers page's failure dialog.
+     *
+     * <p>{@code attempts} is what was actually called, oldest first, and deliberately carries no
+     * request or response bodies: those hold PAN, date of birth and consent OTPs and stay in the
+     * ADMIN provider workbench. An EMPTY list does not mean nothing was tried — rows are kept for
+     * {@code attemptRetentionDays} — so the UI must say "no call history retained".
+     */
+    public record CaseFailureDetail(
+            Long customerId,
+            /** The application the reason describes — the same one the Bureau column reads, and the
+             *  one a re-run must target. Not necessarily the customer's newest application. */
+            Long applicationId,
+            String reason,
+            String severity,
+            /** Whether re-running the credit check could plausibly change this answer. Withheld for
+             *  genuine no-hits, an invalid PAN, a plan limit and the masked-mobile case. */
+            boolean retryable,
+            String checkType,
+            List<ProviderAttemptView> attempts,
+            int attemptRetentionDays) {
+    }
+
+    /** One recorded provider call. No payloads — see {@link CaseFailureDetail}. */
+    public record ProviderAttemptView(String provider, String operation, Integer httpStatus,
+                                      boolean succeeded, Instant at) {
     }
 
     /** Full borrower history: latest KYC profile + every application, loan and payment (newest first). */
@@ -130,6 +168,18 @@ public final class CustomerDtos {
      * are audited (previous→new) and recompute the eligible limit.
      */
     public record UpdateCustomerRequest(
+            /**
+             * Date of birth — the one field here with PATCH rather than replace semantics: null means
+             * "leave it alone", not "clear it".
+             *
+             * <p>Every other field on this request is written unconditionally, so a caller that omits
+             * one erases it. That is tolerable for an employer or an address and is not tolerable for
+             * a date of birth: it is a bureau prerequisite, it is identity data, and the customer
+             * detail page's existing edit card does not send it — adding it to the replace set would
+             * have silently wiped the DOB of every customer edited from that screen. Correcting a DOB
+             * is supported; deleting one is not.
+             */
+            LocalDate dob,
             String fullName,
             String address,
             String employer,

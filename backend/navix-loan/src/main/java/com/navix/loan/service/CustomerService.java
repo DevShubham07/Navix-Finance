@@ -13,6 +13,8 @@ import com.navix.common.verification.OtpVerifierPort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
 import com.navix.loan.dto.BureauState;
+import com.navix.loan.dto.CustomerDtos.CaseFailureDetail;
+import com.navix.loan.dto.CustomerDtos.ProviderAttemptView;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
@@ -106,6 +108,8 @@ public class CustomerService {
     private final CreditBriefService creditBriefService;
     private final ApplicationDocumentRepository documentRepository;
     private final BureauStateService bureauStateService;
+    private final VerificationFailureService verificationFailureService;
+    private final com.navix.common.verification.ProviderAttemptDirectory providerAttempts;
     private final ApplicationVerificationRepository verificationRepository;
     private final ApplicationReferenceRepository referenceRepository;
     private final OtpVerifierPort otpVerifier;
@@ -299,6 +303,10 @@ public class CustomerService {
             }
         }
         Map<Long, BureauState> bureauStates = bureauStateService.states(bureauAppIdByCustomer.values());
+        // Same application ids the bureau state is read from, so the Failure column always
+        // describes the SAME file the Bureau column does.
+        Map<Long, VerificationFailureService.CaseFailure> failures =
+                verificationFailureService.failures(bureauAppIdByCustomer.values());
         // Stage-date rollup: when each customer's LATEST application entered its current status
         // (application_event, filtered to real transitions — see the repository javadoc). Batched
         // once for the whole list rather than per customer, and short-circuited on empty since
@@ -342,6 +350,9 @@ public class CustomerService {
             BureauState bureauState = bureauAppId != null
                     ? bureauStates.getOrDefault(bureauAppId, BureauState.NOT_FETCHED)
                     : BureauState.NOT_FETCHED;
+            VerificationFailureService.CaseFailure failure = bureauAppId != null
+                    ? failures.getOrDefault(bureauAppId, VerificationFailureService.CaseFailure.none())
+                    : VerificationFailureService.CaseFailure.none();
             Instant latestCreatedAt = latestApp != null ? latestApp.getCreatedAt() : null;
             if (!inWindow(latestCreatedAt, fromInstant, toInstant)) {
                 continue;
@@ -396,7 +407,10 @@ public class CustomerService {
                     handled.creditDecidedByName(),
                     handled.disbursedByName(),
                     collectionOfficerName,
-                    latestApp != null ? latestApp.getSalaryCreditDay() : null);
+                    latestApp != null ? latestApp.getSalaryCreditDay() : null,
+                    failure.reason().name(),
+                    failure.reason().severity().name(),
+                    failure.reason().retryable());
             if (matches(cs, apps, needle)) {
                 out.add(cs);
             }
@@ -602,6 +616,13 @@ public class CustomerService {
         }
         Long appId = profile.getApplicationId();
         Long oldSalary = profile.getMonthlySalaryPaise();
+
+        // PATCH, not replace — see the field's javadoc. Only touched when a value is actually sent.
+        if (req.dob() != null) {
+            LocalDate dob = requirePlausibleDob(req.dob());
+            logIfChanged(customerId, appId, "dob", str(profile.getDob()), str(dob));
+            profile.setDob(dob);
+        }
 
         String fullName = trimToNull(req.fullName());
         logIfChanged(customerId, appId, "fullName", profile.getFullName(), fullName);
@@ -1143,6 +1164,55 @@ public class CustomerService {
                 applicationRepository.save(a);
             }
         }
+    }
+
+    /**
+     * Why this customer's file has no usable credit decision, with the provider chain behind it.
+     *
+     * <p>Resolves the SAME application the Customers list classifies — the newest one carrying a
+     * saved profile, not simply the newest application. The two can differ when a fresh application
+     * exists with no profile yet, and using the wrong one would explain a different file than the row
+     * the staffer clicked, and point a re-run at it too.
+     */
+    public CaseFailureDetail caseFailure(Long customerId) {
+        rejectDsa();
+        requireVisible(customerId);
+        List<LoanApplication> apps = applicationRepository.findByCustomerId(customerId);
+        CustomerProfile profile = latestProfile(apps);
+        Long applicationId = profile != null ? profile.getApplicationId()
+                : apps.stream().map(LoanApplication::getId).max(Comparator.naturalOrder()).orElse(null);
+        VerificationFailureService.CaseFailure failure =
+                verificationFailureService.failure(applicationId);
+        List<ProviderAttemptView> attempts = applicationId == null ? List.of()
+                : providerAttempts.byApplicationId(List.of(applicationId))
+                        .getOrDefault(applicationId, List.of()).stream()
+                        .map(a -> new ProviderAttemptView(a.provider(), a.operation(),
+                                a.httpStatus(), a.succeeded(), a.at()))
+                        .toList();
+        return new CaseFailureDetail(customerId, applicationId,
+                failure.reason().name(), failure.reason().severity().name(),
+                failure.reason().retryable(), failure.checkType(), attempts,
+                com.navix.common.verification.ProviderAttemptDirectory.RETENTION_DAYS);
+    }
+
+    /**
+     * A date of birth an admin is allowed to record. Deliberately loose — this is a correction tool,
+     * not an eligibility check (the lending rules live in the flow service) — but it refuses the
+     * three values that can only be typos, because a wrong DOB here goes straight to a bureau as a
+     * real credit inquiry.
+     */
+    private static LocalDate requirePlausibleDob(LocalDate dob) {
+        LocalDate today = LocalDate.now();
+        if (!dob.isBefore(today)) {
+            throw new BusinessException("INVALID_DOB", "Date of birth must be in the past");
+        }
+        if (dob.isAfter(today.minusYears(18))) {
+            throw new BusinessException("INVALID_DOB", "The borrower must be at least 18 years old");
+        }
+        if (dob.isBefore(today.minusYears(100))) {
+            throw new BusinessException("INVALID_DOB", "Date of birth is not plausible");
+        }
+        return dob;
     }
 
     private static String str(Object v) {

@@ -56,6 +56,8 @@ class CustomerServiceTest {
     @Mock private CreditBriefService creditBriefService;
     @Mock private com.navix.loan.repository.ApplicationDocumentRepository documentRepository;
     @Mock private BureauStateService bureauStateService;
+    @Mock private VerificationFailureService verificationFailureService;
+    @Mock private com.navix.common.verification.ProviderAttemptDirectory providerAttempts;
     @Mock private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
     @Mock private com.navix.loan.repository.ApplicationReferenceRepository referenceRepository;
     @Mock private com.navix.common.verification.OtpVerifierPort otpVerifier;
@@ -74,9 +76,12 @@ class CustomerServiceTest {
                 applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
                 staffDirectory, applicationActorDirectory, collectionCaseDirectory,
                 risk, jdbc, creditBriefService, documentRepository, bureauStateService,
-                verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher,
+                verificationFailureService, providerAttempts, verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher,
                 loanMath);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
+        // Nothing outstanding by default: an unstubbed mock returns null, and the summary
+        // dereferences the reason. Tests about a specific failure stub this themselves.
+        lenient().when(verificationFailureService.failures(any())).thenReturn(java.util.Map.of());
         // No collision by default — the handful of tests that DO care about this stub it explicitly.
         lenient().when(borrowerIdentity.wouldCollideWithAnotherCustomer(anyString(), any())).thenReturn(false);
     }
@@ -219,7 +224,7 @@ class CustomerServiceTest {
     void updateProfileRejectedForNonAdmin() {
         ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
         assertThatThrownBy(() -> service.updateProfile(9000001L,
-                new UpdateCustomerRequest("New Name", null, null, null, null, null, null, null, null)))
+                new UpdateCustomerRequest(null, "New Name", null, null, null, null, null, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("ADMIN");
     }
@@ -233,7 +238,7 @@ class CustomerServiceTest {
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         service.updateProfile(9000001L,
-                new UpdateCustomerRequest("Asha R. Rao", "12 MG Road", "Globex", "SALARIED", 6_000_000L, null, null, null, "HDFC"));
+                new UpdateCustomerRequest(null, "Asha R. Rao", "12 MG Road", "Globex", "SALARIED", 6_000_000L, null, null, null, "HDFC"));
 
         assertThat(p.getFullName()).isEqualTo("Asha R. Rao");
         assertThat(p.getEmployer()).isEqualTo("Globex");
@@ -253,7 +258,7 @@ class CustomerServiceTest {
         when(risk.eligibleLimitPaise(6_000_000L)).thenReturn(1_500_000L);
 
         service.updateProfile(9000001L,
-                new UpdateCustomerRequest("Asha", null, null, null, 6_000_000L, null, null, null, null));
+                new UpdateCustomerRequest(null, "Asha", null, null, null, 6_000_000L, null, null, null, null));
 
         verify(changeLogRepository, atLeastOnce()).save(any());   // the salary change is recorded
         assertThat(a.getEligibleLimit()).isEqualTo(1_500_000L);   // eligibility recomputed from new salary

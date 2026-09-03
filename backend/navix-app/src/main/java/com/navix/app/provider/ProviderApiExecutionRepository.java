@@ -1,6 +1,8 @@
 package com.navix.app.provider;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,6 +12,33 @@ import org.springframework.data.repository.query.Param;
 interface ProviderApiExecutionRepository extends JpaRepository<ProviderApiExecution, Long> {
 
     long deleteByExpiresAtBefore(Instant instant);
+
+    /**
+     * Which providers were called for these applications, oldest first — the chain, without the
+     * payloads. Backed by {@code ix_provider_api_execution_app (application_id, created_at desc)}.
+     *
+     * <p>Same projection discipline as {@link #search}: {@code request_json}/{@code response_json}
+     * are omitted deliberately, because one bureau row carries a few hundred KB of credit report and
+     * none of it is needed to say who was tried and what came back.
+     */
+    interface AttemptRow {
+        Long getApplicationId();
+        String getProvider();
+        String getOperation();
+        Integer getHttpStatus();
+        String getStatus();
+        Instant getCreatedAt();
+    }
+
+    @Query("""
+            select r.applicationId as applicationId, r.provider as provider,
+                   r.operation as operation, r.httpStatus as httpStatus, r.status as status,
+                   r.createdAt as createdAt
+            from ProviderApiExecution r
+            where r.applicationId in :applicationIds
+            order by r.applicationId asc, r.createdAt asc, r.id asc
+            """)
+    List<AttemptRow> findAttempts(@Param("applicationIds") Collection<Long> applicationIds);
 
     /**
      * Filtered history. Every filter is optional — a null parameter drops out of the predicate.
