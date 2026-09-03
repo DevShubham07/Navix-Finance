@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -47,6 +48,16 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class CollectionsService {
+
+    /**
+     * Every date this service resolves is an <em>Indian</em> calendar date. The server clock runs UTC
+     * in ECS, so a bare {@code LocalDate.now()} reports yesterday between 00:00 and 05:30 IST — which
+     * on this service means a DPD one day short, a bucket boundary crossed a day late, and a
+     * collectible set that silently differs from the one the loan's own due date implies (that side
+     * already resolves IST correctly, in {@code LoanDirectoryAdapter}). Matches
+     * {@code RepaymentService}/{@code DashboardService} in navix-loan.
+     */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     /** Outcome value that signals the borrower paid and therefore requires proof. */
     private static final String PAID_OUTCOME = "PAID";
@@ -182,7 +193,7 @@ public class CollectionsService {
     @Transactional(readOnly = true)
     public List<WorklistRow> worklist(LocalDate asOf) {
         requireCollectionsStaff();
-        LocalDate at = asOf != null ? asOf : LocalDate.now();
+        LocalDate at = asOf != null ? asOf : LocalDate.now(IST);
         List<LoanSummary> loans = loanDirectory.listCollectible(at).stream()
                 .filter(loan -> loan.status() == null || !TERMINAL_LOAN_STATUSES.contains(loan.status()))
                 .toList();
@@ -252,7 +263,7 @@ public class CollectionsService {
     @Transactional(readOnly = true)
     public List<UpcomingLoanView> upcomingWatchlist(LocalDate asOf) {
         requireStaff();
-        LocalDate on = asOf != null ? asOf : LocalDate.now();
+        LocalDate on = asOf != null ? asOf : LocalDate.now(IST);
         List<LoanSummary> loans = loanDirectory.listUpcoming(on);
         if (loans.isEmpty()) {
             // Short-circuit: findByLoanIdIn is not valid SQL against an empty collection.
@@ -408,7 +419,7 @@ public class CollectionsService {
         if (loan == null || loan.dueDate() == null) {
             return 0;
         }
-        return dpdCalculator.daysPastDue(loan.dueDate(), LocalDate.now());
+        return dpdCalculator.daysPastDue(loan.dueDate(), LocalDate.now(IST));
     }
 
     private String officerName(Long officerId) {

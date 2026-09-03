@@ -19,7 +19,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, ArrowRight } from "lucide-react";
+import { Loader2, RefreshCw, ArrowRight, Eye } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { Input } from "@/components/ui";
 import { errMessage } from "@/components/staff/live-pipeline";
@@ -34,6 +34,7 @@ import {
 import { ExportMenu } from "@/components/staff/export-menu";
 import { WorklistAssignActions } from "@/components/staff/collections-assign";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { collectionsApi, paiseToINR, type WorklistRow } from "@/lib/api/applications";
 import { COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
 import { formatDate } from "@/lib/utils";
@@ -41,6 +42,9 @@ import { formatDate } from "@/lib/utils";
 /** Flattened row: the sort primitive compares top-level keys, and `loan` is a nested object. */
 interface Row {
   loanId: number;
+  /** The application behind this specific loan — what the quick-view dialog opens on. Null only if
+   *  the loan snapshot is missing, in which case the quick-view button is not offered. */
+  applicationId: number | null;
   dpd: number;
   preDue: boolean;
   caseId: string | null;
@@ -64,6 +68,7 @@ interface Row {
 function toRow(w: WorklistRow): Row {
   return {
     loanId: w.loanId,
+    applicationId: w.loan?.applicationId ?? null,
     dpd: w.dpd,
     preDue: w.preDue,
     caseId: w.caseId,
@@ -103,6 +108,9 @@ export default function CollectionsBucketPage() {
     return () => clearTimeout(t);
   }, [query]);
 
+  // Quick-view only. "Open" still navigates to the collections case workspace — that page is where
+  // interactions, settlement and the case itself get created, and none of that lives in this dialog.
+  const [previewApplicationId, setPreviewApplicationId] = React.useState<number | null>(null);
   const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = rangeFor(period, custom);
@@ -325,6 +333,16 @@ export default function CollectionsBucketPage() {
                         assignedOfficerName={r.officerName}
                         compact
                       />
+                      {r.applicationId != null && (
+                        <button
+                          onClick={() => setPreviewApplicationId(r.applicationId)}
+                          className="btn btn-sm btn-outline btn-icon"
+                          aria-label="Quick view application"
+                          title="Quick view — see the application without leaving the worklist"
+                        >
+                          <Eye size={14} />
+                        </button>
+                      )}
                       <Link href={`/staff/collections/${r.loanId}`} className="btn btn-sm btn-outline">
                         Open <ArrowRight size={14} />
                       </Link>
@@ -346,6 +364,11 @@ export default function CollectionsBucketPage() {
           />
         )}
       </div>
+
+      <ApplicationDetailDialog
+        applicationId={previewApplicationId}
+        onClose={() => setPreviewApplicationId(null)}
+      />
     </div>
   );
 }

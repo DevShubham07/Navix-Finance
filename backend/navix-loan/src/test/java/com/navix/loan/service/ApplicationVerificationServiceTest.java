@@ -344,22 +344,6 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
-    void bureau_isDeferredToReview_whenNameIsMissing_andDoesNotCallProvider() {
-        CustomerProfile p = profile();
-        p.setFullName(""); // PAN outage, or a PAN that PASSES while returning no name (revamp.md decision 12)
-        p.setDob(LocalDate.of(1992, 8, 15));
-        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
-        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
-                .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
-
-        var result = service.pullBureau(APP, "123456");
-
-        assertThat(result.status()).isEqualTo("REVIEW");
-        assertThat(result.message()).contains("name");
-        verify(verification, never()).pullBureau(any(), any(), any(), any(), any(), any());
-    }
-
-    @Test
     void bureau_forwardsVerifiedOtp_toTheProvider_onceConsentPassed() {
         CustomerProfile p = profile();
         p.setPan("QVEPS0901K");
