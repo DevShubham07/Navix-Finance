@@ -931,6 +931,13 @@ public class ApplicationVerificationService {
             soft.put("providerError", true);
             String providerErrorCode = providerErrorCode(providerFailure);
             soft.put("providerErrorCode", providerErrorCode);
+            if (ProviderFailureDetails.MASKED_MOBILE_REQUIRED.equals(providerErrorCode)) {
+                // Its own flag, alongside the code, so the backfill's outcome branch reads a boolean
+                // rather than string-matching a code — the same shape bureauChallenge already uses.
+                // A re-run can never resolve this one: the report is real but needs a vendor endpoint
+                // we do not implement, so it must not be treated as a retryable failure.
+                soft.put("bureauMaskedMobileRequired", true);
+            }
             // ProviderJson reduces upstream errors to an endpoint + status. Retain only the status
             // category here: response bodies and the request (PAN, mobile, DOB, OTP) stay out of logs.
             log.warn("bureau pull failed application={} ref={} errorCode={} exception={}", appId, ref,
@@ -3139,8 +3146,15 @@ public class ApplicationVerificationService {
      * the failure classifier, so keep every branch short and stable.
      */
     private static String providerErrorCode(RuntimeException failure) {
-        if (failure instanceof ProviderFailureDetails details && details.httpStatus() != null) {
-            return "HTTP_" + details.httpStatus();
+        if (failure instanceof ProviderFailureDetails details) {
+            if (ProviderFailureDetails.MASKED_MOBILE_REQUIRED.equals(details.providerCode())) {
+                // Not a failure of ours and not retryable — records exist, behind numbers we do not
+                // hold. Named explicitly so the backfill can refuse to re-run it.
+                return ProviderFailureDetails.MASKED_MOBILE_REQUIRED;
+            }
+            if (details.httpStatus() != null) {
+                return "HTTP_" + details.httpStatus();
+            }
         }
         String message = failure.getMessage();
         if (message != null && message.startsWith(TRANSPORT_FAILURE_MESSAGE_PREFIX)) {

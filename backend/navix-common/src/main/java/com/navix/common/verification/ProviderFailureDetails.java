@@ -23,6 +23,15 @@ package com.navix.common.verification;
  */
 public interface ProviderFailureDetails {
 
+    /**
+     * {@link #providerCode()} meaning: the bureau holds records for this identity, but only under
+     * mobile numbers we did not send, and releasing them needs a separate vendor endpoint we do not
+     * implement. Declared here because {@code navix-verification} raises it and {@code navix-loan}
+     * has to recognise it — it is the difference between "this borrower has no credit file" and
+     * "their file is one manual step away", and the two were previously indistinguishable.
+     */
+    String MASKED_MOBILE_REQUIRED = "MASKED_MOBILE_REQUIRED";
+
     /** HTTP status of the failed call, or {@code null} when it never got one (timeout, DNS, reset). */
     Integer httpStatus();
 
