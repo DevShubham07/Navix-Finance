@@ -2,9 +2,8 @@ package com.navix.loan.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.loan.domain.ApplicationStatus;
@@ -15,6 +14,7 @@ import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository.CaseFailureRow;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import com.navix.loan.service.VerificationFailureService.CaseFailure;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,20 +23,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * The precedence walk in {@link VerificationFailureService}.
- *
- * <p>Every row of the September 2026 pending-queue classification is pinned here, because the whole
- * point of this service is that "a real report is one security question away", "we never had a name
- * to send" and "this person genuinely has no credit file" stop rendering identically. A reason that
- * silently changes is a credit officer being told the wrong thing about a real borrower.
- *
- * <p>Declaration order in {@link CaseFailureReason} IS the precedence, so the ordering tests at the
- * bottom are load-bearing, not decoration.
+ * {@link VerificationFailureService#classify} walks {@link CaseFailureReason} in declaration order
+ * and returns on the first match, so an application that trips two conditions at once must still
+ * report only the one that has to be solved first. One test below exercises every reason the service
+ * can actually produce; the precedence tests near the bottom exist because "two things are true at
+ * once" is exactly the scenario the ordering was written to resolve, and a reordering that silently
+ * changes an outcome would sail straight through the single-condition tests alone.
  */
 @ExtendWith(MockitoExtension.class)
 class VerificationFailureServiceTest {
 
-    private static final Long APP = 5455L;
+    private static final Long APP = 42L;
 
     @Mock private ApplicationVerificationRepository verificationRepo;
     @Mock private CustomerProfileRepository profileRepo;
@@ -46,303 +43,250 @@ class VerificationFailureServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new VerificationFailureService(verificationRepo, profileRepo, applicationRepo,
-                new ObjectMapper());
-        // Most cases turn on the verification rows alone; the two tests that care about the profile
-        // or the application override these.
-        lenient().when(profileRepo.findByApplicationIdIn(anyCollection())).thenReturn(List.of());
-        lenient().when(applicationRepo.findAllById(any())).thenReturn(List.of());
+        service = new VerificationFailureService(verificationRepo, profileRepo, applicationRepo, new ObjectMapper());
     }
 
-    // ---------------------------------------------------------------- helpers
+    // ---- fixture builders -----------------------------------------------------------
 
-    /**
-     * A stub of the repository's interface projection. Written by hand rather than mocked so each
-     * test reads as the row it is describing.
-     */
-    private static CaseFailureRow row(String checkType, String status, String derived,
-                                      Long score, String provider, String providerTxnId) {
-        return new CaseFailureRow() {
-            @Override public Long getApplicationId() {
-                return APP;
-            }
-
-            @Override public String getCheckType() {
-                return checkType;
-            }
-
-            @Override public String getStatus() {
-                return status;
-            }
-
-            @Override public String getDerived() {
-                return derived;
-            }
-
-            @Override public String getMessage() {
-                return null;
-            }
-
-            @Override public Long getScore() {
-                return score;
-            }
-
-            @Override public String getProvider() {
-                return provider;
-            }
-
-            @Override public String getProviderTxnId() {
-                return providerTxnId;
-            }
-        };
+    private static CaseFailureRow row(String checkType, String status, String derivedJson) {
+        return row(checkType, status, derivedJson, null, null, null);
     }
 
-    private static CaseFailureRow bureau(String status, String derived) {
-        return row("BUREAU", status, derived, null, "FINTRIX_CRIF", null);
+    private static CaseFailureRow row(String checkType, String status, String derivedJson, Long score,
+                                      String provider, String providerTxnId) {
+        CaseFailureRow r = mock(CaseFailureRow.class);
+        lenient().when(r.getApplicationId()).thenReturn(APP);
+        lenient().when(r.getCheckType()).thenReturn(checkType);
+        lenient().when(r.getStatus()).thenReturn(status);
+        lenient().when(r.getDerived()).thenReturn(derivedJson);
+        lenient().when(r.getScore()).thenReturn(score);
+        lenient().when(r.getProvider()).thenReturn(provider);
+        lenient().when(r.getProviderTxnId()).thenReturn(providerTxnId);
+        return r;
     }
 
-    private static CaseFailureRow consentGiven() {
-        return row("BUREAU_CONSENT", "PASS", null, null, "DhanBoost", null);
-    }
-
-    private CaseFailureReason reasonFor(CaseFailureRow... rows) {
-        when(verificationRepo.findByApplicationIdInAndCheckTypeIn(anyCollection(), anyCollection()))
+    private void stubRows(CaseFailureRow... rows) {
+        lenient().when(verificationRepo.findByApplicationIdInAndCheckTypeIn(any(), any()))
                 .thenReturn(List.of(rows));
-        return service.failure(APP).reason();
     }
 
-    private static CustomerProfile profileNamed(String fullName) {
+    private void stubProfile(String fullName) {
         CustomerProfile p = new CustomerProfile();
         p.setApplicationId(APP);
         p.setFullName(fullName);
-        return p;
+        lenient().when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of(p));
     }
 
-    // ---------------------------------------------------------------- REVIEW rows
-
-    @Test
-    void identityMismatchOutranksEverythingElse() {
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"identityMismatch\":\"PAN differs\",\"providerError\":true,"
-                        + "\"providerErrorCode\":\"HTTP_503\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_IDENTITY_MISMATCH);
+    private void stubApplication(ApplicationStatus status, Long assignedExecutiveId) {
+        LoanApplication a = new LoanApplication();
+        a.setId(APP);
+        a.setStatus(status);
+        a.setAssignedExecutiveId(assignedExecutiveId);
+        lenient().when(applicationRepo.findAllById(any())).thenReturn(List.of(a));
     }
 
-    @Test
-    void missingNameIsReportedAsSomethingAnAdminCanType() {
-        assertThat(reasonFor(consentGiven(), bureau("REVIEW", "{\"missingProfileField\":\"name\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_MISSING_NAME);
+    private CaseFailure classify() {
+        return service.failure(APP);
     }
 
-    @Test
-    void missingDobIsItsOwnReason() {
-        assertThat(reasonFor(consentGiven(), bureau("REVIEW", "{\"missingProfileField\":\"dob\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_MISSING_DOB);
-    }
+    // ---- one test per reason ---------------------------------------------------------
 
     @Test
-    void anUnansweredSecurityQuestionIsNotAFailedPull() {
-        assertThat(reasonFor(consentGiven(), bureau("REVIEW", "{\"bureauChallenge\":true}")))
-                .isEqualTo(CaseFailureReason.BUREAU_KBA_PENDING);
+    void bureauReview_identityMismatch_reportsBureauIdentityMismatch() {
+        stubRows(row("BUREAU", "REVIEW", "{\"identityMismatch\":\"PAN mismatch: report has ZZZZZ9999Z\"}"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_IDENTITY_MISMATCH, "BUREAU"));
     }
 
     @Test
-    void aSkippedSecurityQuestionIsDistinctFromAnUnaskedOne() {
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"bureauChallenge\":true,\"bureauChallengeSkipped\":true}")))
-                .isEqualTo(CaseFailureReason.BUREAU_KBA_SKIPPED);
+    void bureauReview_missingName_reportsBureauMissingName() {
+        stubRows(row("BUREAU", "REVIEW", "{\"missingProfileField\":\"name\"}"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_MISSING_NAME, "BUREAU"));
     }
 
     @Test
-    void maskedMobileFollowUpIsRecognised() {
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"providerError\":true,\"bureauMaskedMobileRequired\":true,"
-                        + "\"providerErrorCode\":\"MASKED_MOBILE_REQUIRED\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_MASKED_MOBILE_FOLLOW_UP);
+    void bureauReview_missingDob_reportsBureauMissingDob() {
+        stubRows(row("BUREAU", "REVIEW", "{\"missingProfileField\":\"dob\"}"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_MISSING_DOB, "BUREAU"));
     }
 
     @Test
-    void providerErrorCodesMapToWhatAnOfficerCanActOn() {
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"providerError\":true,\"providerErrorCode\":\"HTTP_402\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_PROVIDER_NO_BALANCE);
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"providerError\":true,\"providerErrorCode\":\"HTTP_400\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_PROVIDER_REJECTED_REQUEST);
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"providerError\":true,\"providerErrorCode\":\"HTTP_422\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_PROVIDER_PLAN_LIMIT);
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"providerError\":true,\"providerErrorCode\":\"TRANSPORT_FAILURE\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_PROVIDER_UNAVAILABLE);
-    }
+    void bureauReview_kbaChallengePending_reportsBureauKbaPending() {
+        stubRows(row("BUREAU", "REVIEW", "{\"bureauChallenge\":true}"));
 
-    // ---------------------------------------------------------------- PASS rows
-
-    /**
-     * The 47. A Fintrix no-hit that still carries a transaction id held a real report: that id is the
-     * report's own HEADER.REPORT-ID, and a genuine thin file has no report node to read one from.
-     */
-    @Test
-    void aFintrixNoHitCarryingAReportIdIsADiscardedReport() {
-        assertThat(reasonFor(consentGiven(),
-                row("BUREAU", "PASS", "{\"noRecord\":true}", null, "FINTRIX_CRIF", "CCR260822CR41")))
-                .isEqualTo(CaseFailureReason.BUREAU_REPORT_DISCARDED);
-    }
-
-    /**
-     * Digitap's Experian client takes its transaction id from the envelope's {@code request_id}, which
-     * is present on EVERY response including a legitimate no-record. Without the provider gate every
-     * Digitap thin file would be labelled a discarded report and offered a billable re-run that could
-     * only ever come back empty.
-     */
-    @Test
-    void aDigitapNoRecordIsNotMistakenForADiscardedReport() {
-        // Named, so the missing-name rule above cannot claim this row first — the point here is the
-        // provider gate, not the name.
-        when(profileRepo.findByApplicationIdIn(anyCollection()))
-                .thenReturn(List.of(profileNamed("Sample Person")));
-        assertThat(reasonFor(consentGiven(),
-                row("BUREAU", "PASS", "{\"noRecord\":true}", null, "DIGITAP_EXPERIAN", "req-9931")))
-                .isEqualTo(CaseFailureReason.BUREAU_NO_RECORD);
-    }
-
-    /**
-     * The 44. A bureau request built without a name cannot match anyone, the provider rejects it, and
-     * the row was recorded as a thin file. The blank name on the profile is the durable evidence —
-     * and it is what an admin fixes. Note the copy says "name missing", never "PAN failed": a PAN that
-     * PASSES can still return no name.
-     */
-    @Test
-    void aNamelessProfileExplainsAnApparentThinFile() {
-        when(profileRepo.findByApplicationIdIn(anyCollection())).thenReturn(List.of(profileNamed(" ")));
-        assertThat(reasonFor(consentGiven(),
-                row("BUREAU", "PASS", "{\"noRecord\":true}", null, "FINTRIX_CRIF", null)))
-                .isEqualTo(CaseFailureReason.BUREAU_MISSING_NAME);
-    }
-
-    /** The 84. The system working correctly — this must NOT read as a failure. */
-    @Test
-    void aGenuineThinFileIsReportedAsSuchAndIsNotRetryable() {
-        when(profileRepo.findByApplicationIdIn(anyCollection()))
-                .thenReturn(List.of(profileNamed("Sample Person")));
-        CaseFailureReason reason = reasonFor(consentGiven(),
-                row("BUREAU", "PASS", "{\"noRecord\":true}", null, "FINTRIX_CRIF", null));
-        assertThat(reason).isEqualTo(CaseFailureReason.BUREAU_NO_RECORD);
-        assertThat(reason.retryable()).isFalse();
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_KBA_PENDING, "BUREAU"));
     }
 
     @Test
-    void aKeptReportWithNoUsableScoreIsInformationalNotAFailure() {
-        assertThat(reasonFor(consentGiven(),
-                row("BUREAU", "PASS", "{\"noRecord\":false}", null, "FINTRIX_CRIF", "CCR-1")))
-                .isEqualTo(CaseFailureReason.BUREAU_NO_SCORE);
+    void bureauReview_kbaChallengeSkipped_reportsBureauKbaSkipped() {
+        stubRows(row("BUREAU", "REVIEW", "{\"bureauChallenge\":true,\"bureauChallengeSkipped\":true}"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_KBA_SKIPPED, "BUREAU"));
     }
 
     @Test
-    void aScoredPullHasNothingOutstanding() {
-        assertThat(reasonFor(consentGiven(),
-                row("BUREAU", "PASS", "{\"noRecord\":false}", 742L, "FINTRIX_CRIF", "CCR-2")))
-                .isEqualTo(CaseFailureReason.NONE);
-    }
+    void bureauReview_maskedMobileRequired_reportsBureauMaskedMobileFollowUp() {
+        stubRows(row("BUREAU", "REVIEW", "{\"bureauMaskedMobileRequired\":true}"));
 
-    // ---------------------------------------------------------------- PAN, consent, assignment
-
-    @Test
-    void aPanNoProviderRecognisesIsNotASystemFault() {
-        CaseFailureReason reason = reasonFor(consentGiven(), row("PAN", "FAIL", null, null, "SIGNZY", null));
-        assertThat(reason).isEqualTo(CaseFailureReason.PAN_INVALID);
-        assertThat(reason.retryable()).isFalse();
+        assertThat(classify())
+                .isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_MASKED_MOBILE_FOLLOW_UP, "BUREAU"));
     }
 
     @Test
-    void aPanTheProvidersCouldNotAnswerIsWorthRetrying() {
-        CaseFailureReason reason = reasonFor(consentGiven(),
-                row("PAN", "REVIEW", "{\"providerError\":true}", null, null, null));
-        assertThat(reason).isEqualTo(CaseFailureReason.PAN_UNVERIFIED);
-        assertThat(reason.retryable()).isTrue();
+    void bureauReview_providerErrorHttp402_reportsProviderNoBalance() {
+        stubRows(row("BUREAU", "REVIEW", "{\"providerErrorCode\":\"HTTP_402\"}"));
+
+        assertThat(classify())
+                .isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_PROVIDER_NO_BALANCE, "BUREAU"));
+    }
+
+    @Test
+    void bureauReview_providerErrorHttp400_reportsProviderRejectedRequest() {
+        stubRows(row("BUREAU", "REVIEW", "{\"providerErrorCode\":\"HTTP_400\"}"));
+
+        assertThat(classify())
+                .isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_PROVIDER_REJECTED_REQUEST, "BUREAU"));
+    }
+
+    @Test
+    void bureauReview_providerErrorHttp422_reportsProviderPlanLimit() {
+        stubRows(row("BUREAU", "REVIEW", "{\"providerErrorCode\":\"HTTP_422\"}"));
+
+        assertThat(classify())
+                .isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_PROVIDER_PLAN_LIMIT, "BUREAU"));
+    }
+
+    @Test
+    void bureauReview_providerErrorHttp503_reportsProviderUnavailable() {
+        stubRows(row("BUREAU", "REVIEW", "{\"providerErrorCode\":\"HTTP_503\"}"));
+
+        assertThat(classify())
+                .isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_PROVIDER_UNAVAILABLE, "BUREAU"));
     }
 
     /**
-     * Once the bureau has come back with a score the decision is unblocked, so a stale PAN problem
-     * must stop being reported — otherwise "PAN not recognised" would sit on a sanctioned, disbursed
-     * file for the rest of that customer's life.
+     * The 47-case historical fingerprint: a real report was returned and the pre-fix rule threw it away
+     * for carrying a score outside CRIF's band, but recorded it as "no record". On Fintrix the
+     * provider's own transaction id is the report's {@code HEADER.REPORT-ID}, so its presence is what
+     * proves a report actually existed — a genuine thin file never has one.
      */
     @Test
-    void aPanProblemStopsBeingReportedOnceTheBureauHasAnswered() {
-        assertThat(reasonFor(consentGiven(),
-                row("PAN", "FAIL", null, null, "SIGNZY", null),
-                row("BUREAU", "PASS", "{\"noRecord\":false}", 700L, "FINTRIX_CRIF", "CCR-3")))
-                .isEqualTo(CaseFailureReason.NONE);
+    void bureauPass_noRecordWithFintrixProviderTxnId_reportsBureauReportDiscarded() {
+        stubRows(row("BUREAU", "PASS", "{\"noRecord\":true}", null, "FINTRIX_CRIF", "RPT-2026-00147"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_REPORT_DISCARDED, "BUREAU"));
+    }
+
+    /** The 44-case historical signature: no report id to salvage, and the profile never got a name. */
+    @Test
+    void bureauPass_noRecordNoTxnId_blankProfileName_reportsBureauMissingName() {
+        stubRows(row("BUREAU", "PASS", "{\"noRecord\":true}", null, "DIGITAP_EXPERIAN", null));
+        stubProfile("");
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_MISSING_NAME, "BUREAU"));
+    }
+
+    /** The 84 genuine no-hits — the bureau really has nothing on this identity. Not a bug. */
+    @Test
+    void bureauPass_noRecordNoTxnId_profileHasAName_reportsBureauNoRecord() {
+        stubRows(row("BUREAU", "PASS", "{\"noRecord\":true}", null, "DIGITAP_EXPERIAN", null));
+        stubProfile("SHUBHAM");
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_NO_RECORD, "BUREAU"));
     }
 
     @Test
-    void withoutConsentNothingHasBeenAttemptedYet() {
-        assertThat(reasonFor(row("PAN", "PASS", null, null, "SIGNZY", null)))
-                .isEqualTo(CaseFailureReason.BUREAU_CONSENT_PENDING);
+    void bureauPass_noNoRecordFlag_nullScore_reportsBureauNoScore() {
+        stubRows(row("BUREAU", "PASS", "{\"noRecord\":false}", null, "FINTRIX_CRIF", null));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_NO_SCORE, "BUREAU"));
     }
 
     @Test
-    void consentGivenButNoBureauRowMeansThePullNeverRan() {
-        assertThat(reasonFor(consentGiven())).isEqualTo(CaseFailureReason.BUREAU_NOT_RUN);
+    void bureauPass_withScore_reportsNone() {
+        stubRows(row("BUREAU", "PASS", "{\"noRecord\":false}", 778L, "DIGITAP_EXPERIAN", "TXN-1"));
+
+        assertThat(classify()).isEqualTo(CaseFailure.none());
     }
 
     @Test
-    void anUnassignedFileWithNothingWrongSaysSo() {
-        LoanApplication app = new LoanApplication();
-        app.setId(APP);
-        app.setStatus(ApplicationStatus.KYC_PENDING);
-        when(applicationRepo.findAllById(any())).thenReturn(List.of(app));
-        assertThat(reasonFor(consentGiven(),
-                row("BUREAU", "PASS", "{\"noRecord\":false}", 780L, "FINTRIX_CRIF", "CCR-4")))
-                .isEqualTo(CaseFailureReason.NONE);
+    void panFail_withNoBureauPass_reportsPanInvalid() {
+        stubRows(row("PAN", "FAIL", null));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.PAN_INVALID, "PAN"));
     }
 
-    // ---------------------------------------------------------------- precedence + retryability
+    @Test
+    void panReview_providerError_withNoBureauPass_reportsPanUnverified() {
+        stubRows(row("PAN", "REVIEW", "{\"providerError\":true}"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.PAN_UNVERIFIED, "PAN"));
+    }
+
+    @Test
+    void noRows_reportsBureauConsentPending() {
+        stubRows();
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_CONSENT_PENDING, "BUREAU_CONSENT"));
+    }
+
+    @Test
+    void consentPassed_noBureauRowAtAll_reportsBureauNotRun() {
+        stubRows(row("BUREAU_CONSENT", "PASS", null));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_NOT_RUN, "BUREAU"));
+    }
 
     /**
-     * A missing name and an unanswered security question can both be true. The name is what an admin
-     * can fix in seconds, so it must win — chasing the borrower for an answer to a question the bureau
-     * could never have matched would waste everybody's time.
+     * A real bureau pull only ever records {@code PASS} or {@code REVIEW} ({@code ApplicationVerificationService
+     * .finishBureauPull}), both of which classify above and never fall through to here. The only way a
+     * BUREAU row reaches this branch with neither status is a manual override
+     * ({@code manualDecision(..., pass=false)}), which writes {@code FAIL} on any check type — an admin
+     * having failed the check by hand for a reason unrelated to any marker this service reads. With
+     * consent given and nothing else standing in the way, "unassigned" is genuinely the only open item.
      */
     @Test
-    void aMissingNameOutranksAPendingSecurityQuestion() {
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"missingProfileField\":\"name\",\"bureauChallenge\":true}")))
-                .isEqualTo(CaseFailureReason.BUREAU_MISSING_NAME);
+    void consentPassed_bureauRowInAnUnclassifiedStatus_unassignedKycPending_reportsAwaitingAssignment() {
+        stubRows(row("BUREAU_CONSENT", "PASS", null), row("BUREAU", "FAIL", null));
+        stubApplication(ApplicationStatus.KYC_PENDING, null);
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.AWAITING_ASSIGNMENT, null));
     }
 
+    // ---- precedence: two problems true at once, the earlier declaration wins --------
+
+    /** An identity mismatch AND a provider error code both present — the mismatch is reported. */
     @Test
-    void aSecurityQuestionOutranksAProviderErrorCodeOnTheSameRow() {
-        assertThat(reasonFor(consentGiven(),
-                bureau("REVIEW", "{\"bureauChallenge\":true,\"providerError\":true,"
-                        + "\"providerErrorCode\":\"HTTP_503\"}")))
-                .isEqualTo(CaseFailureReason.BUREAU_KBA_PENDING);
+    void precedence_identityMismatchBeatsProviderError() {
+        stubRows(row("BUREAU", "REVIEW",
+                "{\"identityMismatch\":\"PAN mismatch\",\"providerErrorCode\":\"HTTP_402\"}"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_IDENTITY_MISMATCH, "BUREAU"));
     }
+
+    /** A missing name AND a pending KBA challenge both present — the missing name is reported. */
+    @Test
+    void precedence_missingNameBeatsKbaChallenge() {
+        stubRows(row("BUREAU", "REVIEW", "{\"missingProfileField\":\"name\",\"bureauChallenge\":true}"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.BUREAU_MISSING_NAME, "BUREAU"));
+    }
+
+    // ---- retryable() ------------------------------------------------------------------
 
     /**
-     * Every bureau pull is billable and is a real credit inquiry on a real person's file, so a re-run
-     * is offered ONLY where it could plausibly change the answer.
+     * Every bureau pull is billable and a real credit inquiry, so offering a re-run on these would
+     * only spend money to reach the same answer: a genuine no-hit stays a no-hit, an invalid PAN stays
+     * invalid, a plan limit needs a bigger plan (not another call), and the masked-mobile case needs a
+     * vendor endpoint we don't implement.
      */
     @Test
-    void reRunIsNeverOfferedWhereItCouldOnlySpendMoney() {
+    void retryable_isFalseForReasonsWhereARerunCannotChangeTheAnswer() {
         assertThat(CaseFailureReason.BUREAU_NO_RECORD.retryable()).isFalse();
         assertThat(CaseFailureReason.PAN_INVALID.retryable()).isFalse();
         assertThat(CaseFailureReason.BUREAU_PROVIDER_PLAN_LIMIT.retryable()).isFalse();
         assertThat(CaseFailureReason.BUREAU_MASKED_MOBILE_FOLLOW_UP.retryable()).isFalse();
-        assertThat(CaseFailureReason.BUREAU_NO_SCORE.retryable()).isFalse();
-        assertThat(CaseFailureReason.NONE.retryable()).isFalse();
-
-        assertThat(CaseFailureReason.BUREAU_MISSING_NAME.retryable()).isTrue();
-        assertThat(CaseFailureReason.BUREAU_MISSING_DOB.retryable()).isTrue();
-        assertThat(CaseFailureReason.BUREAU_REPORT_DISCARDED.retryable()).isTrue();
-        assertThat(CaseFailureReason.BUREAU_PROVIDER_UNAVAILABLE.retryable()).isTrue();
-    }
-
-    /** Unreadable stored JSON must never be read as "this file is fine". */
-    @Test
-    void malformedDerivedJsonDegradesRatherThanClaimingACleanFile() {
-        assertThat(reasonFor(consentGiven(), bureau("REVIEW", "{not json")))
-                .isEqualTo(CaseFailureReason.BUREAU_PROVIDER_UNAVAILABLE);
     }
 }

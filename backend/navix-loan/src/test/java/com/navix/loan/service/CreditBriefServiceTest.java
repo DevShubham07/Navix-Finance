@@ -224,4 +224,65 @@ class CreditBriefServiceTest {
         verify(profileRepo, never()).save(profile);
         verifyNoInteractions(storage);
     }
+    /**
+     * A report the bureau returned without a usable score keeps everything it DOES have.
+     *
+     * <p>Two things had to be true together for the 47 recovered CRIF reports to be worth anything.
+     * The rating must stay null — a fabricated 2.0★ on a real file is worse than the bug it replaced
+     * — and {@code view()} must still call the brief available, because it used to gate on the star
+     * rating, so a null rating returned an {@code available=false} shell and the tradelines we went
+     * to the trouble of preserving would never have reached a single screen.
+     */
+    @Test
+    void aReportWithNoUsableScoreKeepsItsFactsButGetsNoRating() {
+        CreditBriefService service = new CreditBriefService(
+                new CreditRatingCalculator(), new CreditBriefPdfRenderer(),
+                new CreditBriefPdfWriter(storage, documentRepo),
+                documentRepo, profileRepo, applicationRepo, verificationRepo, new ObjectMapper(),
+                bureauStateService);
+        CustomerProfile profile = new CustomerProfile();
+        profile.setApplicationId(321L);
+        profile.setBureauSource("FINTRIX_CRIF");
+        profile.setFullName("TEST BORROWER");
+        when(profileRepo.save(any(CustomerProfile.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.generate(321L, profile, CreditRatingCalculatorTest.unscored(), "{}");
+
+        assertThat(profile.getCreditStarRating()).isNull();
+        assertThat(profile.getCreditRecommendation()).isNull();
+        // The parts that make the report readable survive.
+        assertThat(profile.getCreditBriefFacts()).isNotNull();
+        assertThat(profile.getCreditBriefSummary()).contains("no usable credit score");
+        assertThat(profile.getCreditBriefGeneratedAt()).isNotNull();
+    }
+
+    /** The other half: {@code view()} gates on the FACTS, not the rating. */
+    @Test
+    void viewReturnsAnAvailableBriefForAReportWithNoScore() {
+        CreditBriefService service = new CreditBriefService(
+                new CreditRatingCalculator(), new CreditBriefPdfRenderer(),
+                new CreditBriefPdfWriter(storage, documentRepo),
+                documentRepo, profileRepo, applicationRepo, verificationRepo, new ObjectMapper(),
+                bureauStateService);
+        CustomerProfile profile = new CustomerProfile();
+        profile.setApplicationId(321L);
+        profile.setBureauSource("FINTRIX_CRIF");
+        profile.setCreditBriefSummary("A summary that mentions no score.");
+        profile.setCreditBriefGeneratedAt(Instant.now());
+        profile.setCreditBriefFacts(
+                new ObjectMapper().valueToTree(CreditRatingCalculatorTest.unscored()).toString());
+        when(profileRepo.findByApplicationId(321L)).thenReturn(Optional.of(profile));
+        when(verificationRepo.findByApplicationIdAndCheckType(321L, "BUREAU"))
+                .thenReturn(Optional.empty());
+        // Already has its PDF, so ensureBrief short-circuits and no S3 write is attempted.
+        when(documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(321L, "CREDIT_BRIEF"))
+                .thenReturn(Optional.of(new ApplicationDocument()));
+
+        var view = service.view(321L);
+
+        assertThat(view.available()).isTrue();
+        assertThat(view.starRating()).isNull();
+        assertThat(view.facts()).isNotNull();
+    }
+
 }
