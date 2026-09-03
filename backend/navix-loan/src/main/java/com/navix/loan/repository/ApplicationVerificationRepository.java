@@ -56,6 +56,7 @@ public interface ApplicationVerificationRepository extends JpaRepository<Applica
         String getDerived();
         String getMessage();
         Long getScore();
+        String getProvider();
         String getProviderTxnId();
     }
 

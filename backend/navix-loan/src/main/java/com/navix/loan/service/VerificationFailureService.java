@@ -57,6 +57,8 @@ public class VerificationFailureService {
     private static final String PASS = "PASS";
     private static final String REVIEW = "REVIEW";
     private static final String FAIL = "FAIL";
+    /** {@code FintrixVerificationAdapter}'s bureau source — see {@link #discardedReport}. */
+    private static final String FINTRIX_CRIF = "FINTRIX_CRIF";
 
     private final ApplicationVerificationRepository verificationRepo;
     private final CustomerProfileRepository profileRepo;
@@ -177,18 +179,7 @@ public class VerificationFailureService {
         if (bureau != null && PASS.equals(bureau.getStatus())) {
             boolean noRecord = Boolean.TRUE.equals(bureauDerived.get("noRecord"));
             if (noRecord) {
-                // Historical rows. A CRIF no-hit that still carries a provider transaction id is a
-                // report the pre-fix rule threw away for having an out-of-band score: that id is the
-                // report's own REPORT-ID, read out of the HEADER, and a genuine thin file has no
-                // report node to read one from. 47 of the September 2026 queue look like this, and
-                // re-running now keeps what it returns — so they are worth separating from the 84
-                // true no-hits they are currently indistinguishable from.
-                //
-                // Reading the stored response itself would be exact, but it is a full credit report
-                // per row and the probe would have to happen in SQL; this is one already-loaded
-                // column. The cost is a rare false positive — a report shell carrying an id and
-                // nothing else — which surfaces as an offer to re-run, not as an automatic spend.
-                if (bureau.getProviderTxnId() != null && !bureau.getProviderTxnId().isBlank()) {
+                if (discardedReport(bureau)) {
                     return new CaseFailure(CaseFailureReason.BUREAU_REPORT_DISCARDED, BUREAU);
                 }
                 // A bureau request built without a name cannot match anyone; the provider rejected it
@@ -214,6 +205,27 @@ public class VerificationFailureService {
             return new CaseFailure(CaseFailureReason.AWAITING_ASSIGNMENT, null);
         }
         return CaseFailure.none();
+    }
+
+    /**
+     * A stored no-hit that was actually a real report, thrown away by the pre-fix rule for carrying a
+     * score outside CRIF's 300-900 band. 47 of the September 2026 queue look like this, and a re-run
+     * now keeps what comes back — so they are worth separating from the 84 genuine thin files they
+     * are otherwise indistinguishable from.
+     *
+     * <p>The evidence is the transaction id. On a Fintrix no-hit that id is the report's own
+     * {@code HEADER.REPORT-ID}, and a genuine thin file has no report node to read one from.
+     *
+     * <p><b>Gated on Fintrix deliberately.</b> Digitap's Experian client takes its transaction id from
+     * the envelope's {@code request_id}, which is present on EVERY response including a legitimate
+     * no-record — so without this check every Digitap thin file would be misread as a discarded
+     * report and offered a pointless billable re-run. The heuristic is only sound for the provider
+     * whose id comes out of the report itself.
+     */
+    private static boolean discardedReport(CaseFailureRow bureau) {
+        return FINTRIX_CRIF.equalsIgnoreCase(bureau.getProvider())
+                && bureau.getProviderTxnId() != null
+                && !bureau.getProviderTxnId().isBlank();
     }
 
     /**
