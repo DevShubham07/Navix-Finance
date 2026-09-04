@@ -89,7 +89,6 @@ public class VerificationClientConfig {
      * the whole list.
      */
     private static void lenientJson(List<HttpMessageConverter<?>> converters) {
-        converters.removeIf(MappingJackson2HttpMessageConverter.class::isInstance);
         MappingJackson2HttpMessageConverter json = new MappingJackson2HttpMessageConverter();
         json.setSupportedMediaTypes(List.of(
                 MediaType.APPLICATION_JSON,
@@ -97,7 +96,22 @@ public class VerificationClientConfig {
                 MediaType.APPLICATION_OCTET_STREAM,
                 MediaType.TEXT_PLAIN,
                 MediaType.valueOf("text/json")));
-        converters.add(json);
+        // Replace IN PLACE. Removing and appending puts this converter behind Spring's YAML converter
+        // (registered whenever jackson-dataformat-yaml is on the classpath — springdoc pulls it into
+        // navix-app), and the FIRST converter that canWrite the body picks the Content-Type. That is
+        // how every provider POST went out as `application/yaml`.
+        int at = -1;
+        for (int i = 0; i < converters.size(); i++) {
+            if (converters.get(i) instanceof MappingJackson2HttpMessageConverter) {
+                at = i;
+                break;
+            }
+        }
+        if (at >= 0) {
+            converters.set(at, json);
+        } else {
+            converters.add(0, json);
+        }
     }
 
     private static String basic(String clientId, String clientSecret) {
