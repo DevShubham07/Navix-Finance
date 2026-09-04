@@ -25,13 +25,17 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.TimeZone;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -68,6 +72,76 @@ class CollectionsServiceTest {
     @AfterEach
     void tearDown() {
         ActorContext.clear();
+    }
+
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
+    /**
+     * A zone whose calendar date differs from IST's <em>right now</em>, whatever "now" is.
+     *
+     * <p>The naive version of the tests below — set nothing, assert the captured date equals
+     * {@code LocalDate.now(IST)} — only fails on the unfixed code between 00:00 and 05:30 IST, when
+     * UTC happens to still be on yesterday. A guard that sleeps through 77% of the day is not a
+     * guard. UTC+14 and UTC-11 are 25 hours apart, so at any instant at least one of them is on a
+     * different date from IST; picking whichever currently is makes the assertion bite at any hour.
+     */
+    private static ZoneId zoneOnADifferentDateFromIst() {
+        return Stream.of("Pacific/Kiritimati", "Pacific/Niue")
+                .map(ZoneId::of)
+                .filter(zone -> !LocalDate.now(zone).equals(LocalDate.now(IST)))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "no zone differs from IST — impossible across a 25-hour span"));
+    }
+
+    /**
+     * Runs {@code body} with the JVM default zone set somewhere that is NOT on IST's date, so a bare
+     * {@code LocalDate.now()} in production code produces a visibly wrong answer.
+     */
+    private static void withDefaultZoneOffIst(Runnable body) {
+        TimeZone original = TimeZone.getDefault();
+        TimeZone.setDefault(TimeZone.getTimeZone(zoneOnADifferentDateFromIst()));
+        try {
+            body.run();
+        } finally {
+            TimeZone.setDefault(original);
+        }
+    }
+
+    /**
+     * An omitted {@code asOf} must resolve to the Indian calendar date, not the container's.
+     *
+     * <p>ECS runs the JVM on UTC, so a bare {@code LocalDate.now()} here reported yesterday between
+     * 00:00 and 05:30 IST — while the loan's own due date and status, resolved by
+     * {@code LoanDirectoryAdapter}, were already on IST. For five and a half hours every day the DPD
+     * shown disagreed with the due date it was derived from, and because this same value is passed
+     * into {@code listCollectible}, even the SET of loans returned could shift by a day.
+     *
+     * <p>Asserting on the captured argument rather than the returned rows because that argument is
+     * the bug: it is what both the DPD figure and the collectible horizon are computed from. The
+     * older tests here all pass an explicit {@code asOf}, so none of them exercise this default.
+     */
+    @Test
+    void worklistDefaultsToTheIndianCalendarDateNotTheContainerClock() {
+        when(loanDirectory.listCollectible(any())).thenReturn(List.of());
+
+        withDefaultZoneOffIst(() -> service.worklist(null));
+
+        ArgumentCaptor<LocalDate> at = ArgumentCaptor.forClass(LocalDate.class);
+        verify(loanDirectory).listCollectible(at.capture());
+        assertThat(at.getValue()).isEqualTo(LocalDate.now(IST));
+    }
+
+    /** Same defaulting rule on the pre-due watchlist, which feeds the UPCOMING bucket. */
+    @Test
+    void upcomingWatchlistDefaultsToTheIndianCalendarDate() {
+        when(loanDirectory.listUpcoming(any())).thenReturn(List.of());
+
+        withDefaultZoneOffIst(() -> service.upcomingWatchlist(null));
+
+        ArgumentCaptor<LocalDate> on = ArgumentCaptor.forClass(LocalDate.class);
+        verify(loanDirectory).listUpcoming(on.capture());
+        assertThat(on.getValue()).isEqualTo(LocalDate.now(IST));
     }
 
     private CollectionCase existingCase() {

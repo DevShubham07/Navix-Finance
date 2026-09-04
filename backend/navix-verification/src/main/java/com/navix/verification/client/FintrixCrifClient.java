@@ -142,6 +142,25 @@ public class FintrixCrifClient {
      * falls through as designed.
      */
     private static void rejectUnlessNoRecord(JsonNode root) {
+        // Fintrix answers a REJECTED REQUEST with HTTP 200 and a completely different envelope that
+        // carries no "status" key at all:
+        //   {"error":"Bad Request","message":"Missing required field name","success":true,"statusCode":400}
+        // The status-only guard below reads a missing node, concludes "not an error", and returns —
+        // execution then falls into parse(), finds no credit_report node, and records the borrower as
+        // a thin file. 44 applications in the Sep-2026 pending-queue audit carried this exact envelope
+        // and were indistinguishable on the dashboard from a genuine no-hit, while CRIF had never run
+        // a search at all. The body's own statusCode is the ONLY signal here, because the transport
+        // status really was 200 — ProviderJson never saw a failure to raise.
+        //
+        // Checked before the status branch and never hoisted into pull(): kbaChallenge() must still
+        // get first look, or a knowledge-based-auth envelope would start throwing.
+        Integer statusCode = integer(root.path("statusCode"));
+        if (statusCode != null && statusCode >= 400) {
+            String detail = text(root.path("message"));
+            throw new VerificationException("Fintrix crif_combine rejected the request (statusCode "
+                    + statusCode + "): "
+                    + (detail == null || detail.isBlank() ? "no detail given" : detail));
+        }
         if (!"error".equalsIgnoreCase(text(root.path("status")))) {
             return;
         }
@@ -220,9 +239,22 @@ public class FintrixCrifClient {
                                      String name, String mobile) {
         Integer score = plausibleScore(integer(report.path("SCORES").path("SCORE").path("SCORE-VALUE")));
 
-        // No-hit rule: a missing/blank/non-numeric score, or no credit_report at all, is a real "no
-        // record" answer — never let a null score reach the auto-reject rule downstream.
-        boolean noHit = report.isMissingNode() || report.isNull() || score == null;
+        // No-hit rule: no credit_report node at all, or a report with nothing to brief on.
+        //
+        // A missing score is NOT on its own a no-hit. CRIF answered 47 applications in the Sep-2026
+        // pending-queue audit with SCORE-VALUE "15" — out of the 300-900 band, correctly nulled by
+        // plausibleScore — alongside a HEADER.STATUS of SUCCESS and an average of 37 real tradelines.
+        // Conflating "no score" with "no record" discarded every one of those reports and rendered
+        // them on the dashboard as thin files. The tradelines are real and the credit team can
+        // underwrite from them; a null score just means no score, and every downstream rule (the
+        // score-floor auto-reject included) already reads it that way.
+        //
+        // The substance test is the PARSER's own rule, deliberately: if this said "substance" while
+        // CrifHighmarkFactsParser.parse returned null, we would emit a response that is neither a hit
+        // nor a no-hit, and CreditBriefService.generate reads that as a thin file and CLEARS an
+        // existing good brief.
+        boolean noHit = report.isMissingNode() || report.isNull()
+                || (score == null && !CrifHighmarkFactsParser.hasSubstance(report));
         if (noHit) {
             if (NO_HIT_LOGGED.compareAndSet(false, true)) {
                 log.warn("Fintrix crif_combine no-hit branch fired for the first time — full envelope: {}",

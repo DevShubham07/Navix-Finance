@@ -497,9 +497,105 @@ class ApplicationVerificationServiceTest {
                 .path("identityMismatch").asText()).contains("PAN");
     }
 
+    /**
+     * Fintrix keys {@code /crif_combine} on name + mobile and rejects a blank name with an HTTP-200
+     * envelope carrying {@code statusCode 400} — a billable call that can never succeed. The intake
+     * deliberately never asks for a name (it arrives from the PAN record), so a PAN outage, or a PAN
+     * that PASSES while returning no name, leaves the profile nameless and every attempt doomed. 44
+     * applications in the September 2026 pending queue died this way and were filed as thin files.
+     */
+    @Test
+    void bureau_isDeferredToReview_whenNameIsMissing_andDoesNotCallProvider() {
+        CustomerProfile p = bureauReadyProfile();
+        p.setFullName("   ");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+
+        var result = service.pullBureau(APP, "123456");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.message()).contains("name");
+        verify(verification, never()).pullBureau(any(), any(), any(), any(), any(), any());
+    }
+
+    /**
+     * The name guard sits AFTER the 24h cross-application reuse check, not up with the DOB guard, and
+     * this is what pins that ordering.
+     *
+     * <p>{@code CustomerProfile} is per-application, so a returning borrower's fresh profile is
+     * nameless until PAN succeeds. Guarding earlier would throw away the FREE reuse of a sibling
+     * application's still-valid PASS and park the borrower in a review queue for no reason.
+     */
+    @Test
+    void bureau_namelessProfileStillReusesASiblingApplicationsFreshPass() {
+        CustomerProfile p = bureauReadyProfile();
+        p.setFullName(null);
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        LoanApplication thisApp = new LoanApplication();
+        thisApp.setId(APP);
+        thisApp.setCustomerId(9L);
+        LoanApplication priorApp = new LoanApplication();
+        priorApp.setId(41L);
+        priorApp.setCustomerId(9L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(thisApp));
+        when(applicationRepo.findByCustomerId(9L)).thenReturn(List.of(thisApp, priorApp));
+        ApplicationVerification priorPass = row(41L, "BUREAU", "PASS");
+        priorPass.setScore(710L);
+        priorPass.setProvider("FINTRIX_CRIF");
+        priorPass.setProviderTxnId("TXN-PRIOR");
+        priorPass.setDerived("{\"noRecord\":false}");
+        priorPass.setUpdatedAt(java.time.Instant.now().minusSeconds(3600));
+        when(verificationRepo.findLatestPassed(eq("BUREAU"), eq(List.of(41L)), any()))
+                .thenReturn(List.of(priorPass));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(verification, never()).pullBureau(any(), any(), any(), any(), any(), any());
+    }
+
     @Test
     void bureau_reusesPassWithin24h_forSameCustomer_doesNotCallProvider() {
         CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        LoanApplication thisApp = new LoanApplication();
+        thisApp.setId(APP);
+        thisApp.setCustomerId(9L);
+        LoanApplication priorApp = new LoanApplication();
+        priorApp.setId(41L);
+        priorApp.setCustomerId(9L);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(thisApp));
+        when(applicationRepo.findByCustomerId(9L)).thenReturn(List.of(thisApp, priorApp));
+        ApplicationVerification priorPass = row(41L, "BUREAU", "PASS");
+        priorPass.setScore(710L);
+        priorPass.setProvider("FINTRIX_CRIF");
+        priorPass.setProviderTxnId("TXN-PRIOR");
+        priorPass.setDerived("{\"noRecord\":false}");
+        priorPass.setUpdatedAt(java.time.Instant.now().minusSeconds(3600));
+        when(verificationRepo.findLatestPassed(eq("BUREAU"), eq(List.of(41L)), any()))
+                .thenReturn(List.of(priorPass));
+
+        var result = service.pullBureau(APP, "999111");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(result.message()).contains("reused within 24h");
+        verify(verification, never()).pullBureau(any(), any(), any(), any(), any(), any());
+    }
+
+    /**
+     * The name guard sits AFTER the reuse check in {@code pullBureau} on purpose: {@code CustomerProfile}
+     * is per-application, so a returning borrower's fresh application is nameless until PAN succeeds, and
+     * guarding earlier would throw away the FREE reuse of a sibling application's valid PASS and force a
+     * needless review. Otherwise identical to {@link #bureau_reusesPassWithin24h_forSameCustomer_doesNotCallProvider}
+     * — only the current application's profile name changes, to prove the reuse still fires before that
+     * guard is ever reached.
+     */
+    @Test
+    void bureau_reusesPassWithin24h_evenWhenTheCurrentProfileHasNoNameYet() {
+        CustomerProfile p = bureauReadyProfile();
+        p.setFullName("");
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
         stubConsentPassed();
         LoanApplication thisApp = new LoanApplication();

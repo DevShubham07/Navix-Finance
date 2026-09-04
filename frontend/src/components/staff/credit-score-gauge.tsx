@@ -17,7 +17,7 @@
 import * as React from "react";
 import { StarRating } from "@/components/ui/star-rating";
 import { cn } from "@/lib/utils";
-import { bureauStateLabel } from "@/components/staff/bureau-state";
+import { bureauStateLabel, reportWithoutScoreLabel } from "@/components/staff/bureau-state";
 import type { BureauState } from "@/lib/api/applications";
 
 const MIN_SCORE = 300;
@@ -113,8 +113,9 @@ export function CreditScoreGauge({
   starRating?: number | null;
   /** Underwriter verdict text, shown as a pill under the dial. */
   recommendation?: string | null;
-  /** Distinguishes the empty-dial caption between "never fetched" and "no record found". Omit to
-   *  keep the pre-existing "NO BUREAU PULL YET" caption unchanged. */
+  /** Distinguishes the empty-dial caption between "never fetched", "no record found", and (`FOUND`
+   *  with `score` null) a real report that simply carries no usable score. Omit to keep the
+   *  pre-existing "NO BUREAU PULL YET" caption unchanged. */
   state?: BureauState;
   size?: keyof typeof SIZES;
   className?: string;
@@ -171,7 +172,10 @@ export function CreditScoreGauge({
   }, [target, has]);
 
   const needleAngle = armed ? angleFor(target) : 0;
-  const emptyCaption = state === "NO_RECORD" ? bureauStateLabel("NO_RECORD", "caption") : "NO BUREAU PULL YET";
+  const emptyCaption =
+    state === "NO_RECORD" ? bureauStateLabel("NO_RECORD", "caption")
+    : state === "FOUND" ? reportWithoutScoreLabel("short").toUpperCase()
+    : "NO BUREAU PULL YET";
   const ariaLabel = has
     ? `Credit score ${target} out of ${MAX_SCORE} — ${band?.label ?? ""}`
     : state === "NO_RECORD"

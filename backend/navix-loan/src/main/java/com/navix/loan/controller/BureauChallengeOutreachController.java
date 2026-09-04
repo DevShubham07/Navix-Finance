@@ -5,6 +5,7 @@ import com.navix.loan.service.BureauChallengeOutreachService;
 import com.navix.loan.service.BureauChallengeOutreachService.OutreachSummary;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,6 +25,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class BureauChallengeOutreachController {
 
     private final BureauChallengeOutreachService service;
+
+    /**
+     * Chase ONE borrower — the Customers page's failure dialog. Idempotent per borrower, like the
+     * cohort run: an application already notified comes back as skipped rather than re-mailed.
+     */
+    @PostMapping("/notify/{applicationId}")
+    public ApiResponse<OutreachSummary> notifyOne(@PathVariable Long applicationId) {
+        return ApiResponse.ok(service.notifyApplication(applicationId));
+    }
 
     /** Dry run: who would be contacted, zero sends. */
     @GetMapping("/preview")

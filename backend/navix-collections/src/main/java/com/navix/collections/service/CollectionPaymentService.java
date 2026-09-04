@@ -21,6 +21,7 @@ import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class CollectionPaymentService {
+
+    /**
+     * An undated payment is recorded on the Indian calendar day it was actually taken. A bare
+     * {@code LocalDate.now()} would stamp yesterday between 00:00 and 05:30 IST, which on a payment
+     * is a real reconciliation error, not just a display one. Same convention as
+     * {@code CollectionsService}.
+     */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
     private static final String OFFICER_ROLE = "COLLECTION_EXECUTIVE";
     private static final String HEAD_ROLE = "COLLECTION_HEAD";
@@ -88,7 +97,7 @@ public class CollectionPaymentService {
         p.setLoanId(c.getLoanId());
         p.setKind(kind);
         p.setAmountPaise(amountPaise);
-        p.setPaidOn(paidOn != null ? paidOn : LocalDate.now());
+        p.setPaidOn(paidOn != null ? paidOn : LocalDate.now(IST));
         p.setTxnRef(blankToNull(txnRef));
         p.setProofRef(blankToNull(proofRef));
         p.setRaisedBy(actorStaffId());

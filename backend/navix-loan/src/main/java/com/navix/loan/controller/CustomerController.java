@@ -5,6 +5,7 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.verification.OtpVerifierPort;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.ApplicationDtos.ApplicationView;
+import com.navix.loan.dto.CustomerDtos.CaseFailureDetail;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
@@ -127,6 +128,18 @@ public class CustomerController {
 
     /** Every document across ALL of this customer's applications, grouped by application (newest
      *  first) — so a reborrow's prior-application uploads stay reachable (work item 4). */
+    /**
+     * Why this customer's file has no usable credit decision, and which providers were tried.
+     *
+     * <p>Staff-wide (not ADMIN-only): it is the credit team who need to know why a file cannot be
+     * decided. Carries no request/response bodies — those stay in the ADMIN provider workbench.
+     */
+    @GetMapping("/{customerId}/failure")
+    public ApiResponse<CaseFailureDetail> caseFailure(@PathVariable Long customerId) {
+        requireStaff();
+        return ApiResponse.ok(customerService.caseFailure(customerId));
+    }
+
     @GetMapping("/{customerId}/documents")
     public ApiResponse<List<ApplicationDocumentGroup>> documents(@PathVariable Long customerId) {
         requireStaff();

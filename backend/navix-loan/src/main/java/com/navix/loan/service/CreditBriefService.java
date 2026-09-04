@@ -107,8 +107,11 @@ public class CreditBriefService {
         // 1) Persist the rating headline + facts FIRST — this drives every staff surface and must not
         //    depend on the PDF/S3 step succeeding (e.g. S3 unreachable in local/dev).
         try {
-            profile.setCreditStarRating(BigDecimal.valueOf(rating.stars()));
-            profile.setCreditRecommendation(rating.recommendation());
+            // An unrated report keeps its facts and its summary but gets NO stars and NO
+            // recommendation. 0.0★ would render as the worst possible borrower, and the entire point
+            // of preserving a score-less report is that its tradelines are real and readable.
+            profile.setCreditStarRating(rating.rated() ? BigDecimal.valueOf(rating.stars()) : null);
+            profile.setCreditRecommendation(rating.rated() ? rating.recommendation() : null);
             profile.setCreditBriefSummary(rating.summary());
             profile.setCreditBriefGeneratedAt(Instant.now());
             profile.setCreditBriefFacts(objectMapper.writeValueAsString(facts));
@@ -177,7 +180,11 @@ public class CreditBriefService {
         CustomerProfile profile = profileRepo.findByApplicationId(appId).orElse(null);
         JsonNode providerResponse = providerResponse(appId);
         BureauState bureauState = bureauStateService.state(appId);
-        if (profile == null || profile.getCreditStarRating() == null) {
+        // Gated on the FACTS, not the rating. A report can be perfectly readable and still carry no
+        // usable score (CRIF's out-of-band SCORE-VALUE), and gating on the star rating meant those
+        // reports returned an available=false shell — the tradelines we went to the trouble of
+        // preserving would never have reached a single screen.
+        if (profile == null || profile.getCreditBriefFacts() == null) {
             return new CreditBriefView(appId, providerResponse != null, null, null, null, null,
                     null, null, null, providerResponse, bureauState,
                     profile != null ? profile.getBureauSource() : null);
@@ -197,7 +204,12 @@ public class CreditBriefService {
                 f.recentInquiries30d(), f.detail());
         return new CreditBriefView(appId, true,
                 profile.getBureauScore() != null ? profile.getBureauScore().intValue() : null,
-                profile.getCreditStarRating().doubleValue(),
+                // Null for a report the bureau returned without a usable score — the view's
+                // starRating is a nullable Double precisely so "not scored" and "scored badly" stay
+                // distinguishable. Unconditional .doubleValue() here NPE'd the moment a score-less
+                // report was allowed past the gate above.
+                profile.getCreditStarRating() != null
+                        ? profile.getCreditStarRating().doubleValue() : null,
                 profile.getCreditRecommendation(),
                 profile.getCreditBriefSummary(),
                 profile.getCreditBriefGeneratedAt(),

@@ -40,6 +40,30 @@ public interface ApplicationVerificationRepository extends JpaRepository<Applica
     List<BureauStateRow> findByCheckTypeAndApplicationIdIn(String checkType, Collection<Long> applicationIds);
 
     /**
+     * Everything {@code VerificationFailureService} needs to classify why an application has no
+     * usable credit decision, for many applications at once.
+     *
+     * <p>A projection, so {@code raw_response} — a full credit report on bureau rows — never leaves
+     * Postgres for a list view. {@code providerTxnId} is here for one specific reason: on a Fintrix
+     * CRIF no-hit it is the report id, and the pre-fix rule that discarded a real report for having
+     * an out-of-band score still recorded that id while a genuine thin file has none. It is what
+     * separates the 47 recoverable reports from the 84 true no-hits without reading the blob.
+     */
+    interface CaseFailureRow {
+        Long getApplicationId();
+        String getCheckType();
+        String getStatus();
+        String getDerived();
+        String getMessage();
+        Long getScore();
+        String getProvider();
+        String getProviderTxnId();
+    }
+
+    List<CaseFailureRow> findByApplicationIdInAndCheckTypeIn(Collection<Long> applicationIds,
+                                                             Collection<String> checkTypes);
+
+    /**
      * The customer's most recent PASSed row for a check type, across every application they have ever
      * filed — used to reuse a fresh bureau pull across a cancelled-and-restarted application instead of
      * re-pulling per application id. {@code Pageable} of size 1 stands in for a bare "top 1".

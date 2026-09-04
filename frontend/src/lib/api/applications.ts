@@ -629,6 +629,13 @@ export interface CustomerSummary {
   collectionOfficerName?: string | null;
   /** `salary_credit_day` (1-31) on the customer's latest application — null until collected. */
   salaryCreditDay?: number | null;
+  /** Why the latest application has no usable credit decision — the `CaseFailureReason` name
+   *  (see `components/staff/case-failure.ts` for the human-readable copy), its severity, and
+   *  whether a re-run could plausibly change the answer. `"NONE"`/undefined means nothing is
+   *  outstanding — render an empty Failure cell. */
+  failureReason?: string | null;
+  failureSeverity?: string | null;
+  failureRetryable?: boolean;
 }
 
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
@@ -644,6 +651,44 @@ export interface CustomerDetail {
    *  pull has happened. Same shape `staffApi.creditBrief` returns, attached here to avoid a second
    *  round-trip when the Credit Report tab just needs "all the info" already on the customer object. */
   creditBrief?: CreditBriefView | null;
+}
+
+/**
+ * Why one customer's file has no usable credit decision, with the provider chain behind it —
+ * mirrors backend `CustomerDtos.CaseFailureDetail`. `reason`/`severity` are the string names of
+ * `CaseFailureReason`/`CaseFailureReason.Severity`; look up their copy in `case-failure.ts`.
+ */
+export interface CaseFailureDetail {
+  customerId: number;
+  /** The application the reason describes — not necessarily the customer's newest one. */
+  applicationId: number | null;
+  reason: string;
+  severity: string;
+  /** Whether re-running the credit check could plausibly change this answer. */
+  retryable: boolean;
+  checkType: string | null;
+  /** What was actually called, oldest first. An empty array does not mean nothing was tried —
+   *  rows are kept only for `attemptRetentionDays`. */
+  attempts: ProviderAttemptView[];
+  attemptRetentionDays: number;
+}
+
+/** Result of a bureau-KBA nudge — mirrors backend `BureauChallengeOutreachService.OutreachSummary`. */
+export interface BureauChallengeOutreachSummary {
+  eligible: number;
+  notified: number;
+  skippedAlreadyNotified: number;
+  dryRun: boolean;
+}
+
+/** One recorded provider call. No request/response bodies — those stay in the ADMIN provider
+ *  workbench (see `CaseFailureDetail`). */
+export interface ProviderAttemptView {
+  provider: string;
+  operation: string;
+  httpStatus: number | null;
+  succeeded: boolean;
+  at: string;
 }
 
 /**
@@ -802,6 +847,9 @@ export interface CreditBriefView {
 
 /** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */
 export interface UpdateCustomerInput {
+  /** ISO date string (yyyy-mm-dd). Backend PATCH semantics: omitting/undefined leaves the stored
+   *  DOB alone rather than clearing it — see `UpdateCustomerRequest.dob`'s javadoc. */
+  dob?: string | null;
   fullName?: string | null;
   address?: string | null;
   employer?: string | null;
@@ -1803,6 +1851,25 @@ export const customersApi = {
   /** One customer's audited profile/salary change history (newest first). */
   changes: (customerId: number) =>
     bff<ProfileChangeView[]>(`${CUSTOMERS_BASE}/${customerId}/changes`, "GET"),
+
+  /** Why the customer's latest file has no usable credit decision, and the provider chain behind
+   *  it — behind the Customers page's Failure column. Staff-wide, not ADMIN-only. */
+  caseFailure: (customerId: number) =>
+    bff<CaseFailureDetail>(`${CUSTOMERS_BASE}/${customerId}/failure`, "GET"),
+
+  /**
+   * Chase ONE borrower whose credit report is sitting behind an unanswered bureau security
+   * question. ADMIN-only (enforced by the backend service).
+   *
+   * Deliberately per-application rather than the cohort endpoint beside it: a staffer looking at a
+   * single stuck file must not fire a send at up to 200 other people. Idempotent — a borrower
+   * already notified comes back with `notified: 0` rather than being re-mailed.
+   */
+  notifyBureauChallenge: (applicationId: number) =>
+    bff<BureauChallengeOutreachSummary>(
+      `/api/admin/bureau-challenge/notify/${applicationId}`,
+      "POST",
+    ),
 
   /** Unified activity timeline: lifecycle + re-verify + profile edits + remarks (newest first). */
   activity: (customerId: number) =>

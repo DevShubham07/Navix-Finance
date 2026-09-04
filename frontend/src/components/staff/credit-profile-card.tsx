@@ -8,7 +8,7 @@ import { StarRating } from "@/components/ui/star-rating";
 import { PdfPreviewDialog } from "@/components/staff/pdf-preview-dialog";
 import { staffApi, type CreditBriefFacts, type CreditBriefDetail } from "@/lib/api/applications";
 import { flattenProviderReport, type JsonValue } from "@/lib/credit/provider-report";
-import { bureauStateLabel } from "@/components/staff/bureau-state";
+import { bureauStateLabel, reportWithoutScoreLabel } from "@/components/staff/bureau-state";
 import { TradelineTable, EnquiryTable, ScoreTrendBlock, TopExposuresBlock } from "@/components/staff/credit/tradeline-table";
 
 const inr = (rupees: number | null | undefined): string =>
@@ -139,6 +139,37 @@ function CompleteProviderReport({ report }: { report: JsonValue }) {
 }
 
 /**
+ * The facts/detail/summary/raw-report block — shared by the scored and no-score-but-readable
+ * branches below, so a report with real tradelines and no usable score still shows the account
+ * history it has, instead of only the score/recommendation header it doesn't.
+ */
+function BriefFactsAndReport({
+  facts,
+  summary,
+  providerResponse,
+}: {
+  facts: CreditBriefFacts | null;
+  summary: string | null;
+  providerResponse: JsonValue | null;
+}) {
+  return (
+    <>
+      {facts && <Facts f={facts} />}
+      {facts?.detail && <ReportDetail detail={facts.detail} />}
+      {summary && (
+        <div className="mt-4 rounded bg-navy-tint/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+            <FileText size={12} /> Underwriter summary
+          </div>
+          <p className="text-sm leading-relaxed text-ink">{summary}</p>
+        </div>
+      )}
+      {providerResponse != null && <CompleteProviderReport report={providerResponse} />}
+    </>
+  );
+}
+
+/**
  * Staff-only credit brief card for one application: the 1–5★ recommendation + bureau score, the
  * categorized facts, the underwriter summary, and a one-click PDF download. Self-fetches the brief.
  */
@@ -192,9 +223,14 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
           {brief.providerResponse != null && <CompleteProviderReport report={brief.providerResponse} />}
         </>
       ) : brief.creditScore == null && brief.starRating == null ? (
-        <div className="text-sm text-muted">
-          The bureau pull completed but returned no usable rating (thin file).
-        </div>
+        <>
+          <div className="text-sm text-muted">
+            {brief.facts
+              ? `${reportWithoutScoreLabel("long")} — read the account history below.`
+              : "The bureau pull completed but returned no usable rating (thin file)."}
+          </div>
+          <BriefFactsAndReport facts={brief.facts} summary={brief.summary} providerResponse={brief.providerResponse} />
+        </>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -232,20 +268,7 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
             </button>
           </div>
 
-          {brief.facts && <Facts f={brief.facts} />}
-
-          {brief.facts?.detail && <ReportDetail detail={brief.facts.detail} />}
-
-          {brief.summary && (
-            <div className="mt-4 rounded bg-navy-tint/60 p-3">
-              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
-                <FileText size={12} /> Underwriter summary
-              </div>
-              <p className="text-sm leading-relaxed text-ink">{brief.summary}</p>
-            </div>
-          )}
-
-          {brief.providerResponse != null && <CompleteProviderReport report={brief.providerResponse} />}
+          <BriefFactsAndReport facts={brief.facts} summary={brief.summary} providerResponse={brief.providerResponse} />
         </>
       )}
 

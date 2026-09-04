@@ -290,6 +290,14 @@ public class BureauBackfillService {
                     // not retryable (that's the whole point: stop burning a billable call every re-run).
                     saveRow(runId, cohort, appId, customerId, BureauBackfillOutcome.KBA_REQUIRED,
                             oldScore, newScore, null, null, row.getMessage());
+                } else if (Boolean.TRUE.equals(derived.get("bureauMaskedMobileRequired"))) {
+                    // Records exist, but only under mobile numbers we did not send. Same reasoning as
+                    // KBA_REQUIRED above: recording FAILED here would make every re-run pull Fintrix,
+                    // Digitap CRIF and Digitap Experian again, forever, on a case that cannot succeed
+                    // until someone follows it up with the bureau by hand.
+                    saveRow(runId, cohort, appId, customerId,
+                            BureauBackfillOutcome.MASKED_MOBILE_REQUIRED, oldScore, newScore, null,
+                            null, row.getMessage());
                 } else {
                     String code = derived.containsKey("providerErrorCode")
                             ? String.valueOf(derived.get("providerErrorCode"))

@@ -36,6 +36,8 @@ public final class ProviderJson {
             "error_code", "errorCode", "result_code", "resultCode", "code");
     private static final List<String> DETAIL_FIELDS = List.of(
             "message", "error_message", "errorMessage", "description", "detail");
+    /** Fintrix's code for "your prepaid account cannot pay for this call". See the log below. */
+    private static final String INSUFFICIENT_BALANCE = "insufficient_balance";
 
     private ProviderJson() {
     }
@@ -109,14 +111,30 @@ public final class ProviderJson {
                     "HTTP " + status + " from " + uri);
             // Keep the exception metadata safe/redacted; the unredacted copy lives in the audit row.
             SafeDiagnostic diagnostic = safeDiagnostic(e.getResponseBodyAsString());
+            if (INSUFFICIENT_BALANCE.equalsIgnoreCase(diagnostic.code())) {
+                // A prepaid provider account at zero fails EVERY call, and nothing else says so:
+                // production sat at zero balance for 11.5 hours in Aug 2026 and 106 applications lost
+                // their bureau pull behind a generic HTTP_402. Logged at ERROR because it is an
+                // operational outage with a one-step fix (top up), not a per-borrower problem.
+                log.error("PROVIDER_BALANCE_EXHAUSTED endpoint={} — every call to this provider will "
+                        + "keep failing until the account is topped up", uri);
+            }
             throw new VerificationException(
                     "HTTP " + e.getStatusCode().value() + " from " + uri, e,
                     e.getStatusCode().value(), uri, diagnostic.code(), diagnostic.detail());
         } catch (RuntimeException transportFailure) {
-            // Read/connect timeouts and connection resets never reach the branch above — they used to
-            // leave no trace at all beyond a bare RestClientException in the stack.
+            // Read/connect timeouts, connection resets and unreadable response bodies never reach the
+            // branch above — they used to leave no trace at all beyond a bare RestClientException.
             record(uri, requestJson, null, null, started, transportFailure.toString());
-            throw transportFailure;
+            // This MUST be a VerificationException. RoutingVerificationPort.route() catches only that
+            // and CapabilityNotSupportedException, so rethrowing the raw RestClientException here
+            // propagated PAST the router and aborted the entire provider chain: the remaining
+            // providers were never called and the answer was lost outright (25 applications in the
+            // Sep-2026 pending-queue audit, where Signzy was leg 1 and Digitap/Fintrix never ran).
+            // The 6-arg constructor carries the endpoint so route()'s fall-through log still names it;
+            // httpStatus and providerCode stay null because the call never got a response to read.
+            throw new VerificationException("Transport failure calling " + uri, transportFailure,
+                    null, uri, null, null);
         }
         if (node == null) {
             record(uri, requestJson, null, httpStatus, started, "Empty response body from " + uri);

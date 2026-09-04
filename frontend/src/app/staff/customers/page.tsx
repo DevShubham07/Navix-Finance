@@ -4,9 +4,9 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon } from "lucide-react";
+import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
-import { Input } from "@/components/ui";
+import { Badge, Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import {
   PermissionGate,
@@ -22,7 +22,16 @@ import {
 } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { CreditBadge } from "@/components/staff/credit-badge";
-import { bureauStateLabel } from "@/components/staff/bureau-state";
+import { bureauStateLabel, reportWithoutScoreLabel } from "@/components/staff/bureau-state";
+import {
+  SEVERITY_BADGE_VARIANT,
+  caseFailureLabel,
+  isNoFailure,
+  type CaseFailureReason,
+  type CaseFailureSeverity,
+} from "@/components/staff/case-failure";
+import { CaseFailureDialog } from "@/components/staff/case-failure-dialog";
+import { CustomerEditDialog } from "@/components/staff/customer-edit-dialog";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { customersApi, staffApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
@@ -110,6 +119,10 @@ function CustomersPageInner() {
   const [debounced, setDebounced] = React.useState("");
   const [openId, setOpenId] = React.useState<number | null>(null);
   const [infoCustomerId, setInfoCustomerId] = React.useState<number | null>(null);
+  // Carries the name too, so the failure dialog can title itself without a second fetch.
+  const [failureCustomer, setFailureCustomer] =
+    React.useState<{ id: number; name: string | null } | null>(null);
+  const [editCustomerId, setEditCustomerId] = React.useState<number | null>(null);
   const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
@@ -220,7 +233,8 @@ function CustomersPageInner() {
   const [pendingReject, setPendingReject] = React.useState<{ ids: number[]; mode: RejectMode } | null>(null);
   const [pendingAssign, setPendingAssign] = React.useState<number[] | null>(null);
   const showBulkColumn = canBulkReject || canBulkAssign;
-  const colCount = showBulkColumn ? 21 : 20;
+  // +1 for the Failure column. The date-group header rows span the whole table with this.
+  const colCount = showBulkColumn ? 22 : 21;
 
   function setSeg(next: CustomerSegment) {
     const p = new URLSearchParams(searchParams.toString());
@@ -256,6 +270,7 @@ function CustomersPageInner() {
             { header: "Stage date", value: (c) => (c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "") },
             { header: "Loan status", value: (c) => c.loanStatus ?? "" },
             { header: "Outstanding (₹)", value: (c) => (c.totalOutstandingPaise / 100).toFixed(2) },
+            { header: "Failure", value: (c) => caseFailureLabel(c.failureReason as CaseFailureReason) },
             { header: "Credit score", value: (c) => c.creditScore ?? "" },
             { header: "Credit rating", value: (c) => (c.starRating != null ? c.starRating.toFixed(1) : "") },
             { header: "Credit exec", value: (c) => c.creditDecidedByName ?? "" },
@@ -379,6 +394,7 @@ function CustomersPageInner() {
                   <th>Loans</th>
                   <th>Outstanding</th>
                   <th>Bureau</th>
+                  <th title="Why this file has no usable credit decision yet">Failure</th>
                   <th>Latest status</th>
                   <th title="When this customer entered their current status">Stage date</th>
                   {/* Who worked the file. "Credit exec" is who DECIDED it, which on a reassigned or
@@ -481,8 +497,37 @@ function CustomersPageInner() {
                         <CreditBadge starRating={c.starRating} creditScore={c.creditScore} bureauSource={c.bureauSource} />
                       ) : c.bureauState === "NO_RECORD" ? (
                         <span className="text-xs text-muted">{bureauStateLabel("NO_RECORD", "long")}</span>
+                      ) : c.bureauState === "FOUND" ? (
+                        // A report CAN come back complete and readable with no usable score (CRIF
+                        // sends one outside the 300-900 band). Falling through to "Not fetched" here
+                        // would call a report we are holding a report we never pulled.
+                        <span className="text-xs text-muted">{reportWithoutScoreLabel("long")}</span>
                       ) : (
                         <span className="text-xs text-muted">{bureauStateLabel("NOT_FETCHED", "short")}</span>
+                      )}
+                    </td>
+                    <td>
+                      {isNoFailure(c.failureReason as CaseFailureReason | null | undefined) ? (
+                        <span className="text-xs text-muted">—</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setFailureCustomer({ id: c.customerId, name: c.name })}
+                          title="Why this file has no usable credit decision"
+                          className="text-left"
+                        >
+                          <Badge
+                            variant={
+                              SEVERITY_BADGE_VARIANT[
+                                (c.failureSeverity ?? "INFO") as CaseFailureSeverity
+                              ] ?? "default"
+                            }
+                            size="sm"
+                            className="cursor-pointer hover:opacity-80"
+                          >
+                            {caseFailureLabel(c.failureReason as CaseFailureReason)}
+                          </Badge>
+                        </button>
                       )}
                     </td>
                     <td>
@@ -531,6 +576,16 @@ function CustomersPageInner() {
                             <XIcon size={14} />
                           </button>
                         )}
+                        <PermissionGate permission="customer:manage">
+                          <button
+                            onClick={() => setEditCustomerId(c.customerId)}
+                            className="btn btn-sm btn-outline btn-icon"
+                            aria-label="Edit customer details"
+                            title="Edit customer details"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        </PermissionGate>
                         <button
                           onClick={() => setInfoCustomerId(c.customerId)}
                           className="btn btn-sm btn-outline btn-icon"
@@ -566,6 +621,16 @@ function CustomersPageInner() {
 
       <CustomerDetailDialog customerId={openId} onClose={() => setOpenId(null)} />
       <ApplicationInfoDialog customerId={infoCustomerId} onClose={() => setInfoCustomerId(null)} />
+      {failureCustomer && (
+        <CaseFailureDialog
+          customerId={failureCustomer.id}
+          customerName={failureCustomer.name}
+          onClose={() => setFailureCustomer(null)}
+        />
+      )}
+      {editCustomerId != null && (
+        <CustomerEditDialog customerId={editCustomerId} onClose={() => setEditCustomerId(null)} />
+      )}
       {pendingReject && (
         <RejectDialog
           ids={pendingReject.ids}

@@ -7,9 +7,11 @@ import static com.navix.verification.support.ProviderJson.text;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.navix.common.verification.BureauReportFacts;
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.verification.config.VerificationClientConfig;
 import com.navix.verification.dto.DigitapDtos.CreditRequest;
 import com.navix.verification.dto.DigitapDtos.CreditResponse;
+import com.navix.verification.exception.VerificationException;
 import com.navix.verification.support.ExperianFactsParser;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -42,6 +44,18 @@ public class DigitapCreditClient {
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("ddMMyyyy-HH:mm:ss");
 
+    /**
+     * Experian's "records exist, but behind numbers you did not send" code.
+     *
+     * <p><b>Do not unify this with {@link DigitapCrifClient}.</b> The two Digitap bureau products
+     * assign the SAME numbers opposite meanings: on the CRIF product 102 is "no record" and 103 is
+     * "name not found", while on this Experian endpoint 103 is the no-record and 102 carries a
+     * retrieval instruction. A blanket {@code 102 -> throw} here would turn genuine Experian
+     * no-records into failures.
+     */
+    private static final int RESULT_MASKED_MOBILE = 102;
+    private static final String MASKED_MOBILE_MARKER = "masked mobile";
+
     private final RestClient digitapApi;
     private final String deviceIp;
 
@@ -61,6 +75,27 @@ public class DigitapCreditClient {
         JsonNode report = root.path("result").path("result_json").path("INProfileResponse");
         Integer score = integer(report.path("SCORE").path("BureauScore"));
         Integer resultCode = integer(root.path("result_code"));
+
+        // result_code 102 is overloaded. Most of the time the score is simply absent and the row is a
+        // legitimate no-record. But Digitap also answers 102 with a message naming the real mobile
+        // numbers CRIF holds for this identity and telling us to call a separate report endpoint —
+        // records DO exist. Because noRecord short-circuited on the null score, that instruction was
+        // never read and 5 applications in the Sep-2026 audit were filed as "no credit history" when
+        // their files were one manual step away.
+        //
+        // Throwing (rather than inventing a new success shape) is deliberate: Digitap is the last leg,
+        // so RoutingVerificationPort rethrows this and the bureau step records an honest REVIEW that
+        // names what is needed. We do NOT call the masked-mobile endpoint — it is undocumented here.
+        String message = text(root.path("message"));
+        if (resultCode != null && resultCode == RESULT_MASKED_MOBILE && message != null
+                && message.toLowerCase(java.util.Locale.ROOT).contains(MASKED_MOBILE_MARKER)) {
+            // The message itself carries real mobile numbers, so it must not travel: safeDetail stays
+            // null and the unredacted body lives only in the provider_api_execution audit row.
+            throw new VerificationException(
+                    "Digitap Experian holds records only under mobile numbers we did not send", null,
+                    null, ENDPOINT, ProviderFailureDetails.MASKED_MOBILE_REQUIRED, null);
+        }
+
         boolean noRecord = score == null || (resultCode != null && resultCode == 103);
         BureauReportFacts facts = ExperianFactsParser.parse(report, score, name, pan, mobile);
         String txnId = text(root.path("request_id"));

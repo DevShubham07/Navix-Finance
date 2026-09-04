@@ -16,6 +16,11 @@ public enum BureauBackfillOutcome {
     /** CRIF gated the (real, existing) report behind a knowledge-based-auth question — no score to act
      *  on. Treated as a completed attempt, NOT retried, so it can't loop the same billable call. */
     KBA_REQUIRED,
+    /** The bureau holds records for this identity only under mobile numbers we never sent, and
+     *  releasing them needs a vendor endpoint we do not implement. Like {@link #KBA_REQUIRED} this is
+     *  a completed attempt, NOT retried — a re-run could only spend the same three billable calls
+     *  again on a case no amount of retrying can resolve. */
+    MASKED_MOBILE_REQUIRED,
     /** The sub-floor sweep rejected an application on the score it already held — no provider call was
      *  made. Distinct from a live intake auto-reject only in how it was triggered: the borrower gets
      *  the same {@code AUTO_REJECT_LOW_BUREAU_SCORE} event, rejection row and 90-day block. */

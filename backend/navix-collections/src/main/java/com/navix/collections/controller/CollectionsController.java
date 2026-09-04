@@ -26,6 +26,7 @@ import com.navix.common.staff.StaffSummary;
 import com.navix.common.web.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class CollectionsController {
 
+    /**
+     * Defaults for an omitted date parameter are IST, not the container's UTC clock — a bare
+     * {@code LocalDate.now()} reports yesterday between 00:00 and 05:30 IST. Same reason and same
+     * convention as {@code CollectionsService}.
+     */
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
+
     private final CollectionsService collectionsService;
     private final SettlementService settlementService;
     private final CollectionPaymentService collectionPaymentService;
@@ -68,7 +76,7 @@ public class CollectionsController {
     @GetMapping("/loans")
     public ApiResponse<List<LoanSummary>> collectibleLoans(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBy) {
-        LocalDate asOf = dueBy != null ? dueBy : LocalDate.now();
+        LocalDate asOf = dueBy != null ? dueBy : LocalDate.now(IST);
         return ApiResponse.ok(collectionsService.collectibleLoans(asOf));
     }
 
@@ -223,7 +231,7 @@ public class CollectionsController {
     public ApiResponse<DpdView> dpd(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
-        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now();
+        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now(IST);
         int dpd = dpdCalculator.daysPastDue(dueDate, effectiveAsOf);
         return ApiResponse.ok(new DpdView(dueDate, effectiveAsOf, dpd, dpdCalculator.bucket(dpd)));
     }

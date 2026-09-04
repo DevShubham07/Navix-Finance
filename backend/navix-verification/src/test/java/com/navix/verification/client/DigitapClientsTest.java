@@ -11,6 +11,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.verification.dto.DigitapDtos.AddressResponse;
 import com.navix.verification.dto.DigitapDtos.CreditResponse;
 import com.navix.verification.dto.DigitapDtos.EmailResponse;
@@ -304,6 +305,52 @@ class DigitapClientsTest {
                 "\"device_ip\":\"3.109.169.131\"",
                 "responsePayload={\"http_response_code\":400,\"result_code\":400,"
                         + "\"message\":\"PAN ABCPE1234Z and mobile 9876543210 rejected\"}");
+        b.server().verify();
+    }
+
+    /**
+     * result_code 102 is overloaded on THIS endpoint: most of the time it's a plain no-record, but
+     * Digitap also answers 102 with a message naming the real mobile numbers CRIF holds for this
+     * identity and instructing a call to a separate report endpoint — records DO exist. 5 applications
+     * in the Sep-2026 audit were filed as "no credit history" when their files were one manual step
+     * away, because the null score short-circuited noRecord before this message was ever read.
+     */
+    @Test
+    void creditMaskedMobileResultCodeThrowsWithMaskedMobileProviderCode() {
+        Bound b = bind();
+        stub(b.server(), "/credit_analytics/request", """
+                {"http_response_code":200,"result_code":102,"request_id":"REQ-MM-1",
+                "message":"Records found under masked mobile numbers 98XXXXXX10, retry via the masked mobile retrieval endpoint"}
+                """);
+
+        DigitapCreditClient client = new DigitapCreditClient(b.restClient(), "3.109.169.131");
+        assertThatThrownBy(() -> client.pull(
+                "ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "ref-mm"))
+                .isInstanceOfSatisfying(VerificationException.class, failure -> assertThat(
+                        failure.providerCode()).isEqualTo(ProviderFailureDetails.MASKED_MOBILE_REQUIRED));
+        b.server().verify();
+    }
+
+    /**
+     * {@code result_code 103} means "no record" on THIS endpoint (Experian) — the opposite of what it
+     * means on {@link DigitapCrifClient} ("name not found"). Score is populated here deliberately: the
+     * point is that {@code noRecord} comes back {@code true} from the {@code resultCode == 103} check
+     * alone, not merely because the score happened to be absent — pinning the two products' 102/103
+     * meanings apart so a future "unify the two Digitap bureau clients" refactor cannot flip them.
+     */
+    @Test
+    void creditResultCode103StillReturnsNoRecord() {
+        Bound b = bind();
+        stub(b.server(), "/credit_analytics/request", """
+                {"http_response_code":200,"result_code":103,"request_id":"REQ-103-1","result":{
+                "result_json":{"INProfileResponse":{"SCORE":{"BureauScore":"800"}}}}}
+                """);
+
+        CreditResponse r = new DigitapCreditClient(b.restClient(), "3.109.169.131")
+                .pull("ABCPE1234Z", "John Doe", "9999999999", "1990-01-01", "654321", "ref-103");
+
+        assertThat(r.noRecord()).isTrue();
+        assertThat(r.creditScore()).isEqualTo(800);
         b.server().verify();
     }
 

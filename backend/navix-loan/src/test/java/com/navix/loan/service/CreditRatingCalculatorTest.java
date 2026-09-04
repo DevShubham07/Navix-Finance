@@ -71,6 +71,43 @@ class CreditRatingCalculatorTest {
         assertThat(calc.verdict(2.0)).isEqualTo("NOT RECOMMENDED");
     }
 
+    /**
+     * A report the bureau returned WITHOUT a usable score must not be rated at all.
+     *
+     * <p>This is the trap the out-of-band-score fix walks into. CRIF answers some applications with a
+     * SCORE-VALUE outside 300-900 — 47 of them in the September 2026 pending queue — which
+     * {@code plausibleScore} correctly nulls while keeping a report full of real tradelines. Left to
+     * the band logic, {@code nz()} would turn that null into 0, drop it into the "&lt; 650" band and
+     * stamp a fabricated 2.0★ NOT RECOMMENDED on a perfectly readable file. Nothing about the
+     * borrower earned that verdict.
+     */
+    @Test
+    void aReportWithNoUsableScoreIsNotRated() {
+        Rating rating = calc.rate(unscored());
+
+        assertThat(rating.rated()).isFalse();
+        assertThat(rating.stars()).isEqualTo(0.0);
+        // The summary must not quote a score or a verdict — summarize() hardcodes "(bureau score N)"
+        // and closes on a recommendation sentence, and with no score both would be fiction.
+        assertThat(rating.summary()).doesNotContain("bureau score");
+        assertThat(rating.summary()).doesNotContain("not recommended");
+        assertThat(rating.summary()).contains("no usable credit score");
+    }
+
+    /** A scored report still rates exactly as before — the branch above must not leak. */
+    @Test
+    void aScoredReportIsStillRated() {
+        assertThat(calc.rate(sample()).rated()).isTrue();
+    }
+
+    /** {@link #sample()} with the score removed; everything else about the file is unchanged. */
+    static BureauReportFacts unscored() {
+        return new BureauReportFacts(
+                "KARTIK JINDAL", "BXFPJ0767C", "95880784XX", "1985-07-10", "Mumbai", "400001",
+                null, 11, 9, 2, 0,
+                861232L, 712212L, 149020L, 5, "1782599074402");
+    }
+
     static BureauReportFacts sample() {
         return new BureauReportFacts(
                 "KARTIK JINDAL", "BXFPJ0767C", "95880784XX", "1985-07-10", "Mumbai", "400001",

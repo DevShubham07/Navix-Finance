@@ -34,7 +34,8 @@ public class ProviderApiExecutionWriter {
      */
     private static final int MAX_PAYLOAD_CHARS = 256 * 1024;
 
-    private static final Duration RETENTION = Duration.ofDays(90);
+    private static final Duration RETENTION =
+            Duration.ofDays(com.navix.common.verification.ProviderAttemptDirectory.RETENTION_DAYS);
 
     /** Only ever used to build the truncation envelope, so a private instance is fine. */
     private static final ObjectMapper JSON = new ObjectMapper();
