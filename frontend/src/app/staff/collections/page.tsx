@@ -32,12 +32,12 @@ import {
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { WorklistAssignActions } from "@/components/staff/collections-assign";
+import { InlineOfficerSelect } from "@/components/staff/collections-assign";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
-import { collectionsApi, paiseToINR, type WorklistRow } from "@/lib/api/applications";
+import { collectionsApi, customersApi, paiseToINR, type CustomerSummary, type WorklistRow } from "@/lib/api/applications";
 import { COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 /** Flattened row: the sort primitive compares top-level keys, and `loan` is a nested object. */
 interface Row {
@@ -45,11 +45,13 @@ interface Row {
   /** The application behind this specific loan — what the quick-view dialog opens on. Null only if
    *  the loan snapshot is missing, in which case the quick-view button is not offered. */
   applicationId: number | null;
+  /** Joins into the customer directory (`customersById`) for export-only fields — mobile, bank,
+   *  credit score, signup/history — the worklist snapshot itself doesn't carry. */
+  customerId: number | null;
   dpd: number;
   preDue: boolean;
   caseId: string | null;
   borrowerName: string | null;
-  mobile: string | null;
   pan: string | null;
   employer: string | null;
   salaryPaise: number | null;
@@ -69,13 +71,11 @@ function toRow(w: WorklistRow): Row {
   return {
     loanId: w.loanId,
     applicationId: w.loan?.applicationId ?? null,
+    customerId: w.loan?.customerId ?? null,
     dpd: w.dpd,
     preDue: w.preDue,
     caseId: w.caseId,
     borrowerName: w.loan?.borrowerName ?? null,
-    // The worklist snapshot carries no mobile — the borrower's number lives on the customer record,
-    // one click away on the case workspace. Left out rather than faked.
-    mobile: null,
     pan: w.loan?.panMasked ?? null,
     employer: w.loan?.employer ?? null,
     salaryPaise: w.loan?.monthlySalaryPaise ?? null,
@@ -120,6 +120,20 @@ export default function CollectionsBucketPage() {
     queryFn: collectionsApi.worklist,
     refetchInterval: 8000,
   });
+
+  // Full customer directory, fetched once and joined in by customerId — export-only enrichment
+  // (mobile, bank, credit score, signup/history) that the worklist snapshot doesn't carry. Mirrors
+  // the on-screen /staff/customers export, which reads the same fields off the same endpoint.
+  const customersQ = useQuery({
+    queryKey: ["collections-customers-directory"],
+    queryFn: () => customersApi.list(),
+  });
+  const customersById = React.useMemo(() => {
+    const m = new Map<number, CustomerSummary>();
+    for (const c of customersQ.data ?? []) m.set(c.customerId, c);
+    return m;
+  }, [customersQ.data]);
+  const customerFor = (id: number | null) => (id != null ? customersById.get(id) : undefined);
 
   // Counts across ALL buckets, from the unfiltered set — the header cards are a map of the whole
   // book, so they must not move when the operator narrows one bucket.
@@ -170,16 +184,61 @@ export default function CollectionsBucketPage() {
           rows={sorted}
           columns={[
             { header: "Loan", value: (r) => String(r.loanId) },
+            { header: "Customer ID", value: (r) => (r.customerId != null ? String(r.customerId) : "—") },
             { header: "Borrower", value: (r) => dash(r.borrowerName) },
+            { header: "Mobile", value: (r) => dash(customerFor(r.customerId)?.mobile) },
             { header: "PAN", value: (r) => dash(r.pan) },
             { header: "Employer", value: (r) => dash(r.employer) },
-            { header: "Principal", value: (r) => paiseToINR(r.principalPaise) },
-            { header: "Outstanding", value: (r) => paiseToINR(r.outstandingPaise) },
+            { header: "Account", value: (r) => dash(customerFor(r.customerId)?.accountNumber) },
+            { header: "IFSC", value: (r) => dash(customerFor(r.customerId)?.ifsc) },
+            { header: "Monthly salary (₹)", value: (r) => (r.salaryPaise != null ? (r.salaryPaise / 100).toFixed(2) : "") },
+            { header: "Principal (₹)", value: (r) => (r.principalPaise != null ? (r.principalPaise / 100).toFixed(2) : "") },
+            { header: "Outstanding (₹)", value: (r) => (r.outstandingPaise != null ? (r.outstandingPaise / 100).toFixed(2) : "") },
+            { header: "Disbursed on", value: (r) => (r.disbursedOn ? formatDate(r.disbursedOn) : "—") },
             { header: "Due date", value: (r) => (r.dueDate ? formatDate(r.dueDate) : "—") },
             { header: "DPD", value: (r) => String(r.dpd) },
+            { header: "Pre-due", value: (r) => (r.preDue ? "Yes" : "No") },
+            { header: "Loan status", value: (r) => dash(r.loanStatus) },
+            {
+              header: "Credit score",
+              value: (r) => {
+                const s = customerFor(r.customerId)?.creditScore;
+                return s != null ? String(s) : "—";
+              },
+            },
+            {
+              header: "Credit rating",
+              value: (r) => {
+                const s = customerFor(r.customerId)?.starRating;
+                return s != null ? s.toFixed(1) : "—";
+              },
+            },
             { header: "Credit exec", value: (r) => dash(r.creditDecidedByName) },
             { header: "Disbursed by", value: (r) => dash(r.disbursedByName) },
             { header: "Collections exec", value: (r) => dash(r.officerName) },
+            { header: "Case ID", value: (r) => dash(r.caseId) },
+            { header: "Case opened", value: (r) => (r.caseOpenedAt ? formatDateTime(r.caseOpenedAt) : "—") },
+            {
+              header: "Signup date",
+              value: (r) => {
+                const c = customerFor(r.customerId);
+                return c?.createdAt ? formatDateTime(c.createdAt) : "—";
+              },
+            },
+            {
+              header: "Applications",
+              value: (r) => {
+                const c = customerFor(r.customerId);
+                return c?.applicationCount != null ? String(c.applicationCount) : "—";
+              },
+            },
+            {
+              header: "Loans",
+              value: (r) => {
+                const c = customerFor(r.customerId);
+                return c?.loanCount != null ? String(c.loanCount) : "—";
+              },
+            },
           ]}
         />
         <button
@@ -324,15 +383,16 @@ export default function CollectionsBucketPage() {
                   <td className="font-mono">{r.salaryPaise != null ? paiseToINR(r.salaryPaise) : "—"}</td>
                   <td>{dash(r.creditDecidedByName)}</td>
                   <td>{dash(r.disbursedByName)}</td>
-                  <td>{dash(r.officerName)}</td>
+                  <td>
+                    <InlineOfficerSelect
+                      loanId={r.loanId}
+                      officerId={r.officerId}
+                      officerName={r.officerName}
+                    />
+                  </td>
                   <td className="staff-sticky-actions">
                     <div className="flex items-center justify-end gap-1.5">
                       <AdminLogPaymentButton loanId={r.loanId} loanStatus={r.loanStatus} compact />
-                      <WorklistAssignActions
-                        loanId={r.loanId}
-                        assignedOfficerName={r.officerName}
-                        compact
-                      />
                       {r.applicationId != null && (
                         <button
                           onClick={() => setPreviewApplicationId(r.applicationId)}

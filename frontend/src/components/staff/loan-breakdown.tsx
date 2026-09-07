@@ -70,6 +70,8 @@ export function LoanBreakdown({
         value={loan.dueDate ? formatDate(loan.dueDate) : "—"}
         hint="On the borrower's salary day"
       />
+      {/* Only once it is actually settled — on a live loan the row would be a permanent dash. */}
+      {loan.closedOn && <Row label="Closed on" value={formatDate(loan.closedOn)} />}
     </dl>
   );
 }

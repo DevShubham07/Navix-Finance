@@ -109,6 +109,11 @@ public final class ReviewDtos {
             Boolean aadhaarVerified,
             Boolean emailVerified,
             Boolean personalEmailVerified,
+            /** OTP-proven control of the OFFICIAL/work inbox (V65) — distinct from
+             *  {@code emailVerified}, which is the provider deliverability + employer match on the
+             *  same address. Without this the staff console renders "Work email (OTP)" as a
+             *  permanent No. */
+            Boolean officialEmailOtpVerified,
             Boolean addressVerified,
             Boolean pennyDropVerified,
             Double nameMatchScore,
@@ -139,7 +144,7 @@ public final class ReviewDtos {
                     p.getCreditStarRating() != null ? p.getCreditStarRating().doubleValue() : null,
                     p.getCreditRecommendation(), p.getBureauSource(), p.getRiskCategory(),
                     p.getPanVerified(), p.getAadhaarLinked(), p.getAadhaarVerified(), p.getEmailVerified(),
-                    p.getPersonalEmailVerified(),
+                    p.getPersonalEmailVerified(), p.getOfficialEmailOtpVerified(),
                     p.getAddressVerified(), p.getPennyDropVerified(), p.getNameMatchScore(),
                     p.getCreditBriefSummary(), p.getCreditBriefGeneratedAt(),
                     p.getOfficialEmail(), p.getSalaryAccountNumber(), p.getSalaryIfsc(),
@@ -158,6 +163,7 @@ public final class ReviewDtos {
                     emergencyContactName, emergencyContactPhone, emergencyContactRelation,
                     null, null, null, null, null,
                     panVerified, aadhaarLinked, aadhaarVerified, emailVerified, personalEmailVerified,
+                    officialEmailOtpVerified,
                     addressVerified, pennyDropVerified,
                     null, null, null,
                     officialEmail, salaryAccountNumber, salaryIfsc, salaryAccountMobile, previousSalaryDate,

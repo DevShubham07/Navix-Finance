@@ -20,12 +20,14 @@ import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import { Bool, CallLogRow, CustomerDocsByType, DocumentsTab, KV, NeedsManualReviewBadge, RemarksTab, Section } from "@/components/staff/detail-parts";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { stageOf, STAGE_LABELS } from "@/lib/domain/journey";
 import {
   customersApi,
   staffApi,
   paiseToINR,
   statusLabel,
+  REJECTION_REASON_LABEL,
   type CustomerDetail,
   type ApplicationView,
   type ActivityEntry,
@@ -274,6 +276,14 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
         <KV k="Relation" v={p?.emergencyContactRelation} />
       </Section>
 
+      {/* The consent trail. Collected at intake and carried on the profile, but until now visible on
+          no staff screen — leaving an auditor's two standard questions unanswerable from the app. */}
+      <Section title="Compliance">
+        <KV k="Terms version" v={p?.termsVersion} mono />
+        <KV k="Terms accepted" v={p?.termsAcceptedAt ? formatDateTime(p.termsAcceptedAt) : null} />
+        <KV k="PEP declared" v={p?.pepDeclaredAt ? formatDateTime(p.pepDeclaredAt) : null} />
+      </Section>
+
       <CustomerOwnerPicker
         customerId={c.customerId}
         ownerStaffId={c.ownerStaffId}
@@ -323,6 +333,9 @@ function EmploymentTab({ c, customerId }: { c: CustomerDetail; customerId: numbe
         <Section title="Employment & salary (declared)">
           <KV k="Employer" v={p?.employer} />
           <KV k="Employment status" v={p?.employmentStatus} />
+          {/* The borrower's OWN declared UAN. The EPFO card alongside shows the provider's answer —
+              when that lookup returns no identifier, this is what a reviewer re-runs against. */}
+          <KV k="UAN" v={p?.uan} mono />
           <KV k="Salary bank" v={p?.salaryBank} />
           {/* The date the borrower reported being last paid, beside the recurring day the due date
               is actually computed from. salaryCreditDay is derived from previousSalaryDate's
@@ -512,6 +525,9 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
           ["Bank", p?.salaryBank, "KYC profile"],
           ["Account", p?.salaryAccountNumber, "KYC profile"],
           ["IFSC", p?.salaryIfsc, "KYC profile"],
+          // Worth surfacing beside the account: a number that differs from the profile mobile is
+          // what a reviewer wants to notice, and it was staff-invisible until now.
+          ["Account mobile", p?.salaryAccountMobile, "KYC profile"],
           ["Penny drop verified", <Bool key="penny" on={p?.pennyDropVerified} />, "KYC profile"],
         ]} />
       </Section>
@@ -767,10 +783,19 @@ function LoansTab({
                 <span className="text-ink">
                   {paiseToINR(pm.amountPaise)} · {pm.method}
                   {pm.paidOn ? <span className="text-muted"> · {formatDate(pm.paidOn)}</span> : null}
+                  {pm.partial ? <span className="text-muted"> · partial</span> : null}{" "}
+                  <PaymentProofLink url={pm.proofUrl} className="text-xs" />
                 </span>
                 <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">
                   {pm.status}
                 </span>
+                {/* A REJECTED pill with no reason is a dead end — the reason is already on the row. */}
+                {pm.status === "REJECTED" && (
+                  <p className="w-full text-xs text-error-700">
+                    {pm.rejectionReason ? REJECTION_REASON_LABEL[pm.rejectionReason] : "Rejected"}
+                    {pm.rejectionNote ? ` — ${pm.rejectionNote}` : ""}
+                  </p>
+                )}
               </li>
             ))}
           </ul>
