@@ -189,6 +189,17 @@ public class CustomerService {
             owned.addAll(nullSafe(applicationRepository.findCustomerIdsByIdIn(decidedAppIds)));
         }
 
+        // A collections officer acquires neither of the two above: the credit assignment is a
+        // different field (assigned_executive_id) and DECISION_ACTIONS are all credit/disbursement
+        // lifecycle actions, so logging a call, an interaction or a payment never earns visibility.
+        // Their book is the collection cases assigned to them, which lives in navix-collections and
+        // is reached through the port rather than a cross-module repository.
+        Collection<Long> collectionLoanIds =
+                nullSafe(collectionCaseDirectory.loanIdsAssignedTo(staffId));
+        if (!collectionLoanIds.isEmpty()) {
+            owned.addAll(nullSafe(loanRepository.findCustomerIdsByIdIn(collectionLoanIds)));
+        }
+
         Set<Long> allocated = null;
         if ("TELECALLER".equals(role)) {
             allocated = new HashSet<>();

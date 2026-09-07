@@ -667,6 +667,41 @@ class CustomerServiceTest {
         assertThat(service.list(null)).isEmpty();
     }
 
+    /**
+     * The bug this guards: a collections officer acquires neither of the credit-side scope sources —
+     * {@code assigned_executive_id} is the credit assignment, and every DECISION_ACTION is a
+     * credit/disbursement action — so before the case seam was consulted they could see none of the
+     * borrowers they were chasing, and remarks/call logs/customer detail all 404'd on their own case.
+     */
+    @Test
+    void list_asCollectionExecutive_showsCustomersOnCasesAssignedToThem() {
+        ActorContext.set(new CurrentActor("77", "Collections Exec", "COLLECTION_EXECUTIVE"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(77L))
+                .thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("77")).thenReturn(List.of());
+        when(collectionCaseDirectory.loanIdsAssignedTo(77L)).thenReturn(java.util.Set.of(500L));
+        when(loanRepository.findCustomerIdsByIdIn(java.util.Set.of(500L)))
+                .thenReturn(java.util.Set.of(9000002L));
+
+        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+                .containsExactly(9000002L);
+    }
+
+    @Test
+    void list_asCollectionExecutive_stillHidesCustomersWithNoCaseOfTheirs() {
+        ActorContext.set(new CurrentActor("77", "Collections Exec", "COLLECTION_EXECUTIVE"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(77L))
+                .thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("77")).thenReturn(List.of());
+        // Holding no cases must still mean seeing nobody: the seam widens the scope to their OWN
+        // worklist, not to every borrower who happens to be in collections.
+        when(collectionCaseDirectory.loanIdsAssignedTo(77L)).thenReturn(java.util.Set.of());
+
+        assertThat(service.list(null)).isEmpty();
+    }
+
     @Test
     void list_asCreditHead_showsEveryCustomer() {
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));

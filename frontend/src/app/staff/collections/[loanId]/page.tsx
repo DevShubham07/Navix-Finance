@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { CasePaymentsCard, RecordPaymentCard } from "@/components/staff/collection-payments";
+import { CallLogRow, RemarksTab } from "@/components/staff/detail-parts";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { collectionsApi, customersApi, paiseToINR, rupeesToPaise, type InteractionView, type LoanSummary } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
@@ -101,6 +102,8 @@ export default function CollectionsCasePage() {
               loading={interQ.isLoading}
               onLogged={invalidate}
             />
+
+            <CallRemarksCard customerId={c.loan?.customerId ?? null} />
           </div>
 
           <div className="space-y-6">
@@ -195,6 +198,54 @@ function BorrowerCard({ loan }: { loan: LoanSummary | null }) {
           </PermissionGate>
         </dl>
       )}
+    </div>
+  );
+}
+
+/**
+ * Telecalling history and staff remarks, on the page where collections actually work.
+ *
+ * Both hang off the CUSTOMER, not the case, so until now they were reachable only from the
+ * Customers popup — an officer chasing a borrower could not see what the last caller had already
+ * been told, or leave a note where the next officer would find it. Case *interactions* (above) are
+ * a different record and do not carry any of it.
+ *
+ * The call list is read-only here: calls are logged from the telecalling queue, and this page's job
+ * is to show what was said. Remarks stay writable, since a note for whoever picks the case up next
+ * is exactly the thing an officer wants to leave from this screen.
+ */
+function CallRemarksCard({ customerId }: { customerId: number | null }) {
+  const q = useQuery({
+    queryKey: ["customer-call-logs", customerId],
+    queryFn: () => customersApi.callLogs(customerId as number),
+    enabled: customerId != null,
+  });
+
+  if (customerId == null) return null;
+  const logs = q.data ?? [];
+
+  return (
+    <div className="rounded border border-line bg-white p-5 shadow-sm text-sm">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-navy">
+        <Phone size={16} /> Call history &amp; remarks
+      </div>
+      {q.isLoading ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : q.error ? (
+        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+      ) : logs.length === 0 ? (
+        <p className="text-sm text-muted">No calls logged for this borrower.</p>
+      ) : (
+        <ul className="space-y-2">
+          {logs.map((l) => (
+            <CallLogRow key={l.id} log={l} />
+          ))}
+        </ul>
+      )}
+      <div className="mt-4 border-t border-line pt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Remarks</p>
+        <RemarksTab customerId={customerId} />
+      </div>
     </div>
   );
 }
