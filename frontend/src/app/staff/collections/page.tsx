@@ -37,7 +37,7 @@ import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { collectionsApi, paiseToINR, type WorklistRow } from "@/lib/api/applications";
 import { COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 /** Flattened row: the sort primitive compares top-level keys, and `loan` is a nested object. */
 interface Row {
@@ -173,13 +173,19 @@ export default function CollectionsBucketPage() {
             { header: "Borrower", value: (r) => dash(r.borrowerName) },
             { header: "PAN", value: (r) => dash(r.pan) },
             { header: "Employer", value: (r) => dash(r.employer) },
+            { header: "Monthly salary", value: (r) => paiseToINR(r.salaryPaise) },
             { header: "Principal", value: (r) => paiseToINR(r.principalPaise) },
             { header: "Outstanding", value: (r) => paiseToINR(r.outstandingPaise) },
+            { header: "Disbursed on", value: (r) => (r.disbursedOn ? formatDate(r.disbursedOn) : "—") },
             { header: "Due date", value: (r) => (r.dueDate ? formatDate(r.dueDate) : "—") },
             { header: "DPD", value: (r) => String(r.dpd) },
+            { header: "Pre-due", value: (r) => (r.preDue ? "Yes" : "No") },
+            { header: "Loan status", value: (r) => dash(r.loanStatus) },
             { header: "Credit exec", value: (r) => dash(r.creditDecidedByName) },
             { header: "Disbursed by", value: (r) => dash(r.disbursedByName) },
             { header: "Collections exec", value: (r) => dash(r.officerName) },
+            { header: "Case ID", value: (r) => dash(r.caseId) },
+            { header: "Case opened", value: (r) => (r.caseOpenedAt ? formatDateTime(r.caseOpenedAt) : "—") },
           ]}
         />
         <button
