@@ -46,14 +46,16 @@ import { CustomerTabBody } from "@/components/staff/customer-tabs";
 import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
 import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
 import { dpdBucket, daysBetween } from "@/lib/calc/loan-math";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { customerPageHref } from "@/lib/customers/customer-page";
+import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import {
   staffApi,
   customersApi,
   statusLabel,
   paiseToINR,
   REFERENCE_RELATIONS,
+  REJECTION_REASON_LABEL,
   type ApplicationView,
   type ProfileView,
   type LoanView,
@@ -474,6 +476,9 @@ function WaitTime({ app, events }: { app: ApplicationView; events: EventView[] }
         k="Marked pending"
         v={app.markedPendingAt ? app.pendingReason || "yes" : null}
       />
+      {/* Both durations above are read off the event trail, so a file that never generated an event
+          (a stalled DRAFT) shows nothing at all — the one case where the start date matters most. */}
+      <KV k="Applied on" v={app.createdAt ? formatDateTime(app.createdAt) : null} />
     </div>
   );
 }
@@ -989,6 +994,22 @@ function CreditFocus({
         <KV k="Risk category" v={p?.riskCategory} />
         <KV k="Bureau" v={p?.bureauSource} />
         {applied && <KV k="Purpose" v={app.purpose} />}
+        {/* The sanction is an amount AND a set of terms. Without these the next reviewer sees what
+            was approved but not the repayment date, tenure or reason the decider set. */}
+        {sanctioned != null && (
+          <>
+            <KV
+              k="Approved repayment date"
+              v={app.approvedRepaymentDate ? formatDate(app.approvedRepaymentDate) : null}
+            />
+            <KV
+              k="Sanction tenure"
+              v={app.sanctionTenureDays != null ? `${app.sanctionTenureDays} days` : null}
+            />
+            <KV k="Sanctioned on" v={app.sanctionedAt ? formatDateTime(app.sanctionedAt) : null} />
+            <KV k="Sanction remarks" v={app.sanctionRemarks} />
+          </>
+        )}
       </dl>
       {p?.creditBriefSummary && (
         <p className="mt-3 rounded border border-line bg-grey-50 px-3 py-2 text-xs text-muted">
@@ -1253,8 +1274,17 @@ function PastDetailsTab({
                 <span className="text-ink">
                   {paiseToINR(pm.amountPaise)} · {pm.method}
                   {pm.paidOn ? <span className="text-muted"> · {formatDate(pm.paidOn)}</span> : null}
+                  {pm.partial ? <span className="text-muted"> · partial</span> : null}{" "}
+                  <PaymentProofLink url={pm.proofUrl} className="text-xs" />
                 </span>
                 <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">{pm.status}</span>
+                {/* A REJECTED pill with no reason is a dead end — the reason is already on the row. */}
+                {pm.status === "REJECTED" && (
+                  <p className="w-full text-xs text-error-700">
+                    {pm.rejectionReason ? REJECTION_REASON_LABEL[pm.rejectionReason] : "Rejected"}
+                    {pm.rejectionNote ? ` — ${pm.rejectionNote}` : ""}
+                  </p>
+                )}
               </li>
             ))}
           </ul>
