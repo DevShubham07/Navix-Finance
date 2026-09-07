@@ -32,7 +32,7 @@ import {
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { WorklistAssignActions } from "@/components/staff/collections-assign";
+import { InlineOfficerSelect } from "@/components/staff/collections-assign";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { collectionsApi, customersApi, paiseToINR, type CustomerSummary, type WorklistRow } from "@/lib/api/applications";
@@ -383,15 +383,16 @@ export default function CollectionsBucketPage() {
                   <td className="font-mono">{r.salaryPaise != null ? paiseToINR(r.salaryPaise) : "—"}</td>
                   <td>{dash(r.creditDecidedByName)}</td>
                   <td>{dash(r.disbursedByName)}</td>
-                  <td>{dash(r.officerName)}</td>
+                  <td>
+                    <InlineOfficerSelect
+                      loanId={r.loanId}
+                      officerId={r.officerId}
+                      officerName={r.officerName}
+                    />
+                  </td>
                   <td className="staff-sticky-actions">
                     <div className="flex items-center justify-end gap-1.5">
                       <AdminLogPaymentButton loanId={r.loanId} loanStatus={r.loanStatus} compact />
-                      <WorklistAssignActions
-                        loanId={r.loanId}
-                        assignedOfficerName={r.officerName}
-                        compact
-                      />
                       {r.applicationId != null && (
                         <button
                           onClick={() => setPreviewApplicationId(r.applicationId)}
