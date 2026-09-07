@@ -2,6 +2,7 @@ package com.navix.common.collections;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Port for reading a loan's assigned collections officer from modules that must not depend on
@@ -27,4 +28,22 @@ public interface CollectionCaseDirectory {
      * @return loan id → assigned officer's staff id, only for loans that have one
      */
     Map<Long, Long> assignedOfficerByLoanId(Collection<Long> loanIds);
+
+    /**
+     * The real (bigint) loan ids whose collection case is currently assigned to {@code
+     * officerStaffId}. The inverse direction of {@link #assignedOfficerByLoanId}, and it has to be
+     * its own method rather than a filter over that one: the caller starts from a staffer, not from
+     * a known set of loans, so answering it through the batched map would mean loading every loan on
+     * the platform first.
+     *
+     * <p>This is what makes a Collection Executive's own worklist visible to them. {@code
+     * CustomerService.scope()} otherwise derives a scoped staffer's book from the *credit*
+     * assignment ({@code loan_application.assigned_executive_id}) and from lifecycle decisions,
+     * neither of which a collections officer ever acquires — so without this they can see none of
+     * the borrowers they are chasing.
+     *
+     * @param officerStaffId the collections officer's staff id; {@code null} yields an empty set
+     * @return loan ids assigned to that officer, empty when they hold no cases
+     */
+    Set<Long> loanIdsAssignedTo(Long officerStaffId);
 }

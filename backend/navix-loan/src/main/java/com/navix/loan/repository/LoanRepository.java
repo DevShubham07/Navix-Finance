@@ -5,6 +5,7 @@ import com.navix.loan.entity.Loan;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,6 +18,14 @@ import org.springframework.stereotype.Repository;
 public interface LoanRepository extends JpaRepository<Loan, Long> {
 
     List<Loan> findByCustomerId(Long customerId);
+
+    /**
+     * The customers behind a set of real loan ids, in one query — resolves a collections officer's
+     * assigned cases into the customers they may see ({@code CustomerService.scope()}). Callers MUST
+     * short-circuit on an empty collection; {@code in ()} is not valid SQL.
+     */
+    @Query("select distinct l.customerId from Loan l where l.id in :loanIds")
+    Set<Long> findCustomerIdsByIdIn(@Param("loanIds") Collection<Long> loanIds);
 
     /** How many loans this customer has ever taken — the DSA-commission "first loan only" guard. */
     long countByCustomerId(Long customerId);

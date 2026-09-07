@@ -11,6 +11,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Collections-module implementation of the {@link CollectionCaseDirectory} port: resolves a batch
@@ -54,5 +57,20 @@ public class CollectionCaseDirectoryAdapter implements CollectionCaseDirectory {
             }
         }
         return result;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<Long> loanIdsAssignedTo(Long officerStaffId) {
+        if (officerStaffId == null) {
+            return Set.of();
+        }
+        // No "latest case wins" tie-break here, unlike above: that one has to pick ONE officer per
+        // loan, whereas this only asks whether this officer holds a case on the loan at all. If a
+        // duplicate case exists and either is theirs, the loan is theirs to work.
+        return caseRepository.findByAssignedOfficerId(officerStaffId).stream()
+                .map(CollectionCase::getLoanId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
     }
 }
