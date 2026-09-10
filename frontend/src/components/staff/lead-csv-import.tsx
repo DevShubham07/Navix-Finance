@@ -2,83 +2,97 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, Upload } from "lucide-react";
-import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui";
 import { errMessage } from "@/components/staff/live-pipeline";
-import {
-  leadsApi,
-  type ImportIssue,
-  type ImportPreview,
-  type ImportResult,
-  type ImportRow,
-} from "@/lib/api/applications";
-import { parseCsv, mapLeadCsv, EXPECTED_HEADER } from "@/lib/csv/parse-csv";
+import { leadsApi, storageApi, type ImportJobView } from "@/lib/api/applications";
 
-const MAX_FILE_BYTES = 1_000_000; // 1 MB — structural limit, checked before the file is even read.
+/** Structural guard only. 200k rows is ~12 MB of CSV or ~15 MB of xlsx; 25 MB leaves headroom. */
+const MAX_FILE_BYTES = 25_000_000;
+const POLL_MS = 2000;
 
-type Stage =
-  | { kind: "idle" }
-  | { kind: "format"; issues: ImportIssue[] }
-  | { kind: "confirm"; fileName: string; rows: ImportRow[] }
-  | { kind: "duplicates"; fileName: string; preview: ImportPreview }
-  | { kind: "result"; result: ImportResult };
+const EXPECTED_HEADER = "name, contact number, pan card, pincode, emailid";
 
 /**
- * "Import CSV" on the DSA-program Leads tab's filter bar. Parses + pre-validates the file in the
- * browser (an obviously wrong file never leaves it), then previews against the backend — which
- * re-validates and classifies every row (new / duplicate-of-an-existing-lead / duplicate-within-
- * the-file / already-a-customer) — before the admin confirms. Imported rows are unattributed
- * (`owner_dsa_id = null`, `source = "OTHER"`), so they never show up in this DSA register.
+ * "Import leads" — upload a .csv/.xlsx list of any size.
+ *
+ * <p>The file goes browser -> S3 directly on a presigned PUT (the same path borrower payslips and
+ * expense receipts already take) and only its key is POSTed here. That is what makes a 1-2 lakh row
+ * list possible: the old widget parsed in the browser and sent every row as one JSON array, which
+ * cost ~200-300 MB of tab memory and exceeded the platform's request-body cap somewhere around
+ * 15-20k rows.
+ *
+ * <p>Because nothing is parsed client-side there is no up-front duplicate preview any more. `merge`
+ * is chosen before the upload instead, and the job reports what it did — including how many rows
+ * were skipped as duplicates or as existing customers.
  */
 export function LeadCsvImport({ onImported }: { onImported: () => void }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
-  const [stage, setStage] = React.useState<Stage>({ kind: "idle" });
-  const [pendingFileName, setPendingFileName] = React.useState<string>("");
-  const [pendingRows, setPendingRows] = React.useState<ImportRow[]>([]);
+  const [merge, setMerge] = React.useState(false);
+  const [jobId, setJobId] = React.useState<number | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [uploading, setUploading] = React.useState(false);
+  const notifiedFor = React.useRef<number | null>(null);
 
-  const previewMutation = useMutation({
-    mutationFn: (body: { fileName: string; rows: ImportRow[] }) =>
-      leadsApi.importPreview({ fileName: body.fileName, rows: body.rows, merge: false }),
+  const job = useQuery({
+    queryKey: ["lead-import-job", jobId],
+    queryFn: () => leadsApi.importJob(jobId as number),
+    enabled: jobId != null,
+    // Stop hitting the API once the job can no longer change.
+    refetchInterval: (query) => {
+      const data = query.state.data as ImportJobView | undefined;
+      return data && (data.status === "SUCCEEDED" || data.status === "FAILED") ? false : POLL_MS;
+    },
   });
 
-  const commitMutation = useMutation({
-    mutationFn: (body: { fileName: string; rows: ImportRow[]; merge: boolean }) =>
-      leadsApi.importCommit(body),
-    onSuccess: (result) => {
-      setStage({ kind: "result", result });
-      onImported();
+  // Refresh the caller's lead lists once, when the import actually finishes.
+  React.useEffect(() => {
+    const current = job.data;
+    if (!current || current.status !== "SUCCEEDED") return;
+    if (notifiedFor.current === current.id) return;
+    notifiedFor.current = current.id;
+    onImported();
+  }, [job.data, onImported]);
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const contentType =
+        file.type ||
+        (file.name.toLowerCase().endsWith(".csv")
+          ? "text/csv"
+          : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      const { key, url } = await storageApi.presignUpload({
+        category: "LEAD_IMPORT",
+        filename: file.name,
+        contentType,
+      });
+      await storageApi.putToPresignedUrl(url, file);
+      return leadsApi.importFile({ s3Key: key, fileName: file.name, merge });
+    },
+    onSuccess: (started) => {
+      notifiedFor.current = null;
+      setJobId(started.id);
     },
   });
 
   async function handleFile(file: File) {
+    setError(null);
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".csv") && !name.endsWith(".xlsx") && !name.endsWith(".xlsm")) {
+      setError("Upload a .csv or .xlsx file.");
+      return;
+    }
     if (file.size > MAX_FILE_BYTES) {
-      setStage({ kind: "format", issues: [{ row: 0, field: "file", message: "The file is larger than 1 MB." }] });
+      setError(`That file is ${(file.size / 1_000_000).toFixed(1)} MB — the limit is 25 MB.`);
       return;
     }
-
-    const text = await file.text();
-    const { rows, issues } = mapLeadCsv(parseCsv(text));
-    if (issues.length > 0) {
-      setStage({ kind: "format", issues });
-      return;
-    }
-
-    setPendingFileName(file.name);
-    setPendingRows(rows);
+    setUploading(true);
     try {
-      const preview = await previewMutation.mutateAsync({ fileName: file.name, rows });
-      if (preview.issues.length > 0) {
-        setStage({ kind: "format", issues: preview.issues });
-        return;
-      }
-      if (preview.duplicates.length > 0 || preview.inFileDuplicates.length > 0 || preview.existingCustomers.length > 0) {
-        setStage({ kind: "duplicates", fileName: file.name, preview });
-      } else {
-        setStage({ kind: "confirm", fileName: file.name, rows });
-      }
+      await upload.mutateAsync(file);
     } catch (e) {
-      setStage({ kind: "format", issues: [{ row: 0, field: "file", message: errMessage(e) }] });
+      setError(errMessage(e));
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -88,242 +102,128 @@ export function LeadCsvImport({ onImported }: { onImported: () => void }) {
     if (file) void handleFile(file);
   }
 
-  const closeToIdle = () => setStage({ kind: "idle" });
+  const current = job.data;
+  const running = current?.status === "QUEUED" || current?.status === "RUNNING";
+  const busy = uploading || running;
 
   return (
-    <>
-      <button type="button" className="btn btn-sm btn-outline" onClick={() => inputRef.current?.click()}>
-        <Upload size={14} /> Import CSV
-      </button>
-      <input ref={inputRef} type="file" accept=".csv,text/csv" onChange={onFileChange} className="hidden" />
+    <div className="w-full">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className="btn btn-sm btn-outline disabled:opacity-50"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          {uploading ? "Uploading…" : running ? "Importing…" : "Import leads"}
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,.xlsx,.xlsm"
+          onChange={onFileChange}
+          className="hidden"
+        />
+        <label className="flex items-center gap-2 text-xs text-navy/70">
+          <input
+            type="checkbox"
+            checked={merge}
+            disabled={busy}
+            onChange={(e) => setMerge(e.target.checked)}
+          />
+          Fill blank email / pincode / PAN on leads that already exist
+        </label>
+      </div>
 
-      {stage.kind === "format" && (
-        <Dialog open onClose={closeToIdle} aria-labelledby="csv-import-format-title">
-          <DialogHeader>
-            <DialogTitle id="csv-import-format-title">This file isn&apos;t in the expected format</DialogTitle>
-            <p className="text-sm text-navy/60">
-              Expected header: <span className="font-mono text-xs">{EXPECTED_HEADER}</span>
-            </p>
-          </DialogHeader>
-          <ul className="max-h-64 list-disc space-y-1 overflow-y-auto pl-5 text-sm text-navy/80">
-            {stage.issues.map((iss, idx) => (
-              <li key={idx}>
-                Row {iss.row}: {iss.field} — {iss.message}
+      <p className="mt-1 text-xs text-navy/50">
+        .csv or .xlsx, up to 25 MB. Expected columns:{" "}
+        <span className="font-mono">{EXPECTED_HEADER}</span>. Re-uploading the same file is safe —
+        rows that already exist are skipped.
+      </p>
+
+      {error && <p className="mt-2 text-sm text-error-700">{error}</p>}
+
+      {current && <ImportProgress job={current} />}
+    </div>
+  );
+}
+
+function ImportProgress({ job }: { job: ImportJobView }) {
+  const done = job.status === "SUCCEEDED";
+  const failed = job.status === "FAILED";
+  // totalRows only lands once the file has been read to the end, so until then the bar is
+  // indeterminate rather than lying about a denominator it does not have.
+  const pct =
+    job.totalRows && job.totalRows > 0
+      ? Math.min(100, Math.round((job.processedRows / job.totalRows) * 100))
+      : null;
+
+  return (
+    <div
+      className={`mt-3 rounded border p-3 text-sm ${
+        failed
+          ? "border-error-200 bg-error-50 text-error-900"
+          : done
+            ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+            : "border-line bg-grey-50 text-navy"
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">
+          {failed ? "Import failed" : done ? "Import finished" : "Importing"} · {job.fileName}
+        </span>
+        <span className="font-mono text-xs">
+          {job.processedRows.toLocaleString("en-IN")}
+          {job.totalRows ? ` / ${job.totalRows.toLocaleString("en-IN")}` : ""} rows
+        </span>
+      </div>
+
+      {!done && !failed && (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-navy/10">
+          <div
+            className={`h-full bg-navy transition-all ${pct == null ? "w-1/3 animate-pulse" : ""}`}
+            style={pct == null ? undefined : { width: `${pct}%` }}
+          />
+        </div>
+      )}
+
+      {(done || failed) && (
+        <p className="mt-2">
+          Imported <strong>{job.insertedCount.toLocaleString("en-IN")}</strong> · merged{" "}
+          {job.mergedCount.toLocaleString("en-IN")} · skipped{" "}
+          {job.skippedDuplicates.toLocaleString("en-IN")} duplicates ·{" "}
+          {job.skippedCustomers.toLocaleString("en-IN")} already customers
+          {job.issueCount > 0 ? ` · ${job.issueCount.toLocaleString("en-IN")} rows had problems` : ""}.
+        </p>
+      )}
+
+      {failed && job.errorMessage && <p className="mt-1">{job.errorMessage}</p>}
+
+      {job.issues.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs font-semibold">
+            First {job.issues.length} problem row{job.issues.length === 1 ? "" : "s"}
+          </summary>
+          <ul className="mt-1 max-h-48 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
+            {job.issues.map((issue, i) => (
+              <li key={i}>
+                Row {issue.row}: {issue.field} — {issue.message}
               </li>
             ))}
           </ul>
-          <DialogFooter>
-            <button type="button" className="btn btn-outline" onClick={closeToIdle}>
-              Close
-            </button>
-          </DialogFooter>
-        </Dialog>
+        </details>
       )}
 
-      {stage.kind === "confirm" && (
-        <Dialog open onClose={closeToIdle} aria-labelledby="csv-import-confirm-title">
-          <DialogHeader>
-            <DialogTitle id="csv-import-confirm-title">
-              Import {stage.rows.length} leads from {stage.fileName}?
-            </DialogTitle>
-          </DialogHeader>
-          {commitMutation.isError && (
-            <p className="text-sm text-error-700">{errMessage(commitMutation.error)}</p>
-          )}
-          <DialogFooter>
-            <button type="button" className="btn btn-outline" onClick={closeToIdle} disabled={commitMutation.isPending}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-gold disabled:opacity-50"
-              disabled={commitMutation.isPending}
-              onClick={() => commitMutation.mutate({ fileName: stage.fileName, rows: stage.rows, merge: false })}
-            >
-              {commitMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
-              Import
-            </button>
-          </DialogFooter>
-        </Dialog>
-      )}
-
-      {stage.kind === "duplicates" && (
-        <DuplicatesDialog
-          fileName={stage.fileName}
-          preview={stage.preview}
-          pending={commitMutation.isPending}
-          error={commitMutation.isError ? commitMutation.error : null}
-          onCancel={closeToIdle}
-          onImportNew={() => commitMutation.mutate({ fileName: pendingFileName, rows: pendingRows, merge: false })}
-          onMerge={() => commitMutation.mutate({ fileName: pendingFileName, rows: pendingRows, merge: true })}
-        />
-      )}
-
-      {stage.kind === "result" && (
-        <div className="mt-2 w-full rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-          Imported {stage.result.inserted} · merged {stage.result.merged} · skipped{" "}
-          {stage.result.skippedDuplicates} duplicates · {stage.result.skippedCustomers} already customers.
-          <br />
+      {done && job.insertedCount > 0 && (
+        <p className="mt-2 text-xs">
           Uploaded leads are unattributed — see them under{" "}
           <Link href="/staff/admin/leads" className="font-semibold underline">
             Admin › Leads
           </Link>{" "}
           (Source: OTHER).
-        </div>
+        </p>
       )}
-    </>
-  );
-}
-
-function DuplicatesDialog({
-  fileName,
-  preview,
-  pending,
-  error,
-  onCancel,
-  onImportNew,
-  onMerge,
-}: {
-  fileName: string;
-  preview: ImportPreview;
-  pending: boolean;
-  error: unknown;
-  onCancel: () => void;
-  onImportNew: () => void;
-  onMerge: () => void;
-}) {
-  const totalKnown = preview.duplicates.length + preview.inFileDuplicates.length + preview.existingCustomers.length;
-  const hasFillable = preview.duplicates.some((d) => d.fillableFields.length > 0);
-
-  return (
-    <Dialog open onClose={onCancel} aria-labelledby="csv-import-duplicates-title" className="max-w-3xl">
-      <DialogHeader>
-        <DialogTitle id="csv-import-duplicates-title">
-          {totalKnown} of {preview.totalRows} leads already exist
-        </DialogTitle>
-        <p className="text-sm text-navy/60">{fileName}</p>
-      </DialogHeader>
-
-      {preview.duplicates.length > 0 && (
-        <div className="mb-4">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-navy/50">
-            Matches an existing lead
-          </p>
-          <div className="staff-table-scroll max-h-56 rounded border border-line">
-            <table className="staff-data-table">
-              <thead>
-                <tr>
-                  <th>Row</th>
-                  <th>Name</th>
-                  <th>Mobile</th>
-                  <th>PAN</th>
-                  <th>Matched on</th>
-                  <th>Existing lead</th>
-                  <th>Will fill</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.duplicates.map((d) => (
-                  <tr key={d.row}>
-                    <td>{d.row}</td>
-                    <td>{d.name}</td>
-                    <td className="font-mono text-xs">{d.mobile}</td>
-                    <td className="font-mono text-xs">{d.pan ?? "—"}</td>
-                    <td>{d.matchedOn.replace(/_/g, " ")}</td>
-                    <td>
-                      #{d.existingLeadId} {d.existingName} ({d.existingMobile}
-                      {d.existingSource ? `, ${d.existingSource}` : ""})
-                    </td>
-                    <td>{d.fillableFields.length ? d.fillableFields.join(", ") : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {preview.inFileDuplicates.length > 0 && (
-        <div className="mb-4">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-navy/50">
-            Duplicate rows within this file
-          </p>
-          <div className="staff-table-scroll max-h-40 rounded border border-line">
-            <table className="staff-data-table">
-              <thead>
-                <tr>
-                  <th>Row</th>
-                  <th>Duplicate of row</th>
-                  <th>Matched on</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.inFileDuplicates.map((d, i) => (
-                  <tr key={i}>
-                    <td>{d.row}</td>
-                    <td>{d.duplicateOfRow}</td>
-                    <td>{d.matchedOn.replace(/_/g, " ")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {preview.existingCustomers.length > 0 && (
-        <div className="mb-4">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-navy/50">
-            Already customers (skipped)
-          </p>
-          <div className="staff-table-scroll max-h-40 rounded border border-line">
-            <table className="staff-data-table">
-              <thead>
-                <tr>
-                  <th>Row</th>
-                  <th>Name</th>
-                  <th>Mobile</th>
-                  <th>PAN</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.existingCustomers.map((c) => (
-                  <tr key={c.row}>
-                    <td>{c.row}</td>
-                    <td>{c.name}</td>
-                    <td className="font-mono text-xs">{c.mobile}</td>
-                    <td className="font-mono text-xs">{c.panMasked ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {error ? <p className="text-sm text-error-700">{errMessage(error)}</p> : null}
-      {!hasFillable && preview.duplicates.length > 0 && (
-        <p className="text-xs text-navy/50">Nothing to fill on the existing leads.</p>
-      )}
-
-      <DialogFooter>
-        <button type="button" className="btn btn-outline" onClick={onCancel} disabled={pending}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-outline disabled:opacity-50" disabled={pending} onClick={onImportNew}>
-          {pending ? <Loader2 size={14} className="animate-spin" /> : null}
-          Import {preview.newRows} new, skip duplicates
-        </button>
-        <button
-          type="button"
-          className="btn btn-gold disabled:opacity-50"
-          disabled={pending || !hasFillable}
-          onClick={onMerge}
-        >
-          {pending ? <Loader2 size={14} className="animate-spin" /> : null}
-          Merge {preview.duplicates.length} duplicates and import
-        </button>
-      </DialogFooter>
-    </Dialog>
+    </div>
   );
 }

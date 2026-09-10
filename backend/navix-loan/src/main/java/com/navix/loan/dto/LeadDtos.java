@@ -93,52 +93,44 @@ public final class LeadDtos {
         }
     }
 
+    /** One parsed row of an uploaded lead list, straight from {@code LeadFileParser}. */
     public record ImportRow(String name, String mobile, String pan, String pincode, String email) {
-    }
-
-    public record ImportRequest(
-            @NotBlank @Size(max = 200) String fileName,
-            @NotNull @Size(max = 2000) List<ImportRow> rows,
-            boolean merge) {
     }
 
     public record ImportIssue(int row, String field, String message) {
     }
 
-    public record ImportDuplicate(
-            int row,
-            String name,
-            String mobile,
-            String pan,
-            String matchedOn,
-            Long existingLeadId,
-            String existingName,
-            String existingMobile,
-            String existingSource,
-            List<String> fillableFields) {
+    /**
+     * Start an import of an already-uploaded file. The bytes went browser -> S3 directly (presigned
+     * PUT), so this carries only the key — the request body stays small no matter how big the list.
+     */
+    public record ImportFileRequest(
+            @NotBlank @Size(max = 512) String s3Key,
+            @NotBlank @Size(max = 200) String fileName,
+            boolean merge) {
     }
 
-    public record ImportInFileDuplicate(int row, int duplicateOfRow, String matchedOn) {
-    }
-
-    public record ImportExistingCustomer(int row, String name, String mobile, String panMasked) {
-    }
-
-    public record ImportPreview(
-            int totalRows,
-            int newRows,
-            List<ImportDuplicate> duplicates,
-            List<ImportInFileDuplicate> inFileDuplicates,
-            List<ImportExistingCustomer> existingCustomers,
-            List<ImportIssue> issues) {
-    }
-
-    public record ImportResult(
-            int inserted,
-            int merged,
+    /**
+     * An import's live state. {@code issues} is capped at the first 50 bad rows; {@code issueCount}
+     * is the true total.
+     */
+    public record ImportJobView(
+            Long id,
+            String status,
+            String fileName,
+            boolean merge,
+            Integer totalRows,
+            int processedRows,
+            int insertedCount,
+            int mergedCount,
             int skippedDuplicates,
             int skippedCustomers,
-            List<Long> insertedIds) {
+            int issueCount,
+            List<ImportIssue> issues,
+            String errorMessage,
+            Instant startedAt,
+            Instant finishedAt,
+            Instant createdAt) {
     }
 
     public record StatusCount(String status, long count) {

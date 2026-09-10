@@ -275,7 +275,11 @@ export function InlineOfficerSelect({
 
   return (
     // Wide enough for the 10rem select plus the spinner slot and its gap, so neither ever flexes.
-    <div className="w-[11.5rem]">
+    // `relative` is load-bearing: the `.sr-only` live region below is `position: absolute`, so
+    // without a positioned ancestor its containing block is the page, not the horizontally
+    // scrolling register — it escaped `.staff-table-scroll`'s clip, landed ~1300px out at its
+    // static position, and widened the document until mobile browsers shrank the whole page to fit.
+    <div className="relative w-[11.5rem]">
       <div className="flex items-center gap-1">
         <Select
           aria-label={`Collections executive for loan #${loanId}`}

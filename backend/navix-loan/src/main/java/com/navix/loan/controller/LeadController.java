@@ -3,13 +3,12 @@ package com.navix.loan.controller;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
-import com.navix.loan.dto.LeadDtos.ImportPreview;
-import com.navix.loan.dto.LeadDtos.ImportRequest;
-import com.navix.loan.dto.LeadDtos.ImportResult;
+import com.navix.loan.dto.LeadDtos.ImportFileRequest;
+import com.navix.loan.dto.LeadDtos.ImportJobView;
 import com.navix.loan.dto.LeadDtos.LeadStats;
 import com.navix.loan.dto.LeadDtos.LeadView;
 import com.navix.loan.dto.LeadDtos.UpdateLeadRequest;
-import com.navix.loan.service.LeadImportService;
+import com.navix.loan.service.LeadImportJobService;
 import com.navix.loan.service.LeadService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
@@ -27,8 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Telecaller leads API — create/list/update/disposition for TELECALLER+ADMIN;
- * {@code /stats} tracker aggregates for ADMIN; {@code /import*} the ADMIN CSV lead import
- * (guards live in the services, not here).
+ * {@code /stats} tracker aggregates for ADMIN; {@code /import*} the bulk lead import, which ANY
+ * staff role may use (guards live in the services, not here).
  */
 @RestController
 @RequestMapping("/api/leads")
@@ -36,7 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class LeadController {
 
     private final LeadService leadService;
-    private final LeadImportService leadImportService;
+    private final LeadImportJobService leadImportJobService;
 
     @PostMapping
     public ApiResponse<LeadView> create(@Valid @RequestBody CreateLeadRequest req) {
@@ -82,13 +81,25 @@ public class LeadController {
         return ApiResponse.ok(leadService.disposition(id, req));
     }
 
-    @PostMapping("/import/preview")
-    public ApiResponse<ImportPreview> importPreview(@Valid @RequestBody ImportRequest req) {
-        return ApiResponse.ok(leadImportService.preview(req));
+    /**
+     * Start an import of a file already uploaded to S3. The body carries the key, never the rows —
+     * a 200k-row list is ~12 MB and would not survive the hop to here (the BFF buffers the whole
+     * body and the platform caps it at 4.5 MB).
+     */
+    @PostMapping("/import/file")
+    public ApiResponse<ImportJobView> importFile(@Valid @RequestBody ImportFileRequest req) {
+        return ApiResponse.ok(leadImportJobService.start(req));
     }
 
-    @PostMapping("/import")
-    public ApiResponse<ImportResult> importCommit(@Valid @RequestBody ImportRequest req) {
-        return ApiResponse.ok(leadImportService.commit(req));
+    /** Poll one import's progress. */
+    @GetMapping("/import/jobs/{id}")
+    public ApiResponse<ImportJobView> importJob(@PathVariable Long id) {
+        return ApiResponse.ok(leadImportJobService.get(id));
+    }
+
+    /** The caller's own recent imports. */
+    @GetMapping("/import/jobs")
+    public ApiResponse<List<ImportJobView>> importJobs() {
+        return ApiResponse.ok(leadImportJobService.mine());
     }
 }

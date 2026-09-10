@@ -70,6 +70,13 @@ export type Permission =
   | "document:upload"
   // Telecaller lead intake + disposition; ADMIN shares write + owns the tracker dashboard.
   | "leads:manage"
+  // Bulk-upload a lead list (.csv/.xlsx). Held by EVERY staff role, DSA included — a deliberate
+  // product decision. Deliberately NOT folded into leads:manage: that also confers the lead register
+  // and disposition screens, i.e. every lead's contact details. Uploading a list you already have is
+  // not the same as being able to read everyone else's. The backend keeps imported rows unattributed
+  // (owner_dsa_id null, source OTHER) so a bulk upload can never manufacture DSA commission, and
+  // withholds per-row detail from roles without customer:view.
+  | "leads:import"
   // Referral payouts: the Disbursement Head settles the ₹-rewards (logs a txn id) and sees the
   // referral-expense dashboard; ADMIN has oversight.
   | "referral:payout"
@@ -104,6 +111,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "loan:pipeline",
     "document:upload",
     "verification:retry",
+    "leads:import",
   ],
   CREDIT_HEAD: [
     "kyc:approve",
@@ -115,6 +123,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:assign",
     "loan:pipeline",
     "document:upload",
+    "leads:import",
   ],
   DISBURSEMENT_HEAD: [
     "loan:disburse",
@@ -122,8 +131,9 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:view:all",
     "referral:payout",
     "loan:pipeline",
+    "leads:import",
   ],
-  ACCOUNTANT: ["loan:activate", "customer:view", "loan:pipeline"],
+  ACCOUNTANT: ["loan:activate", "customer:view", "loan:pipeline", "leads:import"],
   COLLECTION_HEAD: [
     "collections:manage",
     "collections:interact",
@@ -132,14 +142,15 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:assign",
     "loan:pipeline",
     "loan:register",
+    "leads:import",
   ],
-  COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline"],
+  COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline", "leads:import"],
   // Telecaller: view customers, enter DSA-style leads, disposition calls, self-assign chase-up
   // work off the telecalling queue. No lifecycle permission.
-  TELECALLER: ["customer:view", "leads:manage", "customer:assign"],
+  TELECALLER: ["customer:view", "leads:manage", "customer:assign", "leads:import"],
   // External commission agent, firewalled from the platform: own leads + own commissions/earnings
   // only. Deliberately NOT customer:view, NOT leads:manage, NOT loan:pipeline.
-  DSA: ["dsa:portal"],
+  DSA: ["dsa:portal", "leads:import"],
   ADMIN: [
     "kyc:approve",
     "loan:review",
@@ -165,6 +176,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     // "My leads"/"My earnings" in the ADMIN nav, where every call failed FORBIDDEN_ROLE
     // "DSA required". ADMIN oversight goes through dsa:manage → /staff/admin/dsa.
     "dsa:manage",
+    "leads:import",
   ],
 };
 
