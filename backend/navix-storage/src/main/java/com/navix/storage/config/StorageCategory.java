@@ -22,7 +22,12 @@ public enum StorageCategory {
     /** Admin-managed company payment assets (UPI QR image, payee account-info PDF). */
     PAYMENT_SETTINGS("payment/settings"),
     /** Receipt/attachment for an admin company-expense entry (bill, invoice, payment screenshot). */
-    EXPENSE_RECEIPT("admin/expense-receipt");
+    EXPENSE_RECEIPT("admin/expense-receipt"),
+    /**
+     * Uploaded lead list (.csv/.xlsx) awaiting bulk import. Raw contact PII: the objects here are
+     * read once by the import job and are candidates for a bucket lifecycle expiry.
+     */
+    LEAD_IMPORT("leads/import");
 
     private final String prefix;
 

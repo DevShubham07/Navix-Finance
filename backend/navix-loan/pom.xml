@@ -47,5 +47,34 @@
             <groupId>com.github.librepdf</groupId>
             <artifactId>openpdf</artifactId>
         </dependency>
+
+        <!--
+          Streaming .xlsx reader for the bulk lead import. Deliberately NOT Apache POI: POI's
+          XSSFWorkbook materialises the whole sheet, which a 200k-row list cannot afford on a
+          2 GB task (aws.md: cpu 1024 / mem 2048). fastexcel-reader walks rows one at a time.
+        -->
+        <dependency>
+            <groupId>org.dhatim</groupId>
+            <artifactId>fastexcel-reader</artifactId>
+            <version>0.18.4</version>
+        </dependency>
+
+        <!-- Writer half of the same library: builds the .xlsx fixtures the parser tests read. -->
+        <dependency>
+            <groupId>org.dhatim</groupId>
+            <artifactId>fastexcel</artifactId>
+            <version>0.18.4</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          For LeadImportScaleIT only, which drives the real batch-insert path against a disposable
+          PostgreSQL. The app itself gets the driver from navix-app at runtime.
+        -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

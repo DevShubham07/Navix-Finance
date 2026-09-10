@@ -2076,67 +2076,44 @@ export interface LeadStats {
 
 // --- Admin CSV lead import ---------------------------------------------------------------
 
-export interface ImportRow {
-  name: string;
-  mobile: string;
-  pan: string | null;
-  pincode: string | null;
-  email: string | null;
-}
-
 export interface ImportIssue {
   row: number;
   field: string;
   message: string;
 }
 
-export interface ImportDuplicate {
-  row: number;
-  name: string;
-  mobile: string;
-  pan: string | null;
-  matchedOn: "MOBILE" | "PAN" | "MOBILE_AND_PAN";
-  existingLeadId: number;
-  existingName: string;
-  existingMobile: string;
-  existingSource: string | null;
-  fillableFields: string[];
+/** Kick off an import of a file already PUT to S3 — the rows never travel through the BFF. */
+export interface ImportFileRequest {
+  s3Key: string;
+  fileName: string;
+  merge: boolean;
 }
 
-export interface ImportInFileDuplicate {
-  row: number;
-  duplicateOfRow: number;
-  matchedOn: "MOBILE" | "PAN" | "MOBILE_AND_PAN";
-}
+export type ImportJobStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
 
-export interface ImportExistingCustomer {
-  row: number;
-  name: string;
-  mobile: string;
-  panMasked: string | null;
-}
-
-export interface ImportPreview {
-  totalRows: number;
-  newRows: number;
-  duplicates: ImportDuplicate[];
-  inFileDuplicates: ImportInFileDuplicate[];
-  existingCustomers: ImportExistingCustomer[];
-  issues: ImportIssue[];
-}
-
-export interface ImportResult {
-  inserted: number;
-  merged: number;
+/**
+ * An import's live state. `totalRows` is null until the file has been read to the end (the row count
+ * is not known up front), so a progress bar has to tolerate an unknown denominator. `issues` holds
+ * at most the first 50 bad rows and is empty for roles without customer:view; `issueCount` is the
+ * true total either way.
+ */
+export interface ImportJobView {
+  id: number;
+  status: ImportJobStatus;
+  fileName: string;
+  merge: boolean;
+  totalRows: number | null;
+  processedRows: number;
+  insertedCount: number;
+  mergedCount: number;
   skippedDuplicates: number;
   skippedCustomers: number;
-  insertedIds: number[];
-}
-
-export interface ImportRequest {
-  fileName: string;
-  rows: ImportRow[];
-  merge: boolean;
+  issueCount: number;
+  issues: ImportIssue[];
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
 }
 
 const LEADS_BASE = "/api/staff/leads";
@@ -2179,11 +2156,13 @@ export const leadsApi = {
     return bff<LeadStats>(`${LEADS_BASE}/stats${s ? `?${s}` : ""}`, "GET");
   },
 
-  importPreview: (body: ImportRequest) =>
-    bff<ImportPreview>(`${LEADS_BASE}/import/preview`, "POST", body),
+  /** Start an import. Returns immediately with a QUEUED job — poll `importJob` for progress. */
+  importFile: (body: ImportFileRequest) =>
+    bff<ImportJobView>(`${LEADS_BASE}/import/file`, "POST", body),
 
-  importCommit: (body: ImportRequest) =>
-    bff<ImportResult>(`${LEADS_BASE}/import`, "POST", body),
+  importJob: (id: number) => bff<ImportJobView>(`${LEADS_BASE}/import/jobs/${id}`, "GET"),
+
+  importJobs: () => bff<ImportJobView[]>(`${LEADS_BASE}/import/jobs`, "GET"),
 };
 
 // ---------------------------------------------------------------------------

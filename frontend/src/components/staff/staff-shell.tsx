@@ -23,6 +23,7 @@ import {
   Gift,
   Phone,
   LogOut,
+  Upload,
   ChevronRight,
   Briefcase,
   Banknote,
@@ -163,6 +164,9 @@ const NAV: NavGroup[] = [
       // gating the route would only hide a page that already shows the caller their own numbers.
       { label: "Staff performance", href: "/staff/performance", Icon: Gauge, hideFor: ["DSA"] },
       { label: "Leads", href: "/staff/leads", Icon: Phone, perm: "leads:manage" },
+      // Every staff role holds leads:import, so this is the one nav entry that shows for all of
+      // them — including DSA, whose sidebar is otherwise limited to the DSA portal.
+      { label: "Import leads", href: "/staff/leads/import", Icon: Upload, perm: "leads:import" },
       { label: "Telecalling", href: "/staff/telecalling", Icon: Phone, perm: "leads:manage" },
       { label: "Referral payouts", href: "/staff/disbursement/referrals", Icon: Gift, perm: "referral:payout", flag: "referral" },
     ],
