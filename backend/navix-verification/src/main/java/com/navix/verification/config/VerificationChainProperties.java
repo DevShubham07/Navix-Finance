@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * ECS task-def env var rather than a redeploy — and which must stay consistent with the ALB idle
  * timeout in front of the service.
  *
- * <p>{@code chain} -> {@code NAVIX_VERIFICATION_CHAIN} (default {@code [fintrix, signzy, digitap]}) —
+ * <p>{@code chain} -> {@code NAVIX_VERIFICATION_CHAIN} (default {@code [signzy, digitap, fintrix]}) —
  * the ordered list of provider ids the {@code RoutingVerificationPort} tries per capability: it calls
  * each in turn, skipping a provider that does not offer the capability and falling through to the next
  * on a failure, returning the first success. Provider ids: {@code fintrix}, {@code signzy},
@@ -25,7 +25,8 @@ public record VerificationChainProperties(
         Integer bureauReadTimeoutSeconds,
         Integer signzyBureauReadTimeoutSeconds,
         Integer fintrixBureauReadTimeoutSeconds,
-        Integer digitapCrifReadTimeoutSeconds
+        Integer digitapCrifReadTimeoutSeconds,
+        Boolean bureauNoHitFallThrough
 ) {
 
     /**
@@ -37,9 +38,14 @@ public record VerificationChainProperties(
     private static final int DEFAULT_READ_SECONDS = 30;
     /**
      * The bureau chain is sequential and the ALB idle timeout in front of the service is 120s, so every
-     * leg has to fit inside that budget together: Fintrix (CRIF, primary) 45 + Digitap CRIF 20 + Digitap
-     * Experian 45 = <b>110s</b> worst case, leaving 10s of headroom. Adding the Digitap CRIF leg is what
-     * forced Experian down from 60s — the old two-leg budget (45 + 60 = 105s) had no room for a third.
+     * leg has to fit inside that budget together. With {@code digitap-crif} OFF (its endpoint still 401s)
+     * the live worst case is Digitap Experian 45 + Fintrix CRIF 45 = <b>90s</b> read, <b>100s</b> once the
+     * two 5s connect timeouts are counted — 20s of headroom. Signzy's bureau leg throws
+     * {@code CapabilityNotSupportedException} without opening a socket, so it costs nothing.
+     *
+     * <p><b>Before re-enabling {@code digitap-crif}, raise the ALB idle timeout.</b> That third leg takes
+     * the budget to 45 + 20 + 45 = 110s read and <b>125s</b> with connect timeouts — over the 120s limit.
+     * The older comment here quoted 110s as if it fitted, because it never counted the connect timeouts.
      */
     private static final int DEFAULT_BUREAU_READ_SECONDS = 45;
     /**
@@ -82,7 +88,7 @@ public record VerificationChainProperties(
         return seconds(signzyBureauReadTimeoutSeconds, DEFAULT_SIGNZY_BUREAU_READ_SECONDS);
     }
 
-    /** Read timeout for Fintrix {@code /crif_combine} — the bureau PRIMARY. */
+    /** Read timeout for Fintrix {@code /crif_combine} — the bureau FALLBACK behind Digitap. */
     public Duration fintrixBureauReadTimeout() {
         return seconds(fintrixBureauReadTimeoutSeconds, DEFAULT_FINTRIX_BUREAU_READ_SECONDS);
     }
@@ -92,11 +98,24 @@ public record VerificationChainProperties(
     }
 
     /**
-     * The effective chain, defaulting to Signzy → Fintrix → Digitap when unset/blank. Kept in step with
+     * The effective chain, defaulting to Signzy → Digitap → Fintrix when unset/blank. Kept in step with
      * {@code application.yml}: tests have no verification block and fall through to this default, so a
      * divergence here would silently exercise a different provider order than production.
      */
     public List<String> effectiveChain() {
-        return (chain == null || chain.isEmpty()) ? List.of("signzy", "fintrix", "digitap") : chain;
+        return (chain == null || chain.isEmpty()) ? List.of("signzy", "digitap", "fintrix") : chain;
+    }
+
+    /**
+     * Whether a bureau no-hit falls through to the next provider instead of ending the chain.
+     *
+     * <p>Defaults to TRUE. Digitap (Experian) leads the bureau chain, so without this a thin file that
+     * Experian has never seen would come back {@code noRecord} and CRIF — a genuinely different data
+     * source — would never get a look, silently narrowing coverage. The cost is a second billable pull
+     * on every genuinely thin file; set the property false to restore the older "first answer wins,
+     * no-hit included" behaviour.
+     */
+    public boolean bureauNoHitFallThroughEnabled() {
+        return bureauNoHitFallThrough == null || bureauNoHitFallThrough;
     }
 }

@@ -9,7 +9,7 @@
  * differ — different bureaus score the same person differently — and it misattributes a CIC's data.
  *
  * `bureauSource` is the value stored on the profile (`SIGNZY_EXPERIAN`, `DIGITAP_EXPERIAN`,
- * `SIGNZY_CRIF`, `FINTRIX_CRIF`, `MANUAL`, …). When it is unknown or absent, fall back to the plain
+ * `SIGNZY_CRIF`, `DIGITAP_CRIF`, `FINTRIX_CRIF`, `MANUAL`, …). When it is unknown or absent, fall back to the plain
  * "Bureau" — vague, but never false.
  */
 export function bureauLabel(bureauSource?: string | null): string {

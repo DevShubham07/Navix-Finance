@@ -7,7 +7,7 @@
 
 NAVIX runs the **full loan lifecycle end-to-end** — a single `loan_application` aggregate (§5) wired to
 a polished frontend through a BFF (§8), on **real JWT + Spring Security** (§7), with real
-**Signzy (primary) + Digitap (fallback) + Fintrix (bureau)** verification clients (§14), **S3-backed**
+**Signzy (identity primary) + Digitap (fallback, and bureau primary) + Fintrix (bureau fallback)** verification clients (§14), **S3-backed**
 documents, and a two-phase verified borrower journey (intake → credit sanction → offer journey). It is
 deployed (Vercel frontend → AWS ALB → ECS Fargate → RDS/S3/SSM; see `aws.md`). This section is the
 at-a-glance map of what's live (the blow-by-blow history is in git); detail on the lifecycle, roles,
@@ -30,8 +30,8 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
   verification is real (§11, §14); documents are S3-backed (presigned).
 - **KYC verification dashboard** — staff progress tracker + manual PASS/FAIL override + a per-check
   **retry** + a cross-app overview + borrower reminders, at `/staff/verifications`.
-- **Bureau credit brief** — the bureau pull (**Fintrix CRIF Highmark primary**, Digitap Experian
-  fallback — §14) yields a **1–5★ "recommend" rating** + a DhanBoost-branded PDF (OpenPDF, stored to
+- **Bureau credit brief** — the bureau pull (**Digitap Experian primary**, Fintrix CRIF Highmark
+  fallback, walking past a no-hit — §14) yields a **1–5★ "recommend" rating** + a DhanBoost-branded PDF (OpenPDF, stored to
   S3), shown on every staff detail surface and **never to the borrower**; the brief's identity comes
   from the KYC profile, not the bureau copy, and the score is always labelled with the bureau it came
   from. The sub-floor **auto-reject is suspended** (V64) — every bureau result goes to a human.

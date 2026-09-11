@@ -608,10 +608,12 @@ What holds across all of it, and does not belong in that file:
   (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
   `AWS_PROFILE`, `NAVIX_ENV`,
   `SIGNZY_*` + `DIGITAP_*` + `FINTRIX_*` (`FINTRIX_BASE_URL`, `FINTRIX_CLIENT_ID`, `FINTRIX_CLIENT_SECRET` —
-  the bureau-primary Fintrix `crif_combine` client) + `NAVIX_VERIFICATION_CHAIN` (default
-  `signzy,fintrix,digitap` — **global order, not per-capability**: Signzy leads so it stays the PAN
-  primary now that Fintrix also serves PAN via `pan_comprehensive`, while bureau stays Fintrix-primary
-  because Signzy's bureau leg is retired and skips itself; verification providers, §14; loaded from `.env`),
+  the bureau-fallback Fintrix `crif_combine` client) + `NAVIX_VERIFICATION_CHAIN` (default
+  `signzy,digitap,fintrix` — **global order, not per-capability**: Signzy leads so it stays the PAN
+  primary even though Fintrix also serves PAN via `pan_comprehensive`, and bureau reads
+  Digitap (Experian) → Fintrix (CRIF) because Signzy's bureau leg is retired and skips itself;
+  verification providers, §14; loaded from `.env`) + `NAVIX_VERIFICATION_BUREAU_NO_HIT_FALL_THROUGH`
+  (default `true` — a bureau no-hit tries the next provider rather than ending the chain),
   `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
@@ -644,8 +646,11 @@ multiple accounts (kartikjindal, meetzy-india). If push fails on OAuth scope, ru
 
 The rules that survive outside that file:
 - **Go through the seam, never a provider client.** Identity/bureau/penny-drop/DigiLocker run behind
-  `VerificationPort` via `RoutingVerificationPort` (`@Primary`), which routes **per capability**:
-  bureau = Fintrix → Digitap; everything else = Signzy → Digitap. The one exception is
+  `VerificationPort` via `RoutingVerificationPort` (`@Primary`), which walks one **global** ordered
+  chain per capability, each provider opting out by throwing: bureau = Digitap (Experian) → Fintrix
+  (CRIF); everything else = Signzy → Digitap. Bureau alone walks **past a no-hit** to the next provider
+  (`NAVIX_VERIFICATION_BUREAU_NO_HIT_FALL_THROUGH`), so a thin file Experian has never seen still
+  reaches CRIF; the chain head's answer is the one returned when nobody has a file. The one exception is
   `answerBureauChallenge` (the CRIF KBA answer), which bypasses the chain entirely and goes straight
   to Fintrix — an `order_id` belongs to one vendor. Throw
   `CapabilityNotSupportedException` for "skip to the next provider", `VerificationException` for

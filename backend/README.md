@@ -63,9 +63,10 @@ them in an `application-local.yml` (gitignored) or export them in your shell.
 | `DIGITAP_CLIENT_SECRET`  | Digitap client secret. |
 | `DIGITAP_SVC_BASE_URL`   | Digitap svc host — KYC/Employment/Email (default preprod `https://svcdemo.digitap.work`; prod `https://svc.digitap.ai`). |
 | `DIGITAP_API_BASE_URL`   | Digitap api host — Credit/Location/Face-Match/OCR (default preprod `https://apidemo.digitap.work`; prod `https://api.digitap.ai`). |
-| `NAVIX_VERIFICATION_CHAIN`| Provider routing order (default `signzy,digitap`). |
+| `NAVIX_VERIFICATION_CHAIN`| Provider routing order (default `signzy,digitap,fintrix`). One global list: PAN is Signzy → Digitap → Fintrix; bureau is Digitap → Fintrix (Signzy's bureau leg is retired and skips itself). |
+| `NAVIX_VERIFICATION_BUREAU_NO_HIT_FALL_THROUGH`| Whether a bureau no-hit falls through to the next provider (default `true`). |
 
-> Keys placed in `backend/.env` are auto-loaded (spring-dotenv); alternatively export them or use SSM. Signzy is the primary provider, Digitap the per-capability fallback (see `docs/signzy/`, `docs/digitap/` and `CLAUDE.md` §14).
+> Keys placed in `backend/.env` are auto-loaded (spring-dotenv); alternatively export them or use SSM. Signzy is the primary provider for identity checks and Digitap the fallback; for **bureau** the order is Digitap (Experian) → Fintrix (CRIF) — see `docs/signzy/`, `docs/digitap/` and `CLAUDE.md` §14.
 
 ## Build & Run
 

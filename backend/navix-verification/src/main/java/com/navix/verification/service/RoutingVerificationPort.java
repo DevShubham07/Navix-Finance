@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
@@ -42,6 +43,8 @@ public class RoutingVerificationPort implements VerificationPort {
     private final List<String> chain;
     /** Held directly for {@link #answerBureauChallenge}, which bypasses the chain — see its javadoc. */
     private final FintrixVerificationAdapter fintrix;
+    /** See {@link #bureauAcceptable} — bureau-only, and off restores "a no-hit ends the chain". */
+    private final boolean bureauNoHitFallThrough;
 
     public RoutingVerificationPort(FintrixVerificationAdapter fintrix,
                                    SignzyVerificationAdapter signzy,
@@ -50,6 +53,7 @@ public class RoutingVerificationPort implements VerificationPort {
         // An adapter missing from this map is silently ignored by the loop below — every adapter MUST
         // be listed here.
         this.fintrix = fintrix;
+        this.bureauNoHitFallThrough = props.bureauNoHitFallThroughEnabled();
         Map<String, VerificationPort> all = Map.of("fintrix", fintrix, "signzy", signzy, "digitap", digitap);
         this.chain = props.effectiveChain();
         for (String id : chain) {
@@ -62,9 +66,9 @@ public class RoutingVerificationPort implements VerificationPort {
         }
         if (providers.isEmpty()) {
             // Never leave the router empty; fall back to the documented default order.
-            providers.put("fintrix", fintrix);
             providers.put("signzy", signzy);
             providers.put("digitap", digitap);
+            providers.put("fintrix", fintrix);
         }
     }
 
@@ -73,13 +77,33 @@ public class RoutingVerificationPort implements VerificationPort {
      * first success wins.
      */
     private <T> T route(String capability, Function<VerificationPort, T> call) {
+        return route(capability, call, r -> true);
+    }
+
+    /**
+     * As {@link #route(String, Function)}, but a result the {@code acceptable} predicate rejects is
+     * remembered and the walk continues — used only by bureau, to keep looking past a no-hit.
+     * Precedence of what comes back: acceptable result, then the FIRST unacceptable one, then a real
+     * failure, then "unsupported".
+     */
+    private <T> T route(String capability, Function<VerificationPort, T> call, Predicate<T> acceptable) {
         VerificationException lastRealFailure = null;
         CapabilityNotSupportedException lastUnsupported = null;
+        T firstUnacceptable = null;
+        boolean haveUnacceptable = false;
         for (Map.Entry<String, VerificationPort> e : providers.entrySet()) {
             try {
                 T result = call.apply(e.getValue());
-                log.debug("verification[{}] served by {}", capability, e.getKey());
-                return result;
+                if (acceptable.test(result)) {
+                    log.debug("verification[{}] served by {}", capability, e.getKey());
+                    return result;
+                }
+                if (!haveUnacceptable) {
+                    firstUnacceptable = result;
+                    haveUnacceptable = true;
+                }
+                log.info("verification[{}] provider {} answered but found no record — falling through",
+                        capability, e.getKey());
             } catch (CapabilityNotSupportedException unsupported) {
                 lastUnsupported = unsupported; // provider doesn't offer this capability — try the next
             } catch (VerificationException failed) {
@@ -88,6 +112,17 @@ public class RoutingVerificationPort implements VerificationPort {
                         failed.providerCode(), failed.safeDetail());
                 lastRealFailure = failed; // provider tried and failed — fall back to the next
             }
+        }
+        // An ANSWER beats the ABSENCE of one: if any provider said "no record", return that even when a
+        // later provider then blew up. We already hold a valid bureau reply, and throwing it away to
+        // rethrow would be strictly worse than the old behaviour, which terminated on that same reply.
+        //
+        // The FIRST such answer, not the last, and that matters: VerificationFailureService.discardedReport
+        // is gated on provider==FINTRIX_CRIF with a non-blank txn id, so returning a trailing Fintrix
+        // no-hit would flip the whole thin-file cohort into the "discarded report, offer a billable
+        // re-run" bucket. Returning the chain head's answer also keeps bureauSource stable across re-runs.
+        if (haveUnacceptable) {
+            return firstUnacceptable;
         }
         // Prefer a real upstream failure over a "capability unsupported" skip: it's the actionable error.
         // Only when every provider merely skipped do we surface the unsupported signal.
@@ -117,7 +152,21 @@ public class RoutingVerificationPort implements VerificationPort {
 
     @Override
     public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
-        return route("bureau", p -> p.pullBureau(pan, name, mobile, dob, otp, clientRef));
+        return route("bureau", p -> p.pullBureau(pan, name, mobile, dob, otp, clientRef), this::bureauAcceptable);
+    }
+
+    /**
+     * A no-hit is the only bureau answer worth walking past: the bureau leading the chain simply has no
+     * file on this borrower, and the other one is a genuinely different data source that may. Everything
+     * else is terminal.
+     *
+     * <p>A {@code pendingChallenge} is deliberately ACCEPTABLE — the report exists and is merely gated
+     * behind a KBA question, so falling through would burn a second billable pull and throw away a
+     * usable answer. It already carries {@code noRecord=false}; the explicit check documents the intent
+     * and survives a provider that ever sets both.
+     */
+    private boolean bureauAcceptable(BureauCheck b) {
+        return !bureauNoHitFallThrough || b == null || b.pendingChallenge() != null || !b.noRecord();
     }
 
     /**

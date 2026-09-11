@@ -22,10 +22,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 /**
- * Verifies the {@link RoutingVerificationPort} chain semantics with mocked Fintrix (bureau primary),
- * Signzy and Digitap adapters: primary success wins, a {@link VerificationException} falls through to the
- * fallback, a {@link CapabilityNotSupportedException} skips to the next provider, and a capability no
- * provider can serve rethrows.
+ * Verifies the {@link RoutingVerificationPort} chain semantics with mocked Signzy, Digitap (bureau
+ * primary) and Fintrix (bureau fallback) adapters: primary success wins, a {@link VerificationException}
+ * falls through to the fallback, a {@link CapabilityNotSupportedException} skips to the next provider,
+ * and a capability no provider can serve rethrows.
+ *
+ * <p>Bureau additionally walks PAST a no-hit, so a thin file the leading bureau has never seen still
+ * reaches the other one — see the {@code bureauXxx} tests and {@code noFallThroughRouter()}.
  */
 class RoutingVerificationPortTest {
 
@@ -42,20 +45,22 @@ class RoutingVerificationPortTest {
         // Most tests below exercise capabilities Fintrix doesn't offer at all, so leave it out of the
         // chain for those (see bureauXxx() below for the fintrix-specific chain).
         router = new RoutingVerificationPort(fintrix, signzy, digitap,
-                new VerificationChainProperties(List.of("signzy", "digitap"), null, null, null, null, null, null));
-    }
-
-    private RoutingVerificationPort bureauRouter() {
-        return new RoutingVerificationPort(fintrix, signzy, digitap,
-                new VerificationChainProperties(
-                        List.of("fintrix", "signzy", "digitap"), null, null, null, null, null, null));
+                new VerificationChainProperties(List.of("signzy", "digitap"), null, null, null, null, null,
+                        null, null));
     }
 
     /** The REAL production order — see application.yml and {@code effectiveChain()}. */
     private RoutingVerificationPort liveRouter() {
         return new RoutingVerificationPort(fintrix, signzy, digitap,
                 new VerificationChainProperties(
-                        List.of("signzy", "fintrix", "digitap"), null, null, null, null, null, null));
+                        List.of("signzy", "digitap", "fintrix"), null, null, null, null, null, null, null));
+    }
+
+    /** The live order with the bureau no-hit fall-through switched off — the pre-reorder semantics. */
+    private RoutingVerificationPort noFallThroughRouter() {
+        return new RoutingVerificationPort(fintrix, signzy, digitap,
+                new VerificationChainProperties(
+                        List.of("signzy", "digitap", "fintrix"), null, null, null, null, null, null, false));
     }
 
     private static PanCheck pan(String txn) {
@@ -125,29 +130,44 @@ class RoutingVerificationPortTest {
         verify(digitap, never()).verifyPan(anyString(), anyString());
     }
 
-    /** Signzy down → Fintrix serves, and Digitap is never reached. */
+    /** Signzy down → Digitap serves, and Fintrix is never reached. */
     @Test
-    void panFallsThroughSignzyToFintrixBeforeDigitap() {
+    void panFallsThroughSignzyToDigitapBeforeFintrix() {
         when(signzy.verifyPan(anyString(), anyString()))
                 .thenThrow(new VerificationException("signzy down"));
-        when(fintrix.verifyPan(anyString(), anyString())).thenReturn(pan("FINTRIX"));
+        when(digitap.verifyPan(anyString(), anyString())).thenReturn(pan("DIGITAP"));
 
         PanCheck r = liveRouter().verifyPan("ABCPE1234Z", "ref");
 
-        assertThat(r.txnId()).isEqualTo("FINTRIX");
-        verify(digitap, never()).verifyPan(anyString(), anyString());
+        assertThat(r.txnId()).isEqualTo("DIGITAP");
+        verify(fintrix, never()).verifyPan(anyString(), anyString());
     }
 
-    /** Both upstream providers down → Digitap is still the last resort. */
+    /** Both upstream providers down → Fintrix is now the last resort. */
     @Test
-    void panFallsAllTheWayToDigitapWhenSignzyAndFintrixFail() {
+    void panFallsAllTheWayToFintrixWhenSignzyAndDigitapFail() {
         when(signzy.verifyPan(anyString(), anyString()))
                 .thenThrow(new VerificationException("signzy down"));
-        when(fintrix.verifyPan(anyString(), anyString()))
-                .thenThrow(new VerificationException("fintrix down"));
-        when(digitap.verifyPan(anyString(), anyString())).thenReturn(pan("DIGITAP"));
+        when(digitap.verifyPan(anyString(), anyString()))
+                .thenThrow(new VerificationException("digitap down"));
+        when(fintrix.verifyPan(anyString(), anyString())).thenReturn(pan("FINTRIX"));
 
-        assertThat(liveRouter().verifyPan("ABCPE1234Z", "ref").txnId()).isEqualTo("DIGITAP");
+        assertThat(liveRouter().verifyPan("ABCPE1234Z", "ref").txnId()).isEqualTo("FINTRIX");
+    }
+
+    /**
+     * The acceptance predicate that lets bureau walk past a no-hit must not leak into any other
+     * capability: a PAN that simply comes back invalid is a real answer and terminates the chain.
+     */
+    @Test
+    void nonBureauCapabilityIgnoresTheAcceptancePredicate() {
+        PanCheck invalid = new PanCheck("SIGNZY", "SIGNZY", false, null, null, null, false, null,
+                "ABCPE1234Z", null, null, "inoperative", null, null, null);
+        when(signzy.verifyPan(anyString(), anyString())).thenReturn(invalid);
+
+        assertThat(liveRouter().verifyPan("ABCPE1234Z", "ref").valid()).isFalse();
+        verify(digitap, never()).verifyPan(anyString(), anyString());
+        verify(fintrix, never()).verifyPan(anyString(), anyString());
     }
 
     @Test
@@ -202,93 +222,229 @@ class RoutingVerificationPortTest {
         verify(digitap, never()).pennyDrop(anyString(), anyString(), anyString());
     }
 
-    // ---- Bureau: Fintrix (primary) -> Signzy (unsupported, retired) -> Digitap (fallback) ----
+    // ---- Bureau: Signzy (unsupported, retired) -> Digitap (primary) -> Fintrix (fallback) ----
 
     private static BureauCheck bureau(String source, Integer score, boolean noRecord) {
         return new BureauCheck("TXN", source, score, noRecord, null, null, null, null, "{}");
     }
 
-    @Test
-    void bureauTriesFintrixFirst_signzyAndDigitapNotCalled() {
-        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
-                .thenReturn(bureau("FINTRIX_CRIF", 799, false));
-
-        BureauCheck r = bureauRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
-
-        assertThat(r.source()).isEqualTo("FINTRIX_CRIF");
-        verify(signzy, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
-        verify(digitap, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    /** Signzy's retired bureau leg — it always skips itself, whatever else the chain is doing. */
+    private void signzyBureauRetired() {
+        when(signzy.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new CapabilityNotSupportedException(
+                        "Signzy bureau retired from routing — Digitap is now primary"));
     }
 
     @Test
-    void bureauFintrixFailureFallsThroughToDigitap_signzySkippedSilently() {
-        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
-                .thenThrow(new VerificationException("fintrix down"));
-        when(signzy.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
-                .thenThrow(new CapabilityNotSupportedException(
-                        "Signzy bureau retired from routing — Fintrix is now primary"));
+    void bureauTriesDigitapFirst_signzySkippedAndFintrixNotCalled() {
+        signzyBureauRetired();
         when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
-                .thenReturn(bureau("DIGITAP_EXPERIAN", 700, false));
+                .thenReturn(bureau("DIGITAP_EXPERIAN", 799, false));
 
-        BureauCheck r = bureauRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
 
         assertThat(r.source()).isEqualTo("DIGITAP_EXPERIAN");
         verify(signzy).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
-        verify(digitap).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(fintrix, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
-    void bureauFintrixNoHitIsReturnedAsIs_doesNotFallThrough() {
-        // A Fintrix no-hit is a real answer, not a failure — the router must return it rather than
-        // trying Digitap next (the router already returns the first non-exception result; this guards
-        // that behaviour for the specific noRecord=true case).
+    void bureauDigitapFailureFallsThroughToFintrix_signzySkippedSilently() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new VerificationException("digitap down"));
         when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
-                .thenReturn(bureau("FINTRIX_CRIF", null, true));
+                .thenReturn(bureau("FINTRIX_CRIF", 700, false));
 
-        BureauCheck r = bureauRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
 
-        assertThat(r.noRecord()).isTrue();
-        assertThat(r.score()).isNull();
-        verify(digitap, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        assertThat(r.source()).isEqualTo("FINTRIX_CRIF");
+        verify(signzy).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(fintrix).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     /**
-     * Signzy leading the live chain must NOT disturb bureau: its bureau leg is retired and skips itself,
-     * so Fintrix stays the bureau primary exactly as it was before Fintrix also gained PAN. This is the
-     * other half of the reorder's safety argument.
+     * The reorder's whole safety argument: Experian having no file on a borrower must not end the pull,
+     * because CRIF is a genuinely different data source that may well have one.
      */
     @Test
-    void bureauPrimaryStaysFintrixUnderTheLiveChain() {
-        when(signzy.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
-                .thenThrow(new CapabilityNotSupportedException(
-                        "Signzy bureau retired from routing — Fintrix is now primary"));
+    void bureauDigitapNoHitFallsThroughToFintrixHit() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("DIGITAP_EXPERIAN", null, true));
         when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(bureau("FINTRIX_CRIF", 780, false));
 
         BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
 
         assertThat(r.source()).isEqualTo("FINTRIX_CRIF");
-        verify(digitap, never())
-                .pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        assertThat(r.score()).isEqualTo(780);
+        assertThat(r.noRecord()).isFalse();
+        verify(digitap).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(fintrix).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
+    /**
+     * Nobody has a file: still a real answer, and specifically the FIRST one. Returning the trailing
+     * Fintrix no-hit instead would stamp every thin file FINTRIX_CRIF with a non-blank txn id, which is
+     * exactly what {@code VerificationFailureService.discardedReport} reads as "a report we threw away —
+     * offer a billable re-run". Keeping the chain head's answer also keeps bureauSource stable.
+     */
     @Test
-    void bureauFintrixKbaChallengeIsReturnedAsIs_doesNotFallThroughToDigitap() {
-        // A pending KBA challenge is a real answer (the report exists) wearing an error envelope —
-        // exactly like the no-hit case above, it must come back as-is rather than falling through and
-        // burning a second billable Digitap call. This is the test that pins the cost fix.
+    void bureauBothNoHit_returnsTheFirstNoHitNotTheLast() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("DIGITAP_EXPERIAN", null, true));
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("FINTRIX_CRIF", null, true));
+
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.source()).isEqualTo("DIGITAP_EXPERIAN");
+        assertThat(r.noRecord()).isTrue();
+        verify(fintrix).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    /**
+     * An ANSWER beats the ABSENCE of one. We already hold a valid no-hit; discarding it to rethrow a
+     * failure from a provider we only consulted as a bonus would leave the borrower worse off than
+     * before the fall-through existed, when the no-hit simply terminated the chain.
+     */
+    @Test
+    void bureauDigitapNoHitThenFintrixThrows_returnsTheNoHitRatherThanRethrowing() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("DIGITAP_EXPERIAN", null, true));
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new VerificationException("fintrix down"));
+
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.source()).isEqualTo("DIGITAP_EXPERIAN");
+        assertThat(r.noRecord()).isTrue();
+    }
+
+    /** The mirror case: the primary fails outright and the fallback has no file — still not a throw. */
+    @Test
+    void bureauDigitapFailsAndFintrixNoHit_returnsFintrixNoHit() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new VerificationException("digitap down"));
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("FINTRIX_CRIF", null, true));
+
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.source()).isEqualTo("FINTRIX_CRIF");
+        assertThat(r.noRecord()).isTrue();
+    }
+
+    /** Nothing answered at all → the real upstream failure surfaces, not Signzy's "unsupported" skip. */
+    @Test
+    void bureauBothProvidersFail_rethrowsTheRealFailureNotTheUnsupportedSkip() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new VerificationException("digitap down"));
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new VerificationException("fintrix down"));
+
+        assertThatThrownBy(() -> liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref"))
+                .isInstanceOf(VerificationException.class)
+                .hasMessageContaining("fintrix down");
+    }
+
+    /**
+     * The property is the cost brake: with it off, a no-hit terminates the chain exactly as it did
+     * before the reorder, so a thin file costs one billable pull rather than two.
+     */
+    @Test
+    void bureauNoHitFallThroughDisabledByProperty_terminatesAtDigitap() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("DIGITAP_EXPERIAN", null, true));
+
+        BureauCheck r = noFallThroughRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.source()).isEqualTo("DIGITAP_EXPERIAN");
+        assertThat(r.noRecord()).isTrue();
+        verify(fintrix, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    /**
+     * A pending KBA challenge is a real answer (the report exists) wearing an error envelope, so it must
+     * come back as-is rather than being walked past by the no-hit fall-through and burning a second
+     * billable pull. It reaches us only because Digitap found no file first — Fintrix is the sole issuer.
+     */
+    @Test
+    void bureauFintrixKbaChallengeIsReturnedAsIs_afterADigitapNoHit() {
         PendingChallenge challenge = new PendingChallenge(
                 "Please choose Disbursed Amount range for the latest Loan taken",
                 List.of("0-5k", "5k-20k"), "txn-prod-b92e0254");
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("DIGITAP_EXPERIAN", null, true));
         when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(new BureauCheck("RID-1", "FINTRIX_CRIF", null, false, null, null, null, null,
                         null, null, challenge));
 
-        BureauCheck r = bureauRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
 
         assertThat(r.pendingChallenge()).isNotNull();
         assertThat(r.pendingChallenge().orderId()).isEqualTo("txn-prod-b92e0254");
         assertThat(r.noRecord()).isFalse();
+    }
+
+    /**
+     * A challenge that arrived WITH noRecord set must still not be walked past — the report exists, and
+     * losing it would strand an orderId nobody ever answers.
+     */
+    @Test
+    void bureauChallengeIsAcceptableEvenWhenTheProviderAlsoFlagsNoRecord() {
+        PendingChallenge challenge = new PendingChallenge("Q", List.of("a", "b"), "order-1", "report-1");
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(new BureauCheck("RID-2", "FINTRIX_CRIF", null, true, null, null, null, null,
+                        null, null, challenge));
+
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.pendingChallenge()).isNotNull();
+        verify(fintrix, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    /**
+     * An orderId belongs to the vendor that minted it, so answering deliberately bypasses the chain —
+     * it must still go straight to Fintrix now that Fintrix sits LAST.
+     */
+    @Test
+    void answerBureauChallengeBypassesTheChainEvenWithFintrixLast() {
+        when(fintrix.answerBureauChallenge(anyString(), anyString(), anyString(), anyString(), anyString(),
+                anyString())).thenReturn(bureau("FINTRIX_CRIF", 742, false));
+
+        BureauCheck r = liveRouter()
+                .answerBureauChallenge("order-1", "report-1", "5k-20k", "Name", "9000000001", "ref");
+
+        assertThat(r.source()).isEqualTo("FINTRIX_CRIF");
         verify(digitap, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(signzy, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    /**
+     * The empty-chain safety net in the router's constructor is a second, independent copy of the
+     * provider order — it has to agree with application.yml or a typo'd chain would silently restore
+     * the old bureau primary.
+     */
+    @Test
+    void unknownChainFallsBackToSignzyDigitapFintrixOrder() {
+        RoutingVerificationPort bogus = new RoutingVerificationPort(fintrix, signzy, digitap,
+                new VerificationChainProperties(
+                        List.of("nope"), null, null, null, null, null, null, null));
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("DIGITAP_EXPERIAN", 710, false));
+
+        assertThat(bogus.pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref").source())
+                .isEqualTo("DIGITAP_EXPERIAN");
+        verify(fintrix, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 }

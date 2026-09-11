@@ -107,7 +107,7 @@ class ProviderJsonTest {
     void jsonBodyLabelledOctetStreamNowParsesInsteadOfThrowing() {
         RestClient signzyBean = new VerificationClientConfig().signzyRestClient(
                 new SignzyProperties("https://provider.test", "tok", "cid", null, null),
-                new VerificationChainProperties(null, null, null, null, null, null, null));
+                new VerificationChainProperties(null, null, null, null, null, null, null, null));
         RestClient.Builder mutated = signzyBean.mutate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(mutated).build();
         RestClient client = mutated.build();

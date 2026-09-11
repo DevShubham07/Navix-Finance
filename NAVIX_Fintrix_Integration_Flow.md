@@ -11,8 +11,8 @@
 > **removed** — those capabilities are now served by Signzy (primary) / Digitap (fallback) via
 > `RoutingVerificationPort`, see the root `CLAUDE.md` §14. **Only the bureau leg survives, and it
 > came back as a single, different endpoint:** `POST /crif_combine` — CRIF Highmark, not Experian,
-> and not the guessed `individual_crif`. Fintrix is now the bureau **primary** (Digitap Credit
-> Analytics is the fallback; Signzy no longer does bureau at all). Section 3.5 below is rewritten
+> and not the guessed `individual_crif`. Fintrix serves the bureau **fallback** leg behind Digitap
+> Credit Analytics (Signzy no longer does bureau at all). Section 3.5 below is rewritten
 > for the real, verified `crif_combine` contract; every other section (1, 2, 3.1–3.4, 3.6–3.8, 4, 5)
 > documents the **retired** integration, kept here only so the code's history makes sense — do not
 > treat it as current. The live client is `FintrixCrifClient`
@@ -117,12 +117,12 @@ plus top-level `message` (e.g. `"SYS100004 (No record found)"`).
 **Fallback trigger:** if `message` indicates *no record*, or score absent, or `Source Down` → call CRIF.
 > Note: sandbox test PAN returned `credit_score: 8` with "No record found" (thin-file test). Real PANs return a proper band.
 
-### 3.5 CRIF — `crif_combine` — bureau (now PRIMARY) ✅ **live, verified 2026-08-22**
+### 3.5 CRIF — `crif_combine` — bureau (FALLBACK behind Digitap) ✅ **live, verified 2026-08-22**
 
 This supersedes the guess below the old table (`individual_crif`) — the real, confirmed endpoint
-is **`crif_combine`**, and it is CRIF Highmark, wired as the bureau **primary** (Experian/Digitap
-Credit Analytics is now the fallback, reached via Digitap directly — Signzy's bureau legs are
-retired). Implemented in `FintrixCrifClient` / parsed by `CrifHighmarkFactsParser`
+is **`crif_combine`**, and it is CRIF Highmark, wired as the bureau **fallback** behind
+Experian/Digitap Credit Analytics — it is the leg that catches a thin file Experian has no record of.
+(Signzy's bureau legs are retired.) Implemented in `FintrixCrifClient` / parsed by `CrifHighmarkFactsParser`
 (`backend/navix-verification/src/main/java/com/navix/verification/{client,support}/`).
 
 ```
@@ -237,4 +237,4 @@ To be provided by vendor. Will supply employment + salary basis feeding the **25
    **Resolved:** `POST /crif_combine`, body `{name, mobile, remark, consent}` — see §3.5.
 3. ~~Penny-drop **name-match**~~ — moot; penny-drop is now Signzy-only (`CLAUDE.md` §14).
 4. ~~Experian/CRIF: confirm production score range...~~ — moot; bureau routing is now
-   Fintrix (`crif_combine`) → Digitap Credit Analytics, no Experian leg.
+   Digitap Credit Analytics (Experian) → Fintrix (`crif_combine`).
