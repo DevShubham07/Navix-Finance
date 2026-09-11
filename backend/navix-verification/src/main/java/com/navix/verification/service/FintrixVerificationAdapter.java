@@ -15,8 +15,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Maps the Fintrix clients onto the provider-neutral {@link VerificationPort}. Fintrix serves two
- * capabilities: bureau PRIMARY ({@link FintrixCrifClient}) and PAN FALLBACK behind Signzy
- * ({@link FintrixPanClient}) — see the chain order in {@code RoutingVerificationPort}. Every other
+ * capabilities, and is LAST in the chain for both: bureau FALLBACK behind Digitap
+ * ({@link FintrixCrifClient}) and PAN fallback behind Signzy and Digitap ({@link FintrixPanClient}) —
+ * see the chain order in {@code RoutingVerificationPort}. Every other
  * method throws {@link CapabilityNotSupportedException} so the router skips straight to the next
  * provider for email/penny-drop/DigiLocker/liveness/address/employment.
  */
@@ -37,10 +38,10 @@ public class FintrixVerificationAdapter implements VerificationPort {
     @Override
     public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
         // defaultWhenMissing=true: a fresh environment with no feature_flag row must still get the
-        // primary bureau provider — only an explicit `enabled=false` row turns Fintrix off. Throwing
+        // CRIF fallback leg — only an explicit `enabled=false` row turns Fintrix off. Throwing
         // CapabilityNotSupportedException (not VerificationException) makes the router treat a
-        // deliberate switch-off exactly like "Fintrix doesn't support bureau" — a silent skip straight
-        // to Digitap — rather than recording/rethrowing it as an upstream failure.
+        // deliberate switch-off exactly like "Fintrix doesn't support bureau" — a silent skip that
+        // leaves Digitap's answer standing — rather than recording it as an upstream failure.
         if (!featureFlags.isEnabled(KILL_SWITCH_FLAG, true)) {
             throw new CapabilityNotSupportedException(
                     "Fintrix bureau disabled by feature flag '" + KILL_SWITCH_FLAG + "'");
@@ -84,7 +85,7 @@ public class FintrixVerificationAdapter implements VerificationPort {
     }
 
     /**
-     * PAN FALLBACK behind Signzy — see the chain order in {@code RoutingVerificationPort}. Deliberately
+     * PAN FALLBACK behind Signzy and Digitap — see the chain order in {@code RoutingVerificationPort}. Deliberately
      * NOT behind {@link #KILL_SWITCH_FLAG}: that flag names the bureau, and PAN is reverted instead by
      * dropping fintrix from {@code NAVIX_VERIFICATION_CHAIN}, which needs no redeploy either.
      *

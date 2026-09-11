@@ -40,8 +40,8 @@ Browser ──> Frontend (Next.js, http://localhost:3000)
         Backend (Spring Boot, http://localhost:8080)
               │
               ├─> Signzy      identity/bureau/penny-drop/DigiLocker (primary)
-              ├─> Digitap     fallback + address/employment
-              ├─> Fintrix     https://admin.fintrix.tech/__api/api/v1/ (bureau primary, CRIF `crif_combine` only)
+              ├─> Digitap     bureau primary (Experian) + fallback + address/employment
+              ├─> Fintrix     https://admin.fintrix.tech/__api/api/v1/ (bureau fallback, CRIF `crif_combine` only)
               └─> PostgreSQL 16
 ```
 
@@ -135,8 +135,8 @@ Runs on http://localhost:3000.
 ## Integrations
 
 - **Fintrix** — base URL `https://admin.fintrix.tech/__api/api/v1/`. **Bureau only**: `POST
-  /crif_combine` (CRIF Highmark), the primary bureau provider (Digitap Credit Analytics is the
-  fallback). Auth: HTTP Basic `base64(client_id:client_secret)` from
+  /crif_combine` (CRIF Highmark), the bureau fallback behind Digitap Credit Analytics, and the leg
+  that catches a thin file Experian has no record of. Auth: HTTP Basic `base64(client_id:client_secret)` from
   `FINTRIX_CLIENT_ID` / `FINTRIX_CLIENT_SECRET`. Fintrix previously fronted a broader set of
   identity/KYC APIs (PAN, email, address, Experian, penny-drop, DigiLocker) — that integration was
   removed; those capabilities are now served by Signzy/Digitap. See

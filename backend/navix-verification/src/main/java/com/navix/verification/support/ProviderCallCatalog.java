@@ -27,7 +27,7 @@ public final class ProviderCallCatalog {
     private static final Map<String, Route> ROUTES = new LinkedHashMap<>();
 
     static {
-        // Fintrix — bureau PRIMARY. Without this entry the fallback below mislabels every Fintrix call
+        // Fintrix — the bureau FALLBACK leg. Without this entry the fallback below mislabels every Fintrix call
         // as DIGITAP (it doesn't start with the Signzy prefix, so the fallback defaults to Digitap).
         ROUTES.put("/crif_combine", new Route("BUREAU", "FINTRIX"));
         ROUTES.put("/bureau_ch_user_auth", new Route("BUREAU", "FINTRIX"));

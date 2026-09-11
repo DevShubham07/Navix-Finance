@@ -20,9 +20,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Maps the Digitap clients onto the provider-neutral {@link VerificationPort}. Digitap is the FALLBACK
- * provider (see {@code RoutingVerificationPort}) and the sole provider for email + address (Signzy lacks
- * both). Capabilities Digitap does not offer throw {@link CapabilityNotSupportedException}:
+ * Maps the Digitap clients onto the provider-neutral {@link VerificationPort}. Digitap is the bureau PRIMARY and the
+ * identity FALLBACK (see {@code RoutingVerificationPort}), and the sole provider for email + address
+ * (Signzy lacks both). Capabilities Digitap does not offer throw {@link CapabilityNotSupportedException}:
  * <ul>
  *   <li>{@link #pennyDrop} — bank verification is not in the Digitap package handed to DhanBoost.</li>
  *   <li>all {@code digilocker*} — Digitap has no DigiLocker consent/OAuth e-Aadhaar flow.</li>
@@ -86,21 +86,22 @@ public class DigitapVerificationAdapter implements VerificationPort {
     }
 
     /**
-     * Two bureau tries, in order: Digitap CRIF then Digitap Experian. Fintrix (CRIF) is the primary and
-     * sits ahead of both in {@code RoutingVerificationPort}, so the full chain a borrower can walk is
-     * Fintrix CRIF → Digitap CRIF → Digitap Experian.
+     * Two bureau tries, in order: Digitap CRIF then Digitap Experian. Digitap now LEADS the bureau
+     * chain in {@code RoutingVerificationPort} and Fintrix (CRIF) sits behind it, so the full chain a
+     * borrower can walk is Digitap CRIF → Digitap Experian → Fintrix CRIF.
      *
      * <p>Both legs live inside this one method because the router's provider list is global and maps
      * each id to exactly one adapter — "digitap" cannot appear in the chain twice. Signzy's bureau used
      * to chain {@code experian-lite} → {@code crif} the same way, for the same reason.
      *
-     * <p>Why CRIF first: it is the same bureau as the primary, so a Fintrix <i>vendor</i> outage still
-     * yields the score the primary would have returned. Experian stays behind it as a genuinely
+     * <p>Why CRIF first within Digitap: it is the same bureau Fintrix serves, so a Fintrix <i>vendor</i>
+     * outage still yields the score Fintrix would have returned. Experian stays behind it as a genuinely
      * different data source, which is what rescues a thin-file borrower CRIF has never heard of —
      * dropping it would silently start declining files Experian can currently see.
      *
-     * <p>A CRIF no-hit is RETURNED, not retried: the bureau answered, and falling through would burn a
-     * second billable pull on every thin-file borrower.
+     * <p>A CRIF no-hit is RETURNED from this method, not retried against Experian: the bureau answered,
+     * and a second Digitap pull would be billed for the same bureau. The ROUTER may still carry that
+     * no-hit on to Fintrix — that is a different bureau, and the point of the fall-through.
      */
     @Override
     public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {

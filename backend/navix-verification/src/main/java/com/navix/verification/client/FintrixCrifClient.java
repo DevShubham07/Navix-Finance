@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 /**
- * Fintrix CRIF Highmark bureau pull — {@code POST /crif_combine}. The bureau PRIMARY (Digitap Credit
+ * Fintrix CRIF Highmark bureau pull — {@code POST /crif_combine}. The bureau FALLBACK behind Digitap (Digitap Credit
  * Analytics is now the fallback; Signzy's Experian/CRIF legs are retired from the routing chain — see
  * {@code SignzyVerificationAdapter}). Keyed on name + mobile only — Fintrix has no PAN field on this
  * endpoint; it hands back a PAN/DOB in the report body for the caller to cross-check against the

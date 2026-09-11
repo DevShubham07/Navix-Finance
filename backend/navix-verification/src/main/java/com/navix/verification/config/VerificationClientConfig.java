@@ -25,7 +25,7 @@ import org.springframework.web.client.RestClient;
  *   <li>{@code digitapApiRestClient} — base {@code navix.digitap.api-base-url}
  *       (Credit/Location/Face-Match/OCR), same Basic auth.</li>
  *   <li>{@code fintrixRestClient} — base {@code navix.fintrix.base-url}, HTTP Basic like Digitap. The
- *       bureau PRIMARY ({@code /crif_combine}); Digitap Credit Analytics is now the fallback.</li>
+ *       bureau FALLBACK ({@code /crif_combine}) behind Digitap Credit Analytics.</li>
  * </ul>
  *
  * <p>Each gets a {@link SimpleClientHttpRequestFactory} whose connect/read timeouts come from
@@ -51,7 +51,7 @@ public class VerificationClientConfig {
     public static final String DIGITAP_CRIF_CLIENT = "digitapCrifRestClient";
     /** Signzy Experian + CRIF — same host and auth as {@link #SIGNZY_CLIENT}, shorter read. */
     public static final String SIGNZY_BUREAU_CLIENT = "signzyBureauRestClient";
-    /** Fintrix {@code /crif_combine} — the bureau PRIMARY. HTTP Basic, like Digitap. */
+    /** Fintrix {@code /crif_combine} — the bureau FALLBACK behind Digitap. HTTP Basic, like Digitap. */
     public static final String FINTRIX_CLIENT = "fintrixRestClient";
 
     /**

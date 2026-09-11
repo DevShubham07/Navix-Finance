@@ -72,7 +72,7 @@ class VerificationClientContentTypeTest {
 
     private static VerificationChainProperties timeouts() {
         return new VerificationChainProperties(
-                List.of("signzy"), 5, 30, null, null, null, null);
+                List.of("signzy"), 5, 30, null, null, null, null, null);
     }
 
     private void postAndAssertJson(RestClient client) {

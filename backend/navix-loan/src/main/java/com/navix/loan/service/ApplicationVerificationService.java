@@ -977,9 +977,14 @@ public class ApplicationVerificationService {
         // unanswerable: 39 rows held an orderId and nothing else, so every one of them needed a fresh
         // (billable) pull before it could be answered at all.
         derived.put("bureauChallengeReportId", challenge.reportId());
+        // Record the bureau that actually minted the challenge rather than assuming it. Fintrix is the
+        // only issuer today (Digitap's adapter always passes pendingChallenge=null), but Digitap now
+        // LEADS the bureau chain, so an assumption baked in here would misattribute the orderId the day
+        // that changes — and an orderId only means anything to the vendor that issued it.
+        String issuer = r.source() == null || r.source().isBlank() ? "FINTRIX_CRIF" : r.source();
         // 12-arg upsert: keep the provider's own envelope. It carries no signed link, so unlike a
         // scored pull there is nothing to scrub.
-        ApplicationVerification row = upsert(appId, BUREAU, REVIEW, "FINTRIX_CRIF", challenge.orderId(), ref,
+        ApplicationVerification row = upsert(appId, BUREAU, REVIEW, issuer, challenge.orderId(), ref,
                 null, null, null, derived,
                 "Bureau needs the borrower to answer a security question before the report can be released",
                 r.rawResponseJson());

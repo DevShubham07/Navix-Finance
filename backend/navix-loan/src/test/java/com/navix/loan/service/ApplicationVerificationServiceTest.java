@@ -474,6 +474,48 @@ class ApplicationVerificationServiceTest {
         assertThat(saved.getValue().getDerived()).contains("bureauChallenge").contains("txn-prod-b92e0254");
     }
 
+    /**
+     * The parked row records the bureau that actually minted the challenge rather than assuming Fintrix.
+     * Fintrix is the only issuer today, but Digitap now LEADS the bureau chain, and an orderId means
+     * nothing to a vendor that did not issue it — so the assumption is not one to bake in.
+     */
+    @Test
+    void bureau_pendingKbaChallenge_recordsTheIssuingBureauNotAHardcodedFintrix() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        VerificationPort.PendingChallenge challenge =
+                new VerificationPort.PendingChallenge("Q", List.of("a", "b"), "order-9", "report-9");
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("RID-9", "DIGITAP_CRIF", null, false,
+                        null, null, null, null, null, null, challenge));
+
+        assertThat(service.pullBureau(APP, "999111").status()).isEqualTo("REVIEW");
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getProvider()).isEqualTo("DIGITAP_CRIF");
+    }
+
+    /** A provider that names no source still parks under Fintrix — the only issuer we know of. */
+    @Test
+    void bureau_pendingKbaChallenge_fallsBackToFintrixWhenTheSourceIsBlank() {
+        CustomerProfile p = bureauReadyProfile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        stubConsentPassed();
+        VerificationPort.PendingChallenge challenge =
+                new VerificationPort.PendingChallenge("Q", List.of("a", "b"), "order-10", "report-10");
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("RID-10", null, null, false,
+                        null, null, null, null, null, null, challenge));
+
+        assertThat(service.pullBureau(APP, "999111").status()).isEqualTo("REVIEW");
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getProvider()).isEqualTo("FINTRIX_CRIF");
+    }
+
     @Test
     void bureau_panMismatch_isReview_andNeverAutoRejects() throws Exception {
         CustomerProfile p = bureauReadyProfile();

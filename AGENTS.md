@@ -699,8 +699,8 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
   (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
   `AWS_PROFILE`, `NAVIX_ENV`,
   `SIGNZY_*` + `DIGITAP_*` + `FINTRIX_*` (`FINTRIX_BASE_URL`, `FINTRIX_CLIENT_ID`, `FINTRIX_CLIENT_SECRET` —
-  the bureau-primary Fintrix `crif_combine` client) + `NAVIX_VERIFICATION_CHAIN` (default
-  `fintrix,signzy,digitap`; verification providers, §14; loaded from `.env`),
+  the bureau-fallback Fintrix `crif_combine` client) + `NAVIX_VERIFICATION_CHAIN` (default
+  `signzy,digitap,fintrix`; verification providers, §14; loaded from `.env`),
   `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
@@ -768,8 +768,8 @@ specs: **`docs/signzy/`** (11 APIs) and **`docs/digitap/`** (43 APIs).
 
 | Capability (`VerificationPort`) | Provider used | Endpoint |
 |---|---|---|
-| `verifyPan` | **Signzy** → Digitap | Signzy `/api/v3/pan/compliance-206-individual-search` → Digitap `/validation/kyc/v1/pan_details_plus` |
-| `pullBureau` | **Fintrix** → Digitap | Fintrix `POST /crif_combine` (CRIF Highmark; PRIMARY) → Digitap `/credit_analytics/request`. Signzy's `experian-lite`/`crif` legs are **retired from routing** (`SignzyVerificationAdapter.pullBureau` now throws `CapabilityNotSupportedException`) — `SignzyExperianClient`/`SignzyCrifClient` are kept only for the ADMIN provider workbench. Gated by the `fintrix-bureau` feature flag (on by default; off falls through to Digitap). See `NAVIX_Fintrix_Integration_Flow.md` §3.5 |
+| `verifyPan` | **Signzy** → Digitap → Fintrix | Signzy `/api/v3/pan/compliance-206-individual-search` → Digitap `/validation/kyc/v1/pan_details_plus` → Fintrix `POST /pan_comprehensive` |
+| `pullBureau` | **Digitap** → Fintrix | Digitap `/credit_analytics/request` (Experian; PRIMARY) → Fintrix `POST /crif_combine` (CRIF Highmark; FALLBACK). A no-hit falls through to the next provider (`NAVIX_VERIFICATION_BUREAU_NO_HIT_FALL_THROUGH`, default on); when nobody has a file the chain head's no-hit is returned. Signzy's `experian-lite`/`crif` legs are **retired from routing** (`SignzyVerificationAdapter.pullBureau` now throws `CapabilityNotSupportedException`) — `SignzyExperianClient`/`SignzyCrifClient` are kept only for the ADMIN provider workbench. Gated by the `fintrix-bureau` feature flag (on by default; off makes Fintrix skip itself). See `NAVIX_Fintrix_Integration_Flow.md` §3.5 |
 | `livenessInit` / `livenessResult` (selfie) | **Signzy** | Signzy `/api/v3/liveness-secure/createUrl` + `/getData` (prod acct) — **interactive video journey**: passive liveness + 1:1 face-match vs the DigiLocker Aadhaar photo, embedded in an iframe (`allow="camera"`), polled to completion (our DB authoritative). Two-step async, mirrors DigiLocker |
 | `faceLiveness` (selfie fallback) | **Digitap** | Digitap `/fmfl/v2/face-match` — synchronous 1:1 face-match of an uploaded selfie vs the Aadhaar photo (no live camera). **Fallback** used only when Signzy liveness init is unavailable (`selfieLivenessInit` → `derived.fallback=true`) |
 | `pennyDrop` | **Signzy only** | Signzy `/api/v3/bankaccountverification/bankaccountverifications` (Digitap has no penny-drop) |
@@ -783,7 +783,7 @@ specs: **`docs/signzy/`** (11 APIs) and **`docs/digitap/`** (43 APIs).
   Basic `base64(client_id:client_secret)` (`DIGITAP_CLIENT_ID`/`DIGITAP_CLIENT_SECRET`) over **two** hosts —
   `DIGITAP_SVC_BASE_URL` (default `https://svcdemo.digitap.work`, KYC/Email) + `DIGITAP_API_BASE_URL`
   (default `https://apidemo.digitap.work`, Credit/Address/Face-Match). Routing order via
-  `NAVIX_VERIFICATION_CHAIN` (default `signzy,digitap`). Switch to prod by overriding the `*_BASE_URL` vars
+  `NAVIX_VERIFICATION_CHAIN` (default `signzy,digitap,fintrix`). Switch to prod by overriding the `*_BASE_URL` vars
   (`api.signzy.app`, `svc.digitap.ai`, `api.digitap.ai`). **Keys load from `backend/.env`** (auto-loaded by
   `spring-dotenv` — see `.env.example`) or SSM; never committed.
 - **Bureau consent gotcha:** Signzy's `experian-lite`/`crif` require `consent.consentTimestamp` as a JSON
