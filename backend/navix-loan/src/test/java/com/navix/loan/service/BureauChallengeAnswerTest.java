@@ -56,6 +56,7 @@ class BureauChallengeAnswerTest {
     @Mock private ApplicationFlowService flow;
     @Mock private PennyDropGuard pennyDropGuard;
     @Mock private com.navix.common.featureflag.FeatureFlagService featureFlags;
+    @Mock private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
 
     private ApplicationVerificationService service;
 
@@ -66,7 +67,8 @@ class BureauChallengeAnswerTest {
     @BeforeEach
     void setUp() {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
-                documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk, new ObjectMapper(),
+                documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
+                new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags);
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(profileRepo.save(any())).thenAnswer(i -> i.getArgument(0));

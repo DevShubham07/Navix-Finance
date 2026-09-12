@@ -159,7 +159,10 @@ public final class CustomerDtos {
             /** The latest application's full credit brief (categorized bureau facts + PDF doc id) — null
              *  when no bureau pull has happened yet. Reuses {@link CreditBriefDtos.CreditBriefView} as-is
              *  so the Customer roll-up and the per-application endpoint stay in lockstep. */
-            CreditBriefDtos.CreditBriefView creditBrief) {
+            CreditBriefDtos.CreditBriefView creditBrief,
+            /** The ADMIN-set eligible limit for this customer (paise), or null when the 25%-of-salary
+             *  rule applies. Lets the admin console show whether a limit is overridden. */
+            Long limitOverridePaise) {
     }
 
     /**
@@ -221,6 +224,15 @@ public final class CustomerDtos {
      * recompute this can trigger.
      */
     public record SalaryDayRequest(@NotNull @Min(1) @Max(31) Integer salaryCreditDay) {
+    }
+
+    /**
+     * ADMIN setting this customer's eligible limit, overriding the 25%-of-salary rule (V69). A null
+     * {@code limitPaise} <b>clears</b> the override and hands them back to the salary rule. Deliberately
+     * un-annotated: there is no upper ceiling (an admin may exceed the ₹10,00,000 instant-loan cap) and
+     * the ₹1,000 floor is enforced in the service alongside the ADMIN check.
+     */
+    public record LimitOverrideRequest(Long limitPaise, String note) {
     }
 
     /** One audited profile/salary change for the customer detail history pane (Phase 2.1). */

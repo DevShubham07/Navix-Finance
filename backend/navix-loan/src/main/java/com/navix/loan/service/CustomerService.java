@@ -3,7 +3,6 @@ package com.navix.loan.service;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.SanctionedAmountRevisedEvent;
-import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.BorrowerIdentityPort;
 import com.navix.common.security.CurrentActor;
@@ -34,6 +33,7 @@ import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.ApplicationReference;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.CustomerCallLog;
+import com.navix.loan.entity.CustomerLimitOverride;
 import com.navix.loan.entity.CustomerOwner;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.CustomerRemark;
@@ -46,6 +46,7 @@ import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.ApplicationReferenceRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.CustomerCallLogRepository;
+import com.navix.loan.repository.CustomerLimitOverrideRepository;
 import com.navix.loan.repository.CustomerOwnerRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.CustomerRemarkRepository;
@@ -99,11 +100,12 @@ public class CustomerService {
     private final ApplicationEventRepository applicationEventRepository;
     private final CustomerRemarkRepository remarkRepository;
     private final CustomerOwnerRepository ownerRepository;
+    private final CustomerLimitOverrideRepository limitOverrideRepository;
+    private final EligibilityService eligibilityService;
     private final CustomerCallLogRepository callLogRepository;
     private final StaffDirectory staffDirectory;
     private final com.navix.common.loan.ApplicationActorDirectory applicationActorDirectory;
     private final com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
-    private final RiskPort risk;
     private final JdbcTemplate jdbc;
     private final CreditBriefService creditBriefService;
     private final ApplicationDocumentRepository documentRepository;
@@ -537,7 +539,8 @@ public class CustomerService {
         Long latestAppId = appViews.isEmpty() ? null : appViews.get(0).id();
         CreditBriefView creditBrief = latestAppId != null ? creditBriefService.view(latestAppId) : null;
         return new CustomerDetail(customerId, profileView, appViews, loanViews, payments,
-                ownerStaffId, ownerName, creditBrief);
+                ownerStaffId, ownerName, creditBrief,
+                eligibilityService.overrideOf(customerId).orElse(null));
     }
 
     /**
@@ -670,7 +673,8 @@ public class CustomerService {
         CustomerProfile saved = profileRepository.save(profile);
 
         if (!Objects.equals(oldSalary, saved.getMonthlySalaryPaise())) {
-            recomputeEligibility(customerId, saved.getMonthlySalaryPaise());
+            // Honours an ADMIN limit override, which outranks the salary rule (V69).
+            eligibilityService.recomputeForCustomer(customerId, saved.getMonthlySalaryPaise());
         }
         return ProfileView.of(saved);
     }
@@ -784,6 +788,57 @@ public class CustomerService {
         return ApplicationView.of(applicationRepository.save(app));
     }
 
+    // ---------------------------------------------------------------- eligible-limit override
+
+    /**
+     * ADMIN-only: set (or clear) this customer's eligible limit, overriding the 25%-of-salary rule.
+     *
+     * <p>Stored per customer rather than per application because the limit is re-derived from salary
+     * on payslip verification, on a salary edit and on every reborrow — so an edit to a single
+     * application's {@code eligible_limit} would be silently overwritten. {@code newLimitPaise} of
+     * null clears the override and hands the customer back to the salary rule. There is no upper
+     * ceiling (an admin may exceed the ₹10,00,000 instant-loan cap the formula applies); the floor is
+     * the usual ₹1,000 minimum loan. Audited to {@code profile_change_log} like every other admin
+     * correction, and applied immediately to every not-yet-disbursed application.
+     */
+    @Transactional
+    public ApplicationView setLimitOverride(Long customerId, Long newLimitPaise, String note) {
+        requireAdmin();
+        if (customerId == null) {
+            throw new BusinessException("INVALID_CUSTOMER", "customerId is required");
+        }
+        if (newLimitPaise != null && newLimitPaise < LoanMath.MIN_LOAN_PAISE) {
+            throw new BusinessException("AMOUNT_TOO_LOW", "The limit is below the minimum of ₹1,000");
+        }
+        Long previous = limitOverrideRepository.findById(customerId)
+                .map(CustomerLimitOverride::getLimitPaise).orElse(null);
+        logIfChanged(customerId, null, "eligibleLimitPaise", str(previous), str(newLimitPaise));
+
+        if (newLimitPaise == null) {
+            limitOverrideRepository.deleteById(customerId);
+        } else {
+            CustomerLimitOverride row = limitOverrideRepository.findById(customerId)
+                    .orElseGet(CustomerLimitOverride::new);
+            row.setCustomerId(customerId);
+            row.setLimitPaise(newLimitPaise);
+            row.setNote(note);
+            row.setSetBy(actorStaffIdOrNull());
+            row.setSetAt(Instant.now());
+            limitOverrideRepository.save(row);
+        }
+
+        // Push the new ceiling onto every live application. Clearing falls back to the salary rule,
+        // so the borrower's stored limit is always consistent with what the resolver would answer.
+        CustomerProfile profile = latestProfile(applicationRepository.findByCustomerId(customerId));
+        eligibilityService.recomputeForCustomer(customerId,
+                profile != null ? profile.getMonthlySalaryPaise() : null);
+
+        return applicationRepository.findByCustomerId(customerId).stream()
+                .max(Comparator.comparing(LoanApplication::getId))
+                .map(ApplicationView::of)
+                .orElse(null);
+    }
+
     /** The customer's KYC profile, or {@code CUSTOMER_NOT_FOUND} if they have none. */
     private CustomerProfile requireExistingProfile(Long customerId) {
         CustomerProfile profile = latestProfile(applicationRepository.findByCustomerId(customerId));
@@ -894,6 +949,7 @@ public class CustomerService {
         total += jdbc.update("DELETE FROM customer_remark WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM customer_call_log WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM customer_owner WHERE customer_id = ?", customerId);
+        total += jdbc.update("DELETE FROM customer_limit_override WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_mobile WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_preferences WHERE customer_id = ?", customerId);
         total += jdbc.update("DELETE FROM borrower_credential WHERE customer_id = ?", customerId);
@@ -1157,24 +1213,6 @@ public class CustomerService {
         entry.setOldValue(oldVal);
         entry.setNewValue(newVal);
         changeLogRepository.save(entry);
-    }
-
-    /**
-     * Recompute the eligible limit (RiskPort's firm 25%-of-salary cap) on the customer's
-     * <b>not-yet-disbursed</b> applications, so an admin salary edit propagates to eligibility. A
-     * disbursed loan's limit is historical and left untouched.
-     */
-    private void recomputeEligibility(Long customerId, Long monthlySalaryPaise) {
-        if (monthlySalaryPaise == null || monthlySalaryPaise <= 0) {
-            return;
-        }
-        long eligible = risk.eligibleLimitPaise(monthlySalaryPaise);
-        for (LoanApplication a : applicationRepository.findByCustomerId(customerId)) {
-            if (a.getLoanId() == null) {
-                a.setEligibleLimit(eligible);
-                applicationRepository.save(a);
-            }
-        }
     }
 
     /**

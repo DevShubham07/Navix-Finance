@@ -16,6 +16,7 @@ import com.navix.loan.dto.CustomerDtos.ChangeSanctionedAmountRequest;
 import com.navix.loan.dto.CustomerDtos.ConfirmMobileChangeRequest;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
+import com.navix.loan.dto.CustomerDtos.LimitOverrideRequest;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.RemarkView;
 import com.navix.loan.dto.CustomerDtos.RequestMobileChangeRequest;
@@ -124,6 +125,18 @@ public class CustomerController {
             @PathVariable Long customerId, @Valid @RequestBody SalaryDayRequest req) {
         requireStaff();
         return ApiResponse.ok(customerService.changeSalaryCreditDay(customerId, req.salaryCreditDay()));
+    }
+
+    /**
+     * ADMIN — set this customer's eligible limit, overriding the 25%-of-salary rule; a null
+     * {@code limitPaise} clears it. Applies immediately to every not-yet-disbursed application and
+     * survives payslip re-verification, salary edits and future reborrows (V69).
+     */
+    @PostMapping("/{customerId}/limit-override")
+    public ApiResponse<ApplicationView> setLimitOverride(
+            @PathVariable Long customerId, @Valid @RequestBody LimitOverrideRequest req) {
+        requireStaff();
+        return ApiResponse.ok(customerService.setLimitOverride(customerId, req.limitPaise(), req.note()));
     }
 
     /** Every document across ALL of this customer's applications, grouped by application (newest

@@ -62,6 +62,7 @@ class ApplicationVerificationServiceTest {
     @Mock private ApplicationFlowService flow;
     @Mock private PennyDropGuard pennyDropGuard;
     @Mock private com.navix.common.featureflag.FeatureFlagService featureFlags;
+    @Mock private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
 
     private ApplicationVerificationService service;
 
@@ -70,7 +71,8 @@ class ApplicationVerificationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
-                documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk, new ObjectMapper(),
+                documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
+                new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags);
         // The score-floor auto-reject is SUSPENDED in production (see autoRejectEnabled). These tests
         // exercise the rule itself, so switch it on explicitly rather than depending on the default.

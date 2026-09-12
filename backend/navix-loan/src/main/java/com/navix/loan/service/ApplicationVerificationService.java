@@ -196,6 +196,7 @@ public class ApplicationVerificationService {
     private final EmailOtpPort emailOtp;
     private final DocumentStoragePort storage;
     private final RiskPort risk;
+    private final EligibilityService eligibilityService;
     private final ObjectMapper objectMapper;
     private final CreditBriefService creditBriefService;
     private final ApplicationEventPublisher eventPublisher;
@@ -1616,8 +1617,10 @@ public class ApplicationVerificationService {
         profile.setMonthlySalaryPaise(monthlySalaryPaise);
         profileRepo.save(profile);
 
-        long eligible = risk.eligibleLimitPaise(monthlySalaryPaise);
         LoanApplication app = requireApplication(appId);
+        // Override-aware: an ADMIN limit for this customer wins over the 25%-of-salary rule, so a
+        // re-declared salary can no longer silently wipe it (V69).
+        long eligible = eligibilityService.effectiveLimitPaise(app.getCustomerId(), monthlySalaryPaise);
         Integer oldDay = app.getSalaryCreditDay();
         app.setEligibleLimit(eligible);
         if (salaryCreditDay != null) {

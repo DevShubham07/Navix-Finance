@@ -22,7 +22,6 @@ import com.navix.loan.entity.CustomerCallLog;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.CustomerOwner;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.common.risk.RiskPort;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.LoanRepository;
@@ -51,7 +50,8 @@ class CustomerServiceTest {
     @Mock private com.navix.loan.repository.CustomerOwnerRepository ownerRepository;
     @Mock private com.navix.loan.repository.CustomerCallLogRepository callLogRepository;
     @Mock private com.navix.common.staff.StaffDirectory staffDirectory;
-    @Mock private RiskPort risk;
+    @Mock private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
+    @Mock private EligibilityService eligibilityService;
     @Mock private org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Mock private CreditBriefService creditBriefService;
     @Mock private com.navix.loan.repository.ApplicationDocumentRepository documentRepository;
@@ -73,9 +73,10 @@ class CustomerServiceTest {
     void setUp() {
         service = new CustomerService(applicationRepository, loanRepository, profileRepository,
                 paymentRepository, repaymentService, changeLogRepository,
-                applicationEventRepository, remarkRepository, ownerRepository, callLogRepository,
+                applicationEventRepository, remarkRepository, ownerRepository,
+                limitOverrideRepository, eligibilityService, callLogRepository,
                 staffDirectory, applicationActorDirectory, collectionCaseDirectory,
-                risk, jdbc, creditBriefService, documentRepository, bureauStateService,
+                jdbc, creditBriefService, documentRepository, bureauStateService,
                 verificationFailureService, providerAttempts, verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher,
                 loanMath);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
@@ -255,13 +256,14 @@ class CustomerServiceTest {
         when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of(a));
         when(profileRepository.findByApplicationId(2L)).thenReturn(Optional.of(p));
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
-        when(risk.eligibleLimitPaise(6_000_000L)).thenReturn(1_500_000L);
 
         service.updateProfile(9000001L,
                 new UpdateCustomerRequest(null, "Asha", null, null, null, 6_000_000L, null, null, null, null));
 
         verify(changeLogRepository, atLeastOnce()).save(any());   // the salary change is recorded
-        assertThat(a.getEligibleLimit()).isEqualTo(1_500_000L);   // eligibility recomputed from new salary
+        // Recomputing is EligibilityService's job (it honours an ADMIN limit override, V69); this
+        // asserts the delegation, and EligibilityServiceTest covers what the recompute actually writes.
+        verify(eligibilityService).recomputeForCustomer(9000001L, 6_000_000L);
     }
 
     // ---------------------------------------------------------------- mobile-number correction (OTP)

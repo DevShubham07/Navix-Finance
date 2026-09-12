@@ -651,6 +651,8 @@ export interface CustomerDetail {
    *  pull has happened. Same shape `staffApi.creditBrief` returns, attached here to avoid a second
    *  round-trip when the Credit Report tab just needs "all the info" already on the customer object. */
   creditBrief?: CreditBriefView | null;
+  /** ADMIN-set eligible limit (paise) for this customer, or null when the 25%-of-salary rule applies. */
+  limitOverridePaise?: number | null;
 }
 
 /**
@@ -1845,6 +1847,10 @@ export const customersApi = {
    * application is a pending SANCTIONED offer, the projected repayment date moves with it; a live
    * loan keeps its already-disbursed due date.
    */
+  /** ADMIN — set this customer's eligible limit, overriding the 25%-of-salary rule; null clears it. */
+  setLimitOverride: (customerId: number, limitPaise: number | null, note?: string) =>
+    bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/limit-override`, "POST", { limitPaise, note }),
+
   changeSalaryDay: (customerId: number, day: number) =>
     bff<ApplicationView>(`${CUSTOMERS_BASE}/${customerId}/salary-day`, "POST", { salaryCreditDay: day }),
 

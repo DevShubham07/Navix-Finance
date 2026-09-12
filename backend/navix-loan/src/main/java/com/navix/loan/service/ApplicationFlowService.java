@@ -212,7 +212,10 @@ public class ApplicationFlowService {
                 .orElseThrow(() -> new BusinessException("NO_PRIOR_LOAN",
                         "No previous application found to borrow against"));
         Long salaryPaise = prior.getMonthlySalaryPaise();
-        Long eligibleLimit = salaryPaise != null ? loanMath.eligibleLimitPaise(salaryPaise) : null;
+        // An ADMIN limit override outlives the application it was set on, so it must be resolved
+        // here too — a reborrow mints a NEW row and would otherwise fall back to salary (V69).
+        Long eligibleLimit = eligibilityService.overrideOf(customerId)
+                .orElseGet(() -> salaryPaise != null ? loanMath.eligibleLimitPaise(salaryPaise) : null);
 
         LoanApplication app = createDraft(customerId);
         app.setEligibleLimit(eligibleLimit);
@@ -509,13 +512,16 @@ public class ApplicationFlowService {
         if (amountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "Requested amount is below the minimum of ₹1,000");
         }
-        if (eligibleLimitPaise != null && !eligibilityService.isEligible(amountPaise, eligibleLimitPaise)) {
+        // The ceiling is the STORED limit, never the one the caller posts: on the PRE_APPROVED
+        // reborrow path this call fast-tracks straight to DISBURSEMENT_PENDING, so a client-supplied
+        // figure would let a borrower set their own ceiling — and would overwrite an ADMIN override.
+        // ApplyRequest.eligibleLimitPaise is accepted and ignored for wire compatibility.
+        Long storedLimit = app.getEligibleLimit();
+        if (storedLimit != null && !eligibilityService.isEligible(amountPaise, storedLimit)) {
             throw new BusinessException("LIMIT_EXCEEDED", "Requested amount exceeds the eligible limit");
         }
         app.setAmountRequested(amountPaise);
         app.setPurpose(purpose);
-        // Keep the reborrow-computed limit if the caller didn't supply one.
-        app.setEligibleLimit(eligibleLimitPaise != null ? eligibleLimitPaise : app.getEligibleLimit());
         // Keep the reborrow-carried salary day if the caller didn't supply one (a reborrow reuses the
         // borrower's original day and never re-asks); a fresh borrower always sends the picked value.
         app.setSalaryCreditDay(salaryCreditDay != null ? salaryCreditDay : app.getSalaryCreditDay());

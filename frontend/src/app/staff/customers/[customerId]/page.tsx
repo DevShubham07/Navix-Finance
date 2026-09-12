@@ -22,6 +22,7 @@ import {
   customersApi,
   adminApi,
   rupeesToPaise,
+  paiseToINR,
   type CustomerDetail,
   type BlocklistType,
   type ApplicationView,
@@ -106,6 +107,12 @@ export default function CustomerDetailPage() {
                 {sanctionedApp && (
                   <SanctionedAmountCard customerId={id} app={sanctionedApp} onSaved={invalidate} />
                 )}
+                <LimitOverrideCard
+                  customerId={id}
+                  currentLimitPaise={c.applications[0]?.eligibleLimitPaise ?? null}
+                  overridePaise={c.limitOverridePaise ?? null}
+                  onSaved={invalidate}
+                />
                 {c.applications.length > 0 && (
                   <SalaryDayCard customerId={id} app={c.applications[0]} onSaved={invalidate} />
                 )}
@@ -325,6 +332,75 @@ function MobileChangeCard({ detail, onSaved }: { detail: CustomerDetail; onSaved
             </button>
           </div>
         </>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * ADMIN raising (or lowering) how much this customer may be advanced — the eligible limit, which is
+ * otherwise derived as 25% of their monthly salary.
+ *
+ * The override is stored per CUSTOMER, not per application, so it survives a payslip re-upload, a
+ * salary edit and every future reborrow. "Reset" clears it and hands them back to the salary rule.
+ * Unlike the sanctioned amount this is headroom, not an offer, so the borrower is not notified.
+ */
+function LimitOverrideCard({
+  customerId,
+  currentLimitPaise,
+  overridePaise,
+  onSaved,
+}: {
+  customerId: number;
+  currentLimitPaise: number | null;
+  overridePaise: number | null;
+  onSaved: () => void;
+}) {
+  const [amount, setAmount] = React.useState(
+    overridePaise != null ? String(Math.round(overridePaise / 100)) : "",
+  );
+  const newLimitPaise = amount ? rupeesToPaise(Number(amount.replace(/[^\d]/g, ""))) : 0;
+
+  const save = useMutation({
+    mutationFn: (limitPaise: number | null) => customersApi.setLimitOverride(customerId, limitPaise),
+    onSuccess: () => onSaved(),
+  });
+
+  return (
+    <Card title="Maximum loan amount (admin)" icon={<IndianRupee size={16} />}>
+      <p className="mb-3 text-xs text-muted">
+        Current limit: <span className="font-mono text-ink">{paiseToINR(currentLimitPaise)}</span>{" "}
+        {overridePaise != null ? "(set by an admin)" : "(25% of monthly salary)"}. A limit set here
+        sticks — it survives a salary re-check and future re-borrows — and applies to every
+        application that has not been disbursed yet.
+      </p>
+      <Input
+        label="Maximum amount (₹)"
+        inputMode="numeric"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
+        placeholder={currentLimitPaise != null ? String(Math.round(currentLimitPaise / 100)) : "50000"}
+        className="!mb-2"
+      />
+      {save.error && <p className="mb-2 text-sm text-error-700">{errMessage(save.error)}</p>}
+      <button
+        onClick={() => save.mutate(newLimitPaise)}
+        disabled={save.isPending || newLimitPaise <= 0}
+        className="btn btn-sm btn-navy btn-block disabled:opacity-50"
+      >
+        {save.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save
+      </button>
+      {overridePaise != null && (
+        <button
+          onClick={() => {
+            setAmount("");
+            save.mutate(null);
+          }}
+          disabled={save.isPending}
+          className="btn btn-sm btn-ghost btn-block mt-2 disabled:opacity-50"
+        >
+          Reset to 25% of salary
+        </button>
       )}
     </Card>
   );

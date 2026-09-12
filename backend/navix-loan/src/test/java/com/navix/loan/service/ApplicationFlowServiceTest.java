@@ -78,6 +78,8 @@ class ApplicationFlowServiceTest {
     private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
     @Mock
     private com.navix.loan.repository.ApplicationReferenceRepository referenceRepository;
+    @Mock
+    private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
 
     private ApplicationFlowService flow;
     private final List<ApplicationEvent> events = new ArrayList<>();
@@ -85,7 +87,8 @@ class ApplicationFlowServiceTest {
     @BeforeEach
     void setUp() {
         flow = new ApplicationFlowService(applicationRepository, eventRepository,
-                new EligibilityService(applicationRepository, riskPort), loanService, staffDirectory,
+                new EligibilityService(applicationRepository, limitOverrideRepository, riskPort),
+                loanService, staffDirectory,
                 loanRepository, paymentRepository, profileRepository, rejectionRepository,
                 documentRepository, verificationRepository, referenceRepository, new LoanMath(),
                 event -> {}, referralService, dsaCommissionService);
