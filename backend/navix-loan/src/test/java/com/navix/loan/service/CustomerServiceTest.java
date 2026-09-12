@@ -516,6 +516,57 @@ class CustomerServiceTest {
                 any(com.navix.common.notification.event.SanctionedAmountRevisedEvent.class));
     }
 
+    // ---- eligible-limit override (V69) ---------------------------------------------
+
+    @Test
+    void setLimitOverrideStoresTheLimitAndNotifiesTheBorrowerOfAnIncrease() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        when(limitOverrideRepository.findById(9000001L)).thenReturn(Optional.empty());
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+
+        service.setLimitOverride(9000001L, 2_000_000L, "top performer");
+
+        verify(limitOverrideRepository).save(any());
+        verify(changeLogRepository).save(any());   // audited like every admin correction
+        verify(eventPublisher).publishEvent(
+                any(com.navix.common.notification.event.LoanLimitRevisedEvent.class));
+    }
+
+    /** Clearing the override is not something to push at a borrower. */
+    @Test
+    void clearingTheLimitOverrideDeletesItAndNotifiesNobody() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        com.navix.loan.entity.CustomerLimitOverride ov = new com.navix.loan.entity.CustomerLimitOverride();
+        ov.setCustomerId(9000001L);
+        ov.setLimitPaise(2_000_000L);
+        when(limitOverrideRepository.findById(9000001L)).thenReturn(Optional.of(ov));
+        when(applicationRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+
+        service.setLimitOverride(9000001L, null, null);
+
+        verify(limitOverrideRepository).deleteById(9000001L);
+        verify(eventPublisher, org.mockito.Mockito.never()).publishEvent(
+                any(com.navix.common.notification.event.LoanLimitRevisedEvent.class));
+    }
+
+    @Test
+    void setLimitOverrideRejectedBelowTheMinimumLoan() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+
+        assertThatThrownBy(() -> service.setLimitOverride(9000001L, 50_000L, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("minimum");
+    }
+
+    @Test
+    void setLimitOverrideRejectedForNonAdmin() {
+        ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));
+
+        assertThatThrownBy(() -> service.setLimitOverride(9000001L, 2_000_000L, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ADMIN");
+    }
+
     @Test
     void deleteCustomerRejectedForNonAdmin() {
         ActorContext.set(new CurrentActor("7", "Acc", "ACCOUNTANT"));

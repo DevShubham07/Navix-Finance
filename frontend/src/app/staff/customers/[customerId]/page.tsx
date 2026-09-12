@@ -369,10 +369,16 @@ function LimitOverrideCard({
   return (
     <Card title="Maximum loan amount (admin)" icon={<IndianRupee size={16} />}>
       <p className="mb-3 text-xs text-muted">
-        Current limit: <span className="font-mono text-ink">{paiseToINR(currentLimitPaise)}</span>{" "}
-        {overridePaise != null ? "(set by an admin)" : "(25% of monthly salary)"}. A limit set here
-        sticks — it survives a salary re-check and future re-borrows — and applies to every
-        application that has not been disbursed yet.
+        Current limit:{" "}
+        <span className="font-mono text-ink">
+          {paiseToINR(overridePaise ?? currentLimitPaise)}
+        </span>{" "}
+        {overridePaise != null ? "— set by an admin" : "— 25% of monthly salary"}.
+        {overridePaise != null && currentLimitPaise != null && currentLimitPaise !== overridePaise
+          ? ` The salary rule alone would give ${paiseToINR(currentLimitPaise)}.`
+          : ""}{" "}
+        A limit set here sticks — it survives a salary re-check and carries into future re-borrows,
+        raising what the borrower can actually draw. They are emailed when it increases.
       </p>
       <Input
         label="Maximum amount (₹)"

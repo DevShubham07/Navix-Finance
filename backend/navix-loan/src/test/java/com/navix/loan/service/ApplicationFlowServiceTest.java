@@ -857,6 +857,33 @@ class ApplicationFlowServiceTest {
     }
 
     /**
+     * An ADMIN limit override governs the ceiling a reborrow carries (V69). Without this the
+     * returning borrower re-inherits the PRIOR sanction, and since the offer journey enforces
+     * sanctionedAmountPaise — not the eligible limit — a raised limit could never be drawn.
+     */
+    @Test
+    void reapplyCarriesTheAdminLimitOverrideInsteadOfThePriorSanction() {
+        actor("7", "BORROWER");
+        LoanApplication prior = priorApp();
+        prior.setSanctionedAmountPaise(1_250_000L);   // previously sanctioned Rs.12,500
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(prior));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        Loan closed = loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(15));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(closed));
+        when(paymentRepository.findByLoanId(50L)).thenReturn(List.of());
+        com.navix.loan.entity.CustomerLimitOverride ov = new com.navix.loan.entity.CustomerLimitOverride();
+        ov.setCustomerId(7L);
+        ov.setLimitPaise(2_000_000L);                 // admin raised them to Rs.20,000
+        when(limitOverrideRepository.findById(7L)).thenReturn(Optional.of(ov));
+
+        LoanApplication out = flow.reborrow();
+
+        assertThat(out.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+        assertThat(out.getSanctionedAmountPaise()).isEqualTo(2_000_000L); // the override, not 1_250_000
+        assertThat(out.getEligibleLimit()).isEqualTo(2_000_000L);
+    }
+
+    /**
      * A clean returning borrower whose prior file carried a credit sanction is re-sanctioned on the
      * spot (V47, decisions 45/46) — the ceiling, the account and the evidence come with them, so the
      * only thing they re-walk is the short offer journey. The repayment date is recomputed, never

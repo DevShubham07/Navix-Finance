@@ -152,6 +152,14 @@ public class NotificationTemplates {
                         + "has been revised to {amount} (previously {previousAmount}). Log in to review "
                         + "your offer.\n\n— DhanBoost");
 
+        inApp(NotificationType.LOAN_LIMIT_REVISED, "Your borrowing limit has increased",
+                "Good news — you can now borrow up to {limit}. Open DhanBoost to take an advance.");
+        email(NotificationType.LOAN_LIMIT_REVISED, "Your DhanBoost borrowing limit is now {limit}",
+                "Hi {name},\n\nGood news — your borrowing limit has been increased to "
+                        + "{limit}. You can take an advance up to this amount, subject to the usual "
+                        + "checks; your fee, interest and salary-linked repayment date are unchanged."
+                        + "\n\nLog in to borrow.\n\n— DhanBoost");
+
         // ---------------- DISBURSEMENT ----------------
         inApp(NotificationType.LOAN_APPLIED_FAST_TRACK, "Fast-track disbursal",
                 "Pre-approved application #{applicationId} is ready for disbursement (fast-track).");

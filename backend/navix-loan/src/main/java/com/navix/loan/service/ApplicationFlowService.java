@@ -257,7 +257,13 @@ public class ApplicationFlowService {
      */
     private void carryOverForReapply(LoanApplication app, LoanApplication source) {
         app.setReappliedFrom(source.getId());
-        app.setSanctionedAmountPaise(source.getSanctionedAmountPaise());
+        // An ADMIN limit override governs the carried ceiling (V69). Without this, a returning
+        // borrower re-inherits the PRIOR sanction and the raised limit is inert — the offer journey
+        // enforces sanctionedAmountPaise, not the eligible limit, so they could never draw the
+        // higher amount. An explicit override is the admin's decision, up or down.
+        Long limitOverride = eligibilityService.overrideOf(app.getCustomerId()).orElse(null);
+        app.setSanctionedAmountPaise(
+                limitOverride != null ? limitOverride : source.getSanctionedAmountPaise());
         app.setSanctionedBy(source.getSanctionedBy());
         app.setSanctionedAt(Instant.now());
         app.setSanctionRemarks("Carried over from application " + source.getId());

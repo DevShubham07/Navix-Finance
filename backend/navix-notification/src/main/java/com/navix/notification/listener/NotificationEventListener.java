@@ -15,6 +15,7 @@ import com.navix.common.notification.event.RepaymentRecordedEvent;
 import com.navix.common.notification.event.RepaymentRejectedEvent;
 import com.navix.common.notification.event.RepaymentVerifiedEvent;
 import com.navix.common.notification.event.SanctionLetterSignedEvent;
+import com.navix.common.notification.event.LoanLimitRevisedEvent;
 import com.navix.common.notification.event.SanctionedAmountRevisedEvent;
 import com.navix.common.notification.event.SettlementApprovedEvent;
 import com.navix.common.notification.event.SettlementProposedEvent;
@@ -209,6 +210,16 @@ public class NotificationEventListener {
                 .applicationId(e.applicationId())
                 .put("amount", NotificationFormat.inr(e.newAmountPaise()))
                 .put("previousAmount", NotificationFormat.inr(e.previousAmountPaise()))
+                .build());
+    }
+
+    /** An ADMIN raised the borrower's eligible limit — tell them what they can now borrow. */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onLoanLimitRevised(LoanLimitRevisedEvent e) {
+        dispatcher.dispatch(NotificationType.LOAN_LIMIT_REVISED, NotificationContext.builder()
+                .customerId(e.customerId())
+                .put("limit", NotificationFormat.inr(e.newLimitPaise()))
                 .build());
     }
 

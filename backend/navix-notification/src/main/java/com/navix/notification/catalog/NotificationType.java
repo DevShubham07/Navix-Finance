@@ -77,6 +77,10 @@ public enum NotificationType {
     // template would be needed and every DHANBOOST_*_V1 registration is still pending operator
     // approval, so an SMS leg would silently fail (same rationale as SANCTION_LETTER_SIGNED).
     SANCTIONED_AMOUNT_REVISED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
+    // An ADMIN raised the borrower's eligible limit — the ceiling on what they may be advanced
+    // (V69). Increases only; a cleared/reduced limit is never pushed. No SMS for the same reason as
+    // SANCTIONED_AMOUNT_REVISED above: every DHANBOOST_*_V1 DLT registration is still pending.
+    LOAN_LIMIT_REVISED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
 
     // ---- DISBURSEMENT ----
     // Every route into DISBURSEMENT_PENDING (fast-track reborrow, offer acceptance, and a retry after

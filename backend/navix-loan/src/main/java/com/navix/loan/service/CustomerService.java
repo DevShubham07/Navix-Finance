@@ -2,6 +2,7 @@ package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
+import com.navix.common.notification.event.LoanLimitRevisedEvent;
 import com.navix.common.notification.event.SanctionedAmountRevisedEvent;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.BorrowerIdentityPort;
@@ -832,6 +833,14 @@ public class CustomerService {
         CustomerProfile profile = latestProfile(applicationRepository.findByCustomerId(customerId));
         eligibilityService.recomputeForCustomer(customerId,
                 profile != null ? profile.getMonthlySalaryPaise() : null);
+
+        // Tell the borrower only when the ceiling went UP. A cleared or reduced limit is not
+        // something to push at them, and the offer/sanction notices cover the money they can draw.
+        boolean increased = newLimitPaise != null && (previous == null || newLimitPaise > previous);
+        if (increased) {
+            eventPublisher.publishEvent(new LoanLimitRevisedEvent(
+                    customerId, previous, newLimitPaise, Instant.now()));
+        }
 
         return applicationRepository.findByCustomerId(customerId).stream()
                 .max(Comparator.comparing(LoanApplication::getId))

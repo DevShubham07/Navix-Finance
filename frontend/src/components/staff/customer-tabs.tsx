@@ -364,12 +364,17 @@ function EmploymentTab({ c, customerId }: { c: CustomerDetail; customerId: numbe
             k="Increment %"
             v={p?.incrementPercentage != null ? `${p.incrementPercentage}%` : null}
           />
+          {/* An ADMIN override is the customer's live ceiling and outranks the salary rule; the
+              latest application's stored figure is only right when no override is set (and goes
+              stale once that application is disbursed, since the recompute skips it). */}
           <KV
             k="Eligible limit"
             v={
-              latestApp?.eligibleLimitPaise != null
-                ? paiseToINR(latestApp.eligibleLimitPaise)
-                : null
+              c.limitOverridePaise != null
+                ? `${paiseToINR(c.limitOverridePaise)} (set by admin)`
+                : latestApp?.eligibleLimitPaise != null
+                  ? paiseToINR(latestApp.eligibleLimitPaise)
+                  : null
             }
           />
         </Section>
