@@ -107,7 +107,15 @@ public final class ApplicationDtos {
             String creditDecidedByName,
             String disbursedByName,
             /** The collections executive working this loan, when a case has been assigned. */
-            String collectionOfficerName) {
+            String collectionOfficerName,
+            /**
+             * What this customer may borrow RIGHT NOW, in paise — the ADMIN limit override when one is
+             * set, else this application's own stored eligible limit (V69). Borrower-facing: a returning
+             * borrower's newest application is a CLOSED one whose stored limit and sanctioned amount are
+             * both historical, so "available to borrow" must not be read off it. Populated only by
+             * {@link #withAvailableLimit} on the borrower read paths; null elsewhere.
+             */
+            Long availableLimitPaise) {
 
         public static ApplicationView of(LoanApplication a) {
             return of(a, null, null);
@@ -157,7 +165,8 @@ public final class ApplicationDtos {
                     a.getMarkedPendingAt(), a.getPendingReason(),
                     a.getDisbursalAccountNumber(), a.getDisbursalIfsc(), a.getDisbursalHolderName(),
                     a.getDisbursalBank(), a.getDisbursalAccountChanged(),
-                    a.getDisbursalAccountVerified(), null, null, a.getCreatedAt(), null, null, null);
+                    a.getDisbursalAccountVerified(), null, null, a.getCreatedAt(), null, null, null,
+                    null);
         }
 
         /**
@@ -175,7 +184,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise);
         }
 
         /**
@@ -193,7 +202,24 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise);
+        }
+
+        /**
+         * Wither for the borrower-facing "available to borrow" figure. Separate from {@code of(...)}
+         * for the same reason as the others: it costs an override lookup per application, which only
+         * the borrower's own read paths need.
+         */
+        public ApplicationView withAvailableLimit(Long availableLimitPaise) {
+            return new ApplicationView(id, customerId, status, amountRequestedPaise, eligibleLimitPaise,
+                    purpose, assignedExecutiveId, loanId, salaryCreditDay, fastTrack, creditScore,
+                    starRating, recommendation, customerName, customerMobile, pan, salaryAccountNumber,
+                    salaryIfsc, loanStatus, loanDueDate, sanctionedAmountPaise, approvedRepaymentDate,
+                    sanctionTenureDays, sanctionRemarks, sanctionedAt, markedPendingAt, pendingReason,
+                    disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
+                    disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
+                    currentStageEnteredAt, createdAt,
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise);
         }
     }
 

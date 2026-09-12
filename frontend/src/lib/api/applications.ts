@@ -50,6 +50,9 @@ export interface ApplicationView {
   status: ApplicationStatus;
   amountRequestedPaise: number | null;
   eligibleLimitPaise: number | null;
+  /** What this customer may borrow right now — the admin limit override when set, else the
+   *  application's own eligible limit. Populated on the borrower's own read paths (V69). */
+  availableLimitPaise?: number | null;
   purpose: string | null;
   assignedExecutiveId: number | null;
   loanId: number | null;

@@ -91,7 +91,11 @@ export default function ReloanPage() {
     }
   };
 
-  const limitPaise = app ? preferredApprovedAmountPaise(app) : null;
+  // "Available to borrow now" must be the customer's CURRENT ceiling, not the prior advance's.
+  // The app resolved here is their newest — which for a returning borrower is a CLOSED one whose
+  // sanctioned amount and stored limit are both historical, so an admin-raised limit would never
+  // show until they tapped through. availableLimitPaise is the server's live figure (V69).
+  const limitPaise = app ? (app.availableLimitPaise ?? preferredApprovedAmountPaise(app)) : null;
 
   return (
     <div className="container max-w-content py-10">

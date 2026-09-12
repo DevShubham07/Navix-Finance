@@ -103,6 +103,26 @@ class EligibilityServiceTest {
         assertThat(live.getEligibleLimit()).isEqualTo(SALARY_RULE_LIMIT);
     }
 
+    /**
+     * What the borrower's own reads surface as "available to borrow". Their newest application is a
+     * CLOSED one whose stored limit is historical, so the override must win — otherwise an
+     * admin-raised limit is invisible until they tap through the reborrow.
+     */
+    @Test
+    void overrideOfIsTheBorrowerFacingAvailableLimit() {
+        overrideExists();
+
+        assertThat(service.overrideOf(7L)).contains(OVERRIDE);
+    }
+
+    @Test
+    void overrideOfIsEmptyWithoutAnOverrideAndForANullCustomer() {
+        when(overrideRepository.findById(7L)).thenReturn(Optional.empty());
+
+        assertThat(service.overrideOf(7L)).isEmpty();
+        assertThat(service.overrideOf(null)).isEmpty();
+    }
+
     @Test
     void recomputeIsANoOpWhenThereIsNeitherOverrideNorSalary() {
         when(overrideRepository.findById(7L)).thenReturn(Optional.empty());

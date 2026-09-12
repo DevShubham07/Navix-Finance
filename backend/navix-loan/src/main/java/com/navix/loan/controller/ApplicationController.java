@@ -36,6 +36,7 @@ import com.navix.loan.service.CustomerReviewService;
 import com.navix.loan.service.ApplicationFlowService;
 import com.navix.loan.service.ApplicationVerificationService;
 import com.navix.loan.service.CreditBriefService;
+import com.navix.loan.service.EligibilityService;
 import com.navix.loan.service.JourneyService;
 import com.navix.loan.service.OfferService;
 import jakarta.validation.Valid;
@@ -78,6 +79,7 @@ public class ApplicationController {
     private final com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
     private final LoanRepository loanRepository;
     private final ApplicationEventRepository eventRepository;
+    private final EligibilityService eligibilityService;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
@@ -156,7 +158,16 @@ public class ApplicationController {
     /** The calling borrower's own applications (newest first) — for their account "loans/transactions" views. */
     @GetMapping("/mine")
     public ApiResponse<List<ApplicationView>> mine() {
-        return ApiResponse.ok(flow.myApplications().stream().map(ApplicationView::of).toList());
+        // availableLimitPaise: one override lookup for the caller, applied to each of their rows. A
+        // returning borrower's newest application is CLOSED, so its stored limit/sanction are both
+        // historical — the borrower UI must read "available to borrow" from this instead (V69).
+        List<LoanApplication> mine = flow.myApplications();
+        Long available = mine.isEmpty() ? null
+                : eligibilityService.overrideOf(mine.get(0).getCustomerId()).orElse(null);
+        return ApiResponse.ok(mine.stream()
+                .map(a -> ApplicationView.of(a).withAvailableLimit(
+                        available != null ? available : a.getEligibleLimit()))
+                .toList());
     }
 
     /** ADMIN-only register: EVERY application — complete and incomplete — with full KYC detail and an
@@ -186,7 +197,8 @@ public class ApplicationController {
     public ApiResponse<ApplicationView> get(@PathVariable Long id) {
         requireBorrowerOwnsOrStaff(id);
         LoanApplication app = flow.get(id);
-        ApplicationView view = ApplicationView.of(app);
+        ApplicationView view = ApplicationView.of(app).withAvailableLimit(
+                eligibilityService.overrideOf(app.getCustomerId()).orElse(app.getEligibleLimit()));
         if (!"BORROWER".equals(ActorContext.get().role())) {
             // Staff-only: resolve the real assignee name + current-stage-entered timestamp (never
             // leaked to the borrower-facing read, mirrors /mine).
