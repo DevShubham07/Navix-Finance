@@ -8,12 +8,14 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LeadsTracker } from "@/components/staff/leads-tracker";
+import { OutcomeChip, OUTCOME_LABEL } from "@/components/staff/lead-outcome";
 import { hasPermission } from "@/lib/auth/rbac";
 import {
   leadsApi,
   adminApi,
   paiseToINR,
   type LeadCallStatus,
+  type LeadOutcome,
   type LeadSource,
   type LeadView,
 } from "@/lib/api/applications";
@@ -53,6 +55,7 @@ export default function AdminLeadsPage() {
   const [q, setQ] = React.useState("");
   const [callStatus, setCallStatus] = React.useState<LeadCallStatus | "">("");
   const [source, setSource] = React.useState<LeadSource | "">("");
+  const [leadOutcome, setLeadOutcome] = React.useState<LeadOutcome | "">("");
 
   const staffQ = useQuery({
     queryKey: ["admin-staff"],
@@ -71,6 +74,7 @@ export default function AdminLeadsPage() {
     q: q || undefined,
     callStatus: callStatus || undefined,
     source: source || undefined,
+    leadOutcome: leadOutcome || undefined,
   };
 
   const stats = useQuery({
@@ -134,6 +138,8 @@ export default function AdminLeadsPage() {
               value: (r) => (r.qualityRating != null ? String(r.qualityRating) : ""),
             },
             { header: "Remarks", value: (r) => r.remarks ?? "" },
+            { header: "Outcome", value: (r) => r.leadOutcome },
+            { header: "Note for DSA", value: (r) => r.dsaNote ?? "" },
             { header: "Created by", value: (r) => r.createdByStaffName ?? String(r.createdByStaffId) },
             { header: "Created at", value: (r) => r.createdAt },
           ]}
@@ -197,6 +203,19 @@ export default function AdminLeadsPage() {
           ))}
         </Select>
         <Select
+          label="Outcome"
+          className="!mb-0"
+          value={leadOutcome}
+          onChange={(e) => setLeadOutcome(e.target.value as LeadOutcome | "")}
+        >
+          <option value="">All</option>
+          {(["NEW", "OUTREACHED", "REJECTED", "CONFIRMED"] as LeadOutcome[]).map((o) => (
+            <option key={o} value={o}>
+              {OUTCOME_LABEL[o]}
+            </option>
+          ))}
+        </Select>
+        <Select
           label="Source"
           className="!mb-0"
           value={source}
@@ -239,8 +258,10 @@ export default function AdminLeadsPage() {
                 <th>Pincode</th>
                 <th>Source</th>
                 <th>Status</th>
+                <th>Outcome</th>
                 <th>★</th>
                 <th>Remarks</th>
+                <th>Note for DSA</th>
                 <th>By</th>
                 <th>Created</th>
               </tr>
@@ -264,9 +285,13 @@ export default function AdminLeadsPage() {
                     {row.sourceDetail ? ` · ${row.sourceDetail}` : ""}
                   </td>
                   <td className="text-xs">{row.callStatus.replace(/_/g, " ")}</td>
+                  <td><OutcomeChip outcome={row.leadOutcome} /></td>
                   <td>{row.qualityRating ? `${row.qualityRating}★` : "—"}</td>
-                  <td className="max-w-[200px] truncate text-navy/70">
+                  <td className="max-w-[200px] truncate text-navy/70" title={row.remarks ?? undefined}>
                     {row.remarks || "—"}
+                  </td>
+                  <td className="max-w-[200px] truncate text-navy/70" title={row.dsaNote ?? undefined}>
+                    {row.dsaNote || "—"}
                   </td>
                   <td className="text-navy/70">
                     {row.createdByStaffName || row.createdByStaffId}

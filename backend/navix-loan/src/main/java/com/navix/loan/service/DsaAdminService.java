@@ -76,17 +76,30 @@ public class DsaAdminService {
     }
 
     @Transactional(readOnly = true)
-    public List<AdminDsaLeadView> leads(Long dsaId, LocalDate from, LocalDate to, String q) {
+    public List<AdminDsaLeadView> leads(Long dsaId, LocalDate from, LocalDate to, String q,
+            String attribution) {
         requireAdmin();
+        String scope = blankToNull(attribution) == null
+                ? "ALL" : attribution.trim().toUpperCase(Locale.ROOT);
         Instant fromInst = from == null ? null : from.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant toInst = to == null ? null : to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         String query = blankToNull(q);
         Specification<Lead> spec = (root, ignored, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            // DSA leads only — this register is the ADMIN-only counterpart of /staff/leads.
-            predicates.add(cb.isNotNull(root.get("ownerDsaId")));
+            // Was `isNotNull(ownerDsaId)` unconditionally, which hid every imported lead from this
+            // register: an import deliberately leaves owner_dsa_id null so it can never manufacture
+            // commission, so the one tab meant to show DSA lead activity showed none of it (V70).
+            // ENTERED = commission-eligible, UPLOADED = came from a file, ALL = both.
+            if ("ENTERED".equals(scope)) {
+                predicates.add(cb.isNotNull(root.get("ownerDsaId")));
+            } else if ("UPLOADED".equals(scope)) {
+                predicates.add(cb.isNull(root.get("ownerDsaId")));
+            }
             if (dsaId != null) {
-                predicates.add(cb.equal(root.get("ownerDsaId"), dsaId));
+                // Either key: a DSA "has" a lead they entered (owner) or one they uploaded (creator).
+                predicates.add(cb.or(
+                        cb.equal(root.get("ownerDsaId"), dsaId),
+                        cb.equal(root.get("createdByStaffId"), dsaId)));
             }
             if (fromInst != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromInst));
@@ -103,9 +116,22 @@ public class DsaAdminService {
             return cb.and(predicates.toArray(Predicate[]::new));
         };
         Map<Long, String> names = new HashMap<>();
-        return leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "id")).stream()
-                .map(l -> AdminDsaLeadView.of(l,
-                        names.computeIfAbsent(l.getOwnerDsaId(), this::nameOf)))
+        List<Lead> rows = leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "id"));
+        // One attribution query for the page — this register now includes imported leads, which
+        // arrive in bulk, so resolving CONFIRMED per row would be one round trip each.
+        Map<Long, AttributedApplication> attributions =
+                attributionService.attributedApplications(rows);
+        return rows.stream()
+                .map(l -> {
+                    AttributedApplication a = attributions.get(l.getId());
+                    String outcome = a != null && a.application() != null
+                            ? "CONFIRMED" : l.getLeadOutcome();
+                    return AdminDsaLeadView.of(l,
+                            l.getOwnerDsaId() == null
+                                    ? null : names.computeIfAbsent(l.getOwnerDsaId(), this::nameOf),
+                            names.computeIfAbsent(l.getCreatedByStaffId(), this::nameOf),
+                            outcome);
+                })
                 .toList();
     }
 
@@ -247,7 +273,11 @@ public class DsaAdminService {
             lead.setEmail(req.email().isBlank() ? null : req.email().trim());
         }
         Lead saved = leadRepository.save(lead);
-        return AdminDsaLeadView.of(saved, nameOf(saved.getOwnerDsaId()));
+        AttributedApplication a = attributionService.attributedApplication(saved);
+        return AdminDsaLeadView.of(saved,
+                saved.getOwnerDsaId() == null ? null : nameOf(saved.getOwnerDsaId()),
+                nameOf(saved.getCreatedByStaffId()),
+                a.application() != null ? "CONFIRMED" : saved.getLeadOutcome());
     }
 
     @Transactional(readOnly = true)

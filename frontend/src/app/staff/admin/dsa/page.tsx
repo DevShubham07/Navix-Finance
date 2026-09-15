@@ -8,9 +8,11 @@ import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LeadCsvImport } from "@/components/staff/lead-csv-import";
+import { OutcomeChip } from "@/components/staff/lead-outcome";
 import { hasPermission } from "@/lib/auth/rbac";
 import { formatDateTime } from "@/lib/utils";
 import {
+  type DsaLeadAttribution,
   adminDsaApi,
   paiseToINR,
   type AdminDsaRosterView,
@@ -167,21 +169,33 @@ function RosterTab({
   );
 }
 
+/** Who this lead belongs to: its owning DSA, else whoever uploaded the file it came from. */
+function dsaLabel(l: AdminDsaLeadView): string {
+  if (l.ownerDsaName) return l.ownerDsaName;
+  if (l.ownerDsaId != null) return `#${l.ownerDsaId}`;
+  return l.createdByStaffName ?? `#${l.createdByStaffId}`;
+}
+
 function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
   const qc = useQueryClient();
   const [dsaId, setDsaId] = React.useState<string>("");
   const [q, setQ] = React.useState("");
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
+  // Imported leads carry no owner_dsa_id (so a bulk upload can never manufacture commission), and
+  // this register used to filter on exactly that column — which hid every uploaded lead from the one
+  // tab meant to show DSA lead activity. Default to showing both.
+  const [attribution, setAttribution] = React.useState<DsaLeadAttribution | "">("");
 
   const leads = useQuery({
-    queryKey: ["admin-dsa-leads", dsaId, q, from, to],
+    queryKey: ["admin-dsa-leads", dsaId, q, from, to, attribution],
     queryFn: () =>
       adminDsaApi.leads({
         dsaId: dsaId ? Number(dsaId) : undefined,
         q: q || undefined,
         from: from || undefined,
         to: to || undefined,
+        attribution: attribution || undefined,
       }),
   });
 
@@ -199,6 +213,16 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
             </option>
           ))}
         </Select>
+        <Select
+          label="Attribution"
+          className="!mb-0"
+          value={attribution}
+          onChange={(e) => setAttribution(e.target.value as DsaLeadAttribution | "")}
+        >
+          <option value="">Entered + uploaded</option>
+          <option value="ENTERED">Entered (earns commission)</option>
+          <option value="UPLOADED">Uploaded from a file</option>
+        </Select>
         <Input label="Search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, PAN or mobile" className="!mb-0" />
         <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="!mb-0" />
         <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="!mb-0" />
@@ -206,7 +230,10 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
           title="DSA lead register"
           fileBase="dhanboost-dsa-leads"
           columns={[
-            { header: "DSA", value: (l: AdminDsaLeadView) => l.ownerDsaName ?? `#${l.ownerDsaId}` },
+            { header: "DSA", value: (l: AdminDsaLeadView) => dsaLabel(l) },
+            { header: "Attribution", value: (l) => (l.owned ? "Entered" : "Uploaded") },
+            { header: "Outcome", value: (l) => l.leadOutcome },
+            { header: "Note for DSA", value: (l) => l.dsaNote ?? "" },
             { header: "PAN", value: (l) => l.pan },
             { header: "Name", value: (l) => l.name },
             { header: "Mobile", value: (l) => l.mobile },
@@ -238,12 +265,13 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                 <tr>
                   <th>S.No.</th>
                   <th>DSA</th>
+                  <th>Attribution</th>
                   <th>PAN</th>
                   <th>Name</th>
                   <th>Mobile</th>
-                  <th>Email</th>
+                  <th>Outcome</th>
+                  <th>Note for DSA</th>
                   <th>City</th>
-                  <th>Employer</th>
                   <th>Created</th>
                 </tr>
               </thead>
@@ -251,19 +279,27 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                 {pageRows.map((l, i) => (
                   <tr key={l.id}>
                     <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
-                    <td className="text-ink">{l.ownerDsaName ?? `#${l.ownerDsaId}`}</td>
-                    <td className="font-mono text-xs">{l.pan}</td>
+                    <td className="text-ink">{dsaLabel(l)}</td>
+                    <td>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        l.owned ? "bg-navy-tint text-navy" : "bg-grey-100 text-muted"}`}>
+                        {l.owned ? "Entered" : "Uploaded"}
+                      </span>
+                    </td>
+                    <td className="font-mono text-xs">{l.pan ?? "—"}</td>
                     <td className="text-ink">{l.name}</td>
                     <td className="font-mono text-xs">{l.mobile}</td>
-                    <td className="text-muted">{l.email ?? "—"}</td>
+                    <td><OutcomeChip outcome={l.leadOutcome} /></td>
+                    <td className="max-w-[16rem] truncate text-muted" title={l.dsaNote ?? undefined}>
+                      {l.dsaNote ?? "—"}
+                    </td>
                     <td className="text-muted">{l.city ?? "—"}</td>
-                    <td className="text-muted">{l.employer ?? "—"}</td>
                     <td className="whitespace-nowrap text-muted">{formatDateTime(l.createdAt)}</td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center text-muted">No leads match these filters.</td>
+                    <td colSpan={10} className="text-center text-muted">No leads match these filters.</td>
                   </tr>
                 )}
               </tbody>

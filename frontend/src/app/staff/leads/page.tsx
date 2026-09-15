@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, Phone, Star } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { OutcomeChip, OUTCOME_LABEL } from "@/components/staff/lead-outcome";
 import { hasPermission } from "@/lib/auth/rbac";
 import { normalizeMobile } from "@/lib/utils";
 import {
@@ -13,6 +14,8 @@ import {
   rupeesToPaise,
   paiseToINR,
   type LeadCallStatus,
+  type LeadOutcome,
+  SETTABLE_LEAD_OUTCOMES,
   type LeadSource,
   type LeadView,
   type CreateLeadInput,
@@ -116,6 +119,7 @@ export default function StaffLeadsPage() {
                 <th>Mobile</th>
                 <th>Source</th>
                 <th>Status</th>
+                <th>Outcome</th>
                 <th>★</th>
                 <th>City</th>
               </tr>
@@ -123,7 +127,7 @@ export default function StaffLeadsPage() {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-navy/40">
+                  <td colSpan={8} className="py-8 text-center text-navy/40">
                     {list.isLoading ? "Loading…" : "No leads yet — add one above."}
                   </td>
                 </tr>
@@ -144,6 +148,7 @@ export default function StaffLeadsPage() {
                   <td>
                     <StatusChip status={row.callStatus} />
                   </td>
+                  <td><OutcomeChip outcome={row.leadOutcome} /></td>
                   <td>{row.qualityRating ? `${row.qualityRating}★` : "—"}</td>
                   <td className="staff-cell text-navy/70">{row.city || "—"}</td>
                 </tr>
@@ -305,12 +310,17 @@ function DispositionPanel({
   const [status, setStatus] = React.useState<LeadCallStatus>("NOT_CALLED");
   const [rating, setRating] = React.useState<number | "">("");
   const [remarks, setRemarks] = React.useState("");
+  const [outcome, setOutcome] = React.useState<LeadOutcome>("NEW");
+  const [dsaNote, setDsaNote] = React.useState("");
 
   React.useEffect(() => {
     if (!lead) return;
     setStatus(lead.callStatus);
     setRating(lead.qualityRating ?? "");
     setRemarks(lead.remarks ?? "");
+    // CONFIRMED is derived, never settable — fall back to the nearest settable value in the picker.
+    setOutcome(lead.leadOutcome === "CONFIRMED" ? "NEW" : lead.leadOutcome);
+    setDsaNote(lead.dsaNote ?? "");
   }, [lead]);
 
   const save = useMutation({
@@ -320,6 +330,14 @@ function DispositionPanel({
         qualityRating: rating === "" ? null : Number(rating),
         remarks: remarks.trim() || undefined,
       }),
+    onSuccess: onSaved,
+  });
+
+  // A SEPARATE mutation from the disposition save on purpose: `disposition` is replace-semantics and
+  // would null these two on every call, so they get their own endpoint and their own button.
+  const saveOutcome = useMutation({
+    mutationFn: () =>
+      leadsApi.setOutcome(lead!.id, { leadOutcome: outcome, dsaNote: dsaNote.trim() }),
     onSuccess: onSaved,
   });
 
@@ -392,6 +410,59 @@ function DispositionPanel({
         Save disposition
       </button>
       {save.isError && <p className="mt-2 text-sm text-red-700">{errMessage(save.error)}</p>}
+
+      <div className="mt-4 border-t border-line pt-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-ink">Outcome</span>
+          {lead.leadOutcome === "CONFIRMED" && <OutcomeChip outcome="CONFIRMED" />}
+        </div>
+        {lead.leadOutcome === "CONFIRMED" ? (
+          <p className="mb-2 text-xs text-navy/60">
+            This lead has an application against it, so it shows as Confirmed wherever it appears.
+            That is derived and overrides whatever is set below.
+          </p>
+        ) : null}
+        <Select
+          label="Set outcome"
+          value={outcome}
+          onChange={(e) => setOutcome(e.target.value as LeadOutcome)}
+        >
+          {SETTABLE_LEAD_OUTCOMES.map((o) => (
+            <option key={o} value={o}>
+              {OUTCOME_LABEL[o]}
+            </option>
+          ))}
+        </Select>
+
+        <div className="field mt-3">
+          <label htmlFor="lead-dsa-note">Note for the DSA</label>
+          <textarea
+            id="lead-dsa-note"
+            value={dsaNote}
+            onChange={(e) => setDsaNote(e.target.value)}
+            placeholder="What should the agent who sent us this lead know?"
+          />
+          {/* Staff must know who reads this before they write in it — it is the whole reason this is
+              a separate field from Remarks rather than a reuse of it. */}
+          <p className="mt-1 text-[8.8px] text-navy/60">
+            Visible to the DSA who uploaded this lead. Remarks above stay internal.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="btn btn-outline btn-block mt-2 disabled:opacity-50"
+          disabled={saveOutcome.isPending}
+          onClick={() => saveOutcome.mutate()}
+        >
+          {saveOutcome.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+          Save outcome &amp; note
+        </button>
+        {saveOutcome.isError && (
+          <p className="mt-2 text-sm text-red-700">{errMessage(saveOutcome.error)}</p>
+        )}
+      </div>
+
       {lead.notes && (
         <p className="mt-3 text-xs text-navy/50">
           <span className="font-semibold">Intake notes:</span> {lead.notes}

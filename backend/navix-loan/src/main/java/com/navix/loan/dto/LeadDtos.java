@@ -42,6 +42,16 @@ public final class LeadDtos {
             String notes) {
     }
 
+    /**
+     * Patch, not replace — a null field is left untouched, unlike {@link DispositionRequest}. That is
+     * why this is its own request rather than two more fields on the disposition body: the telecaller
+     * panel does not send these, and replace-semantics would null them on every save.
+     */
+    public record LeadOutcomeRequest(
+            @Size(max = 16) String leadOutcome,
+            @Size(max = 2000) String dsaNote) {
+    }
+
     public record DispositionRequest(
             @NotBlank String callStatus,
             @Min(1) @Max(5) Integer qualityRating,
@@ -67,9 +77,13 @@ public final class LeadDtos {
             String createdByStaffName,
             Instant createdAt,
             Instant updatedAt,
-            String pincode) {
+            String pincode,
+            /** NEW | OUTREACHED | REJECTED, or CONFIRMED when an attributed application exists. */
+            String leadOutcome,
+            /** The one note the uploading DSA can read. Never {@code remarks}, which stays internal. */
+            String dsaNote) {
 
-        public static LeadView of(Lead l, String staffName) {
+        public static LeadView of(Lead l, String staffName, String effectiveOutcome) {
             return new LeadView(
                     l.getId(),
                     l.getName(),
@@ -89,7 +103,9 @@ public final class LeadDtos {
                     staffName,
                     l.getCreatedAt(),
                     l.getUpdatedAt(),
-                    l.getPincode());
+                    l.getPincode(),
+                    effectiveOutcome,
+                    l.getDsaNote());
         }
     }
 

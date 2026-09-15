@@ -1996,6 +1996,16 @@ export const loansApi = {
 // Telecaller leads — routes under /api/staff/leads/*
 // ---------------------------------------------------------------------------
 
+/**
+ * A lead's outreach outcome — a different axis from `LeadCallStatus`, which records how a call
+ * ATTEMPT went. `CONFIRMED` is derived server-side from the attributed application and can never be
+ * set: a lead with no PAN can never reach it, because attribution is a PAN match (V70).
+ */
+export type LeadOutcome = "NEW" | "OUTREACHED" | "REJECTED" | "CONFIRMED";
+
+/** The values a human may actually pick; CONFIRMED is derived, never written. */
+export const SETTABLE_LEAD_OUTCOMES: readonly LeadOutcome[] = ["NEW", "OUTREACHED", "REJECTED"];
+
 export type LeadCallStatus =
   | "NOT_CALLED"
   | "CALLED"
@@ -2027,6 +2037,9 @@ export interface LeadView {
   createdAt: string;
   updatedAt: string | null;
   pincode?: string | null;
+  leadOutcome: LeadOutcome;
+  /** The one staff note the uploading DSA can read. Distinct from `remarks`, which stays internal. */
+  dsaNote: string | null;
 }
 
 export interface CreateLeadInput {
@@ -2070,6 +2083,7 @@ export interface LeadListParams {
   to?: string;
   minRating?: number;
   maxRating?: number;
+  leadOutcome?: LeadOutcome;
 }
 
 export interface LeadStats {
@@ -2144,6 +2158,7 @@ function leadsQuery(params?: LeadListParams): string {
   if (params.to) sp.set("to", params.to);
   if (params.minRating != null) sp.set("minRating", String(params.minRating));
   if (params.maxRating != null) sp.set("maxRating", String(params.maxRating));
+  if (params.leadOutcome) sp.set("leadOutcome", params.leadOutcome);
   const s = sp.toString();
   return s ? `?${s}` : "";
 }
@@ -2161,6 +2176,14 @@ export const leadsApi = {
 
   disposition: (id: number, body: DispositionInput) =>
     bff<LeadView>(`${LEADS_BASE}/${id}/disposition`, "PUT", body),
+
+  /**
+   * Set the outreach outcome and/or the DSA-visible note. A SEPARATE call from `disposition`, which
+   * is replace-semantics — sending these through it would null them on every save. Omit a field to
+   * leave it untouched; send an empty note to clear it.
+   */
+  setOutcome: (id: number, body: { leadOutcome?: LeadOutcome; dsaNote?: string }) =>
+    bff<LeadView>(`${LEADS_BASE}/${id}/outcome`, "PUT", body),
 
   stats: (params?: { from?: string; to?: string; createdBy?: number }) => {
     const sp = new URLSearchParams();
@@ -2205,6 +2228,11 @@ export interface DsaLeadView {
   status: DsaLeadStatus;
   netDisbursedPaise: number | null;
   commissionPaise: number | null;
+  leadOutcome: LeadOutcome;
+  /** Written by staff FOR this DSA. Read-only here. */
+  dsaNote: string | null;
+  /** True when this row came from a file the DSA uploaded — visible, but never commission-eligible. */
+  uploaded: boolean;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -2336,6 +2364,13 @@ export interface AdminDsaLeadView {
   notes: string | null;
   ownerDsaId: number | null;
   ownerDsaName: string | null;
+  createdByStaffId: number;
+  createdByStaffName: string | null;
+  /** False for an imported row: visible to its uploader, never commission-eligible. */
+  owned: boolean;
+  callStatus: LeadCallStatus | null;
+  leadOutcome: LeadOutcome;
+  dsaNote: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -2376,11 +2411,15 @@ export interface AdminOutreachView {
   createdAt: string;
 }
 
+/** ENTERED = commission-eligible, UPLOADED = came from a file, omitted = both. */
+export type DsaLeadAttribution = "ENTERED" | "UPLOADED";
+
 export interface AdminDsaLeadListParams {
   dsaId?: number;
   from?: string;
   to?: string;
   q?: string;
+  attribution?: DsaLeadAttribution;
 }
 
 const ADMIN_DSA_BASE = "/api/admin/dsa";
@@ -2392,6 +2431,7 @@ function adminDsaLeadsQuery(params?: AdminDsaLeadListParams): string {
   if (params.from) sp.set("from", params.from);
   if (params.to) sp.set("to", params.to);
   if (params.q) sp.set("q", params.q);
+  if (params.attribution) sp.set("attribution", params.attribution);
   const s = sp.toString();
   return s ? `?${s}` : "";
 }

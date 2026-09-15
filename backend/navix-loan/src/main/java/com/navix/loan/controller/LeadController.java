@@ -5,6 +5,7 @@ import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
 import com.navix.loan.dto.LeadDtos.ImportFileRequest;
 import com.navix.loan.dto.LeadDtos.ImportJobView;
+import com.navix.loan.dto.LeadDtos.LeadOutcomeRequest;
 import com.navix.loan.dto.LeadDtos.LeadStats;
 import com.navix.loan.dto.LeadDtos.LeadView;
 import com.navix.loan.dto.LeadDtos.UpdateLeadRequest;
@@ -51,9 +52,10 @@ public class LeadController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) Integer minRating,
-            @RequestParam(required = false) Integer maxRating) {
+            @RequestParam(required = false) Integer maxRating,
+            @RequestParam(required = false) String leadOutcome) {
         return ApiResponse.ok(leadService.list(
-                q, callStatus, source, createdBy, from, to, minRating, maxRating));
+                q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome));
     }
 
     @GetMapping("/stats")
@@ -73,6 +75,16 @@ public class LeadController {
     public ApiResponse<LeadView> update(
             @PathVariable Long id, @Valid @RequestBody UpdateLeadRequest req) {
         return ApiResponse.ok(leadService.update(id, req));
+    }
+
+    /**
+     * Set the outreach outcome and/or the DSA-visible note. Separate from {@code /disposition} on
+     * purpose — that one is replace-semantics and would null these on every telecaller save.
+     */
+    @PutMapping("/{id}/outcome")
+    public ApiResponse<LeadView> outcome(
+            @PathVariable Long id, @Valid @RequestBody LeadOutcomeRequest req) {
+        return ApiResponse.ok(leadService.outcome(id, req));
     }
 
     @PutMapping("/{id}/disposition")

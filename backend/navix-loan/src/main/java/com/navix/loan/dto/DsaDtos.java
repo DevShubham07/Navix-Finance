@@ -83,14 +83,26 @@ public final class DsaDtos {
             DsaLeadStatus status,
             Long netDisbursedPaise,
             Long commissionPaise,
+            /** NEW | OUTREACHED | REJECTED, or CONFIRMED once an application is attributed (V70). */
+            String leadOutcome,
+            /** The one staff note written FOR this DSA. Never {@code remarks}, which stays internal. */
+            String dsaNote,
+            /**
+             * True when this row came from a file the DSA uploaded rather than one they entered.
+             * Uploaded rows are deliberately unattributed, so they never earn commission — the flag
+             * exists so the portal can say that plainly instead of just showing a blank amount.
+             */
+            boolean uploaded,
             Instant createdAt,
             Instant updatedAt) {
 
-        public static DsaLeadView of(Lead l, DsaLeadStatus status, Long netDisbursedPaise, Long commissionPaise) {
+        public static DsaLeadView of(Lead l, DsaLeadStatus status, Long netDisbursedPaise,
+                Long commissionPaise, String effectiveOutcome) {
             return new DsaLeadView(
                     l.getId(), l.getPan(), l.getName(), l.getMobile(), l.getEmail(), l.getCity(),
                     l.getEmployer(), l.getMonthlySalaryPaise(), l.getLoanAmountInterestedPaise(),
                     l.getNotes(), status, netDisbursedPaise, commissionPaise,
+                    effectiveOutcome, l.getDsaNote(), l.getOwnerDsaId() == null,
                     l.getCreatedAt(), l.getUpdatedAt());
         }
     }
@@ -153,14 +165,27 @@ public final class DsaDtos {
             String notes,
             Long ownerDsaId,
             String ownerDsaName,
+            /** Who put the row here — the entering DSA, or the staff member who uploaded the file. */
+            Long createdByStaffId,
+            String createdByStaffName,
+            /** False for an imported row: visible to its uploader, but never commission-eligible. */
+            boolean owned,
+            String callStatus,
+            /** NEW | OUTREACHED | REJECTED, or CONFIRMED once an application is attributed (V70). */
+            String leadOutcome,
+            String dsaNote,
             Instant createdAt,
             Instant updatedAt) {
 
-        public static AdminDsaLeadView of(Lead l, String ownerDsaName) {
+        public static AdminDsaLeadView of(Lead l, String ownerDsaName, String createdByStaffName,
+                String effectiveOutcome) {
             return new AdminDsaLeadView(
                     l.getId(), l.getPan(), l.getName(), l.getMobile(), l.getEmail(), l.getCity(),
                     l.getEmployer(), l.getMonthlySalaryPaise(), l.getLoanAmountInterestedPaise(),
-                    l.getNotes(), l.getOwnerDsaId(), ownerDsaName, l.getCreatedAt(), l.getUpdatedAt());
+                    l.getNotes(), l.getOwnerDsaId(), ownerDsaName,
+                    l.getCreatedByStaffId(), createdByStaffName, l.getOwnerDsaId() != null,
+                    l.getCallStatus(), effectiveOutcome, l.getDsaNote(),
+                    l.getCreatedAt(), l.getUpdatedAt());
         }
     }
 

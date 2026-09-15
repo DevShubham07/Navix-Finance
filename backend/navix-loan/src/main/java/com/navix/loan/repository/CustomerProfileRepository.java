@@ -71,6 +71,24 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             @Param("pan") String pan, @Param("after") java.time.Instant after);
 
     /**
+     * Every application belonging to any of {@code pans}, oldest first — the BATCH form of
+     * {@link #findApplicationsAfterByPan}.
+     *
+     * <p>The per-lead query filters on that one lead's {@code createdAt}; a list of leads each has a
+     * different cutoff, so this returns the candidates unfiltered and the caller pins per lead in
+     * memory. That keeps a page of leads to ONE query instead of one per lead — the shape
+     * {@code DsaAdminService.roster()} gets wrong today, and which would be ruinous on
+     * {@code LeadService.list()}, whose result set is unpaged.
+     *
+     * <p>Rows are {@code [pan, application]}. Bounded in practice by how many advances a PAN has
+     * taken, which is small.
+     */
+    @Query("select p.pan, a from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and p.pan in :pans "
+            + "order by a.createdAt asc, a.id asc")
+    List<Object[]> findApplicationsByPanIn(@Param("pans") Collection<String> pans);
+
+    /**
      * Which of {@code pans} already belong to a customer — the CSV lead import's "already a
      * customer" check. Distinct, non-null values only.
      */

@@ -20,6 +20,7 @@ import {
   type OutreachChannel,
 } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { OutcomeChip } from "@/components/staff/lead-outcome";
 
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
@@ -106,9 +107,12 @@ export default function DsaLeadsPage() {
             <tr>
               <th>S.No.</th>
               <th>Name</th>
+              <th>Source</th>
               <th>PAN</th>
               <th>Mobile</th>
               <th>Status</th>
+              <th>Outcome</th>
+              <th>Note from us</th>
               <th className="text-right">Net disbursed</th>
               <th className="text-right">Commission</th>
               <th className="text-right">Actions</th>
@@ -117,7 +121,7 @@ export default function DsaLeadsPage() {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-8 text-center text-navy/40">
+                <td colSpan={11} className="py-8 text-center text-navy/40">
                   {list.isLoading ? "Loading…" : "No leads yet — add one above."}
                 </td>
               </tr>
@@ -126,21 +130,37 @@ export default function DsaLeadsPage() {
               <tr key={row.id}>
                 <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
                 <td className="staff-cell font-medium text-navy">{row.name}</td>
-                <td className="font-mono text-xs">{row.pan}</td>
+                <td>
+                  <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    row.uploaded ? "bg-grey-100 text-muted" : "bg-navy-tint text-navy"}`}>
+                    {row.uploaded ? "Uploaded" : "Entered"}
+                  </span>
+                </td>
+                <td className="font-mono text-xs">{row.pan ?? "—"}</td>
                 <td className="font-mono text-xs">{row.mobile}</td>
                 <td>
                   <StatusChip status={row.status} />
                 </td>
+                <td><OutcomeChip outcome={row.leadOutcome} /></td>
+                <td className="staff-cell max-w-[16rem] text-navy/70" title={row.dsaNote ?? undefined}>
+                  {row.dsaNote ?? "—"}
+                </td>
                 <td className="text-right">{paiseToINR(row.netDisbursedPaise)}</td>
                 <td className="text-right font-semibold text-navy">{paiseToINR(row.commissionPaise)}</td>
                 <td className="text-right">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline"
-                    onClick={() => setOutreachLead(row)}
-                  >
-                    <MessageSquare size={13} /> Outreach
-                  </button>
+                  {row.uploaded ? (
+                    <span className="text-xs text-navy/40" title="Leads from an uploaded list are view-only">
+                      View only
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline"
+                      onClick={() => setOutreachLead(row)}
+                    >
+                      <MessageSquare size={13} /> Outreach
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

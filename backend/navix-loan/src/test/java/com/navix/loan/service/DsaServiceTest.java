@@ -71,7 +71,7 @@ class DsaServiceTest {
     @Test
     void getOnForeignLeadReturnsLeadNotFound_notForbidden() {
         asDsa(2L);
-        when(leadRepository.findByIdAndOwnerDsaId(99L, 2L)).thenReturn(Optional.empty());
+        when(leadRepository.findVisibleToDsa(99L, 2L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service().get(99L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("LEAD_NOT_FOUND"));
@@ -91,10 +91,62 @@ class DsaServiceTest {
     @Test
     void listIsAlwaysScopedToTheCallingDsa_neverAClientSuppliedId() {
         asDsa(3L);
-        when(leadRepository.findByOwnerDsaIdOrderByIdDesc(3L)).thenReturn(List.of());
+        when(leadRepository.findByOwnerDsaIdOrCreatedByStaffIdOrderByIdDesc(3L, 3L))
+                .thenReturn(List.of());
         service().list(null, null);
-        // The only id ever passed to the repository is the ActorContext id — never anything else.
-        org.mockito.Mockito.verify(leadRepository).findByOwnerDsaIdOrderByIdDesc(3L);
+        // BOTH ids are the ActorContext id — the widened scope (own + uploaded, V70) must never
+        // introduce a path where a client-supplied id reaches the repository.
+        org.mockito.Mockito.verify(leadRepository)
+                .findByOwnerDsaIdOrCreatedByStaffIdOrderByIdDesc(3L, 3L);
+    }
+
+    @Test
+    void listIncludesLeadsTheDsaUploadedButNeverAnotherDsas() {
+        asDsa(3L);
+        Lead entered = new Lead();
+        entered.setId(1L);
+        entered.setName("Entered");
+        entered.setMobile("9876543210");
+        entered.setPan("ABCDE1234F");
+        entered.setOwnerDsaId(3L);
+        entered.setCreatedByStaffId(3L);
+        Lead uploaded = new Lead();
+        uploaded.setId(2L);
+        uploaded.setName("Uploaded");
+        uploaded.setMobile("9876543211");
+        uploaded.setOwnerDsaId(null);          // never attributed — cannot earn commission
+        uploaded.setCreatedByStaffId(3L);
+        when(leadRepository.findByOwnerDsaIdOrCreatedByStaffIdOrderByIdDesc(3L, 3L))
+                .thenReturn(List.of(entered, uploaded));
+        when(attributionService.attributedApplications(any())).thenReturn(java.util.Map.of());
+        lenient().when(commissionRepository.findByLeadId(anyLong())).thenReturn(Optional.empty());
+
+        List<DsaLeadView> out = service().list(null, null);
+
+        assertThat(out).extracting(DsaLeadView::name).containsExactly("Entered", "Uploaded");
+        assertThat(out).extracting(DsaLeadView::uploaded).containsExactly(false, true);
+    }
+
+    /**
+     * PAN is mandatory on a DSA-entered lead but OPTIONAL on an uploaded one, so the search filter
+     * NPE'd on {@code v.pan().toLowerCase()} the moment uploaded leads became visible here.
+     */
+    @Test
+    void searchDoesNotBlowUpOnAnUploadedLeadWithNoPan() {
+        asDsa(3L);
+        Lead noPan = new Lead();
+        noPan.setId(7L);
+        noPan.setName("No Pan");
+        noPan.setMobile("9876543212");
+        noPan.setPan(null);
+        noPan.setCreatedByStaffId(3L);
+        when(leadRepository.findByOwnerDsaIdOrCreatedByStaffIdOrderByIdDesc(3L, 3L))
+                .thenReturn(List.of(noPan));
+        when(attributionService.attributedApplications(any())).thenReturn(java.util.Map.of());
+        lenient().when(commissionRepository.findByLeadId(anyLong())).thenReturn(Optional.empty());
+
+        assertThat(service().list("no pan", null)).hasSize(1);
+        assertThat(service().list("ABCDE", null)).isEmpty();
     }
 
     // ---- entry-time PAN rejection -----------------------------------------------------
@@ -177,7 +229,12 @@ class DsaServiceTest {
         Set<String> allowed = Set.of(
                 "id", "pan", "name", "mobile", "email", "city", "employer",
                 "monthlySalaryPaise", "loanAmountInterestedPaise", "notes", "status",
-                "netDisbursedPaise", "commissionPaise", "createdAt", "updatedAt");
+                "netDisbursedPaise", "commissionPaise", "createdAt", "updatedAt",
+                // V70. Each is safe for a specific reason: leadOutcome is a coarse staff-set value
+                // (plus a derived CONFIRMED), dsaNote is a field created FOR this audience and
+                // labelled as such where staff write it, and uploaded is a property of the row's
+                // own provenance. None is KYC-sourced.
+                "leadOutcome", "dsaNote", "uploaded");
         for (RecordComponent rc : DsaLeadView.class.getRecordComponents()) {
             assertThat(allowed).as("unexpected field on DsaLeadView: " + rc.getName())
                     .contains(rc.getName());
@@ -187,6 +244,10 @@ class DsaServiceTest {
                 .map(RecordComponent::getName).collect(java.util.stream.Collectors.toSet());
         assertThat(actual).doesNotContain(
                 "address", "dob", "bureauScore", "creditStarRating", "applicationId",
-                "customerId", "salaryBank", "documents", "verifiedName");
+                "customerId", "salaryBank", "documents", "verifiedName",
+                // Internal staff fields. `remarks` especially: it is the telecaller's private call
+                // commentary, written long before a DSA could read a lead at all, which is exactly
+                // why V70 added a separate dsaNote instead of surfacing this one.
+                "remarks", "qualityRating", "callStatus");
     }
 }

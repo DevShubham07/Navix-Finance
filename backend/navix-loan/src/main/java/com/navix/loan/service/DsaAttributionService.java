@@ -5,8 +5,14 @@ import com.navix.loan.dto.DsaDtos.DsaLeadStatus;
 import com.navix.loan.entity.Lead;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.CustomerProfileRepository;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class DsaAttributionService {
+
+    /** PANs per attribution lookup. Well under the 65535 bind-parameter ceiling. */
+    private static final int PAN_LOOKUP_CHUNK = 1000;
 
     private final CustomerProfileRepository customerProfileRepository;
 
@@ -51,6 +60,71 @@ public class DsaAttributionService {
         }
         LoanApplication earliest = candidates.get(0);
         return new AttributedApplication(earliest, mapStatus(earliest.getStatus()));
+    }
+
+    /**
+     * {@link #attributedApplication} for a whole list, in ONE query instead of one per lead.
+     *
+     * <p>Necessary, not an optimisation. The per-lead form runs
+     * {@code findApplicationsAfterByPan} on every call, and the lists this now feeds are large:
+     * a bulk import lands tens of thousands of leads under a single uploader, and
+     * {@code LeadService.list()} is unpaged. Resolving {@code CONFIRMED} row-by-row over that would
+     * be one round trip per lead.
+     *
+     * <p>Pinning is identical to the per-lead form — the earliest application created strictly after
+     * that lead — it is just done in memory over the candidates, because each lead carries its own
+     * cutoff and a single SQL predicate cannot express all of them at once.
+     *
+     * @return lead id → attribution, with an entry for EVERY input lead (never-applied included).
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, AttributedApplication> attributedApplications(List<Lead> leads) {
+        Map<Long, AttributedApplication> out = new HashMap<>();
+        Set<String> pans = new LinkedHashSet<>();
+        for (Lead lead : leads) {
+            out.put(lead.getId(), AttributedApplication.notApplied());
+            if (lead.getPan() != null && !lead.getPan().isBlank() && lead.getCreatedAt() != null) {
+                pans.add(lead.getPan().trim().toUpperCase(Locale.ROOT));
+            }
+        }
+        if (pans.isEmpty()) {
+            return out;
+        }
+
+        // Chunked: LeadService.list() is unpaged, so `pans` can be the whole lead table after a bulk
+        // import, and one IN (...) that size exceeds PostgreSQL's 65535 bind-parameter ceiling
+        // outright — the same wall the lead import hit and chunks around.
+        Map<String, List<LoanApplication>> byPan = new HashMap<>();
+        List<String> panList = new ArrayList<>(pans);
+        for (int start = 0; start < panList.size(); start += PAN_LOOKUP_CHUNK) {
+            List<String> chunk = panList.subList(
+                    start, Math.min(start + PAN_LOOKUP_CHUNK, panList.size()));
+            for (Object[] row : customerProfileRepository.findApplicationsByPanIn(chunk)) {
+                String pan = (String) row[0];
+                byPan.computeIfAbsent(pan == null ? "" : pan.trim().toUpperCase(Locale.ROOT),
+                        ignored -> new ArrayList<>()).add((LoanApplication) row[1]);
+            }
+        }
+
+        for (Lead lead : leads) {
+            if (lead.getPan() == null || lead.getPan().isBlank() || lead.getCreatedAt() == null) {
+                continue;
+            }
+            List<LoanApplication> candidates =
+                    byPan.get(lead.getPan().trim().toUpperCase(Locale.ROOT));
+            if (candidates == null) {
+                continue;
+            }
+            // The query returns them oldest-first, so the first one past this lead's own createdAt
+            // is the pinned application — the same rule, and the same result, as the per-lead query.
+            for (LoanApplication a : candidates) {
+                if (a.getCreatedAt() != null && a.getCreatedAt().isAfter(lead.getCreatedAt())) {
+                    out.put(lead.getId(), new AttributedApplication(a, mapStatus(a.getStatus())));
+                    break;
+                }
+            }
+        }
+        return out;
     }
 
     /** Coarse mapping — the DSA learns "declined", never why; handles historical/deprecated states too. */
