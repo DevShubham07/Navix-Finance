@@ -104,6 +104,76 @@ class LeadFileParserTest {
         assertThat(out.issues.get(0).message()).contains("Expected 3 columns, found 2");
     }
 
+    // ---- headerless PAN/email/name/phone/designation/state/pincode (one known lead source) -----
+
+    @Test
+    void headerlessSevenColumnPanEmailNameMobileLayoutIsAcceptedAsCsv() {
+        // No header row at all — row 1 is real data, exactly the shape one lead source ships.
+        Collected out = parseCsv("""
+                BUAPS3682R,bunty20.chaudhary@gmail.com,Bhupender Singh,918668791426,mabager,Chandigarh,140604
+                FOLPS4828Q,bharats2134@gmail.com,Bharat Sharma,917483509526,Chief Executive Officer,Chandigarh,160003
+                """);
+
+        assertThat(out.issues).isEmpty();
+        assertThat(out.numbers).containsExactly(1, 2);
+        assertThat(out.rows).containsExactly(
+                new ImportRow("Bhupender Singh", "918668791426", "BUAPS3682R", "140604",
+                        "bunty20.chaudhary@gmail.com"),
+                new ImportRow("Bharat Sharma", "917483509526", "FOLPS4828Q", "160003",
+                        "bharats2134@gmail.com"));
+    }
+
+    @Test
+    void headerlessSevenColumnLayoutIsAcceptedAsXlsx() throws IOException {
+        byte[] bytes = workbook(new String[][] {
+                {"BUAPS3682R", "bunty20.chaudhary@gmail.com", "Bhupender Singh", "918668791426",
+                        "mabager", "Chandigarh", "140604"},
+        });
+
+        Collected out = parseXlsx(bytes);
+
+        assertThat(out.numbers).containsExactly(1);
+        assertThat(out.rows).containsExactly(
+                new ImportRow("Bhupender Singh", "918668791426", "BUAPS3682R", "140604",
+                        "bunty20.chaudhary@gmail.com"));
+    }
+
+    /** A real header, even a 7-column one, must never be swallowed by the headerless fallback. */
+    @Test
+    void aRealSevenColumnHeaderIsNotTreatedAsHeaderless() {
+        Collected out = parseCsv("""
+                pan card,emailid,name,contact number,designation,city,pincode
+                BUAPS3682R,bunty20.chaudhary@gmail.com,Bhupender Singh,9868791426,mabager,Chandigarh,140604
+                """);
+
+        // Row 1 (the header) must NOT appear as data — only the one real data row does.
+        assertThat(out.numbers).containsExactly(1);
+        assertThat(out.rows).containsExactly(
+                new ImportRow("Bhupender Singh", "9868791426", "BUAPS3682R", "140604",
+                        "bunty20.chaudhary@gmail.com"));
+    }
+
+    /**
+     * The fallback is width- AND match-gated on purpose: a 7-column row where ONE cell happens to
+     * read as a recognised header word (here, a stray literal "pincode") must still be rejected
+     * loudly, not silently misread through the fixed layout.
+     */
+    @Test
+    void sevenColumnsWithOneStrayHeaderMatchIsStillRejected() {
+        assertThatThrownBy(() -> parseCsv(
+                "BUAPS3682R,bunty20.chaudhary@gmail.com,Bhupender Singh,9868791426,mabager,Chandigarh,pincode\n"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("contact number");
+    }
+
+    /** Neither width nor absence of a header alone is enough — a non-7-column headerless file still fails. */
+    @Test
+    void headerlessFileOfTheWrongWidthIsStillRejected() {
+        assertThatThrownBy(() -> parseCsv("BUAPS3682R,bunty20.chaudhary@gmail.com,Bhupender Singh\n"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("contact number");
+    }
+
     @Test
     void missingRequiredColumnIsRejectedUpFront() {
         assertThatThrownBy(() -> parseCsv("name,pincode\nRavi,560001\n"))

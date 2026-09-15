@@ -15,6 +15,7 @@ import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,25 +50,23 @@ public class LeadImportJobService {
             "COLLECTION_HEAD", "COLLECTION_EXECUTIVE", "TELECALLER", "ADMIN");
 
     private final LeadImportJobRepository jobRepository;
-    private final LeadImportRunner runner;
+    private final ApplicationEventPublisher events;
     private final ObjectMapper objectMapper;
 
-    /** Accept an uploaded file and queue it. Returns immediately — the work happens off-thread. */
+    /**
+     * Accept an uploaded file and queue it. Returns immediately — the work happens off-thread.
+     *
+     * <p><b>Every upload is recorded, including a rejected one.</b> By the time this runs the file is
+     * already in the bucket — the browser PUT it there on a presigned URL before calling here — so
+     * refusing it by throwing would leave an object in S3 that nothing in the database points at:
+     * the operator's list, uploaded and then unreachable. A rejection is therefore written as a
+     * {@code FAILED} row carrying the key and the reason, which the UI renders exactly as it renders
+     * a parse failure, and which keeps the file retrievable. Nothing ever deletes the object.
+     */
     @Transactional
     public ImportJobView start(ImportFileRequest req) {
         Long staffId = LeadImportService.requireStaffId();
         String role = ActorContext.get().role();
-
-        if (!isSupported(req.fileName())) {
-            throw new BusinessException("IMPORT_FORMAT_UNSUPPORTED",
-                    "Upload a .csv or .xlsx file — " + req.fileName() + " is neither.");
-        }
-        // One live import per person. Nine roles each able to queue a 200k-row file would otherwise
-        // pile onto a single 1 vCPU / 2 GB task (aws.md: desired count 1).
-        if (jobRepository.existsByUploadedByStaffIdAndStatusIn(staffId, LIVE_STATUSES)) {
-            throw new BusinessException("IMPORT_ALREADY_RUNNING",
-                    "You already have an import running. Wait for it to finish before starting another.");
-        }
 
         LeadImportJob job = new LeadImportJob();
         job.setS3Key(req.s3Key());
@@ -75,12 +74,39 @@ public class LeadImportJobService {
         job.setUploadedByStaffId(staffId);
         job.setUploaderRole(role);
         job.setMergeRequested(req.merge());
-        job.setStatus(LeadImportJob.QUEUED);
         job.setCreatedAt(Instant.now());
+
+        String rejection = rejectionReason(req, staffId);
+        if (rejection != null) {
+            job.setStatus(LeadImportJob.FAILED);
+            job.setErrorMessage(rejection);
+            job.setFinishedAt(Instant.now());
+            LeadImportJob rejected = jobRepository.save(job);
+            log.info("lead import {} rejected on arrival ({}) — file kept at {}",
+                    rejected.getId(), rejection, rejected.getS3Key());
+            return toView(rejected, role);
+        }
+
+        job.setStatus(LeadImportJob.QUEUED);
         LeadImportJob saved = jobRepository.save(job);
 
-        runner.run(saved.getId());
+        // Published, not called: the worker must not start until this row has COMMITTED, or its
+        // first findById races an insert that is not there yet. See LeadImportQueuedEvent.
+        events.publishEvent(new LeadImportQueuedEvent(saved.getId()));
         return toView(saved, role);
+    }
+
+    /** Null when the upload may proceed; otherwise the reason it may not, in the operator's words. */
+    private String rejectionReason(ImportFileRequest req, Long staffId) {
+        if (!isSupported(req.fileName())) {
+            return "Upload a .csv or .xlsx file — " + req.fileName() + " is neither.";
+        }
+        // One live import per person. Nine roles each able to queue a 200k-row file would otherwise
+        // pile onto a single 1 vCPU / 2 GB task (aws.md: desired count 1).
+        if (jobRepository.existsByUploadedByStaffIdAndStatusIn(staffId, LIVE_STATUSES)) {
+            return "You already have an import running. Wait for it to finish before starting another.";
+        }
+        return null;
     }
 
     @Transactional(readOnly = true)
@@ -137,7 +163,8 @@ public class LeadImportJobService {
      * {@code customer:view} — DSA — get the counts and nothing else.
      */
     private ImportJobView toView(LeadImportJob job, String role) {
-        List<ImportIssue> issues = DETAIL_ROLES.contains(role) ? readIssues(job.getIssuesJson()) : List.of();
+        boolean maySeeDetail = DETAIL_ROLES.contains(role);
+        List<ImportIssue> issues = maySeeDetail ? readIssues(job.getIssuesJson()) : List.of();
         return new ImportJobView(
                 job.getId(),
                 job.getStatus(),
@@ -151,6 +178,7 @@ public class LeadImportJobService {
                 job.getSkippedCustomers(),
                 job.getIssueCount(),
                 issues,
+                maySeeDetail ? job.getS3Key() : null,
                 job.getErrorMessage(),
                 job.getStartedAt(),
                 job.getFinishedAt(),

@@ -188,18 +188,6 @@ export default function DashboardPage() {
           </div>
 
           <div className="rounded border border-line bg-white p-5 shadow-sm">
-            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-navy">
-              <Wallet size={16} /> Approved limit
-            </div>
-            <div className="font-serif text-2xl font-bold text-navy">
-              {limitRupees > 0 ? formatINR0(limitRupees) : "—"}
-            </div>
-            <p className="mt-1 text-xs text-muted">
-              {limitRupees > 0 ? "Approved by our credit team" : "Set by our credit team once your application is reviewed"}
-            </p>
-          </div>
-
-          <div className="rounded border border-line bg-white p-5 shadow-sm">
             <div className="mb-2 text-sm font-semibold text-navy">Quick links</div>
             <ul className="text-sm">
               <li><Link href="/loan/status" className="-mx-2 block rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">Application status</Link></li>

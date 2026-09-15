@@ -68,6 +68,21 @@ public final class LeadFileParser {
 
     public static final String EXPECTED_HEADER = "name, contact number, pan card, pincode, emailid";
 
+    /**
+     * One known lead source ships {@code pan, email, name, phone, designation, state, pincode} —
+     * always in that order, never with a header row. Row 1 is real data there, not column labels, so
+     * the normal alias match finds neither NAME nor MOBILE and would otherwise reject every file from
+     * this source with {@code IMPORT_HEADER_INVALID}.
+     *
+     * <p>Recognised ONLY by this exact width (7 columns) with no header alias matched at all — that
+     * narrow trigger is deliberate, so a genuinely malformed file of some other shape still fails
+     * loudly instead of being silently misread. {@code designation} and {@code state} have no
+     * {@link Field} and are skipped, exactly like any other unrecognised column in a real header.
+     */
+    private static final int HEADERLESS_PSNPD_WIDTH = 7;
+    private static final Map<Field, Integer> HEADERLESS_PSNPD_LAYOUT = Map.of(
+            Field.PAN, 0, Field.EMAIL, 1, Field.NAME, 2, Field.MOBILE, 3, Field.PINCODE, 6);
+
     private LeadFileParser() {
     }
 
@@ -99,10 +114,16 @@ public final class LeadFileParser {
             if (header == null) {
                 throw new BusinessException("IMPORT_FILE_EMPTY", "The file is empty.");
             }
-            Map<Field, Integer> columns = mapColumns(header);
+            ColumnMapping mapping = mapColumns(header);
             int headerLen = header.size();
 
             int rowNumber = 0;
+            // A recognised headerless shape (HEADERLESS_PSNPD_LAYOUT) means the row just read to find
+            // the columns is itself the first data row, not a header to discard.
+            if (mapping.firstRowIsData()) {
+                rowNumber++;
+                sink.row(rowNumber, toImportRow(mapping.columns(), header::get));
+            }
             List<String> cells;
             while ((cells = csv.next()) != null) {
                 if (isBlankRecord(cells)) {
@@ -114,7 +135,7 @@ public final class LeadFileParser {
                             "Expected " + headerLen + " columns, found " + cells.size() + "."));
                     continue;
                 }
-                sink.row(rowNumber, toImportRow(columns, cells::get));
+                sink.row(rowNumber, toImportRow(mapping.columns(), cells::get));
             }
             if (rowNumber == 0) {
                 throw new BusinessException("IMPORT_FILE_EMPTY", "No data rows found.");
@@ -248,8 +269,15 @@ public final class LeadFileParser {
             if (isBlankRecord(header)) {
                 return;             // leading blank rows above the header are common in hand-made sheets
             }
-            state.columns = mapColumns(header);
+            ColumnMapping mapping = mapColumns(header);
+            state.columns = mapping.columns();
             state.headerLen = header.size();
+            // A recognised headerless shape means this row is itself the first data row, not a header
+            // to discard — emit it before returning to normal per-row handling.
+            if (mapping.firstRowIsData()) {
+                state.dataRows++;
+                sink.row(state.dataRows, toImportRow(state.columns, header::get));
+            }
             return;
         }
 
@@ -314,7 +342,15 @@ public final class LeadFileParser {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private static Map<Field, Integer> mapColumns(List<String> header) {
+    /**
+     * What {@link #mapColumns} found: which column holds which {@link Field}, and whether the row it
+     * read to find them was actually the first DATA row ({@link #HEADERLESS_PSNPD_LAYOUT}) rather
+     * than a header to discard.
+     */
+    private record ColumnMapping(Map<Field, Integer> columns, boolean firstRowIsData) {
+    }
+
+    private static ColumnMapping mapColumns(List<String> header) {
         List<String> normalized = new ArrayList<>(header.size());
         for (String cell : header) {
             normalized.add(normalizeHeaderCell(cell));
@@ -338,11 +374,14 @@ public final class LeadFileParser {
             missing.add("contact number");
         }
         if (!missing.isEmpty()) {
+            if (columns.isEmpty() && header.size() == HEADERLESS_PSNPD_WIDTH) {
+                return new ColumnMapping(HEADERLESS_PSNPD_LAYOUT, true);
+            }
             throw new BusinessException("IMPORT_HEADER_INVALID",
                     "Missing required column(s): " + String.join(", ", missing)
                             + ". Expected header: " + EXPECTED_HEADER);
         }
-        return columns;
+        return new ColumnMapping(columns, false);
     }
 
     private static String normalizeHeaderCell(String header) {

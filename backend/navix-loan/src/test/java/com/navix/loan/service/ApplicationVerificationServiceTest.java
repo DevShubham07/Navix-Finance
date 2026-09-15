@@ -22,6 +22,7 @@ import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.EsignPort;
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.CustomerProfile;
@@ -317,6 +318,83 @@ class ApplicationVerificationServiceTest {
         verify(verificationRepo).save(saved.capture());
         assertThat(new ObjectMapper().readTree(saved.getValue().getDerived())
                 .path("providerErrorCode").asText()).isEqualTo("HTTP_403");
+    }
+
+    @Test
+    void bureau_providerFailure_namesTheEndpointAndTheVendorsOwnCode() throws Exception {
+        CustomerProfile p = profile();
+        p.setDob(LocalDate.of(1992, 8, 15));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
+                .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
+        // A real provider failure arrives as a VerificationException, which carries these four
+        // already-redacted fields. The row stores provider = null (the chain tried several and none
+        // answered), so without them the staff KYC panel could say a check was parked but never which
+        // vendor endpoint dropped it.
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenThrow(providerFailure(502, "/crif_combine", "E_UPSTREAM", "upstream timed out"));
+
+        var result = service.pullBureau(APP, "123456");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        var derived = new ObjectMapper().readTree(saved.getValue().getDerived());
+        assertThat(derived.path("providerErrorCode").asText()).isEqualTo("HTTP_502");
+        assertThat(derived.path("providerEndpoint").asText()).isEqualTo("/crif_combine");
+        assertThat(derived.path("providerCode").asText()).isEqualTo("E_UPSTREAM");
+        assertThat(derived.path("providerDetail").asText()).isEqualTo("upstream timed out");
+    }
+
+    @Test
+    void bureau_providerFailure_omitsTheDetailKeysWhenTheFailureCarriesNone() throws Exception {
+        CustomerProfile p = profile();
+        p.setDob(LocalDate.of(1992, 8, 15));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
+                .thenReturn(Optional.of(row("BUREAU_CONSENT", "PASS")));
+        // A plain RuntimeException — and a VerificationException whose accessors are null — must not
+        // write empty keys, or the reviewer gets blank rows where an endpoint should be.
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("HTTP 403 from bureau_crif"));
+
+        service.pullBureau(APP, "123456");
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        var derived = new ObjectMapper().readTree(saved.getValue().getDerived());
+        assertThat(derived.has("providerEndpoint")).isFalse();
+        assertThat(derived.has("providerCode")).isFalse();
+        assertThat(derived.has("providerDetail")).isFalse();
+        // The pre-existing keys the failure classifier reads are untouched.
+        assertThat(derived.path("providerError").asBoolean()).isTrue();
+        assertThat(derived.path("providerErrorCode").asText()).isEqualTo("HTTP_403");
+    }
+
+    /**
+     * A stand-in for {@code VerificationException}, which lives in navix-verification and so is
+     * invisible from this module — the exact reason {@link ProviderFailureDetails} exists.
+     */
+    private static RuntimeException providerFailure(
+            Integer httpStatus, String endpoint, String providerCode, String safeDetail) {
+        class Failure extends RuntimeException implements ProviderFailureDetails {
+            @Override public Integer httpStatus() {
+                return httpStatus;
+            }
+
+            @Override public String endpoint() {
+                return endpoint;
+            }
+
+            @Override public String providerCode() {
+                return providerCode;
+            }
+
+            @Override public String safeDetail() {
+                return safeDetail;
+            }
+        }
+        return new Failure();
     }
 
     @Test

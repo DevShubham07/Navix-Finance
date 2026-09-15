@@ -127,6 +127,13 @@ public final class LeadDtos {
             int skippedCustomers,
             int issueCount,
             List<ImportIssue> issues,
+            /**
+             * S3 key of the uploaded file, which is kept whatever happens to the import — so a list
+             * that failed to parse can still be fetched back and inspected. Contact data by
+             * definition, so it is withheld from roles without {@code customer:view}, exactly like
+             * {@code issues}.
+             */
+            String s3Key,
             String errorMessage,
             Instant startedAt,
             Instant finishedAt,

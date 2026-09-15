@@ -50,6 +50,15 @@ const CHECK_PILL: Record<DisplayStatus, string> = {
 const CHECK_PILL_LABEL: Partial<Record<DisplayStatus, string>> = { NOT_RUN: "NOT RUN" };
 
 /**
+ * Failure keys {@link Provenance} renders in prose, hidden from the generic `derived` table below it
+ * so each fact appears once. Without this the reviewer got "Provider error: true" and "Provider error
+ * code: HTTP_500" as raw table rows — the same facts, in the least readable place on the card.
+ */
+const DERIVED_RENDERED_BY_PROVENANCE: ReadonlySet<string> = new Set([
+  "providerError", "providerErrorCode", "providerEndpoint", "providerCode", "providerDetail",
+]);
+
+/**
  * Mirrors the backend allow-list in `ApplicationVerificationService.retryExternalCheck` exactly.
  * `summary()` only returns rows that already exist in `application_verification`, so a check that
  * has never run (e.g. PENNY_DROP on a fresh application) has no card at all — and therefore no
@@ -164,7 +173,8 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">
           {steps.map((s, i) => {
-            const entries = Object.entries(s.derived ?? {});
+            const entries = Object.entries(s.derived ?? {})
+              .filter(([k]) => !DERIVED_RENDERED_BY_PROVENANCE.has(k));
             return (
               <div key={`${s.checkType}-${i}`} className="rounded border border-line bg-grey-50 p-3">
                 <div className="flex items-center justify-between gap-2">
@@ -219,6 +229,43 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
   );
 }
 
+/** The `derived` keys {@link providerLine} renders itself — see {@link DERIVED_RENDERED_BY_PROVENANCE}. */
+function str(derived: Record<string, unknown> | undefined, key: string): string | null {
+  const value = derived?.[key];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+/**
+ * Which API answered this check, and when — or which one failed to.
+ *
+ * <p>Shared with the Overview card's `CheckState` so the two screens cannot drift on what they call a
+ * provider. The branch that matters is the failure one: a check the vendor could not run is stored
+ * with **`provider` null** and a status of REVIEW, so before this existed both screens showed a bare
+ * amber "Review" with no way to tell a genuine judgement call from an API that fell over. The
+ * endpoint, the vendor's own code and its message are read from `derived`, where
+ * `ApplicationVerificationService.providerUnavailable` now keeps them (already redacted — bodies and
+ * request values never leave `provider_api_execution`). Rows written before that keep only
+ * `providerErrorCode`, which is why the code falls back to it.
+ */
+export function providerLine(step: {
+  provider?: string | null;
+  checkedAt?: string | null;
+  derived?: Record<string, unknown>;
+}): string | null {
+  const bits: string[] = [];
+  if (step.derived?.providerError === true) {
+    bits.push("Provider unavailable");
+    const endpoint = str(step.derived, "providerEndpoint");
+    if (endpoint) bits.push(endpoint);
+    const code = str(step.derived, "providerCode") ?? str(step.derived, "providerErrorCode");
+    if (code) bits.push(code);
+  } else if (step.provider) {
+    bits.push(step.provider === "MANUAL" ? "Manual override" : step.provider);
+  }
+  if (step.checkedAt) bits.push(formatDateTime(step.checkedAt));
+  return bits.length > 0 ? bits.join(" · ") : null;
+}
+
 /**
  * Who produced this result, when, and against which provider transaction.
  *
@@ -229,12 +276,13 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
  * the message text.
  */
 function Provenance({ step }: { step: DisplayStep }) {
-  const manual = step.provider === "MANUAL";
   const bits: string[] = [];
-  if (step.provider) bits.push(manual ? "Manual override" : step.provider);
-  if (step.checkedAt) bits.push(formatDateTime(step.checkedAt));
+  const line = providerLine(step);
+  if (line) bits.push(line);
   if (typeof step.nameMatch === "number") bits.push(`name match ${Math.round(step.nameMatch * 100)}%`);
   if (typeof step.score === "number") bits.push(`score ${step.score}`);
+  const detail = str(step.derived, "providerDetail");
+  if (detail) bits.push(detail);
   if (bits.length === 0) return null;
   return (
     <p className="mt-1 text-[8.8px] text-muted">

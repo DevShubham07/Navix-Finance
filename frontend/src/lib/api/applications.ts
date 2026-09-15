@@ -2119,6 +2119,12 @@ export interface ImportJobView {
   skippedCustomers: number;
   issueCount: number;
   issues: ImportIssue[];
+  /**
+   * S3 key of the uploaded file, kept whatever happens to the import — a list that failed to parse
+   * is still in the bucket and can be fetched back through `storageApi.presignDownload`. Null for
+   * roles without `customer:view` (DSA), since the file is raw contact data.
+   */
+  s3Key: string | null;
   errorMessage: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -2760,6 +2766,32 @@ export const storageApi = {
   /** PUT the file bytes straight to the presigned S3 URL (never through the BFF). */
   putToPresignedUrl: (url: string, file: File): Promise<void> =>
     putToPresignedUrl(url, file, file.type || "application/octet-stream"),
+
+  /** Short-lived GET URL for an existing key, so the browser can fetch the object directly. */
+  presignDownload: async (key: string): Promise<string> => {
+    const res = await fetch(`/api/storage/presign-download?key=${encodeURIComponent(key)}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      // Error paths DO return the ApiResponse envelope, even though the success path does not.
+      let code = `HTTP_${res.status}`;
+      let message = `Could not open that file (status ${res.status}).`;
+      try {
+        const env = JSON.parse(text) as ApiResponse<unknown>;
+        code = env.error?.code ?? code;
+        message = env.error?.message ?? env.message ?? message;
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new ApplicationApiError(message, code, res.status);
+    }
+    // The storage endpoint is NOT envelope-wrapped on success (see PresignUpload above).
+    return (JSON.parse(text) as { url: string }).url;
+  },
 };
 
 // ---------------------------------------------------------------------------

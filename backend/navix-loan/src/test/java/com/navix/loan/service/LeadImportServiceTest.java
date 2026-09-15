@@ -26,6 +26,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -123,6 +125,36 @@ class LeadImportServiceTest {
         assertThat(run.getIssues()).extracting("field").containsExactly("name", "mobile");
         assertThat(run.getInsertedCount()).isEqualTo(2);
         assertThat(run.getProcessedRows()).isEqualTo(4);
+    }
+
+    /**
+     * The one lead source this fix (headerless PAN/email/name/phone/designation/state/pincode)
+     * exists for ships mobiles with a leading "91" country code, and at least one real row arrived
+     * with a stray "p:" prefix ("p:8175813670"). {@link LeadFileParser} passes both through
+     * unmodified — this is the one place the shape rule lives, and it must clean both to the plain
+     * 10-digit number the DB stores and the mobile pattern accepts, not just the well-formed case.
+     */
+    @Test
+    void mobileWithACountryCodeOrAStrayPrefixIsNormalisedBeforeItIsStored() throws SQLException {
+        noExistingRecords();
+        ImportRun run = run(false);
+
+        service.processChunk(rows(
+                row("Bhupender Singh", "918668791426", null, null, null),
+                row("Shilpi Gulati", "p:8175813670", null, null, null)), run);
+
+        assertThat(run.getIssues()).isEmpty();
+        assertThat(run.getInsertedCount()).isEqualTo(2);
+
+        ArgumentCaptor<BatchPreparedStatementSetter> captor =
+                ArgumentCaptor.forClass(BatchPreparedStatementSetter.class);
+        verify(jdbcTemplate).batchUpdate(anyString(), captor.capture());
+        PreparedStatement ps = org.mockito.Mockito.mock(PreparedStatement.class);
+        captor.getValue().setValues(ps, 0);
+        captor.getValue().setValues(ps, 1);
+        // INSERT_LEAD's second bind parameter is mobile — see the SQL in LeadImportService.
+        verify(ps).setString(2, "8668791426");
+        verify(ps).setString(2, "8175813670");
     }
 
     @Test
