@@ -186,6 +186,17 @@ public class ApplicationVerificationService {
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
 
+    /**
+     * Application statuses {@link #overview} triages — mirrors the frontend's identically-named
+     * constant (`frontend/src/app/staff/verifications/page.tsx`), which is the page's whole reason
+     * to exist: "every application that needs a KYC decision". Scoping the query to these three
+     * statuses, rather than the whole company's history, is what keeps the dashboard's three
+     * lookups (verification rows, applications, profiles) bounded by the size of this queue instead
+     * of by how many customers the company has ever had.
+     */
+    private static final Set<ApplicationStatus> UNDECIDED_STATUSES =
+            Set.of(ApplicationStatus.DRAFT, ApplicationStatus.KYC_PENDING, ApplicationStatus.REVIEW_PENDING);
+
     private final ApplicationVerificationRepository verificationRepo;
     private final CustomerProfileRepository profileRepo;
     private final LoanApplicationRepository applicationRepo;
@@ -3002,13 +3013,25 @@ public class ApplicationVerificationService {
      * Cross-application pending-API dashboard (Phase 3.3): status tallies (passed / review / failed /
      * pending / never-run) plus the verification rows, enriched with borrower context and filterable by
      * status, check type and a free-text query (borrower name / application id / customer id).
+     *
+     * <p>Scoped to {@link #UNDECIDED_STATUSES} — "every application that needs a KYC decision" is this
+     * page's own subtitle, so an already-decided application's checks are historical evidence, not
+     * triage work, here just as they are on the frontend's client-side card grouping. This used to load
+     * {@code verificationRepo.findAll()}, {@code applicationRepo.findAll()} and
+     * {@code profileRepo.findAll()} — the whole company's history, unfiltered — which was always the
+     * wrong scope for what this method reports, and at production data volumes made the endpoint take
+     * ~15-25s before failing outright (a company-wide unbounded scan, not this page's small live queue).
      */
     @Transactional(readOnly = true)
     public VerificationOverview overview(String statusFilter, String checkTypeFilter, String q) {
-        List<ApplicationVerification> all = verificationRepo.findAll();
-        Map<Long, LoanApplication> appById = applicationRepo.findAll().stream()
+        List<LoanApplication> undecided = applicationRepo.findByStatusIn(UNDECIDED_STATUSES);
+        Map<Long, LoanApplication> appById = undecided.stream()
                 .collect(Collectors.toMap(LoanApplication::getId, a -> a, (a, b) -> a));
-        Map<Long, CustomerProfile> profByApp = profileRepo.findAll().stream()
+        if (appById.isEmpty()) {
+            return new VerificationOverview(0, 0, 0, 0, 0, List.of());
+        }
+        List<ApplicationVerification> all = verificationRepo.findByApplicationIdIn(appById.keySet());
+        Map<Long, CustomerProfile> profByApp = profileRepo.findByApplicationIdIn(appById.keySet()).stream()
                 .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
 
         int passed = 0, review = 0, failed = 0, pending = 0;

@@ -33,6 +33,11 @@ public interface LoanApplicationRepository
     /** Drives the Credit Head queue (no date filter there) — newest first. */
     List<LoanApplication> findByStatusOrderByCreatedAtDescIdDesc(ApplicationStatus status);
 
+    /** Every application in any of {@code statuses} — the multi-status form, e.g. the pending-API
+     *  dashboard's "still needs a KYC decision" queue. Callers MUST short-circuit on an empty
+     *  collection; {@code in ()} is not valid SQL. */
+    List<LoanApplication> findByStatusIn(Collection<ApplicationStatus> statuses);
+
     List<LoanApplication> findByAssignedExecutiveIdAndStatusOrderByCreatedAtDescIdDesc(
             Long assignedExecutiveId, ApplicationStatus status);
 

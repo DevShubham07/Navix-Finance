@@ -18,6 +18,12 @@ public interface ApplicationVerificationRepository extends JpaRepository<Applica
 
     List<ApplicationVerification> findByApplicationIdOrderByIdAsc(Long applicationId);
 
+    /** Batch-load verification rows for a set of applications — the pending-API dashboard's
+     *  cross-application overview, scoped to the (small) undecided queue rather than every row
+     *  ever recorded. Callers MUST short-circuit on an empty collection; {@code in ()} is not
+     *  valid SQL. */
+    List<ApplicationVerification> findByApplicationIdIn(Collection<Long> applicationIds);
+
     /**
      * Reverse lookup from a provider's own handle back to the application — used by provider callbacks,
      * which know their transaction and nothing else. A prefix match because a handle may pack more than

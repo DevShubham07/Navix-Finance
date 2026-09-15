@@ -24,6 +24,7 @@ import com.navix.common.verification.EmailOtpPort;
 import com.navix.common.verification.EsignPort;
 import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort;
+import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationRejection;
@@ -99,6 +100,83 @@ class ApplicationVerificationServiceTest {
         p.setEmployer("Digitap.ai");
         p.setMobile("7206485966");
         return p;
+    }
+
+    /**
+     * {@link ApplicationVerificationService#overview} used to scan every verification row, every
+     * application and every customer profile the company has ever had ({@code findAll()} on all
+     * three repositories) before filtering in memory — fine on a handful of rows, but at production
+     * scale (thousands of customers) it took 15-25s and then failed outright. These tests pin the
+     * fix: the DB query itself is scoped to the undecided queue (mocked repos never see a bare
+     * {@code findAll()} call for these three repositories), and the returned tallies/rows only ever
+     * reflect applications that still need a KYC decision — matching the page's own subtitle,
+     * "every application that needs a KYC decision".
+     */
+    @Test
+    void overview_scopesToUndecidedApplications_notTheWholeCompany() {
+        LoanApplication undecidedApp = new LoanApplication();
+        undecidedApp.setId(APP);
+        undecidedApp.setCustomerId(501L);
+        undecidedApp.setStatus(ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(undecidedApp));
+
+        ApplicationVerification undecidedRow = row(APP, "PAN", "PASS");
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of(undecidedRow));
+
+        CustomerProfile p = profile();
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of(p));
+
+        var result = service.overview(null, null, null);
+
+        assertThat(result.passed()).isEqualTo(1);
+        assertThat(result.rows()).hasSize(1);
+        assertThat(result.rows().get(0).applicationId()).isEqualTo(APP);
+        assertThat(result.rows().get(0).borrowerName()).isEqualTo("SHUBHAM");
+
+        // The whole point of the fix: never fall back to loading everything.
+        verify(applicationRepo, never()).findAll();
+        verify(verificationRepo, never()).findAll();
+        verify(profileRepo, never()).findAll();
+    }
+
+    /** The empty-queue case must short-circuit before querying the other two repositories at all —
+     *  {@code findByApplicationIdIn}/{@code findByStatusIn} with an empty collection is invalid SQL
+     *  ({@code in ()}), which is exactly why those repository methods carry that warning. */
+    @Test
+    void overview_withNoUndecidedApplications_returnsZeroedResultWithoutFurtherQueries() {
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null);
+
+        assertThat(result.passed()).isZero();
+        assertThat(result.failed()).isZero();
+        assertThat(result.rows()).isEmpty();
+        verifyNoInteractions(verificationRepo);
+        // profileRepo.save/findByApplicationId are stubbed lenient() elsewhere in this class but not
+        // called here — this asserts no interaction on the specific method overview() would use.
+        verify(profileRepo, never()).findByApplicationIdIn(any());
+    }
+
+    /** A DECIDED application's checks (e.g. already sanctioned) must not pollute the tallies or rows
+     *  — they are historical evidence, not this dashboard's triage work. Belt-and-suspenders on top
+     *  of the DB-level scoping: confirms the service never even asks the repo for rows outside the
+     *  undecided set in the first place (it can't return what it never fetched). */
+    @Test
+    void overview_neverIncludesCheckTypesFromApplicationsOutsideTheUndecidedQueue() {
+        LoanApplication undecidedApp = new LoanApplication();
+        undecidedApp.setId(APP);
+        undecidedApp.setStatus(ApplicationStatus.DRAFT);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(undecidedApp));
+        // Only rows for the undecided application are ever handed back — a SANCTIONED application's
+        // rows are never fetched at all, because findByApplicationIdIn is called with only {APP}.
+        when(verificationRepo.findByApplicationIdIn(java.util.Set.of(APP)))
+                .thenReturn(List.of(row(APP, "PAN", "FAIL")));
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null);
+
+        assertThat(result.failed()).isEqualTo(1);
+        assertThat(result.rows()).extracting("applicationId").containsExactly(APP);
     }
 
     @Test
