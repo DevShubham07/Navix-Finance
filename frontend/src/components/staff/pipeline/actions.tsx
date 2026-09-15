@@ -12,7 +12,7 @@
 
 import * as React from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Check, X, Loader2, Zap } from "lucide-react";
+import { Check, X, Loader2, Zap, UserPlus, UserCheck } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { hasPermission, type Permission } from "@/lib/auth/rbac";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
@@ -303,7 +303,14 @@ export function AssignActions({ app, compact }: { app: ApplicationView; compact?
               disabled={m.isPending || !execId}
               className="btn btn-sm btn-navy disabled:opacity-50"
             >
-              {m.isPending ? <Loader2 size={14} className="animate-spin" /> : null} {app.assignedExecutiveId ? "Reassign" : "Assign"}
+              {m.isPending ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : app.assignedExecutiveId ? (
+                <UserCheck size={14} />
+              ) : (
+                <UserPlus size={14} />
+              )}{" "}
+              {app.assignedExecutiveId ? "Reassign" : "Assign"}
             </button>
           )}
           {canAssignSelf && me.data && (
@@ -311,9 +318,20 @@ export function AssignActions({ app, compact }: { app: ApplicationView; compact?
               onClick={() => mSelf.mutate()}
               disabled={mSelf.isPending}
               className="btn btn-sm btn-outline disabled:opacity-50"
-              title="Assign this credit review to yourself"
+              title={
+                app.assignedExecutiveId
+                  ? "Reassign this credit review to yourself"
+                  : "Assign this credit review to yourself"
+              }
             >
-              {mSelf.isPending ? <Loader2 size={14} className="animate-spin" /> : null} {app.assignedExecutiveId ? "Reassign to me" : "Assign to me"}
+              {mSelf.isPending ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : app.assignedExecutiveId ? (
+                <UserCheck size={14} />
+              ) : (
+                <UserPlus size={14} />
+              )}{" "}
+              {app.assignedExecutiveId ? "Reassign to me" : "Assign to me"}
             </button>
           )}
         </div>
@@ -376,7 +394,8 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
         </button>
         {canAssign && (
           <button onClick={() => setAssigning(true)} className="btn btn-sm btn-outline">
-            Assign
+            {app.assignedExecutiveId ? <UserCheck size={14} /> : <UserPlus size={14} />}{" "}
+            {app.assignedExecutiveId ? "Reassign" : "Assign"}
           </button>
         )}
         <button
