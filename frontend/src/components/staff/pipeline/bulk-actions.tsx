@@ -84,7 +84,9 @@ function ResultSummary({ verb, result }: { verb: string; result: BulkResult }) {
   );
 }
 
-async function runSequentially(ids: number[], call: (id: number) => Promise<unknown>): Promise<BulkResult> {
+/** Exported so other bulk surfaces (the collections register's bulk officer assign) reuse the same
+ *  one-at-a-time loop and partial-failure shape instead of growing a second one. */
+export async function runSequentially(ids: number[], call: (id: number) => Promise<unknown>): Promise<BulkResult> {
   const ok: number[] = [];
   const failed: BulkResult["failed"] = [];
   for (const id of ids) {

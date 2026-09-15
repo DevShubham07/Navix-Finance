@@ -32,7 +32,10 @@ import {
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { InlineOfficerSelect } from "@/components/staff/collections-assign";
+import { BulkActionBar, useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
+import { useStaffMe } from "@/components/staff/pipeline/hooks";
+import { hasPermission } from "@/lib/auth/rbac";
+import { BulkAssignOfficerDialog, InlineOfficerSelect } from "@/components/staff/collections-assign";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { collectionsApi, customersApi, paiseToINR, type CustomerSummary, type WorklistRow } from "@/lib/api/applications";
@@ -172,6 +175,28 @@ export default function CollectionsBucketPage() {
   const { sorted, sortKey, dir, toggle } = useTableSort<Row>(filtered, "dpd", "desc");
   const { page, setPage, pageSize, setPageSize, pageCount, pageRows, total } = usePagination(sorted);
 
+  // Bulk assign of a collections executive. `collections:manage` is COLLECTION_HEAD + ADMIN — the
+  // same pair the per-case assign endpoint already permits, so the button and the server agree.
+  const role = useStaffMe().data?.role;
+  const canBulkAssign = role != null && hasPermission(role, "collections:manage");
+  const [bulkOpen, setBulkOpen] = React.useState(false);
+  const pageLoanIds = React.useMemo(() => pageRows.map((r) => r.loanId), [pageRows]);
+  const selection = useQueueSelection(pageLoanIds);
+  // `useQueueSelection` only resets when the row COUNT changes, which paging usually preserves — so
+  // intersect with the rows actually on screen. A bulk assign must never touch a loan the operator
+  // paged or filtered away from.
+  const selectedLoanIds = React.useMemo(
+    () => pageLoanIds.filter((id) => selection.selected.has(id)),
+    [pageLoanIds, selection.selected],
+  );
+  const allPageSelected = pageLoanIds.length > 0 && selectedLoanIds.length === pageLoanIds.length;
+  // Same reason as above, for the header checkbox: `selection.toggleAll` compares set SIZE, so a
+  // same-size selection carried over from another page would make "select all" read as "clear".
+  const toggleAllOnPage = () => {
+    if (allPageSelected) selection.clear();
+    else for (const id of pageLoanIds) if (!selection.selected.has(id)) selection.toggle(id);
+  };
+
   return (
     <div>
       <PageHeader
@@ -280,6 +305,11 @@ export default function CollectionsBucketPage() {
           className="!mb-0 max-w-xs"
         />
         <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
+        {canBulkAssign && (
+          <div className="pb-1">
+            <BulkActionBar count={selectedLoanIds.length} onAssign={() => setBulkOpen(true)} />
+          </div>
+        )}
       </div>
 
       <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
@@ -298,8 +328,20 @@ export default function CollectionsBucketPage() {
             <thead>
               <tr>
                 <th>S.No.</th>
+                {canBulkAssign && (
+                  // Takes over the sticky-left slot while it renders — two cells pinned at `left: 0`
+                  // would sit on top of each other.
+                  <th className="staff-sticky-identity">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={toggleAllOnPage}
+                      aria-label="Select all loans on this page"
+                    />
+                  </th>
+                )}
                 <SortableTh
-                  className="staff-sticky-identity"
+                  className={canBulkAssign ? undefined : "staff-sticky-identity"}
                   label="Borrower"
                   sortKey="borrowerName"
                   active={sortKey}
@@ -360,7 +402,17 @@ export default function CollectionsBucketPage() {
               {pageRows.map((r, i) => (
                 <tr key={r.loanId}>
                   <td>{(page - 1) * pageSize + i + 1}</td>
-                  <td className="staff-sticky-identity">
+                  {canBulkAssign && (
+                    <td className="staff-sticky-identity">
+                      <input
+                        type="checkbox"
+                        checked={selection.selected.has(r.loanId)}
+                        onChange={() => selection.toggle(r.loanId)}
+                        aria-label={`Select loan #${r.loanId}`}
+                      />
+                    </td>
+                  )}
+                  <td className={canBulkAssign ? undefined : "staff-sticky-identity"}>
                     <span className="font-semibold text-ink">{dash(r.borrowerName)}</span>
                     {r.preDue && (
                       <span
@@ -424,6 +476,13 @@ export default function CollectionsBucketPage() {
           />
         )}
       </div>
+
+      <BulkAssignOfficerDialog
+        loanIds={selectedLoanIds}
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onDone={selection.clear}
+      />
 
       <ApplicationDetailDialog
         applicationId={previewApplicationId}

@@ -10,19 +10,21 @@
  * is what makes chasing a borrower BEFORE their salary day possible: assigning a pre-due loan no
  * longer flips it to IN_COLLECTIONS, so an on-time borrower is never branded delinquent.
  *
- * Two shapes of the same action live here — `WorklistAssignActions` (a button opening a dialog, for
- * sticky action cells) and `InlineOfficerSelect` (the DPD register's "Collections exec" cell). They
- * share `useAssignOfficer`/`useCollectionOfficers` so the open-then-assign sequence and the set of
+ * Three shapes of the same action live here — `WorklistAssignActions` (a button opening a dialog, for
+ * sticky action cells), `InlineOfficerSelect` (the DPD register's "Collections exec" cell) and
+ * `BulkAssignOfficerDialog` (the register's checkbox selection). They share
+ * `openCaseThenAssign`/`useCollectionOfficers` so the open-then-assign sequence and the set of
  * caches it invalidates exist exactly once.
  */
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, UserPlus } from "lucide-react";
-import { Dialog, DialogHeader, DialogTitle, Select } from "@/components/ui";
+import { Dialog, DialogFooter, DialogHeader, DialogTitle, Select } from "@/components/ui";
 import { hasPermission } from "@/lib/auth/rbac";
 import { collectionsApi } from "@/lib/api/applications";
 import { errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
+import { runSequentially } from "@/components/staff/pipeline/bulk-actions";
 
 /** Every surface that renders an assignment. A reassign must not leave the worklist row, the case
  *  lists and the two dashboard queues disagreeing about who owns the loan. */
@@ -36,20 +38,26 @@ const ASSIGN_INVALIDATE_KEYS = [
 
 /**
  * The assign is three calls, not one: a loan may have no collection case yet, and the case is a
- * bookkeeping artefact nobody should have to create by hand. Shared by the dialog and the register's
- * inline cell so the sequence and the invalidation set can't drift apart. Callers add their own
- * per-call `onSuccess`/`onError` — React Query runs those in addition to the invalidation here.
+ * bookkeeping artefact nobody should have to create by hand. Lives outside the hook so the bulk loop
+ * runs the identical sequence rather than a second copy of it.
+ */
+async function openCaseThenAssign(loanId: number, officerId: number) {
+  // Open the case on demand — idempotent server-side, so a reassign never duplicates it, and
+  // nobody has to remember a separate "start collections" step.
+  const existing = await collectionsApi.caseByLoan(loanId);
+  const caseId = existing?.id ?? (await collectionsApi.openCase(loanId)).id;
+  return collectionsApi.assignOfficer(caseId, officerId);
+}
+
+/**
+ * Shared by the dialog and the register's inline cell so the sequence and the invalidation set can't
+ * drift apart. Callers add their own per-call `onSuccess`/`onError` — React Query runs those in
+ * addition to the invalidation here.
  */
 function useAssignOfficer(loanId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (officerId: number) => {
-      // Open the case on demand — idempotent server-side, so a reassign never duplicates it, and
-      // nobody has to remember a separate "start collections" step.
-      const existing = await collectionsApi.caseByLoan(loanId);
-      const caseId = existing?.id ?? (await collectionsApi.openCase(loanId)).id;
-      return collectionsApi.assignOfficer(caseId, officerId);
-    },
+    mutationFn: (officerId: number) => openCaseThenAssign(loanId, officerId),
     onSuccess: () => {
       for (const key of ASSIGN_INVALIDATE_KEYS) {
         qc.invalidateQueries({ queryKey: key });
@@ -316,5 +324,141 @@ export function InlineOfficerSelect({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Bulk version of the same assign, for the DPD register's checkbox selection: one collections
+ * executive across every selected loan.
+ *
+ * Deliberately a loop over the per-loan sequence above and not a batch call — there is no batch
+ * endpoint and adding one would move the ownership/role checks off the audited per-case endpoint the
+ * Head already uses. A failure on one loan is recorded and the loop continues, so a single stale row
+ * can't cost the operator the other nineteen.
+ */
+export function BulkAssignOfficerDialog({
+  loanIds,
+  open,
+  onClose,
+  onDone,
+}: {
+  loanIds: number[];
+  open: boolean;
+  onClose: () => void;
+  /** Called once the loop finishes (success or partial failure) — the caller clears its selection
+   *  here, while the dialog stays open showing the "n assigned, m failed" summary. */
+  onDone?: () => void;
+}) {
+  const qc = useQueryClient();
+  const role = useStaffMe().data?.role;
+  const canManage = role != null && hasPermission(role, "collections:manage");
+
+  const [officerId, setOfficerId] = React.useState("");
+  const [result, setResult] = React.useState<Awaited<ReturnType<typeof runSequentially>> | null>(null);
+
+  React.useEffect(() => {
+    if (open) {
+      setOfficerId("");
+      setResult(null);
+    }
+  }, [open]);
+
+  const officersQ = useCollectionOfficers(open && canManage);
+  const officers = officersQ.data ?? [];
+
+  const m = useMutation({
+    mutationFn: () => runSequentially(loanIds, (loanId) => openCaseThenAssign(loanId, Number.parseInt(officerId, 10))),
+    onSuccess: (r) => {
+      setResult(r);
+      // Once for the whole run, not per row: the register polls anyway, and N invalidations would
+      // fire N refetches of the same worklist while the loop is still going.
+      for (const key of ASSIGN_INVALIDATE_KEYS) {
+        qc.invalidateQueries({ queryKey: key });
+      }
+      onDone?.();
+    },
+  });
+
+  // Fail closed — a Collection Executive reads this register, they never set assignments.
+  if (!canManage) return null;
+
+  const count = loanIds.length;
+
+  return (
+    <Dialog open={open} onClose={onClose} className="max-w-md" aria-label="Assign a collections executive in bulk">
+      <DialogHeader>
+        <DialogTitle>
+          Assign {count} loan{count === 1 ? "" : "s"}?
+        </DialogTitle>
+        <p className="text-sm text-muted">
+          Each selected loan is assigned to this executive, one at a time. Only ACTIVE collections
+          executives can be assigned.
+        </p>
+      </DialogHeader>
+
+      {result ? (
+        <>
+          <p className="text-xs text-ink">
+            {result.ok.length} assigned
+            {result.failed.length > 0 && (
+              <span className="text-error-700">
+                , {result.failed.length} failed (loan #{result.failed.map((f) => f.id).join(", #")})
+              </span>
+            )}
+            .
+          </p>
+          {result.failed.length > 0 && (
+            // The ids alone don't say what to do next; the first reason usually applies to all.
+            <p className="mt-1 text-xs text-muted">{result.failed[0].message}</p>
+          )}
+          <DialogFooter>
+            <button type="button" onClick={onClose} className="btn btn-sm btn-navy">
+              Done
+            </button>
+          </DialogFooter>
+        </>
+      ) : (
+        <>
+          {officersQ.isLoading ? (
+            <p className="text-sm text-muted">Loading officers…</p>
+          ) : officersQ.error ? (
+            <p className="text-sm text-error-700">Couldn&apos;t load officers — {errMessage(officersQ.error)}</p>
+          ) : officers.length === 0 ? (
+            <p className="text-sm text-muted">No active collections executives.</p>
+          ) : (
+            <Select
+              label="Collections executive"
+              value={officerId}
+              onChange={(e) => setOfficerId(e.target.value)}
+            >
+              <option value="" disabled>
+                Assign to…
+              </option>
+              {officers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          )}
+
+          {m.error && <p className="mt-2 text-sm text-error-700">{errMessage(m.error)}</p>}
+
+          <DialogFooter>
+            <button type="button" onClick={onClose} disabled={m.isPending} className="btn btn-sm btn-outline">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => m.mutate()}
+              disabled={!officerId || count === 0 || m.isPending}
+              className="btn btn-sm btn-navy disabled:opacity-50"
+            >
+              {m.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Assign
+            </button>
+          </DialogFooter>
+        </>
+      )}
+    </Dialog>
   );
 }
