@@ -67,6 +67,31 @@ public class Lead extends BaseAuditEntity {
     @Column(columnDefinition = "text")
     private String remarks;
 
+    /**
+     * Where the outreach on this lead got to — {@code NEW | OUTREACHED | REJECTED} (V70).
+     *
+     * <p>A separate axis from {@link #callStatus}, which records how a call ATTEMPT went and whose
+     * seven values feed {@code LeadStats.byCallStatus} and buildByDay's "called" metric; folding
+     * outcomes into it would move those numbers silently.
+     *
+     * <p>{@code CONFIRMED} is deliberately not storable here. It is resolved on read from the
+     * attributed application ({@link DsaAttributionService}), because attribution is a PAN match
+     * computed at read time and no lead-to-application link is persisted to drive a write.
+     */
+    @Column(name = "lead_outcome", nullable = false, length = 16)
+    private String leadOutcome = "NEW";
+
+    /**
+     * One staff note the DSA who uploaded this lead can read (V70).
+     *
+     * <p>Deliberately NOT {@link #remarks}, which is the telecaller's private call commentary and
+     * predates anyone outside staff being able to read a lead at all — surfacing it would leak
+     * internal notes on every row already in the table. This column starts empty, and the staff UI
+     * labels it as DSA-visible at the point of writing.
+     */
+    @Column(name = "dsa_note", columnDefinition = "text")
+    private String dsaNote;
+
     @Column(name = "created_by_staff_id", nullable = false)
     private Long createdByStaffId;
 

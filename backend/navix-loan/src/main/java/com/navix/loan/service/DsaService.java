@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -92,25 +93,44 @@ public class DsaService {
         return toView(saved);
     }
 
+    /**
+     * Everything this DSA may see: leads they entered AND leads they uploaded (V70). Scoped, as
+     * everywhere in this service, by {@code ActorContext.get().id()} — never a client-supplied id.
+     */
     @Transactional(readOnly = true)
     public List<DsaLeadView> list(String q, String status) {
         Long dsaId = requireDsaId();
         String query = blankToNull(q) == null ? null : q.trim().toLowerCase(Locale.ROOT);
         String statusFilter = blankToNull(status);
-        return leadRepository.findByOwnerDsaIdOrderByIdDesc(dsaId).stream()
-                .map(this::toView)
+        List<Lead> leads =
+                leadRepository.findByOwnerDsaIdOrCreatedByStaffIdOrderByIdDesc(dsaId, dsaId);
+        // One attribution query for the lot. Per-lead was fine while this was only hand-entered leads
+        // (30/day rate limit); an uploaded list is unbounded.
+        Map<Long, AttributedApplication> attributions =
+                attributionService.attributedApplications(leads);
+        return leads.stream()
+                .map(l -> toView(l, attributions.get(l.getId())))
                 .filter(v -> query == null
-                        || v.name().toLowerCase(Locale.ROOT).contains(query)
-                        || v.pan().toLowerCase(Locale.ROOT).contains(query)
-                        || v.mobile().contains(query))
+                        || contains(v.name(), query)
+                        || contains(v.pan(), query)
+                        || contains(v.mobile(), query))
                 .filter(v -> statusFilter == null || v.status().name().equalsIgnoreCase(statusFilter))
                 .toList();
+    }
+
+    /**
+     * Null-safe substring match. PAN is mandatory on a DSA-entered lead but OPTIONAL on an uploaded
+     * one, so searching over uploaded leads used to NPE on {@code v.pan().toLowerCase()} the moment
+     * they became visible here.
+     */
+    private static boolean contains(String haystack, String lowercaseNeedle) {
+        return haystack != null && haystack.toLowerCase(Locale.ROOT).contains(lowercaseNeedle);
     }
 
     @Transactional(readOnly = true)
     public DsaLeadView get(Long id) {
         Long dsaId = requireDsaId();
-        return toView(requireOwnLead(id, dsaId));
+        return toView(requireVisibleLead(id, dsaId));
     }
 
     @Transactional
@@ -159,12 +179,22 @@ public class DsaService {
                 .toList();
     }
 
+    /**
+     * Deliberately still OWNER-scoped, unlike {@link #list}: this is the commission page, and only a
+     * lead the DSA entered can ever earn. Counting uploaded leads under "Leads added" here would show
+     * a large number next to zero earnings and read as money owed.
+     */
     @Transactional(readOnly = true)
     public DsaEarningsSummary earnings() {
         Long dsaId = requireDsaId();
         List<Lead> leads = leadRepository.findByOwnerDsaIdOrderByIdDesc(dsaId);
+        Map<Long, AttributedApplication> attributions =
+                attributionService.attributedApplications(leads);
         long converted = leads.stream()
-                .filter(l -> attributionService.attributedApplication(l).application() != null)
+                .filter(l -> {
+                    AttributedApplication a = attributions.get(l.getId());
+                    return a != null && a.application() != null;
+                })
                 .count();
         List<DsaCommission> commissions = commissionRepository.findByDsaStaffIdOrderByIdDesc(dsaId);
         long accrued = sumByStatus(commissions, DsaCommissionStatus.ACCRUED);
@@ -176,7 +206,12 @@ public class DsaService {
     // ---- internals -----------------------------------------------------------------
 
     private DsaLeadView toView(Lead lead) {
-        AttributedApplication attributed = attributionService.attributedApplication(lead);
+        return toView(lead, attributionService.attributedApplication(lead));
+    }
+
+    private DsaLeadView toView(Lead lead, AttributedApplication resolved) {
+        AttributedApplication attributed =
+                resolved == null ? AttributedApplication.notApplied() : resolved;
         Long netDisbursedPaise = null;
         Long commissionPaise = null;
         if (attributed.application() != null && attributed.application().getLoanId() != null) {
@@ -187,11 +222,27 @@ public class DsaService {
         if (commission != null) {
             commissionPaise = commission.getAmountPaise();
         }
-        return DsaLeadView.of(lead, attributed.status(), netDisbursedPaise, commissionPaise);
+        // CONFIRMED overlays the stored outcome once an application is attributed (V70).
+        String outcome = attributed.application() != null ? "CONFIRMED" : lead.getLeadOutcome();
+        return DsaLeadView.of(lead, attributed.status(), netDisbursedPaise, commissionPaise, outcome);
     }
 
+    /**
+     * A lead this DSA may WRITE to — strictly one they own.
+     *
+     * <p>Deliberately narrower than {@link #requireVisibleLead}: an uploaded lead is view-only. It
+     * never passed the PAN and cross-DSA duplicate guards a hand-entered lead does, and
+     * {@code outreach} sends real billable SMS/email — so a bulk upload must not become a bulk send
+     * capability, nor a way to rewrite a mobile or PAN after import.
+     */
     private Lead requireOwnLead(Long id, Long dsaId) {
         return leadRepository.findByIdAndOwnerDsaId(id, dsaId)
+                .orElseThrow(() -> new BusinessException("LEAD_NOT_FOUND", "Lead not found: " + id));
+    }
+
+    /** A lead this DSA may READ — one they own or one they uploaded. Same opaque miss on a foreign id. */
+    private Lead requireVisibleLead(Long id, Long dsaId) {
+        return leadRepository.findVisibleToDsa(id, dsaId)
                 .orElseThrow(() -> new BusinessException("LEAD_NOT_FOUND", "Lead not found: " + id));
     }
 

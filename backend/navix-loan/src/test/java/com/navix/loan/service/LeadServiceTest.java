@@ -15,6 +15,7 @@ import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
+import com.navix.loan.dto.LeadDtos.LeadOutcomeRequest;
 import com.navix.loan.dto.LeadDtos.LeadView;
 import com.navix.loan.entity.Lead;
 import com.navix.loan.repository.LeadRepository;
@@ -45,12 +46,13 @@ class LeadServiceTest {
     @Mock private LeadRepository leadRepository;
     @Mock private StaffDirectory staffDirectory;
     @Mock private JdbcTemplate jdbc;
+    @Mock private DsaAttributionService attributionService;
 
     private LeadService service;
 
     @BeforeEach
     void setUp() {
-        service = new LeadService(leadRepository, staffDirectory, jdbc);
+        service = new LeadService(leadRepository, staffDirectory, attributionService, jdbc);
     }
 
     @AfterEach
@@ -89,6 +91,87 @@ class LeadServiceTest {
         ActorContext.set(new CurrentActor("7", "Exec", "CREDIT_EXECUTIVE"));
         assertThatThrownBy(() -> service.create(new CreateLeadRequest(
                 "X", "9876543210", null, null, null, null, null, null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("FORBIDDEN_ROLE");
+    }
+
+    // ---- outcome + DSA note (V70) -------------------------------------------------------
+
+    @Test
+    void outcome_rejectsAValueOutsideTheVocabulary() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+
+        assertThatThrownBy(() -> service.outcome(9L, new LeadOutcomeRequest("BOGUS", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("INVALID_LEAD_OUTCOME");
+    }
+
+    /** CONFIRMED is derived from the attributed application on read — it must not be settable. */
+    @Test
+    void outcome_rejectsConfirmedBecauseItIsDerivedNotStored() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+
+        assertThatThrownBy(() -> service.outcome(9L, new LeadOutcomeRequest("CONFIRMED", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("INVALID_LEAD_OUTCOME");
+    }
+
+    /**
+     * Patch, not replace. {@code disposition()} overwrites remarks/rating from the request, so if
+     * these two fields lived there the telecaller panel would null them on every save.
+     */
+    @Test
+    void outcome_leavesAnUnsentFieldAlone() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        Lead existing = new Lead();
+        existing.setId(9L);
+        existing.setName("Ravi");
+        existing.setCreatedByStaffId(1L);
+        existing.setLeadOutcome("OUTREACHED");
+        existing.setDsaNote("keep me");
+        when(leadRepository.findById(9L)).thenReturn(Optional.of(existing));
+        when(leadRepository.save(any(Lead.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.outcome(9L, new LeadOutcomeRequest("REJECTED", null));
+
+        assertThat(existing.getLeadOutcome()).isEqualTo("REJECTED");
+        assertThat(existing.getDsaNote()).isEqualTo("keep me");
+
+        service.outcome(9L, new LeadOutcomeRequest(null, "  now with a note  "));
+
+        assertThat(existing.getLeadOutcome()).isEqualTo("REJECTED");
+        assertThat(existing.getDsaNote()).isEqualTo("now with a note");
+    }
+
+    /**
+     * {@code requireLead} is a bare findById with no ownership predicate, while {@code list()}
+     * filters {@code ownerDsaId IS NULL} — so a telecaller cannot FIND a DSA-owned lead but could
+     * write to one by id. The outcome path closes that rather than inheriting it.
+     */
+    @Test
+    void outcome_refusesADsaOwnedLead() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        Lead dsaOwned = new Lead();
+        dsaOwned.setId(9L);
+        dsaOwned.setOwnerDsaId(42L);
+        dsaOwned.setCreatedByStaffId(42L);
+        when(leadRepository.findById(9L)).thenReturn(Optional.of(dsaOwned));
+
+        assertThatThrownBy(() -> service.outcome(9L, new LeadOutcomeRequest("REJECTED", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("LEAD_NOT_FOUND");
+        org.mockito.Mockito.verify(leadRepository, org.mockito.Mockito.never()).save(any(Lead.class));
+    }
+
+    @Test
+    void outcome_forbiddenForNonTelecaller() {
+        ActorContext.set(new CurrentActor("1", "Agent", "DSA"));
+
+        assertThatThrownBy(() -> service.outcome(9L, new LeadOutcomeRequest("REJECTED", null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getCode())
                 .isEqualTo("FORBIDDEN_ROLE");
@@ -142,7 +225,7 @@ class LeadServiceTest {
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
         when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
 
-        assertThat(service.list(null, null, null, null, null, null, null, null)).isEmpty();
+        assertThat(service.list(null, null, null, null, null, null, null, null, null)).isEmpty();
 
         verify(leadRepository).findAll(any(Specification.class), eq(Sort.by(Sort.Direction.DESC, "id")));
         // Even with no explicit filters, the "exclude DSA-owned leads" predicate is always present —
@@ -165,7 +248,7 @@ class LeadServiceTest {
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
         when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
 
-        service.list(null, null, null, null, null, null, null, null);
+        service.list(null, null, null, null, null, null, null, null, null);
 
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);
@@ -186,7 +269,7 @@ class LeadServiceTest {
         when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
 
         service.list(null, null, null, null,
-                LocalDate.of(2026, 7, 13), LocalDate.of(2026, 8, 12), null, null);
+                LocalDate.of(2026, 7, 13), LocalDate.of(2026, 8, 12), null, null, null);
 
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);
@@ -213,7 +296,7 @@ class LeadServiceTest {
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
         when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
 
-        service.list("  Ravi  ", null, null, null, null, null, null, null);
+        service.list("  Ravi  ", null, null, null, null, null, null, null, null);
 
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);
@@ -246,7 +329,7 @@ class LeadServiceTest {
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
         when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
 
-        service.list(null, " CALLBACK ", " DSA ", 42L, null, null, 2, 4);
+        service.list(null, " CALLBACK ", " DSA ", 42L, null, null, 2, 4, null);
 
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);

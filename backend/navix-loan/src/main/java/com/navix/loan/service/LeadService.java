@@ -8,6 +8,8 @@ import com.navix.common.staff.StaffSummary;
 import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DayCount;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
+import com.navix.loan.dto.LeadDtos.LeadOutcomeRequest;
+import com.navix.loan.service.DsaAttributionService.AttributedApplication;
 import com.navix.loan.dto.LeadDtos.LeadStats;
 import com.navix.loan.dto.LeadDtos.LeadView;
 import com.navix.loan.dto.LeadDtos.RatingCount;
@@ -45,9 +47,16 @@ public class LeadService {
     private static final Set<String> CALL_STATUSES = Set.of(
             "NOT_CALLED", "CALLED", "CALLBACK", "NO_ANSWER",
             "NOT_INTERESTED", "WRONG_NUMBER", "CONNECTED");
+    /**
+     * The outcome values a human may SET. {@code CONFIRMED} is absent on purpose — it is resolved on
+     * read from the attributed application, never stored (see {@code Lead.leadOutcome} and V70).
+     */
+    private static final Set<String> LEAD_OUTCOMES = Set.of("NEW", "OUTREACHED", "REJECTED");
 
     private final LeadRepository leadRepository;
     private final StaffDirectory staffDirectory;
+    // Resolves the derived CONFIRMED outcome. Read-only; this service never writes DSA state.
+    private final DsaAttributionService attributionService;
     private final JdbcTemplate jdbc;
 
     @Transactional
@@ -80,13 +89,16 @@ public class LeadService {
             LocalDate from,
             LocalDate to,
             Integer minRating,
-            Integer maxRating) {
+            Integer maxRating,
+            String leadOutcome) {
         requireLeadWriter();
         Instant fromInst = from == null ? null : from.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant toInst = to == null ? null : to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         String query = blankToNull(q);
         String status = blankToNull(callStatus);
         String leadSource = blankToNull(source);
+        String outcome = blankToNull(leadOutcome) == null
+                ? null : leadOutcome.trim().toUpperCase(Locale.ROOT);
         Specification<Lead> spec = (root, ignored, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             // DSA-owned leads never appear to a telecaller/ADMIN here — they stay out of the
@@ -106,6 +118,9 @@ public class LeadService {
             if (createdBy != null) {
                 predicates.add(cb.equal(root.get("createdByStaffId"), createdBy));
             }
+            if (outcome != null) {
+                predicates.add(cb.equal(root.get("leadOutcome"), outcome));
+            }
             if (fromInst != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromInst));
             }
@@ -122,13 +137,31 @@ public class LeadService {
         };
         List<Lead> rows = leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "id"));
         Map<Long, String> names = new HashMap<>();
-        return rows.stream().map(l -> toView(l, names)).toList();
+        // ONE attribution query for the whole result set, not one per row — this list is unpaged.
+        Map<Long, AttributedApplication> attributions = attributionService.attributedApplications(rows);
+        return rows.stream()
+                .map(l -> toView(l, names, attributions.get(l.getId())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public LeadView get(Long id) {
         requireLeadWriter();
         return toView(requireLead(id));
+    }
+
+    /**
+     * The outcome a reader should see: the stored value, unless an attributed application exists, in
+     * which case {@code CONFIRMED} overlays it.
+     *
+     * <p>{@code CONFIRMED} is never persisted — attribution is a PAN match resolved on read (V70), so
+     * a lead with no PAN can never reach it however it was worked.
+     */
+    private static String effectiveOutcome(Lead l, AttributedApplication attribution) {
+        if (attribution != null && attribution.application() != null) {
+            return "CONFIRMED";
+        }
+        return l.getLeadOutcome();
     }
 
     @Transactional
@@ -350,20 +383,71 @@ public class LeadService {
         }
     }
 
+    /**
+     * Set the outreach outcome and/or the DSA-visible note on a lead.
+     *
+     * <p>Deliberately a SEPARATE endpoint from {@link #disposition}, which is replace-semantics: it
+     * overwrites {@code qualityRating} and {@code remarks} from whatever the request carries. Folding
+     * these two fields into {@code DispositionRequest} would mean the existing telecaller panel —
+     * which does not send them — nulled them on every save.
+     *
+     * <p>This one is PATCH semantics: a null field is left alone, so the two screens can write
+     * independently. Passing a blank note clears it.
+     */
+    @Transactional
+    public LeadView outcome(Long id, LeadOutcomeRequest req) {
+        requireLeadWriter();
+        // Validate before loading, as disposition() does — a malformed request costs no query.
+        String outcome = null;
+        if (req.leadOutcome() != null) {
+            outcome = req.leadOutcome().trim().toUpperCase(Locale.ROOT);
+            if (!LEAD_OUTCOMES.contains(outcome)) {
+                throw new BusinessException("INVALID_LEAD_OUTCOME",
+                        "leadOutcome must be one of " + LEAD_OUTCOMES
+                                + " (CONFIRMED is derived from the application, not set here)");
+            }
+        }
+        Lead l = requireTelecallerLead(id);
+        if (outcome != null) {
+            l.setLeadOutcome(outcome);
+        }
+        if (req.dsaNote() != null) {
+            String note = req.dsaNote().trim();
+            l.setDsaNote(note.isEmpty() ? null : note);
+        }
+        return toView(leadRepository.save(l));
+    }
+
+    /**
+     * A lead this side of the partition may write to.
+     *
+     * <p>{@link #requireLead} is a bare {@code findById} with no ownership predicate, while
+     * {@link #list} filters {@code ownerDsaId IS NULL}. A telecaller therefore cannot FIND a
+     * DSA-owned lead but could still write to one by id. The existing methods inherit that gap;
+     * this one does not.
+     */
+    private Lead requireTelecallerLead(Long id) {
+        Lead l = requireLead(id);
+        if (l.getOwnerDsaId() != null) {
+            throw new BusinessException("LEAD_NOT_FOUND", "Lead not found: " + id);
+        }
+        return l;
+    }
+
     private Lead requireLead(Long id) {
         return leadRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("LEAD_NOT_FOUND", "Lead not found: " + id));
     }
 
     private LeadView toView(Lead l) {
-        return toView(l, new HashMap<>());
+        return toView(l, new HashMap<>(), attributionService.attributedApplication(l));
     }
 
-    private LeadView toView(Lead l, Map<Long, String> names) {
+    private LeadView toView(Lead l, Map<Long, String> names, AttributedApplication attribution) {
         String name = names.computeIfAbsent(
                 l.getCreatedByStaffId(),
                 id -> staffDirectory.findStaff(id).map(StaffSummary::name).orElse(null));
-        return LeadView.of(l, name);
+        return LeadView.of(l, name, effectiveOutcome(l, attribution));
     }
 
     private void requireLeadWriter() {

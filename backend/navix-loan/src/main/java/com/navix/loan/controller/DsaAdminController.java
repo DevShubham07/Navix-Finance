@@ -49,8 +49,9 @@ public class DsaAdminController {
             @RequestParam(required = false) Long dsaId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) String q) {
-        return ApiResponse.ok(dsaAdminService.leads(dsaId, from, to, q));
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String attribution) {
+        return ApiResponse.ok(dsaAdminService.leads(dsaId, from, to, q, attribution));
     }
 
     @PutMapping("/leads/{id}")
