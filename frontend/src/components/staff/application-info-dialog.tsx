@@ -101,7 +101,9 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
   const displayName = p?.fullName ?? app?.customerName ?? (app ? `Customer #${app.customerId}` : "Application");
 
   return (
-    <Dialog open={open} onClose={onClose} className="!max-w-[96vw] !w-[96vw]" aria-label="Quick summary">
+    // Sized to match customer-detail-dialog.tsx:51 — the other dialog opened from the same Customers
+    // row — so both popups from one row look alike. The old !w-[96vw] was the widest dialog in the repo.
+    <Dialog open={open} onClose={onClose} className="!max-w-4xl !w-[min(56rem,94vw)]" aria-label="Quick summary">
       <div className="border-b border-line pb-3">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
@@ -137,7 +139,16 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
         </div>
       </div>
 
-      <div className="mt-3 grid h-[92vh] grid-cols-2 grid-rows-2 gap-3 overflow-hidden text-[10px]">
+      {/*
+        Content box, sized so a short summary yields a genuinely small popup:
+        max-h-[70vh] (was h-[92vh]) — a fixed height filled the screen regardless of content; a max lets it shrink.
+        overflow-y-auto (was overflow-hidden) — critical: overflow past the height used to be silently clipped.
+        no grid-rows-2 — rows size to their content instead of each being forced to half a viewport.
+        grid-cols-1 + sm:grid-cols-2 — the four panels stack on narrow screens.
+        text-xs (was text-[10px]) — 10px only existed to cram all four panels into one screenful.
+        pr-1 — keeps the new scrollbar off the card borders.
+      */}
+      <div className="mt-3 grid max-h-[70vh] grid-cols-1 gap-3 overflow-y-auto pr-1 text-xs sm:grid-cols-2">
         {loading ? (
           <p className="flex items-center gap-2 py-8 text-sm text-muted">
             <Loader2 size={15} className="animate-spin" /> Loading…
