@@ -17,6 +17,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Runs one import off the request thread.
@@ -39,8 +41,25 @@ public class LeadImportRunner {
     private final DocumentStoragePort storage;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Start work once the job row is committed, never before.
+     *
+     * <p>{@code AFTER_COMMIT} is the whole point of going through an event: {@link
+     * LeadImportJobService#start} is {@code @Transactional}, so dispatching from inside it handed
+     * this thread an id whose INSERT had not landed yet and {@link #run}'s opening {@code findById}
+     * lost the race — the job then sat at {@code QUEUED} for good. Note this also means a caller
+     * that invokes {@code start} outside a transaction gets no worker at all; the listener is
+     * deliberately not {@code fallbackExecution}, because a job queued outside a transaction would
+     * be worked before anyone could read it back.
+     */
     @Async("leadImportExecutor")
-    public void run(Long jobId) {
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onQueued(LeadImportQueuedEvent event) {
+        run(event.jobId());
+    }
+
+    /** The import itself. Package-private entry point so a test can drive it without the event. */
+    void run(Long jobId) {
         LeadImportJob job = jobRepository.findById(jobId).orElse(null);
         if (job == null) {
             log.warn("lead import job {} vanished before it started", jobId);
@@ -85,6 +104,10 @@ public class LeadImportRunner {
     /**
      * Rows already committed by earlier chunks stay committed — the counters are saved alongside the
      * failure so the operator can see how far it got, and re-uploading the same file skips them.
+     *
+     * <p>The uploaded file itself is never touched: {@code s3Key} stays on the row and nothing in the
+     * application deletes the object ({@code DocumentStoragePort} exposes no delete at all), so a
+     * list that failed to parse is still in the bucket and still retrievable by its key.
      */
     private void fail(LeadImportJob job, ImportRun run, String message) {
         applyProgress(job, run);

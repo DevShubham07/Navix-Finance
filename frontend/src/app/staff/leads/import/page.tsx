@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { LeadCsvImport } from "@/components/staff/lead-csv-import";
 import { hasPermission } from "@/lib/auth/rbac";
-import { leadsApi } from "@/lib/api/applications";
+import { leadsApi, storageApi, type ImportJobView } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
 /**
@@ -69,6 +69,7 @@ export default function LeadImportPage() {
                 <th>Duplicates</th>
                 <th>Customers</th>
                 <th>Problems</th>
+                <th>Original</th>
               </tr>
             </thead>
             <tbody>
@@ -88,6 +89,9 @@ export default function LeadImportPage() {
                   <td className="font-mono">{job.skippedDuplicates.toLocaleString("en-IN")}</td>
                   <td className="font-mono">{job.skippedCustomers.toLocaleString("en-IN")}</td>
                   <td className="font-mono">{job.issueCount.toLocaleString("en-IN")}</td>
+                  <td>
+                    <OriginalFileLink job={job} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -95,5 +99,45 @@ export default function LeadImportPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Download the list exactly as it was uploaded.
+ *
+ * <p>The file is PUT to S3 before the backend is told anything about it, and nothing ever deletes it
+ * — not a parse failure, not a rejected format, not an import that died half way. So the row always
+ * knows where the original is, and this is how someone gets it back to see what was wrong with it.
+ * The key is withheld from roles without `customer:view` (a DSA sees their own counts but not the
+ * contact data), in which case there is nothing to link to.
+ */
+function OriginalFileLink({ job }: { job: ImportJobView }) {
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  if (!job.s3Key) return <span className="text-xs text-muted">—</span>;
+
+  async function open() {
+    setBusy(true);
+    setError(null);
+    try {
+      // Presigned GET, minted on demand: the URL is short-lived, so it is fetched at click time
+      // rather than rendered into the table for every row.
+      const url = await storageApi.presignDownload(job.s3Key as string);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      setError(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" className="text-xs underline disabled:opacity-50" disabled={busy} onClick={open}>
+        {busy ? "Opening…" : "Original"}
+      </button>
+      {error && <p className="text-xs text-error-700">{error}</p>}
+    </>
   );
 }

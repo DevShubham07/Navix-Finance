@@ -7,6 +7,8 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * One bulk lead-import run (V68).
@@ -68,7 +70,19 @@ public class LeadImportJob extends BaseAuditEntity {
     @Column(name = "issue_count", nullable = false)
     private int issueCount;
 
-    /** The first {@code MAX_ISSUES} bad rows as JSON. Capped so a wholly-invalid file stays small. */
+    /**
+     * The first {@code MAX_ISSUES} bad rows as JSON. Capped so a wholly-invalid file stays small.
+     *
+     * <p>{@code @JdbcTypeCode(SqlTypes.JSON)} is load-bearing, not decoration. Without it Hibernate
+     * binds this String as {@code Types.VARCHAR}, pgJDBC sends oid {@code varchar}, and PostgreSQL
+     * rejects the statement when it is PARSED — on the parameter's declared type, before it looks at
+     * the value — so even the {@code null} bind on the very first INSERT failed with
+     * {@code column "issues_json" is of type jsonb but expression is of type character varying}.
+     * That surfaced as a bare 500 on every single upload. {@code ddl-auto: validate} does not catch
+     * it: the explicit {@code columnDefinition} makes the validator compare jsonb against jsonb, and
+     * only the runtime bind differs. Same mapping as {@code ApplicationVerification.rawResponse}.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "issues_json", columnDefinition = "jsonb")
     private String issuesJson;
 
