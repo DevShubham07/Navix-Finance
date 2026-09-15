@@ -14,6 +14,7 @@ import {
 } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
 import { LoanDetailsDialog } from "@/components/borrower/loan-details-dialog";
+import { LoanDetailBody } from "@/components/borrower/loan-detail-body";
 
 /** Colour an application status: active=green, bad=red, terminal-neutral=grey, in-flight=blue. */
 function statusVariant(status: ApplicationStatus): React.ComponentProps<typeof Badge>["variant"] {
@@ -77,7 +78,7 @@ export default function LoansPage() {
         <div className="space-y-8">
           <Section title="Active advances" apps={active} emptyHint="No active advance right now." onView={setDetailsLoanId} />
           <Section title="In progress" apps={inProgress} onView={setDetailsLoanId} />
-          <Section title="Past loans" apps={past} onView={setDetailsLoanId} />
+          <Section title="Past loans" apps={past} onView={setDetailsLoanId} expanded />
         </div>
       )}
 
@@ -91,8 +92,15 @@ export default function LoansPage() {
 }
 
 function Section({
-  title, apps, emptyHint, onView,
-}: { title: string; apps: ApplicationView[]; emptyHint?: string; onView: (loanId: number) => void }) {
+  title, apps, emptyHint, onView, expanded,
+}: {
+  title: string;
+  apps: ApplicationView[];
+  emptyHint?: string;
+  onView: (loanId: number) => void;
+  /** Render each card's full detail inline instead of a summary behind "View full details". */
+  expanded?: boolean;
+}) {
   if (apps.length === 0 && !emptyHint) return null;
   return (
     <section>
@@ -104,7 +112,7 @@ function Section({
       ) : (
         <div className="space-y-4">
           {apps.map((app) => (
-            <LoanApplicationCard key={app.id} app={app} onView={onView} />
+            <LoanApplicationCard key={app.id} app={app} onView={onView} expanded={expanded} />
           ))}
         </div>
       )}
@@ -112,8 +120,11 @@ function Section({
   );
 }
 
-function LoanApplicationCard({ app, onView }: { app: ApplicationView; onView: (loanId: number) => void }) {
+function LoanApplicationCard({
+  app, onView, expanded,
+}: { app: ApplicationView; onView: (loanId: number) => void; expanded?: boolean }) {
   const hasLoan = app.loanId != null;
+  const inline = hasLoan && expanded === true;
   return (
     <div className="rounded border border-line bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -126,7 +137,7 @@ function LoanApplicationCard({ app, onView }: { app: ApplicationView; onView: (l
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={statusVariant(app.status)}>{statusLabel(app.status)}</Badge>
-          {hasLoan && (
+          {hasLoan && !inline && (
             <button
               type="button"
               onClick={() => onView(app.loanId as number)}
@@ -138,7 +149,14 @@ function LoanApplicationCard({ app, onView }: { app: ApplicationView; onView: (l
         </div>
       </div>
 
-      {hasLoan && <LoanDetails loanId={app.loanId as number} />}
+      {inline ? (
+        <div className="mt-4 border-t border-grey-200 pt-4">
+          <div className="mb-3 text-xs text-muted">Loan #{app.loanId}</div>
+          <LoanDetailBody loanId={app.loanId as number} />
+        </div>
+      ) : (
+        hasLoan && <LoanDetails loanId={app.loanId as number} />
+      )}
     </div>
   );
 }
@@ -176,9 +194,6 @@ function LoanDetails({ loanId }: { loanId: number }) {
           <div className="text-xs text-muted">Loan status</div>
           <Badge variant={statusVariant(loan.status as ApplicationStatus)}>{loan.status}</Badge>
         </div>
-      </div>
-      <div className="mt-3 text-[8.8px] text-muted">
-        Upfront deductions: processing fee {paiseToINR(loan.processingFeePaise)} · GST {paiseToINR(loan.gstPaise)}
       </div>
     </div>
   );
