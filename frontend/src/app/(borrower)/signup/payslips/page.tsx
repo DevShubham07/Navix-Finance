@@ -11,10 +11,9 @@ import { useOnboarding, completeStep, useSavedProfile } from "@/lib/onboarding";
 import { verificationApi, type StepResult } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
+import { DOC_UPLOAD_ACCEPT, checkDocumentFile } from "@/lib/upload-file-types";
 
 const LABELS = ["Most recent month", "Previous month", "Month before that"] as const;
-const ACCEPT = "application/pdf,image/jpeg,image/png";
-const MAX_BYTES = 10 * 1024 * 1024;
 type Slips = [File | null, File | null, File | null];
 
 export default function SignupPayslipsPage() {
@@ -38,12 +37,9 @@ export default function SignupPayslipsPage() {
   const pick = (i: 0 | 1 | 2) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!ACCEPT.split(",").includes(f.type)) {
-      setError("Upload a PDF, JPG or PNG.");
-      return;
-    }
-    if (f.size > MAX_BYTES) {
-      setError("File must be under 10 MB.");
+    const problem = checkDocumentFile(f);
+    if (problem) {
+      setError(problem);
       return;
     }
     setError(undefined);
@@ -101,7 +97,7 @@ export default function SignupPayslipsPage() {
                 files[i] ? "border-success-600 bg-success-50/50" : "border-line bg-grey-100 hover:border-navy"
               }`}
             >
-              <input type="file" accept={ACCEPT} className="sr-only" onChange={pick(i)} />
+              <input type="file" accept={DOC_UPLOAD_ACCEPT} className="sr-only" onChange={pick(i)} />
               {files[i] ? (
                 <>
                   <FileCheck2 size={24} className="text-success-600" />
@@ -112,7 +108,7 @@ export default function SignupPayslipsPage() {
                 <>
                   <UploadCloud size={24} className="text-navy" />
                   <span className="text-sm font-semibold text-navy">{LABELS[i]}</span>
-                  <span className="text-xs text-muted">PDF, JPG or PNG up to 10 MB</span>
+                  <span className="text-xs text-muted">PDF or photo (JPG, PNG, HEIC) up to 10 MB</span>
                 </>
               )}
             </label>

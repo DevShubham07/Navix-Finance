@@ -9,9 +9,8 @@ import { borrowerApi, journeyApi, verificationApi } from "@/lib/api/applications
 import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
 import { BRAND } from "@/lib/brand";
+import { DOC_UPLOAD_ACCEPT, checkDocumentFile } from "@/lib/upload-file-types";
 
-const ACCEPT = "application/pdf,image/jpeg,image/png";
-const MAX_BYTES = 10 * 1024 * 1024;
 const EXTRA_DOCS = [
   { docType: "ELECTRICITY_BILL", label: "Electricity bill" },
   { docType: "GAS_BILL", label: "Gas bill" },
@@ -55,8 +54,9 @@ export default function SignupSubmittedPage() {
   const upload = (docType: string) => async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f || appId == null) return;
-    if (f.size > MAX_BYTES) {
-      setError("File must be under 10 MB.");
+    const problem = checkDocumentFile(f);
+    if (problem) {
+      setError(problem);
       return;
     }
     setError(undefined);
@@ -114,7 +114,7 @@ export default function SignupSubmittedPage() {
                 uploaded[docType] ? "border-success-600 bg-success-50/50" : "border-line bg-grey-100 hover:border-navy"
               }`}
             >
-              <input type="file" accept={ACCEPT} className="sr-only" onChange={upload(docType)} />
+              <input type="file" accept={DOC_UPLOAD_ACCEPT} className="sr-only" onChange={upload(docType)} />
               {uploaded[docType] ? (
                 <FileCheck2 size={20} className="flex-shrink-0 text-success-600" />
               ) : (
@@ -123,7 +123,7 @@ export default function SignupSubmittedPage() {
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-navy">{label}</span>
                 <span className="block truncate text-xs text-muted">
-                  {uploaded[docType] ?? "PDF, JPG or PNG up to 10 MB"}
+                  {uploaded[docType] ?? "PDF or photo (JPG, PNG, HEIC) up to 10 MB"}
                 </span>
               </span>
             </label>

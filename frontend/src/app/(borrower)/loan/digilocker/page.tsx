@@ -9,16 +9,12 @@ import { useOffer, nextOfferRoute, prevOfferRoute, completeOfferStep } from "@/l
 import { verificationApi, type StepResult } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
+import { DOC_UPLOAD_ACCEPT, checkDocumentFile } from "@/lib/upload-file-types";
 
 type Phase = "idle" | "connecting" | "polling" | "done" | "failed" | "manual";
 const POLL_MS = 4000;
 // Resolved at call time, not module load: the step list is server-driven since V47.
 const next = () => nextOfferRoute("digilocker");
-
-// Aadhaar card photos arrive the same way bank statements do (signup/bank) or the cheque/passbook
-// fallback (loan/disbursal-account): a phone photo or a scanned PDF, capped the same way.
-const AADHAAR_ACCEPT = "application/pdf,image/jpeg,image/png";
-const AADHAAR_MAX_BYTES = 10 * 1024 * 1024;
 
 function pickAadhaarFile(
   e: React.ChangeEvent<HTMLInputElement>,
@@ -28,12 +24,9 @@ function pickAadhaarFile(
   const f = e.target.files?.[0] ?? null;
   e.target.value = ""; // allow re-picking the same file after a mistaken selection
   if (!f) return;
-  if (!AADHAAR_ACCEPT.split(",").includes(f.type)) {
-    setError("Upload a PDF, JPG or PNG file.");
-    return;
-  }
-  if (f.size > AADHAAR_MAX_BYTES) {
-    setError("File must be under 10 MB.");
+  const problem = checkDocumentFile(f);
+  if (problem) {
+    setError(problem);
     return;
   }
   setError(undefined);
@@ -256,7 +249,7 @@ export default function LoanDigiLockerPage() {
               <p className="mb-1 text-sm font-semibold text-ink">Aadhaar front</p>
               <input
                 type="file"
-                accept={AADHAAR_ACCEPT}
+                accept={DOC_UPLOAD_ACCEPT}
                 onChange={pickFront}
                 className="block w-full text-sm text-ink file:mr-3 file:rounded file:border-0 file:bg-navy file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white file:cursor-pointer"
               />
@@ -266,7 +259,7 @@ export default function LoanDigiLockerPage() {
               <p className="mb-1 text-sm font-semibold text-ink">Aadhaar back</p>
               <input
                 type="file"
-                accept={AADHAAR_ACCEPT}
+                accept={DOC_UPLOAD_ACCEPT}
                 onChange={pickBack}
                 className="block w-full text-sm text-ink file:mr-3 file:rounded file:border-0 file:bg-navy file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white file:cursor-pointer"
               />

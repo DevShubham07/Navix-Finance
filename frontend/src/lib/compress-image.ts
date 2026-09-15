@@ -14,8 +14,18 @@ const MAX_DIMENSION = 1920;
 const JPEG_QUALITY = 0.8;
 const SKIP_BELOW_BYTES = 300 * 1024;
 
+/**
+ * Formats to re-encode even when the shortcuts below would skip them: an iPhone's HEIC/HEIF renders
+ * on the phone that shot it and almost nowhere else, so a staff reviewer opening the document in
+ * Chrome gets a broken image. Converting here — on the device that can actually decode it — is the
+ * only point in the pipeline where that is still possible.
+ */
+const ALWAYS_RECODE = /^image\/(heic|heif)$/i;
+
 export async function compressImage(file: File): Promise<File> {
-  if (!file.type.startsWith("image/") || file.type === "image/gif" || file.size < SKIP_BELOW_BYTES) {
+  const mustRecode = ALWAYS_RECODE.test(file.type);
+  if (!file.type.startsWith("image/") || file.type === "image/gif"
+      || (!mustRecode && file.size < SKIP_BELOW_BYTES)) {
     return file;
   }
   try {
@@ -32,8 +42,10 @@ export async function compressImage(file: File): Promise<File> {
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY),
     );
-    // Only swap in the compressed version when it actually saved bytes.
-    if (!blob || blob.size >= file.size) return file;
+    if (!blob) return file;
+    // Only swap in the compressed version when it actually saved bytes — except for the formats that
+    // must be re-encoded to stay viewable at all, where a larger JPEG still beats an unopenable file.
+    if (!mustRecode && blob.size >= file.size) return file;
     return new File([blob], file.name.replace(/\.[^.]*$/, "") + ".jpg", { type: "image/jpeg" });
   } catch {
     return file;

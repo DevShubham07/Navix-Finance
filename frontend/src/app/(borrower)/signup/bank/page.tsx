@@ -12,11 +12,10 @@ import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
 import { INDIAN_BANKS } from "@/lib/indian-banks";
 import { normalizeMobile } from "@/lib/utils";
+import { DOC_UPLOAD_ACCEPT, checkDocumentFile } from "@/lib/upload-file-types";
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
-const STATEMENT_ACCEPT = "application/pdf,image/jpeg,image/png";
-const STATEMENT_MAX_BYTES = 10 * 1024 * 1024;
 
 export default function SignupBankPage() {
   const router = useRouter();
@@ -60,12 +59,9 @@ export default function SignupBankPage() {
     if (picked.length === 0) return;
     const accepted: File[] = [];
     for (const f of picked) {
-      if (!STATEMENT_ACCEPT.split(",").includes(f.type)) {
-        setError("Upload PDF, JPG or PNG files only.");
-        continue;
-      }
-      if (f.size > STATEMENT_MAX_BYTES) {
-        setError("Each file must be under 10 MB.");
+      const problem = checkDocumentFile(f);
+      if (problem) {
+        setError(problem);
         continue;
       }
       accepted.push(f);
@@ -174,7 +170,7 @@ export default function SignupBankPage() {
           >
             <input
               type="file"
-              accept={STATEMENT_ACCEPT}
+              accept={DOC_UPLOAD_ACCEPT}
               multiple
               className="sr-only"
               onChange={pickStatements}
@@ -191,7 +187,7 @@ export default function SignupBankPage() {
               <>
                 <UploadCloud size={24} className="text-navy" />
                 <span className="text-sm font-semibold text-navy">Bank statements (last 6 months)</span>
-                <span className="text-xs text-muted">PDF, JPG or PNG up to 10 MB each — upload one or several</span>
+                <span className="text-xs text-muted">PDF or photo (JPG, PNG, HEIC) up to 10 MB each — upload one or several</span>
               </>
             )}
           </label>

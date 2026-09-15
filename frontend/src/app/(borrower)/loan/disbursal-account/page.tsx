@@ -12,13 +12,9 @@ import { useOffer } from "@/lib/offer";
 import { formatDateTime } from "@/lib/utils";
 import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
+import { DOC_UPLOAD_ACCEPT, DOC_UPLOAD_MAX_BYTES, checkDocumentFile } from "@/lib/upload-file-types";
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-
-// Cancelled cheques and passbook photos arrive the same way bank statements do (signup/bank):
-// a photo or a scanned PDF, never anything larger than a phone camera would produce.
-const BANK_PROOF_ACCEPT = "application/pdf,image/jpeg,image/png";
-const BANK_PROOF_MAX_BYTES = 10 * 1024 * 1024;
 
 function maskAccount(account: string | null): string {
   if (!account || account.length < 4) return "—";
@@ -92,12 +88,9 @@ export default function DisbursalAccountPage() {
     const f = e.target.files?.[0] ?? null;
     e.target.value = ""; // allow re-picking the same file after a mistaken selection
     if (!f) return;
-    if (!BANK_PROOF_ACCEPT.split(",").includes(f.type)) {
-      setBankProofError("Upload a PDF, JPG or PNG file.");
-      return;
-    }
-    if (f.size > BANK_PROOF_MAX_BYTES) {
-      setBankProofError("File must be under 10 MB.");
+    const problem = checkDocumentFile(f, DOC_UPLOAD_MAX_BYTES);
+    if (problem) {
+      setBankProofError(problem);
       return;
     }
     setBankProofError(undefined);
@@ -228,10 +221,17 @@ export default function DisbursalAccountPage() {
           </>
         )}
 
+        {/* The lock stops the ₹1 check, not the borrower: the bank-proof card below is unaffected by
+            it and is how this advance still goes out today. Saying only "try again after <date>"
+            read as a dead end, and borrowers waited instead of using the way out directly beneath. */}
         {isLocked ? (
           <p className="mt-4 flex items-start gap-2 rounded border border-warning-100 bg-warning-50 p-4 text-sm text-warning-800">
             <Lock size={15} className="mt-0.5 flex-shrink-0" />
-            Too many failed account checks. Try again after {formatDateTime(lockedUntil)}.
+            <span>
+              Too many failed account checks. The ₹1 check can run again after{" "}
+              {formatDateTime(lockedUntil)} — or skip the wait and upload a cancelled cheque or
+              passbook below, which we&apos;ll verify by hand.
+            </span>
           </p>
         ) : null}
 
@@ -249,7 +249,7 @@ export default function DisbursalAccountPage() {
         </p>
         <input
           type="file"
-          accept={BANK_PROOF_ACCEPT}
+          accept={DOC_UPLOAD_ACCEPT}
           onChange={pickBankProof}
           className="block w-full text-sm text-ink file:mr-3 file:rounded file:border-0 file:bg-navy file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white file:cursor-pointer"
         />
@@ -261,7 +261,9 @@ export default function DisbursalAccountPage() {
           type="button"
           onClick={submitBankProof}
           disabled={bankProofBusy || !bankProofFile || (changing && !formOk)}
-          className="btn btn-outline btn-sm mt-3"
+          // While locked the Confirm button below is dead, so this is the only live action on the
+          // screen — it has to look like it, or the borrower keeps pressing the big green one.
+          className={`btn btn-sm mt-3 ${isLocked ? "btn-navy" : "btn-outline"}`}
         >
           <UploadCloud size={15} />
           {bankProofBusy ? "Uploading…" : "Upload proof & continue"}
