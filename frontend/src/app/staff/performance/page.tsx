@@ -24,15 +24,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Search } from "lucide-react";
+import { FilterX } from "lucide-react";
 import { PageHeader, StatCard, RefreshButton } from "@/components/staff/staff-ui";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { NoAccessNotice, errMessage, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { useTableSort, SortableTh } from "@/components/staff/sortable-table";
+import { useColumnFilters, FilterableTh, type FilterColumn } from "@/components/staff/column-filter";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { PeriodPicker } from "@/components/staff/period-picker";
 import { InfoTooltip } from "@/components/ui/tooltip";
-import { Input } from "@/components/ui";
 import { rangeFor, periodLabelFor, type Range } from "@/lib/period";
 import { staffApi, paiseToINR, type StaffPerformanceRow } from "@/lib/api/applications";
 
@@ -62,8 +62,6 @@ export default function StaffPerformancePage() {
   const [preset, setPreset] = React.useState("this-month");
   const [custom, setCustom] = React.useState<Range>({});
 
-  const [search, setSearch] = React.useState("");
-
   const range: Range = React.useMemo(() => rangeFor(preset, custom), [preset, custom]);
 
   const q = useQuery({
@@ -77,22 +75,25 @@ export default function StaffPerformancePage() {
   const callTrackingSince = q.data?.callTrackingSince;
 
   // Filtered client-side: the roster is a company's staff list (tens of rows), already in memory,
-  // so a round-trip per keystroke would be slower and no more correct.
-  const rows = React.useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return allRows;
-    return allRows.filter((r) =>
-      r.staffName.toLowerCase().includes(needle)
-      || (ROLE_LABEL[r.role] ?? r.role).toLowerCase().includes(needle));
-  }, [allRows, search]);
+  // so a round-trip per dropdown tick would be slower and no more correct.
+  const filterColumns = React.useMemo<Array<FilterColumn<StaffPerformanceRow>>>(
+    () => [
+      { key: "staffName", value: (r) => r.staffName },
+      { key: "role", value: (r) => ROLE_LABEL[r.role] ?? r.role },
+    ],
+    [],
+  );
+  const { filtered: rows, selectionFor, optionsFor, setFilter, clearAll, activeCount } =
+    useColumnFilters(allRows, filterColumns);
 
-  const { sorted, sortKey, dir, toggle } = useTableSort<StaffPerformanceRow>(rows, "totalActions", "desc");
+  const { sorted, sortKey, dir, toggle, setSort } = useTableSort<StaffPerformanceRow>(rows, "totalActions", "desc");
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(sorted);
 
   const periodLabel = periodLabelFor(preset, custom);
 
-  // Totals follow the search, so the tiles always describe the rows actually on screen rather than
-  // a hidden population — a filtered table under unfiltered totals reads as a bug.
+  // Totals follow the column filters, so the tiles always describe the rows actually on screen rather
+  // than a hidden population — a filtered table under unfiltered totals reads as a bug. Picking one
+  // person in the Staff dropdown is therefore also how you read that person's figures on their own.
   const totals = rows.reduce(
     (acc, r) => ({
       accepted: acc.accepted + r.accepted,
@@ -158,14 +159,17 @@ export default function StaffPerformancePage() {
 
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <PeriodPicker preset={preset} onPreset={setPreset} custom={custom} onCustom={setCustom} />
-        <Input
-          aria-label="Search employees"
-          placeholder="Search name or role…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          leftIcon={<Search size={15} />}
-          className="!mb-4 w-full sm:w-64"
-        />
+        {/* The way out of a filter set on a column that has since been scrolled off — without it the
+            only clue that rows are hidden is a caret the reader has to go hunting for. */}
+        {activeCount > 0 && (
+          <button
+            type="button"
+            onClick={clearAll}
+            className="mb-4 flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:bg-grey-100 hover:text-ink"
+          >
+            <FilterX size={13} /> Clear filters — showing {rows.length} of {allRows.length} staff
+          </button>
+        )}
       </div>
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -187,8 +191,12 @@ export default function StaffPerformancePage() {
 
       {daily.length > 0 && (
         <div className="mb-4 rounded border border-line bg-white p-4 shadow-sm">
+          {/* The trend is computed server-side across the whole visible roster and the rows carry no
+              per-day breakdown to rebuild it from, so it cannot follow a column filter the way the
+              tiles above do. Say so rather than let it read as the selected person's own activity. */}
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
             Actions per day
+            {activeCount > 0 && <span className="normal-case"> — all staff, not filtered</span>}
           </div>
           <div style={{ width: "100%", height: 180 }}>
             <ResponsiveContainer>
@@ -212,8 +220,28 @@ export default function StaffPerformancePage() {
             <thead>
               <tr>
                 <th>S.No.</th>
-                <SortableTh label="Staff" sortKey="staffName" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="Role" sortKey="role" active={sortKey} dir={dir} onToggle={toggle} />
+                <FilterableTh
+                  label="Staff"
+                  sortKey="staffName"
+                  active={sortKey}
+                  dir={dir}
+                  onToggle={toggle}
+                  setSort={setSort}
+                  options={optionsFor("staffName")}
+                  selected={selectionFor("staffName")}
+                  onApply={(v) => setFilter("staffName", v)}
+                />
+                <FilterableTh
+                  label="Role"
+                  sortKey="role"
+                  active={sortKey}
+                  dir={dir}
+                  onToggle={toggle}
+                  setSort={setSort}
+                  options={optionsFor("role")}
+                  selected={selectionFor("role")}
+                  onApply={(v) => setFilter("role", v)}
+                />
                 <SortableTh label="Approved" sortKey="accepted" active={sortKey} dir={dir} onToggle={toggle} />
                 <SortableTh label="Rejected" sortKey="rejected" active={sortKey} dir={dir} onToggle={toggle} />
                 <SortableTh label="In queue now" sortKey="pendingNow" active={sortKey} dir={dir} onToggle={toggle} />
