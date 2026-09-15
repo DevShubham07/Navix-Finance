@@ -46,8 +46,18 @@ const REQUIRED_CHECKS = ["PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY
  * `pendingReview` would drag a large share of otherwise-clean files out of "All checks passed" and
  * into "Awaiting borrower steps", where there is no borrower step to take. It gets its own chip on
  * the card instead: visible, not gating.
+ *
+ * DIGILOCKER, AGREEMENT and ESIGN are the other three types the backend recognises
+ * ({@code ApplicationVerificationService.KNOWN_CHECKS} minus {@link REQUIRED_CHECKS} minus
+ * EMPLOYMENT). All three are Phase-3 checks that only fire once an application is sanctioned — this
+ * dashboard is scoped to applications still awaiting that decision (see {@link UNDECIDED_STATUSES}),
+ * so a row for one of them here is incidental (a staff manual retry, or a historical row), not
+ * routine triage work. They used to leak into the card's denominator: two applications both reading
+ * "8/10 passed" were not actually at the same point — one might be missing 2 of the 8 truly-required
+ * checks, the other could have cleared all 8 and simply picked up 2 of these extras along the way.
+ * Excluding them keeps the fraction a stable, comparable X/8 everywhere.
  */
-const ADVISORY_CHECKS = ["EMPLOYMENT"];
+const NON_GATING_CHECKS = ["EMPLOYMENT", "DIGILOCKER", "AGREEMENT", "ESIGN"];
 
 /** One application rolled up from its verification rows (or a never-started KYC_PENDING app). */
 interface AppCard {
@@ -59,7 +69,7 @@ interface AppCard {
   passed: number;
   failed: number;
   pendingReview: number;
-  /** EPFO/UAN outcome, shown as its own chip. Advisory — see {@link ADVISORY_CHECKS}. */
+  /** EPFO/UAN outcome, shown as its own chip. Advisory — see {@link NON_GATING_CHECKS}. */
   employmentStatus: string | null;
   lastUpdate: string | null;
   bucket: Bucket;
@@ -108,7 +118,7 @@ export default function VerificationsDashboardPage() {
     }
     const out: AppCard[] = [];
     for (const [applicationId, checks] of byApp) {
-      const gating = checks.filter((c) => !ADVISORY_CHECKS.includes(c.checkType));
+      const gating = checks.filter((c) => !NON_GATING_CHECKS.includes(c.checkType));
       const employment = checks.find((c) => c.checkType === "EMPLOYMENT") ?? null;
       const failed = gating.filter((c) => c.status === "FAIL").length;
       const passed = gating.filter((c) => c.status === "PASS").length;
@@ -304,7 +314,7 @@ function Tile({ label, value, valueClass }: { label: string; value: number | und
 /**
  * The EPFO/UAN outcome as a standalone chip. Deliberately outside the passed/failed/pending counts:
  * this check gates nothing, so it must not move an application between buckets (see
- * {@link ADVISORY_CHECKS}). A REVIEW here reads "we could not confirm employment", not "the borrower
+ * {@link NON_GATING_CHECKS}). A REVIEW here reads "we could not confirm employment", not "the borrower
  * still owes us a step" — hence the neutral wording rather than a warning colour.
  */
 function EmploymentChip({ status }: { status: string | null }) {
