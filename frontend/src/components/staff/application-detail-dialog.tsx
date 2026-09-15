@@ -47,6 +47,7 @@ import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
 import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
 import { dpdBucket, daysBetween } from "@/lib/calc/loan-math";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { providerLine } from "@/components/staff/verification-checks";
 import { customerPageHref } from "@/lib/customers/customer-page";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import {
@@ -61,6 +62,7 @@ import {
   type LoanView,
   type OutstandingView,
   type VerificationProgress,
+  type StepResult,
   type EventView,
   type ReferenceInput,
   type CreditBriefDetail,
@@ -1081,31 +1083,57 @@ function KycFocus({ applicationId, p }: { applicationId: number; p: ProfileView 
   });
   const prog = progQ.data as VerificationProgress | undefined;
 
-  const statusOf = React.useMemo(() => {
-    const byType = new Map((checksQ.data ?? []).map((s) => [s.checkType, s.status]));
+  // The whole step, not just its status. Everything below the status word — which provider answered,
+  // when, and which endpoint dropped the call when none did — is already in this payload and was
+  // being discarded here, which is why the card could only ever say "Review" without saying why.
+  const stepOf = React.useMemo(() => {
+    const byType = new Map((checksQ.data ?? []).map((s) => [s.checkType, s]));
     return (...types: string[]) => types.map((t) => byType.get(t)).find(Boolean) ?? null;
   }, [checksQ.data]);
+
+  // A provider outage is recorded as REVIEW and progress() counts REVIEW as cleared, so this card
+  // will happily read "100% complete" over a check no vendor actually ran. The count is left alone
+  // (other surfaces and the KYC gate read it) — but it does not get to claim an untroubled 100%.
+  //
+  // Counted over exactly the checks the headline counts, or the caption would blame the score for an
+  // outage on a check that never fed it. That set is REQUIRED, plus REQUIRED_SANCTION once the file
+  // is sanctioned (ApplicationVerificationService.progress) — which `required` itself tells us.
+  const outages = React.useMemo(() => {
+    if (!prog) return 0;
+    const counted = new Set(
+      prog.required > 4
+        ? ["PAN", "EMAIL", "BUREAU", "SALARY", "AADHAAR", "SELFIE", "ADDRESS", "ESIGN"]
+        : ["PAN", "EMAIL", "BUREAU", "SALARY"],
+    );
+    return (checksQ.data ?? []).filter(
+      (s) => counted.has(s.checkType) && s.derived?.providerError === true,
+    ).length;
+  }, [checksQ.data, prog]);
 
   return (
     <FocusCard icon={ShieldCheck} title="KYC & verification">
       <Headline
         label="Required checks cleared"
         value={prog ? `${prog.completed} / ${prog.required}` : "—"}
-        tone={prog && prog.failed > 0 ? "error" : "navy"}
+        tone={prog && (prog.failed > 0 || outages > 0) ? "error" : "navy"}
         caption={
           prog
-            ? `${prog.percent}% complete${prog.failed > 0 ? ` · ${prog.failed} failed` : ""}${prog.pending > 0 ? ` · ${prog.pending} pending` : ""}`
+            ? `${prog.percent}% complete${prog.failed > 0 ? ` · ${prog.failed} failed` : ""}${prog.pending > 0 ? ` · ${prog.pending} pending` : ""}${outages > 0 ? ` · ${outages} cleared despite a provider outage` : ""}`
             : undefined
         }
       />
       <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-        <KV k="PAN" v={<CheckState status={statusOf("PAN")} />} />
-        <KV k="Aadhaar (DigiLocker)" v={<CheckState status={statusOf("AADHAAR", "DIGILOCKER")} />} />
-        <KV k="Email" v={<CheckState status={statusOf("EMAIL")} />} />
-        <KV k="Address" v={<CheckState status={statusOf("ADDRESS")} />} />
+        <KV k="PAN" v={<CheckState step={stepOf("PAN")} />} />
+        <KV k="Aadhaar (DigiLocker)" v={<CheckState step={stepOf("AADHAAR", "DIGILOCKER")} />} />
+        <KV k="Email" v={<CheckState step={stepOf("EMAIL")} />} />
+        {/* Bureau and salary are half the headline's four REQUIRED checks and were the two it never
+            listed, so the score could move for a reason nothing on this card explained. */}
+        <KV k="Bureau" v={<CheckState step={stepOf("BUREAU")} />} />
+        <KV k="Salary" v={<CheckState step={stepOf("SALARY")} />} />
+        <KV k="Address" v={<CheckState step={stepOf("ADDRESS")} />} />
         {/* Penny drop legitimately never runs when the borrower keeps their salary account
             (revamp.md decision 9), so "Not run" here is not a gap to chase. */}
-        <KV k="Penny drop" v={<CheckState status={statusOf("PENNY_DROP")} notRun="Not run" />} />
+        <KV k="Penny drop" v={<CheckState step={stepOf("PENNY_DROP")} notRun="Not run" />} />
         <KV k="Identity match" v={p?.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null} />
       </dl>
       <p className="mt-2 text-[8.8px] text-muted">Per-check detail and manual overrides are on the Verifications tab.</p>
@@ -1113,19 +1141,39 @@ function KycFocus({ applicationId, p }: { applicationId: number; p: ProfileView 
   );
 }
 
-/** One check's real status, in the same vocabulary the Verifications tab uses. */
-function CheckState({ status, notRun = "Not run" }: { status: string | null; notRun?: string }) {
-  if (status === "PASS") {
-    return (
+/**
+ * One check's real status, in the same vocabulary the Verifications tab uses, over a second line
+ * naming who produced it.
+ *
+ * <p>That second line is the point: "Review" on its own reads as a judgement call, when it is just as
+ * often a vendor whose API never answered. {@link providerLine} is shared with the Verifications tab
+ * so the two screens cannot drift on what they call a provider.
+ */
+function CheckState({ step, notRun = "Not run" }: { step: StepResult | null; notRun?: string }) {
+  const status = step?.status ?? null;
+  const word =
+    status === "PASS" ? (
       <span className="inline-flex items-center gap-0.5 text-success-700">
         <Check size={13} /> Passed
       </span>
+    ) : status === "FAIL" ? (
+      <span className="font-semibold text-error-700">Failed</span>
+    ) : status === "REVIEW" ? (
+      <span className="text-warning-800">Review</span>
+    ) : status === "PENDING" ? (
+      <span className="text-muted">In progress</span>
+    ) : (
+      <span className="text-muted">{notRun}</span>
     );
-  }
-  if (status === "FAIL") return <span className="font-semibold text-error-700">Failed</span>;
-  if (status === "REVIEW") return <span className="text-warning-800">Review</span>;
-  if (status === "PENDING") return <span className="text-muted">In progress</span>;
-  return <span className="text-muted">{notRun}</span>;
+
+  const line = step ? providerLine(step) : null;
+  if (!line) return word;
+  return (
+    <span className="inline-flex flex-col items-end">
+      {word}
+      <span className="text-[8.8px] leading-tight text-muted">{line}</span>
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------

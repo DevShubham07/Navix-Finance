@@ -939,6 +939,7 @@ public class ApplicationVerificationService {
                 // we do not implement, so it must not be treated as a retryable failure.
                 soft.put("bureauMaskedMobileRequired", true);
             }
+            putProviderFailureDetail(soft, providerFailure);
             // ProviderJson reduces upstream errors to an endpoint + status. Retain only the status
             // category here: response bodies and the request (PAN, mobile, DOB, OTP) stay out of logs.
             log.warn("bureau pull failed application={} ref={} errorCode={} exception={}", appId, ref,
@@ -2661,6 +2662,7 @@ public class ApplicationVerificationService {
         derived.put("providerError", true);
         String providerErrorCode = providerErrorCode(failure);
         derived.put("providerErrorCode", providerErrorCode);
+        putProviderFailureDetail(derived, failure);
         // Category only — response bodies and request values (PAN, mobile, DOB) stay out of the log,
         // exactly as the bureau catch does. The unredacted exchange lives in provider_api_execution.
         log.warn("{} check failed application={} errorCode={} exception={}", checkType, appId,
@@ -3153,6 +3155,39 @@ public class ApplicationVerificationService {
      * <p>The value is persisted to {@code bureau_backfill_row.error_code varchar(64)} and read by
      * the failure classifier, so keep every branch short and stable.
      */
+    /**
+     * Record WHICH provider API failed, not merely that one did.
+     *
+     * <p>{@link #providerErrorCode} normalises a failure to {@code HTTP_500} / {@code TRANSPORT_FAILURE},
+     * and a failed check is stored with {@code provider = null} — correctly, because the chain may have
+     * tried several vendors and none answered. The consequence was that staff reading a parked check
+     * could see it had been parked but never which vendor endpoint dropped it, which is the first
+     * question anyone asks of that screen. These three fields answer it.
+     *
+     * <p>All of them are already redacted: {@code ProviderJson} strips PAN, mobile, email and long
+     * digit runs before they reach the exception, and {@link ProviderFailureDetails} exists precisely
+     * so this module — which cannot see {@code VerificationException} — can read them. Response bodies
+     * and request values still never leave {@code provider_api_execution}.
+     *
+     * <p>Blank accessors are skipped rather than written empty: a transport failure has no HTTP
+     * status and an unrecognised envelope has no vendor code, and an empty key renders as a blank row
+     * in the reviewer's derived table.
+     */
+    private static void putProviderFailureDetail(Map<String, Object> derived, RuntimeException failure) {
+        if (!(failure instanceof ProviderFailureDetails details)) {
+            return;
+        }
+        putIfPresent(derived, "providerEndpoint", details.endpoint());
+        putIfPresent(derived, "providerCode", details.providerCode());
+        putIfPresent(derived, "providerDetail", details.safeDetail());
+    }
+
+    private static void putIfPresent(Map<String, Object> derived, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            derived.put(key, value);
+        }
+    }
+
     private static String providerErrorCode(RuntimeException failure) {
         if (failure instanceof ProviderFailureDetails details) {
             if (ProviderFailureDetails.MASKED_MOBILE_REQUIRED.equals(details.providerCode())) {
