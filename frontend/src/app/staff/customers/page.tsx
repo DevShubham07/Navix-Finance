@@ -3,9 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { Badge, Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import {
@@ -34,7 +34,14 @@ import { CaseFailureDialog } from "@/components/staff/case-failure-dialog";
 import { CustomerEditDialog } from "@/components/staff/customer-edit-dialog";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
-import { customersApi, staffApi, paiseToINR, statusLabel, type CustomerSummary, type ApplicationStatus } from "@/lib/api/applications";
+import {
+  customersApi,
+  paiseToINR,
+  statusLabel,
+  type CustomerSummary,
+  type CustomerSummaryCounts,
+  type ApplicationStatus,
+} from "@/lib/api/applications";
 import { AmountCell, DueCell, dpdFor } from "@/components/staff/pipeline/cells";
 import {
   QueueDateFilter,
@@ -44,14 +51,22 @@ import {
 } from "@/components/staff/pipeline/queue-date-filter";
 import { hasPermission } from "@/lib/auth/rbac";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import {
-  SEGMENTS,
-  SEGMENT_LABEL,
-  inSegment,
-  segmentCounts,
-  type CustomerSegment,
-} from "@/lib/customers/segments";
-import { isMine, decidedCustomerIds } from "@/lib/customers/mine";
+import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
+
+const ZERO_COUNTS: CustomerSummaryCounts = {
+  all: 0,
+  incomplete: 0,
+  pending: 0,
+  review: 0,
+  approved: 0,
+  disbursementPending: 0,
+  active: 0,
+  overdue: 0,
+  hold: 0,
+  rejected: 0,
+  closed: 0,
+  unallocated: 0,
+};
 
 /**
  * Statuses the backend's transition map allows REJECTED from (mirrors `ApplicationStatus.
@@ -94,8 +109,10 @@ function notActionableReason(c: CustomerSummary): string | null {
 }
 
 /**
- * Customers — a borrower-centric roll-up across the loan aggregate. Segment chips filter
- * client-side (?seg=); search matches name, PAN, mobile, customer or application id (server-side).
+ * Customers — a borrower-centric roll-up across the loan aggregate. Search (name, PAN, mobile,
+ * customer or application id), the date window, the segment chip (?seg=), "mine" (?mine=1) and
+ * paging are all applied server-side; the chip counts come from a separate, cheaper summary call
+ * that is allowed to lag the table by up to 30s.
  */
 export default function CustomersPage() {
   return (
@@ -114,6 +131,7 @@ function CustomersPageInner() {
     segParam === "all" || SEGMENTS.includes(segParam) ? segParam : "all";
   const mine = searchParams.get("mine") === "1";
   const me = useStaffMe().data;
+  const qc = useQueryClient();
 
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
@@ -137,42 +155,51 @@ function CustomersPageInner() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const q = useQuery({
-    // The range MUST be in the key — without it React Query serves the previous window's rows
-    // when the filter changes. Normalised to "" because undefined is not a stable key boundary.
-    queryKey: ["customers", debounced, range.from ?? "", range.to ?? ""],
-    queryFn: () => customersApi.list(debounced || undefined, range),
-  });
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSizeState] = React.useState(25);
+  const setPageSize = React.useCallback((n: number) => {
+    setPageSizeState(n);
+    setPage(1);
+  }, []);
+  // Any filter change lands on page 1 — page 7 of a different result set is meaningless.
+  React.useEffect(() => {
+    setPage(1);
+  }, [debounced, range.from, range.to, seg, mine]);
 
-  // Only fetched when "mine" is active — needed so a customer this staffer decided on (but isn't
-  // the owner of) still counts as "mine", matching the dashboard's "your book" tile exactly.
-  const myDecisionsQ = useQuery({
-    queryKey: ["customers-mine-decisions"],
-    queryFn: () => staffApi.decisions(),
-    enabled: mine && me?.id != null,
-  });
-
-  const rows = React.useMemo(() => q.data ?? [], [q.data]);
-  const scoped = React.useMemo(() => {
-    let list = rows;
-    if (mine) {
-      // Fail CLOSED when the staff id will not resolve: an unfiltered company list under the
-      // "My customers" chip is worse than an empty one, and it would also disagree with the
-      // dashboard's "borrowers in your book" tile, which links here.
-      const sid = me?.id != null ? Number(me.id) : NaN;
-      const decided = decidedCustomerIds(myDecisionsQ.data ?? []);
-      list = Number.isFinite(sid) ? list.filter((c) => isMine(c, sid, decided)) : [];
-    }
-    return list;
-  }, [rows, mine, me?.id, myDecisionsQ.data]);
-
-  const counts = React.useMemo(() => segmentCounts(scoped), [scoped]);
-  const filtered = React.useMemo(
-    () => scoped.filter((c) => inSegment(c, seg)),
-    [scoped, seg],
+  const baseFilters = React.useMemo(
+    () => ({ q: debounced || undefined, from: range.from, to: range.to, mine: mine || undefined }),
+    [debounced, range.from, range.to, mine],
   );
 
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(filtered);
+  // The range MUST be in the key — without it React Query serves the previous window's rows
+  // when the filter changes. Normalised to "" because undefined is not a stable key boundary.
+  const listQ = useQuery({
+    queryKey: ["customers-page", debounced, range.from ?? "", range.to ?? "", seg, mine, page, pageSize],
+    queryFn: () =>
+      customersApi.page({ ...baseFilters, seg: seg === "all" ? undefined : seg, page, size: pageSize }),
+    // Keep the previous page on screen while the next one loads instead of flashing a skeleton.
+    placeholderData: keepPreviousData,
+  });
+  // Chip counts are a separate, cheap aggregate. Up to 30s stale is fine here (the table itself is
+  // always fresh), and it stops every keystroke re-counting the whole book.
+  const summaryQ = useQuery({
+    queryKey: ["customers-summary", debounced, range.from ?? "", range.to ?? "", mine],
+    queryFn: () => customersApi.summary(baseFilters),
+    staleTime: 30_000,
+  });
+  const refreshAll = () => {
+    listQ.refetch();
+    summaryQ.refetch();
+  };
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ["customers-page"] });
+    qc.invalidateQueries({ queryKey: ["customers-summary"] });
+  };
+
+  const pageRows = React.useMemo(() => listQ.data?.rows ?? [], [listQ.data]);
+  const total = listQ.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const counts: CustomerSummaryCounts = summaryQ.data ?? ZERO_COUNTS;
   const [collapsedDates, setCollapsedDates] = React.useState<Set<string>>(new Set());
   const toggleDate = (key: string) =>
     setCollapsedDates((prev) => {
@@ -198,11 +225,12 @@ function CustomersPageInner() {
   // The bulk-action target is each row's LATEST application, not the customer id — matching the
   // pipeline queues, which act on applications. Only rows whose latest application is still in a
   // rejectable stage are selectable at all, so select-all can never sweep an already-decided or
-  // live-loan row into a reject/assign run.
+  // live-loan row into a reject/assign run. Scoped to the page on screen: "select all" means the
+  // rows the staffer can see, never the thousands behind the pagination.
   const { canBulkReject, canBulkAssign } = useBulkRoleFlags();
   const actionableRows = React.useMemo(
-    () => filtered.filter((c) => c.latestApplicationId != null && notActionableReason(c) == null),
-    [filtered],
+    () => pageRows.filter((c) => c.latestApplicationId != null && notActionableReason(c) == null),
+    [pageRows],
   );
   const actionableIds = React.useMemo(
     () => actionableRows.map((c) => c.latestApplicationId as number),
@@ -277,13 +305,15 @@ function CustomersPageInner() {
             { header: "Disbursed by", value: (c) => c.disbursedByName ?? "" },
             { header: "Collections exec", value: (c) => c.collectionOfficerName ?? "" },
           ]}
-          rows={filtered}
+          rows={pageRows}
+          getAllRows={() => customersApi.exportAll({ ...baseFilters, seg: seg === "all" ? undefined : seg })}
+          allLabel="Download all customers (CSV)"
         />
         <button
-          onClick={() => q.refetch()}
+          onClick={refreshAll}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
-          {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+          {listQ.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
@@ -353,11 +383,11 @@ function CustomersPageInner() {
         )}
 
         <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          {q.isLoading ? (
+          {listQ.isLoading ? (
             <div className="h-40 animate-pulse rounded bg-grey-100" />
-          ) : q.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
-          ) : filtered.length === 0 ? (
+          ) : listQ.error ? (
+            <p className="px-5 py-4 text-sm text-error-700">{errMessage(listQ.error)}</p>
+          ) : pageRows.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted">
               No customers{debounced ? ` for “${debounced}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
               {period !== "ALL" ? " in the selected date range" : ""}.
@@ -637,11 +667,22 @@ function CustomersPageInner() {
           mode={pendingReject.mode}
           open
           onClose={() => setPendingReject(null)}
-          onDone={sel.clear}
+          onDone={() => {
+            sel.clear();
+            invalidateAll();
+          }}
         />
       )}
       {pendingAssign && (
-        <AssignDialog ids={pendingAssign} open onClose={() => setPendingAssign(null)} onDone={sel.clear} />
+        <AssignDialog
+          ids={pendingAssign}
+          open
+          onClose={() => setPendingAssign(null)}
+          onDone={() => {
+            sel.clear();
+            invalidateAll();
+          }}
+        />
       )}
     </div>
   );

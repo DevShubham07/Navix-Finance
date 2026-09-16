@@ -66,6 +66,7 @@ class CustomerServiceTest {
     @Mock private com.navix.common.collections.CollectionCaseDirectory collectionCaseDirectory;
     @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock private LoanMath loanMath;
+    @Mock private CustomerBookQuery bookQuery;
 
     private CustomerService service;
 
@@ -78,7 +79,7 @@ class CustomerServiceTest {
                 staffDirectory, applicationActorDirectory, collectionCaseDirectory,
                 jdbc, creditBriefService, documentRepository, bureauStateService,
                 verificationFailureService, providerAttempts, verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher,
-                loanMath);
+                loanMath, bookQuery);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
         // Nothing outstanding by default: an unstubbed mock returns null, and the summary
         // dereferences the reason. Tests about a specific failure stub this themselves.
@@ -130,6 +131,114 @@ class CustomerServiceTest {
         assertThat(cs.applicationCount()).isEqualTo(2);
         assertThat(cs.latestStatus()).isEqualTo("ACTIVE");      // newest application's status
         assertThat(cs.pan()).isEqualTo("ABCDE1234F");           // staff see the full, unmasked PAN
+    }
+
+    // ---- page() / summary() / export(): filtering, sorting and paging live in CustomerBookQuery ----
+
+    @Test
+    void pageHydratesOnlyTheIdsSqlReturnedInSqlOrderAndNeverLoadsWholeTables() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        when(bookQuery.count(any())).thenReturn(2L);
+        when(bookQuery.pageIds(any(), eq(0), eq(25))).thenReturn(List.of(7L, 3L));
+        when(applicationRepository.findByCustomerIdIn(List.of(7L, 3L))).thenReturn(List.of(
+                app(30, 3L, ApplicationStatus.ACTIVE), app(70, 7L, ApplicationStatus.REJECTED)));
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
+                profile(30, "Three", "AAAPA0003A"), profile(70, "Seven", "AAAPA0007A")));
+
+        var page = service.page(null, null, null, null, false, 1, 25);
+
+        assertThat(page.total()).isEqualTo(2);
+        assertThat(page.page()).isEqualTo(1);
+        assertThat(page.size()).isEqualTo(25);
+        // SQL order (stage date desc) is preserved even though hydration groups by customer id.
+        assertThat(page.rows()).extracting(CustomerSummary::customerId).containsExactly(7L, 3L);
+        assertThat(page.rows().get(0).name()).isEqualTo("Seven");
+        verify(applicationRepository, org.mockito.Mockito.never()).findAll();
+        verify(loanRepository, org.mockito.Mockito.never()).findAll();
+        verify(ownerRepository, org.mockito.Mockito.never()).findAll();
+    }
+
+    @Test
+    void pageCapsSizeAndFloorsPageNumber() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        when(bookQuery.pageIds(any(), eq(0), eq(CustomerService.MAX_PAGE_SIZE))).thenReturn(List.of());
+
+        var page = service.page("raj", null, null, "active", false, 0, 500);
+
+        assertThat(page.size()).isEqualTo(CustomerService.MAX_PAGE_SIZE);
+        assertThat(page.page()).isEqualTo(1);
+        assertThat(page.rows()).isEmpty();
+        var captor = org.mockito.ArgumentCaptor.forClass(CustomerBookQuery.BookFilter.class);
+        verify(bookQuery).pageIds(captor.capture(), eq(0), eq(CustomerService.MAX_PAGE_SIZE));
+        assertThat(captor.getValue().needle()).isEqualTo("raj");
+        assertThat(captor.getValue().segment()).isEqualTo("active");
+        assertThat(captor.getValue().scopeIds()).isNull();      // ADMIN sees the whole book
+        assertThat(captor.getValue().mineIds()).isNull();
+    }
+
+    @Test
+    void pageScopesAnExecutiveToTheirOwnBookInSql() {
+        ActorContext.set(new CurrentActor("9", "Exec", "CREDIT_EXECUTIVE"));
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(9L)).thenReturn(java.util.Set.of(7L));
+        when(bookQuery.pageIds(any(), eq(0), eq(25))).thenReturn(List.of());
+
+        service.page(null, null, null, null, false, 1, 25);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(CustomerBookQuery.BookFilter.class);
+        verify(bookQuery).count(captor.capture());
+        assertThat(captor.getValue().scopeIds()).containsExactly(7L);
+        assertThat(captor.getValue().scopeIncludesUnallocated()).isFalse();
+    }
+
+    @Test
+    void mineMeansOwnedByOrDecidedByTheCaller() {
+        ActorContext.set(new CurrentActor("5", "Head", "CREDIT_HEAD"));
+        when(ownerRepository.findCustomerIdsByOwnerStaffId(5L)).thenReturn(java.util.Set.of(1L));
+        ApplicationEvent sanction = new ApplicationEvent();
+        sanction.setApplicationId(42L);
+        sanction.setAction("SANCTION");
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("5")).thenReturn(List.of(sanction));
+        when(applicationRepository.findCustomerIdsByIdIn(List.of(42L))).thenReturn(java.util.Set.of(2L));
+        when(bookQuery.pageIds(any(), eq(0), eq(25))).thenReturn(List.of());
+
+        service.page(null, null, null, null, true, 1, 25);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(CustomerBookQuery.BookFilter.class);
+        verify(bookQuery).count(captor.capture());
+        assertThat(captor.getValue().mineIds()).containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void summaryMapsSegmentsAndOverlaysUnallocated() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        when(bookQuery.segmentCounts(any())).thenReturn(List.of(
+                new CustomerBookQuery.SegmentCount("active", 3, 1),
+                new CustomerBookQuery.SegmentCount("rejected", 2, 2)));
+
+        var counts = service.summary(null, null, null, false);
+
+        assertThat(counts.all()).isEqualTo(5);
+        assertThat(counts.active()).isEqualTo(3);
+        assertThat(counts.rejected()).isEqualTo(2);
+        assertThat(counts.unallocated()).isEqualTo(3);
+        assertThat(counts.pending()).isZero();
+        assertThat(counts.overdue()).isZero();
+    }
+
+    @Test
+    void exportIsAdminOnlyAndPageRejectsDsa() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        assertThatThrownBy(() -> service.export(null, null, null, null, false))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ADMIN");
+
+        ActorContext.set(new CurrentActor("77", "Agent", "DSA"));
+        assertThatThrownBy(() -> service.page(null, null, null, null, false, 1, 25))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSA");
+        assertThatThrownBy(() -> service.summary(null, null, null, false))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSA");
     }
 
     @Test

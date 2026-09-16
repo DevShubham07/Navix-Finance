@@ -1808,6 +1808,49 @@ export const staffApi = {
 
 const CUSTOMERS_BASE = "/api/staff/customers";
 
+export type CustomerListFilters = {
+  q?: string;
+  /** yyyy-mm-dd, resolved in IST server-side. */
+  from?: string;
+  to?: string;
+  /** A `CustomerSegment` other than `all`. */
+  seg?: string;
+  /** Owned by or decided by the signed-in staffer. */
+  mine?: boolean;
+  /** 1-indexed. */
+  page?: number;
+  size?: number;
+};
+
+export type CustomerPage = { rows: CustomerSummary[]; page: number; size: number; total: number };
+
+/** Mirrors the backend `CustomerSummaryCounts` record; keys are `CustomerSegment` names. */
+export type CustomerSummaryCounts = {
+  all: number;
+  incomplete: number;
+  pending: number;
+  review: number;
+  approved: number;
+  disbursementPending: number;
+  active: number;
+  overdue: number;
+  hold: number;
+  rejected: number;
+  closed: number;
+  unallocated: number;
+};
+
+/** A blank or `false` filter must not be sent — the backend treats a present value as a filter. */
+function customerQuery(filters: Record<string, string | number | boolean | undefined>): string {
+  const qs = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === false || String(value).trim() === "") return;
+    qs.set(key, String(value));
+  });
+  const s = qs.toString();
+  return s ? `?${s}` : "";
+}
+
 export const customersApi = {
   /**
    * All customers, optionally filtered by name / PAN / mobile / customer id and by an inclusive
@@ -1822,6 +1865,21 @@ export const customersApi = {
     const search = qs.toString();
     return bff<CustomerSummary[]>(`${CUSTOMERS_BASE}${search ? `?${search}` : ""}`, "GET");
   },
+
+  /**
+   * One page of the customer book. Search, date window, segment, "mine" and paging are all applied
+   * server-side (SQL), so the response carries only the rows on screen plus the total match count.
+   */
+  page: (filters: CustomerListFilters = {}) =>
+    bff<CustomerPage>(`${CUSTOMERS_BASE}/page${customerQuery(filters)}`, "GET"),
+
+  /** Segment-chip counts over the whole (scoped, filtered) book — same filters as `page` minus `seg`. */
+  summary: (filters: Omit<CustomerListFilters, "seg" | "page" | "size"> = {}) =>
+    bff<CustomerSummaryCounts>(`${CUSTOMERS_BASE}/summary${customerQuery(filters)}`, "GET"),
+
+  /** Every row under the current filter, for the ADMIN "download all customers" export (server-capped). */
+  exportAll: (filters: Omit<CustomerListFilters, "page" | "size"> = {}) =>
+    bff<CustomerSummary[]>(`${CUSTOMERS_BASE}/export${customerQuery(filters)}`, "GET"),
 
   /** One customer's full history (profile + applications + loans + payments). */
   get: (customerId: number) => bff<CustomerDetail>(`${CUSTOMERS_BASE}/${customerId}`, "GET"),

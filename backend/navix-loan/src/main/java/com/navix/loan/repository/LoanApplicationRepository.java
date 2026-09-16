@@ -57,6 +57,9 @@ public interface LoanApplicationRepository
     @Query("select distinct a.customerId from LoanApplication a where a.id in :applicationIds")
     Set<Long> findCustomerIdsByIdIn(@Param("applicationIds") Collection<Long> applicationIds);
 
+    /** Every application of the given customers — the paged Customers list hydrates one page's ids. */
+    List<LoanApplication> findByCustomerIdIn(Collection<Long> customerIds);
+
     /** Application count per status, for the staff dashboard pipeline (statuses with no rows are absent). */
     @Query("select a.status as status, count(a) as count from LoanApplication a group by a.status")
     List<StatusCount> countGroupByStatus();

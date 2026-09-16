@@ -86,7 +86,10 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 
 | Method + path | Role | Purpose |
 |---|---|---|
-| `GET /?q=` | staff (all roles) | list/search distinct applicants (name / applicant id); each row rolls up counts + total outstanding |
+| `GET /?q=&from=&to=` | staff (all roles) | the **whole** book (dashboard/collections consumers); each row rolls up counts + total outstanding |
+| `GET /page?q=&from=&to=&seg=&mine=&page=&size=` | staff (all roles) | one page of the book — search, IST window, lifecycle segment (`unallocated` = nobody owns), "mine" (owned by or decided by the caller) and paging all in SQL; `size` capped at 100; `{rows, page, size, total}` |
+| `GET /summary?q=&from=&to=&mine=` | staff (all roles) | the segment-chip counts over the same scoped, filtered book |
+| `GET /export?q=&from=&to=&seg=&mine=` | ADMIN | every matching row for "download all customers" (capped at 50k) |
 | `GET /{customerId}` | staff (all roles) | one customer's full history: latest profile + all applications + loans + payments |
 | `PUT /{customerId}/profile` | ADMIN | correct KYC + salary data (non-identity fields; PAN/Aadhaar/mobile locked) — a monthly-salary change recomputes the eligible limit |
 | `GET /{customerId}/changes` | staff (all roles) | audited profile-change history (`profile_change_log`, previous→new per field) |

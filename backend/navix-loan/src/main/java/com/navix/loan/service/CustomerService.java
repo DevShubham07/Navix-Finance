@@ -21,7 +21,9 @@ import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
+import com.navix.loan.dto.CustomerDtos.CustomerPage;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
+import com.navix.loan.dto.CustomerDtos.CustomerSummaryCounts;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.RemarkView;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
@@ -119,6 +121,7 @@ public class CustomerService {
     private final BorrowerIdentityPort borrowerIdentity;
     private final ApplicationEventPublisher eventPublisher;
     private final LoanMath loanMath;
+    private final CustomerBookQuery bookQuery;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -181,16 +184,7 @@ public class CustomerService {
 
         Set<Long> owned = new HashSet<>(
                 nullSafe(applicationRepository.findCustomerIdsByAssignedExecutiveId(staffId)));
-
-        List<Long> decidedAppIds = nullSafe(
-                applicationEventRepository.findByActorIdOrderByAtDesc(String.valueOf(staffId))).stream()
-                .filter(e -> DecisionHistoryService.DECISION_ACTIONS.contains(e.getAction()))
-                .map(ApplicationEvent::getApplicationId)
-                .distinct()
-                .toList();
-        if (!decidedAppIds.isEmpty()) {
-            owned.addAll(nullSafe(applicationRepository.findCustomerIdsByIdIn(decidedAppIds)));
-        }
+        owned.addAll(decidedCustomerIds(staffId));
 
         // A collections officer acquires neither of the two above: the credit assignment is a
         // different field (assigned_executive_id) and DECISION_ACTIONS are all credit/disbursement
@@ -220,6 +214,41 @@ public class CustomerService {
             }
         }
         return new CustomerScope(owned, allocated);
+    }
+
+    /**
+     * Customers on whose applications this staffer has recorded a decision (the
+     * {@link DecisionHistoryService#DECISION_ACTIONS} trail) — shared by the visibility scope and by
+     * the "My customers" filter so both mean exactly the same thing as the dashboard's "your book".
+     */
+    private Set<Long> decidedCustomerIds(Long staffId) {
+        List<Long> decidedAppIds = nullSafe(
+                applicationEventRepository.findByActorIdOrderByAtDesc(String.valueOf(staffId))).stream()
+                .filter(e -> DecisionHistoryService.DECISION_ACTIONS.contains(e.getAction()))
+                .map(ApplicationEvent::getApplicationId)
+                .distinct()
+                .toList();
+        if (decidedAppIds.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(nullSafe(applicationRepository.findCustomerIdsByIdIn(decidedAppIds)));
+    }
+
+    /** Owned by the caller OR decided by the caller — the frontend's {@code isMine} rule, server-side. */
+    private Set<Long> mineCustomerIds() {
+        CurrentActor actor = ActorContext.get();
+        Long staffId;
+        try {
+            staffId = actor != null && actor.id() != null ? Long.valueOf(actor.id()) : null;
+        } catch (NumberFormatException e) {
+            staffId = null;
+        }
+        if (staffId == null) {
+            return Set.of();
+        }
+        Set<Long> mine = new HashSet<>(nullSafe(ownerRepository.findCustomerIdsByOwnerStaffId(staffId)));
+        mine.addAll(decidedCustomerIds(staffId));
+        return mine;
     }
 
     private static <T> Collection<T> nullSafe(Collection<T> c) {
@@ -264,8 +293,8 @@ public class CustomerService {
         CustomerScope scope = scope();
         Instant fromInstant = from == null ? null : from.atStartOfDay(IST).toInstant();
         Instant toInstant = to == null ? null : to.plusDays(1).atStartOfDay(IST).toInstant();
-        // ponytail: whole-table rollup + client-side segmenting. Move to a paged indexed query when the
-        // list stops fitting one response — same change as adding server-side segment filters.
+        // Whole-table rollup, kept for the dashboard/collections consumers that still read the full
+        // book. The Customers page itself uses page()/summary(), which filter and sort in SQL.
         String needle = q != null ? q.trim().toLowerCase() : "";
         // Filter BEFORE grouping so no per-customer work (loans, outstanding, bureau state) is done
         // for a customer the caller will never be shown.
@@ -273,17 +302,126 @@ public class CustomerService {
                 .filter(a -> scope == null || scope.permits(a.getCustomerId()))
                 .collect(Collectors.groupingBy(LoanApplication::getCustomerId));
 
-        // ponytail: whole-table load, same altitude as applicationRepository.findAll() above; switch both to an
-        // id-bounded finder when customers are paged.
         List<Loan> allLoans = loanRepository.findAll().stream()
                 .filter(l -> l.getCustomerId() != null && byCustomer.containsKey(l.getCustomerId()))
                 .toList();
+        Map<Long, CustomerOwner> owners = ownerRepository.findAll().stream()
+                .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
+
+        List<CustomerSummary> out = buildRows(byCustomer, allLoans, owners, fromInstant, toInstant, needle);
+        // Stage date descending — when each customer's latest application entered its current status,
+        // so the freshest decisions (a rejection, a sanction) surface first rather than the oldest
+        // signups. Nulls last: a customer whose application predates created_at auditing has no date.
+        out.sort(Comparator.comparing(CustomerSummary::statusChangedAt,
+                Comparator.nullsLast(Comparator.reverseOrder())));
+        return out;
+    }
+
+    /** Hard ceiling on one page of the Customers list. */
+    public static final int MAX_PAGE_SIZE = 100;
+    /** Hard ceiling on a "download all customers" export. */
+    public static final int EXPORT_CAP = 50_000;
+
+    /**
+     * One page of the Customers list. Filtering (search, IST date window, segment, scope, "mine"),
+     * sorting and paging all happen in SQL ({@link CustomerBookQuery}); only the ids on the page are
+     * hydrated into full rows, so the cost is bounded by {@code size}, not by the size of the book.
+     */
+    @Transactional(readOnly = true)
+    public CustomerPage page(String q, LocalDate from, LocalDate to, String seg, boolean mine,
+            int page, int size) {
+        rejectDsa();
+        CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, seg, mine);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        int safePage = Math.max(1, page);
+        long total = bookQuery.count(filter);
+        List<Long> ids = bookQuery.pageIds(filter, (safePage - 1) * safeSize, safeSize);
+        return new CustomerPage(hydrate(ids), safePage, safeSize, total);
+    }
+
+    /** Every matching row under the same filter as {@link #page} — the ADMIN "download all" export. */
+    @Transactional(readOnly = true)
+    public List<CustomerSummary> export(String q, LocalDate from, LocalDate to, String seg, boolean mine) {
+        requireAdmin();
+        CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, seg, mine);
+        return hydrate(bookQuery.pageIds(filter, 0, EXPORT_CAP));
+    }
+
+    /** The segment-chip counts under the same search / window / scope / "mine" as {@link #page}. */
+    @Transactional(readOnly = true)
+    public CustomerSummaryCounts summary(String q, LocalDate from, LocalDate to, boolean mine) {
+        rejectDsa();
+        CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, null, mine);
+        Map<String, Long> bySegment = new HashMap<>();
+        long all = 0;
+        long unallocated = 0;
+        for (CustomerBookQuery.SegmentCount c : bookQuery.segmentCounts(filter)) {
+            bySegment.merge(c.segment(), c.count(), Long::sum);
+            all += c.count();
+            unallocated += c.unallocated();
+        }
+        return new CustomerSummaryCounts(
+                all,
+                bySegment.getOrDefault("incomplete", 0L),
+                bySegment.getOrDefault("pending", 0L),
+                bySegment.getOrDefault("review", 0L),
+                bySegment.getOrDefault("approved", 0L),
+                bySegment.getOrDefault("disbursementPending", 0L),
+                bySegment.getOrDefault("active", 0L),
+                bySegment.getOrDefault("overdue", 0L),
+                bySegment.getOrDefault("hold", 0L),
+                bySegment.getOrDefault("rejected", 0L),
+                bySegment.getOrDefault("closed", 0L),
+                unallocated);
+    }
+
+    private CustomerBookQuery.BookFilter bookFilter(String q, LocalDate from, LocalDate to, String seg,
+            boolean mine) {
+        CustomerScope scope = scope();
+        String needle = q != null ? q.trim().toLowerCase() : "";
+        Instant fromInstant = from == null ? null : from.atStartOfDay(IST).toInstant();
+        Instant toInstant = to == null ? null : to.plusDays(1).atStartOfDay(IST).toInstant();
+        String segment = seg != null && CustomerBookQuery.SEGMENTS.contains(seg) ? seg : null;
+        return new CustomerBookQuery.BookFilter(
+                needle,
+                fromInstant,
+                toInstant,
+                segment,
+                scope == null ? null : scope.ownedIds(),
+                scope != null && scope.allocatedIds() != null,
+                mine ? mineCustomerIds() : null,
+                LocalDate.now(IST));
+    }
+
+    /** Full rows for exactly these customers, returned in the order the ids were given. */
+    private List<CustomerSummary> hydrate(List<Long> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, List<LoanApplication>> byCustomer = nullSafe(applicationRepository.findByCustomerIdIn(ids))
+                .stream().collect(Collectors.groupingBy(LoanApplication::getCustomerId));
+        List<Loan> loans = nullSafe(loanRepository.findByCustomerIdIn(ids)).stream()
+                .filter(l -> l.getCustomerId() != null)
+                .toList();
+        Map<Long, CustomerOwner> owners = nullSafe(ownerRepository.findAllById(ids)).stream()
+                .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
+        Map<Long, CustomerSummary> byId = new HashMap<>();
+        for (CustomerSummary cs : buildRows(byCustomer, loans, owners, null, null, "")) {
+            byId.put(cs.customerId(), cs);
+        }
+        return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+    }
+
+    /**
+     * Builds the full {@link CustomerSummary} rows for the customers in {@code byCustomer}. Every
+     * lookup is batched over the whole input (never per customer), so the caller decides the cost:
+     * the whole book from {@link #list}, or one page's ids from {@link #hydrate}. Unsorted.
+     */
+    private List<CustomerSummary> buildRows(Map<Long, List<LoanApplication>> byCustomer, List<Loan> allLoans,
+            Map<Long, CustomerOwner> owners, Instant fromInstant, Instant toInstant, String needle) {
         Map<Long, List<Loan>> loansByCustomer = allLoans.stream()
                 .collect(Collectors.groupingBy(Loan::getCustomerId));
         Map<Long, Long> owedByLoanId = repaymentService.outstandingForAll(allLoans, null);
-
-        Map<Long, CustomerOwner> owners = ownerRepository.findAll().stream()
-                .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
         Map<Long, String> staffNames = new HashMap<>();
 
         // Every profile these applications could resolve to, batched in one query instead of one
@@ -429,11 +567,6 @@ public class CustomerService {
                 out.add(cs);
             }
         }
-        // Stage date descending — when each customer's latest application entered its current status,
-        // so the freshest decisions (a rejection, a sanction) surface first rather than the oldest
-        // signups. Nulls last: a customer whose application predates created_at auditing has no date.
-        out.sort(Comparator.comparing(CustomerSummary::statusChangedAt,
-                Comparator.nullsLast(Comparator.reverseOrder())));
         return out;
     }
 

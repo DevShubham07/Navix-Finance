@@ -19,6 +19,9 @@ public interface LoanRepository extends JpaRepository<Loan, Long> {
 
     List<Loan> findByCustomerId(Long customerId);
 
+    /** Every loan of the given customers — the paged Customers list hydrates one page's ids. */
+    List<Loan> findByCustomerIdIn(Collection<Long> customerIds);
+
     /**
      * The customers behind a set of real loan ids, in one query — resolves a collections officer's
      * assigned cases into the customers they may see ({@code CustomerService.scope()}). Callers MUST
