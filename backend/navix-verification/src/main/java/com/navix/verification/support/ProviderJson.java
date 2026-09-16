@@ -95,10 +95,17 @@ public final class ProviderJson {
         long started = System.nanoTime();
         JsonNode node;
         int httpStatus;
+        String responseBody;
         try {
-            ResponseEntity<JsonNode> entity =
-                    client.post().uri(uri).body(body).retrieve().toEntity(JsonNode.class);
-            node = entity.getBody();
+            // Read as String, not JsonNode: Spring's default StringHttpMessageConverter accepts any
+            // Content-Type, so a provider mislabelling a body `application/octet-stream` no longer
+            // makes the converter throw before we ever see the bytes (that used to surface as an
+            // opaque RestClientException with the response recorded as null — the answer was lost on
+            // our side of the wire). We parse the JSON ourselves below, where a genuinely non-JSON body
+            // still fails, but with the raw text kept on the audit row.
+            ResponseEntity<String> entity =
+                    client.post().uri(uri).body(body).retrieve().toEntity(String.class);
+            responseBody = entity.getBody();
             httpStatus = entity.getStatusCode().value();
         } catch (RestClientResponseException e) {
             int status = e.getStatusCode().value();
@@ -136,9 +143,17 @@ public final class ProviderJson {
             throw new VerificationException("Transport failure calling " + uri, transportFailure,
                     null, uri, null, null);
         }
-        if (node == null) {
-            record(uri, requestJson, null, httpStatus, started, "Empty response body from " + uri);
+        if (responseBody == null || responseBody.isBlank()) {
+            record(uri, requestJson, responseBody, httpStatus, started, "Empty response body from " + uri);
             throw new VerificationException("Empty response body from " + uri);
+        }
+        try {
+            node = JSON.readTree(responseBody);
+        } catch (Exception unparseable) {
+            record(uri, requestJson, responseBody, httpStatus, started,
+                    "Unparseable response body from " + uri);
+            throw new VerificationException("Unparseable response body from " + uri, unparseable,
+                    httpStatus, uri, null, null);
         }
         // A 2xx carrying an error envelope is still a failed call as far as the audit trail cares.
         record(uri, requestJson, node.toString(), httpStatus, started,
