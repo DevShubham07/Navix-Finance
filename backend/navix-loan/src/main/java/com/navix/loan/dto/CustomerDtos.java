@@ -118,6 +118,30 @@ public final class CustomerDtos {
             boolean failureRetryable) {
     }
 
+    /** One page of the Customers list. {@code page} is 1-indexed; {@code total} counts every match. */
+    public record CustomerPage(List<CustomerSummary> rows, int page, int size, long total) {
+    }
+
+    /**
+     * The segment-chip counts over the whole (scoped, filtered) book. Keys are the frontend's
+     * {@code CustomerSegment} names; {@code unallocated} overlays the others (a customer is counted
+     * in exactly one lifecycle segment AND, when nobody owns them, in {@code unallocated}).
+     */
+    public record CustomerSummaryCounts(
+            long all,
+            long incomplete,
+            long pending,
+            long review,
+            long approved,
+            long disbursementPending,
+            long active,
+            long overdue,
+            long hold,
+            long rejected,
+            long closed,
+            long unallocated) {
+    }
+
     /**
      * Why one customer's file has no usable credit decision, with the provider chain behind it — the
      * Customers page's failure dialog.

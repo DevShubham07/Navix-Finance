@@ -15,7 +15,9 @@ import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CustomerDtos.ChangeSanctionedAmountRequest;
 import com.navix.loan.dto.CustomerDtos.ConfirmMobileChangeRequest;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
+import com.navix.loan.dto.CustomerDtos.CustomerPage;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
+import com.navix.loan.dto.CustomerDtos.CustomerSummaryCounts;
 import com.navix.loan.dto.CustomerDtos.LimitOverrideRequest;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.RemarkView;
@@ -66,6 +68,60 @@ public class CustomerController {
                     iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to) {
         requireStaff();
         return ApiResponse.ok(customerService.list(q, from, to));
+    }
+
+    /**
+     * One page of the customer book — the same {@code q} / {@code from} / {@code to} as {@link #list}
+     * plus a lifecycle {@code seg} (the frontend's segment names, or {@code unallocated}), a
+     * {@code mine} flag (owned by or decided by the caller) and a 1-indexed {@code page}. Filtering,
+     * sorting and paging run in SQL; the size is capped server-side.
+     */
+    @GetMapping("/page")
+    public ApiResponse<CustomerPage> page(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(required = false) String seg,
+            @RequestParam(defaultValue = "false") boolean mine,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        requireStaff();
+        return ApiResponse.ok(customerService.page(q, from, to, seg, mine, page, size));
+    }
+
+    /** The segment-chip counts over the whole (scoped, filtered) book. */
+    @GetMapping("/summary")
+    public ApiResponse<CustomerSummaryCounts> summary(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(defaultValue = "false") boolean mine) {
+        requireStaff();
+        return ApiResponse.ok(customerService.summary(q, from, to, mine));
+    }
+
+    /** Every row matching the filter, for the ADMIN "download all customers" export (capped). */
+    @GetMapping("/export")
+    public ApiResponse<List<CustomerSummary>> export(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(required = false) String seg,
+            @RequestParam(defaultValue = "false") boolean mine) {
+        requireStaff();
+        return ApiResponse.ok(customerService.export(q, from, to, seg, mine));
     }
 
     /** One customer's full history: profile + applications + loans + payments. */

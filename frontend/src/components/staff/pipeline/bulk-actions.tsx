@@ -45,8 +45,10 @@ export function useQueueSelection(rowIds: number[]) {
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
 
   // Reset whenever the underlying row list changes (a new poll, a filter, a page nav) — a stale
-  // selection could otherwise point at ids no longer in view.
-  React.useEffect(() => setSelected(new Set()), [rowIds.length]);
+  // selection could otherwise point at ids no longer in view. Keyed on the ids themselves, not the
+  // length: two server pages of the same size must not carry a selection across.
+  const rowKey = rowIds.join(",");
+  React.useEffect(() => setSelected(new Set()), [rowKey]);
 
   const toggle = (id: number) => {
     setSelected((s) => {
