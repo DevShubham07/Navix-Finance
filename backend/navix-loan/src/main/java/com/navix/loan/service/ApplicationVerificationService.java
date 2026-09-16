@@ -34,6 +34,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -179,9 +180,34 @@ public class ApplicationVerificationService {
     private static final Set<String> INHERITABLE_CHECKS =
             Set.of(PAN, EMAIL, BUREAU, SALARY, AADHAAR, SELFIE, ADDRESS);
 
+    /** How far back a re-apply chain is walked for carried evidence. Bounded so a cycle in the data
+     *  can never spin; shared by the single-application and batched completeness paths. */
+    private static final int REAPPLY_CHAIN_HOPS = 5;
+
+    /** Id-list chunk for batched lookups — keeps {@code IN (...)} clear of the JDBC parameter limit
+     *  on a full register (the live book is ~9.7k applications). Mirrors {@code BureauStateService}. */
+    private static final int ID_CHUNK_SIZE = 1_000;
+
     /** Every recognised check type — guards the staff manual-override target. */
     static final Set<String> KNOWN_CHECKS = Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU,
             SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN);
+
+    /**
+     * Checks that inform the credit decision but gate nothing, so they stay out of the
+     * pending-API dashboard's bucket maths. Mirrors the frontend constant of the same meaning
+     * (`frontend/src/app/staff/verifications/page.tsx`) — the two must agree, or the server's default
+     * "needs attention" page and the card the page draws from it would disagree about the same file.
+     */
+    private static final Set<String> OVERVIEW_NON_GATING =
+            Set.of(EMPLOYMENT, DIGILOCKER, AGREEMENT, ESIGN);
+
+    /** The gating checks the dashboard counts: every known check that is not {@link #OVERVIEW_NON_GATING}. */
+    private static final Set<String> OVERVIEW_GATING_CHECKS = KNOWN_CHECKS.stream()
+            .filter(c -> !OVERVIEW_NON_GATING.contains(c))
+            .collect(Collectors.toUnmodifiableSet());
+
+    /** Page-size ceiling for {@link #overview}, mirroring {@code CustomerService.MAX_PAGE_SIZE}. */
+    private static final int OVERVIEW_MAX_PAGE_SIZE = 100;
 
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
@@ -261,9 +287,17 @@ public class ApplicationVerificationService {
                                           String applicationStatus) {
     }
 
-    /** Pending-API dashboard payload: status tallies + the (filtered) rows (Phase 3.3). */
+    /**
+     * Pending-API dashboard payload: status tallies + one page of rows (Phase 3.3).
+     *
+     * <p>The five tallies are always computed over the <b>whole</b> undecided queue — they are the
+     * page's headline counts and must not move when the reviewer turns a page. {@code rows} is the
+     * requested page, and {@code total} counts <b>applications</b> (not rows), because the page groups
+     * rows into one card per application and pages at that granularity.
+     */
     public record VerificationOverview(int passed, int review, int failed, int pending, int neverRun,
-                                       List<VerificationOverviewRow> rows) {
+                                       List<VerificationOverviewRow> rows,
+                                       int page, int size, long total) {
     }
 
     // ---------------------------------------------------------------- steps
@@ -2720,16 +2754,143 @@ public class ApplicationVerificationService {
      *  Evidence carried forward by a re-apply counts, for the reason given on {@link #progress}. */
     @Transactional(readOnly = true)
     public int requiredPassedCount(Long appId) {
-        Map<String, String> byType = statusesWithCarriedEvidence(
-                applicationRepo.findById(appId).orElse(null), appId);
-        int done = 0;
-        for (String required : REQUIRED) {
-            String status = byType.get(required);
-            if (PASS.equals(status) || REVIEW.equals(status)) {
-                done++;
+        LoanApplication app = applicationRepo.findById(appId).orElse(null);
+        Map<Long, Long> one = new LinkedHashMap<>();
+        one.put(appId, app == null ? null : app.getReappliedFrom());
+        return countRequiredPassed(one).getOrDefault(appId, 0);
+    }
+
+    /**
+     * Batched twin of {@link #requiredPassedCount} — the completeness count for a whole register in a
+     * fixed number of queries instead of one (plus a re-apply chain walk) per row.
+     *
+     * <p>The per-row form is what made the telecalling queue and the all-applications register take
+     * 13-15s over ~9.7k applications: each call re-loaded the application it was handed and then
+     * walked its re-apply chain one {@code findById}/{@code statusesOf} pair at a time. This resolves
+     * every application's own rows in one projection query, then each chain <em>level</em> for the
+     * whole page at once — 1 + 2 x (chain depth, capped at 5) queries however many rows there are.
+     *
+     * <p>Carry-forward semantics are identical to {@link #statusesWithCarriedEvidence}: a row on the
+     * newer application always wins, only {@link #INHERITABLE_CHECKS} are inherited, and the walk is
+     * bounded at 5 hops so a cycle in the data can never spin here.
+     *
+     * <p>Ids with no verification rows at all are still present in the returned map, with a count of 0.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, Integer> requiredPassedCounts(Collection<LoanApplication> apps) {
+        if (apps == null || apps.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> sourceByAppId = new LinkedHashMap<>();
+        for (LoanApplication app : apps) {
+            if (app != null && app.getId() != null) {
+                sourceByAppId.put(app.getId(), app.getReappliedFrom());
             }
         }
-        return done;
+        return countRequiredPassed(sourceByAppId);
+    }
+
+    /**
+     * The completeness count for every entry of {@code sourceByAppId} (application id -> the id it
+     * re-applied from, nullable). Level-wise twin of {@link #statusesWithCarriedEvidence}.
+     */
+    private Map<Long, Integer> countRequiredPassed(Map<Long, Long> sourceByAppId) {
+        if (sourceByAppId.isEmpty()) {
+            return Map.of();
+        }
+        // Only REQUIRED types are ever counted, and REQUIRED is a subset of INHERITABLE_CHECKS, so
+        // narrowing the projection to REQUIRED cannot change a single count — it just keeps the
+        // rows (and the raw_response blob they hang off) out of the query.
+        Map<Long, Map<String, String>> byApp = new HashMap<>();
+        for (Long appId : sourceByAppId.keySet()) {
+            byApp.put(appId, new HashMap<>());
+        }
+        for (Map.Entry<Long, Map<String, String>> e : requiredStatusesOf(sourceByAppId.keySet()).entrySet()) {
+            byApp.get(e.getKey()).putAll(e.getValue());
+        }
+
+        // Walk the re-apply chain one level at a time for the whole batch: each hop costs one
+        // application load plus one verification read, regardless of how many rows are still walking.
+        Map<Long, Long> pending = new LinkedHashMap<>();
+        Map<Long, Set<Long>> visited = new HashMap<>();
+        for (Map.Entry<Long, Long> e : sourceByAppId.entrySet()) {
+            visited.put(e.getKey(), new HashSet<>(Set.of(e.getKey())));
+            if (e.getValue() != null) {
+                pending.put(e.getKey(), e.getValue());
+                visited.get(e.getKey()).add(e.getValue());
+            }
+        }
+        for (int hop = 0; hop < REAPPLY_CHAIN_HOPS && !pending.isEmpty(); hop++) {
+            List<Long> sourceIds = pending.values().stream().distinct().toList();
+            Map<Long, Long> nextSourceById = new HashMap<>();
+            for (LoanApplication source : findAllByIdChunked(sourceIds)) {
+                nextSourceById.put(source.getId(), source.getReappliedFrom());
+            }
+            Map<Long, Map<String, String>> rowsBySource = requiredStatusesOf(sourceIds);
+            Map<Long, Long> stillWalking = new LinkedHashMap<>();
+            for (Map.Entry<Long, Long> e : pending.entrySet()) {
+                Long appId = e.getKey();
+                Long source = e.getValue();
+                Map<String, String> carried = rowsBySource.get(source);
+                if (carried != null) {
+                    Map<String, String> target = byApp.get(appId);
+                    carried.forEach((check, status) -> {
+                        if (INHERITABLE_CHECKS.contains(check)) {
+                            target.putIfAbsent(check, status);
+                        }
+                    });
+                }
+                // A source that no longer exists ends the walk, exactly as findById(...).orElse(null) did.
+                Long next = nextSourceById.get(source);
+                if (next != null && visited.get(appId).add(next)) {
+                    stillWalking.put(appId, next);
+                }
+            }
+            pending = stillWalking;
+        }
+
+        Map<Long, Integer> out = new HashMap<>();
+        for (Map.Entry<Long, Map<String, String>> e : byApp.entrySet()) {
+            int done = 0;
+            for (String required : REQUIRED) {
+                String status = e.getValue().get(required);
+                if (PASS.equals(status) || REVIEW.equals(status)) {
+                    done++;
+                }
+            }
+            out.put(e.getKey(), done);
+        }
+        return out;
+    }
+
+    /**
+     * {@link #statusesOf} for many applications at once, restricted to {@link #REQUIRED} check types.
+     * Chunked to stay clear of the JDBC/Postgres {@code IN (...)} parameter limit on a full register.
+     */
+    private Map<Long, Map<String, String>> requiredStatusesOf(Collection<Long> appIds) {
+        Map<Long, Map<String, String>> out = new HashMap<>();
+        List<Long> ids = new ArrayList<>(appIds);
+        for (int from = 0; from < ids.size(); from += ID_CHUNK_SIZE) {
+            List<Long> chunk = ids.subList(from, Math.min(from + ID_CHUNK_SIZE, ids.size()));
+            for (ApplicationVerificationRepository.CaseFailureRow row
+                    : verificationRepo.findByApplicationIdInAndCheckTypeIn(chunk, REQUIRED)) {
+                out.computeIfAbsent(row.getApplicationId(), k -> new HashMap<>())
+                        .put(row.getCheckType(), row.getStatus());
+            }
+        }
+        return out;
+    }
+
+    /** {@code findAllById} in chunks, for the same reason as {@link #requiredStatusesOf}. */
+    private List<LoanApplication> findAllByIdChunked(List<Long> ids) {
+        if (ids.size() <= ID_CHUNK_SIZE) {
+            return applicationRepo.findAllById(ids);
+        }
+        List<LoanApplication> out = new ArrayList<>();
+        for (int from = 0; from < ids.size(); from += ID_CHUNK_SIZE) {
+            out.addAll(applicationRepo.findAllById(ids.subList(from, Math.min(from + ID_CHUNK_SIZE, ids.size()))));
+        }
+        return out;
     }
 
     /** All verification rows for an application as borrower-safe step results. */
@@ -2844,7 +3005,7 @@ public class ApplicationVerificationService {
     private Map<String, String> statusesWithCarriedEvidence(LoanApplication app, Long appId) {
         Map<String, String> byType = new HashMap<>(statusesOf(appId));
         Long source = app == null ? null : app.getReappliedFrom();
-        for (int hop = 0; source != null && hop < 5; hop++) {
+        for (int hop = 0; source != null && hop < REAPPLY_CHAIN_HOPS; hop++) {
             statusesOf(source).forEach((check, status) -> {
                 if (INHERITABLE_CHECKS.contains(check)) {
                     byType.putIfAbsent(check, status);
@@ -3023,12 +3184,15 @@ public class ApplicationVerificationService {
      * ~15-25s before failing outright (a company-wide unbounded scan, not this page's small live queue).
      */
     @Transactional(readOnly = true)
-    public VerificationOverview overview(String statusFilter, String checkTypeFilter, String q) {
+    public VerificationOverview overview(String statusFilter, String checkTypeFilter, String q,
+                                         Boolean needsAttention, int page, int size) {
         List<LoanApplication> undecided = applicationRepo.findByStatusIn(UNDECIDED_STATUSES);
         Map<Long, LoanApplication> appById = undecided.stream()
                 .collect(Collectors.toMap(LoanApplication::getId, a -> a, (a, b) -> a));
+        int safeSize = Math.max(1, Math.min(size, OVERVIEW_MAX_PAGE_SIZE));
+        int safePage = Math.max(1, page);
         if (appById.isEmpty()) {
-            return new VerificationOverview(0, 0, 0, 0, 0, List.of());
+            return new VerificationOverview(0, 0, 0, 0, 0, List.of(), safePage, safeSize, 0L);
         }
         List<ApplicationVerification> all = verificationRepo.findByApplicationIdIn(appById.keySet());
         Map<Long, CustomerProfile> profByApp = profileRepo.findByApplicationIdIn(appById.keySet()).stream()
@@ -3036,6 +3200,7 @@ public class ApplicationVerificationService {
 
         int passed = 0, review = 0, failed = 0, pending = 0;
         Map<Long, Set<String>> presentByApp = new java.util.HashMap<>();
+        Map<Long, Map<String, String>> statusesByApp = new java.util.HashMap<>();
         for (ApplicationVerification v : all) {
             String s = v.getStatus();
             if (PASS.equals(s)) {
@@ -3048,6 +3213,8 @@ public class ApplicationVerificationService {
                 pending++;
             }
             presentByApp.computeIfAbsent(v.getApplicationId(), k -> new HashSet<>()).add(v.getCheckType());
+            statusesByApp.computeIfAbsent(v.getApplicationId(), k -> new HashMap<>())
+                    .put(v.getCheckType(), s);
         }
         // Never-run: required checks with no row, on applications that have at least started verification.
         int neverRun = 0;
@@ -3062,7 +3229,7 @@ public class ApplicationVerificationService {
         String statusF = norm(statusFilter);
         String typeF = norm(checkTypeFilter);
         String needle = q != null ? q.trim().toLowerCase() : "";
-        List<VerificationOverviewRow> rows = all.stream()
+        List<VerificationOverviewRow> matched = all.stream()
                 .filter(v -> statusF.isEmpty() || statusF.equals(v.getStatus()))
                 .filter(v -> typeF.isEmpty() || typeF.equals(v.getCheckType()))
                 .map(v -> {
@@ -3080,7 +3247,55 @@ public class ApplicationVerificationService {
                 .sorted(java.util.Comparator.comparing(VerificationOverviewRow::updatedAt,
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
                 .toList();
-        return new VerificationOverview(passed, review, failed, pending, neverRun, rows);
+
+        // Page by APPLICATION, not by row: the dashboard renders one card per application and its
+        // bucket maths needs that application's whole row set, so a row-sliced page would show cards
+        // built from half their checks. Rows keep the updatedAt ordering within each card.
+        boolean attentionOnly = statusF.isEmpty() && typeF.isEmpty() && !Boolean.FALSE.equals(needsAttention);
+        Map<Long, List<VerificationOverviewRow>> rowsByApp = new LinkedHashMap<>();
+        for (VerificationOverviewRow r : matched) {
+            if (attentionOnly && !needsAttention(statusesByApp.get(r.applicationId()))) {
+                continue;
+            }
+            rowsByApp.computeIfAbsent(r.applicationId(), k -> new ArrayList<>()).add(r);
+        }
+        List<Long> pageAppIds = rowsByApp.keySet().stream()
+                .skip((long) (safePage - 1) * safeSize)
+                .limit(safeSize)
+                .toList();
+        List<VerificationOverviewRow> rows = new ArrayList<>();
+        for (Long appId : pageAppIds) {
+            rows.addAll(rowsByApp.get(appId));
+        }
+        return new VerificationOverview(passed, review, failed, pending, neverRun,
+                List.copyOf(rows), safePage, safeSize, rowsByApp.size());
+    }
+
+    /**
+     * Does this application still need a reviewer's attention? Mirrors the dashboard's own bucket
+     * rule (`frontend/src/app/staff/verifications/page.tsx`): an application is "all checks passed"
+     * only when every gating check has a row reading PASS. Anything else — a FAIL, a REVIEW, a
+     * PENDING, or a gating check that never ran — is the failures or awaiting bucket, i.e. work.
+     *
+     * <p>Gating means {@link #KNOWN_CHECKS} minus {@link #OVERVIEW_NON_GATING}: the checks that inform
+     * the credit decision but gate nothing are kept out of the maths on both sides.
+     */
+    private static boolean needsAttention(Map<String, String> statusesByCheck) {
+        if (statusesByCheck == null) {
+            return true; // nothing recorded at all — every gating check is outstanding
+        }
+        for (String gating : OVERVIEW_GATING_CHECKS) {
+            if (!PASS.equals(statusesByCheck.get(gating))) {
+                return true;
+            }
+        }
+        // A gating row of an unrecognised type that is not PASS is still outstanding work.
+        for (Map.Entry<String, String> e : statusesByCheck.entrySet()) {
+            if (!OVERVIEW_NON_GATING.contains(e.getKey()) && !PASS.equals(e.getValue())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean overviewMatches(VerificationOverviewRow r, String needle) {

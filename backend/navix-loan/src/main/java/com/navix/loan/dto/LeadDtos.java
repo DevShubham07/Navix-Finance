@@ -109,6 +109,10 @@ public final class LeadDtos {
         }
     }
 
+    /** One page of the lead list: rows for the requested page, plus the total across the whole filter. */
+    public record LeadPage(List<LeadView> rows, int page, int size, long total) {
+    }
+
     /** One parsed row of an uploaded lead list, straight from {@code LeadFileParser}. */
     public record ImportRow(String name, String mobile, String pan, String pincode, String email) {
     }

@@ -38,6 +38,12 @@ public interface LoanApplicationRepository
      *  collection; {@code in ()} is not valid SQL. */
     List<LoanApplication> findByStatusIn(Collection<ApplicationStatus> statuses);
 
+    /** Every application NOT in any of {@code statuses} — the complement form, e.g. the telecalling
+     *  queue's "has not reached sanction yet". {@code status} is NOT NULL (V2), so this returns
+     *  exactly what filtering the same set out of {@code findAll()} in memory would. Callers MUST
+     *  short-circuit on an empty collection; {@code not in ()} is not valid SQL. */
+    List<LoanApplication> findByStatusNotIn(Collection<ApplicationStatus> statuses);
+
     List<LoanApplication> findByAssignedExecutiveIdAndStatusOrderByCreatedAtDescIdDesc(
             Long assignedExecutiveId, ApplicationStatus status);
 

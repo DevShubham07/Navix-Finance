@@ -234,15 +234,20 @@ function RoleQueues({ role }: { role: StaffRole }) {
 function AwaitingRepaymentPanel() {
   const range = useQueueRange();
   const query = useQueueQuery();
+  // A minute, where the maker-checker queues above still poll every 8s. This panel is a "who owes
+  // money" reference view, not a desk: its membership changes only when a disbursement activates a
+  // loan or an accountant verifies a repayment, and both of those now invalidate `["staff-queue"]`
+  // explicitly (see `useRefreshAfterAction` and the repayment verify queue), so the panel updates
+  // on the action rather than waiting for a poll to notice.
   const activeQ = useQuery({
     queryKey: ["staff-queue", "ACTIVE", range.from ?? "", range.to ?? "", query],
     queryFn: () => staffApi.listByStatus("ACTIVE", range, query || undefined),
-    refetchInterval: 8000,
+    refetchInterval: 60_000,
   });
   const overdueQ = useQuery({
     queryKey: ["staff-queue", "OVERDUE", range.from ?? "", range.to ?? "", query],
     queryFn: () => staffApi.listByStatus("OVERDUE", range, query || undefined),
-    refetchInterval: 8000,
+    refetchInterval: 60_000,
   });
 
   // Split on the LOAN's due date, not the application status. LoanStatus.OVERDUE is

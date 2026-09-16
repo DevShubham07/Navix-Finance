@@ -289,7 +289,37 @@ public class RepaymentService {
 
     @Transactional(readOnly = true)
     public OutstandingBreakdown outstandingBreakdownAsOf(Long loanId, LocalDate asOf) {
-        Loan loan = requireLoan(loanId);
+        return outstandingBreakdownAsOf(requireLoan(loanId), loanId, asOf);
+    }
+
+    /**
+     * {@link #outstandingBreakdownAsOf(Long, LocalDate)} for a {@link Loan} the caller already holds —
+     * saves the reload, and is otherwise identical (it still issues the verified-payment sum and the
+     * settlement lookup itself). For a whole page of loans use {@link #outstandingBreakdownsForAll},
+     * which batches those two lookups as well.
+     */
+    @Transactional(readOnly = true)
+    public OutstandingBreakdown outstandingBreakdownAsOf(Loan loan, LocalDate asOf) {
+        return outstandingBreakdownAsOf(loan, loan.getId(), asOf);
+    }
+
+    /**
+     * The id is threaded separately rather than read off the entity so the by-id path keeps asking
+     * about exactly the loan the caller named.
+     */
+    private OutstandingBreakdown outstandingBreakdownAsOf(Loan loan, Long loanId, LocalDate asOf) {
+        long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
+        Long settled = settlementDirectory.approvedSettlementAmount(loanId).orElse(null);
+        return breakdown(loan, asOf, verified, settled);
+    }
+
+    /**
+     * The <b>one</b> implementation of the outstanding formula, shared by the single-loan and the
+     * batched paths so the two can never drift. Pure arithmetic — every input it needs (the loan, the
+     * as-of date, the verified-payment sum, the approved settlement or null) is passed in, so it
+     * issues no queries of its own.
+     */
+    private OutstandingBreakdown breakdown(Loan loan, LocalDate asOf, long verified, Long settled) {
         LocalDate at = asOf != null ? asOf : LocalDate.now(IST);
         // A closed loan's balance is frozen at the day it closed — otherwise a loan closed months ago
         // keeps accruing late penalty against "today" and reports a phantom balance.
@@ -301,11 +331,9 @@ public class RepaymentService {
         int interestDays = Math.min(daysToAsOf, tenureDays + LoanMath.SALARY_GRACE_DAYS);
         int rawDpd = loanMath.daysPastDue(loan.getDueDate(), at);
         int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
-        long verified = paymentRepository.sumAmountByLoanIdAndStatus(loanId, PaymentStatus.VERIFIED);
         long interest = loanMath.interestPaise(loan.getPrincipal(), interestDays);
         long penalty = loanMath.latePenaltyPaise(loan.getPrincipal(), penaltyDays);
         long formulaOwed = loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
-        Long settled = settlementDirectory.approvedSettlementAmount(loanId).orElse(null);
         long owed = settled != null ? Math.min(formulaOwed, Math.max(0L, settled - verified)) : formulaOwed;
         // Report the days actually CHARGED (penalty is capped inside latePenaltyPaise), so the
         // displayed "2%/day × N days" reconciles with penaltyPaise instead of overstating it.
@@ -315,21 +343,54 @@ public class RepaymentService {
     }
 
     /**
-     * The batched twin of {@link #outstandingAsOf}: the same penalty/prepayment-aware balance for a
-     * whole set of loans in a small, fixed number of queries instead of one round trip per loan —
-     * {@link #outstandingBreakdownAsOf} alone costs 3 DB queries per loan (verified-payment sum, the
-     * loan reload inside {@code requireLoan}, and the settlement lookup), so a 50-row page would
-     * otherwise be ~150 queries. Callers must already hold the {@link Loan} rows (no reload here).
+     * The batched twin of {@link #outstandingBreakdownAsOf}: the full itemised breakdown per loan in a
+     * fixed number of queries (one verified-payment sum, one settlement lookup) regardless of how many
+     * loans are passed — where the per-loan call costs 3 queries each (the loan reload inside
+     * {@code requireLoan}, the verified-payment sum, and the settlement lookup), so a 300-row register
+     * would otherwise be ~900. Callers must already hold the {@link Loan} rows (no reload here).
      *
-     * <p>Runs <b>the same formula</b> {@link #outstandingBreakdownAsOf} uses, in memory, per loan —
-     * this is deliberate: the loan register, the repay page, and collections must all agree on
+     * <p>Runs <b>the same formula</b> {@link #outstandingBreakdownAsOf} does — literally the same
+     * private helper, not a copy: the loan register, the repay page, and collections must all agree on
      * "amount owed", so the math is not allowed to fork into a second implementation.
      *
-     * <p>The verified-payment sums are pre-fetched in one grouped query
-     * ({@link PaymentRepository#sumAmountByLoanIdInAndStatus}). The approved-settlement lookup stays
-     * per-loan ({@link SettlementDirectory} exposes only a single-loan read) — settlements are rare
-     * (most loans have none), so this remaining per-loan call is far cheaper than the payment-sum
-     * query it replaces and does not undermine the batching.
+     * <p>The verified-payment sums come from one grouped query
+     * ({@link PaymentRepository#sumAmountByLoanIdInAndStatus}) and the approved settlements from one
+     * batched port read ({@link SettlementDirectory#approvedSettlementAmounts}) — a loan with no
+     * approved settlement is simply absent from that map, which is the same thing the single-loan
+     * {@code Optional.empty()} means.
+     *
+     * @param loans the loans to price (any subset; duplicates/foreign loans are harmless)
+     * @param asOf  the as-of date (defaults to today when null)
+     * @return loan id → itemised breakdown, for every loan passed in
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, OutstandingBreakdown> outstandingBreakdownsForAll(List<Loan> loans, LocalDate asOf) {
+        if (loans.isEmpty()) {
+            return Map.of();
+        }
+        // Resolve "today" ONCE for the whole batch: pricing a long page across midnight IST must not
+        // put the first and last rows on different dates.
+        LocalDate at = asOf != null ? asOf : LocalDate.now(IST);
+        List<Long> loanIds = loans.stream().map(Loan::getId).toList();
+        Map<Long, Long> verifiedByLoanId = paymentRepository
+                .sumAmountByLoanIdInAndStatus(loanIds, PaymentStatus.VERIFIED).stream()
+                .collect(Collectors.toMap(PaymentRepository.LoanAmount::getLoanId,
+                        PaymentRepository.LoanAmount::getTotal));
+        Map<Long, Long> settledByLoanId = settlementDirectory.approvedSettlementAmounts(loanIds);
+
+        Map<Long, OutstandingBreakdown> result = new HashMap<>();
+        for (Loan loan : loans) {
+            long verified = verifiedByLoanId.getOrDefault(loan.getId(), 0L);
+            result.put(loan.getId(), breakdown(loan, at, verified, settledByLoanId.get(loan.getId())));
+        }
+        return result;
+    }
+
+    /**
+     * The batched twin of {@link #outstandingAsOf}: the same penalty/prepayment-aware balance for a
+     * whole set of loans in a small, fixed number of queries instead of one round trip per loan.
+     * A thin projection of {@link #outstandingBreakdownsForAll} — same queries, same formula, just the
+     * net figure.
      *
      * @param loans the loans to price (any subset; duplicates/foreign loans are harmless)
      * @param asOf  the as-of date (defaults to today when null)
@@ -337,35 +398,8 @@ public class RepaymentService {
      */
     @Transactional(readOnly = true)
     public Map<Long, Long> outstandingForAll(List<Loan> loans, LocalDate asOf) {
-        if (loans.isEmpty()) {
-            return Map.of();
-        }
-        LocalDate at = asOf != null ? asOf : LocalDate.now(IST);
-        List<Long> loanIds = loans.stream().map(Loan::getId).toList();
-        Map<Long, Long> verifiedByLoanId = paymentRepository
-                .sumAmountByLoanIdInAndStatus(loanIds, PaymentStatus.VERIFIED).stream()
-                .collect(Collectors.toMap(PaymentRepository.LoanAmount::getLoanId,
-                        PaymentRepository.LoanAmount::getTotal));
-
-        Map<Long, Long> result = new HashMap<>();
-        for (Loan loan : loans) {
-            LocalDate loanAt = at;
-            // Same freeze-at-close rule as outstandingBreakdownAsOf.
-            if (loan.getClosedOn() != null && loanAt.isAfter(loan.getClosedOn())) {
-                loanAt = loan.getClosedOn();
-            }
-            int tenureDays = (int) ChronoUnit.DAYS.between(loan.getDisbursedOn(), loan.getDueDate());
-            int daysToAsOf = (int) Math.max(0L, ChronoUnit.DAYS.between(loan.getDisbursedOn(), loanAt));
-            int interestDays = Math.min(daysToAsOf, tenureDays + LoanMath.SALARY_GRACE_DAYS);
-            int rawDpd = loanMath.daysPastDue(loan.getDueDate(), loanAt);
-            int penaltyDays = Math.max(0, rawDpd - LoanMath.SALARY_GRACE_DAYS);
-            long verified = verifiedByLoanId.getOrDefault(loan.getId(), 0L);
-            long formulaOwed = loanMath.outstandingPaise(loan.getPrincipal(), interestDays, penaltyDays, verified);
-            Long settled = settlementDirectory.approvedSettlementAmount(loan.getId()).orElse(null);
-            long owed = settled != null ? Math.min(formulaOwed, Math.max(0L, settled - verified)) : formulaOwed;
-            result.put(loan.getId(), owed);
-        }
-        return result;
+        return outstandingBreakdownsForAll(loans, asOf).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().outstandingPaise()));
     }
 
     /**
@@ -446,13 +480,38 @@ public class RepaymentService {
      * reduction is an accountant noticing. Staff roles are unrestricted — recording on a borrower's
      * behalf (a branch walk-in, a phoned-in reference) is legitimate.
      */
-    private void requireOwnLoanIfBorrower(Loan loan) {
+    /**
+     * Ownership guard for the by-id loan reads: a BORROWER may only read their OWN loan (its
+     * {@code customer_id} must equal the JWT subject); any staff role but DSA may read any loan.
+     *
+     * <p>Closes an IDOR on the three reads that had no guard at all — without this a borrower could
+     * fetch another customer's loan, balance or repayment history by guessing the id, all of which
+     * carry that customer's money. DSA is excluded for the reason spelled out in
+     * {@code CustomerService.rejectDsa}: an external commission agent must never reach customer data.
+     * (Anonymous callers never get here — {@code SecurityConfig} requires auth on {@code /api/**}.)
+     */
+    @Transactional(readOnly = true)
+    public Loan requireReadableLoan(Long loanId) {
         var actor = com.navix.common.security.ActorContext.get();
-        if (!"BORROWER".equals(actor.role())) {
+        if (actor != null && "DSA".equals(actor.role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view loans");
+        }
+        Loan loan = requireLoan(loanId);
+        requireOwnLoanIfBorrower(loan, "Not your loan");
+        return loan;
+    }
+
+    private void requireOwnLoanIfBorrower(Loan loan) {
+        requireOwnLoanIfBorrower(loan, "You can only record payments on your own loan");
+    }
+
+    private void requireOwnLoanIfBorrower(Loan loan, String message) {
+        var actor = com.navix.common.security.ActorContext.get();
+        if (actor == null || !"BORROWER".equals(actor.role())) {
             return;
         }
         if (!String.valueOf(loan.getCustomerId()).equals(actor.id())) {
-            throw new BusinessException("FORBIDDEN", "You can only record payments on your own loan");
+            throw new BusinessException("FORBIDDEN", message);
         }
     }
 

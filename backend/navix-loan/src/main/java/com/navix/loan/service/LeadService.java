@@ -9,6 +9,7 @@ import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DayCount;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
 import com.navix.loan.dto.LeadDtos.LeadOutcomeRequest;
+import com.navix.loan.dto.LeadDtos.LeadPage;
 import com.navix.loan.service.DsaAttributionService.AttributedApplication;
 import com.navix.loan.dto.LeadDtos.LeadStats;
 import com.navix.loan.dto.LeadDtos.LeadView;
@@ -30,6 +31,8 @@ import java.util.Map;
 import java.util.Set;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -52,6 +55,8 @@ public class LeadService {
      * read from the attributed application, never stored (see {@code Lead.leadOutcome} and V70).
      */
     private static final Set<String> LEAD_OUTCOMES = Set.of("NEW", "OUTREACHED", "REJECTED");
+    /** Hard ceiling on one page of the lead list, same as the Customers book. */
+    public static final int MAX_PAGE_SIZE = 100;
 
     private final LeadRepository leadRepository;
     private final StaffDirectory staffDirectory;
@@ -81,7 +86,7 @@ public class LeadService {
     }
 
     @Transactional(readOnly = true)
-    public List<LeadView> list(
+    public LeadPage list(
             String q,
             String callStatus,
             String source,
@@ -90,7 +95,9 @@ public class LeadService {
             LocalDate to,
             Integer minRating,
             Integer maxRating,
-            String leadOutcome) {
+            String leadOutcome,
+            int page,
+            int size) {
         requireLeadWriter();
         Instant fromInst = from == null ? null : from.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant toInst = to == null ? null : to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
@@ -135,13 +142,18 @@ public class LeadService {
             }
             return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(Predicate[]::new));
         };
-        List<Lead> rows = leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "id"));
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        int safePage = Math.max(1, page);
+        Page<Lead> result = leadRepository.findAll(
+                spec, PageRequest.of(safePage - 1, safeSize, Sort.by(Sort.Direction.DESC, "id")));
+        List<Lead> rows = result.getContent();
         Map<Long, String> names = new HashMap<>();
-        // ONE attribution query for the whole result set, not one per row — this list is unpaged.
+        // ONE attribution query for the whole page, not one per row.
         Map<Long, AttributedApplication> attributions = attributionService.attributedApplications(rows);
-        return rows.stream()
+        List<LeadView> views = rows.stream()
                 .map(l -> toView(l, names, attributions.get(l.getId())))
                 .toList();
+        return new LeadPage(views, safePage, safeSize, result.getTotalElements());
     }
 
     @Transactional(readOnly = true)

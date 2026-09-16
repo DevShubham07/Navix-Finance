@@ -55,7 +55,7 @@ const TERMINAL: ApplicationStatus[] = [
 ];
 
 /** Bad terminal states (stop polling, show a declined/failed card). */
-const TERMINAL_BAD: ApplicationStatus[] = [
+export const TERMINAL_BAD: ApplicationStatus[] = [
   "KYC_REJECTED",
   "REJECTED",
   "CANCELLED",
@@ -298,18 +298,31 @@ function pickCurrentAppId(apps: ApplicationView[]): number | null {
   return current.id;
 }
 
-/** Poll the borrower's live application (+ loan once ACTIVE). */
-export function useLiveApplication(): LiveApplication {
+/**
+ * Poll the borrower's live application (+ loan once ACTIVE).
+ *
+ * `needLoan` (default true) is for callers that never render loan data — `/loan/status` only shows
+ * the state machine and its audit trail, so fetching the loan there is a round trip whose answer is
+ * thrown away. It only gates the loan request; the returned shape is unchanged (`loan` is simply
+ * left undefined).
+ */
+export function useLiveApplication(options?: { needLoan?: boolean }): LiveApplication {
+  const needLoan = options?.needLoan ?? true;
   const [appId, setAppId] = useStoredAppId();
 
   const appQuery = useQuery({
     queryKey: ["live-application", appId],
     queryFn: () => borrowerApi.get(appId as number),
     enabled: appId != null,
+    // Poll only while the application can still move. Every TERMINAL status is one where the
+    // borrower can do nothing more from this page — CLOSED / OVERDUE / WRITTEN_OFF / DEFAULTED
+    // included — and a 4s poll against a settled application just repeats the same answer forever.
+    // (A reborrow is still picked up: the ["my-apps"] poll below stays on while the pointer can be
+    // stale, and moving the pointer re-keys this query.)
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       if (!status) return POLL_MS;
-      if (status === "ACTIVE" || TERMINAL_BAD.includes(status)) return false;
+      if (TERMINAL.includes(status)) return false;
       return POLL_MS;
     },
   });
@@ -373,7 +386,7 @@ export function useLiveApplication(): LiveApplication {
   const loanQuery = useQuery({
     queryKey: ["live-loan", loanId],
     queryFn: () => borrowerApi.loan(loanId as number),
-    enabled: loanId != null,
+    enabled: needLoan && loanId != null,
   });
 
   return {
@@ -388,12 +401,20 @@ export function useLiveApplication(): LiveApplication {
   };
 }
 
-/** The application's audit trail (for the live status page). */
-export function useLiveEvents(appId: number | null, status?: ApplicationStatus) {
+/**
+ * The application's audit trail (for the live status page). `options.enabled` (default true) lets a
+ * caller defer the fetch until the trail is actually shown — it sits behind a collapsed
+ * `<details>` on /loan/status.
+ */
+export function useLiveEvents(
+  appId: number | null,
+  status?: ApplicationStatus,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ["live-events", appId, status],
     queryFn: () => borrowerApi.events(appId as number),
-    enabled: appId != null,
+    enabled: (options?.enabled ?? true) && appId != null,
   });
 }
 

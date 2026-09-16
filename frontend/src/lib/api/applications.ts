@@ -14,6 +14,7 @@
 
 import { daysBetween } from "@/lib/calc/loan-math";
 import type { JsonValue } from "@/lib/credit/provider-report";
+import type { BookStats } from "@/lib/staff/my-stats";
 
 // ---------------------------------------------------------------------------
 // Domain types (mirror the backend exactly)
@@ -315,6 +316,27 @@ export interface LoanView {
   closedOn: string | null;
 }
 
+/**
+ * The three balances the repay screen quotes together: as of the requested day, on the salary day
+ * the loan is due, and on the one grace day after it. `due`/`grace` are null when the loan has no
+ * due date yet. One call in place of three `outstanding` round trips for the same screen.
+ */
+export interface OutstandingScheduleView {
+  asOf: OutstandingView;
+  due: OutstandingView | null;
+  grace: OutstandingView | null;
+}
+
+/**
+ * The caller's own book, aggregated server-side — the same fifteen figures the dashboard's "your
+ * borrowers" tiles used to compute in the browser over every row of the book, plus the two counts
+ * its "customers allocated to you" / "now overdue" queue lines need.
+ */
+export interface BookStatsView extends BookStats {
+  ownedCount: number;
+  ownedOverdue: number;
+}
+
 export interface OutstandingView {
   loanId: number;
   asOf: string;
@@ -377,6 +399,17 @@ export type TransactionType = "DISBURSAL" | "REPAYMENT";
 export type TransactionDirection = "OUTGOING" | "INCOMING";
 
 /** One row in the accountant's company-wide transactions ledger (mirrors backend TransactionView). */
+/** One page of the transactions ledger, with the period's totals (not the page's). */
+export interface TransactionPage {
+  rows: TransactionView[];
+  page: number;
+  size: number;
+  /** Rows matching the whole filter. */
+  total: number;
+  totalInPaise: number;
+  totalOutPaise: number;
+}
+
 export interface TransactionView {
   id: string;
   type: TransactionType;
@@ -656,6 +689,9 @@ export interface CustomerDetail {
   creditBrief?: CreditBriefView | null;
   /** ADMIN-set eligible limit (paise) for this customer, or null when the 25%-of-salary rule applies. */
   limitOverridePaise?: number | null;
+  /** The itemised interest/penalty/paid breakdown per loan id, computed with the rest of this
+   *  payload. The Loans tab used to fetch one `/outstanding` per loan card to get it. */
+  outstandingByLoanId?: Record<string, OutstandingView>;
 }
 
 /**
@@ -1126,6 +1162,17 @@ export const borrowerApi = {
       "GET",
     ),
 
+  /**
+   * The three balances the repay screen quotes together — today, on the salary day the loan is due,
+   * and on the one grace day after it — in one call instead of three `outstanding` round trips.
+   * Each field is the identical figure `outstanding` returns for that date.
+   */
+  outstandingSchedule: (loanId: number, asOf?: string) =>
+    bff<OutstandingScheduleView>(
+      `${BORROWER_LOAN_BASE}/${loanId}/outstanding/schedule${asOf ? `?asOf=${encodeURIComponent(asOf)}` : ""}`,
+      "GET",
+    ),
+
   /** Record a (full / partial / prepayment) repayment with proof — lands PENDING_VERIFICATION. */
   recordRepayment: (
     loanId: number,
@@ -1232,7 +1279,13 @@ export interface VerificationOverview {
   failed: number;
   pending: number;
   neverRun: number;
+  /** The requested page's rows, grouped whole: an application's checks are never split across pages. */
   rows: VerificationOverviewRow[];
+  page: number;
+  size: number;
+  /** Matching APPLICATIONS (the paging unit), not rows. The five tallies above always cover the
+   *  whole undecided queue, whatever page or filter is showing. */
+  total: number;
 }
 
 /** Result of a staff-triggered KYC reminder (Phase 3.4). */
@@ -1714,15 +1767,26 @@ export const staffApi = {
   /** Repayments awaiting proof verification, across all loans (accountant queue). */
   pendingRepayments: () => bff<PaymentView[]>(`${STAFF_LOAN_BASE}/pending-repayments`, "GET"),
 
-  /** Company-wide transactions ledger (disbursals + repayments); optional borrower/direction filter. */
-  transactions: (q?: string, direction?: TransactionDirection, range?: { from?: string; to?: string }) => {
+  /**
+   * One page of the company-wide transactions ledger (disbursals + repayments), newest first, with
+   * an optional borrower/direction/period filter. `totalInPaise`/`totalOutPaise` cover the whole
+   * filter, not the page, so the summary cards stay still while the reviewer pages through.
+   */
+  transactions: (
+    q?: string,
+    direction?: TransactionDirection,
+    range?: { from?: string; to?: string },
+    paging?: { page?: number; size?: number },
+  ) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (direction) params.set("direction", direction);
     if (range?.from) params.set("from", range.from);
     if (range?.to) params.set("to", range.to);
+    if (paging?.page) params.set("page", String(paging.page));
+    if (paging?.size) params.set("size", String(paging.size));
     const qs = params.toString();
-    return bff<TransactionView[]>(`${STAFF_LOAN_BASE}/transactions${qs ? `?${qs}` : ""}`, "GET");
+    return bff<TransactionPage>(`${STAFF_LOAN_BASE}/transactions${qs ? `?${qs}` : ""}`, "GET");
   },
 
   /** Repayments recorded against one loan. */
@@ -1776,11 +1840,23 @@ export const staffApi = {
     } finally { if (timer) clearTimeout(timer); }
   },
   /** Pending-API dashboard: cross-application verification overview + tallies (Phase 3.3). */
-  verificationOverview: (filters?: { status?: string; checkType?: string; q?: string }) => {
+  verificationOverview: (filters?: {
+    status?: string;
+    checkType?: string;
+    q?: string;
+    /** Default (undefined/true): only applications that still need a reviewer — the page's own
+     *  "failures" and "awaiting" buckets. `false` returns the whole undecided queue. */
+    needsAttention?: boolean;
+    page?: number;
+    size?: number;
+  }) => {
     const params = new URLSearchParams();
     if (filters?.status) params.set("status", filters.status);
     if (filters?.checkType) params.set("checkType", filters.checkType);
     if (filters?.q) params.set("q", filters.q);
+    if (filters?.needsAttention === false) params.set("needsAttention", "false");
+    if (filters?.page) params.set("page", String(filters.page));
+    if (filters?.size) params.set("size", String(filters.size));
     const qs = params.toString();
     return bff<VerificationOverview>(`${STAFF_BASE}/verifications/overview${qs ? `?${qs}` : ""}`, "GET");
   },
@@ -1807,6 +1883,9 @@ export const staffApi = {
 // ---------------------------------------------------------------------------
 
 const CUSTOMERS_BASE = "/api/staff/customers";
+
+/** Server-side cap on `by-ids` — mirrors CustomerService.MAX_PAGE_SIZE. */
+const CUSTOMER_IDS_CHUNK = 100;
 
 export type CustomerListFilters = {
   q?: string;
@@ -1853,18 +1932,35 @@ function customerQuery(filters: Record<string, string | number | boolean | undef
 
 export const customersApi = {
   /**
-   * All customers, optionally filtered by name / PAN / mobile / customer id and by an inclusive
-   * `range.from`/`range.to` (yyyy-mm-dd) window over the customer's latest application date.
-   * The window is resolved in IST server-side, matching the live-applications queues.
+   * Full rows for exactly these customers, in the order asked for. Scoped server-side, capped at
+   * 100 ids, and silent about ids the caller may not see.
+   *
+   * Replaces fetching the whole book to pick a handful of rows out of it: the collections export
+   * and the dashboard's decided-customer join both need tens of rows, not ~9.7k.
    */
-  list: (q?: string, range?: { from?: string; to?: string }) => {
-    const qs = new URLSearchParams();
-    if (q) qs.set("q", q);
-    if (range?.from) qs.set("from", range.from);
-    if (range?.to) qs.set("to", range.to);
-    const search = qs.toString();
-    return bff<CustomerSummary[]>(`${CUSTOMERS_BASE}${search ? `?${search}` : ""}`, "GET");
+  byIds: (ids: number[]) =>
+    ids.length === 0
+      ? Promise.resolve([] as CustomerSummary[])
+      : bff<CustomerSummary[]>(`${CUSTOMERS_BASE}/by-ids?ids=${ids.join(",")}`, "GET"),
+
+  /** {@link byIds} for any number of ids, in server-sized chunks, fetched together. */
+  byIdsAll: async (ids: number[]) => {
+    const chunks: number[][] = [];
+    for (let i = 0; i < ids.length; i += CUSTOMER_IDS_CHUNK) {
+      chunks.push(ids.slice(i, i + CUSTOMER_IDS_CHUNK));
+    }
+    const pages = await Promise.all(chunks.map((chunk) => customersApi.byIds(chunk)));
+    return pages.flat();
   },
+
+  /**
+   * The caller's own book, aggregated server-side: lifecycle counts, exposure, DPD buckets and the
+   * headline averages the dashboard's "your borrowers" tiles read.
+   *
+   * The dashboard used to compute these in the browser from every row of the book — a 7.5MB fetch
+   * every 60s to render fifteen numbers.
+   */
+  bookStats: () => bff<BookStatsView>(`${CUSTOMERS_BASE}/book-stats`, "GET"),
 
   /**
    * One page of the customer book. Search, date window, segment, "mine" and paging are all applied
@@ -2142,6 +2238,18 @@ export interface LeadListParams {
   minRating?: number;
   maxRating?: number;
   leadOutcome?: LeadOutcome;
+  /** 1-indexed page (default 1 server-side). */
+  page?: number;
+  /** Rows per page (default 25, capped at 100 server-side). */
+  size?: number;
+}
+
+/** One page of the lead list, with the total across the whole filter. */
+export interface LeadPage {
+  rows: LeadView[];
+  page: number;
+  size: number;
+  total: number;
 }
 
 export interface LeadStats {
@@ -2217,13 +2325,19 @@ function leadsQuery(params?: LeadListParams): string {
   if (params.minRating != null) sp.set("minRating", String(params.minRating));
   if (params.maxRating != null) sp.set("maxRating", String(params.maxRating));
   if (params.leadOutcome) sp.set("leadOutcome", params.leadOutcome);
+  if (params.page) sp.set("page", String(params.page));
+  if (params.size) sp.set("size", String(params.size));
   const s = sp.toString();
   return s ? `?${s}` : "";
 }
 
 export const leadsApi = {
+  /**
+   * One page of the telecalling lead list. Paged server-side: a bulk import puts tens of thousands
+   * of leads in this table, and the page only ever shows 25 of them.
+   */
   list: (params?: LeadListParams) =>
-    bff<LeadView[]>(`${LEADS_BASE}${leadsQuery(params)}`, "GET"),
+    bff<LeadPage>(`${LEADS_BASE}${leadsQuery(params)}`, "GET"),
 
   get: (id: number) => bff<LeadView>(`${LEADS_BASE}/${id}`, "GET"),
 

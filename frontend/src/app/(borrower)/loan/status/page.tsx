@@ -12,6 +12,7 @@ import {
   appStatusToStage,
   hasOffer,
   isTerminalBad,
+  TERMINAL_BAD,
 } from "@/lib/api/live-journey";
 import { statusLabel } from "@/lib/api/applications";
 import { formatDateTime, formatINR0 } from "@/lib/utils";
@@ -23,8 +24,16 @@ import { BRAND } from "@/lib/brand";
  * this page polls and reflects the application as it walks to ACTIVE.
  */
 export default function LoanStatusPage() {
-  const { appId, app, isLoading, refetch } = useLiveApplication();
-  const eventsQuery = useLiveEvents(appId, app?.status);
+  // This page renders the state machine and its audit trail only — never the loan — so the live
+  // adapter is told not to fetch it.
+  const { appId, app, isLoading, refetch } = useLiveApplication({ needLoan: false });
+  // The audit trail lives inside a collapsed <details>; fetch it when the borrower opens it. The
+  // one exception is a declined/failed application, whose card reads its reason off the same
+  // events (`declineNote` below) — there they must be loaded eagerly.
+  const [trailOpen, setTrailOpen] = React.useState(false);
+  const eventsQuery = useLiveEvents(appId, app?.status, {
+    enabled: trailOpen || (app != null && TERMINAL_BAD.includes(app.status)),
+  });
   const stage = appStatusToStage(app);
 
   // No live application started in this browser yet.
@@ -144,11 +153,19 @@ export default function LoanStatusPage() {
             </div>
           )}
 
-          {events.length > 0 && (
-            <details className="rounded border border-line bg-white p-4 shadow-sm">
-              <summary className="cursor-pointer text-sm font-semibold text-navy">
-                Audit trail ({events.length})
-              </summary>
+          {/* Always rendered — it is what the borrower opens to load the trail in the first place. */}
+          <details
+            className="rounded border border-line bg-white p-4 shadow-sm"
+            onToggle={(e) => setTrailOpen((e.currentTarget as HTMLDetailsElement).open)}
+          >
+            <summary className="cursor-pointer text-sm font-semibold text-navy">
+              Audit trail{events.length > 0 ? ` (${events.length})` : ""}
+            </summary>
+            {events.length === 0 ? (
+              <p className="mt-2 text-xs text-muted">
+                {eventsQuery.isLoading ? "Loading…" : "Nothing recorded yet."}
+              </p>
+            ) : (
               <ul className="mt-2 space-y-1.5 text-xs text-muted">
                 {events.map((e) => (
                   <li key={e.id} className="flex items-center justify-between gap-2 border-b border-line pb-1.5 last:border-0">
@@ -162,8 +179,8 @@ export default function LoanStatusPage() {
                   </li>
                 ))}
               </ul>
-            </details>
-          )}
+            )}
+          </details>
         </div>
       </div>
     </div>

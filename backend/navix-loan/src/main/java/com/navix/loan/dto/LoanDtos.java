@@ -154,6 +154,19 @@ public final class LoanDtos {
     }
 
     /**
+     * The three balances the repay screen quotes together: as of the requested day (today by
+     * default), on the salary day the loan is due, and on the one grace day after it — so paying
+     * early, on time or a day late each show their own figure.
+     *
+     * <p>One request instead of three {@code /outstanding?asOf=} calls for the same screen. Each
+     * field is the identical {@link OutstandingView} that endpoint returns for that date.
+     * {@code due} and {@code grace} are null when the loan has no due date yet.
+     */
+    public record OutstandingScheduleView(OutstandingView asOf, OutstandingView due,
+                                          OutstandingView grace) {
+    }
+
+    /**
      * One row in the accountant's company-wide transactions ledger. Synthesized (not stored):
      * a DISBURSAL (OUTGOING, money leaving DhanBoost, from {@code loan.net_disbursed}) or a REPAYMENT
      * (INCOMING, from a {@code payment}). PAN is returned in full (staff-only ledger).

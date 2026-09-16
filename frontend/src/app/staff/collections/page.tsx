@@ -124,12 +124,25 @@ export default function CollectionsBucketPage() {
     refetchInterval: 8000,
   });
 
-  // Full customer directory, fetched once and joined in by customerId — export-only enrichment
-  // (mobile, bank, credit score, signup/history) that the worklist snapshot doesn't carry. Mirrors
-  // the on-screen /staff/customers export, which reads the same fields off the same endpoint.
+  // The customers behind the worklist — sorted so the set is a stable query key across the 8s poll
+  // and the bucket switcher (the worklist rows re-order; the id set does not).
+  const worklistCustomerIds = React.useMemo(() => {
+    const ids = new Set<number>();
+    for (const w of q.data ?? []) {
+      if (w.loan?.customerId != null) ids.add(w.loan.customerId);
+    }
+    return [...ids].sort((a, b) => a - b);
+  }, [q.data]);
+
+  // Export-only enrichment (mobile, bank, credit score, signup/history) the worklist snapshot
+  // doesn't carry, joined in by customerId below. `enabled: false` on purpose: it is read ONLY by
+  // the <ExportMenu> column definitions, and ExportMenu renders nothing for a non-ADMIN — so
+  // fetching it on mount made every collections visitor pay for data almost none of them ever see.
+  // It now loads when the menu is opened (`onOpen`), for exactly the customers on the worklist.
   const customersQ = useQuery({
-    queryKey: ["collections-customers-directory"],
-    queryFn: () => customersApi.list(),
+    queryKey: ["collections-export-customers", worklistCustomerIds],
+    queryFn: () => customersApi.byIdsAll(worklistCustomerIds),
+    enabled: false,
   });
   const customersById = React.useMemo(() => {
     const m = new Map<number, CustomerSummary>();
@@ -207,6 +220,10 @@ export default function CollectionsBucketPage() {
           title={`Collections — ${meta.label}`}
           fileBase={`collections-${bucket.toLowerCase()}`}
           rows={sorted}
+          onOpen={() => {
+            void customersQ.refetch();
+          }}
+          disabled={customersQ.isFetching}
           columns={[
             { header: "Loan", value: (r) => String(r.loanId) },
             { header: "Customer ID", value: (r) => (r.customerId != null ? String(r.customerId) : "—") },

@@ -131,6 +131,9 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
         ["collections-worklist"],
         ["collections-cases"],
         ["customers"],
+        // The customer roll-up now carries the per-loan outstanding breakdown the Loans tab renders
+        // (`outstandingByLoanId`), so without this the tab keeps showing the pre-payment figures.
+        ["customer-detail"],
       ]) {
         qc.invalidateQueries({ queryKey: key });
       }

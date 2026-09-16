@@ -11,6 +11,7 @@ import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.AddRemarkRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.AssignOwnerRequest;
+import com.navix.loan.dto.CustomerDtos.BookStats;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
 import com.navix.loan.dto.CustomerDtos.ChangeSanctionedAmountRequest;
 import com.navix.loan.dto.CustomerDtos.ConfirmMobileChangeRequest;
@@ -53,28 +54,12 @@ public class CustomerController {
     private final CustomerService customerService;
 
     /**
-     * All customers, optionally filtered by {@code q} (name / PAN / mobile / customer id) and an
-     * inclusive {@code [from, to]} date window over the customer's latest application. The window is
-     * resolved in IST by the service, matching the live-applications queues.
-     */
-    @GetMapping
-    public ApiResponse<List<CustomerSummary>> list(
-            @RequestParam(required = false) String q,
-            @RequestParam(required = false)
-            @org.springframework.format.annotation.DateTimeFormat(
-                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate from,
-            @RequestParam(required = false)
-            @org.springframework.format.annotation.DateTimeFormat(
-                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate to) {
-        requireStaff();
-        return ApiResponse.ok(customerService.list(q, from, to));
-    }
-
-    /**
-     * One page of the customer book — the same {@code q} / {@code from} / {@code to} as {@link #list}
-     * plus a lifecycle {@code seg} (the frontend's segment names, or {@code unallocated}), a
-     * {@code mine} flag (owned by or decided by the caller) and a 1-indexed {@code page}. Filtering,
-     * sorting and paging run in SQL; the size is capped server-side.
+     * One page of the customer book — a search {@code q} (name / PAN / mobile / customer id) and an
+     * inclusive {@code [from, to]} date window over the customer's latest application (resolved in
+     * IST by the service, matching the live-applications queues), plus a lifecycle {@code seg} (the
+     * frontend's segment names, or {@code unallocated}), a {@code mine} flag (owned by or decided by
+     * the caller) and a 1-indexed {@code page}. Filtering, sorting and paging run in SQL; the size
+     * is capped server-side.
      */
     @GetMapping("/page")
     public ApiResponse<CustomerPage> page(
@@ -106,6 +91,29 @@ public class CustomerController {
             @RequestParam(defaultValue = "false") boolean mine) {
         requireStaff();
         return ApiResponse.ok(customerService.summary(q, from, to, mine));
+    }
+
+    /**
+     * Full rows for exactly these customers, in the order the ids were given — the batched twin of
+     * one customer's summary row. What the collections export's enrichment and the dashboard's
+     * decided-customer join use instead of loading the whole book. Ids outside the caller's scope,
+     * and ids that do not exist, are simply absent from the response.
+     */
+    @GetMapping("/by-ids")
+    public ApiResponse<List<CustomerSummary>> byIds(@RequestParam("ids") List<Long> ids) {
+        requireStaff();
+        return ApiResponse.ok(customerService.byIds(ids));
+    }
+
+    /**
+     * The caller's own book (owned by or decided by them), aggregated server-side: lifecycle counts,
+     * exposure, DPD bands and the headline averages. Replaces shipping every customer row to the
+     * browser so the dashboard can count them there.
+     */
+    @GetMapping("/book-stats")
+    public ApiResponse<BookStats> bookStats() {
+        requireStaff();
+        return ApiResponse.ok(customerService.bookStats());
     }
 
     /** Every row matching the filter, for the ADMIN "download all customers" export (capped). */

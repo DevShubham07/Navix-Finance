@@ -74,6 +74,7 @@ public class AdminApplicationService {
                 .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
         Map<Long, BureauState> bureauStates = bureauStateService.states(appIds);
         int required = ApplicationVerificationService.requiredCount();
+        Map<Long, Integer> completedByApp = verification.requiredPassedCounts(apps);
         // Batched — one lookup per distinct assignee, one event-table query for the whole register —
         // mirrors ApplicationController#enrich / CustomerService#detail.
         Map<Long, String> executiveNameById = new java.util.LinkedHashMap<>();
@@ -91,7 +92,7 @@ public class AdminApplicationService {
                 .map(a -> {
                     CustomerProfile p = byApp.get(a.getId());
                     BureauState bureauState = bureauStates.getOrDefault(a.getId(), BureauState.NOT_FETCHED);
-                    int completed = verification.requiredPassedCount(a.getId());
+                    int completed = completedByApp.getOrDefault(a.getId(), 0);
                     // The retired AGREEMENT step is now the screen-1 T&C acceptance (revamp.md decision 25).
                     boolean agreement = p != null && p.getTermsAcceptedAt() != null;
                     boolean complete = completed >= required && agreement;
@@ -136,9 +137,9 @@ public class AdminApplicationService {
     @Transactional(readOnly = true)
     public List<TelecallingView> listForTelecalling() {
         requireTelecallingRole();
-        List<LoanApplication> apps = applicationRepository.findAll().stream()
-                .filter(a -> !REACHED_SANCTIONED.contains(a.getStatus()))
-                .toList();
+        // Filtered in SQL, not in memory: this queue is every pre-sanction application, so loading the
+        // whole table to throw most of it away cost a full-table read on every 15s poll.
+        List<LoanApplication> apps = applicationRepository.findByStatusNotIn(REACHED_SANCTIONED);
         if (apps.isEmpty()) {
             return List.of();
         }
@@ -153,11 +154,12 @@ public class AdminApplicationService {
         Map<Long, Long> ownerByCustomer = ownerRepository.findAllById(customerIds).stream()
                 .collect(Collectors.toMap(CustomerOwner::getCustomerId, CustomerOwner::getOwnerStaffId));
         int required = ApplicationVerificationService.requiredCount();
+        Map<Long, Integer> completedByApp = verification.requiredPassedCounts(apps);
         Instant now = Instant.now();
         return apps.stream()
                 .map(a -> {
                     CustomerProfile p = byApp.get(a.getId());
-                    int completed = verification.requiredPassedCount(a.getId());
+                    int completed = completedByApp.getOrDefault(a.getId(), 0);
                     // LoanApplication carries no createdAt of its own — the CREATE application_event
                     // is the closest equivalent, so an application with any event history at all
                     // always resolves through latestActivity; only a row with truly no events (should

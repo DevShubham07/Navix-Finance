@@ -166,7 +166,10 @@ class CollectionsServiceTest {
      */
     @Test
     void worklistIncludesALoanThatHasNoCaseYet() {
-        LoanSummary overdue = loanSummary(2L, LocalDate.now().minusDays(9));
+        // Due date on IST's calendar because the DPD this asserts on is derived from LocalDate.now(IST)
+        // inside the service: a bare LocalDate.now() here reads the JVM zone (UTC in CI) and reports N+1
+        // days for the five and a half hours each day the two calendars disagree.
+        LoanSummary overdue = loanSummary(2L, LocalDate.now(IST).minusDays(9));
         when(loanDirectory.listCollectible(any())).thenReturn(java.util.List.of(overdue));
         when(caseRepository.findByLoanIdIn(java.util.List.of(2L))).thenReturn(java.util.List.of());
         when(applicationActorDirectory.byLoanId(java.util.List.of(2L))).thenReturn(java.util.Map.of());
@@ -245,7 +248,7 @@ class CollectionsServiceTest {
     @Test
     void caseDetailComputesLiveDpdFromDueDate() {
         when(caseRepository.findById(caseId)).thenReturn(Optional.of(existingCase()));
-        when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loanSummary(2L, LocalDate.now().minusDays(10))));
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loanSummary(2L, LocalDate.now(IST).minusDays(10))));
 
         CaseDetailView detail = service.getCaseDetail(caseId);
 
@@ -323,7 +326,7 @@ class CollectionsServiceTest {
     void caseDetailByLoanIdFindsTheCaseForThatLoan() {
         when(caseRepository.findFirstByLoanIdOrderByCreatedAtDesc(2L))
                 .thenReturn(Optional.of(existingCase()));
-        when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loanSummary(2L, LocalDate.now().minusDays(10))));
+        when(loanDirectory.findLoan(2L)).thenReturn(Optional.of(loanSummary(2L, LocalDate.now(IST).minusDays(10))));
 
         CaseDetailView detail = service.getCaseDetailByLoanId(2L);
 

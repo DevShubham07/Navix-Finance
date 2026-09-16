@@ -254,14 +254,25 @@ public class ApplicationController {
         return ApiResponse.ok(verification.retryExternalCheck(id, checkType, input));
     }
 
-    /** Pending-API dashboard: cross-application verification overview + status tallies (Phase 3.3). Staff. */
+    /**
+     * Pending-API dashboard: cross-application verification overview + status tallies (Phase 3.3). Staff.
+     *
+     * <p>Rows are paged by application. By default only applications that still need a reviewer's
+     * attention are returned — the dashboard's own "failures" and "awaiting" buckets — because the
+     * undecided queue is dominated by abandoned DRAFT intakes whose rows nobody acts on.
+     * {@code needsAttention=false} returns every undecided application. The five tallies always cover
+     * the whole queue, whatever the paging or the filter.
+     */
     @GetMapping("/verifications/overview")
     public ApiResponse<ApplicationVerificationService.VerificationOverview> verificationOverview(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String checkType,
-            @RequestParam(required = false) String q) {
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean needsAttention,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size) {
         requireStaff();
-        return ApiResponse.ok(verification.overview(status, checkType, q));
+        return ApiResponse.ok(verification.overview(status, checkType, q, needsAttention, page, size));
     }
 
     /** Staff nudges the borrower with their pending verification steps (Phase 3.4). KYC approver / admin. */

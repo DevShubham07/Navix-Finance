@@ -60,4 +60,15 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     /** Payments with a given status paid at or after {@code since} — backs the dashboard trend window. */
     List<Payment> findByStatusAndPaidOnGreaterThanEqual(PaymentStatus status, LocalDate since);
+
+    /**
+     * Payments inside an optional inclusive {@code paid_on} window — the incoming half of the
+     * transactions ledger. Mirrors {@code LoanRepository.findAllForRegister} (including its
+     * {@code cast(:from as date)} trick: Hibernate 6 cannot infer a bare null parameter's type in
+     * {@code :param is null}), so the ledger's statement period is applied in SQL instead of by
+     * loading every payment ever taken and filtering them in memory.
+     */
+    @Query("select p from Payment p where (cast(:from as date) is null or p.paidOn >= :from) "
+            + "and (cast(:to as date) is null or p.paidOn <= :to)")
+    List<Payment> findAllForLedger(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

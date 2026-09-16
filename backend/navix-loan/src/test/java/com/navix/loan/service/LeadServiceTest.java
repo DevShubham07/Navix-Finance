@@ -16,6 +16,7 @@ import com.navix.common.staff.StaffSummary;
 import com.navix.loan.dto.LeadDtos.CreateLeadRequest;
 import com.navix.loan.dto.LeadDtos.DispositionRequest;
 import com.navix.loan.dto.LeadDtos.LeadOutcomeRequest;
+import com.navix.loan.dto.LeadDtos.LeadPage;
 import com.navix.loan.dto.LeadDtos.LeadView;
 import com.navix.loan.entity.Lead;
 import com.navix.loan.repository.LeadRepository;
@@ -36,6 +37,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -223,11 +227,15 @@ class LeadServiceTest {
     void list_withoutFilters_usesAnIdDescendingSpecificationQuery() {
         ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+        stubPage(spec, List.of(), 0L);
 
-        assertThat(service.list(null, null, null, null, null, null, null, null, null)).isEmpty();
+        assertThat(service.list(null, null, null, null, null, null, null, null, null, 1, 25).rows())
+                .isEmpty();
 
-        verify(leadRepository).findAll(any(Specification.class), eq(Sort.by(Sort.Direction.DESC, "id")));
+        // Still newest-first — the paging change must not reorder the queue.
+        verify(leadRepository).findAll(
+                any(Specification.class),
+                eq(PageRequest.of(0, 25, Sort.by(Sort.Direction.DESC, "id"))));
         // Even with no explicit filters, the "exclude DSA-owned leads" predicate is always present —
         // so the built query is never a bare conjunction any more.
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
@@ -246,9 +254,9 @@ class LeadServiceTest {
     void list_excludesDsaOwnedLeads_regardlessOfOtherFilters() {
         ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+        stubPage(spec, List.of(), 0L);
 
-        service.list(null, null, null, null, null, null, null, null, null);
+        service.list(null, null, null, null, null, null, null, null, null, 1, 25);
 
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);
@@ -266,10 +274,10 @@ class LeadServiceTest {
     void list_withFromAndToOnly_buildsExclusiveUtcDateRange() {
         ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+        stubPage(spec, List.of(), 0L);
 
         service.list(null, null, null, null,
-                LocalDate.of(2026, 7, 13), LocalDate.of(2026, 8, 12), null, null, null);
+                LocalDate.of(2026, 7, 13), LocalDate.of(2026, 8, 12), null, null, null, 1, 25);
 
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);
@@ -294,9 +302,9 @@ class LeadServiceTest {
     void list_withQOnly_normalisesWhitespaceIntoOneCaseInsensitiveTerm() {
         ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+        stubPage(spec, List.of(), 0L);
 
-        service.list("  Ravi  ", null, null, null, null, null, null, null, null);
+        service.list("  Ravi  ", null, null, null, null, null, null, null, null, 1, 25);
 
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);
@@ -327,9 +335,9 @@ class LeadServiceTest {
     void list_withCombinedFilters_includesEverySuppliedConstraint() {
         ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
         ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
-        when(leadRepository.findAll(spec.capture(), any(Sort.class))).thenReturn(List.of());
+        stubPage(spec, List.of(), 0L);
 
-        service.list(null, " CALLBACK ", " DSA ", 42L, null, null, 2, 4, null);
+        service.list(null, " CALLBACK ", " DSA ", 42L, null, null, 2, 4, null, 1, 25);
 
         CriteriaBuilder cb = mock(CriteriaBuilder.class);
         Root<Lead> root = mock(Root.class);
@@ -358,6 +366,62 @@ class LeadServiceTest {
         verify(cb).equal(createdBy, 42L);
         verify(cb).greaterThanOrEqualTo(rating, 2);
         verify(cb).lessThanOrEqualTo(rating, 4);
+    }
+
+    /**
+     * The page is what the caller asked for; {@code total} is the whole filter behind it. The list
+     * used to come back unpaged and be sliced in the browser — 2,000 rows a fetch.
+     */
+    @Test
+    void list_pagesAndReportsTheTotalAcrossTheWholeFilter() {
+        ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
+        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
+        stubPage(spec, List.of(lead(11L, "Ravi"), lead(10L, "Asha")), 5L);
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+
+        LeadPage result = service.list(null, null, null, null, null, null, null, null, null, 1, 2);
+
+        assertThat(result.rows()).extracting(LeadView::name).containsExactly("Ravi", "Asha");
+        assertThat(result.page()).isEqualTo(1);
+        assertThat(result.size()).isEqualTo(2);
+        assertThat(result.total()).isEqualTo(5L);
+        verify(leadRepository).findAll(any(Specification.class), pageable.capture());
+        assertThat(pageable.getValue())
+                .isEqualTo(PageRequest.of(0, 2, Sort.by(Sort.Direction.DESC, "id")));
+    }
+
+    /** A 1-indexed page and a ceiling on size, exactly like the Customers book. */
+    @Test
+    void list_clampsPageAndSize() {
+        ActorContext.set(new CurrentActor("42", "Tara", "TELECALLER"));
+        ArgumentCaptor<Specification<Lead>> spec = specificationCaptor();
+        stubPage(spec, List.of(), 0L);
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+
+        LeadPage result = service.list(null, null, null, null, null, null, null, null, null, 0, 500);
+
+        assertThat(result.page()).isEqualTo(1);
+        assertThat(result.size()).isEqualTo(LeadService.MAX_PAGE_SIZE);
+        verify(leadRepository).findAll(any(Specification.class), pageable.capture());
+        assertThat(pageable.getValue())
+                .isEqualTo(PageRequest.of(0, LeadService.MAX_PAGE_SIZE,
+                        Sort.by(Sort.Direction.DESC, "id")));
+    }
+
+    private static Lead lead(Long id, String name) {
+        Lead l = new Lead();
+        l.setId(id);
+        l.setName(name);
+        l.setMobile("9876543210");
+        l.setCallStatus("NOT_CALLED");
+        l.setCreatedByStaffId(42L);
+        return l;
+    }
+
+    /** Stub the paged repository read: {@code rows} as the requested page, {@code total} behind it. */
+    private void stubPage(ArgumentCaptor<Specification<Lead>> spec, List<Lead> rows, long total) {
+        when(leadRepository.findAll(spec.capture(), any(Pageable.class)))
+                .thenAnswer(inv -> new PageImpl<>(rows, inv.getArgument(1), total));
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DTOs for the staff-facing <b>customer</b> (borrower-centric) views — a cross-application roll-up
@@ -112,7 +113,7 @@ public final class CustomerDtos {
              *  could plausibly change the answer. Every human-readable string for these lives in the
              *  frontend's {@code case-failure.ts}; nothing here carries provider or exception text.
              *  {@code NONE} means there is nothing outstanding. Appended at the end deliberately —
-             *  this is a positional record built positionally in {@code CustomerService.list}. */
+             *  this is a positional record built positionally in {@code CustomerService.buildRows}. */
             String failureReason,
             String failureSeverity,
             boolean failureRetryable) {
@@ -140,6 +141,53 @@ public final class CustomerDtos {
             long rejected,
             long closed,
             long unallocated) {
+    }
+
+    /** How many of the caller's loans sit in each days-past-due band. Counts of loans, not money. */
+    public record DpdBuckets(long d1to30, long d31to60, long d60plus) {
+    }
+
+    /**
+     * The caller's own book, rolled up server-side — the Java twin of the frontend's
+     * {@code lib/staff/my-stats.ts} {@code bookStats}, field for field, plus the two trailing
+     * {@code owned*} figures the staff dashboard's "customers allocated to you" / "your customers
+     * now overdue" queue extras need.
+     *
+     * <p>Every rate/average follows that file's rule: an <b>unmeasurable</b> metric (zero
+     * denominator, no data) is {@code null}, never {@code 0} — a {@code 0} reads as a real, bad
+     * number. Hence the boxed {@link Double}s.
+     *
+     * <p>{@code counts} is the same segment breakdown {@link CustomerSummaryCounts} carries
+     * elsewhere, computed here over the caller's rows by {@code CustomerSegments.counts}.
+     */
+    public record BookStats(
+            /** Rows in the caller's book — the denominator behind everything else here. */
+            long total,
+            CustomerSummaryCounts counts,
+            /** Σ {@code totalOutstandingPaise} across the book. */
+            long outstandingPaise,
+            /** Σ {@code totalOutstandingPaise} over rows whose segment is {@code overdue}. */
+            long atRiskPaise,
+            DpdBuckets dpd,
+            /** Loans falling due within the next 7 days (not yet past due). */
+            long dueNext7Days,
+            /** Mean drawn amount over rows that actually requested one; null when none did. */
+            Double avgTicketPaise,
+            long largestExposurePaise,
+            /** {@code largestExposurePaise / outstandingPaise}; null when the book owes nothing. */
+            Double concentrationPct,
+            long repeatBorrowers,
+            /** Mean bureau score over rows that have one; null when nobody does. */
+            Double avgCreditScore,
+            /** Rows the bureau has no record for. */
+            long thinFile,
+            /** Rows abandoned mid-onboarding ({@code DRAFT}) — the call list. */
+            long toChase,
+            /** Rows whose {@code ownerStaffId} is the caller: allocated to them, as opposed to the
+             *  wider "mine" (owned by OR decided by) set the rest of this roll-up covers. */
+            long ownedCount,
+            /** Of {@code ownedCount}, those whose loan is OVERDUE / IN_COLLECTIONS. */
+            long ownedOverdue) {
     }
 
     /**
@@ -186,7 +234,12 @@ public final class CustomerDtos {
             CreditBriefDtos.CreditBriefView creditBrief,
             /** The ADMIN-set eligible limit for this customer (paise), or null when the 25%-of-salary
              *  rule applies. Lets the admin console show whether a limit is overridden. */
-            Long limitOverridePaise) {
+            Long limitOverridePaise,
+            /** The itemised interest / penalty / verified-payment make-up of each loan's balance,
+             *  keyed by loan id — the same figures {@code GET /api/loan/{id}/outstanding} returns,
+             *  computed in the one batched pass that already priced {@link #loans}. Lets the Loans
+             *  tab render the full breakdown per loan card without one call per card. */
+            Map<Long, LoanDtos.OutstandingView> outstandingByLoanId) {
     }
 
     /**

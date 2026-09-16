@@ -312,10 +312,10 @@ function RetryDialog({ applicationId, step, onClose }: { applicationId: number; 
       qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verif-overview"] });
-      // Same reason as the override below: the customer tabs hold their own copies of these rows.
+      // Same reason as the override below: the customer tabs hold their own copy of these rows.
+      qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
+      // application-info-dialog.tsx still reads the same rows under its own key.
       qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
-      qc.invalidateQueries({ queryKey: ["customer-verifications-personal", applicationId] });
-      qc.invalidateQueries({ queryKey: ["customer-verifications-employment", applicationId] });
       onClose();
     },
   });
@@ -401,12 +401,12 @@ function OverrideDialog({
       // The dashboard groups applications off this overview query; refresh it so a card's
       // failed/passed counts update immediately after an override (not on the 15s poll).
       qc.invalidateQueries({ queryKey: ["staff-verif-overview"] });
-      // The customer tabs each re-fetch the same rows under their own keys, so without these an
-      // overridden check still reads its pre-override values on the Personal / Employment / Bank
-      // cards until those queries happen to refetch.
+      // The customer tabs re-fetch the same rows under one shared key, so without this an
+      // overridden check still reads its pre-override values on the Personal / Employment / Bank /
+      // Credit cards until that query happens to refetch.
+      qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
+      // application-info-dialog.tsx still reads the same rows under its own key.
       qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
-      qc.invalidateQueries({ queryKey: ["customer-verifications-personal", applicationId] });
-      qc.invalidateQueries({ queryKey: ["customer-verifications-employment", applicationId] });
       onClose();
     },
   });

@@ -55,9 +55,13 @@ export default function RepayPage() {
     queryFn: () => borrowerApi.loan(loanId as number),
     enabled: loanId != null,
   });
-  const outQuery = useQuery({
-    queryKey: ["repay-outstanding", loanId],
-    queryFn: () => borrowerApi.outstanding(loanId as number, todayISO()),
+  // Every balance this screen quotes, in ONE request: as of today (the prepayment-aware figure the
+  // borrower actually pays), as of the due date, and as of the grace day. Each field is the identical
+  // figure the per-date `outstanding` endpoint returns — this used to be three calls to that endpoint
+  // for the same loan at three dates.
+  const schedule = useQuery({
+    queryKey: ["repay-schedule", loanId, todayISO()],
+    queryFn: () => borrowerApi.outstandingSchedule(loanId as number, todayISO()),
     enabled: loanId != null,
   });
   const payQuery = useQuery({
@@ -72,20 +76,10 @@ export default function RepayPage() {
     queryFn: () => paymentSettingsApi.get(),
   });
   // The penalty-free pay-by dates: the salary day (the loan's due date) and the day after (the
-  // built-in 1-day grace). We read the outstanding *as of* each so the borrower sees the exact
-  // amount for each choice. Grace day adds one normal-interest day but no late penalty.
+  // built-in 1-day grace) — the labels for `schedule`'s `due` / `grace` balances. Grace day adds one
+  // normal-interest day but no late penalty.
   const dueISO = loanQuery.data?.dueDate ?? null;
   const graceISO = dueISO ? addIsoCalendarDays(dueISO, 1) : null;
-  const outDueQuery = useQuery({
-    queryKey: ["repay-out-due", loanId, dueISO],
-    queryFn: () => borrowerApi.outstanding(loanId as number, dueISO as string),
-    enabled: loanId != null && dueISO != null,
-  });
-  const outGraceQuery = useQuery({
-    queryKey: ["repay-out-grace", loanId, graceISO],
-    queryFn: () => borrowerApi.outstanding(loanId as number, graceISO as string),
-    enabled: loanId != null && graceISO != null,
-  });
 
   const record = useMutation({
     mutationFn: async (payload: { amountPaise: number; method: PaymentMethodName; txnRef: string }) => {
@@ -107,7 +101,7 @@ export default function RepayPage() {
       setCustom("");
       setProof(null);
       qc.invalidateQueries({ queryKey: ["repay-payments", loanId] });
-      qc.invalidateQueries({ queryKey: ["repay-outstanding", loanId] });
+      qc.invalidateQueries({ queryKey: ["repay-schedule", loanId] });
       qc.invalidateQueries({ queryKey: ["repay-loan", loanId] });
     },
   });
@@ -165,18 +159,18 @@ export default function RepayPage() {
 
   // Prepayment-aware "pay today" figure (interest only to today); fall back to the
   // ledger outstanding while it loads.
-  const dueToday = outQuery.data?.outstandingPaise ?? loan.outstandingPaise;
+  const dueToday = schedule.data?.asOf.outstandingPaise ?? loan.outstandingPaise;
   const scheduled = loan.outstandingPaise; // full-tenure basis (minus verified payments)
   const savingPaise = Math.max(0, scheduled - dueToday);
   // An approved collections settlement caps the payable at a full-and-final figure: show it as a
   // settlement (not the normal balance) and suppress the prepay-saving / penalty hints.
-  const settlementPaise = outQuery.data?.settledAmountPaise ?? null;
+  const settlementPaise = schedule.data?.asOf.settledAmountPaise ?? null;
   const isSettlement = settlementPaise != null;
   const overdue = !isSettlement && (app?.status === "OVERDUE" || dueToday > loan.totalRepayablePaise);
 
   // Presentation-only interest breakdown for the "What you owe" card.
   const daysSince = loan.disbursedOn ? daysBetween(new Date(loan.disbursedOn), new Date()) : null;
-  const interestPaise = outQuery.data?.interestPaise ?? null;
+  const interestPaise = schedule.data?.asOf.interestPaise ?? null;
   const dueInFuture = loan.dueDate ? daysBetween(new Date(), new Date(loan.dueDate)) > 0 : false;
   // Interest accrues only up to the tenure (the backend caps it at the due date), so an overdue loan's
   // interest reflects the full tenure, not days-held — cap the label's day count to match interestPaise.
@@ -276,13 +270,13 @@ export default function RepayPage() {
             <PayByOption
               title="On salary day"
               date={loan.dueDate}
-              amount={outDueQuery.data?.outstandingPaise ?? loan.totalRepayablePaise}
+              amount={schedule.data?.due?.outstandingPaise ?? loan.totalRepayablePaise}
               note="Penalty-free"
             />
             <PayByOption
               title="Day after salary"
               date={graceISO ?? loan.dueDate}
-              amount={outGraceQuery.data?.outstandingPaise ?? loan.totalRepayablePaise}
+              amount={schedule.data?.grace?.outstandingPaise ?? loan.totalRepayablePaise}
               note="One extra interest day · no late penalty"
             />
           </div>

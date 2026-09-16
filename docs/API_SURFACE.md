@@ -86,7 +86,8 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 
 | Method + path | Role | Purpose |
 |---|---|---|
-| `GET /?q=&from=&to=` | staff (all roles) | the **whole** book (dashboard/collections consumers); each row rolls up counts + total outstanding |
+| `GET /by-ids?ids=` | staff (all roles) | full rows for exactly these customers, in the order asked for — scoped to the caller's book, capped at 100 ids, silently omitting ids they may not see. Backs the collections export and the dashboard's decided-customer join |
+| `GET /book-stats` | staff (all roles) | the caller's **own** book aggregated server-side: lifecycle counts, exposure, DPD buckets, averages, plus `ownedCount`/`ownedOverdue`. Replaces shipping every row so the dashboard could count them in the browser |
 | `GET /page?q=&from=&to=&seg=&mine=&page=&size=` | staff (all roles) | one page of the book — search, IST window, lifecycle segment (`unallocated` = nobody owns), "mine" (owned by or decided by the caller) and paging all in SQL; `size` capped at 100; `{rows, page, size, total}` |
 | `GET /summary?q=&from=&to=&mine=` | staff (all roles) | the segment-chip counts over the same scoped, filtered book |
 | `GET /export?q=&from=&to=&seg=&mine=` | ADMIN | every matching row for "download all customers" (capped at 50k) |
@@ -98,11 +99,12 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 
 | Method + path | Role | Purpose |
 |---|---|---|
-| `GET /{id}` · `GET /{id}/outstanding?asOf=` | any | disbursed-loan view · **prepayment-aware** balance (interest only to `asOf`) |
-| `POST /{id}/repayments` · `GET /{id}/repayments` | borrower writes · any reads | record a manual repayment (→ PENDING_VERIFICATION) · list a loan's repayments |
+| `GET /{id}` · `GET /{id}/outstanding?asOf=` | owner borrower or staff (DSA rejected) | disbursed-loan view · **prepayment-aware** balance (interest only to `asOf`) |
+| `GET /{id}/outstanding/schedule?asOf=` | owner borrower or staff (DSA rejected) | the three balances the repay screen quotes at once — as of `asOf` (today by default), on the salary day the loan is due, and on the one grace day after it. `due`/`grace` are null with no due date; each field is the identical figure `/outstanding` returns for that date |
+| `POST /{id}/repayments` · `GET /{id}/repayments` | borrower writes · owner borrower or staff reads (DSA rejected) | record a manual repayment (→ PENDING_VERIFICATION) · list a loan's repayments |
 | `POST /{id}/repayments/{pid}/verify` · `POST …/{pid}/reject` | ACCOUNTANT | confirm proof → reduce outstanding, close at zero · **reject** a pending payment (no recompute; can't reject a VERIFIED one) |
 | `GET /pending-repayments` | ACCOUNTANT | repayments awaiting verification (company-wide queue) |
-| `GET /transactions?q=&direction=&from=&to=` | ACCOUNTANT/ADMIN | company-wide ledger (OUTGOING disbursals + INCOMING repayments), searchable + server-side date range |
+| `GET /transactions?q=&direction=&from=&to=&page=&size=` | ACCOUNTANT/ADMIN | one page of the company-wide ledger (OUTGOING disbursals + INCOMING repayments), searchable, with the period applied in SQL on both halves. `{rows, page, size, total, totalInPaise, totalOutPaise}` — the totals cover the whole filter, not the page |
 
 ### DSA portal (`/api/dsa`) and DSA administration (`/api/admin/dsa`)
 
@@ -174,7 +176,7 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 |---|---|---|
 | `GET /api/applications/{id}/verification-progress` | staff | per-application completion snapshot |
 | `POST /api/applications/{id}/verifications/{checkType}/decision` | credit roles / ADMIN | manual PASS/FAIL override (provider MANUAL, audited) |
-| `GET /api/applications/verifications/overview` | staff | cross-application rows + status tallies |
+| `GET /api/applications/verifications/overview?status=&checkType=&q=&needsAttention=&page=&size=` | staff | status tallies over the whole undecided queue + one page of rows. Paged by **application** (a card's checks are never split across pages); by default only applications that still need a reviewer — `needsAttention=false` returns the whole queue |
 | `POST /api/applications/{id}/send-reminder` | credit roles / ADMIN | nudge the borrower on outstanding steps (no-op when nothing pending) |
 | `PUT /api/applications/{id}/profile/self` | BORROWER | self-edit non-identity profile fields (may invalidate the matching verification → re-verify) |
 | `GET\|PUT /api/preferences` | BORROWER | notification settings (opt-out suppresses SMS/EMAIL, never IN_APP) |

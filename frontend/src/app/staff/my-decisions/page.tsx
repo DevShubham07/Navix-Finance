@@ -70,10 +70,17 @@ export default function MyDecisionsPage() {
 
   const range: Range = React.useMemo(() => rangeFor(preset, custom), [preset, custom]);
 
+  // Only the roles that can actually inspect someone else's history need this list: it exists
+  // solely to populate the "whose decisions" picker below, which renders only when it comes back
+  // non-empty. For a Credit Executive, an Accountant, a Telecaller — everyone else — the request
+  // was fired on every visit to return a list that could never be shown.
+  const canInspectOthers =
+    me.data?.role === "CREDIT_HEAD" || me.data?.role === "COLLECTION_HEAD" || me.data?.role === "ADMIN";
   const team = useQuery({
     queryKey: ["decisions-inspectable"],
     queryFn: () => staffApi.inspectableStaff(),
     staleTime: 60_000,
+    enabled: canInspectOthers,
   });
 
   const q = useQuery({

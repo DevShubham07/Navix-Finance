@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Phone, Star } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -20,7 +20,8 @@ import {
   type LeadView,
   type CreateLeadInput,
 } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 const CALL_STATUSES: LeadCallStatus[] = [
   "NOT_CALLED",
@@ -41,23 +42,43 @@ export default function StaffLeadsPage() {
   const myRole = useStaffMe().data?.role;
   const qc = useQueryClient();
   const [q, setQ] = React.useState("");
+  // The raw box fed the query key, so a six-letter name was six requests, five of them obsolete
+  // before they answered. The input still renders from `q`; only the fetch waits.
+  const debouncedQ = useDebouncedValue(q.trim());
   const [callStatus, setCallStatus] = React.useState<LeadCallStatus | "">("");
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
+  // Server paging — the lead table grows without limit and was being fetched whole to show 25 rows.
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+
+  // A new filter means a new result set; page 3 of the old one is not a position in it.
+  React.useEffect(() => {
+    setPage(1);
+  }, [debouncedQ, callStatus]);
 
   const list = useQuery({
-    queryKey: ["leads", q, callStatus],
+    queryKey: ["leads", debouncedQ, callStatus, page, pageSize],
     queryFn: () =>
       leadsApi.list({
-        q: q || undefined,
+        q: debouncedQ || undefined,
         callStatus: callStatus || undefined,
+        page,
+        size: pageSize,
       }),
+    // Paging changes the key; without this the table blanks to "Loading…" on every Next/Prev.
+    placeholderData: keepPreviousData,
   });
 
+  // Unchanged: every mutation below still invalidates the whole `["leads"]` prefix, which now also
+  // covers the page/size suffixes.
   const invalidate = () => qc.invalidateQueries({ queryKey: ["leads"] });
 
-  const rows = list.data ?? [];
+  const rows = list.data?.rows ?? [];
   const selected = rows.find((r) => r.id === selectedId) ?? null;
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  // `total` is every lead matching the filter, counted by the server — not `rows.length`, which is
+  // now just this page.
+  const total = list.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   if (myRole && !hasPermission(myRole, "leads:manage")) {
     return <NoAccessNotice message="Telecaller or Admin access required." />;
@@ -132,7 +153,7 @@ export default function StaffLeadsPage() {
                   </td>
                 </tr>
               )}
-              {pageRows.map((row, i) => (
+              {rows.map((row, i) => (
                 <tr
                   key={row.id}
                   onClick={() => setSelectedId(row.id)}
@@ -161,7 +182,10 @@ export default function StaffLeadsPage() {
             setPage={setPage}
             total={total}
             pageSize={pageSize}
-            setPageSize={setPageSize}
+            setPageSize={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
           />
         </div>
 

@@ -47,23 +47,58 @@ public class TransactionService {
     private final CustomerProfileRepository profileRepository;
     private final DocumentStoragePort storage;
 
-    @Transactional(readOnly = true)
-    public List<TransactionView> listTransactions(String q, String direction) {
-        return listTransactions(q, direction, null, null);
+    /** Page-size ceiling, mirroring {@code CustomerService.MAX_PAGE_SIZE}. */
+    public static final int MAX_PAGE_SIZE = 100;
+
+    /**
+     * One page of the ledger, plus the totals for the <b>whole</b> filter — the summary cards above
+     * the table must show the period's real money movement, not just the page the reviewer is on.
+     */
+    public record TransactionPage(List<TransactionView> rows, int page, int size, long total,
+                                  long totalInPaise, long totalOutPaise) {
     }
 
     /**
-     * As {@link #listTransactions(String, String)} with an optional inclusive date range ({@code from}
-     * / {@code to}, by the transaction's {@code date}). A row with no date is excluded once either bound
-     * is set. Lets the ledger filter a statement period server-side (timezone-free — dates are LocalDate).
+     * One page of the transactions ledger: OUTGOING disbursals + INCOMING repayments, newest first,
+     * filtered by direction, an optional inclusive {@code from}/{@code to} statement period and a
+     * free-text {@code q} (borrower name / mobile / loan id).
+     *
+     * <p>The period is applied in SQL on both halves ({@code loan.disbursed_on} and
+     * {@code payment.paid_on}) rather than by loading every loan and every payment the company has
+     * ever had and filtering in memory, and only the returned page's proofs are presigned. A row with
+     * no date is excluded once either bound is set, as before.
      */
     @Transactional(readOnly = true)
-    public List<TransactionView> listTransactions(String q, String direction, LocalDate from, LocalDate to) {
+    public TransactionPage listTransactions(String q, String direction, LocalDate from, LocalDate to,
+                                            int page, int size) {
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        int safePage = Math.max(1, page);
         String dir = direction != null ? direction.trim().toUpperCase() : null;
 
+        // Each half is windowed in SQL on its own date column. A bound also drops null-date rows,
+        // which is what the old in-memory `date() == null` removal did.
+        List<Loan> disbursals = "INCOMING".equals(dir) ? List.of() : loanRepository.findAllForRegister(from, to);
+        List<Payment> repayments = "OUTGOING".equals(dir) ? List.of() : paymentRepository.findAllForLedger(from, to);
+        if (from != null || to != null) {
+            disbursals = disbursals.stream().filter(l -> l.getDisbursedOn() != null).toList();
+            repayments = repayments.stream().filter(p -> p.getPaidOn() != null).toList();
+        }
+
+        // Every loan either half references: the disbursals themselves, plus the loans the in-window
+        // repayments belong to (which may have been disbursed before the period started).
         Map<Long, Loan> loanById = new HashMap<>();
-        for (Loan l : loanRepository.findAll()) {
+        for (Loan l : disbursals) {
             loanById.put(l.getId(), l);
+        }
+        List<Long> missing = repayments.stream()
+                .map(Payment::getLoanId)
+                .filter(id -> id != null && !loanById.containsKey(id))
+                .distinct()
+                .toList();
+        if (!missing.isEmpty()) {
+            for (Loan l : loanRepository.findAllById(missing)) {
+                loanById.put(l.getId(), l);
+            }
         }
 
         // loanId -> the borrower's profile (loan → application → customer_profile).
@@ -71,52 +106,35 @@ public class TransactionService {
 
         List<TransactionView> out = new ArrayList<>();
 
-        // Outgoing: each loan is one disbursal. Skipped entirely when the caller only wants INCOMING.
-        if (!"INCOMING".equals(dir)) {
-            for (Loan loan : loanById.values()) {
-                CustomerProfile p = profileByLoanId.get(loan.getId());
-                out.add(new TransactionView(
-                        "D-" + loan.getId(), "DISBURSAL", "OUTGOING",
-                        loan.getId(), loan.getCustomerId(),
-                        p != null ? p.getFullName() : null,
-                        p != null ? p.getPan() : null,
-                        loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
-                        loan.getDisbursalTxnRef(),
-                        loan.getStatus() != null ? loan.getStatus().name() : null,
-                        loan.getDisbursedOn(), null));
-            }
+        // Outgoing: each loan is one disbursal.
+        for (Loan loan : disbursals) {
+            CustomerProfile p = profileByLoanId.get(loan.getId());
+            out.add(new TransactionView(
+                    "D-" + loan.getId(), "DISBURSAL", "OUTGOING",
+                    loan.getId(), loan.getCustomerId(),
+                    p != null ? p.getFullName() : null,
+                    p != null ? p.getPan() : null,
+                    loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
+                    loan.getDisbursalTxnRef(),
+                    loan.getStatus() != null ? loan.getStatus().name() : null,
+                    loan.getDisbursedOn(), null));
         }
 
-        // Incoming: each payment is one repayment. Skipped entirely when the caller only wants OUTGOING.
-        // proofUrl carries the raw S3 key here — presigning happens once, after filtering, below.
-        if (!"OUTGOING".equals(dir)) {
-            for (Payment pay : paymentRepository.findAll()) {
-                Loan loan = loanById.get(pay.getLoanId());
-                CustomerProfile p = profileByLoanId.get(pay.getLoanId());
-                out.add(new TransactionView(
-                        "P-" + pay.getId(), "REPAYMENT", "INCOMING",
-                        pay.getLoanId(),
-                        loan != null ? loan.getCustomerId() : null,
-                        p != null ? p.getFullName() : null,
-                        p != null ? p.getPan() : null,
-                        pay.getAmount() != null ? pay.getAmount() : 0L,
-                        pay.getTxnRef(),
-                        pay.getStatus() != null ? pay.getStatus().name() : null,
-                        pay.getPaidOn(), pay.getProofUrl()));
-            }
-        }
-
-        // Already narrowed above when dir is INCOMING/OUTGOING; kept as a no-op safety net.
-        if ("INCOMING".equals(dir) || "OUTGOING".equals(dir)) {
-            out.removeIf(t -> !t.direction().equals(dir));
-        }
-
-        // Inclusive statement-period window (by transaction date). Null-date rows drop once bounded.
-        if (from != null) {
-            out.removeIf(t -> t.date() == null || t.date().isBefore(from));
-        }
-        if (to != null) {
-            out.removeIf(t -> t.date() == null || t.date().isAfter(to));
+        // Incoming: each payment is one repayment.
+        // proofUrl carries the raw S3 key here — presigning happens once, for the page, below.
+        for (Payment pay : repayments) {
+            Loan loan = loanById.get(pay.getLoanId());
+            CustomerProfile p = profileByLoanId.get(pay.getLoanId());
+            out.add(new TransactionView(
+                    "P-" + pay.getId(), "REPAYMENT", "INCOMING",
+                    pay.getLoanId(),
+                    loan != null ? loan.getCustomerId() : null,
+                    p != null ? p.getFullName() : null,
+                    p != null ? p.getPan() : null,
+                    pay.getAmount() != null ? pay.getAmount() : 0L,
+                    pay.getTxnRef(),
+                    pay.getStatus() != null ? pay.getStatus().name() : null,
+                    pay.getPaidOn(), pay.getProofUrl()));
         }
 
         if (q != null && !q.isBlank()) {
@@ -124,17 +142,30 @@ public class TransactionService {
             out.removeIf(t -> !matches(t, needle, profileByLoanId));
         }
 
+        // Totals describe the whole filter, not the page — the cards above the table are the
+        // period's money movement, and they must not change as the reviewer pages through it.
+        long totalIn = 0L;
+        long totalOut = 0L;
+        for (TransactionView t : out) {
+            if ("INCOMING".equals(t.direction())) {
+                totalIn += t.amountPaise();
+            } else {
+                totalOut += t.amountPaise();
+            }
+        }
+
         // Most recent first; rows without a date sort to the end.
         out.sort(Comparator.comparing(TransactionView::date,
                 Comparator.nullsLast(Comparator.<LocalDate>reverseOrder())));
 
-        // Presign only the survivors' proofs — the expensive part, done once per row that's actually
-        // returned instead of once per payment in the table.
-        List<TransactionView> result = new ArrayList<>(out.size());
-        for (TransactionView t : out) {
-            result.add(withProof(t, presignedProof(t.proofUrl())));
-        }
-        return result;
+        // Presign only the page's proofs — the expensive part, done once per row actually returned
+        // instead of once per payment in the table.
+        List<TransactionView> pageRows = out.stream()
+                .skip((long) (safePage - 1) * safeSize)
+                .limit(safeSize)
+                .map(t -> withProof(t, presignedProof(t.proofUrl())))
+                .toList();
+        return new TransactionPage(pageRows, safePage, safeSize, out.size(), totalIn, totalOut);
     }
 
     /**
