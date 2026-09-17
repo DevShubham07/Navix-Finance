@@ -2,6 +2,7 @@ package com.navix.verification.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
@@ -9,6 +10,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.verification.dto.SignzyDtos.AadhaarResponse;
 import com.navix.verification.dto.SignzyDtos.BankVerificationResponse;
 import com.navix.verification.dto.SignzyDtos.ContractInitiateRequest;
@@ -23,7 +25,9 @@ import com.navix.verification.dto.SignzyDtos.ExperianResponse;
 import com.navix.verification.dto.SignzyDtos.LivenessResult;
 import com.navix.verification.dto.SignzyDtos.LivenessSession;
 import com.navix.verification.dto.SignzyDtos.PanResponse;
+import com.navix.verification.exception.TerminalVerificationException;
 import com.navix.verification.exception.VerificationException;
+import com.navix.verification.support.VendorEnvelopes;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -319,6 +323,73 @@ class SignzyClientsTest {
                 "operation=PAN",
                 "requestPayload={\"panNumber\":\"ABCPE1234Z\",\"maskedName\":\"false\"}",
                 "responsePayload={\"error\":{\"message\":\"PAN ABCPE1234Z is not entitled\"}}");
+        b.server().verify();
+    }
+
+    /**
+     * Signzy's verdict on a PAN that does not exist: {@code 404} with
+     * {@code {"error":{"reason":"NOT_FOUND","message":"Pan Number Not Found"}}}. That is an ANSWER,
+     * and a final one — of the 18 applications traced through the Sep-2026 provider audit that hit
+     * it, not one ever produced a valid PAN afterwards.
+     *
+     * <p>Read as an ordinary failure it made the router fall through: on to Digitap, which 412s
+     * because we are not provisioned for that product, and on to Fintrix, which happily bills us to
+     * reply "Invalid PAN" — 41 paid calls on PANs already known not to exist, in one window. It is
+     * raised as a {@link TerminalVerificationException} so {@code RoutingVerificationPort} stops
+     * instead of paying two more vendors to repeat a settled question, and it carries
+     * {@link ProviderFailureDetails#PAN_NOT_FOUND} so {@code navix-loan} — which cannot see this
+     * exception class — can still tell staff the PAN is wrong rather than that the vendor was down.
+     */
+    @Test
+    void pan404NotFoundIsATerminalAnswer() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/api/v3/pan/compliance-206-individual-search"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(VendorEnvelopes.load("signzy-pan-404-not-found.json")));
+
+        SignzyPanClient client = new SignzyPanClient(b.restClient());
+        Throwable thrown = catchThrowable(() -> client.verify("ABCPE1234Z"));
+
+        assertThat(thrown).isInstanceOf(TerminalVerificationException.class);
+        TerminalVerificationException terminal = (TerminalVerificationException) thrown;
+        assertThat(terminal.httpStatus()).isEqualTo(404);
+        assertThat(terminal.providerCode()).isEqualTo(ProviderFailureDetails.PAN_NOT_FOUND);
+        assertThat(terminal.safeDetail()).contains("Pan Number Not Found");
+        b.server().verify();
+    }
+
+    /**
+     * The load-bearing half of the rule above, and the reason the not-found match is on the message
+     * rather than on the status code. Signzy's {@code reason} field is not one of
+     * {@code ProviderJson}'s allow-listed code fields, so a 404 arrives with no {@code providerCode}
+     * to match on — and a 404 from a mistyped {@code SIGNZY_BASE_URL}, a withdrawn route or a bad
+     * gateway looks identical on status alone.
+     *
+     * <p>Matching on 404 by itself would therefore stamp {@code PAN_NOT_FOUND} on every borrower in
+     * the book the moment a base URL went stale, stop the chain that exists to rescue exactly that
+     * situation, and tell staff the borrower's PAN is fake. A 404 that does not say "not found" stays
+     * an ordinary {@link VerificationException} and keeps falling through to the next provider.
+     */
+    @Test
+    void pan404WithoutNotFoundDetailIsStillAGenericFailure() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/api/v3/pan/compliance-206-individual-search"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":{\"message\":\"Cannot POST /api/v3/pan/typo\","
+                                + "\"statusCode\":404}}"));
+
+        SignzyPanClient client = new SignzyPanClient(b.restClient());
+        Throwable thrown = catchThrowable(() -> client.verify("ABCPE1234Z"));
+
+        assertThat(thrown)
+                .isInstanceOf(VerificationException.class)
+                .isNotInstanceOf(TerminalVerificationException.class);
+        assertThat(((VerificationException) thrown).providerCode())
+                .isNotEqualTo(ProviderFailureDetails.PAN_NOT_FOUND);
         b.server().verify();
     }
 

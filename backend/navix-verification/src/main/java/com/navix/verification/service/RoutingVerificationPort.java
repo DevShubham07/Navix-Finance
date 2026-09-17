@@ -1,8 +1,10 @@
 package com.navix.verification.service;
 
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort;
 import com.navix.verification.config.VerificationChainProperties;
 import com.navix.verification.exception.CapabilityNotSupportedException;
+import com.navix.verification.exception.TerminalVerificationException;
 import com.navix.verification.exception.VerificationException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,6 +22,8 @@ import org.springframework.stereotype.Component;
  * (default {@code signzy, digitap}) and:
  * <ul>
  *   <li>skips a provider that throws {@link CapabilityNotSupportedException} ("provider can't do this"),</li>
+ *   <li><b>stops</b> on a {@link TerminalVerificationException} ("provider answered definitively" —
+ *       no such PAN, consent declined; asking the next one costs money and changes nothing),</li>
  *   <li>falls through to the next on a {@link VerificationException} ("provider tried and failed"),</li>
  *   <li>returns the first success (logging which provider served — never any PII).</li>
  * </ul>
@@ -27,10 +31,12 @@ import org.springframework.stereotype.Component;
  *
  * <p>Net effect of the matrix: penny-drop + DigiLocker + the interactive liveness journey are Signzy-only;
  * the synchronous face-match ({@code faceLiveness}) and the UAN/EPFO employment lookup
- * ({@code verifyEmployment}) are Digitap-only; PAN, email and address try Signzy then fall back to
- * Digitap. Bureau is the one capability with a THREE-provider chain: Fintrix (primary) → Signzy
- * (unsupported — retired, always skipped) → Digitap (fallback); Signzy stays in the map only because
- * the chain is global across capabilities.
+ * ({@code verifyEmployment}) are Digitap-only; PAN and email try Signzy first (with the Digitap legs
+ * flag-gated off — neither product is provisioned) and PAN then falls back to Fintrix; address is
+ * Digitap-only. Bureau is the one capability with a THREE-provider chain, and since 2026-09-11
+ * (commit {@code 4b3a0c2}) the live order is <b>Digitap Experian → Fintrix CRIF</b>; Signzy's bureau
+ * leg is retired and skips itself, staying in the map only because the chain is global across
+ * capabilities. The default chain property is {@code signzy,digitap,fintrix}.
  */
 @Component
 @Primary
@@ -88,6 +94,7 @@ public class RoutingVerificationPort implements VerificationPort {
      */
     private <T> T route(String capability, Function<VerificationPort, T> call, Predicate<T> acceptable) {
         VerificationException lastRealFailure = null;
+        VerificationException maskedMobileFailure = null;
         CapabilityNotSupportedException lastUnsupported = null;
         T firstUnacceptable = null;
         boolean haveUnacceptable = false;
@@ -106,12 +113,36 @@ public class RoutingVerificationPort implements VerificationPort {
                         capability, e.getKey());
             } catch (CapabilityNotSupportedException unsupported) {
                 lastUnsupported = unsupported; // provider doesn't offer this capability — try the next
+            } catch (TerminalVerificationException terminal) {
+                // A definitive ANSWER, not a failure to serve: "no such PAN", "the borrower declined
+                // consent". Asking the next provider would pay to be told the same thing — 41 billable
+                // Fintrix PAN calls in the Sep-2026 audit were exactly that, on PANs Signzy had already
+                // reported nonexistent, and not one of those applications ever got a PAN through.
+                log.info("verification[{}] provider {} answered definitively code={} — chain stopped",
+                        capability, e.getKey(), terminal.providerCode());
+                throw terminal;
             } catch (VerificationException failed) {
                 log.warn("verification[{}] provider {} failed status={} endpoint={} code={} detail={} — falling through",
                         capability, e.getKey(), failed.httpStatus(), failed.endpoint(),
                         failed.providerCode(), failed.safeDetail());
-                lastRealFailure = failed; // provider tried and failed — fall back to the next
+                if (ProviderFailureDetails.MASKED_MOBILE_REQUIRED.equals(failed.providerCode())) {
+                    // Not terminal — a DIFFERENT bureau may well hold a file under the number we sent,
+                    // and CRIF recovered a report for 3 of the 14 traced cases. But it outranks a
+                    // trailing no-hit: see the precedence note below.
+                    maskedMobileFailure = failed;
+                } else {
+                    lastRealFailure = failed; // provider tried and failed — fall back to the next
+                }
             }
+        }
+        // "Records exist, under numbers you did not send" beats "nobody has a file". Both are answers,
+        // but only one of them is true, and the thin-file one is the answer that costs a borrower their
+        // application. Digitap Experian raises MASKED_MOBILE_REQUIRED for this; before the 2026-09-11
+        // chain flip Digitap was last, so the exception simply propagated, and DigitapCreditClient still
+        // says so in a comment. Now Fintrix runs after it, and a trailing CRIF no-hit would be recorded
+        // as a thin-file PASS — burying a real credit file behind a verdict of "no history".
+        if (maskedMobileFailure != null) {
+            throw maskedMobileFailure;
         }
         // An ANSWER beats the ABSENCE of one: if any provider said "no record", return that even when a
         // later provider then blew up. We already hold a valid bureau reply, and throwing it away to

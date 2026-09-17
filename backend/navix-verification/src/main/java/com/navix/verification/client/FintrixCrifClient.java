@@ -7,6 +7,7 @@ import static com.navix.verification.support.ProviderJson.text;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.verification.BureauReportFacts;
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.verification.config.VerificationClientConfig;
 import com.navix.verification.dto.FintrixDtos;
 import com.navix.verification.dto.FintrixDtos.CrifRequest;
@@ -14,6 +15,7 @@ import com.navix.verification.dto.FintrixDtos.CrifResponse;
 import com.navix.verification.exception.VerificationException;
 import com.navix.verification.support.BureauFixtureLoader;
 import com.navix.verification.support.CrifHighmarkFactsParser;
+import com.navix.verification.support.ProviderCallLog;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -157,17 +159,22 @@ public class FintrixCrifClient {
         Integer statusCode = integer(root.path("statusCode"));
         if (statusCode != null && statusCode >= 400) {
             String detail = text(root.path("message"));
-            throw new VerificationException("Fintrix crif_combine rejected the request (statusCode "
-                    + statusCode + "): "
-                    + (detail == null || detail.isBlank() ? "no detail given" : detail));
+            String failure = "Fintrix crif_combine rejected the request (statusCode " + statusCode
+                    + "): " + (detail == null || detail.isBlank() ? "no detail given" : detail);
+            // The transport recorded this as served (postAllowingErrorEnvelope tolerates the envelope
+            // so a genuine no-hit is not mistaken for a failure). This one IS a failure, so say so.
+            ProviderCallLog.failLast(failure);
+            throw new VerificationException(failure);
         }
         if (!"error".equalsIgnoreCase(text(root.path("status")))) {
             return;
         }
         String message = text(root.path("error_message"));
         if (message == null || !message.toLowerCase(java.util.Locale.ROOT).contains("no data found")) {
-            throw new VerificationException("Fintrix crif_combine error: "
-                    + (message == null || message.isBlank() ? "unspecified provider error" : message));
+            String failure = "Fintrix crif_combine error: "
+                    + (message == null || message.isBlank() ? "unspecified provider error" : message);
+            ProviderCallLog.failLast(failure);
+            throw new VerificationException(failure);
         }
     }
 
@@ -214,12 +221,100 @@ public class FintrixCrifClient {
         if (fixturePath != null && !fixturePath.isBlank()) {
             return parse(root.path("canonical").path("data"), root.toString(), name, mobile);
         }
+        CrifResponse answered = kbaAnswerEnvelope(root);
+        if (answered != null) {
+            return answered;
+        }
         CrifResponse challenge = kbaChallenge(root);
         if (challenge != null) {
             return challenge;
         }
         rejectUnlessNoRecord(root);
         return parseReport(root.path("data"), null, root.toString(), name, mobile);
+    }
+
+    /**
+     * The {@code /bureau_ch_user_auth} reply to an answer, which is shaped NOTHING like
+     * {@code /crif_combine}'s: {@code error_message} is a JSON <b>object</b>, not a string.
+     *
+     * <ul>
+     *   <li>{@code status: "S11"} — the answer was taken and CRIF has issued a <b>new</b> question,
+     *       carrying a fresh {@code orderId}/{@code reportId}. A challenge, not a failure.</li>
+     *   <li>{@code status: "S02"} — every answer attempt CRIF allows has been spent
+     *       ({@code "Authentication failed due to unsuccesfull all ans attempt failed"}, their
+     *       spelling). Terminal for this order: answering again is billable and can only fail.</li>
+     * </ul>
+     *
+     * <p>Without this branch {@link #kbaChallenge} (which matches only a <i>string</i>
+     * {@code error_message}) skipped it, {@link #rejectUnlessNoRecord} called {@code text()} on the
+     * object, got {@code null}, and threw "unspecified provider error". The caller then kept the OLD
+     * question open, so the borrower re-answered a question CRIF had already replaced, was marked
+     * wrong, and after three billed attempts lost the report — the exact S11 → S11 → S02 sequence
+     * two applications show in the Sep-2026 audit, twelve seconds apart.
+     *
+     * <p>Key names are read defensively ({@code optionsList}/{@code options},
+     * {@code orderId}/{@code order_id}, …): they come from captured production responses, not from
+     * any Fintrix document we hold.
+     */
+    private static CrifResponse kbaAnswerEnvelope(JsonNode root) {
+        JsonNode em = root.path("error_message");
+        if (!em.isObject()) {
+            return null;
+        }
+        String status = text(em.path("status"));
+        String statusDesc = text(em.path("statusDesc"));
+        boolean exhausted = "S02".equalsIgnoreCase(nz(status))
+                || (statusDesc != null
+                        && statusDesc.toLowerCase(java.util.Locale.ROOT).contains("ans attempt"));
+        if (exhausted) {
+            String detail = statusDesc == null || statusDesc.isBlank()
+                    ? "the bureau closed this question" : statusDesc;
+            // The audit row stays SUCCESS, deliberately. S02 is CRIF ANSWERING — telling us, over a
+            // perfectly healthy HTTP 200, that this order is closed. Nothing about the call went
+            // wrong, and filing it FAILED is the same mistake that put 1,939 correct answers in the
+            // failure column and took the dashboard's apparent failure rate from ~10% to 24.5%. The
+            // borrower's outcome is recorded where it belongs, on application_verification. Compare
+            // the unrecognised-envelope branch below, which DOES flip the row: there we genuinely
+            // could not read what the vendor said.
+            throw new VerificationException("Fintrix bureau_ch_user_auth: KBA attempts exhausted",
+                    null, null, ANSWER_ENDPOINT, ProviderFailureDetails.KBA_EXHAUSTED,
+                    detail.length() <= 180 ? detail : detail.substring(0, 180));
+        }
+        JsonNode question = firstPresent(em, "question");
+        if (!"S11".equalsIgnoreCase(nz(status)) || question.isMissingNode() || text(question) == null) {
+            // An object we do not recognise. Not a challenge and not an exhaustion — a real failure.
+            String failure = "Fintrix bureau_ch_user_auth: unrecognised answer envelope"
+                    + (status == null ? "" : " (status " + status + ")");
+            ProviderCallLog.failLast(failure);
+            throw new VerificationException(failure);
+        }
+        java.util.List<String> options = new java.util.ArrayList<>();
+        for (JsonNode option : firstPresent(em, "optionsList", "options")) {
+            String value = text(option);
+            if (value != null) {
+                // Verbatim, padding included — CRIF matches the option string exactly.
+                options.add(value);
+            }
+        }
+        String reportId = text(firstPresent(em, "reportId", "report_id"));
+        FintrixDtos.Challenge challenge = new FintrixDtos.Challenge(text(question), options,
+                text(firstPresent(em, "orderId", "order_id")), reportId);
+        return new CrifResponse(reportId, null, false, null, root.toString(), null, challenge);
+    }
+
+    /** The first of {@code keys} present on {@code node}; a missing node when none are. */
+    private static JsonNode firstPresent(JsonNode node, String... keys) {
+        for (String key : keys) {
+            JsonNode value = node.path(key);
+            if (!value.isMissingNode() && !value.isNull()) {
+                return value;
+            }
+        }
+        return node.path(keys[keys.length - 1]);
+    }
+
+    private static String nz(String value) {
+        return value == null ? "" : value;
     }
 
     /** The {@code /crif_combine} shape: the report is wrapped, with a sibling report link. */

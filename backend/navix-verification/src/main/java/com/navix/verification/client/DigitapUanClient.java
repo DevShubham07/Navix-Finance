@@ -65,12 +65,23 @@ public class DigitapUanClient {
 
     public UanLookupResponse verify(String pan, String mobile, String dob, String employeeName,
                                       String employerName, String knownUan, String clientRef) {
-        // The provider rejects employer_name unless employee_name rides along, so drop it rather than
-        // send a request we know is invalid.
-        String employer = isBlank(employeeName) ? null : blankToNull(employerName);
-        UanLookupRequest request = new UanLookupRequest(
-                ref(clientRef), blankToNull(pan), blankToNull(mobile), blankToNull(dob),
-                blankToNull(employeeName), employer, blankToNull(knownUan));
+        UanLookupRequest request;
+        if (!isBlank(knownUan)) {
+            // Lookup Method 3 — the UAN direct, and ONLY the UAN. A request has to satisfy exactly one
+            // of the vendor's lookup methods (docs/digitap/UAN_EMPLOYMENT.md §2); sending the UAN
+            // alongside pan/mobile/dob/name combines two and is rejected with "One or more parameters
+            // format is wrong or missing". That is 378 of the 4,848 failures in the Sep-2026 audit —
+            // every one of them a borrower who had just typed their UAN in to help. An exact UAN is
+            // also the best identifier we will ever have, so it needs no corroboration.
+            request = new UanLookupRequest(ref(clientRef), null, null, null, null, null, knownUan);
+        } else {
+            // The provider rejects employer_name unless employee_name rides along, so drop it rather
+            // than send a request we know is invalid.
+            String employer = isBlank(employeeName) ? null : blankToNull(employerName);
+            request = new UanLookupRequest(
+                    ref(clientRef), blankToNull(pan), blankToNull(mobile), blankToNull(dob),
+                    blankToNull(employeeName), employer, null);
+        }
 
         JsonNode root = post(digitapSvc, ENDPOINT, request);
         Integer resultCode = integer(root.path("result_code"));

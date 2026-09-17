@@ -229,4 +229,46 @@ class DigitapUanClientTest {
         assertThat(r.employerName()).isEqualTo("FORMER EMPLOYER LIMITED");
         b.server().verify();
     }
+
+    /**
+     * Lookup method 3 — the UAN direct — and the one request shape the vendor will NOT tolerate being
+     * enriched. UAN-Basic-V3 requires a request to satisfy exactly ONE of its five lookup methods
+     * (docs/digitap/UAN_EMPLOYMENT.md §2); a UAN sent alongside pan/mobile/dob/employee_name combines
+     * two and comes back 400 "One or more parameters format is wrong or missing". That was 378 of the
+     * 4,848 failures in the Sep-2026 audit, across 349 applications — every one of them a borrower who
+     * had helpfully typed their own UAN in, which is the single best identifier we will ever hold and
+     * needs no corroboration.
+     *
+     * <p>So the assertion is about ABSENCE: the caller here passes a full identity, and none of it may
+     * reach the wire.
+     */
+    @Test
+    void aKnownUanIsSentAloneAsLookupMethodThree() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + ENDPOINT))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.client_ref_num").value("ref-8"))
+                .andExpect(jsonPath("$.uan").value("100000000000"))
+                .andExpect(jsonPath("$.pan").doesNotExist())
+                .andExpect(jsonPath("$.mobile").doesNotExist())
+                .andExpect(jsonPath("$.dob").doesNotExist())
+                .andExpect(jsonPath("$.employee_name").doesNotExist())
+                .andExpect(jsonPath("$.employer_name").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"http_response_code":200,"request_id":"REQ-UAN-8","result_code":101,"result":{
+                          "uan":["100000000000"],
+                          "summary":{"recent_employer_data":{"establishment_name":"EXAMPLE EMPLOYER PVT LTD",
+                            "date_of_joining":"2024-07-29","date_of_exit":""},
+                            "matching_uan":"100000000000","is_employed":true,"uan_count":1},
+                          "uan_details":{"100000000000":{"basic_details":{"name":"FIRSTNAME LASTNAME"}}}}}
+                        """, MediaType.APPLICATION_JSON));
+
+        UanLookupResponse r = new DigitapUanClient(b.restClient())
+                .verify("AAAPA0000A", "9000000000", "2000-01-31", "Firstname Lastname",
+                        "Example Employer", "100000000000", "ref-8");
+
+        assertThat(r.uan()).isEqualTo("100000000000");
+        assertThat(r.isEmployed()).isTrue();
+        b.server().verify();
+    }
 }

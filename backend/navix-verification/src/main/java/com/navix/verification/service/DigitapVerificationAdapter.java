@@ -49,6 +49,23 @@ public class DigitapVerificationAdapter implements VerificationPort {
      */
     private static final String CRIF_FLAG = "digitap-crif";
 
+    /**
+     * DB-backed switches for the two Digitap products that are <b>not provisioned on this account</b>.
+     * Both answer {@code 412 Precondition Failed} to every call: PAN Details Plus 96 times out of 96
+     * and Email Verification v1 39 times out of 39 across the whole Sep-2026 audit window, with zero
+     * successes ever recorded. Left in the chain they cost a guaranteed-dead call — and a slower
+     * answer — on every borrower whose Signzy leg fails.
+     *
+     * <p>Read with {@code defaultWhenMissing = false}, like {@link #CRIF_FLAG}: a fresh environment
+     * must not reintroduce the dead leg. Throwing {@link CapabilityNotSupportedException} (rather than
+     * a failure) makes the router skip silently, exactly as it does for Signzy's retired bureau leg,
+     * so PAN still falls Signzy → Fintrix. Flip the row to {@code enabled=true} the day Digitap
+     * provisions the product — no redeploy. The ADMIN workbench calls these clients directly and can
+     * still probe them to find out.
+     */
+    private static final String PAN_FLAG = "digitap-pan";
+    private static final String EMAIL_FLAG = "digitap-email";
+
     private static final Logger log = LoggerFactory.getLogger(DigitapVerificationAdapter.class);
 
     private final DigitapPanClient panClient;
@@ -62,6 +79,11 @@ public class DigitapVerificationAdapter implements VerificationPort {
 
     @Override
     public PanCheck verifyPan(String pan, String clientRef) {
+        if (!featureFlags.isEnabled(PAN_FLAG, false)) {
+            throw new CapabilityNotSupportedException(
+                    "Digitap PAN Details Plus is not provisioned on this account (412 on every call) "
+                            + "— disabled by feature flag '" + PAN_FLAG + "'");
+        }
         DigitapDtos.PanResponse r = panClient.verify(pan, clientRef);
         return new PanCheck(r.txnId(), "DIGITAP", Boolean.TRUE.equals(r.valid()), trim(r.fullName()),
                 r.dob(), r.gender(), Boolean.TRUE.equals(r.aadhaarLinked()), null, pan,
@@ -71,6 +93,11 @@ public class DigitapVerificationAdapter implements VerificationPort {
 
     @Override
     public EmailCheck verifyEmail(String email, String individualName, String establishmentName, String clientRef) {
+        if (!featureFlags.isEnabled(EMAIL_FLAG, false)) {
+            throw new CapabilityNotSupportedException(
+                    "Digitap Email Verification v1 is not provisioned on this account (412 on every "
+                            + "call) — disabled by feature flag '" + EMAIL_FLAG + "'");
+        }
         DigitapDtos.EmailResponse r = emailClient.verify(email, individualName, establishmentName, clientRef);
         return new EmailCheck(r.txnId(), "DIGITAP", Boolean.TRUE.equals(r.isVerified()),
                 Boolean.TRUE.equals(r.isEstablishmentMatched()), Boolean.TRUE.equals(r.isIndividualMatched()),

@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort.BureauCheck;
 import com.navix.common.verification.VerificationPort.EmailCheck;
 import com.navix.common.verification.VerificationPort.LivenessSession;
@@ -15,6 +17,7 @@ import com.navix.common.verification.VerificationPort.PendingChallenge;
 import com.navix.common.verification.VerificationPort.PennyDropCheck;
 import com.navix.verification.config.VerificationChainProperties;
 import com.navix.verification.exception.CapabilityNotSupportedException;
+import com.navix.verification.exception.TerminalVerificationException;
 import com.navix.verification.exception.VerificationException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -446,5 +449,119 @@ class RoutingVerificationPortTest {
         assertThat(bogus.pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref").source())
                 .isEqualTo("DIGITAP_EXPERIAN");
         verify(fintrix, never()).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    // ---- Terminal answers, and the masked-mobile / no-hit precedence ----
+
+    /**
+     * A vendor saying "there is no such PAN" is an ANSWER, and the next two vendors will be paid to
+     * repeat it. The Sep-2026 audit counted 41 billable Fintrix PAN calls that were exactly this —
+     * PANs Signzy had already returned 404 {@code "Pan Number Not Found"} for (the envelope is in
+     * {@code vendor-envelopes/signzy-pan-404-not-found.json}) — and not one of the 18 applications
+     * behind them ever got a PAN through afterwards.
+     *
+     * <p>The exception must arrive at the caller UNCHANGED, not rewrapped: {@code navix-loan} reads
+     * {@code providerCode()} off it to store {@code PAN_NOT_FOUND} rather than a generic HTTP_404.
+     */
+    @Test
+    void panNotFoundStopsTheChainWithoutCallingDigitapOrFintrix() {
+        TerminalVerificationException notFound = new TerminalVerificationException(
+                "PAN does not exist", null, 404, "/api/v3/customValidations/205",
+                ProviderFailureDetails.PAN_NOT_FOUND, "Pan Number Not Found");
+        when(signzy.verifyPan(anyString(), anyString())).thenThrow(notFound);
+
+        assertThatThrownBy(() -> liveRouter().verifyPan("ABCPE1234Z", "ref"))
+                .isSameAs(notFound);
+
+        verifyNoInteractions(digitap);
+        verifyNoInteractions(fintrix);
+    }
+
+    /**
+     * Builds the masked-mobile failure exactly as {@code DigitapCreditClient} throws it: no http status
+     * (the vendor answers 200 with {@code result_code} 102 — see
+     * {@code vendor-envelopes/digitap-credit-102-masked.json}) and a deliberately NULL safeDetail,
+     * because the vendor's message lists the borrower's real mobile numbers and must not travel.
+     */
+    private static VerificationException maskedMobile() {
+        return new VerificationException(
+                "Digitap Experian holds records only under mobile numbers we did not send", null,
+                null, "/credit_analytics/request", ProviderFailureDetails.MASKED_MOBILE_REQUIRED, null);
+    }
+
+    /**
+     * Masked-mobile is emphatically NOT terminal. The bureau behind it is Experian; CRIF is a different
+     * bureau that may hold a file under the number we did send, and did for 3 of the 14 traced cases.
+     * Stopping the chain here would trade a recoverable report for a manual vendor step every time.
+     */
+    @Test
+    void maskedMobileFromDigitapStillTriesFintrix() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(maskedMobile());
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("FINTRIX_CRIF", 733, false));
+
+        liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        verify(fintrix).pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    /** And when CRIF does hold the file, that report is the answer — the Digitap failure is spent, not surfaced. */
+    @Test
+    void aFintrixReportOutranksMaskedMobile() {
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(maskedMobile());
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("FINTRIX_CRIF", 733, false));
+
+        BureauCheck r = liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref");
+
+        assertThat(r.source()).isEqualTo("FINTRIX_CRIF");
+        assertThat(r.score()).isEqualTo(733);
+        assertThat(r.noRecord()).isFalse();
+    }
+
+    /**
+     * THE ONE THAT COSTS A BORROWER THEIR APPLICATION. Two answers are on the table — "records exist,
+     * under mobile numbers you did not send" and "nobody has a file" — and only one of them is true.
+     * The masked-mobile throw was written when Digitap was the LAST leg, so it simply propagated; the
+     * 2026-09-11 reorder put Fintrix behind it, and a trailing CRIF no-hit then outranked it by the
+     * plain "an answer beats the absence of one" rule, filing a real credit file as a thin-file PASS.
+     *
+     * <p>Staff must see the recoverable case, so the exception is rethrown rather than the no-hit
+     * returned — even though a no-hit is, in every other pairing in this class, the thing that wins.
+     */
+    @Test
+    void maskedMobileOutranksAFintrixNoHit() {
+        VerificationException masked = maskedMobile();
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(masked);
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(bureau("FINTRIX_CRIF", null, true));
+
+        assertThatThrownBy(() -> liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref"))
+                .isSameAs(masked);
+    }
+
+    /**
+     * The same precedence against an ordinary outage. Masked-mobile is the more actionable of the two
+     * failures — it names a next step a human can take — so it must not be overwritten by whatever the
+     * last provider happened to die of, which is the rule the generic {@code lastRealFailure} slot
+     * otherwise applies.
+     */
+    @Test
+    void maskedMobileOutranksAFintrixOutage() {
+        VerificationException masked = maskedMobile();
+        signzyBureauRetired();
+        when(digitap.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(masked);
+        when(fintrix.pullBureau(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new VerificationException("fintrix down"));
+
+        assertThatThrownBy(() -> liveRouter().pullBureau("PAN", "Name", "9000000001", "1990-01-01", "", "ref"))
+                .isSameAs(masked);
     }
 }
