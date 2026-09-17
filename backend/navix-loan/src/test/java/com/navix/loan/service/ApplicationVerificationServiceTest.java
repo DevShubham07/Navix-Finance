@@ -462,6 +462,64 @@ class ApplicationVerificationServiceTest {
         verify(verification, never()).verifyPan(anyString(), anyString());
     }
 
+    /**
+     * Signzy's 404 {@code "Pan Number Not Found"} is a vendor ANSWER, not an outage, and storing the
+     * two the same way cost real money. In the Sep-2026 audit it came back 58 times; every one of
+     * those applications then walked the rest of the chain anyway — Digitap (dead, 412) and Fintrix
+     * (billable) — for 41 paid calls on PANs already known not to exist, and not one of the 18 traced
+     * applications ever produced a valid PAN afterwards.
+     *
+     * <p>The load-bearing assertion is the ABSENCE of {@code providerError}. That key is what
+     * {@link VerificationFailureService} keys its "the vendor was down" bucket off, so writing it here
+     * would label a definitively non-existent PAN {@code PAN_UNVERIFIED} and offer staff a re-run that
+     * can only spend money to hear the same answer.
+     */
+    @Test
+    void panVerify_notFoundIsAFailWithTheCodeNotAReview() {
+        CustomerProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyPan(anyString(), anyString())).thenThrow(providerFailure(
+                404, "/pan_comprehensive", ProviderFailureDetails.PAN_NOT_FOUND, "Pan Number Not Found"));
+
+        var result = service.verifyPan(APP, "QVEPS0901K");
+
+        // FAIL, exactly like a PAN the provider returns as invalid: the credit team reads "PAN
+        // invalid" rather than "we could not check", and the borrower can correct a typo and re-run.
+        assertThat(result.status()).isEqualTo("FAIL");
+        assertThat(result.derived()).containsEntry("panNotFound", true)
+                .containsEntry("providerErrorCode", ProviderFailureDetails.PAN_NOT_FOUND)
+                // The number is kept so staff can see which PAN the bureau denied existing.
+                .containsEntry("panNumber", "QVEPS0901K");
+        assertThat(result.derived()).doesNotContainKey("providerError");
+        assertThat(p.getPanVerified()).isFalse();
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        // Nobody "served" this check — the chain stopped on a terminal verdict, so naming a provider
+        // here would attribute an answer to a vendor that may never have been asked.
+        assertThat(saved.getValue().getProvider()).isNull();
+    }
+
+    /**
+     * The other half of the pair above, which had no test of its own. An ordinary provider failure is
+     * still a REVIEW carrying {@code providerError} — pinned here beside the not-found case because
+     * the difference between them is invisible in the data unless both are asserted. Before the split,
+     * every PAN failure looked identical in the database: a 404 "no such PAN", a gateway that timed
+     * out and an unreadable body were indistinguishable months later.
+     */
+    @Test
+    void panVerify_aProviderOutageIsAReview() {
+        when(verification.verifyPan(anyString(), anyString()))
+                .thenThrow(providerFailure(503, "/pan_comprehensive", "E_UPSTREAM", "gateway timed out"));
+
+        var result = service.verifyPan(APP, "QVEPS0901K");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("providerError", true)
+                .containsEntry("providerErrorCode", "HTTP_503");
+        assertThat(result.derived()).doesNotContainKey("panNotFound");
+    }
+
     @Test
     void email_genericEmail_isReview() {
         when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
@@ -1680,6 +1738,204 @@ class ApplicationVerificationServiceTest {
         assertThat(saved.getValue().getMessage()).contains("unavailable");
     }
 
+    /**
+     * Digitap bills for exactly one outcome: a RESOLVED EPFO record. The step short-circuited only on
+     * PASS — but most resolved records are a REVIEW (the employer differs from the declared one, the
+     * borrower has left, the name is spelt differently), so every re-entry to the screen bought the
+     * same record again. Reusing it is not a cache optimisation; it is refusing to pay twice for an
+     * answer already sitting on the row.
+     */
+    @Test
+    void verifyEmployment_reusesAResolvedRecordInsteadOfRespending() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMPLOYMENT"))
+                .thenReturn(Optional.of(rowWithDerived("EMPLOYMENT", "REVIEW",
+                        "{\"found\":true,\"employerName\":\"SOMEONE ELSE LIMITED\"}")));
+
+        var result = service.verifyEmployment(APP);
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("employerName", "SOMEONE ELSE LIMITED");
+        verifyNoInteractions(verification);
+        // Rewriting the row would be free but dishonest — nothing new was learned.
+        verify(verificationRepo, never()).save(any());
+    }
+
+    /**
+     * PENDING is the shape both {@code VerificationInvalidationService} (the borrower edited their
+     * employer) and {@code retryExternalCheck} leave behind, and both KEEP {@code derived} — including
+     * {@code found:true} — so a reviewer's screen is not blanked while the re-run is in flight. If the
+     * reuse rule read {@code found} without reading the status, that parked row would answer for the
+     * new employer with the old employer's record and the re-check would silently never happen.
+     */
+    @Test
+    void verifyEmployment_neverReusesAPendingRow() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMPLOYMENT"))
+                .thenReturn(Optional.of(rowWithDerived("EMPLOYMENT", "PENDING", "{\"found\":true}")));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                any(), anyString()))
+                .thenReturn(employmentCheck(true, false, true, "DIGITAP.AI", "2024-07-29", null, Boolean.TRUE));
+
+        service.verifyEmployment(APP);
+
+        verify(verification).verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                any(), anyString());
+    }
+
+    /**
+     * {@code force} is what the ADMIN retry and the scheduled re-run of a vendor-parked check ride on.
+     * A resolved record is reused by default (above); those two callers have a reason to pay again,
+     * and they must be able to say so without mutating the row first.
+     */
+    @Test
+    void verifyEmployment_forceRerunsAResolvedRecord() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMPLOYMENT"))
+                .thenReturn(Optional.of(rowWithDerived("EMPLOYMENT", "REVIEW", "{\"found\":true}")));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                any(), anyString()))
+                .thenReturn(employmentCheck(true, false, true, "DIGITAP.AI", "2024-07-29", null, Boolean.TRUE));
+
+        service.verifyEmployment(APP, true);
+
+        verify(verification).verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                any(), anyString());
+    }
+
+    /**
+     * A UAN the borrower has since supplied is genuinely new evidence, not a repeat of the same
+     * question: it is Digitap's exact-match lookup method (docs/digitap/UAN_EMPLOYMENT.md §2) rather
+     * than the fuzzy PAN/mobile path, so the record already on the row is not the answer to it. Reuse
+     * is keyed on the identifier for exactly this reason.
+     */
+    @Test
+    void verifyEmployment_aNewlySuppliedDifferentUanRerunsWithTheDirectLookup() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        p.setUan("999999999999");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMPLOYMENT"))
+                .thenReturn(Optional.of(rowWithDerived("EMPLOYMENT", "REVIEW",
+                        "{\"found\":true,\"uan\":\"100000000000\"}")));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                eq("999999999999"), anyString()))
+                .thenReturn(employmentCheck(true, false, true, "DIGITAP.AI", "2024-07-29", null, Boolean.TRUE));
+
+        service.verifyEmployment(APP);
+
+        verify(verification).verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                eq("999999999999"), anyString());
+    }
+
+    /**
+     * {@code upsert} replaces {@code derived} wholesale, so a re-run that landed in a vendor blip used
+     * to wipe a resolved EPFO record off the reviewer's screen and leave them "Employment check
+     * unavailable" where an employer name had been — an outage erasing what we already knew and
+     * already paid for. The facts are carried across the failure instead.
+     */
+    @Test
+    void verifyEmployment_anOutageDoesNotEraseAResolvedRecord() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMPLOYMENT"))
+                .thenReturn(Optional.of(rowWithDerived("EMPLOYMENT", "PENDING",
+                        "{\"found\":true,\"uan\":\"100000000000\",\"uanMasked\":\"XXXXX0000000000\","
+                                + "\"employerName\":\"DIGITAP.AI\",\"dateOfJoining\":\"2024-07-29\"}")));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                any(), anyString()))
+                .thenThrow(new RuntimeException("provider down"));
+
+        service.verifyEmployment(APP);
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo("REVIEW");
+        assertThat(saved.getValue().getDerived())
+                .contains("\"found\":true")
+                .contains("DIGITAP.AI")
+                .contains("2024-07-29")
+                // ...while still saying plainly that this particular attempt did not reach the vendor.
+                .contains("\"providerError\":true");
+    }
+
+    /**
+     * 378 HTTP 400s across 349 applications came from sending a known UAN alongside PAN/mobile/DOB/
+     * names when Digitap accepts exactly one lookup method per request — so "no EPFO record" is a very
+     * common answer for a borrower whose record only resolves under a UAN we did not have. The moment
+     * they supply one, the question being asked is a different question and must be asked again.
+     */
+    @Test
+    void verifyEmployment_notFoundStillRerunsWhenAUanArrives() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        p.setUan("100000000000");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMPLOYMENT"))
+                .thenReturn(Optional.of(rowWithDerived("EMPLOYMENT", "REVIEW", "{\"found\":false}")));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                eq("100000000000"), anyString()))
+                .thenReturn(employmentCheck(true, false, true, "DIGITAP.AI", "2024-07-29", null, Boolean.TRUE));
+
+        service.verifyEmployment(APP);
+
+        verify(verification).verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                eq("100000000000"), anyString());
+    }
+
+    /**
+     * The ADMIN "retry this check" button, end to end. The row it starts from is the exact shape the
+     * reuse rule hands straight back — REVIEW, {@code found:true}, same identifiers — so if the retry
+     * did not reach the forced path, pressing it would return the stored record and look like a
+     * successful re-run that never happened. That is the failure mode this pins.
+     */
+    @Test
+    void retryExternalCheck_employmentForcesARerun() {
+        ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        p.setPan("AAAPA0000A");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMPLOYMENT"))
+                .thenReturn(Optional.of(rowWithDerived("EMPLOYMENT", "REVIEW", "{\"found\":true}")));
+        when(verification.verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                any(), anyString()))
+                .thenReturn(employmentCheck(true, false, true, "DIGITAP.AI", "2024-07-29", null, Boolean.TRUE));
+
+        var result = service.retryExternalCheck(APP, "EMPLOYMENT", java.util.Map.of());
+
+        assertThat(result.status()).isEqualTo("PASS");
+        verify(verification).verifyEmployment(anyString(), anyString(), any(), anyString(), anyString(),
+                any(), anyString());
+    }
+
     @Test
     void manualDecision_preservesEmploymentDerivedSoTheEpfoCardSurvivesAnOverride() {
         // Before this, an override wiped derived to {} for every check but PENNY_DROP - blanking the
@@ -1956,10 +2212,19 @@ class ApplicationVerificationServiceTest {
     }
 
     private VerificationPort.AadhaarResult aadhaar(String masked) {
+        return aadhaar(masked, Boolean.TRUE);
+    }
+
+    /**
+     * {@code validDsc} is a parameter rather than a constant because the invalid-signature case is not
+     * a variant of the happy path — it is a different, terminal outcome. Building both from one
+     * fixture keeps the two honest about being the same document with one field changed.
+     */
+    private VerificationPort.AadhaarResult aadhaar(String masked, Boolean validDsc) {
         return new VerificationPort.AadhaarResult("TXN-DL", "SHUBHAM", "2003-03-24", "M", masked,
                 "addr", "Haryana", "Sonipat", "Sonipat", "131001", "INDIA", "House 1", "Near park",
                 "DS NATIONAL E-GOVERNANCE DIVISION 1", null, "https://signzy.test/aadhaar.pdf",
-                "https://signzy.test/aadhaar.jpeg", null);
+                "https://signzy.test/aadhaar.jpeg", null, validDsc);
     }
 
     @Test
@@ -1993,6 +2258,128 @@ class ApplicationVerificationServiceTest {
                 .containsEntry("pincode", "131001")
                 .containsEntry("dscSubject", "DS NATIONAL E-GOVERNANCE DIVISION 1");
         verify(storage).storeFromUrl("apps/42/aadhaar.pdf", "https://signzy.test/aadhaar.pdf", "application/pdf");
+    }
+
+    /**
+     * One borrower whose e-Aadhaar came back with {@code validAadhaarDSC:"no"} opened 62 DigiLocker
+     * sessions and made 820 SUCCESSFUL fetches in three and a half hours — 58% of every successful
+     * DigiLocker call in a 90-day window — because an unvalidatable signature was collapsed into "not
+     * ready yet" and the page polled it forever. A signature the issuer will not confirm is a finished
+     * answer: park it for a human, keep the demographics they would judge it on, and make asking the
+     * provider again impossible.
+     */
+    @Test
+    void digilockerComplete_invalidSignatureIsAReviewAndNeverFetchesAgain() {
+        CustomerProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.digilockerAadhaar("CL1")).thenReturn(aadhaar("XXXXXXXX1234", false));
+
+        var result = service.digilockerComplete(APP);
+
+        assertThat(result.checkType()).isEqualTo("AADHAAR");
+        assertThat(result.status()).isEqualTo("REVIEW");
+        // An identity PASS on a signature the provider would not confirm is exactly what this outcome
+        // must never produce, so nothing it would have proven is written to the profile.
+        assertThat(p.getAadhaarVerified()).isNull();
+        assertThat(p.getDob()).isNull();
+        assertThat(p.getAddress()).isNull();
+        // The evidence survives even though the verdict did not — a document a human has to judge is
+        // no use without the demographics they would judge it on.
+        assertThat(result.derived()).containsEntry("validDsc", false)
+                .containsEntry("maskedAadhaar", "XXXXXXXX1234")
+                .containsEntry("dscSubject", "DS NATIONAL E-GOVERNANCE DIVISION 1");
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo, times(2)).save(saved.capture());
+        ApplicationVerification digilocker = saved.getAllValues().stream()
+                .filter(r -> "DIGILOCKER".equals(r.getCheckType())).findFirst().orElseThrow();
+        assertThat(digilocker.getStatus()).isEqualTo("REVIEW");
+        assertThat(digilocker.getDerived()).contains("\"validDsc\":false").contains("\"completed\":true");
+
+        // Clearing the consent handle is the mechanism that ends the 820-fetch loop: the next attempt
+        // cannot reach the provider at all, it stops at DIGILOCKER_NOT_STARTED.
+        assertThat(p.getDigilockerClientId()).isNull();
+        assertThatThrownBy(() -> service.digilockerComplete(APP))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("DIGILOCKER_NOT_STARTED");
+        verify(verification, times(1)).digilockerAadhaar("CL1");
+    }
+
+    /**
+     * Signzy's 409 {@code "Upstream Down"} is DigiLocker itself being unavailable, not the borrower
+     * being slow — and polled at the 5-second "not ready yet" cadence it produced 183 calls for one
+     * borrower in 20 minutes. It has to reach the caller as its own code so the page can back off
+     * instead of hammering a service that is down.
+     */
+    @Test
+    void digilockerComplete_upstreamDownIsARetryableBusinessError() {
+        CustomerProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.digilockerAadhaar("CL1")).thenThrow(providerFailure(
+                409, "/digilocker/aadhaar", ProviderFailureDetails.DIGILOCKER_UPSTREAM_DOWN, "Upstream Down"));
+
+        assertThatThrownBy(() -> service.digilockerComplete(APP))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("DIGILOCKER_UPSTREAM_DOWN");
+    }
+
+    /**
+     * {@code 400 "User denied the consent"} was polled 23 times for a single borrower — an answer no
+     * amount of asking can change, so it surfaces as its own terminal code.
+     *
+     * <p>The second assertion is the one that still matters long after that fix.
+     * {@code digilockerComplete} is {@code @Transactional}, so anything written before one of these
+     * throws is rolled back and silently lost: bookkeeping added here would look right in review and
+     * do nothing at runtime. Nothing is written, deliberately, and this test exists to stop anyone
+     * adding it.
+     */
+    @Test
+    void digilockerComplete_consentDenied_writesNothing() {
+        CustomerProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.digilockerAadhaar("CL1")).thenThrow(providerFailure(
+                400, "/digilocker/aadhaar", ProviderFailureDetails.DIGILOCKER_CONSENT_DENIED,
+                "User denied the consent"));
+
+        assertThatThrownBy(() -> service.digilockerComplete(APP))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("DIGILOCKER_CONSENT_DENIED");
+
+        verify(verificationRepo, never()).save(any());
+        verify(profileRepo, never()).save(any());
+    }
+
+    /**
+     * The readiness gate — untested until now, and the branch every other DigiLocker outcome is
+     * defined against. The redirect back to our callback is the real "borrower finished consent"
+     * signal, but the provider may not have materialised the Aadhaar XML the instant we ask, and a
+     * blank envelope must fail retryably rather than persisting a PASS with empty demographics.
+     *
+     * <p>Built with no signature verdict either, which pins the ORDER of the two gates: an empty
+     * envelope reports "not ready", never "signature invalid", so a borrower who polls a moment too
+     * early is not parked for manual review over a document that has not arrived yet.
+     */
+    @Test
+    void digilockerComplete_notReadyGateStillThrowsForABlankResult() {
+        CustomerProfile p = profile();
+        p.setDigilockerClientId("CL1");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.digilockerAadhaar("CL1")).thenReturn(new VerificationPort.AadhaarResult(
+                "TXN-DL", null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null));
+
+        assertThatThrownBy(() -> service.digilockerComplete(APP))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("DIGILOCKER_NOT_READY");
+
+        verify(verificationRepo, never()).save(any());
     }
 
     // ---- DigiLocker status poll --------------------------------------------------
@@ -2060,6 +2447,90 @@ class ApplicationVerificationServiceTest {
         var result = service.digilockerStatus(APP);
 
         assertThat(result.status()).isEqualTo("PENDING");
+    }
+
+    /**
+     * The borrower-facing half of the invalid-signature fix. {@code digilockerComplete} clears
+     * {@code digilockerClientId} when it parks an unvalidatable Aadhaar, so without this branch the
+     * poll fell through to the null-clientId case and reported "not_started" — leaving the page
+     * inviting the borrower to start over against a document that would fail the same way. That is
+     * the loop which produced 62 sessions in one afternoon. REVIEW + finalised is what lets the page
+     * move on instead.
+     */
+    @Test
+    void digilockerStatus_reportsReviewForAnInvalidSignature() {
+        CustomerProfile p = profile();   // clientId already cleared by digilockerComplete
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.DIGILOCKER))
+                .thenReturn(Optional.of(rowWithDerived("DIGILOCKER", "REVIEW",
+                        "{\"completed\":true,\"validDsc\":false,\"finalized\":true}")));
+
+        var result = service.digilockerStatus(APP);
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("finalized", true)
+                .containsEntry("completed", true)
+                .containsEntry("validDsc", false);
+        // Re-polling the provider for a verdict that cannot change is the spend this branch removes.
+        verify(verification, never()).digilockerStatus(any());
+    }
+
+    // ---- DigiLocker session cap -------------------------------------------------
+
+    /**
+     * The consent page's own MAX_RETRIES is React state and every attempt is a full-page redirect, so
+     * it reset to zero each time the borrower came back — which is how one application minted 62
+     * sessions in three and a half hours against a provider that was never going to answer. The cap
+     * that actually holds has to be server-side, and it has to refuse BEFORE the vendor is called: a
+     * session we will not let the borrower use is pure spend.
+     */
+    @Test
+    void digilockerInit_sixthSessionInADayIsRefusedWithoutCallingTheVendor() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.DIGILOCKER))
+                .thenReturn(Optional.of(rowWithDerived("DIGILOCKER", "PENDING",
+                        "{\"digilockerSessions\":5,\"digilockerSessionWindowStart\":\""
+                                + java.time.Instant.now().minusSeconds(3600) + "\"}")));
+
+        var result = service.digilockerInit(APP, "https://app.test/callback");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("sessionsExhausted", true)
+                // Refusing must not dead-end the borrower: the Aadhaar-card upload is offered instead.
+                .containsEntry("skippable", true);
+        verifyNoInteractions(verification);
+    }
+
+    /**
+     * The cap is a rolling 24-hour window, not a lifetime budget. A borrower who genuinely could not
+     * finish yesterday — a DigiLocker outage, a forgotten Aadhaar PIN — has to be able to try again
+     * today, so a window start older than the window resets the counter and the vendor IS called.
+     * Without this the cap would quietly become a permanent block after five bad attempts.
+     */
+    @Test
+    void digilockerInit_windowResetsAfterTwentyFourHours() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        CustomerProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.DIGILOCKER))
+                .thenReturn(Optional.of(rowWithDerived("DIGILOCKER", "PENDING",
+                        "{\"digilockerSessions\":5,\"digilockerSessionWindowStart\":\""
+                                + java.time.Instant.now().minus(java.time.Duration.ofHours(25)) + "\"}")));
+        when(verification.digilockerInit("https://app.test/callback", 20, true)).thenReturn(
+                new VerificationPort.DigiLockerSession("TXN-DL", "CL9", "https://digilocker.test/c/CL9", 1200));
+
+        var result = service.digilockerInit(APP, "https://app.test/callback");
+
+        assertThat(result.status()).isEqualTo("PENDING");
+        // The counter restarts at this session rather than continuing from the stale five.
+        assertThat(result.derived()).containsEntry("digilockerSessions", 1);
+        assertThat(p.getDigilockerClientId()).isEqualTo("CL9");
+        verify(verification).digilockerInit("https://app.test/callback", 20, true);
     }
 
     // ---- Aadhaar e-sign ---------------------------------------------------------

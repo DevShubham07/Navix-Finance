@@ -314,6 +314,25 @@ public class ApplicationVerificationService {
         try {
             r = verification.verifyPan(pan, ref);
         } catch (RuntimeException providerFailure) {
+            if (ProviderFailureDetails.PAN_NOT_FOUND.equals(providerErrorCode(providerFailure))) {
+                // Not an outage — the bureau looked and this PAN does not exist. Recorded exactly like
+                // a PAN the provider returns as invalid (FAIL, non-blocking), so the credit team reads
+                // "PAN invalid" rather than "we couldn't check", and the borrower can correct a typo
+                // and re-run. Deliberately NOT providerError=true: VerificationFailureService keys the
+                // PAN_UNVERIFIED ("vendor was down") bucket off that flag.
+                CustomerProfile unverified = profile(appId);
+                unverified.setPanVerified(false);
+                profileRepo.save(unverified);
+                Map<String, Object> derived = new LinkedHashMap<>();
+                derived.put("panNotFound", true);
+                derived.put("providerErrorCode", ProviderFailureDetails.PAN_NOT_FOUND);
+                derived.put("panNumber", pan);
+                ApplicationVerification row = upsert(appId, PAN, FAIL, null, null, ref,
+                        null, null, null, derived,
+                        "PAN not found — please check the number and try again");
+                log.info("PAN not found application={} ref={}", appId, ref);
+                return view(row);
+            }
             // The provider couldn't be reached. Record it and let the borrower through — a technical
             // failure must not wedge an application on the last screen (revamp.md decision 10); the
             // credit team sees the flag and decides. Mirrors verifyEmail below.
@@ -611,6 +630,24 @@ public class ApplicationVerificationService {
         requireApplication(appId);
         CustomerProfile profile = profile(appId);
 
+        // How many consent sessions one application may start in a day. The page's own MAX_RETRIES is
+        // React state and every consent attempt is a full-page redirect, so it resets to zero each
+        // time the borrower comes back — which is how one application minted 62 sessions in three and
+        // a half hours against a provider that was never going to answer. The cap that actually holds
+        // has to live here.
+        Map<String, Object> sessions = sessionCounters(appId);
+        int used = intValue(sessions.get("digilockerSessions"));
+        if (used >= MAX_DIGILOCKER_SESSIONS_PER_DAY) {
+            Map<String, Object> exhausted = new LinkedHashMap<>(sessions);
+            exhausted.put("skippable", true);
+            exhausted.put("sessionsExhausted", true);
+            log.info("digilocker session cap reached application={} sessions={}", appId, used);
+            return view(upsert(appId, DIGILOCKER, REVIEW, "MANUAL", null, ref(appId, DIGILOCKER),
+                    null, null, null, exhausted,
+                    "DigiLocker could not be completed after several attempts — please upload your Aadhaar card instead."));
+        }
+        sessions.put("digilockerSessions", used + 1);
+
         VerificationPort.DigiLockerSession s;
         try {
             s = verification.digilockerInit(redirectUrl, 20, true);
@@ -621,7 +658,7 @@ public class ApplicationVerificationService {
             // The Aadhaar number is already captured on the PAN step, and submit-kyc's
             // allowAadhaarManualReview keeps the AADHAAR gate open for staff to finish. Mirrors
             // the graceful degrade already used for the bureau pull.
-            Map<String, Object> soft = new LinkedHashMap<>();
+            Map<String, Object> soft = new LinkedHashMap<>(sessions);
             soft.put("providerError", true);
             soft.put("skippable", true);
             return view(upsert(appId, DIGILOCKER, REVIEW, "MANUAL", null, ref(appId, DIGILOCKER),
@@ -632,11 +669,112 @@ public class ApplicationVerificationService {
         profile.setDigilockerClientId(s.clientId());
         profileRepo.save(profile);
 
-        Map<String, Object> derived = new LinkedHashMap<>();
+        // The counters ride along in every DIGILOCKER derived map: upsert replaces `derived` wholesale,
+        // so a key that is not carried forward is a key that resets — which is exactly the bug the cap
+        // exists to prevent.
+        Map<String, Object> derived = new LinkedHashMap<>(sessions);
         derived.put("clientId", s.clientId());
         derived.put("url", s.url());
         return view(upsert(appId, DIGILOCKER, PENDING, "DIGILOCKER", s.clientId(), s.clientId(),
                 null, null, null, derived, "DigiLocker session started"));
+    }
+
+    /**
+     * The rolling 24-hour consent-session counters for this application, reset when the window has
+     * passed. Returns a mutable map so callers can bump the count and carry it into their own derived.
+     */
+    private Map<String, Object> sessionCounters(Long appId) {
+        Map<String, Object> previous = derivedFor(appId, DIGILOCKER);
+        Instant windowStart = parseInstant(previous.get("digilockerSessionWindowStart"));
+        Map<String, Object> counters = new LinkedHashMap<>();
+        if (windowStart == null || windowStart.isBefore(Instant.now().minus(Duration.ofHours(24)))) {
+            counters.put("digilockerSessions", 0);
+            counters.put("digilockerSessionWindowStart", Instant.now().toString());
+            return counters;
+        }
+        counters.put("digilockerSessions", intValue(previous.get("digilockerSessions")));
+        counters.put("digilockerSessionWindowStart", windowStart.toString());
+        return counters;
+    }
+
+    private static Instant parseInstant(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Instant.parse(String.valueOf(value));
+        } catch (RuntimeException unparseable) {
+            return null;
+        }
+    }
+
+    /**
+     * Vendor-side failures worth asking again about. Everything here describes the PROVIDER failing —
+     * an exhausted prepaid balance, an EPFO source that is busy, a gateway error, a dropped
+     * connection, a body we could not read. Deliberately absent: {@code HTTP_400} and {@code HTTP_412}
+     * (our request or our account entitlements — identical on every retry) and every named verdict
+     * ({@code PAN_NOT_FOUND}, {@code MASKED_MOBILE_REQUIRED}, …), which are answers.
+     */
+    public static final List<String> RETRYABLE_PROVIDER_ERROR_CODES = List.of(
+            "HTTP_402", "HTTP_500", "HTTP_502", "HTTP_503", "HTTP_505",
+            "TRANSPORT_FAILURE", "EMPTY_RESPONSE", ProviderFailureDetails.UNPARSEABLE_RESPONSE);
+
+    /** Attempts one parked employment check gets before it is left to a human. */
+    public static final int MAX_EMPLOYMENT_RETRIES = 5;
+
+    /** Employment checks a vendor outage parked, oldest first — the scheduled re-run's work list. */
+    @Transactional(readOnly = true)
+    public List<ApplicationVerification> employmentRetryCandidates(int limit) {
+        return verificationRepo.findEmploymentRetryCandidates(
+                RETRYABLE_PROVIDER_ERROR_CODES, MAX_EMPLOYMENT_RETRIES,
+                UNDECIDED_STATUSES.stream().map(Enum::name).toList(), limit);
+    }
+
+    /**
+     * Record that a scheduled re-run happened and still hit a provider error.
+     *
+     * <p>Written after the re-run rather than before it because {@code providerUnavailable} rebuilds
+     * {@code derived} from the failure, and only carries forward the keys it names — this one included.
+     * Left alone when the row is no longer a provider error: the retry succeeded or a human took over,
+     * and either way the counter has done its job.
+     */
+    @Transactional
+    public void markEmploymentRetried(Long appId, int attempt) {
+        verificationRepo.findByApplicationIdAndCheckType(appId, EMPLOYMENT).ifPresent(row -> {
+            Map<String, Object> derived = fromJson(row.getDerived());
+            if (!Boolean.TRUE.equals(derived.get("providerError"))) {
+                return;
+            }
+            derived.put("retryCount", attempt);
+            derived.put("lastRetryAt", Instant.now().toString());
+            row.setDerived(toJson(derived));
+            verificationRepo.save(row);
+        });
+    }
+
+    /**
+     * The full e-Aadhaar card as DigiLocker returned it — staff read this off the CRM. The number
+     * stays MASKED (last 4 only); the raw UID is never persisted.
+     *
+     * <p>Shared by the PASS path and the invalid-signature REVIEW path: a document a human has to
+     * judge is no use without the demographics they would judge it on.
+     */
+    private static Map<String, Object> aadhaarDerived(VerificationPort.AadhaarResult a) {
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("fullName", a.fullName());
+        derived.put("dob", a.dob());
+        derived.put("gender", a.gender());
+        derived.put("maskedAadhaar", a.maskedAadhaar());
+        derived.put("address", a.fullAddress());
+        derived.put("state", a.state());
+        derived.put("district", a.district());
+        derived.put("city", a.city());
+        derived.put("pincode", a.pincode());
+        derived.put("country", a.country());
+        derived.put("addressLine", a.addressLine());
+        derived.put("landmark", a.landmark());
+        derived.put("dscSubject", a.dscSubject());
+        return derived;
     }
 
     /** Poll the DigiLocker session status. */
@@ -655,6 +793,25 @@ public class ApplicationVerificationService {
             derived.put("failed", false);
             derived.put("finalized", true);
             return new StepResult(DIGILOCKER, PASS, "DigiLocker completed", derived);
+        }
+        // An Aadhaar we fetched but could not validate the signature on is finished, not pending. It
+        // clears digilockerClientId, so without this branch the poll below would report "not_started"
+        // and the borrower's page would sit there inviting them to start over against a document that
+        // will fail the same way.
+        Optional<ApplicationVerification> unsigned = verificationRepo
+                .findByApplicationIdAndCheckType(appId, DIGILOCKER)
+                .filter(row -> REVIEW.equals(row.getStatus()))
+                .filter(row -> Boolean.TRUE.equals(fromJson(row.getDerived()).get("validDsc")) == false
+                        && fromJson(row.getDerived()).containsKey("validDsc"));
+        if (unsigned.isPresent()) {
+            Map<String, Object> derived = new LinkedHashMap<>();
+            derived.put("status", "review");
+            derived.put("completed", true);
+            derived.put("failed", false);
+            derived.put("validDsc", false);
+            derived.put("finalized", true);
+            return new StepResult(DIGILOCKER, REVIEW,
+                    "Aadhaar received but its signature could not be validated", derived);
         }
         if (clientId == null) {
             // No consent session yet — either init hasn't run, or a provider-degraded init recorded
@@ -705,7 +862,27 @@ public class ApplicationVerificationService {
         if (clientId == null) {
             throw new BusinessException("DIGILOCKER_NOT_STARTED", "No DigiLocker session for this application");
         }
-        VerificationPort.AadhaarResult a = verification.digilockerAadhaar(clientId);
+        VerificationPort.AadhaarResult a;
+        try {
+            a = verification.digilockerAadhaar(clientId);
+        } catch (RuntimeException providerFailure) {
+            // Nothing is written before these throws, deliberately: this method is @Transactional and a
+            // BusinessException rolls the transaction back, so any bookkeeping here would vanish. The
+            // next digilockerInit overwrites digilockerClientId anyway.
+            String code = providerErrorCode(providerFailure);
+            if (ProviderFailureDetails.DIGILOCKER_CONSENT_DENIED.equals(code)) {
+                throw new BusinessException("DIGILOCKER_CONSENT_DENIED",
+                        "You declined the DigiLocker consent — start again or upload your Aadhaar card.");
+            }
+            if (ProviderFailureDetails.DIGILOCKER_UPSTREAM_DOWN.equals(code)) {
+                throw new BusinessException("DIGILOCKER_UPSTREAM_DOWN",
+                        "DigiLocker is temporarily unavailable — please try again shortly.");
+            }
+            log.warn("digilocker complete failed application={} errorCode={} exception={}",
+                    appId, code, providerFailure.getClass().getSimpleName());
+            throw new BusinessException("DIGILOCKER_PROVIDER_ERROR",
+                    "We couldn't fetch your Aadhaar just now — please try again or upload your card.");
+        }
 
         // Readiness gate. The redirect back to our callback is the real "user finished consent"
         // signal — but the provider may not have materialised the Aadhaar XML the instant we ask.
@@ -714,6 +891,29 @@ public class ApplicationVerificationService {
         if (isBlank(a.fullName()) && isBlank(a.maskedAadhaar())) {
             throw new BusinessException("DIGILOCKER_NOT_READY",
                     "DigiLocker consent not completed yet — Aadhaar data not available");
+        }
+
+        // A document whose Aadhaar document-signer signature does not validate is FINISHED, not
+        // pending: re-fetching returns the same verdict every time. Treating it as not-ready is what
+        // let one borrower's page fetch the same e-Aadhaar 820 times in an afternoon. Park it for a
+        // human, keep the evidence, and never ask the provider again — clearing digilockerClientId
+        // means a later digilockerComplete stops at DIGILOCKER_NOT_STARTED.
+        //
+        // Note this deliberately treats an ABSENT verdict like an invalid one: we must not record an
+        // identity PASS on a signature the provider would not confirm.
+        if (!Boolean.TRUE.equals(a.validDsc())) {
+            Map<String, Object> unsigned = aadhaarDerived(a);
+            unsigned.put("validDsc", false);
+            ApplicationVerification unsignedRow = upsert(appId, AADHAAR, REVIEW, "DIGILOCKER",
+                    a.txnId(), null, null, null, null, unsigned,
+                    "Aadhaar signature could not be validated — manual review");
+            profile.setDigilockerClientId(null);
+            profileRepo.save(profile);
+            upsert(appId, DIGILOCKER, REVIEW, "DIGILOCKER", a.txnId(), clientId, null, null, null,
+                    Map.of("completed", true, "validDsc", false, "finalized", true),
+                    "Aadhaar received but its signature could not be validated");
+            log.info("digilocker aadhaar signature invalid application={} — parked for review", appId);
+            return view(unsignedRow);
         }
 
         // Aadhaar is the authoritative DOB source — persist it onto the profile (overriding any
@@ -781,22 +981,7 @@ public class ApplicationVerificationService {
             }
         }
 
-        // The full e-Aadhaar card as DigiLocker returned it — staff read this off the CRM. The
-        // number stays MASKED (last 4 only); the raw UID is never persisted.
-        Map<String, Object> derived = new LinkedHashMap<>();
-        derived.put("fullName", a.fullName());
-        derived.put("dob", a.dob());
-        derived.put("gender", a.gender());
-        derived.put("maskedAadhaar", a.maskedAadhaar());
-        derived.put("address", a.fullAddress());
-        derived.put("state", a.state());
-        derived.put("district", a.district());
-        derived.put("city", a.city());
-        derived.put("pincode", a.pincode());
-        derived.put("country", a.country());
-        derived.put("addressLine", a.addressLine());
-        derived.put("landmark", a.landmark());
-        derived.put("dscSubject", a.dscSubject());
+        Map<String, Object> derived = aadhaarDerived(a);
         ApplicationVerification row = upsert(appId, AADHAAR, PASS, "DIGILOCKER", a.txnId(), null,
                 null, null, s3Key, derived, "Aadhaar fetched from DigiLocker");
         double match = recomputeNameMatch(appId);
@@ -839,7 +1024,7 @@ public class ApplicationVerificationService {
             // 24h customer-scoped reuse window (see pullBureau overload below).
             case BUREAU -> pullBureau(appId, value(values, "otp", null), true);
             // Every input comes off the stored profile, so this one needs no borrower session at all.
-            case EMPLOYMENT -> verifyEmployment(appId);
+            case EMPLOYMENT -> verifyEmployment(appId, true);
             case PENNY_DROP -> verifyPennyDrop(appId, value(values, "accountNumber", p.getSalaryAccountNumber()), value(values, "ifsc", p.getSalaryIfsc()), true);
             case SELFIE -> verifySelfie(appId, value(values, "selfieObjectKey", null));
             default -> throw new BusinessException("RETRY_NOT_SUPPORTED", "Unsupported verification retry");
@@ -1060,6 +1245,14 @@ public class ApplicationVerificationService {
     /** Most attempts a borrower gets against one challenge before they must mint a fresh question. */
     private static final int MAX_CHALLENGE_ATTEMPTS = 3;
 
+    /**
+     * Consent sessions one application may start in a rolling 24 hours before we stop offering
+     * DigiLocker and route the borrower to the Aadhaar-card upload instead. Five is generous for a
+     * borrower having genuine trouble and still an order of magnitude below the 62 sessions one
+     * application accumulated against a DigiLocker outage in the Sep-2026 audit.
+     */
+    private static final int MAX_DIGILOCKER_SESSIONS_PER_DAY = 5;
+
     /** Minimum gap between two mints on one application. Every mint is a billable provider call. */
     private static final Duration CHALLENGE_MINT_COOLDOWN = Duration.ofSeconds(60);
 
@@ -1084,6 +1277,12 @@ public class ApplicationVerificationService {
         Map<String, Object> derived = derivedFor(appId, BUREAU);
         if (!Boolean.TRUE.equals(derived.get("bureauChallenge"))) {
             throw new BusinessException("BUREAU_CHALLENGE_NONE", "There is no bureau question to answer.");
+        }
+        if (Boolean.TRUE.equals(derived.get("bureauChallengeExhausted"))) {
+            // CRIF itself closed this question (S02). Another answer is billable and cannot succeed;
+            // only a fresh question can, and that is the borrower's own call on the re-mint button.
+            return new StepResult(BUREAU, REVIEW,
+                    "The bureau has closed this question — our team will complete this check.", derived);
         }
         String orderId = trimToNull(String.valueOf(derived.getOrDefault("bureauChallengeOrderId", "")));
         Object reportIdRaw = derived.get("bureauChallengeReportId");
@@ -1112,18 +1311,29 @@ public class ApplicationVerificationService {
             r = verification.answerBureauChallenge(orderId, reportId, answer,
                     nz(profile.getFullName()), nz(resolveMobile(appId, profile)), ref);
         } catch (RuntimeException providerFailure) {
-            // A wrong answer and a lapsed order look identical from here: an error envelope. Record the
-            // attempt, keep the challenge open, let the borrower retry or re-mint. Never a 500 - the
-            // same "never stop the borrower at this step" policy as the pull path above.
+            String failureCode = providerErrorCode(providerFailure);
             Map<String, Object> retry = new LinkedHashMap<>(derived);
-            retry.put("bureauChallengeAttempts", attempts + 1);
-            retry.put("bureauChallengeLastAttemptAt", Instant.now().toString());
+            String message;
+            if (ProviderFailureDetails.KBA_EXHAUSTED.equals(failureCode)) {
+                // CRIF has spent every attempt it allows on this order. Park it terminally rather than
+                // counting another local attempt: the borrower cannot win this question, and each try
+                // is billed. The credit team picks it up, or the borrower mints a fresh question.
+                retry.put("bureauChallengeExhausted", true);
+                retry.put("bureauChallengeExhaustedAt", Instant.now().toString());
+                retry.put("bureauChallengeAttempts", MAX_CHALLENGE_ATTEMPTS);
+                message = "The bureau has closed this question — our team will complete this check.";
+            } else {
+                // A wrong answer and a lapsed order look identical from here: an error envelope. Record
+                // the attempt, keep the challenge open, let the borrower retry or re-mint. Never a 500 -
+                // the same "never stop the borrower at this step" policy as the pull path above.
+                retry.put("bureauChallengeAttempts", attempts + 1);
+                retry.put("bureauChallengeLastAttemptAt", Instant.now().toString());
+                message = "That answer wasn't accepted - you can try again or get a new question.";
+            }
             log.warn("bureau challenge answer rejected application={} ref={} errorCode={} exception={}",
-                    appId, ref, providerErrorCode(providerFailure),
-                    providerFailure.getClass().getSimpleName());
-            ApplicationVerification row = upsert(appId, BUREAU, REVIEW, "FINTRIX_CRIF", orderId, ref,
-                    null, null, null, retry,
-                    "That answer wasn't accepted - you can try again or get a new question.");
+                    appId, ref, failureCode, providerFailure.getClass().getSimpleName());
+            ApplicationVerification row = upsert(appId, BUREAU, REVIEW, challengeIssuer(appId), orderId,
+                    ref, null, null, null, retry, message);
             return new StepResult(BUREAU, REVIEW, row.getMessage(), retry);
         }
 
@@ -1170,11 +1380,27 @@ public class ApplicationVerificationService {
         }
         derived.put("bureauChallengeSkipped", true);
         derived.put("bureauChallengeSkippedAt", Instant.now().toString());
-        ApplicationVerification row = upsert(appId, BUREAU, REVIEW, "FINTRIX_CRIF",
+        ApplicationVerification row = upsert(appId, BUREAU, REVIEW, challengeIssuer(appId),
                 trimToNull(String.valueOf(derived.getOrDefault("bureauChallengeOrderId", ""))),
                 ref(appId, BUREAU), null, null, null, derived,
                 "Borrower could not answer the bureau security question - credit team to review.");
         return new StepResult(BUREAU, REVIEW, row.getMessage(), derived);
+    }
+
+    /**
+     * The bureau that actually minted the open challenge, read off the parked row rather than assumed.
+     *
+     * <p>{@code bureauChallengeReview} has recorded the real issuer since the chain gained a second
+     * bureau, but the answer and skip paths still wrote a hardcoded {@code FINTRIX_CRIF} — so a single
+     * rejected answer would relabel a Digitap-issued challenge as Fintrix's. An {@code orderId} only
+     * means something to the vendor that issued it, and {@code VerificationFailureService} reads the
+     * provider to decide whether a report was thrown away, so the label has to stay true.
+     */
+    private String challengeIssuer(Long appId) {
+        return verificationRepo.findByApplicationIdAndCheckType(appId, BUREAU)
+                .map(ApplicationVerification::getProvider)
+                .filter(provider -> provider != null && !provider.isBlank())
+                .orElse("FINTRIX_CRIF");
     }
 
     /**
@@ -1725,13 +1951,42 @@ public class ApplicationVerificationService {
      */
     @Transactional
     public StepResult verifyEmployment(Long appId) {
-        Optional<ApplicationVerification> existing = passed(appId, EMPLOYMENT);
-        if (existing.isPresent()) {
-            return view(existing.get());
+        return verifyEmployment(appId, false);
+    }
+
+    /**
+     * As {@link #verifyEmployment(Long)}, but {@code force} skips the reuse of an already-resolved
+     * record — the ADMIN retry, and the scheduled re-run of checks a vendor outage parked.
+     */
+    @Transactional
+    public StepResult verifyEmployment(Long appId, boolean force) {
+        Optional<ApplicationVerification> row =
+                verificationRepo.findByApplicationIdAndCheckType(appId, EMPLOYMENT);
+        if (row.filter(v -> PASS.equals(v.getStatus())).isPresent()) {
+            return view(row.get());
         }
         requireApplication(appId);
         CustomerProfile profile = profile(appId);
         String ref = ref(appId, EMPLOYMENT);
+
+        // A resolved EPFO record is the ONE outcome Digitap bills for, and the check short-circuited
+        // only on PASS — but most resolved records are a REVIEW (the employer differs from the
+        // declared one, the borrower has left, the name is spelt differently). Every re-entry to the
+        // step therefore bought the same record again. Reuse it unless the borrower has since supplied
+        // a UAN we have not looked up, which is genuinely new evidence.
+        //
+        // PENDING is deliberately excluded: VerificationInvalidationService parks the row PENDING
+        // (keeping `derived`) when the employer changes, and the ADMIN retry does the same — both mean
+        // "ask again".
+        if (!force && row.isPresent() && REVIEW.equals(row.get().getStatus())) {
+            Map<String, Object> previous = fromJson(row.get().getDerived());
+            String storedUan = text(previous.get("uan"));
+            boolean sameIdentifier = isBlank(profile.getUan())
+                    || (storedUan != null && storedUan.equals(profile.getUan()));
+            if (Boolean.TRUE.equals(previous.get("found")) && sameIdentifier) {
+                return view(row.get());
+            }
+        }
 
         String pan = profile.getPan();
         String mobile = profile.getMobile();
@@ -2704,6 +2959,17 @@ public class ApplicationVerificationService {
     private StepResult providerUnavailable(Long appId, String checkType, RuntimeException failure,
                                            String message) {
         Map<String, Object> derived = new LinkedHashMap<>();
+        // An outage must not erase what we already knew. `upsert` replaces `derived` wholesale, so a
+        // retry during a vendor blip used to wipe a resolved EPFO record off the reviewer's screen and
+        // leave them "Employment check unavailable" where an employer name had been. Carry the facts
+        // forward; the retry counter rides here too so the scheduler can see its own attempts.
+        Map<String, Object> previous = derivedFor(appId, checkType);
+        for (String key : List.of("found", "uan", "uanMasked", "employerName", "dateOfJoining",
+                "retryCount", "lastRetryAt")) {
+            if (previous.get(key) != null) {
+                derived.put(key, previous.get(key));
+            }
+        }
         derived.put("providerError", true);
         String providerErrorCode = providerErrorCode(failure);
         derived.put("providerErrorCode", providerErrorCode);
@@ -3378,22 +3644,6 @@ public class ApplicationVerificationService {
     }
 
     /**
-     * Converts an upstream failure into a PII-safe diagnostic category. Provider response bodies,
-     * request values, and OTPs must never enter application logs or the verification audit JSON.
-     *
-     * <p>Structured first. {@code ProviderJson} already parsed the HTTP status off the failed call
-     * and hung it on the exception, so {@link ProviderFailureDetails} is an exact answer where the
-     * message match was only ever a guess at an English sentence we happened to write.
-     *
-     * <p><b>The message matching below is not dead code — do not delete it.</b> The eSign path
-     * throws through {@code EsignPort}, whose adapters raise plain {@code RuntimeException} /
-     * {@code IllegalStateException} carrying the same {@code "HTTP <status> from <uri>"} text and
-     * never implement {@link ProviderFailureDetails}. Three tests pin exactly that.
-     *
-     * <p>The value is persisted to {@code bureau_backfill_row.error_code varchar(64)} and read by
-     * the failure classifier, so keep every branch short and stable.
-     */
-    /**
      * Record WHICH provider API failed, not merely that one did.
      *
      * <p>{@link #providerErrorCode} normalises a failure to {@code HTTP_500} / {@code TRANSPORT_FAILURE},
@@ -3426,12 +3676,31 @@ public class ApplicationVerificationService {
         }
     }
 
+    /**
+     * Converts an upstream failure into a PII-safe diagnostic category. Provider response bodies,
+     * request values, and OTPs must never enter application logs or the verification audit JSON.
+     *
+     * <p>Structured first. {@code ProviderJson} already parsed the HTTP status off the failed call
+     * and hung it on the exception, so {@link ProviderFailureDetails} is an exact answer where the
+     * message match was only ever a guess at an English sentence we happened to write.
+     *
+     * <p><b>The message matching below is not dead code — do not delete it.</b> The eSign path
+     * throws through {@code EsignPort}, whose adapters raise plain {@code RuntimeException} /
+     * {@code IllegalStateException} carrying the same {@code "HTTP <status> from <uri>"} text and
+     * never implement {@link ProviderFailureDetails}. Three tests pin exactly that.
+     *
+     * <p>The value is persisted to {@code bureau_backfill_row.error_code varchar(64)} and read by
+     * the failure classifier, so keep every branch short and stable.
+     */
     private static String providerErrorCode(RuntimeException failure) {
         if (failure instanceof ProviderFailureDetails details) {
-            if (ProviderFailureDetails.MASKED_MOBILE_REQUIRED.equals(details.providerCode())) {
-                // Not a failure of ours and not retryable — records exist, behind numbers we do not
-                // hold. Named explicitly so the backfill can refuse to re-run it.
-                return ProviderFailureDetails.MASKED_MOBILE_REQUIRED;
+            if (details.providerCode() != null
+                    && ProviderFailureDetails.NAMED_PROVIDER_CODES.contains(details.providerCode())) {
+                // A named verdict the vendor actually gave — "no such PAN", "records exist under other
+                // numbers", "the bureau closed this question", "DigiLocker is down", "not JSON". These
+                // are more useful than HTTP_404/HTTP_409 and several of them are explicitly NOT
+                // retryable, which is what stops a re-run burning a billable call on a settled answer.
+                return details.providerCode();
             }
             if (details.httpStatus() != null) {
                 return "HTTP_" + details.httpStatus();
@@ -3448,6 +3717,11 @@ public class ApplicationVerificationService {
         }
         if (message != null && message.startsWith("Empty response body")) {
             return "EMPTY_RESPONSE";
+        }
+        if (message != null && message.startsWith("Unparseable response body")) {
+            // The provider answered with something that is not JSON. Structured callers already carry
+            // the code; this covers the eSign adapters, which raise plain RuntimeExceptions.
+            return ProviderFailureDetails.UNPARSEABLE_RESPONSE;
         }
         if (message != null && message.startsWith("Provider reported error")) {
             return "PROVIDER_REPORTED_ERROR";
