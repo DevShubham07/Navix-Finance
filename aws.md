@@ -224,10 +224,12 @@ must be the **public backend host Signzy can reach — the ALB, not the Vercel f
 bash scripts/esign-aws-setup.sh                  # dev; NAVIX_ENV=prod for prod
 ```
 
-Idempotent: it writes the URL, mints a 48-char SecureString secret **only if one is not already set**
-(rotating it would strand contracts mid-signature), reads both back, and prints the service's
-deployment configuration — a startup guard is only safe while `minimumHealthyPercent=100` + the
-deployment circuit breaker keep the previous task serving. By hand it is two
+Runs unchanged in **AWS CloudShell** (it inherits the console session — no `AWS_PROFILE` needed) or on
+a laptop with `AWS_PROFILE=navix-dev` exported. Idempotent: it writes the URL, mints a 48-char
+SecureString secret **only if one is not already set** (rotating it would strand contracts
+mid-signature), reads both back, and then enables the ECS deployment circuit breaker if it is not
+already on — a startup guard is only safe while `minimumHealthyPercent=100` + the circuit breaker
+keep the previous task serving. `SKIP_ECS=1` writes the parameters and leaves the service alone. By hand it is two
 `aws ssm put-parameter` calls (`--type String` for the URL, `--type SecureString --key-id
 alias/navix-finance` for the secret). Set both **before** the rollout, then redeploy and confirm the
 task reaches `RUNNING` (§8). The ALB is **HTTP-only** today (§8's gotchas), so the callback URL is
