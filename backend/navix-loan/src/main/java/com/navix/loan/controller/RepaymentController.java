@@ -66,9 +66,10 @@ public class RepaymentController {
         return ApiResponse.ok(repaymentService.view(repaymentService.verifyPayment(payment.getId())));
     }
 
-    /** List repayments recorded against the loan. */
+    /** List repayments recorded against the loan. Owner-or-staff: a borrower sees only their own. */
     @GetMapping
     public ApiResponse<List<PaymentView>> list(@PathVariable Long loanId) {
+        repaymentService.requireReadableLoan(loanId);
         return ApiResponse.ok(repaymentService.listPayments(loanId).stream()
                 .map(repaymentService::view)
                 .toList());

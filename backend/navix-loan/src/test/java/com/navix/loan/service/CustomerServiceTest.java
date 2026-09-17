@@ -112,17 +112,17 @@ class CustomerServiceTest {
     }
 
     @Test
-    void listGroupsByCustomerPicksLatestProfileAndShowsFullPan() {
+    void byIdsGroupsByCustomerPicksLatestProfileAndShowsFullPan() {
         // A Head sees the whole book (FULL_CUSTOMER_VIEW_ROLES); scoping is covered separately.
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
         // Customer 9000001 has two applications; the newer (id 2) carries the current name.
-        when(applicationRepository.findAll()).thenReturn(List.of(
+        when(applicationRepository.findByCustomerIdIn(List.of(9000001L))).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.CLOSED),
                 app(2, 9000001L, ApplicationStatus.ACTIVE)));
         when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
                 profile(1, "Old Name", "ABCDE1234F"), profile(2, "Asha Rao", "ABCDE1234F")));
 
-        List<CustomerSummary> rows = service.list(null);
+        List<CustomerSummary> rows = service.byIds(List.of(9000001L));
 
         assertThat(rows).hasSize(1);
         CustomerSummary cs = rows.get(0);
@@ -241,25 +241,6 @@ class CustomerServiceTest {
                 .hasMessageContaining("DSA");
     }
 
-    @Test
-    void listFiltersByNamePanMobileOrCustomerId() {
-        // A Head sees the whole book (FULL_CUSTOMER_VIEW_ROLES); scoping is covered separately.
-        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
-        when(applicationRepository.findAll()).thenReturn(List.of(
-                app(1, 9000001L, ApplicationStatus.ACTIVE),
-                app(2, 9000002L, ApplicationStatus.ACTIVE)));
-        CustomerProfile asha = profile(1, "Asha Rao", "AAAAA1111A");
-        asha.setMobile("9876543210");
-        when(profileRepository.findByApplicationIdIn(any()))
-                .thenReturn(List.of(asha, profile(2, "Bhavya Reddy", "BBBBB2222B")));
-
-        assertThat(service.list("asha")).extracting(CustomerSummary::customerId).containsExactly(9000001L);
-        assertThat(service.list("aaaaa1111a")).extracting(CustomerSummary::customerId).containsExactly(9000001L);
-        assertThat(service.list("9876543210")).extracting(CustomerSummary::customerId).containsExactly(9000001L);
-        assertThat(service.list("9000002")).extracting(CustomerSummary::customerId).containsExactly(9000002L);
-        assertThat(service.list("")).hasSize(2);
-    }
-
     /** Minimal implementer of the interface projection {@code findCurrentStatusEnteredAt} returns. */
     private static com.navix.loan.repository.ApplicationEventRepository.StatusEnteredAt statusEnteredAt(
             long applicationId, java.time.Instant at) {
@@ -277,18 +258,18 @@ class CustomerServiceTest {
     }
 
     @Test
-    void listUsesTheCurrentStatusEnteredAtProjectionForStatusChangedAt() {
+    void hydratedRowUsesTheCurrentStatusEnteredAtProjectionForStatusChangedAt() {
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
         LoanApplication a = app(1, 9000001L, ApplicationStatus.REJECTED);
         java.time.Instant rejectedAt = java.time.Instant.parse("2026-08-01T10:00:00Z");
-        when(applicationRepository.findAll()).thenReturn(List.of(a));
+        when(applicationRepository.findByCustomerIdIn(List.of(9000001L))).thenReturn(List.of(a));
         when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
         // The map iterated to build the query's argument is a HashMap-backed Collection, not a
         // List, so match structurally rather than on List.of(1L) (List.equals rejects non-Lists).
         when(applicationEventRepository.findCurrentStatusEnteredAt(any()))
                 .thenReturn(List.of(statusEnteredAt(1L, rejectedAt)));
 
-        CustomerSummary cs = service.list(null).get(0);
+        CustomerSummary cs = service.byIds(List.of(9000001L)).get(0);
 
         // The rejection date, NOT a later reassignment/mark-pending — that is the whole point of
         // querying findCurrentStatusEnteredAt rather than "the latest event" for the application.
@@ -296,38 +277,20 @@ class CustomerServiceTest {
     }
 
     @Test
-    void listFallsBackToCreatedAtWhenNoTransitionEventExists() {
+    void hydratedRowFallsBackToCreatedAtWhenNoTransitionEventExists() {
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
         LoanApplication a = app(1, 9000001L, ApplicationStatus.DRAFT);
         java.time.Instant createdAt = java.time.Instant.parse("2026-07-01T09:00:00Z");
         a.setCreatedAt(createdAt);
-        when(applicationRepository.findAll()).thenReturn(List.of(a));
+        when(applicationRepository.findByCustomerIdIn(List.of(9000001L))).thenReturn(List.of(a));
         when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
         // Unstubbed findCurrentStatusEnteredAt returns Mockito's default empty list — the intended
         // fallback path, no stub needed — but stub it explicitly here to make the case unambiguous.
         when(applicationEventRepository.findCurrentStatusEnteredAt(any())).thenReturn(List.of());
 
-        CustomerSummary cs = service.list(null).get(0);
+        CustomerSummary cs = service.byIds(List.of(9000001L)).get(0);
 
         assertThat(cs.statusChangedAt()).isEqualTo(createdAt);
-    }
-
-    @Test
-    void listOrdersByStatusChangedAtDescendingWithNullsLast() {
-        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
-        LoanApplication older = app(1, 9000001L, ApplicationStatus.REJECTED);
-        LoanApplication newer = app(2, 9000002L, ApplicationStatus.REJECTED);
-        LoanApplication undated = app(3, 9000003L, ApplicationStatus.DRAFT); // no createdAt, no event
-        when(applicationRepository.findAll()).thenReturn(List.of(older, newer, undated));
-        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
-        when(applicationEventRepository.findCurrentStatusEnteredAt(any())).thenReturn(List.of(
-                statusEnteredAt(1L, java.time.Instant.parse("2026-08-01T00:00:00Z")),
-                statusEnteredAt(2L, java.time.Instant.parse("2026-08-05T00:00:00Z"))));
-
-        List<CustomerSummary> rows = service.list(null);
-
-        assertThat(rows).extracting(CustomerSummary::customerId)
-                .containsExactly(9000002L, 9000001L, 9000003L); // newest stage date first, null last
     }
 
     @Test
@@ -784,28 +747,40 @@ class CustomerServiceTest {
 
     /** Two customers on file; the executive is assigned 9000001 and has decided nothing. */
     private void givenTwoCustomers() {
-        when(applicationRepository.findAll()).thenReturn(List.of(
-                app(1, 9000001L, ApplicationStatus.ACTIVE),
-                app(2, 9000002L, ApplicationStatus.ACTIVE)));
+        // hydrate() only ever asks for the ids that survived the scope filter, so answer per id
+        // rather than returning the whole table — that IS the behaviour under test.
+        lenient().when(applicationRepository.findByCustomerIdIn(any())).thenAnswer(inv -> {
+            java.util.Collection<Long> ids = inv.getArgument(0);
+            return java.util.stream.Stream.of(
+                            app(1, 9000001L, ApplicationStatus.ACTIVE),
+                            app(2, 9000002L, ApplicationStatus.ACTIVE))
+                    .filter(a -> ids.contains(a.getCustomerId()))
+                    .toList();
+        });
         // Some scoped tests filter every customer out before the batched profile query would run.
         lenient().when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
                 profile(1, "Asha Rao", "AAAAA1111A"), profile(2, "Bhavya Reddy", "BBBBB2222B")));
     }
 
+    /** Ask for both customers and see which ones the caller's scope lets through. */
+    private List<CustomerSummary> visibleOfTheTwo() {
+        return service.byIds(List.of(9000001L, 9000002L));
+    }
+
     @Test
-    void list_asCreditExecutive_showsOnlyAssignedAndDecidedCustomers() {
+    void byIds_asCreditExecutive_showsOnlyAssignedAndDecidedCustomers() {
         ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
         givenTwoCustomers();
         when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L))
                 .thenReturn(java.util.Set.of(9000001L));
         when(applicationEventRepository.findByActorIdOrderByAtDesc("12")).thenReturn(List.of());
 
-        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+        assertThat(visibleOfTheTwo()).extracting(CustomerSummary::customerId)
                 .containsExactly(9000001L);
     }
 
     @Test
-    void list_asCreditExecutive_includesCustomersTheyDecidedOn() {
+    void byIds_asCreditExecutive_includesCustomersTheyDecidedOn() {
         ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
         givenTwoCustomers();
         when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L)).thenReturn(java.util.Set.of());
@@ -813,12 +788,12 @@ class CustomerServiceTest {
                 .thenReturn(List.of(decision(2L, "12", "SANCTION")));
         when(applicationRepository.findCustomerIdsByIdIn(List.of(2L))).thenReturn(java.util.Set.of(9000002L));
 
-        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+        assertThat(visibleOfTheTwo()).extracting(CustomerSummary::customerId)
                 .containsExactly(9000002L);
     }
 
     @Test
-    void list_ignoresNonDecisionEventsWhenScoping() {
+    void byIds_ignoresNonDecisionEventsWhenScoping() {
         ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
         givenTwoCustomers();
         when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L)).thenReturn(java.util.Set.of());
@@ -826,7 +801,7 @@ class CustomerServiceTest {
         when(applicationEventRepository.findByActorIdOrderByAtDesc("12"))
                 .thenReturn(List.of(decision(2L, "12", "CREATE")));
 
-        assertThat(service.list(null)).isEmpty();
+        assertThat(visibleOfTheTwo()).isEmpty();
     }
 
     /**
@@ -836,7 +811,7 @@ class CustomerServiceTest {
      * borrowers they were chasing, and remarks/call logs/customer detail all 404'd on their own case.
      */
     @Test
-    void list_asCollectionExecutive_showsCustomersOnCasesAssignedToThem() {
+    void byIds_asCollectionExecutive_showsCustomersOnCasesAssignedToThem() {
         ActorContext.set(new CurrentActor("77", "Collections Exec", "COLLECTION_EXECUTIVE"));
         givenTwoCustomers();
         when(applicationRepository.findCustomerIdsByAssignedExecutiveId(77L))
@@ -846,12 +821,12 @@ class CustomerServiceTest {
         when(loanRepository.findCustomerIdsByIdIn(java.util.Set.of(500L)))
                 .thenReturn(java.util.Set.of(9000002L));
 
-        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+        assertThat(visibleOfTheTwo()).extracting(CustomerSummary::customerId)
                 .containsExactly(9000002L);
     }
 
     @Test
-    void list_asCollectionExecutive_stillHidesCustomersWithNoCaseOfTheirs() {
+    void byIds_asCollectionExecutive_stillHidesCustomersWithNoCaseOfTheirs() {
         ActorContext.set(new CurrentActor("77", "Collections Exec", "COLLECTION_EXECUTIVE"));
         givenTwoCustomers();
         when(applicationRepository.findCustomerIdsByAssignedExecutiveId(77L))
@@ -861,20 +836,20 @@ class CustomerServiceTest {
         // worklist, not to every borrower who happens to be in collections.
         when(collectionCaseDirectory.loanIdsAssignedTo(77L)).thenReturn(java.util.Set.of());
 
-        assertThat(service.list(null)).isEmpty();
+        assertThat(visibleOfTheTwo()).isEmpty();
     }
 
     @Test
-    void list_asCreditHead_showsEveryCustomer() {
+    void byIds_asCreditHead_showsEveryCustomer() {
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
         givenTwoCustomers();
 
-        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+        assertThat(visibleOfTheTwo()).extracting(CustomerSummary::customerId)
                 .containsExactlyInAnyOrder(9000001L, 9000002L);
     }
 
     @Test
-    void list_asTelecaller_alsoSeesUnallocatedCustomers() {
+    void byIds_asTelecaller_alsoSeesUnallocatedCustomers() {
         ActorContext.set(new CurrentActor("21", "Caller", "TELECALLER"));
         givenTwoCustomers();
         when(applicationRepository.findCustomerIdsByAssignedExecutiveId(21L)).thenReturn(java.util.Set.of());
@@ -888,12 +863,12 @@ class CustomerServiceTest {
         lenient().when(staffDirectory.findStaff(99L))
                 .thenReturn(Optional.of(new StaffSummary(99L, "Other", "TELECALLER", true)));
 
-        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+        assertThat(visibleOfTheTwo()).extracting(CustomerSummary::customerId)
                 .containsExactly(9000001L);
     }
 
     @Test
-    void list_asTelecaller_keepsCustomersTheyHaveClaimed() {
+    void byIds_asTelecaller_keepsCustomersTheyHaveClaimed() {
         // Claiming a lead allocates it — and the unallocated rule is an inversion, so without an
         // explicit carve-out a telecaller would lose sight of a customer the moment they took it.
         ActorContext.set(new CurrentActor("21", "Caller", "TELECALLER"));
@@ -910,7 +885,7 @@ class CustomerServiceTest {
         lenient().when(staffDirectory.findStaff(any()))
                 .thenReturn(Optional.of(new StaffSummary(21L, "Caller", "TELECALLER", true)));
 
-        assertThat(service.list(null)).extracting(CustomerSummary::customerId)
+        assertThat(visibleOfTheTwo()).extracting(CustomerSummary::customerId)
                 .containsExactly(9000001L);
     }
 
@@ -940,28 +915,34 @@ class CustomerServiceTest {
 
     // --- Date window ------------------------------------------------------------------------
 
+    /**
+     * The window is resolved in IST server-side, not in the browser and not in UTC: an application
+     * created at 23:30 IST on the 19th is still 18:00 UTC that day, so a UTC-resolved window would
+     * push it into the 20th and drop it from a "Today = 19th" filter. SQL does the filtering now,
+     * so what has to hold is the pair of instants handed to it.
+     */
     @Test
-    void list_dateWindowIsResolvedInIst() {
+    void pageResolvesTheDateWindowInIst() {
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
-        LoanApplication late = app(1, 9000001L, ApplicationStatus.ACTIVE);
-        // 23:30 IST on 2026-08-19 — still 18:00 UTC the same day. Resolving the window in UTC
-        // would push this row into the 20th and drop it from a "Today = 19th" filter.
-        late.setCreatedAt(java.time.LocalDateTime.of(2026, 8, 19, 23, 30)
-                .atZone(java.time.ZoneId.of("Asia/Kolkata")).toInstant());
-        when(applicationRepository.findAll()).thenReturn(List.of(late));
-        when(profileRepository.findByApplicationIdIn(any()))
-                .thenReturn(List.of(profile(1, "Asha Rao", "AAAAA1111A")));
+        when(bookQuery.pageIds(any(), eq(0), eq(25))).thenReturn(List.of());
 
         java.time.LocalDate d19 = java.time.LocalDate.of(2026, 8, 19);
-        java.time.LocalDate d20 = java.time.LocalDate.of(2026, 8, 20);
-        assertThat(service.list(null, d19, d19)).hasSize(1);
-        assertThat(service.list(null, d20, d20)).isEmpty();
+        service.page(null, d19, d19, null, false, 1, 25);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(CustomerBookQuery.BookFilter.class);
+        verify(bookQuery).count(captor.capture());
+        java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+        assertThat(captor.getValue().from()).isEqualTo(d19.atStartOfDay(ist).toInstant());
+        // Exclusive upper bound: midnight IST at the START of the 20th, so 23:30 IST on the 19th
+        // is inside the window and 00:00 IST on the 20th is not.
+        assertThat(captor.getValue().to()).isEqualTo(d19.plusDays(1).atStartOfDay(ist).toInstant());
+        assertThat(captor.getValue().today()).isEqualTo(java.time.LocalDate.now(ist));
     }
 
     @Test
-    void listPricesEveryLoanInOneBatchedPass() {
+    void byIdsPricesEveryLoanInOneBatchedPass() {
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
-        when(applicationRepository.findAll()).thenReturn(List.of(
+        when(applicationRepository.findByCustomerIdIn(any())).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.ACTIVE),
                 app(2, 9000002L, ApplicationStatus.ACTIVE)));
         when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
@@ -972,11 +953,11 @@ class CustomerServiceTest {
         l1.setStatus(com.navix.loan.domain.LoanStatus.ACTIVE);
         l2.setStatus(com.navix.loan.domain.LoanStatus.ACTIVE);
         l3.setStatus(com.navix.loan.domain.LoanStatus.ACTIVE);
-        when(loanRepository.findAll()).thenReturn(List.of(l1, l2, l3));
+        when(loanRepository.findByCustomerIdIn(any())).thenReturn(List.of(l1, l2, l3));
         when(repaymentService.outstandingForAll(any(), any())).thenReturn(java.util.Map.of(
                 500L, 10_000L, 501L, 5_000L, 502L, 20_000L));
 
-        List<CustomerSummary> rows = service.list(null);
+        List<CustomerSummary> rows = service.byIds(List.of(9000001L, 9000002L));
 
         assertThat(rows).hasSize(2);
         CustomerSummary c1 = rows.stream().filter(r -> r.customerId() == 9000001L).findFirst().orElseThrow();
@@ -985,22 +966,267 @@ class CustomerServiceTest {
         assertThat(c2.totalOutstandingPaise()).isEqualTo(20_000L);
         verify(repaymentService, org.mockito.Mockito.never()).outstandingAsOf(any(), any());
         verify(loanRepository, org.mockito.Mockito.never()).findByCustomerId(any());
-        verify(loanRepository, org.mockito.Mockito.times(1)).findAll();
+        verify(loanRepository, org.mockito.Mockito.never()).findAll();
+        verify(loanRepository, org.mockito.Mockito.times(1)).findByCustomerIdIn(any());
     }
 
     @Test
-    void listResolvesProfilesInOneQuery() {
+    void byIdsResolvesProfilesInOneQuery() {
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
-        when(applicationRepository.findAll()).thenReturn(List.of(
+        when(applicationRepository.findByCustomerIdIn(any())).thenReturn(List.of(
                 app(1, 9000001L, ApplicationStatus.CLOSED),
                 app(2, 9000001L, ApplicationStatus.ACTIVE)));
         when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
                 profile(1, "Old Name", "ABCDE1234F"), profile(2, "Asha Rao", "ABCDE1234F")));
 
-        service.list(null);
+        service.byIds(List.of(9000001L));
 
         verify(profileRepository, org.mockito.Mockito.times(1)).findByApplicationIdIn(any());
         verify(profileRepository, org.mockito.Mockito.never()).findByApplicationId(any());
+    }
+
+    // --- byIds(): the batched twin of one summary row ------------------------------------------
+
+    @Test
+    void byIdsHydratesOnlyPermittedIdsInInputOrder() {
+        // A scoped executive asking for two customers gets back only the one their scope permits —
+        // silently, with no 403/404 that would confirm the other customer exists.
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L))
+                .thenReturn(java.util.Set.of(9000001L));
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("12")).thenReturn(List.of());
+
+        assertThat(service.byIds(List.of(9000002L, 9000001L)))
+                .extracting(CustomerSummary::customerId)
+                .containsExactly(9000001L);
+
+        // …and for a caller who may see both, the rows come back in the order they were ASKED for,
+        // not in whatever order grouping by customer id happens to produce.
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        assertThat(service.byIds(List.of(9000002L, 9000001L)))
+                .extracting(CustomerSummary::customerId)
+                .containsExactly(9000002L, 9000001L);
+    }
+
+    @Test
+    void byIdsRejectsDsa() {
+        ActorContext.set(new CurrentActor("77", "Agent", "DSA"));
+        assertThatThrownBy(() -> service.byIds(List.of(9000001L)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSA");
+        verify(applicationRepository, org.mockito.Mockito.never()).findByCustomerIdIn(any());
+    }
+
+    @Test
+    void byIdsClampsAtMaxPageSize() {
+        // A batch lookup, not a second whole-book list endpoint: 150 ids in, at most 100 queried.
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        List<Long> ids = java.util.stream.LongStream.rangeClosed(1, 150).boxed().toList();
+        when(applicationRepository.findByCustomerIdIn(any())).thenReturn(List.of());
+
+        service.byIds(ids);
+
+        // The FIRST 100 of the 150, in the order asked for — not a sample and not all 150.
+        verify(applicationRepository).findByCustomerIdIn(org.mockito.ArgumentMatchers.argThat(
+                c -> c.size() == CustomerService.MAX_PAGE_SIZE && c.contains(1L) && c.contains(100L)
+                        && !c.contains(101L)));
+    }
+
+    @Test
+    void byIdsEmptyReturnsEmptyWithoutQueries() {
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+
+        assertThat(service.byIds(List.of())).isEmpty();
+        assertThat(service.byIds(null)).isEmpty();
+
+        // Not even the scope resolution runs — there is nothing to scope.
+        verify(applicationRepository, org.mockito.Mockito.never()).findByCustomerIdIn(any());
+        verify(applicationRepository, org.mockito.Mockito.never())
+                .findCustomerIdsByAssignedExecutiveId(any());
+    }
+
+    // --- bookStats(): the dashboard roll-up, server-side ---------------------------------------
+    // The numeric cases below mirror frontend/src/lib/staff/my-stats.test.ts so both sides of the
+    // port stay pinned to the same numbers.
+
+    /** {@code mine} = owned by the caller; hydration answers with the given apps/loans. */
+    private void givenMyBook(java.util.Set<Long> mineIds, List<LoanApplication> apps,
+            List<com.navix.loan.entity.Loan> loans) {
+        when(ownerRepository.findCustomerIdsByOwnerStaffId(5L)).thenReturn(mineIds);
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("5")).thenReturn(List.of());
+        lenient().when(applicationRepository.findByCustomerIdIn(any())).thenAnswer(inv -> {
+            java.util.Collection<Long> ids = inv.getArgument(0);
+            return apps.stream().filter(a -> ids.contains(a.getCustomerId())).toList();
+        });
+        lenient().when(loanRepository.findByCustomerIdIn(any())).thenAnswer(inv -> {
+            java.util.Collection<Long> ids = inv.getArgument(0);
+            return loans.stream().filter(l -> ids.contains(l.getCustomerId())).toList();
+        });
+        lenient().when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
+    }
+
+    /** An ACTIVE loan for {@code customerId} falling due {@code daysAgo} days before today (IST). */
+    private com.navix.loan.entity.Loan dueLoan(long id, long customerId, int daysAgo) {
+        com.navix.loan.entity.Loan l = loan(id, customerId);
+        l.setStatus(com.navix.loan.domain.LoanStatus.ACTIVE);
+        l.setDueDate(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).minusDays(daysAgo));
+        return l;
+    }
+
+    @Test
+    void bookStatsEmptyBookGivesNullRatesAndZeroCounts() {
+        // An unmeasurable metric is null, never 0 — a 0 reads as a real, bad number.
+        ActorContext.set(new CurrentActor("5", "Head", "CREDIT_HEAD"));
+        when(ownerRepository.findCustomerIdsByOwnerStaffId(5L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("5")).thenReturn(List.of());
+
+        var stats = service.bookStats();
+
+        assertThat(stats.total()).isZero();
+        assertThat(stats.concentrationPct()).isNull();
+        assertThat(stats.avgTicketPaise()).isNull();
+        assertThat(stats.avgCreditScore()).isNull();
+        assertThat(stats.outstandingPaise()).isZero();
+        assertThat(stats.largestExposurePaise()).isZero();
+        assertThat(stats.counts().all()).isZero();
+        assertThat(stats.dpd()).isEqualTo(new com.navix.loan.dto.CustomerDtos.DpdBuckets(0, 0, 0));
+        assertThat(stats.dueNext7Days()).isZero();
+        verify(applicationRepository, org.mockito.Mockito.never()).findByCustomerIdIn(any());
+    }
+
+    @Test
+    void bookStatsDpdBoundaries30_31_60_61() {
+        // Exactly 30 -> d1to30, 31 -> d31to60, 60 -> d31to60, 61 -> d60plus. Same boundaries the
+        // frontend's bookStats test pins.
+        ActorContext.set(new CurrentActor("5", "Head", "CREDIT_HEAD"));
+        givenMyBook(java.util.Set.of(1L, 2L, 3L, 4L),
+                List.of(app(1, 1L, ApplicationStatus.ACTIVE), app(2, 2L, ApplicationStatus.ACTIVE),
+                        app(3, 3L, ApplicationStatus.ACTIVE), app(4, 4L, ApplicationStatus.ACTIVE)),
+                List.of(dueLoan(101, 1L, 30), dueLoan(102, 2L, 31),
+                        dueLoan(103, 3L, 60), dueLoan(104, 4L, 61)));
+
+        var stats = service.bookStats();
+
+        assertThat(stats.total()).isEqualTo(4);
+        assertThat(stats.dpd().d1to30()).isEqualTo(1);
+        assertThat(stats.dpd().d31to60()).isEqualTo(2);
+        assertThat(stats.dpd().d60plus()).isEqualTo(1);
+        // Every one of them is past due, so none is "due in the next 7 days".
+        assertThat(stats.dueNext7Days()).isZero();
+        // effectiveStatus turns a past-due ACTIVE loan into OVERDUE, which is what segments read.
+        assertThat(stats.counts().overdue()).isEqualTo(4);
+    }
+
+    @Test
+    void bookStatsCountsALoanFallingDueInsideTheNextWeek() {
+        ActorContext.set(new CurrentActor("5", "Head", "CREDIT_HEAD"));
+        givenMyBook(java.util.Set.of(1L, 2L),
+                List.of(app(1, 1L, ApplicationStatus.ACTIVE), app(2, 2L, ApplicationStatus.ACTIVE)),
+                List.of(dueLoan(101, 1L, -3), dueLoan(102, 2L, -8)));
+
+        var stats = service.bookStats();
+
+        assertThat(stats.dueNext7Days()).isEqualTo(1);   // the 8-days-out loan is outside the window
+        assertThat(stats.dpd().d1to30()).isZero();
+    }
+
+    @Test
+    void bookStatsConcentrationNullWhenOutstandingIsZero() {
+        ActorContext.set(new CurrentActor("5", "Head", "CREDIT_HEAD"));
+        givenMyBook(java.util.Set.of(1L), List.of(app(1, 1L, ApplicationStatus.ACTIVE)),
+                List.of(dueLoan(101, 1L, 1)));
+        // Nothing owed on it: outstandingForAll answers 0 for the loan.
+        when(repaymentService.outstandingForAll(any(), any()))
+                .thenReturn(java.util.Map.of(101L, 0L));
+
+        var stats = service.bookStats();
+
+        assertThat(stats.outstandingPaise()).isZero();
+        assertThat(stats.concentrationPct()).isNull();
+    }
+
+    @Test
+    void bookStatsConcentrationIsLargestOverTotal() {
+        ActorContext.set(new CurrentActor("5", "Head", "CREDIT_HEAD"));
+        givenMyBook(java.util.Set.of(1L, 2L),
+                List.of(app(1, 1L, ApplicationStatus.ACTIVE), app(2, 2L, ApplicationStatus.ACTIVE)),
+                List.of(dueLoan(101, 1L, 2), dueLoan(102, 2L, 2)));
+        when(repaymentService.outstandingForAll(any(), any()))
+                .thenReturn(java.util.Map.of(101L, 3_000L, 102L, 1_000L));
+
+        var stats = service.bookStats();
+
+        assertThat(stats.outstandingPaise()).isEqualTo(4_000L);
+        assertThat(stats.largestExposurePaise()).isEqualTo(3_000L);
+        assertThat(stats.concentrationPct()).isEqualTo(3_000d / 4_000d);
+        // Both loans are past due, so the whole book is at risk.
+        assertThat(stats.atRiskPaise()).isEqualTo(4_000L);
+    }
+
+    @Test
+    void bookStatsCountsOnlyMyCustomersAndChunksHydration() {
+        // 150 customers is more than one IN (...) list should carry, so hydration is chunked at
+        // MAX_PAGE_SIZE rather than handed the whole book in one query.
+        ActorContext.set(new CurrentActor("5", "Head", "CREDIT_HEAD"));
+        java.util.Set<Long> mine = new java.util.LinkedHashSet<>();
+        List<LoanApplication> apps = new java.util.ArrayList<>();
+        for (long id = 1; id <= 150; id++) {
+            mine.add(id);
+            apps.add(app(id, id, ApplicationStatus.DRAFT));
+        }
+        givenMyBook(mine, apps, List.of());
+
+        var stats = service.bookStats();
+
+        assertThat(stats.total()).isEqualTo(150);
+        assertThat(stats.toChase()).isEqualTo(150);           // every one is an abandoned DRAFT
+        assertThat(stats.counts().incomplete()).isEqualTo(150);
+        assertThat(stats.counts().unallocated()).isEqualTo(150); // no customer_owner rows stubbed
+        verify(applicationRepository, org.mockito.Mockito.atLeast(2)).findByCustomerIdIn(any());
+    }
+
+    @Test
+    void bookStatsRejectsDsa() {
+        ActorContext.set(new CurrentActor("77", "Agent", "DSA"));
+        assertThatThrownBy(() -> service.bookStats())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSA");
+    }
+
+    // --- detail(): one batched pricing pass + the itemised breakdown ---------------------------
+
+    @Test
+    void detailPricesLoansInOneBatchedPassAndExposesTheBreakdown() {
+        ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
+        com.navix.loan.entity.Loan l1 = dueLoan(500L, 9000001L, 2);
+        com.navix.loan.entity.Loan l2 = dueLoan(501L, 9000001L, 40);
+        l1.setPrincipal(1_000_000L);
+        l2.setPrincipal(2_000_000L);
+        when(applicationRepository.findByCustomerId(9000001L))
+                .thenReturn(List.of(app(1, 9000001L, ApplicationStatus.ACTIVE)));
+        when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of(l1, l2));
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
+        when(repaymentService.outstandingBreakdownsForAll(any(), eq(null))).thenReturn(java.util.Map.of(
+                500L, new RepaymentService.OutstandingBreakdown(10_000L, 2_000L, 500L, 0L, null, 2, 1),
+                501L, new RepaymentService.OutstandingBreakdown(20_000L, 4_000L, 900L, 0L, null, 40, 30)));
+
+        var detail = service.detail(9000001L);
+
+        // One batched call priced both loans — never the 3-queries-per-loan single-loan path.
+        verify(repaymentService, org.mockito.Mockito.never()).outstandingAsOf(any(), any());
+        verify(repaymentService, org.mockito.Mockito.times(1)).outstandingBreakdownsForAll(any(), eq(null));
+        assertThat(detail.loans()).extracting(com.navix.loan.dto.LoanDtos.LoanView::outstandingPaise)
+                .containsExactly(20_000L, 10_000L);          // newest loan first
+        assertThat(detail.outstandingByLoanId()).containsOnlyKeys(500L, 501L);
+        var b = detail.outstandingByLoanId().get(500L);
+        assertThat(b.loanId()).isEqualTo(500L);
+        assertThat(b.outstandingPaise()).isEqualTo(10_000L);
+        assertThat(b.interestPaise()).isEqualTo(2_000L);
+        assertThat(b.penaltyPaise()).isEqualTo(500L);
+        assertThat(b.interestDays()).isEqualTo(2);
+        assertThat(b.penaltyDays()).isEqualTo(1);
+        assertThat(b.asOf()).isEqualTo(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
     }
 
     // --- Call log loan tagging (WP2) ----------------------------------------------------------

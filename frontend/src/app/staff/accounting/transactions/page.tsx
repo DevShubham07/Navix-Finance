@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Search, ArrowDownLeft, ArrowUpRight, ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -11,7 +11,8 @@ import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { formatDate } from "@/lib/utils";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 const TABS: { key: "ALL" | TransactionDirection; label: string }[] = [
   { key: "ALL", label: "All" },
@@ -78,29 +79,50 @@ export default function TransactionsPage() {
   const [tab, setTab] = React.useState<"ALL" | TransactionDirection>("ALL");
   const [period, setPeriod] = React.useState<Period>("MONTH");
   const [search, setSearch] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
-
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(search.trim()), 300);
-    return () => clearTimeout(t);
-  }, [search]);
+  const debounced = useDebouncedValue(search.trim());
+  // Server paging: the ledger is every money movement the company has ever made, so it was never a
+  // list to fetch whole and slice in the browser.
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
 
   const direction = tab === "ALL" ? undefined : tab;
   const range = React.useMemo(() => periodRange(period), [period]);
+
+  // Any change to the filter puts you back on page 1 — an offset into the old result set means
+  // nothing in the new one.
+  React.useEffect(() => {
+    setPage(1);
+  }, [debounced, direction, period]);
+
   const q = useQuery({
     // Period filtering is now server-side (timezone-free), so the query keys on the range too.
-    queryKey: ["staff-transactions", debounced, direction, range?.from ?? "", range?.to ?? ""],
+    queryKey: ["staff-transactions", debounced, direction, range?.from ?? "", range?.to ?? "", page, pageSize],
     queryFn: () =>
-      staffApi.transactions(debounced || undefined, direction, range ? { from: range.from, to: range.to } : undefined),
-    refetchInterval: 10_000,
+      staffApi.transactions(
+        debounced || undefined,
+        direction,
+        range ? { from: range.from, to: range.to } : undefined,
+        { page, size: pageSize },
+      ),
+    // A minute, not ten seconds. The ledger is a read-only oversight view of movements that have
+    // already settled; the one thing that adds a row from inside the console — an accountant
+    // verifying a repayment — now invalidates `["staff-transactions"]` directly, so this poll only
+    // has to catch disbursals made elsewhere.
+    refetchInterval: 60_000,
+    // Keep the table and the totals on screen while the next page loads.
+    placeholderData: keepPreviousData,
   });
 
-  const rows = q.data ?? [];
+  const rows = q.data?.rows ?? [];
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? "All time";
-  const totalIn = rows.filter((r) => r.direction === "INCOMING").reduce((s, r) => s + r.amountPaise, 0);
-  const totalOut = rows.filter((r) => r.direction === "OUTGOING").reduce((s, r) => s + r.amountPaise, 0);
+  // From the server, not a reduce over `rows`: `rows` is one page now, and these three cards claim
+  // to describe the PERIOD. Summing the page would have made "Inflow · This month" mean "inflow in
+  // the 25 movements you happen to be looking at".
+  const totalIn = q.data?.totalInPaise ?? 0;
+  const totalOut = q.data?.totalOutPaise ?? 0;
   const net = totalIn - totalOut;
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const total = q.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div>
@@ -122,6 +144,24 @@ export default function TransactionsPage() {
             { header: "Loan", value: (t) => (t.loanId != null ? `#${t.loanId}` : "") },
           ]}
           rows={rows}
+          getAllRows={async () => {
+            // `rows` is one page, so "Download all" has to walk the server under the SAME filter.
+            // 100 a call (the ledger's page ceiling), stopping once we hold `total` rows — or the
+            // moment a page comes back short, which is both the last page and the guard against
+            // looping forever if the count and the rows ever disagree.
+            const out: TransactionView[] = [];
+            const dateWindow = range ? { from: range.from, to: range.to } : undefined;
+            for (let p = 1; ; p += 1) {
+              const chunk = await staffApi.transactions(debounced || undefined, direction, dateWindow, {
+                page: p,
+                size: 100,
+              });
+              out.push(...chunk.rows);
+              if (chunk.rows.length < 100 || out.length >= chunk.total) break;
+            }
+            return out;
+          }}
+          allLabel="Download all transactions (CSV)"
           meta={{
             periodLabel,
             from: range ? humanISO(range.from) : undefined,
@@ -228,21 +268,24 @@ export default function TransactionsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((r, i) => (
+                  {rows.map((r, i) => (
                     <TxnRow key={r.id} t={r} sno={(page - 1) * pageSize + i + 1} />
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          {rows.length > 0 && (
+          {total > 0 && (
             <PaginationBar
               page={page}
               pageCount={pageCount}
               setPage={setPage}
               total={total}
               pageSize={pageSize}
-              setPageSize={setPageSize}
+              setPageSize={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
             />
           )}
         </div>

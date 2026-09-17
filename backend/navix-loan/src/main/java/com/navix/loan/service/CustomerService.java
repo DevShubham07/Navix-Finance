@@ -18,7 +18,9 @@ import com.navix.loan.dto.CustomerDtos.ProviderAttemptView;
 import com.navix.loan.dto.CustomerDtos.ActivityEntry;
 import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
+import com.navix.loan.dto.CustomerDtos.BookStats;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
+import com.navix.loan.dto.CustomerDtos.DpdBuckets;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
 import com.navix.loan.dto.CustomerDtos.CustomerPage;
@@ -27,6 +29,7 @@ import com.navix.loan.dto.CustomerDtos.CustomerSummaryCounts;
 import com.navix.loan.dto.CustomerDtos.ProfileChangeView;
 import com.navix.loan.dto.CustomerDtos.RemarkView;
 import com.navix.loan.dto.CustomerDtos.UpdateCustomerRequest;
+import com.navix.loan.dto.LoanDtos;
 import com.navix.loan.dto.LoanDtos.LoanView;
 import com.navix.loan.dto.LoanDtos.PaymentView;
 import com.navix.loan.dto.ReviewDtos.DocumentView;
@@ -234,15 +237,23 @@ public class CustomerService {
         return new HashSet<>(nullSafe(applicationRepository.findCustomerIdsByIdIn(decidedAppIds)));
     }
 
+    /**
+     * The acting staff id, or null when the actor cannot be identified as one — the resolution
+     * {@link #mineCustomerIds()} and {@link #bookStats()} share, so "my book" and "allocated to me"
+     * can never disagree about who "me" is.
+     */
+    private static Long actorStaffId() {
+        CurrentActor actor = ActorContext.get();
+        try {
+            return actor != null && actor.id() != null ? Long.valueOf(actor.id()) : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     /** Owned by the caller OR decided by the caller — the frontend's {@code isMine} rule, server-side. */
     private Set<Long> mineCustomerIds() {
-        CurrentActor actor = ActorContext.get();
-        Long staffId;
-        try {
-            staffId = actor != null && actor.id() != null ? Long.valueOf(actor.id()) : null;
-        } catch (NumberFormatException e) {
-            staffId = null;
-        }
+        Long staffId = actorStaffId();
         if (staffId == null) {
             return Set.of();
         }
@@ -265,56 +276,6 @@ public class CustomerService {
         if (scope != null && !scope.permits(customerId)) {
             throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
         }
-    }
-
-    /** Back-compat overload — no date window. */
-    @Transactional(readOnly = true)
-    public List<CustomerSummary> list(String q) {
-        return list(q, null, null);
-    }
-
-    /**
-     * All customers (distinct customers), optionally filtered by {@code q} matching the name
-     * (case-insensitive contains), PAN, mobile, or the customer id, and by an inclusive
-     * {@code [from, to]} window over the customer's latest application SIGNUP date. Ordered by
-     * {@code statusChangedAt} descending — when each customer's latest application entered its
-     * current status — so the freshest decisions (a rejection, a sanction) surface first, even
-     * though the date-window filter itself still runs on the signup date. Those two are
-     * deliberately different fields: switching the window to the stage date would silently change
-     * which customers appear for "Today" and diverge from the sibling live-applications/loans
-     * queues, which all window on signup date.
-     *
-     * <p>The window is resolved in IST server-side rather than in the browser, so a staffer on a
-     * UTC laptop sees the same "Today" as the live-applications queues.
-     */
-    @Transactional(readOnly = true)
-    public List<CustomerSummary> list(String q, LocalDate from, LocalDate to) {
-        rejectDsa();
-        CustomerScope scope = scope();
-        Instant fromInstant = from == null ? null : from.atStartOfDay(IST).toInstant();
-        Instant toInstant = to == null ? null : to.plusDays(1).atStartOfDay(IST).toInstant();
-        // Whole-table rollup, kept for the dashboard/collections consumers that still read the full
-        // book. The Customers page itself uses page()/summary(), which filter and sort in SQL.
-        String needle = q != null ? q.trim().toLowerCase() : "";
-        // Filter BEFORE grouping so no per-customer work (loans, outstanding, bureau state) is done
-        // for a customer the caller will never be shown.
-        Map<Long, List<LoanApplication>> byCustomer = applicationRepository.findAll().stream()
-                .filter(a -> scope == null || scope.permits(a.getCustomerId()))
-                .collect(Collectors.groupingBy(LoanApplication::getCustomerId));
-
-        List<Loan> allLoans = loanRepository.findAll().stream()
-                .filter(l -> l.getCustomerId() != null && byCustomer.containsKey(l.getCustomerId()))
-                .toList();
-        Map<Long, CustomerOwner> owners = ownerRepository.findAll().stream()
-                .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
-
-        List<CustomerSummary> out = buildRows(byCustomer, allLoans, owners, fromInstant, toInstant, needle);
-        // Stage date descending — when each customer's latest application entered its current status,
-        // so the freshest decisions (a rejection, a sanction) surface first rather than the oldest
-        // signups. Nulls last: a customer whose application predates created_at auditing has no date.
-        out.sort(Comparator.comparing(CustomerSummary::statusChangedAt,
-                Comparator.nullsLast(Comparator.reverseOrder())));
-        return out;
     }
 
     /** Hard ceiling on one page of the Customers list. */
@@ -345,6 +306,139 @@ public class CustomerService {
         requireAdmin();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, seg, mine);
         return hydrate(bookQuery.pageIds(filter, 0, EXPORT_CAP));
+    }
+
+    /**
+     * The batched twin of {@link #detail}'s summary row: full rows for exactly these customers, in
+     * the order the ids were given. This is what the collections export's enrichment and the
+     * dashboard's decided-customer join use <b>instead of loading the whole book</b> and picking a
+     * handful of rows out of it in the browser.
+     *
+     * <p>Capped at {@link #MAX_PAGE_SIZE} ids (a batch lookup, not a second list endpoint) and
+     * de-duplicated first, so asking for the same id twice does not eat the budget. Ids outside the
+     * caller's {@link #scope()} — and ids that simply do not exist — are silently omitted rather
+     * than refused: a 403/404 here would confirm that a customer exists, which is exactly the
+     * enumeration oracle {@link #requireVisible} avoids.
+     */
+    @Transactional(readOnly = true)
+    public List<CustomerSummary> byIds(List<Long> ids) {
+        rejectDsa();
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        CustomerScope scope = scope();
+        List<Long> kept = ids.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .limit(MAX_PAGE_SIZE)
+                .filter(id -> scope == null || scope.permits(id))
+                .toList();
+        return hydrate(kept);
+    }
+
+    /**
+     * The caller's own book, aggregated server-side: lifecycle counts, exposure, DPD bands and the
+     * headline averages the staff dashboard shows. Replaces shipping every customer row to the
+     * browser so it can count them there.
+     *
+     * <p>"Own book" is {@link #mineCustomerIds()} — owned by OR decided by the caller, the same rule
+     * the {@code mine} filter on {@link #page} applies — and the arithmetic is a port of the
+     * frontend's {@code lib/staff/my-stats.ts} {@code bookStats}, so the two agree figure for
+     * figure. Its rule for an unmeasurable value holds here too: a metric with no denominator is
+     * {@code null}, never {@code 0}.
+     */
+    @Transactional(readOnly = true)
+    public BookStats bookStats() {
+        rejectDsa();
+        Long staffId = actorStaffId();
+        List<Long> mine = new ArrayList<>(mineCustomerIds());
+        // hydrate() is bounded by the IN (...) list it builds, so feed it a page at a time rather
+        // than handing a whole book to one query.
+        List<CustomerSummary> rows = new ArrayList<>();
+        for (int i = 0; i < mine.size(); i += MAX_PAGE_SIZE) {
+            rows.addAll(hydrate(mine.subList(i, Math.min(i + MAX_PAGE_SIZE, mine.size()))));
+        }
+
+        long outstandingPaise = 0;
+        long atRiskPaise = 0;
+        long d1to30 = 0;
+        long d31to60 = 0;
+        long d60plus = 0;
+        long dueNext7Days = 0;
+        long largestExposurePaise = 0;
+        long repeatBorrowers = 0;
+        long thinFile = 0;
+        long toChase = 0;
+        long ownedCount = 0;
+        long ownedOverdue = 0;
+        long ticketSum = 0;
+        long ticketCount = 0;
+        long scoreSum = 0;
+        long scoreCount = 0;
+        LocalDate today = LocalDate.now(IST);
+
+        for (CustomerSummary c : rows) {
+            outstandingPaise += c.totalOutstandingPaise();
+            if ("overdue".equals(CustomerSegments.segmentOf(c.loanStatus(), c.latestStatus()))) {
+                atRiskPaise += c.totalOutstandingPaise();
+            }
+            if (c.loanDueDate() != null) {
+                // The same signed whole-day difference the frontend's daysBetween computes:
+                // positive = days late, negative = days still to run.
+                long daysLate = ChronoUnit.DAYS.between(c.loanDueDate(), today);
+                if (daysLate >= 1 && daysLate <= 30) {
+                    d1to30++;
+                } else if (daysLate >= 31 && daysLate <= 60) {
+                    d31to60++;
+                } else if (daysLate > 60) {
+                    d60plus++;
+                }
+                if (daysLate >= -7 && daysLate < 0) {
+                    dueNext7Days++;
+                }
+            }
+            if (c.amountIsRequested() && c.amountPaise() != null) {
+                ticketSum += c.amountPaise();
+                ticketCount++;
+            }
+            if (c.creditScore() != null) {
+                scoreSum += c.creditScore();
+                scoreCount++;
+            }
+            largestExposurePaise = Math.max(largestExposurePaise, c.totalOutstandingPaise());
+            if (c.loanCount() > 1) {
+                repeatBorrowers++;
+            }
+            if (c.bureauState() == BureauState.NO_RECORD) {
+                thinFile++;
+            }
+            if ("DRAFT".equals(c.latestStatus())) {
+                toChase++;
+            }
+            if (staffId != null && staffId.equals(c.ownerStaffId())) {
+                ownedCount++;
+                if ("OVERDUE".equals(c.loanStatus()) || "IN_COLLECTIONS".equals(c.loanStatus())) {
+                    ownedOverdue++;
+                }
+            }
+        }
+
+        return new BookStats(
+                rows.size(),
+                CustomerSegments.counts(rows),
+                outstandingPaise,
+                atRiskPaise,
+                new DpdBuckets(d1to30, d31to60, d60plus),
+                dueNext7Days,
+                ticketCount > 0 ? (double) ticketSum / ticketCount : null,
+                largestExposurePaise,
+                outstandingPaise > 0 ? (double) largestExposurePaise / outstandingPaise : null,
+                repeatBorrowers,
+                scoreCount > 0 ? (double) scoreSum / scoreCount : null,
+                thinFile,
+                toChase,
+                ownedCount,
+                ownedOverdue);
     }
 
     /** The segment-chip counts under the same search / window / scope / "mine" as {@link #page}. */
@@ -406,7 +500,7 @@ public class CustomerService {
         Map<Long, CustomerOwner> owners = nullSafe(ownerRepository.findAllById(ids)).stream()
                 .collect(Collectors.toMap(CustomerOwner::getCustomerId, o -> o, (a, b) -> a));
         Map<Long, CustomerSummary> byId = new HashMap<>();
-        for (CustomerSummary cs : buildRows(byCustomer, loans, owners, null, null, "")) {
+        for (CustomerSummary cs : buildRows(byCustomer, loans, owners)) {
             byId.put(cs.customerId(), cs);
         }
         return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
@@ -414,11 +508,13 @@ public class CustomerService {
 
     /**
      * Builds the full {@link CustomerSummary} rows for the customers in {@code byCustomer}. Every
-     * lookup is batched over the whole input (never per customer), so the caller decides the cost:
-     * the whole book from {@link #list}, or one page's ids from {@link #hydrate}. Unsorted.
+     * lookup is batched over the whole input (never per customer), so the caller decides the cost —
+     * always one page's (or one batch's) ids from {@link #hydrate}. Unsorted, and unfiltered: search
+     * and the date window are resolved in SQL by {@link CustomerBookQuery} before an id ever gets
+     * here.
      */
     private List<CustomerSummary> buildRows(Map<Long, List<LoanApplication>> byCustomer, List<Loan> allLoans,
-            Map<Long, CustomerOwner> owners, Instant fromInstant, Instant toInstant, String needle) {
+            Map<Long, CustomerOwner> owners) {
         Map<Long, List<Loan>> loansByCustomer = allLoans.stream()
                 .collect(Collectors.groupingBy(Loan::getCustomerId));
         Map<Long, Long> owedByLoanId = repaymentService.outstandingForAll(allLoans, null);
@@ -506,9 +602,6 @@ public class CustomerService {
                     ? failures.getOrDefault(bureauAppId, VerificationFailureService.CaseFailure.none())
                     : VerificationFailureService.CaseFailure.none();
             Instant latestCreatedAt = latestApp != null ? latestApp.getCreatedAt() : null;
-            if (!inWindow(latestCreatedAt, fromInstant, toInstant)) {
-                continue;
-            }
             // Where THIS advance is paid, falling back to the salary account until the borrower
             // reaches the disbursal-account step.
             String accountNumber = latestApp != null && latestApp.getDisbursalAccountNumber() != null
@@ -563,9 +656,7 @@ public class CustomerService {
                     failure.reason().name(),
                     failure.reason().severity().name(),
                     failure.reason().retryable());
-            if (matches(cs, apps, needle)) {
-                out.add(cs);
-            }
+            out.add(cs);
         }
         return out;
     }
@@ -592,21 +683,6 @@ public class CustomerService {
         return result;
     }
 
-
-    /**
-     * Inclusive {@code [from, to)} membership. A customer with no application has no date, so they
-     * are excluded when a window is set and included when it is not.
-     */
-    private static boolean inWindow(Instant at, Instant fromInstant, Instant toInstant) {
-        if (fromInstant == null && toInstant == null) {
-            return true;
-        }
-        if (at == null) {
-            return false;
-        }
-        return !(fromInstant != null && at.isBefore(fromInstant))
-                && !(toInstant != null && !at.isBefore(toInstant));
-    }
 
     /** A single customer's full history (newest first), or 404 if the customer has nothing on file. */
     @Transactional(readOnly = true)
@@ -648,11 +724,25 @@ public class CustomerService {
                 .toList();
 
         LocalDate today = LocalDate.now();
+        // One batched pass for the whole customer: the per-loan call costs 3 queries each (loan
+        // reload + verified-payment sum + settlement lookup), so a returning borrower's 6 loans cost
+        // 18 round trips to say what two queries can. Same formula either way — it is literally the
+        // same private helper inside RepaymentService, so the figures cannot fork.
+        Map<Long, RepaymentService.OutstandingBreakdown> breakdowns =
+                repaymentService.outstandingBreakdownsForAll(loans, null);
         List<LoanView> loanViews = loans.stream()
                 .sorted(Comparator.comparing(Loan::getId).reversed())
-                .map(l -> LoanView.of(l, repaymentService.outstandingAsOf(l.getId(), null),
+                .map(l -> LoanView.of(l, breakdowns.get(l.getId()).outstandingPaise(),
                         l.effectiveStatus(today)))
                 .toList();
+        // The itemised make-up of those same balances, so the Loans tab can show the interest /
+        // penalty working per loan card without one /outstanding call each.
+        LocalDate asOf = LocalDate.now(IST);
+        Map<Long, LoanDtos.OutstandingView> outstandingByLoanId = new java.util.LinkedHashMap<>();
+        breakdowns.forEach((loanId, b) -> outstandingByLoanId.put(loanId,
+                new LoanDtos.OutstandingView(loanId, asOf, b.outstandingPaise(),
+                        b.settledAmountPaise(), b.interestPaise(), b.penaltyPaise(),
+                        b.verifiedPaise(), b.interestDays(), b.penaltyDays())));
 
         List<PaymentView> payments = loans.stream()
                 .flatMap(l -> paymentRepository.findByLoanId(l.getId()).stream())
@@ -674,7 +764,8 @@ public class CustomerService {
         CreditBriefView creditBrief = latestAppId != null ? creditBriefService.view(latestAppId) : null;
         return new CustomerDetail(customerId, profileView, appViews, loanViews, payments,
                 ownerStaffId, ownerName, creditBrief,
-                eligibilityService.overrideOf(customerId).orElse(null));
+                eligibilityService.overrideOf(customerId).orElse(null),
+                outstandingByLoanId);
     }
 
     /**
@@ -1432,29 +1523,6 @@ public class CustomerService {
                 .max(Comparator.naturalOrder())
                 .map(profileByAppId::get)
                 .orElse(null);
-    }
-
-    /**
-     * {@code apps} is the customer's full application list (not just the row's latest one) so a
-     * search by an OLDER application's id still finds the customer.
-     */
-    private static boolean matches(CustomerSummary cs, List<LoanApplication> apps, String needle) {
-        if (needle.isEmpty()) {
-            return true;
-        }
-        if (cs.name() != null && cs.name().toLowerCase().contains(needle)) {
-            return true;
-        }
-        if (cs.pan() != null && cs.pan().toLowerCase().contains(needle)) {
-            return true;
-        }
-        if (cs.mobile() != null && cs.mobile().contains(needle)) {
-            return true;
-        }
-        if (String.valueOf(cs.customerId()).contains(needle)) {
-            return true;
-        }
-        return apps.stream().anyMatch(a -> String.valueOf(a.getId()).contains(needle));
     }
 
     /**

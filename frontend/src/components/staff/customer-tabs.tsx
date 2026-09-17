@@ -32,6 +32,7 @@ import {
   type ApplicationView,
   type ActivityEntry,
   type LoanView,
+  type OutstandingView,
   type ApplicationStatus,
 } from "@/lib/api/applications";
 
@@ -52,8 +53,6 @@ const CANCELLABLE: Set<ApplicationStatus> = new Set([
   "CREDIT_EXEC_PENDING", "CREDIT_EXEC_APPROVED", "CREDIT_HEAD_PENDING", "CREDIT_HEAD_APPROVED",
   "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING", "DISBURSEMENT_FAILED",
 ]);
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const CALL_TYPES = [
   { value: "OUTBOUND", label: "Outbound" },
@@ -182,8 +181,12 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
     null;
   const latestApp = c.applications.find((app) => app.id === applicationId) ?? c.applications[0] ?? null;
 
+  // One cache entry per application for ALL of this file's verification reads (the Personal,
+  // Employment, Bank and Credit cards each want a different check off the SAME payload, and the
+  // key ["verifications", appId] is shared with AadhaarCard + VerificationChecksPanel) — five
+  // separate keys meant four extra round trips for identical data as a reviewer clicked the tabs.
   const verQ = useQuery({
-    queryKey: ["customer-verifications-personal", latestApp?.id],
+    queryKey: ["verifications", latestApp?.id],
     queryFn: () => staffApi.verifications(latestApp!.id),
     enabled: latestApp != null,
   });
@@ -197,12 +200,9 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
   >;
   // Item 3b: the itemized interest/penalty/paid breakdown only renders when `outstanding` is
   // passed — without it LoanBreakdown falls back to the loan's stale cached totalRepayable.
-  const outQ = useQuery({
-    queryKey: ["staff-loan-out", currentLoan?.id, todayISO()],
-    queryFn: () => staffApi.outstanding(currentLoan!.id, todayISO()),
-    enabled: currentLoan != null,
-    retry: false,
-  });
+  // The figure comes off the customer payload (`outstandingByLoanId`, computed server-side with
+  // the rest of it) rather than a per-loan request of our own.
+  const outstanding = currentLoan != null ? c.outstandingByLoanId?.[String(currentLoan.id)] : undefined;
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -294,7 +294,7 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
       <div className="md:col-span-2">
         <Section title="Loan cost calculation">
           {currentLoan ? (
-            <LoanBreakdown loan={currentLoan} outstanding={outQ.data} />
+            <LoanBreakdown loan={currentLoan} outstanding={outstanding} />
           ) : latestApp?.amountRequestedPaise != null ? (
             <ProjectedCostBreakdown app={latestApp} />
           ) : (
@@ -406,7 +406,7 @@ function EmploymentTab({ c, customerId }: { c: CustomerDetail; customerId: numbe
  */
 function EpfoEmploymentCard({ applicationId }: { applicationId: number }) {
   const q = useQuery({
-    queryKey: ["customer-verifications-employment", applicationId],
+    queryKey: ["verifications", applicationId],
     queryFn: () => staffApi.verifications(applicationId),
     enabled: applicationId != null,
   });
@@ -492,7 +492,7 @@ function triState(v: unknown): string | null {
 function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | null }) {
   const p = c.profile;
   const pennyQ = useQuery({
-    queryKey: ["customer-verifications", latestAppId],
+    queryKey: ["verifications", latestAppId],
     queryFn: () => staffApi.verifications(latestAppId as number),
     enabled: latestAppId != null,
   });
@@ -597,7 +597,7 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
 function CreditTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | null }) {
   const p = c.profile;
   const bureauQ = useQuery({
-    queryKey: ["customer-verifications-bureau", latestAppId],
+    queryKey: ["verifications", latestAppId],
     queryFn: () => staffApi.verifications(latestAppId as number),
     enabled: latestAppId != null,
   });
@@ -772,7 +772,12 @@ function LoansTab({
         ) : (
           <div className="space-y-3">
             {c.loans.map((l) => (
-              <LoanCard key={l.id} loan={l} onSelect={() => setSelectedLoanId(l.id)} />
+              <LoanCard
+                key={l.id}
+                loan={l}
+                outstanding={c.outstandingByLoanId?.[String(l.id)]}
+                onSelect={() => setSelectedLoanId(l.id)}
+              />
             ))}
           </div>
         )}
@@ -812,14 +817,18 @@ function LoansTab({
   );
 }
 
-/** One loan row on the Loan applications tab — fetches its own outstanding so LoanBreakdown can
- *  itemize interest/penalty/paid instead of showing the stale cached total (item 3b). */
-function LoanCard({ loan, onSelect }: { loan: LoanView; onSelect: () => void }) {
-  const outQ = useQuery({
-    queryKey: ["staff-loan-out", loan.id, todayISO()],
-    queryFn: () => staffApi.outstanding(loan.id, todayISO()),
-    retry: false,
-  });
+/** One loan row on the Loan applications tab — the itemized interest/penalty/paid breakdown (item
+ *  3b) comes from the customer payload's `outstandingByLoanId`, handed down by LoansTab. Fetching
+ *  it per card meant one request per loan the moment the tab opened. */
+function LoanCard({
+  loan,
+  outstanding,
+  onSelect,
+}: {
+  loan: LoanView;
+  outstanding?: OutstandingView;
+  onSelect: () => void;
+}) {
   return (
     <div className="rounded border border-line p-3">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
@@ -830,7 +839,7 @@ function LoanCard({ loan, onSelect }: { loan: LoanView; onSelect: () => void }) 
           {loan.status}
         </span>
       </div>
-      <LoanBreakdown loan={loan} outstanding={outQ.data} />
+      <LoanBreakdown loan={loan} outstanding={outstanding} />
     </div>
   );
 }

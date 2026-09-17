@@ -8,29 +8,28 @@
  */
 
 import * as React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, CalendarClock } from "lucide-react";
 import { Input, InfoTooltip } from "@/components/ui";
 import { customersApi, type CustomerSummary } from "@/lib/api/applications";
 import { errMessage } from "@/components/staff/pipeline/hooks";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 const MIN_QUERY_LENGTH = 2;
 const MAX_RESULTS = 25;
 
-function matches(c: CustomerSummary, needle: string): boolean {
-  return (
-    (c.name?.toLowerCase().includes(needle) ?? false) ||
-    (c.mobile?.includes(needle) ?? false) ||
-    (c.pan?.toLowerCase().includes(needle) ?? false)
-  );
-}
-
-export function SalaryDaysPanel({ rows, loading }: { rows: CustomerSummary[]; loading: boolean }) {
+export function SalaryDaysPanel() {
   const [q, setQ] = React.useState("");
-  const needle = q.trim().toLowerCase();
-  const results = needle.length >= MIN_QUERY_LENGTH
-    ? rows.filter((c) => matches(c, needle)).slice(0, MAX_RESULTS)
-    : [];
+  // Server-side search (name / mobile / PAN), debounced so a typed name is one query and not one
+  // per keystroke. This panel used to be handed the whole customer book and filter it in the
+  // browser — the dashboard no longer fetches that book at all.
+  const needle = useDebouncedValue(q.trim(), 300);
+  const search = useQuery({
+    queryKey: ["staff-dashboard-salary-search", needle],
+    queryFn: () => customersApi.page({ q: needle, size: MAX_RESULTS }),
+    enabled: needle.length >= MIN_QUERY_LENGTH,
+  });
+  const results = search.data?.rows ?? [];
 
   return (
     <section className="mt-8">
@@ -47,7 +46,7 @@ export function SalaryDaysPanel({ rows, loading }: { rows: CustomerSummary[]; lo
           placeholder="Name, mobile, or PAN"
           className="!mb-3 max-w-sm"
         />
-        {loading ? (
+        {search.isLoading ? (
           <div className="h-20 animate-pulse rounded bg-grey-100" />
         ) : needle.length < MIN_QUERY_LENGTH ? (
           <p className="text-sm text-muted">Search for a customer to view or change their salary date.</p>
@@ -87,7 +86,7 @@ function SalaryDayRow({ c }: { c: CustomerSummary }) {
     mutationFn: ({ customerId, day }: { customerId: number; day: number }) =>
       customersApi.changeSalaryDay(customerId, day),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["staff-dashboard-customers"] });
+      qc.invalidateQueries({ queryKey: ["staff-dashboard-salary-search"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
     },
   });

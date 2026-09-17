@@ -256,10 +256,15 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: Parameters<type
   // The same worklist the bucket pages render, so a sidebar badge can never disagree with the page
   // it links to (it used to count cases, while the page now counts loans).
   const collectionCases = useQuery({
+    // 30s, not 8s: this badge rides along on EVERY staff page for the collection roles + ADMIN, and
+    // all it renders is six bucket integers. The collections page itself observes the same
+    // `["collections-worklist"]` key at its own faster interval while it is open, and React Query
+    // takes the shortest interval across observers — so the register stays live where it matters
+    // and only the ambient background cost drops.
     queryKey: ["collections-worklist"],
     queryFn: collectionsApi.worklist,
     enabled: role === "COLLECTION_HEAD" || role === "COLLECTION_EXECUTIVE" || role === "ADMIN",
-    refetchInterval: 8000,
+    refetchInterval: 30_000,
   });
   const bucketCounts = collectionBucketCounts(collectionCases.data ?? []);
 

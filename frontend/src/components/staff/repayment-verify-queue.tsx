@@ -38,9 +38,19 @@ export function RepaymentVerifyQueue() {
     queryFn: () => staffApi.pendingRepayments(),
     refetchInterval: 8000,
   });
+  // Verifying or rejecting a payment moves money on two other surfaces, so invalidate them here
+  // rather than letting them notice on their next poll: `["staff-queue"]` as a PREFIX (it covers
+  // ACTIVE/OVERDUE/CLOSED with their range + query suffixes) feeds the applications console's
+  // "Awaiting repayment" panel, which a verification can empty by closing the loan, and
+  // `["staff-transactions"]` is the accountant's ledger, where the payment becomes a row.
+  const invalidateAfterDecision = () => {
+    qc.invalidateQueries({ queryKey: ["staff-pending-repayments"] });
+    qc.invalidateQueries({ queryKey: ["staff-queue"] });
+    qc.invalidateQueries({ queryKey: ["staff-transactions"] });
+  };
   const verify = useMutation({
     mutationFn: (p: PaymentView) => staffApi.verifyRepayment(p.loanId, p.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-pending-repayments"] }),
+    onSuccess: invalidateAfterDecision,
   });
   const reject = useMutation({
     mutationFn: (vars: { p: PaymentView; reason: RejectionReasonCode; note: string }) =>
@@ -49,7 +59,7 @@ export function RepaymentVerifyQueue() {
         note: vars.note.trim() || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["staff-pending-repayments"] });
+      invalidateAfterDecision();
       setRejectTarget(null);
     },
   });

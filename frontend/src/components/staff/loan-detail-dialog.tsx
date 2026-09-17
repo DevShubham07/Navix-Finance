@@ -109,15 +109,19 @@ export function LoanDetailDialog({
     enabled: open,
     retry: false,
   });
+  // Deferred to their own tab: the default tab is Overview, and neither of these renders anything
+  // there — fetching both on open cost two requests per dialog nobody had asked to see yet. The
+  // loan / customer / outstanding / collections-case queries above stay eager because Overview
+  // itself renders from all four.
   const payQ = useQuery({
     queryKey: ["staff-loan-pay", loanId],
     queryFn: () => staffApi.repayments(loanId as number),
-    enabled: open,
+    enabled: open && tab === "repayments",
   });
   const evQ = useQuery({
     queryKey: ["staff-events", applicationId],
     queryFn: () => staffApi.events(applicationId as number),
-    enabled: open && applicationId != null,
+    enabled: open && applicationId != null && tab === "timeline",
   });
   // The collections officer assigned to this loan, when a case has been opened — shared by the
   // Overview "Assigned officer" row and the Calls tab's interaction log, same cache entry.
@@ -199,7 +203,9 @@ export function LoanDetailDialog({
                   How they paid
                   {payQ.isLoading && <Loader2 size={12} className="animate-spin text-muted" />}
                 </h4>
-                {payments.length === 0 ? (
+                {payQ.isLoading && payments.length === 0 ? (
+                  <p className="text-muted">Loading…</p>
+                ) : payments.length === 0 ? (
                   <p className="text-muted">No repayments recorded yet.</p>
                 ) : (
                   <ul className="divide-y divide-line rounded border border-line">

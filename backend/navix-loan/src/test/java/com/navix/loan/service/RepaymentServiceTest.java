@@ -21,6 +21,7 @@ import com.navix.loan.entity.Payment;
 import com.navix.loan.repository.LoanRepository;
 import com.navix.loan.repository.PaymentRepository;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -602,5 +603,79 @@ class RepaymentServiceTest {
     void viewLeavesProofUrlNullWhenNothingWasUploaded() {
         assertThat(repaymentService.view(paymentFixture()).proofUrl()).isNull();
         verify(storage, never()).presignDownload(any());
+    }
+
+    // ------------------------------------------------------------------ read guard
+    //
+    // GET /api/loan/{id}, /outstanding and /repayments had NO ownership check: any authenticated
+    // token could read any borrower's loan, balance and repayment history by guessing an id. These
+    // pin the guard that closes it — and that it does not get in the way of the staff who need those
+    // reads to do their job.
+
+    @Test
+    void requireReadableLoanLetsABorrowerReadTheirOwnLoan() {
+        Loan loan = activeLoan();
+        loan.setCustomerId(7L);
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor("7", "Asha", "BORROWER"));
+
+        assertThat(repaymentService.requireReadableLoan(1L)).isSameAs(loan);
+        com.navix.common.security.ActorContext.clear();
+    }
+
+    @Test
+    void requireReadableLoanRejectsABorrowerReadingSomeoneElsesLoan() {
+        Loan loan = activeLoan();
+        loan.setCustomerId(7L);
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor("8", "Bilal", "BORROWER"));
+
+        assertThatThrownBy(() -> repaymentService.requireReadableLoan(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Not your loan");
+        com.navix.common.security.ActorContext.clear();
+    }
+
+    @Test
+    void requireReadableLoanRejectsADsaBeforeItEvenLooksTheLoanUp() {
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor("14", "Agent", "DSA"));
+
+        assertThatThrownBy(() -> repaymentService.requireReadableLoan(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSAs cannot view loans");
+        verify(loanRepository, never()).findById(any());
+        com.navix.common.security.ActorContext.clear();
+    }
+
+    @Test
+    void requireReadableLoanLetsAnyOtherStaffRoleRead() {
+        Loan loan = activeLoan();
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        com.navix.common.security.ActorContext.set(
+                new com.navix.common.security.CurrentActor("7", "Deepa", "ACCOUNTANT"));
+
+        assertThat(repaymentService.requireReadableLoan(1L)).isSameAs(loan);
+        com.navix.common.security.ActorContext.clear();
+    }
+
+    /**
+     * The repay screen's three quotes come from one endpoint now; this pins that routing them
+     * through the already-loaded loan gives the identical figure the by-id path gives, so the
+     * borrower's "pay today / on salary day / a day later" amounts cannot drift from the ledger.
+     */
+    @Test
+    void breakdownForAnAlreadyLoadedLoanEqualsTheByIdForm() {
+        Loan loan = activeLoan();
+        when(loanRepository.findById(1L)).thenReturn(Optional.of(loan));
+        when(paymentRepository.sumAmountByLoanIdAndStatus(1L, PaymentStatus.VERIFIED)).thenReturn(0L);
+        when(settlementDirectory.approvedSettlementAmount(1L)).thenReturn(Optional.empty());
+
+        for (LocalDate at : List.of(today(), DUE, DUE.plusDays(1))) {
+            assertThat(repaymentService.outstandingBreakdownAsOf(1L, at))
+                    .isEqualTo(repaymentService.outstandingBreakdownAsOf(loan, at));
+        }
     }
 }

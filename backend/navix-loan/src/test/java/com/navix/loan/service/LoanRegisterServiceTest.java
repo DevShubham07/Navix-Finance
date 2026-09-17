@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
@@ -56,6 +59,7 @@ class LoanRegisterServiceTest {
         service = new LoanRegisterService(loanRepository, applicationRepository, profileRepository,
                 repaymentService, loanMath, collectionCaseDirectory, staffDirectory);
         lenient().when(settlementDirectory.approvedSettlementAmount(any())).thenReturn(java.util.Optional.empty());
+        lenient().when(settlementDirectory.approvedSettlementAmounts(any())).thenReturn(java.util.Map.of());
         lenient().when(paymentRepository.sumAmountByLoanIdInAndStatus(anyList(), any())).thenReturn(List.of());
         lenient().when(collectionCaseDirectory.assignedOfficerByLoanId(anyList())).thenReturn(java.util.Map.of());
     }
@@ -218,36 +222,91 @@ class LoanRegisterServiceTest {
     // ---------------------------------------------------------------- outstandingForAll equivalence
 
     /**
+     * The four loans that exercise every branch of the formula: a healthy one, an overdue one (late
+     * penalty), a partially paid one (verified payments), one under an approved settlement (the cap),
+     * and one CLOSED in the past (the {@code closedOn} freeze). Built once and shared by the two
+     * equivalence tests below.
+     */
+    private List<Loan> equivalenceFixtures() {
+        Loan onTime = loan(10L, 9000001L, LocalDate.now().minusDays(10), LocalDate.now().plusDays(10), LoanStatus.ACTIVE);
+        Loan overdue = loan(11L, 9000002L, LocalDate.now().minusDays(60), LocalDate.now().minusDays(15), LoanStatus.ACTIVE);
+        Loan partiallyPaid = loan(12L, 9000003L, LocalDate.now().minusDays(5), LocalDate.now().plusDays(25), LoanStatus.ACTIVE);
+        Loan settled = loan(13L, 9000004L, LocalDate.now().minusDays(60), LocalDate.now().minusDays(15), LoanStatus.ACTIVE);
+        // Closed 90 days ago, 3 days late. Without the closedOn freeze the batched path would keep
+        // accruing penalty against today and disagree wildly with the per-loan read.
+        Loan closed = loan(14L, 9000005L, LocalDate.now().minusDays(120), LocalDate.now().minusDays(93), LoanStatus.CLOSED);
+        closed.setClosedOn(LocalDate.now().minusDays(90));
+        return List.of(onTime, overdue, partiallyPaid, settled, closed);
+    }
+
+    /** The per-loan stubs the single-loan path needs for {@link #equivalenceFixtures()}. */
+    private void stubPerLoanReads(List<Loan> loans) {
+        for (Loan l : loans) {
+            when(loanRepository.findById(l.getId())).thenReturn(java.util.Optional.of(l));
+        }
+        when(paymentRepository.sumAmountByLoanIdAndStatus(10L, PaymentStatus.VERIFIED)).thenReturn(0L);
+        when(paymentRepository.sumAmountByLoanIdAndStatus(11L, PaymentStatus.VERIFIED)).thenReturn(0L);
+        when(paymentRepository.sumAmountByLoanIdAndStatus(12L, PaymentStatus.VERIFIED)).thenReturn(200_000L);
+        when(paymentRepository.sumAmountByLoanIdAndStatus(13L, PaymentStatus.VERIFIED)).thenReturn(0L);
+        when(paymentRepository.sumAmountByLoanIdAndStatus(14L, PaymentStatus.VERIFIED)).thenReturn(1_000_000L);
+        // Loan 13 is under a ₹7,000 approved full-and-final; the other four have none.
+        when(settlementDirectory.approvedSettlementAmount(13L)).thenReturn(java.util.Optional.of(700_000L));
+    }
+
+    /** The batched stubs — the same facts, delivered through the two grouped reads instead. */
+    private void stubBatchedReads() {
+        when(paymentRepository.sumAmountByLoanIdInAndStatus(anyList(), any())).thenReturn(List.of(
+                loanAmount(12L, 200_000L), loanAmount(14L, 1_000_000L)));
+        when(settlementDirectory.approvedSettlementAmounts(any())).thenReturn(java.util.Map.of(13L, 700_000L));
+    }
+
+    /**
      * The whole point of the batched path: {@code outstandingForAll} must return the exact same
      * figure {@code outstandingAsOf} would compute one loan at a time — otherwise the register would
      * disagree with the repay page / collections.
      */
     @Test
     void outstandingForAll_agreesWithOutstandingAsOfForEachLoan() {
-        Loan onTime = loan(10L, 9000001L, LocalDate.now().minusDays(10), LocalDate.now().plusDays(10), LoanStatus.ACTIVE);
-        Loan overdue = loan(11L, 9000002L, LocalDate.now().minusDays(60), LocalDate.now().minusDays(15), LoanStatus.ACTIVE);
-        Loan partiallyPaid = loan(12L, 9000003L, LocalDate.now().minusDays(5), LocalDate.now().plusDays(25), LoanStatus.ACTIVE);
+        List<Loan> loans = equivalenceFixtures();
+        stubPerLoanReads(loans);
 
-        when(loanRepository.findById(10L)).thenReturn(java.util.Optional.of(onTime));
-        when(loanRepository.findById(11L)).thenReturn(java.util.Optional.of(overdue));
-        when(loanRepository.findById(12L)).thenReturn(java.util.Optional.of(partiallyPaid));
-        when(paymentRepository.sumAmountByLoanIdAndStatus(10L, PaymentStatus.VERIFIED)).thenReturn(0L);
-        when(paymentRepository.sumAmountByLoanIdAndStatus(11L, PaymentStatus.VERIFIED)).thenReturn(0L);
-        when(paymentRepository.sumAmountByLoanIdAndStatus(12L, PaymentStatus.VERIFIED)).thenReturn(200_000L);
+        java.util.Map<Long, Long> expected = new java.util.HashMap<>();
+        for (Loan l : loans) {
+            expected.put(l.getId(), repaymentService.outstandingAsOf(l.getId(), null));
+        }
+        // The settled loan must actually be capped by the settlement, else the case proves nothing.
+        assertThat(expected.get(13L)).isEqualTo(700_000L);
 
-        long expectedOnTime = repaymentService.outstandingAsOf(10L, null);
-        long expectedOverdue = repaymentService.outstandingAsOf(11L, null);
-        long expectedPartial = repaymentService.outstandingAsOf(12L, null);
+        stubBatchedReads();
 
-        // Batched path: verified sums come back through the grouped projection instead.
-        when(paymentRepository.sumAmountByLoanIdInAndStatus(anyList(), any())).thenReturn(List.of(
-                loanAmount(12L, 200_000L)));
+        var batched = repaymentService.outstandingForAll(loans, null);
 
-        var batched = repaymentService.outstandingForAll(List.of(onTime, overdue, partiallyPaid), null);
+        assertThat(batched).containsExactlyInAnyOrderEntriesOf(expected);
+    }
 
-        assertThat(batched.get(10L)).isEqualTo(expectedOnTime);
-        assertThat(batched.get(11L)).isEqualTo(expectedOverdue);
-        assertThat(batched.get(12L)).isEqualTo(expectedPartial);
+    /**
+     * The batched breakdown must agree item by item — not just on the net figure — and must get there
+     * without the per-loan settlement lookup this work item removed from the register's hot path.
+     */
+    @Test
+    void outstandingBreakdownsForAll_agreesWithOutstandingBreakdownAsOf() {
+        List<Loan> loans = equivalenceFixtures();
+        stubPerLoanReads(loans);
+
+        java.util.Map<Long, RepaymentService.OutstandingBreakdown> expected = new java.util.HashMap<>();
+        for (Loan l : loans) {
+            expected.put(l.getId(), repaymentService.outstandingBreakdownAsOf(l.getId(), null));
+        }
+
+        stubBatchedReads();
+        // Drop the single-loan invocations the expectations above made, so the never() below is a
+        // statement about the batched call alone.
+        clearInvocations(settlementDirectory);
+
+        var batched = repaymentService.outstandingBreakdownsForAll(loans, null);
+
+        assertThat(batched).containsExactlyInAnyOrderEntriesOf(expected);
+        verify(settlementDirectory, never()).approvedSettlementAmount(any());
     }
 
     // ---------------------------------------------------------------- collections officer

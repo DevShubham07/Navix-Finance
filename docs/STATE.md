@@ -58,6 +58,19 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
   call, V49/V57), the ADMIN **bureau backfill/rescore** tool (V62), plus the ADMIN-only
   **company-expense ledger**, **DSA administration** and the full **all-applications register**;
   branded CSV / PDF export throughout.
+- **Performance** — the console's two pathological reads are gone: the telecalling queue and the
+  all-applications register resolve verification completeness for the whole page in one batched call
+  (they used to run one lookup, plus a re-apply chain walk, per row — ~9.7k round trips and 13-15s
+  over the live book) and filter in SQL rather than loading `loan_application` whole; the settlement
+  lookup inside `outstandingForAll` is batched, so the customer book, the loans register and the
+  collections worklist no longer issue two queries per loan. The whole-book `GET /api/customers`
+  (7.5MB) is **retired** — the dashboard reads server-side aggregates (`/book-stats`, `/summary`) and
+  the collections export loads only the customers it exports (`/by-ids`). The verifications overview,
+  the transactions ledger and the leads list are **paged server-side**; polling intervals were
+  recalibrated to how fast each surface actually changes (maker-checker queues stay at 8s). Loan
+  reads (`/api/loan/{id}`, `/outstanding`, `/repayments`) now enforce owner-or-staff. Vercel functions
+  are pinned to `bom1` so the BFF sits in the same region as the backend. Full evidence:
+  [`docs/perf/UI_PERFORMANCE_INVESTIGATION_2026-09-16.md`](perf/UI_PERFORMANCE_INVESTIGATION_2026-09-16.md).
 - **Bot challenge** — Cloudflare **Turnstile** in front of both password logins and both
   forgot-password forms; unset keys = the check is skipped (dev/CI/E2E/demo) — see §12.
 - **Editable profiles & settings** — borrowers self-edit non-identity profile fields (an edit can

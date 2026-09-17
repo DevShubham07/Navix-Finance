@@ -6,6 +6,7 @@ import com.navix.loan.dto.LeadDtos.DispositionRequest;
 import com.navix.loan.dto.LeadDtos.ImportFileRequest;
 import com.navix.loan.dto.LeadDtos.ImportJobView;
 import com.navix.loan.dto.LeadDtos.LeadOutcomeRequest;
+import com.navix.loan.dto.LeadDtos.LeadPage;
 import com.navix.loan.dto.LeadDtos.LeadStats;
 import com.navix.loan.dto.LeadDtos.LeadView;
 import com.navix.loan.dto.LeadDtos.UpdateLeadRequest;
@@ -43,8 +44,9 @@ public class LeadController {
         return ApiResponse.ok(leadService.create(req));
     }
 
+    /** One page of the lead list, newest first; {@code total} counts every match in the filter. */
     @GetMapping
-    public ApiResponse<List<LeadView>> list(
+    public ApiResponse<LeadPage> list(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String callStatus,
             @RequestParam(required = false) String source,
@@ -53,9 +55,12 @@ public class LeadController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) Integer minRating,
             @RequestParam(required = false) Integer maxRating,
-            @RequestParam(required = false) String leadOutcome) {
+            @RequestParam(required = false) String leadOutcome,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size) {
         return ApiResponse.ok(leadService.list(
-                q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome));
+                q, callStatus, source, createdBy, from, to, minRating, maxRating, leadOutcome,
+                page, size));
     }
 
     @GetMapping("/stats")

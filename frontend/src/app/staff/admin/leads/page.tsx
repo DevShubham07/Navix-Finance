@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -19,7 +19,7 @@ import {
   type LeadSource,
   type LeadView,
 } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const CALL_STATUSES: LeadCallStatus[] = [
   "NOT_CALLED",
@@ -67,6 +67,9 @@ export default function AdminLeadsPage() {
     (s) => s.role === "TELECALLER" || s.role === "ADMIN",
   );
 
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+
   const filter = {
     from: from || undefined,
     to: to || undefined,
@@ -89,13 +92,18 @@ export default function AdminLeadsPage() {
   });
 
   const list = useQuery({
-    queryKey: ["admin-leads", filter],
-    queryFn: () => leadsApi.list(filter),
+    queryKey: ["admin-leads", filter, page, pageSize],
+    queryFn: () => leadsApi.list({ ...filter, page, size: pageSize }),
     enabled: !!myRole && hasPermission(myRole, "staff:manage"),
+    placeholderData: keepPreviousData,
   });
 
-  const rows = list.data ?? [];
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  // Server-paged: the register only ever renders one page, and a bulk import can put tens of
+  // thousands of leads behind this filter.
+  const rows = list.data?.rows ?? [];
+  const total = list.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const pageRows = rows;
 
   if (myRole && !hasPermission(myRole, "staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -144,7 +152,18 @@ export default function AdminLeadsPage() {
             { header: "Created at", value: (r) => r.createdAt },
           ]}
           rows={rows}
-          disabled={rows.length === 0}
+          getAllRows={async () => {
+            // The register shows one page; an export means the whole filter, so walk the server.
+            const out: LeadView[] = [];
+            for (let p = 1; ; p += 1) {
+              const chunk = await leadsApi.list({ ...filter, page: p, size: 100 });
+              out.push(...chunk.rows);
+              if (chunk.rows.length === 0 || out.length >= chunk.total) break;
+            }
+            return out;
+          }}
+          allLabel="Download all leads (CSV)"
+          disabled={total === 0}
         />
         <button
           type="button"

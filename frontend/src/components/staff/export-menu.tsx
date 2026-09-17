@@ -19,6 +19,7 @@ export function ExportMenu<Row>({
   rows,
   disabled,
   meta,
+  onOpen,
   getAllRows,
   allLabel = "Download all (CSV)",
 }: {
@@ -30,6 +31,15 @@ export function ExportMenu<Row>({
   disabled?: boolean;
   /** Optional statement-period metadata stamped onto the PDF. */
   meta?: ExportMeta;
+  /**
+   * Fired when the menu goes from closed to open (not on close, not on re-open while already open).
+   *
+   * Lets a caller load export-only enrichment on demand instead of on mount: a page whose columns
+   * join in data no one sees on screen can leave that fetch until someone actually reaches for
+   * Export, rather than making every visitor pay for it. Pair it with `disabled` while the fetch
+   * is in flight.
+   */
+  onOpen?: () => void;
   /** Fetches every row under the current filter (not just the page on screen). */
   getAllRows?: () => Promise<Row[]>;
   allLabel?: string;
@@ -81,10 +91,17 @@ export function ExportMenu<Row>({
   };
   const pageOnly = rows.length === 0;
 
+  // Deliberately not inside the setOpen updater: React may invoke an updater twice (StrictMode),
+  // and `onOpen` is a side effect — a caller's fetch must fire once per open, not per render pass.
+  const toggle = () => {
+    if (!open) onOpen?.();
+    setOpen((o) => !o);
+  };
+
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         disabled={isDisabled}
         className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs font-semibold text-navy hover:bg-grey-100 disabled:cursor-not-allowed disabled:opacity-50"
         title={isDisabled ? "Nothing to export" : "Export the rows on screen"}

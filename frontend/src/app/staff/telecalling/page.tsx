@@ -23,9 +23,15 @@ export default function TelecallingPage() {
   const me = useStaffMe().data;
   const qc = useQueryClient();
   const q = useQuery({
+    // Two minutes, not fifteen seconds. A lead queue's staleness is measured in days — an
+    // application sits here until somebody phones the borrower — so a 15s poll re-fetched the same
+    // rows ~480 times an hour to show nothing new. Worse, this endpoint answers in 13-15s, so the
+    // next poll fired as the previous one landed and the page was never once idle. The Refresh
+    // button below and the assign mutation's invalidation cover the moments that actually change
+    // something.
     queryKey: ["staff-telecalling"],
     queryFn: () => staffApi.telecalling(),
-    refetchInterval: 15000,
+    refetchInterval: 120_000,
   });
 
   const [infoId, setInfoId] = React.useState<number | null>(null);

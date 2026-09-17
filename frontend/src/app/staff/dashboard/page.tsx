@@ -34,17 +34,16 @@ import {
   paiseToINR,
   type ApplicationStatus,
   type ApplicationView,
-  type TransactionView,
+  type BookStatsView,
+  type TransactionPage,
   type TrendPoint,
   type TrendResponse,
-  type CustomerSummary,
 } from "@/lib/api/applications";
-import { segmentCounts, SEGMENT_LABEL, SEGMENTS, type CustomerSegment } from "@/lib/customers/segments";
-import { isMine, decidedCustomerIds } from "@/lib/customers/mine";
+import { SEGMENT_LABEL, SEGMENTS, type CustomerSegment, type SegmentCounts } from "@/lib/customers/segments";
+import { decidedCustomerIds } from "@/lib/customers/mine";
 import {
   decisionStats,
   outcomeStats,
-  bookStats,
   collectionsStats,
 } from "@/lib/staff/my-stats";
 import { useMounted } from "@/hooks/use-mounted";
@@ -54,6 +53,27 @@ import { SalaryDaysPanel } from "@/components/staff/salary-days-panel";
 const REFRESH_MS = 10_000;   // small, actionable queues
 // ponytail: two tiers, not per-query tuning — revisit when the backend lists are paged.
 const SLOW_MS = 60_000;      // whole-book lists and rollups
+// Whole-book aggregates (server-side rollups over every customer). They move on the timescale of a
+// disbursement or a repayment, not of a queue, so polling them at queue speed only costs the
+// database — a minute-old book count is indistinguishable from a live one.
+const BOOK_MS = 5 * 60_000;
+
+/** Zero-filled segment counts — what the admin strip renders until the summary lands. Written out
+ *  rather than derived so the compiler checks it against every `CustomerSegment`. */
+const EMPTY_SEGMENT_COUNTS: SegmentCounts = {
+  all: 0,
+  incomplete: 0,
+  pending: 0,
+  review: 0,
+  approved: 0,
+  disbursementPending: 0,
+  active: 0,
+  overdue: 0,
+  hold: 0,
+  rejected: 0,
+  closed: 0,
+  unallocated: 0,
+};
 
 // ---------------------------------------------------------------------------
 // Formatting helpers — a null metric is unmeasurable, never a fabricated 0.
@@ -288,7 +308,8 @@ export default function StaffDashboardPage() {
     refetchInterval: REFRESH_MS,
   });
 
-  // "Your decision outcomes" — decisions in the selected period, joined against the book below.
+  // "Your decision outcomes" — decisions in the selected period, joined below against the customers
+  // those decisions name (decidedCustomersQuery).
   const windowedDecisionsQuery = useQuery({
     queryKey: ["staff-dashboard-decisions-windowed", range.from ?? "", range.to ?? ""],
     queryFn: () => staffApi.decisions(undefined, range.from, range.to),
@@ -296,51 +317,55 @@ export default function StaffDashboardPage() {
     refetchInterval: REFRESH_MS,
   });
 
-  // All-time "mine" decisions — used only to decide book membership (isMine), so the "borrowers in
-  // your book" tile matches /staff/customers?mine=1 exactly (that page's ownership check is also
-  // all-time, unwindowed).
-  const allDecisionsQuery = useQuery({
-    queryKey: ["staff-dashboard-decisions-all"],
-    queryFn: () => staffApi.decisions(),
-    enabled: mounted && !!role && has("borrowers"),
-    refetchInterval: SLOW_MS,
-    staleTime: SLOW_MS,
+  // "Your borrowers" — the fifteen tiles, aggregated server-side over the caller's own book (who is
+  // "mine" is the server's call now, so this is scoped identically to /staff/customers?mine=1 and
+  // needs no all-time decision list to narrow it). Also carries the two counts the "my customers" /
+  // "my overdue" queue lines below need.
+  const bookStatsQuery = useQuery({
+    queryKey: ["staff-dashboard-book-stats"],
+    queryFn: () => customersApi.bookStats(),
+    enabled: mounted && !!role && role !== "DSA" && (has("work") || has("borrowers")),
+    refetchInterval: BOOK_MS,
+    staleTime: BOOK_MS,
   });
 
-  // "Your borrowers" — company list, scoped server-side for most roles already; narrowed further by
-  // isMine for the roles (Head/ADMIN) whose server scope is broader. Also feeds the admin segment
-  // strip and the "my customers"/"my overdue" queue extras below — one fetch for all three (Step 1.1).
-  const customersQuery = useQuery({
-    queryKey: ["staff-dashboard-customers"],
-    queryFn: () => customersApi.list(),
-    enabled: mounted && !!role && role !== "DSA" && (has("work") || has("borrowers") || isAdmin),
-    refetchInterval: SLOW_MS,
-    staleTime: SLOW_MS,
+  // Admin segment strip — the same twelve counts the customers page shows, rolled up server-side.
+  const segmentSummaryQuery = useQuery({
+    queryKey: ["staff-dashboard-segment-summary"],
+    queryFn: () => customersApi.summary(),
+    enabled: mounted && isAdmin,
+    refetchInterval: BOOK_MS,
+    staleTime: BOOK_MS,
   });
-  const book: CustomerSummary[] = React.useMemo(() => {
-    const rows = customersQuery.data ?? [];
-    // Fail CLOSED: without a resolvable staff id an ADMIN/Head would read the whole company book
-    // under a "your borrowers" heading — the precise mislabelling this dashboard exists to remove.
-    if (sid == null) return [];
-    const decided = decidedCustomerIds(allDecisionsQuery.data ?? []);
-    return rows.filter((c) => isMine(c, sid, decided));
-  }, [customersQuery.data, allDecisionsQuery.data, sid]);
 
-  // "My customers"/"my-overdue" queue extras — mirrors the old fetchRoleQueue best-effort block:
-  // empty when there's no resolvable staff id, or the customers fetch hasn't resolved yet (error or
-  // still loading), same as the old try/catch swallowing a failure.
+  // The customers behind the decisions in the selected period — outcomeStats joins the two. Fetched
+  // by id (sorted, so the key is stable) rather than by pulling the whole book to keep a handful of
+  // rows out of it; a customer the caller decided on is by definition in their book.
+  const decidedIds = React.useMemo(
+    () => [...decidedCustomerIds(windowedDecisionsQuery.data ?? [])].sort((a, b) => a - b),
+    [windowedDecisionsQuery.data],
+  );
+  const decidedCustomersQuery = useQuery({
+    queryKey: ["staff-dashboard-decided-customers", decidedIds],
+    queryFn: () => customersApi.byIdsAll(decidedIds),
+    enabled: mounted && !!role && has("outcomes") && decidedIds.length > 0,
+    refetchInterval: BOOK_MS,
+    staleTime: BOOK_MS,
+  });
+
+  // "My customers"/"my-overdue" queue extras — two counts off the book aggregate above. Empty until
+  // it resolves (error or still loading), same as the old try/catch swallowing a failure.
   const myCustomerExtras: QueueExtra[] = React.useMemo(() => {
-    if (sid == null || customersQuery.data == null) return [];
-    const mine = customersQuery.data.filter((c) => c.ownerStaffId === sid);
-    const overdue = mine.filter((c) => c.loanStatus === "OVERDUE" || c.loanStatus === "IN_COLLECTIONS");
+    const book = bookStatsQuery.data;
+    if (book == null) return [];
     const out: QueueExtra[] = [
-      { key: "my-customers", label: "Customers allocated to you", count: mine.length, href: "/staff/customers?mine=1" },
+      { key: "my-customers", label: "Customers allocated to you", count: book.ownedCount, href: "/staff/customers?mine=1" },
     ];
-    if (overdue.length > 0) {
-      out.push({ key: "my-overdue", label: "Your customers now overdue", count: overdue.length, href: "/staff/customers?seg=overdue&mine=1" });
+    if (book.ownedOverdue > 0) {
+      out.push({ key: "my-overdue", label: "Your customers now overdue", count: book.ownedOverdue, href: "/staff/customers?seg=overdue&mine=1" });
     }
     return out;
-  }, [customersQuery.data, sid]);
+  }, [bookStatsQuery.data]);
 
   // Collections desk — only for the two collections roles (+ ADMIN).
   const casesQuery = useQuery({
@@ -428,15 +453,14 @@ export default function StaffDashboardPage() {
   // renders half-populated. Preserve that with the queries that now feed the extras above.
   const queueLoading =
     queueQuery.isLoading ||
-    (sid != null && customersQuery.isLoading) ||
     ((role === "COLLECTION_HEAD" || isAdmin) && settlementsQuery.isLoading) ||
     (role === "COLLECTION_EXECUTIVE" && casesQuery.isLoading);
 
   const decisions = performanceQuery.data ? decisionStats(performanceQuery.data, range.from) : null;
   const outcomes = has("outcomes") && windowedDecisionsQuery.data
-    ? outcomeStats(windowedDecisionsQuery.data, book)
+    ? outcomeStats(windowedDecisionsQuery.data, decidedCustomersQuery.data ?? [])
     : null;
-  const books = has("borrowers") ? bookStats(book, new Date()) : null;
+  const books = has("borrowers") ? bookStatsQuery.data ?? null : null;
   const collections = has("collections")
     && casesQuery.data && settlementsQuery.data && collectionPaymentsQuery.data && sid != null
     ? collectionsStats(casesQuery.data, settlementsQuery.data, collectionPaymentsQuery.data, sid)
@@ -449,8 +473,9 @@ export default function StaffDashboardPage() {
     queueQuery.isFetching ||
     performanceQuery.isFetching ||
     windowedDecisionsQuery.isFetching ||
-    allDecisionsQuery.isFetching ||
-    customersQuery.isFetching ||
+    bookStatsQuery.isFetching ||
+    segmentSummaryQuery.isFetching ||
+    decidedCustomersQuery.isFetching ||
     casesQuery.isFetching ||
     settlementsQuery.isFetching ||
     collectionPaymentsQuery.isFetching ||
@@ -460,8 +485,9 @@ export default function StaffDashboardPage() {
     queueQuery.refetch();
     performanceQuery.refetch();
     windowedDecisionsQuery.refetch();
-    allDecisionsQuery.refetch();
-    customersQuery.refetch();
+    bookStatsQuery.refetch();
+    segmentSummaryQuery.refetch();
+    decidedCustomersQuery.refetch();
     casesQuery.refetch();
     settlementsQuery.refetch();
     collectionPaymentsQuery.refetch();
@@ -552,13 +578,13 @@ export default function StaffDashboardPage() {
       {has("outcomes") && (
         <OutcomesSection
           stats={outcomes}
-          loading={windowedDecisionsQuery.isLoading || customersQuery.isLoading}
+          loading={windowedDecisionsQuery.isLoading || decidedCustomersQuery.isLoading}
         />
       )}
 
       {/* Section 4 — Your borrowers */}
       {has("borrowers") && (
-        <BorrowersSection stats={books} loading={customersQuery.isLoading || allDecisionsQuery.isLoading} />
+        <BorrowersSection stats={books} loading={bookStatsQuery.isLoading} />
       )}
 
       {/* Section 5 — Collections desk */}
@@ -594,10 +620,10 @@ export default function StaffDashboardPage() {
           </section>
 
           <SegmentBar
-            counts={segmentCounts(customersQuery.data ?? [])}
-            loading={customersQuery.isLoading}
+            counts={segmentSummaryQuery.data ?? EMPTY_SEGMENT_COUNTS}
+            loading={segmentSummaryQuery.isLoading}
           />
-          <SalaryDaysPanel rows={customersQuery.data ?? []} loading={customersQuery.isLoading} />
+          <SalaryDaysPanel />
 
           <details className="group mt-8 rounded border border-line bg-white shadow-sm">
             {/* No interactive children inside <summary> — it is itself a disclosure control. */}
@@ -611,7 +637,7 @@ export default function StaffDashboardPage() {
                 Company-wide money movement — disbursals out and repayments in.
                 <InfoTooltip content="Admin oversight; the full searchable ledger lives under Administration → Transactions." />
               </p>
-              <AdminTransactions rows={txns.data ?? []} loading={txns.isLoading} />
+              <AdminTransactions page={txns.data} loading={txns.isLoading} />
             </div>
           </details>
         </>
@@ -858,8 +884,8 @@ function OutcomesSection({ stats, loading }: { stats: ReturnType<typeof outcomeS
   );
 }
 
-/** Section 4 — Your borrowers, off bookStats(). */
-function BorrowersSection({ stats, loading }: { stats: ReturnType<typeof bookStats> | null; loading: boolean }) {
+/** Section 4 — Your borrowers, off the server-side book aggregate (`customersApi.bookStats`). */
+function BorrowersSection({ stats, loading }: { stats: BookStatsView | null; loading: boolean }) {
   const href = (seg?: CustomerSegment) => `/staff/customers?mine=1${seg ? `&seg=${seg}` : ""}`;
   return (
     <section className="mt-8">
@@ -1040,7 +1066,7 @@ function SegmentBar({
   counts,
   loading,
 }: {
-  counts: ReturnType<typeof segmentCounts>;
+  counts: SegmentCounts;
   loading: boolean;
 }) {
   const chips: CustomerSegment[] = ["all", ...SEGMENTS];
@@ -1048,7 +1074,7 @@ function SegmentBar({
     <section className="mt-8">
       <div className="mb-3 flex items-center gap-2">
         <h2 className="mb-0 text-xl">Customers by segment</h2>
-        <InfoTooltip content="Client-side roll-up of every customer into lifecycle segments. Unallocated is tinted when the backlog is non-zero." />
+        <InfoTooltip content="Every customer rolled up into lifecycle segments, counted server-side. Unallocated is tinted when the backlog is non-zero." />
       </div>
       {loading ? (
         <div className="h-24 animate-pulse rounded border border-line bg-white" />
@@ -1194,10 +1220,12 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 }
 
 /** Admin-only: company-wide money-movement summary + the latest transactions, with a link to the ledger. */
-function AdminTransactions({ rows, loading }: { rows: TransactionView[]; loading: boolean }) {
-  const totalIn = rows.filter((r) => r.direction === "INCOMING").reduce((s, r) => s + r.amountPaise, 0);
-  const totalOut = rows.filter((r) => r.direction === "OUTGOING").reduce((s, r) => s + r.amountPaise, 0);
-  const latest = rows.slice(0, 5);
+function AdminTransactions({ page, loading }: { page?: TransactionPage; loading: boolean }) {
+  // Totals come off the page envelope, not the rows: the ledger is server-paged, so summing the
+  // rows in hand would quietly report one page's money as the company's.
+  const totalIn = page?.totalInPaise ?? 0;
+  const totalOut = page?.totalOutPaise ?? 0;
+  const latest = (page?.rows ?? []).slice(0, 5);
 
   return (
     <div>

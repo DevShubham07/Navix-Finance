@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Search, X, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui";
 import { Dialog } from "@/components/ui/dialog";
@@ -9,6 +9,8 @@ import { PageHeader } from "@/components/staff/staff-ui";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { staffApi, type VerificationOverviewRow } from "@/lib/api/applications";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatDateTime } from "@/lib/utils";
 
 /** The four application-wise buckets, in triage priority order. */
@@ -82,26 +84,51 @@ interface AppCard {
  */
 export default function VerificationsDashboardPage() {
   const [search, setSearch] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
+  const debounced = useDebouncedValue(search.trim());
   const [selected, setSelected] = React.useState<AppCard | null>(null);
+  // Paging is the SERVER's now: it pages by application (an application's checks are never split
+  // across pages), and by default returns only the ones that still need a reviewer.
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+  const [includeCleared, setIncludeCleared] = React.useState(false);
+
+  // Any change to what is being asked for puts you back at the first page — page 4 of the old
+  // filter is a meaningless offset into the new one.
   React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(search.trim()), 300);
-    return () => clearTimeout(t);
-  }, [search]);
+    setPage(1);
+  }, [debounced, includeCleared]);
 
   const q = useQuery({
-    queryKey: ["staff-verif-overview", debounced],
-    queryFn: () => staffApi.verificationOverview({ q: debounced || undefined }),
-    refetchInterval: 15_000,
+    queryKey: ["staff-verif-overview", debounced, page, pageSize, includeCleared],
+    queryFn: () =>
+      staffApi.verificationOverview({
+        q: debounced || undefined,
+        // `undefined` is the server's default (needs-attention only); only ask for the whole
+        // undecided queue when the reviewer opts in.
+        needsAttention: includeCleared ? false : undefined,
+        page,
+        size: pageSize,
+      }),
+    // 45s: this is a triage board, not a maker-checker desk — a verification result arrives from a
+    // provider callback minutes after the borrower acts, so a 15s poll re-fetched the same board
+    // three times for every change it could possibly show.
+    refetchInterval: 45_000,
+    // Paging swaps the query key, so without this every Next/Prev blanked the buckets back to the
+    // loading skeleton.
+    placeholderData: keepPreviousData,
   });
   // Enrich: KYC_PENDING applications with zero verification rows form the "Not started" bucket.
   const pendingQ = useQuery({
     queryKey: ["staff-verif-kyc-pending"],
     queryFn: () => staffApi.listByStatus("KYC_PENDING"),
-    refetchInterval: 15_000,
+    refetchInterval: 45_000,
   });
 
   const data = q.data;
+  // `total` counts matching APPLICATIONS — the unit the server pages by — so the bar can't be
+  // derived from `rows.length` (one application contributes many rows).
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   const cards = React.useMemo<AppCard[]>(() => {
     // Group verification rows by application — only applications still awaiting a KYC decision.
@@ -198,7 +225,11 @@ export default function VerificationsDashboardPage() {
     <div>
       <PageHeader
         title="Verification dashboard"
-        subtitle="Every application that needs a KYC decision, grouped by where it stands — failures first, then awaiting the borrower, then cleared."
+        subtitle={
+          includeCleared
+            ? "Every application still awaiting a KYC decision, grouped by where it stands — failures first, then awaiting the borrower, then cleared."
+            : "Applications that need attention — the ones with a failed check or still waiting on the borrower. Tick “Include cleared” to see the fully-passed files too."
+        }
       >
         <button
           onClick={() => {
@@ -221,6 +252,14 @@ export default function VerificationsDashboardPage() {
         </div>
 
         <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+          <label className="flex items-center gap-2 text-xs text-muted">
+            <input
+              type="checkbox"
+              checked={includeCleared}
+              onChange={(e) => setIncludeCleared(e.target.checked)}
+            />
+            Include cleared
+          </label>
           <Input
             aria-label="Search by borrower / application / customer id"
             value={search}
@@ -240,7 +279,8 @@ export default function VerificationsDashboardPage() {
           </p>
         ) : cards.length === 0 ? (
           <p className="rounded border border-line bg-white px-5 py-8 text-center text-sm text-muted shadow-sm">
-            No applications to verify{debounced ? ` for “${debounced}”` : ""}.
+            No applications need attention{debounced ? ` for “${debounced}”` : ""}.
+            {!includeCleared && " Tick “Include cleared” to see the files that have already passed."}
           </p>
         ) : (
           <div className="space-y-6">
@@ -261,6 +301,21 @@ export default function VerificationsDashboardPage() {
                 </section>
               );
             })}
+            {total > 0 && (
+              <div className="rounded border border-line bg-white shadow-sm">
+                <PaginationBar
+                  page={page}
+                  pageCount={pageCount}
+                  setPage={setPage}
+                  total={total}
+                  pageSize={pageSize}
+                  setPageSize={(size) => {
+                    setPageSize(size);
+                    setPage(1);
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
       </PermissionGate>

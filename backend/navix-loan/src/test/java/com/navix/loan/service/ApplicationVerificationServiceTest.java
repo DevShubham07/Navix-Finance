@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -126,7 +127,7 @@ class ApplicationVerificationServiceTest {
         CustomerProfile p = profile();
         when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of(p));
 
-        var result = service.overview(null, null, null);
+        var result = service.overview(null, null, null, null, 1, 25);
 
         assertThat(result.passed()).isEqualTo(1);
         assertThat(result.rows()).hasSize(1);
@@ -146,7 +147,7 @@ class ApplicationVerificationServiceTest {
     void overview_withNoUndecidedApplications_returnsZeroedResultWithoutFurtherQueries() {
         when(applicationRepo.findByStatusIn(any())).thenReturn(List.of());
 
-        var result = service.overview(null, null, null);
+        var result = service.overview(null, null, null, null, 1, 25);
 
         assertThat(result.passed()).isZero();
         assertThat(result.failed()).isZero();
@@ -173,10 +174,144 @@ class ApplicationVerificationServiceTest {
                 .thenReturn(List.of(row(APP, "PAN", "FAIL")));
         when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
 
-        var result = service.overview(null, null, null);
+        var result = service.overview(null, null, null, null, 1, 25);
 
         assertThat(result.failed()).isEqualTo(1);
         assertThat(result.rows()).extracting("applicationId").containsExactly(APP);
+    }
+
+    // ------------------------------------------------------- overview paging + attention default
+    //
+    // The undecided queue is dominated by abandoned DRAFT intakes, so returning every row of it on a
+    // 15s poll shipped 418KB per poll over the live book and only grew. Rows are now paged by
+    // application (the page renders one card per application, so a row-sliced page would draw cards
+    // from half their checks) and default to the applications the dashboard's own bucket rule counts
+    // as work. The five tallies stay over the whole queue so the headline numbers never move.
+
+    /** Every gating check PASSing is the page's "all checks passed" bucket — not attention work. */
+    @Test
+    void overview_defaultExcludesApplicationsWhoseGatingChecksAllPass() {
+        LoanApplication cleared = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
+        LoanApplication needsWork = appWithStatus(43L, ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(cleared, needsWork));
+        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
+        for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
+                "PENNY_DROP", "SELFIE")) {
+            rows.add(row(APP, check, "PASS"));
+        }
+        rows.add(row(43L, "PAN", "FAIL"));
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null, null, 1, 25);
+
+        assertThat(result.total()).isEqualTo(1);
+        assertThat(result.rows()).extracting("applicationId").containsOnly(43L);
+        // Tallies still cover the whole queue, cleared application included.
+        assertThat(result.passed()).isEqualTo(8);
+        assertThat(result.failed()).isEqualTo(1);
+    }
+
+    /** A gating check that never ran is outstanding borrower work, so the file stays in the default. */
+    @Test
+    void overview_defaultKeepsApplicationsMissingAGatingCheck() {
+        LoanApplication partial = appWithStatus(APP, ApplicationStatus.DRAFT);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(partial));
+        when(verificationRepo.findByApplicationIdIn(any()))
+                .thenReturn(List.of(row(APP, "PAN", "PASS"), row(APP, "EMAIL", "PASS")));
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null, null, 1, 25);
+
+        assertThat(result.total()).isEqualTo(1);
+        assertThat(result.rows()).hasSize(2);
+    }
+
+    /** needsAttention=false is the escape hatch back to the full undecided queue. */
+    @Test
+    void overview_needsAttentionFalseReturnsEveryUndecidedApplication() {
+        LoanApplication cleared = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(cleared));
+        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
+        for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
+                "PENNY_DROP", "SELFIE")) {
+            rows.add(row(APP, check, "PASS"));
+        }
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null, false, 1, 25);
+
+        assertThat(result.total()).isEqualTo(1);
+        assertThat(result.rows()).hasSize(8);
+    }
+
+    /** Paging counts applications, and never splits one application's checks across two pages. */
+    @Test
+    void overview_pagesByApplicationNotByRow() {
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(
+                appWithStatus(1L, ApplicationStatus.DRAFT),
+                appWithStatus(2L, ApplicationStatus.DRAFT),
+                appWithStatus(3L, ApplicationStatus.DRAFT)));
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of(
+                row(1L, "PAN", "FAIL"), row(1L, "EMAIL", "PENDING"),
+                row(2L, "PAN", "FAIL"), row(2L, "EMAIL", "PENDING"),
+                row(3L, "PAN", "FAIL"), row(3L, "EMAIL", "PENDING")));
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var first = service.overview(null, null, null, null, 1, 2);
+
+        assertThat(first.total()).isEqualTo(3);          // applications, not the 6 rows
+        assertThat(first.page()).isEqualTo(1);
+        assertThat(first.size()).isEqualTo(2);
+        assertThat(first.rows()).hasSize(4);             // two applications, both checks each
+        // Whole cards, never half of one: exactly two distinct applications, two rows apiece.
+        assertThat(first.rows()).extracting("applicationId")
+                .containsOnly(1L, 2L)
+                .filteredOn(id -> id.equals(1L)).hasSize(2);
+
+        var second = service.overview(null, null, null, null, 2, 2);
+        assertThat(second.rows()).hasSize(2);
+        // Tallies are identical on both pages — they describe the queue, not the page.
+        assertThat(second.failed()).isEqualTo(first.failed());
+        assertThat(second.pending()).isEqualTo(first.pending());
+    }
+
+    /** An explicit status filter is the reviewer asking for something specific — it wins over the default. */
+    @Test
+    void overview_explicitStatusFilterBypassesTheAttentionDefault() {
+        LoanApplication cleared = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(cleared));
+        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
+        for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
+                "PENNY_DROP", "SELFIE")) {
+            rows.add(row(APP, check, "PASS"));
+        }
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var result = service.overview("PASS", null, null, null, 1, 25);
+
+        assertThat(result.rows()).hasSize(8);
+        assertThat(result.total()).isEqualTo(1);
+    }
+
+    /** Page and size are clamped the same way the customer book clamps them. */
+    @Test
+    void overview_clampsPageAndSize() {
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null, null, 0, 5_000);
+
+        assertThat(result.page()).isEqualTo(1);
+        assertThat(result.size()).isEqualTo(100);
+    }
+
+    private static LoanApplication appWithStatus(Long id, ApplicationStatus status) {
+        LoanApplication a = new LoanApplication();
+        a.setId(id);
+        a.setStatus(status);
+        return a;
     }
 
     @Test
@@ -1687,6 +1822,137 @@ class ApplicationVerificationServiceTest {
 
         assertThat(p.failed()).isEqualTo(1);
         assertThat(p.completed()).isZero();
+    }
+
+    // ---------------------------------------------------------------- batched completeness
+    //
+    // requiredPassedCounts is the batched twin of requiredPassedCount: the admin registers used to
+    // call the per-row form once per application (plus a re-apply chain walk each), which over the
+    // live book meant ~9.7k round trips in one request. These tests pin that the batched form gives
+    // the same answer as the per-row one — including the carry-forward rules, the 5-hop cap and
+    // cycle-safety — because the registers now read completeness only through it.
+
+    /** One projection row, the lean shape the batched path reads instead of full entities. */
+    private static ApplicationVerificationRepository.CaseFailureRow caseRow(Long appId, String type,
+                                                                           String status) {
+        return new ApplicationVerificationRepository.CaseFailureRow() {
+            @Override public Long getApplicationId() { return appId; }
+            @Override public String getCheckType() { return type; }
+            @Override public String getStatus() { return status; }
+            @Override public String getDerived() { return null; }
+            @Override public String getMessage() { return null; }
+            @Override public Long getScore() { return null; }
+            @Override public String getProvider() { return null; }
+            @Override public String getProviderTxnId() { return null; }
+        };
+    }
+
+    private static LoanApplication appWithSource(Long id, Long reappliedFrom) {
+        LoanApplication a = new LoanApplication();
+        a.setId(id);
+        a.setReappliedFrom(reappliedFrom);
+        return a;
+    }
+
+    /** A row on the newer application always wins over the carried one — a re-run FAIL is not masked. */
+    @Test
+    void requiredPassedCounts_ownRowWinsOverTheCarriedOne() {
+        Long prior = 41L;
+        when(verificationRepo.findByApplicationIdInAndCheckTypeIn(any(), any()))
+                .thenReturn(List.of(caseRow(APP, "PAN", "FAIL")))
+                .thenReturn(List.of(caseRow(prior, "PAN", "PASS")));
+        when(applicationRepo.findAllById(any())).thenReturn(List.of(appWithSource(prior, null)));
+
+        var counts = service.requiredPassedCounts(List.of(appWithSource(APP, prior)));
+
+        assertThat(counts).containsEntry(APP, 0);
+    }
+
+    /** Intake evidence proved on the prior advance still counts — the carry-forward rule. */
+    @Test
+    void requiredPassedCounts_countsIntakeEvidenceCarriedFromThePriorApplication() {
+        Long prior = 41L;
+        when(verificationRepo.findByApplicationIdInAndCheckTypeIn(any(), any()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(caseRow(prior, "PAN", "PASS"), caseRow(prior, "EMAIL", "REVIEW"),
+                        caseRow(prior, "BUREAU", "PASS"), caseRow(prior, "SALARY", "PASS")));
+        when(applicationRepo.findAllById(any())).thenReturn(List.of(appWithSource(prior, null)));
+
+        var counts = service.requiredPassedCounts(List.of(appWithSource(APP, prior)));
+
+        assertThat(counts).containsEntry(APP, 4);
+    }
+
+    /** The walk is capped at five hops, so evidence further back than that is not counted. */
+    @Test
+    void requiredPassedCounts_stopsAfterFiveHops() {
+        // APP -> 1 -> 2 -> 3 -> 4 -> 5 -> 6, with the only PAN evidence sitting on hop six.
+        when(verificationRepo.findByApplicationIdInAndCheckTypeIn(any(), any()))
+                .thenAnswer(inv -> {
+                    java.util.Collection<Long> ids = inv.getArgument(0);
+                    return ids.contains(6L) ? List.of(caseRow(6L, "PAN", "PASS")) : List.of();
+                });
+        when(applicationRepo.findAllById(any())).thenAnswer(inv -> {
+            java.util.List<Long> ids = new java.util.ArrayList<>((java.util.Collection<Long>) inv.getArgument(0));
+            return ids.stream().map(id -> appWithSource(id, id + 1)).toList();
+        });
+
+        var counts = service.requiredPassedCounts(List.of(appWithSource(APP, 1L)));
+
+        assertThat(counts).containsEntry(APP, 0);
+        // Five hops, each one application load — never one per application per hop.
+        verify(applicationRepo, times(5)).findAllById(any());
+    }
+
+    /** A cycle in the data terminates instead of spinning, and the evidence is still counted once. */
+    @Test
+    void requiredPassedCounts_terminatesOnACycle() {
+        Long other = 41L;
+        when(verificationRepo.findByApplicationIdInAndCheckTypeIn(any(), any()))
+                .thenAnswer(inv -> {
+                    java.util.Collection<Long> ids = inv.getArgument(0);
+                    return ids.contains(other) ? List.of(caseRow(other, "PAN", "PASS")) : List.of();
+                });
+        // APP re-applied from `other`, and `other` points back at APP.
+        when(applicationRepo.findAllById(any())).thenAnswer(inv -> {
+            java.util.Collection<Long> ids = inv.getArgument(0);
+            return ids.contains(other) ? List.of(appWithSource(other, APP)) : List.of(appWithSource(APP, other));
+        });
+
+        var counts = service.requiredPassedCounts(List.of(appWithSource(APP, other)));
+
+        assertThat(counts).containsEntry(APP, 1);
+    }
+
+    /** An application with no verification rows at all is present with a zero, not missing. */
+    @Test
+    void requiredPassedCounts_reportsZeroForAnApplicationWithNoRows() {
+        when(verificationRepo.findByApplicationIdInAndCheckTypeIn(any(), any())).thenReturn(List.of());
+
+        var counts = service.requiredPassedCounts(List.of(appWithSource(APP, null)));
+
+        assertThat(counts).containsEntry(APP, 0);
+        verify(applicationRepo, never()).findAllById(any());
+    }
+
+    /** The per-application entry point now goes through the batched core, so the two cannot drift. */
+    @Test
+    void requiredPassedCount_agreesWithTheBatchedFormAndUsesTheProjection() {
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(appWithSource(APP, null)));
+        when(verificationRepo.findByApplicationIdInAndCheckTypeIn(any(), any())).thenReturn(List.of(
+                caseRow(APP, "PAN", "PASS"), caseRow(APP, "EMAIL", "REVIEW"), caseRow(APP, "BUREAU", "FAIL")));
+
+        int single = service.requiredPassedCount(APP);
+
+        assertThat(single).isEqualTo(2); // PASS + REVIEW count, FAIL does not
+        // The heavy per-row entity read is gone from this path.
+        verify(verificationRepo, never()).findByApplicationIdOrderByIdAsc(APP);
+    }
+
+    @Test
+    void requiredPassedCounts_emptyInputIssuesNoQueries() {
+        assertThat(service.requiredPassedCounts(List.of())).isEmpty();
+        verifyNoInteractions(verificationRepo);
     }
 
     private VerificationPort.AadhaarResult aadhaar(String masked) {

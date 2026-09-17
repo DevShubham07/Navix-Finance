@@ -1,5 +1,7 @@
 package com.navix.common.collections;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -26,4 +28,19 @@ public interface SettlementDirectory {
      * @return the approved settlement amount in paise, or empty if none applies
      */
     Optional<Long> approvedSettlementAmount(Long loanId);
+
+    /**
+     * The batched twin of {@link #approvedSettlementAmount}: loan id → the operative approved
+     * settlement amount (paise), resolved for a whole page of loans in a fixed number of queries
+     * instead of one round trip per loan. Same rule per loan — the most recently approved settlement
+     * on the loan's collection case is operative.
+     *
+     * <p>A loan with no collection case, or a case with no approved settlement, is <b>absent</b> from
+     * the map — never present with a zero, which would read as "settled at nothing" and wrongly close
+     * the loan. So {@code map.get(id) == null} is exactly {@code approvedSettlementAmount(id).isEmpty()}.
+     *
+     * @param loanIds the real (bigint) loan ids; an empty or null collection issues no query
+     * @return loan id → approved settlement amount in paise, for the loans that have one
+     */
+    Map<Long, Long> approvedSettlementAmounts(Collection<Long> loanIds);
 }
