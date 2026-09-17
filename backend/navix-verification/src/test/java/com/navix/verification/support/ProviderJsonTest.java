@@ -63,21 +63,22 @@ class ProviderJsonTest {
     }
 
     /**
-     * A raw transport failure (here: the default Jackson converter refusing to read a body it wasn't
-     * told is JSON) must come back as a {@link VerificationException}, not the underlying
-     * {@code RestClientException}. {@code RoutingVerificationPort.route()} catches only
-     * {@code VerificationException}/{@code CapabilityNotSupportedException} — before this fix the raw
-     * exception propagated past it and aborted the whole provider chain (25 applications in the
-     * Sep-2026 pending-queue audit never reached Digitap/Fintrix because Signzy threw one of these).
-     * {@code UnknownContentTypeException} is the concrete type here (Spring throws it when no converter
-     * claims the response's content type), and it is a plain {@code RestClientException}, not a
-     * {@code RestClientResponseException} — so it lands in {@code ProviderJson.post}'s
-     * {@code catch (RuntimeException transportFailure)} branch exactly like a socket timeout would.
+     * A body that isn't valid JSON at all (not merely mislabelled — see
+     * {@link #jsonBodyLabelledOctetStreamNowParsesInsteadOfThrowing} for that case) must still come back
+     * as a {@link VerificationException}, not an opaque {@code RestClientException}, so
+     * {@code RoutingVerificationPort.route()} (which catches only
+     * {@code VerificationException}/{@code CapabilityNotSupportedException}) falls through instead of
+     * aborting the whole provider chain.
+     *
+     * <p>{@code ProviderJson.post} reads the response as a raw {@code String} first — Spring's default
+     * {@code StringHttpMessageConverter} accepts any {@code Content-Type} — so the transport itself
+     * succeeds and the real HTTP status/body reach the audit trail even though the content can't be
+     * parsed as JSON. Before that fix, the plain Jackson converter threw before the response was ever
+     * read, and the audit row recorded {@code httpStatus: null} / {@code response: null} — the answer
+     * was lost on our side of the wire, not the provider's.
      */
     @Test
     void undeserializableResponseIsWrappedAsVerificationExceptionCarryingTheEndpoint() {
-        // Deliberately the PLAIN builder (no lenient converter) — the default Jackson converter only
-        // accepts application/json, so octet-stream is refused before the body is even looked at.
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("/pan"))
@@ -86,9 +87,9 @@ class ProviderJsonTest {
         assertThatThrownBy(() -> ProviderJson.post(builder.build(), "/pan", Map.of("pan", "ABCDE1234F")))
                 .isInstanceOfSatisfying(VerificationException.class, failure -> {
                     assertThat(failure.endpoint()).isEqualTo("/pan");
-                    // A transport-stage failure never got a response to read, so status/code are null —
-                    // see the 6-arg VerificationException constructor in ProviderJson.post.
-                    assertThat(failure.httpStatus()).isNull();
+                    // The HTTP transport succeeded, so the real status is captured — only the JSON
+                    // parse failed.
+                    assertThat(failure.httpStatus()).isEqualTo(200);
                     assertThat(failure.providerCode()).isNull();
                 });
         server.verify();
