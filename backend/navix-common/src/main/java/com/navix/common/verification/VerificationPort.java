@@ -242,9 +242,21 @@ public interface VerificationPort {
     record DigiLockerDownload(String txnId, String downloadUrl, String mimeType) {
     }
 
+    /**
+     * {@code validDsc} is the Aadhaar document-signer signature check ({@code x509Data.validAadhaarDSC}
+     * on Signzy's e-Aadhaar). It is the difference between "this document is not ready yet" and "this
+     * document will never be acceptable", and it used to be dropped on the way out of the provider
+     * client — so the adapter collapsed an invalid signature into "not ready" and the borrower's page
+     * polled it forever. One borrower produced 820 successful e-Aadhaar fetches in three and a half
+     * hours that way, 58% of every successful DigiLocker call in a 90-day window.
+     *
+     * <p>{@code null} means the provider did not say (treat as not valid — the caller must not record
+     * a PASS on a signature it cannot confirm).
+     */
     record AadhaarResult(String txnId, String fullName, String dob, String gender, String maskedAadhaar,
                           String fullAddress, String state, String district, String city, String pincode,
                           String country, String addressLine, String landmark, String dscSubject,
-                          String profileImageBase64, String pdfUrl, String jpegUrl, String xmlUrl) {
+                          String profileImageBase64, String pdfUrl, String jpegUrl, String xmlUrl,
+                          Boolean validDsc) {
     }
 }

@@ -27,13 +27,23 @@ import org.springframework.web.client.RestClient;
 class ProviderCallLogTest {
 
     private final List<ProviderCall> recorded = new ArrayList<>();
+    private final List<String> reclassified = new ArrayList<>();
 
     @BeforeEach
     void installRecorder() {
         recorded.clear();
-        ProviderCallLog.setRecorder(call -> {
-            recorded.add(call);
-            return 42L;
+        reclassified.clear();
+        ProviderCallLog.setRecorder(new ProviderCallRecorder() {
+            @Override
+            public Long record(ProviderCall call) {
+                recorded.add(call);
+                return 42L;
+            }
+
+            @Override
+            public void markFailed(Long executionId, String error) {
+                reclassified.add(executionId + ":" + error);
+            }
         });
     }
 
@@ -87,8 +97,60 @@ class ProviderCallLogTest {
         server.verify();
     }
 
+    /**
+     * The audit status is the CALLER'S outcome, not a guess from the envelope's shape.
+     *
+     * <p>{@code postAllowingErrorEnvelope} exists precisely so a client can read an "error"-shaped body
+     * as a legitimate ANSWER — Digitap's UAN {@code 103}/{@code 104} ("no EPFO record") and Fintrix's
+     * "no data found in CRIF" are the two that matter. Marking those FAILED buried the real failures:
+     * 1,939 of the 4,848 rows in the Sep-2026 audit were correct answers logged at ERROR, which took
+     * the dashboard's apparent failure rate from ~10% to 24.5%.
+     */
     @Test
-    void marksATwoHundredCarryingAnErrorEnvelopeAsFailed() {
+    void aToleratedErrorEnvelopeIsRecordedAsSuccess() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("/validation/kyc/v1/uan_basic_v3"))
+                .andRespond(withSuccess(
+                        "{\"result_code\":103,\"status\":\"error\",\"message\":\"No record found\"}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThat(ProviderJson.postAllowingErrorEnvelope(
+                builder.build(), "/validation/kyc/v1/uan_basic_v3", Map.of())).isNotNull();
+
+        assertThat(recorded).hasSize(1);
+        assertThat(recorded.get(0).status()).isEqualTo(ProviderCall.SUCCESS);
+        assertThat(recorded.get(0).httpStatus()).isEqualTo(200);
+        assertThat(recorded.get(0).errorMessage()).isNull();
+        server.verify();
+    }
+
+    /** The other half of the same rule: a caller that DOES reject the envelope gets a FAILED row. */
+    @Test
+    void aRejectedErrorEnvelopeIsRecordedAsFailedAndThrows() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("/validation/kyc/v1/pan_details_plus"))
+                .andRespond(withSuccess("{\"status\":\"error\",\"message\":\"not verified\"}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> ProviderJson.post(
+                builder.build(), "/validation/kyc/v1/pan_details_plus", Map.of()))
+                .isInstanceOf(VerificationException.class);
+
+        assertThat(recorded).hasSize(1);
+        assertThat(recorded.get(0).failed()).isTrue();
+        assertThat(recorded.get(0).httpStatus()).isEqualTo(200);
+        server.verify();
+    }
+
+    /**
+     * A {@code result_code} that is not 101 is not, on its own, a failure. This is the exact shape that
+     * accounted for 1,337 phantom failures: Digitap answers HTTP 200 with a code the client reads as
+     * "no record", which is an answer.
+     */
+    @Test
+    void aResultCodeOtherThanOneZeroOneIsNotAFailure() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("/validation/kyc/v1/pan_details_plus"))
@@ -98,8 +160,58 @@ class ProviderCallLogTest {
         ProviderJson.post(builder.build(), "/validation/kyc/v1/pan_details_plus", Map.of());
 
         assertThat(recorded).hasSize(1);
-        assertThat(recorded.get(0).failed()).isTrue();
+        assertThat(recorded.get(0).status()).isEqualTo(ProviderCall.SUCCESS);
         assertThat(recorded.get(0).httpStatus()).isEqualTo(200);
+        server.verify();
+    }
+
+    /**
+     * The escape hatch for the narrow case the rule above cannot cover: the transport legitimately
+     * recorded a served call, and the CLIENT then decided the envelope was a failure after all.
+     * {@code FintrixCrifClient.rejectUnlessNoRecord} is the real caller.
+     */
+    @Test
+    void failLastFlipsTheJustWrittenRowToFailed() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("/validation/kyc/v1/uan_basic_v3"))
+                .andRespond(withSuccess("{\"result_code\":103}", MediaType.APPLICATION_JSON));
+
+        ProviderJson.postAllowingErrorEnvelope(builder.build(), "/validation/kyc/v1/uan_basic_v3", Map.of());
+        ProviderCallLog.failLast("client rejected the envelope");
+
+        assertThat(reclassified).containsExactly("42:client rejected the envelope");
+        server.verify();
+    }
+
+    /** No row was written (fixture mode, a NOOP recorder, a call that never left) — nothing to flip. */
+    @Test
+    void failLastIsANoOpWhenNoRowWasWritten() {
+        ProviderCallContext.clear();
+        ProviderCallLog.failLast("nothing to reclassify");
+        assertThat(reclassified).isEmpty();
+    }
+
+    /**
+     * {@code provider_api_execution.response_json} is {@code jsonb}, so an HTML error page or a bare
+     * string fails the insert — and because recording is best-effort, that failure was swallowed and
+     * the row vanished entirely. Wrapping keeps the evidence for the one row anybody would want to read.
+     */
+    @Test
+    void aNonJsonBodyIsRecordedWrappedAndFailed() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("/pan"))
+                .andRespond(withSuccess("<html><body>502 Bad Gateway</body></html>",
+                        MediaType.TEXT_HTML));
+
+        assertThatThrownBy(() -> ProviderJson.post(builder.build(), "/pan", Map.of()))
+                .isInstanceOf(VerificationException.class);
+
+        assertThat(recorded).hasSize(1);
+        ProviderCall call = recorded.get(0);
+        assertThat(call.failed()).isTrue();
+        assertThat(call.responseJson()).contains("\"__unparseable\":true", "502 Bad Gateway");
         server.verify();
     }
 

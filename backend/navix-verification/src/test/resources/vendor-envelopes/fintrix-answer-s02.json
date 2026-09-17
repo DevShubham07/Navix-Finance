@@ -1,0 +1,13 @@
+{
+  "status": "error",
+  "success": true,
+  "timestamp": "2026-09-16T07:55:17.102Z",
+  "request_id": "TXN-TEST-01BBBBBBBBBBBBBBBBBBBBBBBB",
+  "error_message": {
+    "status": "S02",
+    "orderId": "txn-test-00000000-1111-2222-3333-444444444444",
+    "reportId": "CCR260916CR000000001",
+    "statusDesc": "Authentication failed due to unsuccesfull all ans attempt failed"
+  },
+  "transaction_id": "TXN-TEST-99999999-8888-7777-6666-555555555556"
+}

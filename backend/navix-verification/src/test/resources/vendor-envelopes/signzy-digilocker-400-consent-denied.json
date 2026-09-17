@@ -1,0 +1,10 @@
+{
+  "error": {
+    "name": "error",
+    "type": "Bad Request",
+    "reason": "AUTH_FAIL",
+    "status": 400,
+    "message": "User denied the consent. Please try again.",
+    "statusCode": 400
+  }
+}

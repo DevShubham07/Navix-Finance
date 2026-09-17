@@ -1,0 +1,26 @@
+{
+  "result": {
+    "name": "EXAMPLE BORROWER",
+    "uid": "XXXXXXXX1234",
+    "dob": "1994-06-11",
+    "gender": "M",
+    "address": "12 Example Road, Example Colony, Example City, Example State - 110001",
+    "splitAddress": {
+      "state": [["Example State"]],
+      "district": ["Example District"],
+      "city": ["Example City"],
+      "pincode": "110001",
+      "country": ["", "", "India"],
+      "addressLine": "12 Example Road, Example Colony",
+      "landMark": "Near Example Park"
+    },
+    "x509Data": {
+      "validAadhaarDSC": "no",
+      "subjectName": "Example Document Signer"
+    },
+    "photo": "",
+    "aadhaarPdf": "",
+    "aadhaarJpeg": "",
+    "eAadhaarXmlLink": "https://example.invalid/eaadhaar.xml"
+  }
+}

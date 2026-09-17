@@ -32,6 +32,52 @@ public interface ProviderFailureDetails {
      */
     String MASKED_MOBILE_REQUIRED = "MASKED_MOBILE_REQUIRED";
 
+    /**
+     * {@link #providerCode()} meaning: the PAN does not exist. A definitive vendor ANSWER, not an
+     * outage — Signzy's 404 {@code "Pan Number Not Found"}. Raised as a
+     * {@code TerminalVerificationException} so the router stops instead of paying two more vendors to
+     * repeat it (41 billable Fintrix calls in the Sep-2026 audit did exactly that, and none of the 18
+     * traced applications ever got a PAN through afterwards).
+     */
+    String PAN_NOT_FOUND = "PAN_NOT_FOUND";
+
+    /**
+     * {@link #providerCode()} meaning: the bureau has closed the knowledge-based-authentication
+     * question — every answer attempt it allowed has been spent (Fintrix {@code S02}). Terminal for
+     * that order id: answering again is billable and can only fail.
+     */
+    String KBA_EXHAUSTED = "KBA_EXHAUSTED";
+
+    /**
+     * {@link #providerCode()} meaning: DigiLocker itself is down upstream of our provider (Signzy 409
+     * {@code "Upstream Down"}). Retryable, but slowly and with a cap — not at the 5-second cadence a
+     * "not ready yet" poll uses, which turned one outage into 183 calls for a single borrower.
+     */
+    String DIGILOCKER_UPSTREAM_DOWN = "DIGILOCKER_UPSTREAM_DOWN";
+
+    /**
+     * {@link #providerCode()} meaning: the borrower declined the DigiLocker consent (Signzy 400
+     * {@code AUTH_FAIL}). Terminal for that consent session — polling it cannot change the answer.
+     */
+    String DIGILOCKER_CONSENT_DENIED = "DIGILOCKER_CONSENT_DENIED";
+
+    /**
+     * {@link #providerCode()} meaning: the provider answered, but the body could not be parsed as
+     * JSON. Distinct from a transport failure (we did get a response) and from any HTTP code (the
+     * status may well have been 200).
+     */
+    String UNPARSEABLE_RESPONSE = "UNPARSEABLE_RESPONSE";
+
+    /**
+     * Every {@link #providerCode()} above: the codes {@code navix-loan} stores verbatim rather than
+     * normalising to {@code HTTP_<status>}. Kept here so
+     * {@code ApplicationVerificationService.providerErrorCode} needs one membership test instead of a
+     * branch per code — add a constant above and it is honoured automatically.
+     */
+    java.util.Set<String> NAMED_PROVIDER_CODES = java.util.Set.of(
+            MASKED_MOBILE_REQUIRED, PAN_NOT_FOUND, KBA_EXHAUSTED,
+            DIGILOCKER_UPSTREAM_DOWN, DIGILOCKER_CONSENT_DENIED, UNPARSEABLE_RESPONSE);
+
     /** HTTP status of the failed call, or {@code null} when it never got one (timeout, DNS, reset). */
     Integer httpStatus();
 

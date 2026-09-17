@@ -1,6 +1,7 @@
 package com.navix.app.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -106,6 +107,42 @@ class ProviderApiExecutionWriterIntegrationTest {
         assertThat(stored.path("__originalChars").asInt()).isEqualTo(huge.length());
         assertThat(stored.path("__body").asText()).startsWith("{\"report\":\"xxx");
         assertThat(row.getResponseJson().length()).isLessThan(huge.length());
+    }
+
+    /**
+     * A provider call whose failure is only discovered AFTER the row was written still has to end up
+     * FAILED, carrying the client's own reason.
+     *
+     * <p>This is the shape of every silent provider outage we have had. Aadhaar eSign was rejected by
+     * Signzy 156 times out of 156 across four weeks and raised nothing, because each failure was caught
+     * and degraded into a drawn-signature fallback; the audit trail was the only place the truth could
+     * have lived. It is also what makes {@code healthSince} trustworthy — that query reads
+     * {@code status = 'SUCCESS'}, so a failure left recorded as a success is an outage the health sweep
+     * would never see.
+     *
+     * <p>The reason is clamped because provider error bodies are routinely raw HTML and the column is
+     * {@code varchar(2000)}: an unclamped write is an exception thrown while recording an exception.
+     */
+    @Test
+    void markFailedUpdatesStatusAndError() {
+        Long id = writer.write(call("/api/v3/contracts", "{\"client_ref_num\":\"navix-116-AGREEMENT\"}",
+                "{\"status\":\"queued\"}"));
+        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(ProviderCall.SUCCESS);
+
+        String htmlErrorBody = "<html><body>" + "callback url is required. ".repeat(200) + "</body></html>";
+        writer.markFailed(id, htmlErrorBody);
+
+        ProviderApiExecution row = repository.findById(id).orElseThrow();
+        assertThat(row.getStatus()).isEqualTo(ProviderCall.FAILED);
+        assertThat(row.getErrorMessage()).hasSize(2000);
+        assertThat(row.getErrorMessage()).isEqualTo(htmlErrorBody.substring(0, 2000));
+    }
+
+    /** A row that has since aged out of the retention window is simply not there — not an error. */
+    @Test
+    void markFailedIgnoresAnIdThatNoLongerExists() {
+        assertThatCode(() -> writer.markFailed(9_999_999L, "gone")).doesNotThrowAnyException();
+        assertThatCode(() -> writer.markFailed(null, "no row was written")).doesNotThrowAnyException();
     }
 
     @Test

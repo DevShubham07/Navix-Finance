@@ -1,0 +1,8 @@
+{
+  "result": {},
+  "message": "please call the masked mobile report API with the following actual mobile numbers: [90XXXXX001, 90XXXXX002, 90XXXXX003]",
+  "request_id": "00000000-0000-0000-0000-000000000102",
+  "result_code": 102,
+  "client_ref_num": "navix-1001-BUREAU",
+  "http_response_code": 200
+}

@@ -20,4 +20,17 @@ public interface ProviderCallRecorder {
      * Implementations MUST NOT let a storage failure escape into the caller's flow.
      */
     Long record(ProviderCall call);
+
+    /**
+     * Flip an already-stored row to FAILED — for a call the transport recorded as a normal answer but
+     * the client then judged a failure.
+     *
+     * <p>{@code postAllowingErrorEnvelope} exists so a client can read a provider's "error" envelope
+     * as an ANSWER (a thin credit file, no EPFO record). The transport cannot know which of those a
+     * given client will accept, so it records the call as served and the handful of clients that
+     * reject one say so here. Default no-op, like {@link #record}.
+     */
+    default void markFailed(Long executionId, String error) {
+        // no-op unless navix-app wires a real recorder in
+    }
 }

@@ -33,4 +33,9 @@ public class ProviderApiExecutionRecorder implements ProviderCallRecorder {
     public Long record(ProviderCall call) {
         return writer.write(call);
     }
+
+    @Override
+    public void markFailed(Long executionId, String error) {
+        writer.markFailed(executionId, error);
+    }
 }

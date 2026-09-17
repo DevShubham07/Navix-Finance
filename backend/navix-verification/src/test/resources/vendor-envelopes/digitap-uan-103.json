@@ -1,0 +1,14 @@
+{
+  "message": "No record(s) found",
+  "input_data": {
+    "dob": "1994-06-11",
+    "pan": "AAAPA0000A",
+    "mobile": "9000000000",
+    "employee_name": "EXAMPLE BORROWER",
+    "employer_name": "Example Logistics"
+  },
+  "request_id": "00000000-0000-0000-0000-000000000103",
+  "result_code": 103,
+  "client_ref_num": "navix-1001-EMPLOYMENT",
+  "http_response_code": 200
+}

@@ -1,0 +1,8 @@
+{
+  "status": "error",
+  "success": true,
+  "timestamp": "2026-09-17T03:35:13.931Z",
+  "request_id": "TXN-TEST-01CCCCCCCCCCCCCCCCCCCCCCCC",
+  "error_message": "No data found in CRIF,Please re-verify details",
+  "transaction_id": "TXN-TEST-99999999-8888-7777-6666-555555555557"
+}

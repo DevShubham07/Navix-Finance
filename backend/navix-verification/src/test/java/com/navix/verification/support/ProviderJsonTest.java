@@ -63,34 +63,58 @@ class ProviderJsonTest {
     }
 
     /**
-     * A raw transport failure (here: the default Jackson converter refusing to read a body it wasn't
-     * told is JSON) must come back as a {@link VerificationException}, not the underlying
-     * {@code RestClientException}. {@code RoutingVerificationPort.route()} catches only
-     * {@code VerificationException}/{@code CapabilityNotSupportedException} — before this fix the raw
-     * exception propagated past it and aborted the whole provider chain (25 applications in the
-     * Sep-2026 pending-queue audit never reached Digitap/Fintrix because Signzy threw one of these).
-     * {@code UnknownContentTypeException} is the concrete type here (Spring throws it when no converter
-     * claims the response's content type), and it is a plain {@code RestClientException}, not a
-     * {@code RestClientResponseException} — so it lands in {@code ProviderJson.post}'s
-     * {@code catch (RuntimeException transportFailure)} branch exactly like a socket timeout would.
+     * A body that is not JSON is now READ before it is judged, and the evidence is kept.
+     *
+     * <p>This test used to pin the opposite: the response was requested as a {@code JsonNode}, no
+     * converter claimed {@code application/octet-stream}, and the call died inside the converter with
+     * an {@code UnknownContentTypeException} — recorded as a transport failure with
+     * {@code response: null}, which is the one field anybody debugging it would want. {@code post} now
+     * reads bytes, decodes them explicitly, and parses afterwards, so the body reaches the audit row
+     * wrapped as {@code __unparseable} (the column is {@code jsonb} and would otherwise reject it).
+     *
+     * <p>What has NOT changed is the exception type: it is still a {@link VerificationException}, because
+     * {@code RoutingVerificationPort.route()} catches only that and
+     * {@code CapabilityNotSupportedException} — a raw {@code RestClientException} propagated past the
+     * router and aborted the whole chain, which is how 25 applications in the Sep-2026 audit never
+     * reached Digitap or Fintrix at all. {@code httpStatus} stays null on purpose so the caller does not
+     * file a perfectly ordinary 200 as {@code HTTP_200}.
      */
     @Test
-    void undeserializableResponseIsWrappedAsVerificationExceptionCarryingTheEndpoint() {
-        // Deliberately the PLAIN builder (no lenient converter) — the default Jackson converter only
-        // accepts application/json, so octet-stream is refused before the body is even looked at.
+    void anUnparseableBodyIsAVerificationExceptionCarryingTheEndpointAndACode() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("/pan"))
-                .andRespond(withSuccess("not read anyway", MediaType.APPLICATION_OCTET_STREAM));
+                .andRespond(withSuccess("not JSON at all", MediaType.APPLICATION_OCTET_STREAM));
 
         assertThatThrownBy(() -> ProviderJson.post(builder.build(), "/pan", Map.of("pan", "ABCDE1234F")))
                 .isInstanceOfSatisfying(VerificationException.class, failure -> {
+                    assertThat(failure.getMessage()).startsWith("Unparseable response body");
                     assertThat(failure.endpoint()).isEqualTo("/pan");
-                    // A transport-stage failure never got a response to read, so status/code are null —
-                    // see the 6-arg VerificationException constructor in ProviderJson.post.
                     assertThat(failure.httpStatus()).isNull();
-                    assertThat(failure.providerCode()).isNull();
+                    assertThat(failure.providerCode())
+                            .isEqualTo(com.navix.common.verification.ProviderFailureDetails.UNPARSEABLE_RESPONSE);
                 });
+        server.verify();
+    }
+
+    /**
+     * Digitap labels some perfectly good JSON {@code application/octet-stream}, which has no charset —
+     * and {@code StringHttpMessageConverter} defaults an unrecognised content type to ISO-8859-1. Every
+     * non-ASCII borrower name would come back mojibake. Reading bytes and decoding as UTF-8 explicitly
+     * is what keeps that from happening, so it is worth a test of its own.
+     */
+    @Test
+    void aBodyWithNoCharsetIsDecodedAsUtf8NotIsoLatin1() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("/pan"))
+                .andRespond(withSuccess(
+                        "{\"name\":\"Nidhi Bhardwaj \u20b9\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        MediaType.APPLICATION_OCTET_STREAM));
+
+        JsonNode result = ProviderJson.post(builder.build(), "/pan", Map.of());
+
+        assertThat(result.path("name").asText()).isEqualTo("Nidhi Bhardwaj \u20b9");
         server.verify();
     }
 

@@ -1,0 +1,14 @@
+{
+  "message": "One or more parameters format is wrong or missing",
+  "input_data": {
+    "dob": "",
+    "pan": "",
+    "uan": "",
+    "mobile": "",
+    "employee_name": "",
+    "employer_name": ""
+  },
+  "request_id": null,
+  "client_ref_num": "",
+  "http_response_code": 400
+}
