@@ -170,4 +170,48 @@ class VerificationClientConfigTest {
             assertThat(supported.get(0)).isEqualTo(MediaType.APPLICATION_JSON);
         }
     }
+
+    /**
+     * The OTHER half of the Content-Type story, and the half that actually broke production on
+     * 2026-09-04: not which media type the Jackson converter prefers, but which CONVERTER gets asked
+     * first. {@code DefaultRestClient} writes the body with the first converter whose {@code canWrite}
+     * accepts it, and takes the Content-Type from that converter — so a YAML converter sitting ahead of
+     * Jackson sends every provider POST as {@code application/yaml}, which is exactly what happened when
+     * {@code lenientJson} removed-and-appended instead of replacing in place.
+     *
+     * <p>This module's classpath has no YAML converter, so the assertion can only fail here if somebody
+     * reintroduces the append. {@code VerificationClientConverterOrderTest} in {@code navix-app} is the
+     * copy that reproduces the real regression, because springdoc drags
+     * {@code jackson-dataformat-yaml} onto that module's classpath and nowhere else.
+     */
+    @Test
+    void theFirstConverterThatCanWriteABodyIsTheLenientJsonOne() {
+        List<RestClient> clients = List.of(
+                new VerificationClientConfig().signzyRestClient(
+                        new SignzyProperties("https://signzy.test", "tok", "cid", null, null), defaults()),
+                new VerificationClientConfig().fintrixRestClient(
+                        new FintrixProperties("https://fintrix.test", "id", "secret"), defaults()),
+                new VerificationClientConfig().digitapSvcRestClient(
+                        new DigitapProperties("https://svc.digitap.test", "https://api.digitap.test",
+                                "id", "secret"), defaults()));
+
+        for (RestClient client : clients) {
+            assertThatJsonWritesFirst(client);
+        }
+    }
+
+    /**
+     * Shared with {@code navix-app}'s copy in spirit: find the first converter that would accept a Map
+     * body with no declared content type, and insist it is the lenient Jackson one with JSON at index 0.
+     */
+    static void assertThatJsonWritesFirst(RestClient client) {
+        List<HttpMessageConverter<?>> converters = new ArrayList<>();
+        client.mutate().messageConverters(converters::addAll);
+        HttpMessageConverter<?> first = converters.stream()
+                .filter(c -> c.canWrite(java.util.Map.class, null))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No converter can write a Map body"));
+        assertThat(first).isInstanceOf(MappingJackson2HttpMessageConverter.class);
+        assertThat(first.getSupportedMediaTypes().get(0)).isEqualTo(MediaType.APPLICATION_JSON);
+    }
 }
