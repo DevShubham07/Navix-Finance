@@ -5,21 +5,25 @@
 
 ## 14. External integrations (when un-mocked)
 
-### Verification providers — Signzy (primary) + Digitap (fallback)
+### Verification providers — Signzy (identity primary) · Digitap · Fintrix
 
 NAVIX's identity/bureau/penny-drop/DigiLocker verification runs behind the provider-neutral
-`VerificationPort` seam via `RoutingVerificationPort` (`@Primary`, `navix-verification`), which routes **per
-capability: Signzy first, Digitap as fallback; where Signzy lacks a capability, Digitap directly** — **except
-`pullBureau`, which is Fintrix first, Digitap as fallback (Signzy no longer does bureau at all)**. The old
+`VerificationPort` seam via `RoutingVerificationPort` (`@Primary`, `navix-verification`), which walks **one
+global ordered chain** — `NAVIX_VERIFICATION_CHAIN`, default **`signzy,digitap,fintrix`** — so Signzy leads
+and a provider opts out of a capability by throwing, **except `pullBureau`, which reads Digitap (Experian)
+→ Fintrix (CRIF)** because Signzy's bureau leg is retired and skips itself (the order flipped on
+2026-09-11; Fintrix led before). The old
 Fintrix + Fintrix-DigiLocker integration was **removed** (`git` history has it) — **Fintrix later came back
-as the bureau primary only**, via a single new endpoint unrelated to the old multi-API integration (see
+as a bureau leg only**, via a single new endpoint unrelated to the old multi-API integration (see
 `NAVIX_Fintrix_Integration_Flow.md` §3.5 for the full history + the live contract). Three per-provider
 adapters (`SignzyVerificationAdapter`, `DigitapVerificationAdapter`, `FintrixVerificationAdapter`) map
 provider clients → the neutral records; `FintrixVerificationAdapter` offers **two** capabilities — bureau
-(primary) and PAN (fallback behind Signzy) — and every other method throws
-`CapabilityNotSupportedException` so the router falls straight through to Signzy/Digitap for everything
-else. A `CapabilityNotSupportedException` tells the router "skip to the next
-provider" vs a `VerificationException` "tried and failed, fall through".
+(the CRIF fallback behind Digitap Experian) and PAN (fallback behind Signzy) — and every other method
+throws `CapabilityNotSupportedException` so the router falls straight through to Signzy/Digitap for
+everything else. A `CapabilityNotSupportedException` tells the router "skip to the next
+provider", a `VerificationException` "tried and failed, fall through", and a
+`TerminalVerificationException` "answered definitively — **stop**" (no such PAN, a declined consent:
+asking the next provider costs money and cannot change the answer).
 
 ⚠️ **`digitap-crif` is OFF by default and the endpoint is not yet usable.** Digitap's Credit Analytics
 CRIF (`/credit_analytics/v2/cf`) returns **401 Client Authentication Failed** with our production
@@ -29,8 +33,8 @@ other network every Digitap endpoint returns `403 IP not allowed`, yet this one 
 echoed our `client_ref_num` — i.e. it reached their application layer). The client, adapter leg,
 routing and tests are all implemented and green, but the flag is read with
 `defaultWhenMissing = FALSE` so the leg is **inert** until Digitap enables it — a default-on flag
-would put a guaranteed-failing call in front of the Experian fallback that currently rescues most
-Fintrix failures. To switch on: confirm with a probe from the allow-listed IP, then
+would put a guaranteed-failing call in front of the Experian leg that now leads the bureau
+chain. To switch on: confirm with a probe from the allow-listed IP, then
 `INSERT` an `enabled=true` row for `digitap-crif` — no redeploy needed.
 
 ⚠️ **The chain order is GLOBAL, not per-capability** — `RoutingVerificationPort.route()` uses the
@@ -40,18 +44,33 @@ PAN. Bureau then reads **Digitap → Fintrix**, because Signzy's bureau leg is r
 check the chain position before you do. Full API catalogs + field/sample
 specs: **`docs/signzy/`** (11 APIs) and **`docs/digitap/`** (43 APIs).
 
+⚠️ **A `FAILED` row in the ADMIN Provider API dashboard now means the call actually failed.**
+`ProviderJson` used to stamp the `provider_api_execution` row FAILED for any envelope that merely
+*looked* like an error (`status` error/failed/failure, a non-null `error` key, `result_code != 101`)
+even where the client read that body as a perfectly good answer — ~1,939 of the 4,848 failures in the
+Sep-2026 audit were Digitap "no EPFO record" (`103`/`104`) and Fintrix no-hit / KBA-challenge replies,
+logged at ERROR and shown to staff as red attempts on the customer page. The row now follows the
+**caller's** outcome; a client that rejects a tolerated envelope says so itself
+(`ProviderCallLog.failLast` → `ProviderCallRecorder.markFailed`, as `FintrixCrifClient` does). Bodies are
+read as bytes and decoded as **UTF-8** (Digitap labels some JSON `application/octet-stream`, which
+Spring's String converter would have decoded as ISO-8859-1 and mangled every non-ASCII name); a body
+that is not JSON at all is stored wrapped as `{"__unparseable":true,"__body":"<first 4 KB>"}` so the
+`jsonb` insert still succeeds, the row is FAILED, and the caller gets provider code
+`UNPARSEABLE_RESPONSE` (with no `httpStatus` — the status was very likely 200). Full evidence:
+[`docs/vendor-api/VENDOR_API_FAILURE_INVESTIGATION_2026-09-17.md`](vendor-api/VENDOR_API_FAILURE_INVESTIGATION_2026-09-17.md).
+
 | Capability (`VerificationPort`) | Provider used | Endpoint |
 |---|---|---|
-| `verifyPan` | **Signzy** → Digitap → Fintrix | Signzy `/api/v3/pan/compliance-206-individual-search` → Fintrix `POST /pan_comprehensive` → Digitap `/validation/kyc/v1/pan_details_plus`. Fintrix returns DOB/gender/masked-Aadhaar/address (which Signzy's 206AB search does not) but carries **no 206AB flags**, so `compliant`/`isSpecified` are null on the Fintrix leg — both are display-only and gate nothing. Not behind the `fintrix-bureau` flag; drop `fintrix` from `NAVIX_VERIFICATION_CHAIN` to revert |
-| `pullBureau` | **Digitap CRIF → Digitap Experian** → Fintrix | Digitap `POST /credit_analytics/v2/cf` (**CRIF**, svc host — flag-gated OFF) → Digitap `/credit_analytics/request` (**Experian**, api host; PRIMARY in practice) → Fintrix `POST /crif_combine` (CRIF Highmark; FALLBACK). The two Digitap legs both live inside `DigitapVerificationAdapter.pullBureau` because the router's chain is global and maps `digitap` to one adapter — the same reason Signzy's bureau used to chain `experian-lite`→`crif` internally. Inside the Digitap adapter, CRIF sits ahead of Experian as the same bureau Fintrix serves. Across providers a bureau **no-hit now falls through** to the next one (`NAVIX_VERIFICATION_BUREAU_NO_HIT_FALL_THROUGH`, default on), so a thin file Experian has never seen still reaches CRIF; when nobody has a file the **chain head's** no-hit is returned, deliberately — a trailing `FINTRIX_CRIF` no-hit with a non-blank txn id is what `VerificationFailureService.discardedReport` reads as a thrown-away report. Set the property false to restore "the first answer wins, no-hit included" and one billable pull per thin file. Signzy's `experian-lite`/`crif` legs are **retired from routing** (`SignzyVerificationAdapter.pullBureau` throws `CapabilityNotSupportedException`) — `SignzyExperianClient`/`SignzyCrifClient` are kept only for the ADMIN provider workbench. Gated by `fintrix-bureau` (on by default) and `digitap-crif` (**off** by default — see below). See `NAVIX_Fintrix_Integration_Flow.md` §3.5 |
+| `verifyPan` | **Signzy** → *(Digitap — flag-gated off)* → Fintrix | Signzy `/api/v3/pan/compliance-206-individual-search` → Digitap `/validation/kyc/v1/pan_details_plus` (**skipped unless the `digitap-pan` flag is on**: the product is not provisioned and answered `412` on **96 of 96** calls, zero successes ever, so the adapter throws `CapabilityNotSupportedException` — V72) → Fintrix `POST /pan_comprehensive`. A Signzy **404 whose detail says "not found" is terminal** (`PAN_NOT_FOUND`): the PAN does not exist, the chain stops, and the check is recorded **FAIL** "PAN not found" rather than REVIEW "PAN check unavailable" — 41 billable Fintrix calls in the Sep-2026 audit were spent re-asking about PANs Signzy had already declared nonexistent. A bare 404 with no such detail still falls through, deliberately, so a mistyped base URL cannot fail every borrower's PAN. Fintrix returns DOB/gender/masked-Aadhaar/address (which Signzy's 206AB search does not) but carries **no 206AB flags**, so `compliant`/`isSpecified` are null on the Fintrix leg — both are display-only and gate nothing. Not behind the `fintrix-bureau` flag; drop `fintrix` from `NAVIX_VERIFICATION_CHAIN` to revert |
+| `pullBureau` | **Digitap CRIF → Digitap Experian** → Fintrix | Digitap `POST /credit_analytics/v2/cf` (**CRIF**, svc host — flag-gated OFF) → Digitap `/credit_analytics/request` (**Experian**, api host; PRIMARY in practice) → Fintrix `POST /crif_combine` (CRIF Highmark; FALLBACK). The two Digitap legs both live inside `DigitapVerificationAdapter.pullBureau` because the router's chain is global and maps `digitap` to one adapter — the same reason Signzy's bureau used to chain `experian-lite`→`crif` internally. Inside the Digitap adapter, CRIF sits ahead of Experian as the same bureau Fintrix serves. Across providers a bureau **no-hit now falls through** to the next one (`NAVIX_VERIFICATION_BUREAU_NO_HIT_FALL_THROUGH`, default on), so a thin file Experian has never seen still reaches CRIF; when nobody has a file the **chain head's** no-hit is returned, deliberately — a trailing `FINTRIX_CRIF` no-hit with a non-blank txn id is what `VerificationFailureService.discardedReport` reads as a thrown-away report. Set the property false to restore "the first answer wins, no-hit included" and one billable pull per thin file. Digitap's Experian `102` **masked-mobile** answer ("records exist behind other numbers") now **outranks a trailing no-hit**: the router keeps that failure aside and rethrows it in preference to a thin-file reply, so staff still get the hint instead of a verdict of "no history" — precedence is acceptable answer > masked mobile > first unacceptable > last real failure > last unsupported. Before the 2026-09-11 flip Digitap was last and the exception simply propagated. Signzy's `experian-lite`/`crif` legs are **retired from routing** (`SignzyVerificationAdapter.pullBureau` throws `CapabilityNotSupportedException`) — `SignzyExperianClient`/`SignzyCrifClient` are kept only for the ADMIN provider workbench. Gated by `fintrix-bureau` (on by default) and `digitap-crif` (**off** by default — see below). See `NAVIX_Fintrix_Integration_Flow.md` §3.5 |
 | `answerBureauChallenge` | **Fintrix only** | Fintrix `POST /bureau_ch_user_auth` — answers a CRIF KBA question and releases the withheld report. Verified live 2026-08-24. **Does NOT walk the provider chain** (`RoutingVerificationPort` delegates straight to Fintrix): an `order_id` is meaningless to another bureau and falling through would burn a billable call. See the KBA note below |
 | `livenessInit` / `livenessResult` (selfie) | **Signzy** | Signzy `/api/v3/liveness-secure/createUrl` + `/getData` (prod acct) — **interactive video journey**: passive liveness + 1:1 face-match vs the DigiLocker Aadhaar photo, embedded in an iframe (`allow="camera"`), polled to completion (our DB authoritative). Two-step async, mirrors DigiLocker |
 | `faceLiveness` (selfie fallback) | **Digitap** | Digitap `/fmfl/v2/face-match` — synchronous 1:1 face-match of an uploaded selfie vs the Aadhaar photo (no live camera). **Fallback** used only when Signzy liveness init is unavailable (`selfieLivenessInit` → `derived.fallback=true`) |
 | `pennyDrop` | **Signzy only** | Signzy `/api/v3/bankaccountverification/bankaccountverifications` (Digitap has no penny-drop) |
-| `digilocker*` | **Signzy only** (prod acct) | Signzy **v2** `/api/v3/digilocker-v2/createUrl` + `/geteAadhaar` (Digitap has no consent flow). Migrated 2026-07-29: v2 is entitled on the **production** account only — the preprod account is out of API credits and prod is not entitled for the retired v1 pair |
-| `verifyEmail` | **Signzy** → Digitap | Signzy `/api/v3/email/verificationV2` (prod acct; deliverability + person/company enrichment) → Digitap `/cv/email_verification/v1` |
+| `digilocker*` | **Signzy only** (prod acct) | Signzy **v2** `/api/v3/digilocker-v2/createUrl` + `/geteAadhaar` (Digitap has no consent flow). Failure verdicts are classified and consent sessions capped — see the DigiLocker gotchas below. Migrated 2026-07-29: v2 is entitled on the **production** account only — the preprod account is out of API credits and prod is not entitled for the retired v1 pair |
+| `verifyEmail` | **Signzy** → *(Digitap — flag-gated off)* | Signzy `/api/v3/email/verificationV2` (prod acct; deliverability + person/company enrichment) → Digitap `/cv/email_verification/v1`, **skipped unless the `digitap-email` flag is on**: also not provisioned — `412` on **39 of 39** calls, zero successes — and as the *last* leg its failure was what staff read as "the email check was unavailable" (V72) |
 | `verifyAddress` | **Digitap only** | Digitap `/ent/v1/address-verification` (Signzy has no address API) |
-| `verifyEmployment` | **Digitap only** | Digitap `/cv/v3/uan_basic/sync` — EPFO/UAN employment (Signzy has no UAN API). **Basic V3, not Advanced V4**: every Advanced variant answers `412` (product not provisioned), so the PF-filing cross-check (`is_recent`, `has_pf_filings_details`) and `employer_confidence_score` are permanently null. Advisory — absent from `REQUIRED`, never blocks KYC, never returns FAIL. Full probe table + wiring in `docs/digitap/UAN_EMPLOYMENT.md` |
+| `verifyEmployment` | **Digitap only** | Digitap `/cv/v3/uan_basic/sync` — EPFO/UAN employment (Signzy has no UAN API). **Basic V3, not Advanced V4**: every Advanced variant answers `412` (product not provisioned), so the PF-filing cross-check (`is_recent`, `has_pf_filings_details`) and `employer_confidence_score` are permanently null. **A known UAN is sent ALONE** (the vendor's Lookup Method 3): a request must satisfy exactly one lookup method, so a UAN riding alongside `pan`+`mobile`+`dob`+names is rejected `400 "One or more parameters format is wrong or missing"` — 378 such calls in the Sep-2026 audit, every one a borrower who had just typed their UAN in to help. A resolved record (`found=true`) is **reused** instead of re-pulled (except on a forced ADMIN retry, and never for a PENDING row), a borrower-supplied UAN must be 12 digits (`INVALID_UAN`), and `EmploymentRetryScheduler` re-runs checks a vendor outage parked (hourly, `employment-auto-retry` flag, undecided applications only, ≤5 attempts at 1/2/4/8/16-hour spacing). Advisory — absent from `REQUIRED`, never blocks KYC, never returns FAIL. Full probe table + wiring in `docs/digitap/UAN_EMPLOYMENT.md` |
 
 **Aadhaar eSign of the sanction letter** sits on its own seam — `EsignPort` (navix-common), *not*
 `VerificationPort`/the router, because it is one provider and a legal act rather than a check.
@@ -62,6 +81,17 @@ cannot consume this service"`. Selected by `navix.esign.provider` (`signzy` defa
 and is set only by the demo seed script and tests). Specs + verified corrections in
 `docs/signzy/initiatecontact.md` and `docs/signzy/pullcontact.md`; live-test with
 `docs/signzy/test-contract-esign.sh`.
+- ⚠️ **Both callback settings are mandatory when the provider is `signzy` — `EsignConfig` refuses to
+  start without them.** `navix.esign.callback-url` must be an absolute http(s) URL on the **public
+  backend host Signzy can reach** (`http://<alb-or-backend>/api/webhooks/signzy/contract`, SSM
+  `/navix/<env>/navix/esign/callback-url`), and `navix.esign.callback-secret` must be non-blank — the
+  webhook authenticates every callback against it, so a blank one leaves a minted contract with no
+  accelerator at all. Signzy's spec marks `callbackUrl` **Mandatory** and answers
+  `400 "callbackUrl is not allowed to be empty"` to the empty string ours defaulted to: **156 of 156
+  production contracts were rejected between 2026-08-21 and 2026-09-16**, unnoticed for four weeks
+  because `esignInit` catches the failure and quietly offers the drawn signature — every sanction
+  letter in that window was signed by finger, not by Aadhaar. Offline runs set
+  `NAVIX_ESIGN_PROVIDER=mock`.
 - **Flow** (offer-journey screen 8, `/loan/sanction-letter`): `esignInit` presigns the stored
   `SANCTION_LETTER` and returns `derived.url` → the borrower is **redirected** (eMudhra refuses framing,
   so this follows DigiLocker, not the liveness iframe) → returns to `/kyc/esign/callback`, which polls
@@ -139,7 +169,7 @@ you meant. When that match is not confident enough it withholds the report behin
 borrower's own credit history, returned as an HTTP 200 *error* envelope carrying `data.question`,
 `data.options`, `data.order_id` and `data.report_id`.
 
-Four properties of this flow that are easy to get wrong:
+Five properties of this flow that are easy to get wrong:
 
 1. **`bureau_ch_user_auth` authenticates differently from `crif_combine`** — `X-Client-ID` /
    `X-Client-Secret` headers, not `Authorization: Basic`. The single `fintrixRestClient` bean sends
@@ -154,6 +184,21 @@ Four properties of this flow that are easy to get wrong:
    borrower-facing screen offers a re-mint — the only billable call a borrower can trigger, guarded by
    a 60s server cooldown, a 3-attempt cap, and an option-membership check that refuses to spend on an
    answer that cannot be right.
+5. **The ANSWER endpoint's envelope is shaped differently again.** `/bureau_ch_user_auth` returns
+   `error_message` as an **object**: `{status:"S11", question, optionsList, orderId, reportId}` is CRIF
+   issuing a *new* question (replace the stored question/options/orderId/reportId and re-park), while
+   `{status:"S02", statusDesc:"…all ans attempt failed"}` means CRIF has spent every attempt it allows.
+   Only the *string* shape was parsed before, so the old question stayed open, the borrower re-answered
+   one CRIF had already replaced, it was counted wrong, and after three billed attempts the report was
+   lost (the S11 → S11 → S02 sequence two applications show twelve seconds apart in the Sep-2026
+   audit). `S02` now raises provider code `KBA_EXHAUSTED` → `answerBureauChallenge` writes
+   `bureauChallengeExhausted` and makes no further provider call, and `/credit-question` shows a
+   terminal "closed" screen rather than offering a re-mint the backend would refuse. Both `S11` and
+   `S02` leave the audit row **SUCCESS** — they are CRIF answering, over a healthy 200. Only an
+   `error_message` object in a shape nobody recognises flips the row to FAILED, because there we
+   genuinely could not read what the vendor said. Key names are read
+   defensively (`optionsList`/`options`, `orderId`/`order_id`): they come from captured production
+   responses, since Fintrix publishes no schema for this endpoint.
 
 The borrower answers at `/credit-question` (reached inline from the signup consent step, or by the
 `BUREAU_QUESTION_PENDING` email). It never blocks: "I don't recognise any of these" writes
@@ -188,8 +233,20 @@ identity** (name/PAN/mobile/DOB) is overridden from the borrower's `ApplicantPro
 the on-screen brief is always recomputed from the profile.
 
 **DigiLocker live-flow gotchas** (touch points
-`ApplicationVerificationService.{digilockerStatus,digilockerComplete}`, `signup/digilocker/page.tsx`,
-`kyc/digilocker/callback/page.tsx`):
+`ApplicationVerificationService.{digilockerInit,digilockerStatus,digilockerComplete}`,
+`signup/digilocker/page.tsx`, `kyc/digilocker/callback/page.tsx`):
+- **Failure verdicts are classified, not collapsed into "not ready".** `401` (or no status at all) is
+  the genuine not-ready case and keeps polling; `409` + "upstream" → `DIGILOCKER_UPSTREAM_DOWN`; `400` +
+  "denied" → `DIGILOCKER_CONSENT_DENIED`; anything else propagates. A `200` whose `validAadhaarDSC` is
+  `"no"` is a **terminal `AADHAAR` REVIEW** carrying `validDsc=false` (the documents are still ingested
+  for staff), not something to re-fetch. Collapsing all of them into "not ready" is what produced the
+  poll storms: a `409` outage polled **183 times in 20 minutes** for one borrower, and an invalid
+  document signature produced **62 consent sessions and 820 *successful* fetches in 3½ hours**.
+  `digilockerComplete` surfaces the codes to the borrower as `BusinessException`
+  `DIGILOCKER_UPSTREAM_DOWN` / `DIGILOCKER_CONSENT_DENIED` / `DIGILOCKER_PROVIDER_ERROR`, and
+  `digilockerInit` caps consent sessions at **5 per application per rolling 24 h** — the page's own
+  counter is React state and resets on every redirect — after which the borrower is routed to the
+  manual Aadhaar-card upload.
 - **`digilocker_initialize` caches the consent session by `redirect_url`** and re-serves a stale,
   expired token on reuse (→ SDK "Access Denied"). **Fix:** make `redirect_url` unique per attempt
   (append `?app=<id>&sid=<nonce>`; the callback resolves the app from `localStorage`).

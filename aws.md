@@ -191,6 +191,8 @@ The backend imports `aws-parameterstore:/navix/dev/` (path = `/navix/${NAVIX_ENV
 | `/navix/dev/navix/app/frontend-base-url` | String | `navix.app.frontend-base-url` (env `NAVIX_APP_BASE_URL`) |
 | `/navix/dev/navix/captcha/secret` | **SecureString** | `navix.captcha.secret` (Cloudflare Turnstile; **unset = the check is skipped**) |
 | `/navix/dev/navix/captcha/hostnames` | String | `navix.captcha.hostnames` (comma-separated origins a token may be minted on) |
+| `/navix/dev/navix/esign/callback-url` | String | `navix.esign.callback-url` (Signzy contract callback — **the app will not boot without it** when `navix.esign.provider=signzy`) |
+| `/navix/dev/navix/esign/callback-secret` | **SecureString** | `navix.esign.callback-secret` (shared secret the contract webhook authenticates every callback against; **also mandatory**) |
 
 List them (names only): `aws ssm get-parameters-by-path --path /navix/dev/ --recursive --query 'Parameters[].Name'`
 Set one: `aws ssm put-parameter --name /navix/dev/... --type SecureString --value '...' --overwrite`
@@ -211,6 +213,27 @@ aws ssm put-parameter \
 Use `https://frontend-ruby-two-78.vercel.app` until `dhanboost.com` is the canonical host. After updating SSM,
 **restart/redeploy the ECS task** so the backend picks up the new value, then smoke-test: create a staff invite
 from `/staff/admin/invites` and confirm the email link is `https://dhanboost.com/staff/activate?token=…`.
+
+**▶ eSign callback (mandatory)** — with `navix.esign.provider=signzy` (the default), `EsignConfig` throws
+at startup unless **both** parameters above are set, so a task without them crash-loops rather than
+quietly degrading: Signzy marks `callbackUrl` mandatory and rejected all 156 production contracts sent
+with the blank default, while `esignInit` silently fell back to a drawn signature for four weeks. The URL
+must be the **public backend host Signzy can reach — the ALB, not the Vercel frontend**:
+
+```bash
+bash scripts/esign-aws-setup.sh                  # dev; NAVIX_ENV=prod for prod
+```
+
+Idempotent: it writes the URL, mints a 48-char SecureString secret **only if one is not already set**
+(rotating it would strand contracts mid-signature), reads both back, and prints the service's
+deployment configuration — a startup guard is only safe while `minimumHealthyPercent=100` + the
+deployment circuit breaker keep the previous task serving. By hand it is two
+`aws ssm put-parameter` calls (`--type String` for the URL, `--type SecureString --key-id
+alias/navix-finance` for the secret). Set both **before** the rollout, then redeploy and confirm the
+task reaches `RUNNING` (§8). The ALB is **HTTP-only** today (§8's gotchas), so the callback URL is
+`http://…`; it only accelerates a poll that re-reads from Signzy, so a forged callback cannot forge a
+signature — but if Signzy will only call an `https://` endpoint, put a cert/HTTPS listener in front
+first.
 
 **IAM** — `navix-finance-task-role` has: `AmazonECSTaskExecutionRolePolicy`, `AmazonSSMReadOnlyAccess`,
 `AWSKeyManagementServicePowerUser`, `AmazonS3FullAccess`, + an inline `kms` policy. (S3FullAccess is

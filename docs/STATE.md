@@ -71,6 +71,23 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
   reads (`/api/loan/{id}`, `/outstanding`, `/repayments`) now enforce owner-or-staff. Vercel functions
   are pinned to `bom1` so the BFF sits in the same region as the backend. Full evidence:
   [`docs/perf/UI_PERFORMANCE_INVESTIGATION_2026-09-16.md`](perf/UI_PERFORMANCE_INVESTIGATION_2026-09-16.md).
+- **Vendor resilience** — the fixes from the provider-API failure audit are live: a `FAILED` row in the
+  Provider API dashboard now means the **caller** rejected the call (a Digitap "no EPFO record" or a
+  Fintrix no-hit is a SUCCESS row, and an unparseable body is captured rather than lost); a definitive
+  vendor answer stops the chain instead of paying the next provider to repeat it (Signzy's
+  `PAN_NOT_FOUND` is a PAN **FAIL**, not "check unavailable"), while Experian's masked-mobile hint now
+  outranks a trailing no-hit; DigiLocker verdicts are classified (upstream-down · consent-denied ·
+  invalid signature) with consent sessions capped at 5 per application per day, which ends the poll
+  storms; the Fintrix KBA answer envelope (`S11` = a new question, `S02` = attempts exhausted) is
+  parsed, so a borrower is no longer answering a question CRIF has replaced; a known UAN is sent on its
+  own (Method 3), a resolved record is reused and a check a vendor outage parked is retried hourly; and
+  ADMINs are alerted when a prepaid balance empties or a capability goes 24 h with ≥10 calls and no
+  success (`PROVIDER_BALANCE_EXHAUSTED` / `PROVIDER_CAPABILITY_DOWN`). **Two items still need an
+  operator, not code:** the eSign callback parameters
+  (`/navix/<env>/navix/esign/{callback-url,callback-secret}` — the backend now refuses to start without
+  them, see `aws.md` §7) and the `digitap-pan` / `digitap-email` flags (V72), which stay **off** until
+  Digitap provisions those two products. Full evidence:
+  [`docs/vendor-api/VENDOR_API_FAILURE_INVESTIGATION_2026-09-17.md`](vendor-api/VENDOR_API_FAILURE_INVESTIGATION_2026-09-17.md).
 - **Bot challenge** — Cloudflare **Turnstile** in front of both password logins and both
   forgot-password forms; unset keys = the check is skipped (dev/CI/E2E/demo) — see §12.
 - **Editable profiles & settings** — borrowers self-edit non-identity profile fields (an edit can
