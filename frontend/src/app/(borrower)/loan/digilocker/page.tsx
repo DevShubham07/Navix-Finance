@@ -6,13 +6,20 @@ import { Building2, Lock, ArrowRight, Loader2, RefreshCw, UploadCloud } from "lu
 import { Reassurance } from "@/components/borrower/reassurance";
 import { StepResultBanner } from "@/components/borrower/step-result-banner";
 import { useOffer, nextOfferRoute, prevOfferRoute, completeOfferStep } from "@/lib/offer";
-import { verificationApi, type StepResult } from "@/lib/api/applications";
+import { verificationApi, ApplicationApiError, type StepResult } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
 import { DOC_UPLOAD_ACCEPT, checkDocumentFile } from "@/lib/upload-file-types";
 
 type Phase = "idle" | "connecting" | "polling" | "done" | "failed" | "manual";
 const POLL_MS = 4000;
+const MAX_RETRIES = 3;
+// ~3 min at POLL_MS. If consent isn't finished in that window we no longer guess it passed —
+// we drop to the Aadhaar-upload fallback instead (see the class doc below).
+const POLL_LIMIT = 45;
+// The callback page owns the long wait for the Aadhaar XML; a finalise from this screen only
+// happens when that tab never ran, so it asks a handful of times and then stops.
+const FINALISE_MAX_ATTEMPTS = 10;
 // Resolved at call time, not module load: the step list is server-driven since V47.
 const next = () => nextOfferRoute("digilocker");
 
@@ -58,11 +65,8 @@ export default function LoanDigiLockerPage() {
   const [error, setError] = React.useState<string>();
   const [retryCount, setRetryCount] = React.useState(0);
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const finaliseTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const polls = React.useRef(0);
-  const MAX_RETRIES = 3;
-  // ~3 min at POLL_MS. If consent isn't finished in that window we no longer guess it passed —
-  // we drop to the Aadhaar-upload fallback instead (see the class doc above).
-  const POLL_LIMIT = 45;
 
   // The Aadhaar-upload fallback is a wholly separate submit path from the DigiLocker state above —
   // it never touches `retryCount` or the poll timer, so its own file/busy/error state is independent.
@@ -73,6 +77,14 @@ export default function LoanDigiLockerPage() {
 
   const stop = React.useCallback(() => {
     if (timer.current) { clearInterval(timer.current); timer.current = null; }
+    if (finaliseTimer.current) { clearTimeout(finaliseTimer.current); finaliseTimer.current = null; }
+  }, []);
+
+  // The callback page hands the borrower here with ?manual=1 when DigiLocker is down upstream.
+  // useSearchParams() would drag this page under a Suspense boundary (it bails out of the
+  // prerender), and one query param does not warrant that, so it is read off the location.
+  React.useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("manual") === "1") setPhase("manual");
   }, []);
 
   React.useEffect(() => () => stop(), [stop]);
@@ -82,19 +94,6 @@ export default function LoanDigiLockerPage() {
     void completeOfferStep(appId, "OFFER_DIGILOCKER", router, next());
   }, [appId, router]);
 
-  const finalise = React.useCallback(async () => {
-    if (appId == null) return;
-    try {
-      const r = await verificationApi.digilockerComplete(appId);
-      setResult(r);
-      setPhase(r.status === "FAIL" ? "failed" : "done");
-      if (r.status === "PASS" || r.status === "REVIEW") setTimeout(advance, 700);
-    } catch (err) {
-      setError(formatApiError(err, "Could not finalise DigiLocker."));
-      setPhase("failed");
-    }
-  }, [appId, advance]);
-
   // Enters the mandatory Aadhaar-upload fallback. Replaces the old `skip()`, which used to advance
   // straight past this screen — now nothing advances without either a completed DigiLocker or both
   // uploaded card sides.
@@ -102,6 +101,50 @@ export default function LoanDigiLockerPage() {
     stop();
     setPhase("manual");
   }, [stop]);
+
+  const finalise = React.useCallback(async () => {
+    if (appId == null) return;
+    let attempts = 0;
+    const run = async (): Promise<void> => {
+      try {
+        const r = await verificationApi.digilockerComplete(appId);
+        setResult(r);
+        setPhase(r.status === "FAIL" ? "failed" : "done");
+        // A REVIEW carrying `validDsc: false` is terminal too — the e-Aadhaar arrived with a bad
+        // signature and the backend will never fetch again — so it advances with every other
+        // finished outcome rather than parking the borrower on a step nothing can move.
+        if (r.status === "PASS" || r.status === "REVIEW") setTimeout(advance, 700);
+      } catch (err) {
+        const code = err instanceof ApplicationApiError ? err.code : null;
+        if (code === "DIGILOCKER_NOT_READY") {
+          // Every one of these used to fail the step on the first ask, which sent borrowers back
+          // through `connect()` for an Aadhaar that was merely seconds from materialising.
+          attempts += 1;
+          if (attempts < FINALISE_MAX_ATTEMPTS) {
+            finaliseTimer.current = setTimeout(() => { void run(); }, POLL_MS);
+            return;
+          }
+          setError("DigiLocker is taking longer than usual.");
+          setPhase("failed");
+          return;
+        }
+        if (code === "DIGILOCKER_UPSTREAM_DOWN" || code === "DIGILOCKER_PROVIDER_ERROR") {
+          // Retrying an outage from here only adds provider calls, and this screen already carries
+          // the path that doesn't depend on DigiLocker being up.
+          enterAadhaarUpload();
+          return;
+        }
+        if (code === "DIGILOCKER_CONSENT_DENIED") {
+          setError("You declined the DigiLocker consent, so we couldn't read your Aadhaar.");
+          setPhase("failed");
+          return;
+        }
+        setError(formatApiError(err, "Could not finalise DigiLocker."));
+        setPhase("failed");
+      }
+    };
+    await run();
+  }, [appId, advance, enterAadhaarUpload]);
 
   const poll = React.useCallback(async () => {
     if (appId == null) return;
@@ -153,6 +196,13 @@ export default function LoanDigiLockerPage() {
       const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
       const redirectUrl = `${window.location.origin}/kyc/digilocker/callback?app=${appId}&sid=${nonce}`;
       const r = await verificationApi.digilockerInit(appId, redirectUrl);
+      if (r.derived?.sessionsExhausted === true) {
+        // Five consent sessions inside 24h and the backend won't mint another, so there is no
+        // consent URL coming and nothing to wait for — the upload path is the only way forward.
+        setResult(r);
+        enterAadhaarUpload();
+        return;
+      }
       const url = typeof r.derived?.url === "string" ? (r.derived.url as string) : null;
       if (url) {
         // Same tab: consent redirects back to our callback, which finalises and routes forward.
@@ -280,7 +330,7 @@ export default function LoanDigiLockerPage() {
                 better evidence for us (parsed Aadhaar data and the face crop the selfie step
                 matches against, neither of which a card photo yields). Retries are still capped by
                 MAX_RETRIES, so this cannot become an infinite loop. */}
-            {retryCount < MAX_RETRIES && (
+            {retryCount < MAX_RETRIES && result?.derived?.sessionsExhausted !== true && (
               <button
                 type="button"
                 onClick={() => { setAadhaarError(undefined); setPhase("idle"); }}
