@@ -9,6 +9,7 @@ import com.navix.common.notification.event.CollectionPaymentRaisedEvent;
 import com.navix.common.notification.event.BureauQuestionPendingEvent;
 import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
+import com.navix.common.notification.event.ProviderHealthEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
 import com.navix.common.notification.event.ReferralRewardCreditedEvent;
 import com.navix.common.notification.event.RepaymentRecordedEvent;
@@ -237,6 +238,27 @@ public class NotificationEventListener {
                 .loanId(e.loanId())
                 .put("amount", NotificationFormat.inr(e.outstandingPaise()))
                 .put(e.overdue() ? "daysOverdue" : "daysToDue", e.days())
+                .build());
+    }
+
+    /**
+     * A verification provider needs an operator. Also a plain {@code @Async @EventListener}, and for a
+     * stronger reason than the reminder above: the balance alert is published from inside a provider
+     * call, whose surrounding transaction is very often the one that is about to roll back. An
+     * {@code AFTER_COMMIT} listener would therefore drop exactly the alerts worth having.
+     */
+    @Async("notificationExecutor")
+    @EventListener
+    public void onProviderHealth(ProviderHealthEvent e) {
+        NotificationType type = e.kind() == ProviderHealthEvent.Kind.BALANCE_EXHAUSTED
+                ? NotificationType.PROVIDER_BALANCE_EXHAUSTED
+                : NotificationType.PROVIDER_CAPABILITY_DOWN;
+        dispatcher.dispatch(type, NotificationContext.builder()
+                .put("provider", e.provider() == null ? "A provider" : e.provider())
+                .put("operation", e.operation() == null ? "" : e.operation())
+                .put("endpoint", e.endpoint() == null ? "" : e.endpoint())
+                .put("calls", e.calls())
+                .put("since", e.since() == null ? "" : e.since().toString())
                 .build());
     }
 

@@ -288,6 +288,25 @@ public class NotificationTemplates {
         inApp(NotificationType.APPLICATION_CANCELLED, "Application cancelled",
                 "Your loan application #{applicationId} has been cancelled.");
 
+        inApp(NotificationType.PROVIDER_BALANCE_EXHAUSTED, "{provider} balance exhausted",
+                "{provider}'s prepaid balance is exhausted — every call to it fails until the account "
+                        + "is topped up ({endpoint}).");
+        email(NotificationType.PROVIDER_BALANCE_EXHAUSTED, "DhanBoost: {provider} balance exhausted",
+                "{provider}'s prepaid account is at zero balance.\n\nEvery verification call routed to "
+                        + "{provider} is failing and will keep failing until the account is topped up. "
+                        + "The endpoint that reported it: {endpoint}\n\n— DhanBoost");
+
+        inApp(NotificationType.PROVIDER_CAPABILITY_DOWN, "{provider} {operation} is failing",
+                "{calls} calls to {provider} {operation} in the last 24 hours, none of them successful. "
+                        + "Check the provider dashboard.");
+        email(NotificationType.PROVIDER_CAPABILITY_DOWN,
+                "DhanBoost: {provider} {operation} has not succeeded in 24 hours",
+                "{provider} {operation} recorded {calls} live calls since {since} and not one of them "
+                        + "succeeded.\n\nThis is the shape of a misconfiguration or a provider-side "
+                        + "outage rather than a borrower problem. Open the provider dashboard "
+                        + "(Admin → API dashboard) and read the newest row's response payload.\n\n"
+                        + "— DhanBoost");
+
         // ---------------- REFERRAL ----------------
         inApp(NotificationType.REFERRAL_PAYOUT_PENDING, "Referral reward to pay",
                 "A referral qualified — two rewards of {amount} each are pending payout. Settle them in Referral payouts.");
