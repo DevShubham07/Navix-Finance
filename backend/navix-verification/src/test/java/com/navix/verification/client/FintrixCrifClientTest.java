@@ -7,9 +7,18 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.navix.common.verification.ProviderCallContext;
 import com.navix.verification.dto.FintrixDtos.CrifResponse;
 import com.navix.verification.exception.VerificationException;
+import com.navix.verification.support.ProviderCall;
+import com.navix.verification.support.ProviderCallLog;
+import com.navix.verification.support.ProviderCallRecorder;
+import com.navix.verification.support.VendorEnvelopes;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -27,6 +36,40 @@ import org.springframework.web.client.RestClient;
 class FintrixCrifClientTest {
 
     private static final String BASE = "https://fintrix.test";
+
+    /**
+     * The audit row is half of what this client is responsible for, so the tests capture it. A
+     * recorder that logs both {@code record} and {@code markFailed} is the only way to tell a vendor
+     * ANSWER wearing an error envelope (stays SUCCESS) from a genuine provider failure (flipped to
+     * FAILED) — a distinction that went the wrong way for 1,939 of the 4,848 failure rows in the
+     * Sep-2026 provider audit.
+     */
+    private final List<ProviderCall> recorded = new ArrayList<>();
+    private final List<String> reclassified = new ArrayList<>();
+
+    @BeforeEach
+    void installRecorder() {
+        recorded.clear();
+        reclassified.clear();
+        ProviderCallLog.setRecorder(new ProviderCallRecorder() {
+            @Override
+            public Long record(ProviderCall call) {
+                recorded.add(call);
+                return 42L;
+            }
+
+            @Override
+            public void markFailed(Long executionId, String error) {
+                reclassified.add(executionId + ":" + error);
+            }
+        });
+    }
+
+    @AfterEach
+    void reset() {
+        ProviderCallLog.setRecorder(ProviderCallRecorder.NOOP);
+        ProviderCallContext.clear();
+    }
 
     private record Bound(MockRestServiceServer server, RestClient restClient) {
     }
@@ -177,7 +220,15 @@ class FintrixCrifClientTest {
         b.server().verify();
     }
 
-    /** Any OTHER error envelope is a genuine failure and must still throw so the chain falls through. */
+    /**
+     * Any OTHER error envelope is a genuine failure and must still throw so the chain falls through.
+     *
+     * <p>It must also LOOK like a failure on the Provider API dashboard. The transport wrote this row
+     * SUCCESS on purpose — {@code postAllowingErrorEnvelope} tolerates an error-shaped body so a real
+     * CRIF no-hit is not mistaken for a failure — which leaves the client, and only the client, able
+     * to say that this particular envelope was not an answer. Without that explicit
+     * {@code ProviderCallLog.failLast} an upstream bureau outage reads as a wall of healthy calls.
+     */
     @Test
     void anUnrecognisedErrorEnvelopeStillThrows() {
         Bound b = bind();
@@ -190,6 +241,10 @@ class FintrixCrifClientTest {
         assertThatThrownBy(() -> client.pull("Sample Person", "9000000001", "app-123"))
                 .isInstanceOf(VerificationException.class)
                 .hasMessageContaining("Upstream bureau timeout");
+
+        assertThat(recorded).hasSize(1);
+        assertThat(reclassified).hasSize(1);
+        assertThat(reclassified.get(0)).contains("Upstream bureau timeout");
     }
 
     /**
@@ -247,6 +302,50 @@ class FintrixCrifClientTest {
         assertThatThrownBy(() -> client.pull("Sample Person", "9000000001", "app-123"))
                 .isInstanceOf(VerificationException.class)
                 .hasMessageContaining("Missing required field name");
+
+        // HTTP 200 means the transport recorded this SUCCESS; nothing but the client can know that
+        // CRIF never ran a search. Those 44 applications were invisible on the dashboard precisely
+        // because the row said the call had been served.
+        assertThat(recorded).hasSize(1);
+        assertThat(recorded.get(0).httpStatus()).isEqualTo(200);
+        assertThat(reclassified).hasSize(1);
+        assertThat(reclassified.get(0)).contains("statusCode 400");
+        b.server().verify();
+    }
+
+    /**
+     * The mirror image of the two tests above, on the real production body captured 2026-09-17: the
+     * no-hit. CRIF answers a borrower it has never seen with HTTP 200 and the same error-shaped
+     * envelope a failure wears, {@code "No data found in CRIF,Please re-verify details"} — and that is
+     * a definitive ANSWER.
+     *
+     * <p>So this asserts both halves. The client must return a no-record rather than throw (a throw
+     * burns a second billable call falling through to the next bureau, and FAILED is exactly what a
+     * backfill re-run retries — so a borrower who can never hit would be paid for on every pass), and
+     * the audit row must stay SUCCESS. Marking correct answers FAILED accounted for 1,939 of the
+     * 4,848 failure rows in the Sep-2026 audit and took the dashboard's failure rate from ~10% to
+     * 24.5%, which is what hid the outages that mattered.
+     */
+    @Test
+    void aNoHitIsAnAnswerNotAFailure() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/crif_combine"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess(VendorEnvelopes.load("fintrix-bureau-no-hit.json"),
+                        MediaType.APPLICATION_JSON));
+
+        CrifResponse r = new FintrixCrifClient(b.restClient(), new ObjectMapper(), "")
+                .pull("Sample Person", "9000000001", "app-127");
+
+        assertThat(r.noRecord()).isTrue();
+        assertThat(r.score()).isNull();
+        assertThat(r.facts()).isNull();
+        assertThat(r.challenge()).isNull();
+
+        assertThat(recorded).hasSize(1);
+        assertThat(recorded.get(0).status()).isEqualTo(ProviderCall.SUCCESS);
+        assertThat(recorded.get(0).errorMessage()).isNull();
+        assertThat(reclassified).isEmpty();
         b.server().verify();
     }
 }

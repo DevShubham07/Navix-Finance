@@ -1,0 +1,10 @@
+{
+  "error": {
+    "name": "error",
+    "type": "Conflict",
+    "reason": "Error From Upstream",
+    "status": 409,
+    "message": "Upstream Down",
+    "statusCode": 409
+  }
+}

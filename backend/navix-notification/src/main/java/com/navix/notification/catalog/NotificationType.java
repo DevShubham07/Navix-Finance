@@ -126,6 +126,19 @@ public enum NotificationType {
     // ---- SYSTEM ----
     APPLICATION_CANCELLED(SYSTEM, Set.of(IN_APP), Set.of(TO_BORROWER)),
 
+    /**
+     * A prepaid verification provider is at zero balance — every call to it fails until it is topped
+     * up. EMAIL as well as IN_APP because the fix is an operator's, not a queue's: production sat at
+     * zero for 11.5 hours in Aug 2026 with nothing but an unread log line to show for it.
+     */
+    PROVIDER_BALANCE_EXHAUSTED(SYSTEM, Set.of(IN_APP, EMAIL), Set.of(TO_ADMINS)),
+    /**
+     * One provider capability has not succeeded once in 24 hours. Aadhaar eSign was in this state for
+     * four weeks — 156 attempts, 0 successes — and raised nothing, because every failure was caught
+     * and quietly degraded into the drawn-signature fallback.
+     */
+    PROVIDER_CAPABILITY_DOWN(SYSTEM, Set.of(IN_APP, EMAIL), Set.of(TO_ADMINS)),
+
     // ---- REFERRAL ----
     // A referral qualified (referred borrower's first loan disbursed) — alert the Disbursement Heads
     // who settle the two pending ₹-reward payouts.

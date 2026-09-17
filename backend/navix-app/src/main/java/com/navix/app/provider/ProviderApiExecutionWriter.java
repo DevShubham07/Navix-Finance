@@ -64,6 +64,25 @@ public class ProviderApiExecutionWriter {
     }
 
     /**
+     * Flip a row this writer already stored to FAILED, with the client's own reason.
+     *
+     * <p>Its own {@code REQUIRES_NEW} transaction for the same reason {@link #write} has one: the
+     * verification transaction around it may still roll back, and the evidence of a failed provider
+     * call has to survive that. A row that has since been purged is simply not there — no error.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 5)
+    public void markFailed(Long executionId, String error) {
+        if (executionId == null) {
+            return;
+        }
+        repository.findById(executionId).ifPresent(row -> {
+            row.setStatus(com.navix.verification.support.ProviderCall.FAILED);
+            row.setErrorMessage(clampError(error));
+            repository.save(row);
+        });
+    }
+
+    /**
      * The columns are {@code jsonb}, so an over-long payload cannot simply be cut — a truncated JSON
      * document does not parse. Wrap the fragment as a JSON string instead, keeping the row insertable
      * and flagging what happened.

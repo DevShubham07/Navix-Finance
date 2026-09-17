@@ -79,4 +79,42 @@ public interface ApplicationVerificationRepository extends JpaRepository<Applica
     List<ApplicationVerification> findLatestPassed(@Param("checkType") String checkType,
                                                     @Param("applicationIds") Collection<Long> applicationIds,
                                                     Pageable pageable);
+
+    /**
+     * EMPLOYMENT checks a VENDOR OUTAGE parked, on applications that still need a decision — the
+     * scheduled re-run's work list.
+     *
+     * <p>A 27-hour Digitap balance outage left 173 of these in the Sep-2026 window and nothing ever
+     * looked at them again; another 145 sit behind an intermittent EPFO "source is busy". None of
+     * those outcomes is billed, and the outcome we want from a re-run (a resolved record) is the one
+     * that is — so retrying is both cheap and the only way the borrower's file ever gets the data.
+     *
+     * <p>Native, because the filter is on {@code jsonb} keys. The predicates are deliberately narrow:
+     * <ul>
+     *   <li>only {@code providerErrorCode}s that describe the VENDOR failing — never {@code HTTP_400},
+     *       which means our own request was wrong and would fail identically forever;</li>
+     *   <li>exponential spacing (1h, 2h, 4h, 8h, 16h) so five attempts span a day and a half rather
+     *       than hammering a provider that is still down;</li>
+     *   <li>undecided applications only — a sanctioned or closed file does not need the answer, and
+     *       a successful re-run is billable.</li>
+     * </ul>
+     */
+    @Query(value = """
+            select v.* from application_verification v
+              join loan_application a on a.id = v.application_id
+             where v.check_type = 'EMPLOYMENT'
+               and v.status = 'REVIEW'
+               and v.derived ->> 'providerError' = 'true'
+               and v.derived ->> 'providerErrorCode' in (:codes)
+               and coalesce((v.derived ->> 'retryCount')::int, 0) < :maxRetries
+               and v.updated_at < now() - (interval '1 hour'
+                     * power(2, coalesce((v.derived ->> 'retryCount')::int, 0)))
+               and a.status in (:appStatuses)
+             order by v.updated_at asc
+             limit :limit
+            """, nativeQuery = true)
+    List<ApplicationVerification> findEmploymentRetryCandidates(@Param("codes") Collection<String> codes,
+                                                                @Param("maxRetries") int maxRetries,
+                                                                @Param("appStatuses") Collection<String> appStatuses,
+                                                                @Param("limit") int limit);
 }

@@ -1,0 +1,7 @@
+{
+  "name": "error",
+  "type": "Bad Request",
+  "reason": "VALIDATION_ERROR",
+  "message": "callbackUrl is not allowed to be empty",
+  "statusCode": 400
+}

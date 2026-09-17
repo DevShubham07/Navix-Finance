@@ -79,6 +79,33 @@ public final class ProviderCallLog {
         }
     }
 
+    /**
+     * Reclassify the call this thread just made as FAILED.
+     *
+     * <p>For the narrow case where the transport legitimately recorded a served call — a 2xx whose
+     * envelope {@code postAllowingErrorEnvelope} tolerates — and the client then decided it was a
+     * failure after all (an unrecognised error envelope, a rejected request). Without this the row
+     * would read SUCCESS while the borrower's check went to manual review.
+     *
+     * <p>Silently does nothing when no row was written (fixture mode, a recorder that is still the
+     * NOOP, a call that never reached the provider). Never throws: an audit-trail write must not turn
+     * a handled failure into an unhandled one.
+     */
+    public static void failLast(String error) {
+        Long executionId = ProviderCallContext.lastExecutionId();
+        if (executionId == null) {
+            return;
+        }
+        try {
+            recorder.markFailed(executionId, error);
+        } catch (Throwable recordingFailure) {
+            log.warn("PROVIDER_CALL could not be reclassified executionId={} error={}",
+                    executionId, recordingFailure.toString());
+            return;
+        }
+        log.error("PROVIDER_CALL reclassified as failed executionId={} error={}", executionId, error);
+    }
+
     private static String clamp(String payload) {
         if (payload == null) {
             return "<empty>";

@@ -2,6 +2,7 @@ package com.navix.verification.service;
 
 import static com.navix.verification.support.ProviderJson.ref;
 
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort;
 import com.navix.verification.client.SignzyBankVerificationClient;
 import com.navix.verification.client.SignzyDigiLockerClient;
@@ -11,8 +12,10 @@ import com.navix.verification.client.SignzyLivenessClient;
 import com.navix.verification.client.SignzyPanClient;
 import com.navix.verification.dto.SignzyDtos;
 import com.navix.verification.exception.CapabilityNotSupportedException;
+import com.navix.verification.exception.TerminalVerificationException;
 import com.navix.verification.exception.VerificationException;
 import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -154,30 +157,61 @@ public class SignzyVerificationAdapter implements VerificationPort {
         return new DigiLockerDownload(clientId, fileId, "application/pdf");
     }
 
+    /**
+     * Fetch the signed e-Aadhaar, distinguishing the four things Signzy's failures actually mean.
+     *
+     * <p>This used to map <b>every</b> exception — and any document whose signature did not validate —
+     * onto "not ready", which the caller turns into a retryable {@code DIGILOCKER_NOT_READY} and the
+     * borrower's page polls 45 times at four-second intervals. Three different verdicts were hidden
+     * behind that one answer in the Sep-2026 audit: a DigiLocker outage polled 183 times in twenty
+     * minutes, a borrower who had explicitly <i>declined</i> consent polled 23 times, and an Aadhaar
+     * whose document-signer signature was invalid fetched successfully 820 times in an afternoon.
+     *
+     * <p>Only two things are genuinely "come back in a moment": a 401 (consent not finished) and a
+     * transport blip. Everything else now says what it is.
+     */
     @Override
     public AadhaarResult digilockerAadhaar(String clientId) {
+        SignzyDtos.AadhaarResponse a;
         try {
-            SignzyDtos.AadhaarResponse a = digiLockerClient.getEAadhaar(clientId);
-            // Gate on a valid Aadhaar document-signer signature; without it, treat as not-ready.
-            if (!Boolean.TRUE.equals(a.validDsc()) || isBlank(a.fullName())) {
+            a = digiLockerClient.getEAadhaar(clientId);
+        } catch (TerminalVerificationException alreadyClassified) {
+            throw alreadyClassified;
+        } catch (VerificationException e) {
+            Integer status = e.httpStatus();
+            String detail = e.safeDetail() == null ? "" : e.safeDetail().toLowerCase(Locale.ROOT);
+            if (status == null || status == 401) {
+                // No response at all, or consent genuinely still in flight. Keep polling.
                 return notReady(clientId);
             }
-            // Carry the Aadhaar face-photo URL in profileImageBase64 (Signzy returns a persist URL, not
-            // base64) so the selfie step can face-match the borrower's selfie against it.
-            return new AadhaarResult(a.txnId(), trim(a.fullName()), a.dob(), a.gender(), a.maskedUid(),
-                    a.fullAddress(), a.state(), a.district(), a.city(), a.pincode(), a.country(),
-                    a.addressLine(), a.landmark(), a.dscSubject(), a.photoUrl(), a.pdfUrl(), a.jpegUrl(),
-                    a.xmlUrl());
-        } catch (VerificationException notReadyYet) {
-            // Consent not completed / XML not materialised yet — surface blank demographics so the
-            // caller's readiness gate throws DIGILOCKER_NOT_READY and the bounded retry kicks in.
+            if (status == 409 && detail.contains("upstream")) {
+                throw new TerminalVerificationException("DigiLocker upstream is down", e, status,
+                        e.endpoint(), ProviderFailureDetails.DIGILOCKER_UPSTREAM_DOWN, e.safeDetail());
+            }
+            if (status == 400 && detail.contains("denied")) {
+                throw new TerminalVerificationException("Borrower declined the DigiLocker consent", e,
+                        status, e.endpoint(), ProviderFailureDetails.DIGILOCKER_CONSENT_DENIED,
+                        e.safeDetail());
+            }
+            throw e;
+        }
+        if (isBlank(a.fullName())) {
+            // Consent is through but the XML has not materialised — the one case the poll is for.
             return notReady(clientId);
         }
+        // The signature verdict travels with the result instead of erasing it: an invalid signature is
+        // a real, complete document that a human has to look at, not an absence of one.
+        // Carry the Aadhaar face-photo URL in profileImageBase64 (Signzy returns a persist URL, not
+        // base64) so the selfie step can face-match the borrower's selfie against it.
+        return new AadhaarResult(a.txnId(), trim(a.fullName()), a.dob(), a.gender(), a.maskedUid(),
+                a.fullAddress(), a.state(), a.district(), a.city(), a.pincode(), a.country(),
+                a.addressLine(), a.landmark(), a.dscSubject(), a.photoUrl(), a.pdfUrl(), a.jpegUrl(),
+                a.xmlUrl(), a.validDsc());
     }
 
     private static AadhaarResult notReady(String clientId) {
         return new AadhaarResult(clientId, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
     }
 
     private static boolean isBlank(String s) {

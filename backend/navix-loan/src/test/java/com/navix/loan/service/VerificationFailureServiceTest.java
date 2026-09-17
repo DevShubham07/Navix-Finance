@@ -218,6 +218,22 @@ class VerificationFailureServiceTest {
         assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.PAN_INVALID, "PAN"));
     }
 
+    /**
+     * The half of the PAN pair that is easy to break from the other side. A Signzy 404 "Pan Number Not
+     * Found" is recorded as FAIL with {@code panNotFound} and {@code providerErrorCode}, and
+     * deliberately WITHOUT {@code providerError} — because this classifier keys its "the vendor was
+     * down" bucket off that one key. If {@code verifyPan} ever grew a {@code providerError} on that
+     * branch, 58 PANs the bureau has said do not exist would start reporting {@code PAN_UNVERIFIED},
+     * which is retryable and would offer staff a re-run that can only spend money to hear the same
+     * answer. This is the assertion that makes the omission over there safe.
+     */
+    @Test
+    void panFail_carryingPanNotFound_stillReportsPanInvalid() {
+        stubRows(row("PAN", "FAIL", "{\"panNotFound\":true,\"providerErrorCode\":\"PAN_NOT_FOUND\"}"));
+
+        assertThat(classify()).isEqualTo(new CaseFailure(CaseFailureReason.PAN_INVALID, "PAN"));
+    }
+
     @Test
     void panReview_providerError_withNoBureauPass_reportsPanUnverified() {
         stubRows(row("PAN", "REVIEW", "{\"providerError\":true}"));

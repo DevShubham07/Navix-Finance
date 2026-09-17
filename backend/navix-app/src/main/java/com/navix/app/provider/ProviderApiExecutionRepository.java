@@ -71,4 +71,35 @@ interface ProviderApiExecutionRepository extends JpaRepository<ProviderApiExecut
                                              @Param("from") Instant from,
                                              @Param("to") Instant to,
                                              Pageable pageable);
+
+    /** One row per (provider, operation) pair called since {@code since}. */
+    interface HealthRow {
+        String getProvider();
+        String getOperation();
+        long getCalls();
+        long getSuccesses();
+    }
+
+    /**
+     * Live-traffic success rate per capability, for {@code ProviderHealthMonitor}.
+     *
+     * <p>{@code source = 'LIVE'} deliberately: the ADMIN workbench probes a provider precisely when it
+     * is suspected of being broken, and the employment retry sweep re-runs calls that already failed
+     * once — both would drag a healthy capability's rate down. Reading the audit table rather than an
+     * in-memory counter is what makes the check restart-proof and free: eSign makes roughly five calls
+     * a day, so a process-local tracker would reset long before it noticed four weeks of total failure.
+     *
+     * <p>Only meaningful because of the audit-status fix shipped alongside it: before that, a Digitap
+     * UAN "no record" answer was stored FAILED, and this query would have reported a permanent outage
+     * on a capability behaving exactly as designed.
+     */
+    @Query(HEALTH_SINCE)
+    List<HealthRow> healthSince(@Param("since") Instant since);
+
+    String HEALTH_SINCE = "select r.provider as provider, r.operation as operation, "
+            + "count(r) as calls, "
+            + "sum(case when r.status = 'SUCCESS' then 1L else 0L end) as successes "
+            + "from ProviderApiExecution r "
+            + "where r.source = 'LIVE' and r.createdAt >= :since "
+            + "group by r.provider, r.operation";
 }

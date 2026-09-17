@@ -116,6 +116,7 @@ public class CustomerReviewService {
             p.setMobile(mobile);
         }
         if (req.dob() != null) {
+            requireStorableDob(req.dob());
             log(customerId, appId, "dob", str(p.getDob()), req.dob().toString());
             p.setDob(req.dob());
         }
@@ -208,6 +209,30 @@ public class CustomerReviewService {
      * {@link #editOwnProfile} logs, so the same field reads consistently on the activity timeline
      * regardless of which path wrote it.
      */
+    /**
+     * Rejects a date of birth no verification provider would accept.
+     *
+     * <p>Only the two impossible cases: a DOB in the future and one more than a century back. A typo
+     * of that shape used to travel all the way to the vendor, which answers with a format error, and
+     * the borrower was then told the check was unavailable rather than that their date was wrong —
+     * eleven applications in the Sep-2026 audit. The date input on the consent screen carries the same
+     * {@code min}/{@code max}; this is the half a client cannot skip.
+     *
+     * <p><b>Deliberately no age rule here.</b> {@code CustomerService.requirePlausibleDob} enforces
+     * "at least 18" on the ADMIN correction path, and whether an under-18 applicant is turned away at
+     * intake or routed to a human is a product decision, not a validation one. This method only
+     * refuses input that cannot be a date of birth at all.
+     */
+    private static void requireStorableDob(java.time.LocalDate dob) {
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (!dob.isBefore(today)) {
+            throw new BusinessException("INVALID_DOB", "Date of birth must be in the past");
+        }
+        if (dob.isBefore(today.minusYears(100))) {
+            throw new BusinessException("INVALID_DOB", "Please check your date of birth");
+        }
+    }
+
     private void log(Long customerId, Long appId, String field, String oldVal, String newVal) {
         changeLogger.logIfChanged(customerId, appId, field, oldVal, newVal);
     }
@@ -283,6 +308,13 @@ public class CustomerReviewService {
         // UAN isn't itself verified (no invalidation) — it just sharpens the employment lookup.
         String uan = trimToNull(req.uan());
         if (uan != null && !uan.equals(p.getUan())) {
+            // Checked here rather than left to the vendor: a UAN that is not twelve digits makes the
+            // EPFO lookup fail its format validation, and the borrower is told the employment check is
+            // unavailable when the truth is a typo they could fix in a second. The frontend validates
+            // the same shape; this is the half that cannot be skipped.
+            if (!uan.matches("\\d{12}")) {
+                throw new BusinessException("INVALID_UAN", "UAN must be exactly 12 digits");
+            }
             logChange(customerId, appId, "uan", p.getUan(), uan);
             p.setUan(uan);
         }

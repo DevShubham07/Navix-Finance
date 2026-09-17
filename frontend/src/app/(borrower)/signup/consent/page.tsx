@@ -11,6 +11,15 @@ import { verificationApi, type OtpRequestResult } from "@/lib/api/applications";
 import { fetchBorrowerSession } from "@/lib/api/live-journey";
 import { formatApiError } from "@/lib/api/errors";
 
+// A date of birth typed as a future year reached the bureau, which rejected the enquiry outright —
+// a billable call spent on a typo. The picker is bounded so it can't leave the page.
+const today = () => new Date().toISOString().slice(0, 10);
+const hundredYearsAgo = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 100);
+  return d.toISOString().slice(0, 10);
+};
+
 /**
  * Screen 9 — the only place external APIs fire (revamp.md decisions 6, 7). The borrower re-confirms
  * their identity with a one-time code AND explicitly authorises the bureau enquiry; only then do PAN,
@@ -157,6 +166,8 @@ export default function SignupConsentPage() {
           <input
             type="date"
             value={dob}
+            max={today()}
+            min={hundredYearsAgo()}
             onChange={(e) => {
               setDob(e.target.value);
               setError(undefined);

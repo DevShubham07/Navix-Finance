@@ -1,0 +1,15 @@
+{
+  "status": "error",
+  "success": true,
+  "timestamp": "2026-09-16T07:55:11.312Z",
+  "request_id": "TXN-TEST-01AAAAAAAAAAAAAAAAAAAAAAAA",
+  "error_message": {
+    "status": "S11",
+    "orderId": "txn-test-00000000-1111-2222-3333-444444444444",
+    "question": "Please Choose a Bank Name OR Institution Name for the latest Loan taken",
+    "reportId": "CCR260916CR000000001",
+    "optionsList": ["EXAMPLE FINANCIAL TECH ", " EXAMPLE BANK ", " EXAMPLE CREDIT SERVICES LIMITED ", " Example Hire Purchase"],
+    "buttonbehaviour": "R"
+  },
+  "transaction_id": "TXN-TEST-99999999-8888-7777-6666-555555555555"
+}

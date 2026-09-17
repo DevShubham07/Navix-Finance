@@ -29,7 +29,10 @@ import { formatApiError } from "@/lib/api/errors";
  *     "never stop the borrower at this step" policy the bureau step has always had.
  */
 
-type Phase = "loading" | "question" | "needsMint" | "done" | "skipped" | "none";
+type Phase = "loading" | "question" | "needsMint" | "done" | "skipped" | "closed" | "none";
+
+/** The bureau stops accepting answers after this many, and the count survives a re-mint. */
+const MAX_CHALLENGE_ATTEMPTS = 3;
 
 /** The challenge fields `bureauChallengeReview` writes into the BUREAU row's `derived`. */
 type Challenge = {
@@ -37,6 +40,10 @@ type Challenge = {
   options: string[];
   hasReportId: boolean;
   skipped: boolean;
+  /** Moves on a real re-mint and stays put inside the server's cooldown — see `mint()`. */
+  orderId: string | null;
+  exhausted: boolean;
+  attempts: number;
 };
 
 /**
@@ -69,6 +76,13 @@ function readChallenge(row: StepResult | undefined): Challenge | null {
     // answered at all, so those borrowers are offered a fresh question instead.
     hasReportId: typeof d.bureauChallengeReportId === "string" && d.bureauChallengeReportId.length > 0,
     skipped: d.bureauChallengeSkipped === true,
+    orderId: typeof d.bureauChallengeOrderId === "string" ? d.bureauChallengeOrderId : null,
+    exhausted: d.bureauChallengeExhausted === true,
+    // Same two shapes as the options: a number off the live call, a string off the stored row.
+    attempts:
+      typeof d.bureauChallengeAttempts === "number"
+        ? d.bureauChallengeAttempts
+        : Number(d.bureauChallengeAttempts ?? 0),
   };
 }
 
@@ -110,6 +124,10 @@ function CreditQuestionInner() {
       setPhase(row?.status === "PASS" ? "done" : "none");
     } else if (next.skipped) {
       setPhase("skipped");
+    } else if (next.exhausted || next.attempts >= MAX_CHALLENGE_ATTEMPTS) {
+      // Before this the page kept rendering the options after the cap was spent, so every answer
+      // came back REVIEW and the borrower had no way to tell the question was already closed.
+      setPhase("closed");
     } else {
       setPhase(next.hasReportId && next.options.length > 0 ? "question" : "needsMint");
     }
@@ -135,11 +153,19 @@ function CreditQuestionInner() {
     }
   };
 
-  const mint = () =>
-    run(
-      () => verificationApi.bureauChallengeRefresh(appId as number),
-      "We couldn't fetch a question just now — please try again in a minute.",
-    );
+  const mint = () => {
+    // Inside its 60s cooldown the backend returns the stored row untouched instead of erroring, so
+    // an unmoved order id is the only signal that no new question was minted — without it the
+    // button looks dead.
+    const previousOrderId = challenge?.orderId ?? null;
+    return run(async () => {
+      const refreshed = await verificationApi.bureauChallengeRefresh(appId as number);
+      if (previousOrderId && readChallenge(refreshed)?.orderId === previousOrderId) {
+        setNotice("Please wait a minute before asking for a new question.");
+      }
+      return refreshed;
+    }, "We couldn't fetch a question just now — please try again in a minute.");
+  };
 
   const submit = async () => {
     if (!choice) return;
@@ -176,6 +202,22 @@ function CreditQuestionInner() {
             title="Thanks — we'll take it from here"
             body="No problem. Our credit team will complete this check manually; you don't need to do anything else."
           />
+        ) : phase === "closed" ? (
+          <div className="text-center">
+            <ShieldQuestion size={26} className="mx-auto text-navy" />
+            <h1 className="mt-3 font-serif text-xl text-navy">We&apos;ll take this one from here</h1>
+            <p className="mt-2 text-sm text-muted">
+              The credit bureau has closed this security question. Our credit team will complete the
+              check for you — there&apos;s nothing left for you to answer.
+            </p>
+            {/* No re-mint offered here on purpose: the attempt count is carried across re-mints by
+                design, so a fresh question would be billed and then refused before it could be
+                answered. Skipping is the only move that leaves the file in a clean state. */}
+            <button type="button" className="btn btn-primary mt-6" onClick={skip} disabled={busy}>
+              {busy ? "One moment…" : "Continue"}
+            </button>
+            {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
+          </div>
         ) : phase === "none" ? (
           <Outcome
             title="Nothing to answer"

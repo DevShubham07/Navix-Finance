@@ -8,6 +8,15 @@ import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui
 import { errMessage } from "@/components/staff/live-pipeline";
 import { customersApi, rupeesToPaise } from "@/lib/api/applications";
 
+// A date of birth typed as a future year reached the bureau, which rejected the enquiry outright —
+// a billable call spent on a typo. The picker is bounded so it can't leave the page.
+const today = () => new Date().toISOString().slice(0, 10);
+const hundredYearsAgo = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 100);
+  return d.toISOString().slice(0, 10);
+};
+
 /**
  * ADMIN correcting a customer's details without leaving the Customers page — chiefly the name and
  * date of birth, which are the two bureau prerequisites that park a file with nothing a reviewer
@@ -120,6 +129,8 @@ export function CustomerEditDialog({
             label="Date of birth"
             type="date"
             value={form.dob}
+            max={today()}
+            min={hundredYearsAgo()}
             onChange={set("dob")}
             className="!mb-2"
             helperText="Required by the bureau before a credit check can run."

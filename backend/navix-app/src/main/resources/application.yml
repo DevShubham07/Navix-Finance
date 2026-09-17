@@ -76,9 +76,14 @@ navix:
     # `mock` signs inline without calling anyone: the demo seed script and the tests set it, because a
     # real signature needs a human with an Aadhaar-linked handset. Never set it in a real environment.
     provider: ${NAVIX_ESIGN_PROVIDER:signzy}
-    # Signzy requires a callback URL on every contract. Ours only accelerates the borrower's own poll
-    # (which stays the source of truth) for the case they close the tab before being redirected back;
-    # blank disables it. The secret is echoed back by Signzy and is how the endpoint authenticates.
+    # BOTH ARE REQUIRED when provider=signzy — the app refuses to start without them. Signzy's contract
+    # spec marks callbackUrl mandatory and answers 400 "callbackUrl is not allowed to be empty" to a
+    # blank one; 156 production contracts failed that way, unnoticed for four weeks, because esignInit
+    # catches the error and silently offers the drawn-signature fallback. The secret is echoed back by
+    # Signzy in the callback's Authorization header and is how the webhook authenticates it — blank
+    # means every callback is rejected. The callback only accelerates the borrower's own poll (which
+    # stays the source of truth) for the case they close the tab before being redirected back.
+    # Set both via SSM /navix/<env>/navix/esign/callback-{url,secret}, or provider=mock for offline runs.
     callback-url: ${NAVIX_ESIGN_CALLBACK_URL:}
     callback-secret: ${NAVIX_ESIGN_CALLBACK_SECRET:}
     # How closely the Aadhaar name must match ours before Signzy accepts the signature ("0.01".."1.00").
@@ -166,6 +171,16 @@ navix:
   # Daily payment-reminder sweep (PaymentReminderScheduler). Spring cron: sec min hour dom mon dow.
   reminders:
     cron: ${NAVIX_REMINDERS_CRON:0 0 9 * * *}
+  employment-retry:
+    # Re-runs EPFO/UAN checks a vendor outage parked (REVIEW + providerError), undecided applications
+    # only, five attempts with exponential spacing. Hourly at :30 so it never coincides with the 09:00
+    # reminder sweep. Turn it off without a deploy via the `employment-auto-retry` feature_flag row.
+    cron: ${NAVIX_EMPLOYMENT_RETRY_CRON:0 30 * * * *}
+  provider-health:
+    # Hourly sweep of provider_api_execution looking for a capability with >= 10 live calls and zero
+    # successes in 24h — the shape Aadhaar eSign had for four weeks without raising anything. Alerts
+    # ADMINs through the notification engine, rate-limited to one per capability per 6h.
+    cron: ${NAVIX_PROVIDER_HEALTH_CRON:0 15 * * * *}
 
   # Refer-a-friend program. enabled gates the whole feature; reward-paise is the per-person reward
   # (₹200 = 20000 paise). Read at boot — override per env via the SSM params

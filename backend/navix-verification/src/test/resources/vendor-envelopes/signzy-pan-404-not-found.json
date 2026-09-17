@@ -1,0 +1,10 @@
+{
+  "error": {
+    "name": "error",
+    "type": "Not Found",
+    "reason": "NOT_FOUND",
+    "status": 404,
+    "message": "Pan Number Not Found",
+    "statusCode": 404
+  }
+}

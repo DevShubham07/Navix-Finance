@@ -24,6 +24,12 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 >   email,address,digilocker/init,bureau,salary,penny-drop,selfie,agreement,presign-upload}`,
 >   `POST …/verify/digilocker/complete`, `GET …/verify/{digilocker/status,summary}`; `submit-kyc` is gated
 >   (`KYC_INCOMPLETE`). Staff-readable `GET /api/applications/{id}/verifications`, `GET …/documents/{docId}/url`.
+>   `digilocker/complete` no longer answers only the retryable `DIGILOCKER_NOT_READY`: the provider's
+>   verdicts are classified (§14), so it also returns **`DIGILOCKER_UPSTREAM_DOWN`** (DigiLocker itself is
+>   down — back off rather than keep polling at 4s), **`DIGILOCKER_CONSENT_DENIED`** (the borrower
+>   declined — terminal for that consent session) and **`DIGILOCKER_PROVIDER_ERROR`** for anything else.
+>   `digilocker/init` caps consent sessions at **5 per application per rolling 24 h**, then returns a
+>   skippable row that routes the borrower to the manual Aadhaar-card upload.
 > - **Email OTP (both addresses).** `POST …/verify/email/otp` + `…/verify/email/otp/confirm` (PERSONAL)
 >   and `POST …/verify/official-email/otp` + `…/verify/official-email/otp/confirm` (OFFICIAL/work).
 >   Inbox control, distinct from `…/verify/email`, the provider deliverability + employer-match check
@@ -58,7 +64,7 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 | `GET /rejections?reason=` · `GET /telecalling` | staff | rejection register · the telecalling queue |
 | `POST /{id}/verifications/{checkType}/retry` | staff (`verification:retry`) | re-run one provider check |
 | `POST /{id}/cancel` | borrower/staff | → CANCELLED (pre-disbursement) |
-| `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read; the staff-only credit score/★ rating are **stripped** for a borrower reading their own profile) |
+| `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read; the staff-only credit score/★ rating are **stripped** for a borrower reading their own profile). A DOB in the future or more than 100 years back → `INVALID_DOB` (no age rule here — the ADMIN correction path keeps its own 18+ check) |
 | `POST /{id}/documents` · `GET /{id}/documents` · `GET /{id}/documents/{docId}` | borrower uploads · any reads | documents (base64; metadata list + content for view/download) — the auto-generated `CREDIT_BRIEF` PDF rides this list |
 | `GET /{id}/credit-brief` | staff only | bureau credit brief: 1–5★ rating + categorized facts (A/B/C) + summary + the `CREDIT_BRIEF` PDF doc id (`CreditBriefView`); borrower/anonymous → `FORBIDDEN_ROLE` |
 
@@ -178,7 +184,7 @@ All routes are gated by the **`referral` feature flag** (off → `REFERRAL_DISAB
 | `POST /api/applications/{id}/verifications/{checkType}/decision` | credit roles / ADMIN | manual PASS/FAIL override (provider MANUAL, audited) |
 | `GET /api/applications/verifications/overview?status=&checkType=&q=&needsAttention=&page=&size=` | staff | status tallies over the whole undecided queue + one page of rows. Paged by **application** (a card's checks are never split across pages); by default only applications that still need a reviewer — `needsAttention=false` returns the whole queue |
 | `POST /api/applications/{id}/send-reminder` | credit roles / ADMIN | nudge the borrower on outstanding steps (no-op when nothing pending) |
-| `PUT /api/applications/{id}/profile/self` | BORROWER | self-edit non-identity profile fields (may invalidate the matching verification → re-verify) |
+| `PUT /api/applications/{id}/profile/self` | BORROWER | self-edit non-identity profile fields (may invalidate the matching verification → re-verify); a UAN that is not exactly 12 digits → `INVALID_UAN` |
 | `GET\|PUT /api/preferences` | BORROWER | notification settings (opt-out suppresses SMS/EMAIL, never IN_APP) |
 | `GET\|PUT /api/staff/me` | staff | staff self-profile (role/status stay ADMIN-only); `PUT` also toggles `emailOptIn` (operational-email opt-out, null-guarded so a partial PUT leaves it untouched — STAFF_IAM account/security mail is never suppressible) |
 | `GET/POST/DELETE /api/admin/expenses` (+`/{id}`) | ADMIN | company-expense ledger (+ receipt S3 keys) |

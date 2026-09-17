@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +16,7 @@ import com.navix.common.risk.RiskPort;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.common.verification.VerificationPort;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.CustomerProfile;
@@ -22,11 +24,14 @@ import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -80,7 +85,7 @@ class BureauChallengeAnswerTest {
         ActorContext.clear();
     }
 
-    private void parked(String derivedJson) {
+    private ApplicationVerification parked(String derivedJson) {
         ApplicationVerification row = new ApplicationVerification();
         row.setApplicationId(APP);
         row.setCheckType("BUREAU");
@@ -88,6 +93,7 @@ class BureauChallengeAnswerTest {
         row.setDerived(derivedJson);
         lenient().when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU"))
                 .thenReturn(Optional.of(row));
+        return row;
     }
 
     private static String derived(String extra) {
@@ -96,12 +102,40 @@ class BureauChallengeAnswerTest {
                 + "\"bureauChallengeOrderId\":\"txn-prod-1\"" + extra + "}";
     }
 
-    private void profileExists() {
+    private CustomerProfile profileExists() {
         CustomerProfile p = new CustomerProfile();
         p.setApplicationId(APP);
         p.setFullName("Sample Person");
         p.setMobile("9000000001");
         lenient().when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        return p;
+    }
+
+    /**
+     * A stand-in for {@code VerificationException}, which lives in navix-verification and is invisible
+     * from this module — the exact reason {@link ProviderFailureDetails} exists. Only
+     * {@code providerCode()} matters here: it is what tells a closed question (CRIF {@code S02}) apart
+     * from a wrong answer, and the two must never be recorded the same way.
+     */
+    private static RuntimeException providerFailure(Integer httpStatus, String providerCode) {
+        class Failure extends RuntimeException implements ProviderFailureDetails {
+            @Override public Integer httpStatus() {
+                return httpStatus;
+            }
+
+            @Override public String endpoint() {
+                return "/crif_combine";
+            }
+
+            @Override public String providerCode() {
+                return providerCode;
+            }
+
+            @Override public String safeDetail() {
+                return "kba closed";
+            }
+        }
+        return new Failure();
     }
 
     /**
@@ -190,5 +224,106 @@ class BureauChallengeAnswerTest {
         assertThat(result.derived()).containsKey("bureauChallengeQuestion");
         verify(verification, never())
                 .answerBureauChallenge(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    /**
+     * Applications 9741 and 9474 walked S11 → S11 → S02 in twelve seconds: the follow-up envelope was
+     * mis-parsed, so the old question stayed open, the borrower kept answering it, and after three
+     * billed attempts CRIF closed the order and the report was lost. {@code S02} is the bureau saying
+     * the question is spent — a local attempt counter cannot see that, so the verdict has to be
+     * persisted as its own flag with the budget burnt down to the cap.
+     */
+    @Test
+    void exhaustedAnswerPersistsTheClosedFlagAndStopsFurtherCalls() {
+        parked(derived(",\"bureauChallengeReportId\":\"CCR-1\""));
+        profileExists();
+        when(verification.answerBureauChallenge(anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString()))
+                .thenThrow(providerFailure(200, ProviderFailureDetails.KBA_EXHAUSTED));
+
+        var result = service.answerBureauChallenge(APP, PADDED_OPTION);
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("bureauChallengeExhausted", true)
+                // Burnt to MAX_CHALLENGE_ATTEMPTS rather than incremented: a local counter that still
+                // had room would invite another billable call CRIF has already refused to honour.
+                .containsEntry("bureauChallengeAttempts", 3);
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getDerived()).contains("\"bureauChallengeExhausted\":true");
+    }
+
+    /**
+     * The flag above only earns its keep if the next answer is turned away for free. Every call to
+     * CRIF is billable with no sandbox, and this is the one provider path a BORROWER can trigger — a
+     * closed question with a live-looking options list on screen is precisely the shape that invites
+     * repeated clicking.
+     */
+    @Test
+    void aClosedChallengeIsNotSentToTheProviderAgain() {
+        parked(derived(",\"bureauChallengeReportId\":\"CCR-1\",\"bureauChallengeExhausted\":true"));
+
+        var result = service.answerBureauChallenge(APP, PADDED_OPTION);
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        verifyNoInteractions(verification);
+    }
+
+    /**
+     * An {@code orderId} only means something to the vendor that issued it, and
+     * {@code VerificationFailureService} reads the provider off the row to decide whether a real
+     * report was thrown away. The answer and skip paths used to write a hardcoded
+     * {@code FINTRIX_CRIF}, so one rejected answer relabelled a Digitap-issued challenge as Fintrix's
+     * — and the label has to stay true for either of those readers to be right.
+     */
+    @Test
+    void answerFailurePreservesTheStoredIssuer() {
+        ApplicationVerification row = parked(derived(",\"bureauChallengeReportId\":\"CCR-1\""));
+        row.setProvider("DIGITAP_EXPERIAN");
+        profileExists();
+        when(verification.answerBureauChallenge(anyString(), anyString(), anyString(), anyString(),
+                anyString(), anyString()))
+                .thenThrow(providerFailure(200, "S11"));
+
+        service.answerBureauChallenge(APP, PADDED_OPTION);
+
+        ArgumentCaptor<ApplicationVerification> saved = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(saved.capture());
+        assertThat(saved.getValue().getProvider()).isEqualTo("DIGITAP_EXPERIAN");
+    }
+
+    /**
+     * Exhaustion closes one CRIF order, not the borrower's file. A re-mint is a NEW order with a new
+     * question, so the flag must not ride along into it — carrying it forward would leave the fresh
+     * question permanently unanswerable and the only route to the report would be a manual credit
+     * decision. The attempt counter, by contrast, is deliberately carried so a borrower cannot reset
+     * their own budget by asking for another question.
+     */
+    @Test
+    void remintAfterExhaustionIsStillAllowedOutsideTheCooldown() {
+        parked(derived(",\"bureauChallengeReportId\":\"CCR-1\",\"bureauChallengeExhausted\":true,"
+                + "\"bureauChallengeAttempts\":3"));
+        CustomerProfile p = profileExists();
+        p.setDob(LocalDate.of(1992, 8, 15));
+        ApplicationVerification consent = new ApplicationVerification();
+        consent.setApplicationId(APP);
+        consent.setCheckType("BUREAU_CONSENT");
+        consent.setStatus("PASS");
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "BUREAU_CONSENT"))
+                .thenReturn(Optional.of(consent));
+        when(verification.pullBureau(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new VerificationPort.BureauCheck("CCR-2", "FINTRIX_CRIF", null, false,
+                        null, null, null, null, null, null,
+                        new VerificationPort.PendingChallenge("Which lender?",
+                                List.of(PADDED_OPTION), "txn-prod-2", "CCR-2")));
+
+        var result = service.refreshBureauChallenge(APP);
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("bureauChallenge", true)
+                .containsEntry("bureauChallengeOrderId", "txn-prod-2");
+        assertThat(result.derived()).doesNotContainKey("bureauChallengeExhausted");
+        // The spent budget still follows the borrower across the re-mint.
+        assertThat(result.derived()).containsEntry("bureauChallengeAttempts", 3);
     }
 }

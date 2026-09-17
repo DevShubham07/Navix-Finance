@@ -99,7 +99,12 @@ Fargate → RDS/S3/SSM; see `aws.md`), and CI deploys on every push to `main`.
 > The blow-by-blow history is in git; the roadmap is [`FUTURE.md`](FUTURE.md) and
 > [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
 
-Two live landmines worth knowing before you deploy anything:
+Three live landmines worth knowing before you deploy anything:
+- **Aadhaar eSign refuses to boot without its two callback parameters.** `navix.esign.callback-url`
+  and `callback-secret` (SSM `/navix/<env>/navix/esign/…`) are mandatory whenever the provider is
+  `signzy`, because Signzy rejects every contract that carries no callback URL — which it did, 156
+  times out of 156, for four weeks, while `esignInit` quietly fell back to a drawn signature. A
+  deploy without those parameters now fails to start **by design**; set them first.
 - **The backend image carries the OTP SMS template.** Only the old NAVIX-worded `NAVIX_OTP_LOGIN_V2`
   is DLT-approved, so ECS task-def **revision 4 pins `NAVIX_SMS_OTP_TEMPLATE`** to that wording.
   Redeploying from `application.yml` defaults swaps in unapproved text and every send fails
@@ -127,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V67 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V72 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -165,10 +170,17 @@ docker compose up -d           # Postgres 16 on localhost:5432 (db/user/pass: na
 ### 4.2 Backend  (http://localhost:8080)
 ```bash
 cd backend
+cp .env.example .env           # spring-dotenv loads it; see the eSign note below
 ./mvnw install -DskipTests     # FIRST build sibling jars (navix-common etc.) into ~/.m2
 ./mvnw -pl navix-app spring-boot:run
 ```
 Flyway applies **all migrations** on boot (the full list is §10). Swagger UI at `http://localhost:8080/swagger-ui.html`.
+
+> **eSign refuses to boot without its callback settings.** With `navix.esign.provider=signzy` (the
+> default), a blank `NAVIX_ESIGN_CALLBACK_URL` or `NAVIX_ESIGN_CALLBACK_SECRET` now throws at startup —
+> Signzy rejects every contract that carries no callback URL, and that failed silently in production for
+> four weeks. `.env.example` ships `NAVIX_ESIGN_PROVIDER=mock` plus dummy values, so a local run is fine;
+> a deployed environment must have both SSM parameters set before the rollout.
 
 ### 4.3 Frontend  (http://localhost:3000)
 ```bash
@@ -522,7 +534,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V67** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V72** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -602,11 +614,15 @@ What holds across all of it, and does not belong in that file:
   row leaves it off — it takes money-affecting, 90-day-blocking action without a human),
   `digitap-crif` (the middle bureau leg, Digitap's CRIF product; also `defaultWhenMissing = FALSE` —
   the endpoint still 401s, so the implemented leg stays inert until Digitap enables it and a row is
-  inserted; see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)).
+  inserted; see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)), `digitap-pan` + `digitap-email`
+  (**both off, V72** — neither product is provisioned, `412` on every call, so the adapter skips the leg
+  entirely; flip a row when Digitap provisions it), `employment-auto-retry` (on — the hourly re-run of
+  EPFO checks a vendor outage parked).
 - **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `BORROWER_AUTH_TTL_SECONDS`
   (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
-  `AWS_PROFILE`, `NAVIX_ENV`,
+  `NAVIX_EMPLOYMENT_RETRY_CRON` + `NAVIX_PROVIDER_HEALTH_CRON` (the employment-retry and vendor-health
+  sweeps), `AWS_PROFILE`, `NAVIX_ENV`,
   `SIGNZY_*` + `DIGITAP_*` + `FINTRIX_*` (`FINTRIX_BASE_URL`, `FINTRIX_CLIENT_ID`, `FINTRIX_CLIENT_SECRET` —
   the bureau-fallback Fintrix `crif_combine` client) + `NAVIX_VERIFICATION_CHAIN` (default
   `signzy,digitap,fintrix` — **global order, not per-capability**: Signzy leads so it stays the PAN
@@ -614,6 +630,8 @@ What holds across all of it, and does not belong in that file:
   Digitap (Experian) → Fintrix (CRIF) because Signzy's bureau leg is retired and skips itself;
   verification providers, §14; loaded from `.env`) + `NAVIX_VERIFICATION_BUREAU_NO_HIT_FALL_THROUGH`
   (default `true` — a bureau no-hit tries the next provider rather than ending the chain),
+  `NAVIX_ESIGN_*` (`PROVIDER` signzy|mock · `CALLBACK_URL` + `CALLBACK_SECRET` — **both mandatory when
+  the provider is `signzy`**; the app refuses to start otherwise, SSM `/navix/<env>/navix/esign/…`),
   `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
@@ -674,7 +692,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V65 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V72 Flyway catalog.
 
 **Everything else:**
 - **`aws.md`** — the live cloud deployment (Vercel → ALB → ECS → RDS/S3/SSM): every resource id, the

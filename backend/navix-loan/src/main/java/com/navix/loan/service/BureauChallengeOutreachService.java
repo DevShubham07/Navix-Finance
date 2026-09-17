@@ -136,7 +136,10 @@ public class BureauChallengeOutreachService {
             }
             Map<String, Object> derived = derived(row);
             if (!Boolean.TRUE.equals(derived.get("bureauChallenge"))
-                    || Boolean.TRUE.equals(derived.get("bureauChallengeSkipped"))) {
+                    || Boolean.TRUE.equals(derived.get("bureauChallengeSkipped"))
+                    // CRIF has closed this question (S02): nudging the borrower to answer it would
+                    // send them to a screen where every option is already dead.
+                    || Boolean.TRUE.equals(derived.get("bureauChallengeExhausted"))) {
                 continue;
             }
             LoanApplication app = applicationRepo.findById(row.getApplicationId()).orElse(null);

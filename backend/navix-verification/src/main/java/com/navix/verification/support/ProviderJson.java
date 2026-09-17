@@ -2,10 +2,16 @@ package com.navix.verification.support;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.navix.common.verification.ProviderCallContext;
+import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.verification.exception.VerificationException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -38,6 +44,8 @@ public final class ProviderJson {
             "message", "error_message", "errorMessage", "description", "detail");
     /** Fintrix's code for "your prepaid account cannot pay for this call". See the log below. */
     private static final String INSUFFICIENT_BALANCE = "insufficient_balance";
+    /** How much of a non-JSON body is kept for diagnosis. Enough to read an error page's title. */
+    private static final int UNPARSEABLE_BODY_LIMIT = 4_000;
 
     private ProviderJson() {
     }
@@ -91,23 +99,33 @@ public final class ProviderJson {
     private static JsonNode post(RestClient client, String uri, Object body, int toleratedStatus,
                                  boolean throwOnErrorEnvelope) {
         String requestJson = rawJson(body);
+        // Clear any id left by an earlier call on this thread: ProviderCallLog.failLast() reclassifies
+        // "the row we just wrote", and a stale id would let a client flip somebody else's row to FAILED.
+        ProviderCallContext.setLastExecutionId(null);
         ProviderCallLog.logRequest(uri, requestJson);
         long started = System.nanoTime();
-        JsonNode node;
+        String rawBody;
         int httpStatus;
         try {
-            ResponseEntity<JsonNode> entity =
-                    client.post().uri(uri).body(body).retrieve().toEntity(JsonNode.class);
-            node = entity.getBody();
+            // Read BYTES, not JsonNode. Two reasons, both learned the hard way:
+            //   1. a body the parser rejects (an HTML 502 page, a bare string) used to blow up inside
+            //      the converter, so the call was recorded with response=null — the one row anybody
+            //      would want to read. Now the bytes are captured first and parsed afterwards.
+            //   2. decoding is explicit. StringHttpMessageConverter defaults to ISO-8859-1 for any
+            //      content type it does not recognise as JSON, and Digitap answers some calls
+            //      application/octet-stream — which would mangle every non-ASCII borrower name.
+            ResponseEntity<byte[]> entity =
+                    client.post().uri(uri).body(body).retrieve().toEntity(byte[].class);
             httpStatus = entity.getStatusCode().value();
+            rawBody = decode(entity.getBody(), entity.getHeaders().getContentType());
         } catch (RestClientResponseException e) {
             int status = e.getStatusCode().value();
             if (status == toleratedStatus) {
                 // An expected state, not a failure — still recorded, so the dashboard shows the poll.
-                record(uri, requestJson, e.getResponseBodyAsString(), status, started, null);
+                record(uri, requestJson, storableJson(e.getResponseBodyAsString()), status, started, null);
                 return null;
             }
-            record(uri, requestJson, e.getResponseBodyAsString(), status, started,
+            record(uri, requestJson, storableJson(e.getResponseBodyAsString()), status, started,
                     "HTTP " + status + " from " + uri);
             // Keep the exception metadata safe/redacted; the unredacted copy lives in the audit row.
             SafeDiagnostic diagnostic = safeDiagnostic(e.getResponseBodyAsString());
@@ -118,6 +136,9 @@ public final class ProviderJson {
                 // operational outage with a one-step fix (top up), not a per-borrower problem.
                 log.error("PROVIDER_BALANCE_EXHAUSTED endpoint={} — every call to this provider will "
                         + "keep failing until the account is topped up", uri);
+                // …and the log line alone was the problem: nobody was reading it. The sink turns this
+                // into an ADMIN notification. Never throws (see ProviderHealth).
+                ProviderHealth.balanceExhausted(ProviderCallCatalog.providerFor(uri), uri);
             }
             throw new VerificationException(
                     "HTTP " + e.getStatusCode().value() + " from " + uri, e,
@@ -136,17 +157,86 @@ public final class ProviderJson {
             throw new VerificationException("Transport failure calling " + uri, transportFailure,
                     null, uri, null, null);
         }
-        if (node == null) {
+        if (rawBody == null || rawBody.isBlank()) {
             record(uri, requestJson, null, httpStatus, started, "Empty response body from " + uri);
             throw new VerificationException("Empty response body from " + uri);
         }
-        // A 2xx carrying an error envelope is still a failed call as far as the audit trail cares.
+        JsonNode node = parseOrNull(rawBody);
+        if (node == null) {
+            // The provider answered, but not with JSON. Distinct from a transport failure (we did get a
+            // response) and from any HTTP code (the status was very likely 200), so httpStatus stays
+            // null on the exception and the caller records UNPARSEABLE_RESPONSE.
+            record(uri, requestJson, wrapUnparseable(rawBody), httpStatus, started,
+                    "Unparseable response body from " + uri);
+            throw new VerificationException("Unparseable response body from " + uri, null,
+                    null, uri, ProviderFailureDetails.UNPARSEABLE_RESPONSE, null);
+        }
+        // The audit status is the CALLER'S outcome, not a guess from the envelope's shape.
+        //
+        // This used to mark the row FAILED for any envelope that merely LOOKED like an error —
+        // status error/failed/failure, a non-null "error" key, or result_code != 101 — regardless of
+        // whether the caller then threw. Since `postAllowingErrorEnvelope` exists precisely so a
+        // client can treat such a body as an ANSWER, ~1,939 of the 4,848 failures in the Sep-2026
+        // audit were Digitap "no EPFO record" (103/104) and Fintrix "no data found in CRIF" replies
+        // that every layer above handled correctly — recorded FAILED and logged at ERROR, burying the
+        // real failures and inflating the dashboard's failure rate from ~10% to 24.5%.
+        //
+        // A client that classifies a tolerated envelope as a failure AFTER this point says so itself,
+        // with ProviderCallLog.failLast(...) — see FintrixCrifClient.rejectUnlessNoRecord.
+        boolean rejecting = throwOnErrorEnvelope
+                && "error".equalsIgnoreCase(node.path("status").asText(""));
         record(uri, requestJson, node.toString(), httpStatus, started,
-                isProviderErrorEnvelope(node) ? "Provider reported an error envelope" : null);
-        if (throwOnErrorEnvelope && "error".equalsIgnoreCase(node.path("status").asText(""))) {
+                rejecting ? "Provider reported an error envelope" : null);
+        if (rejecting) {
             throw new VerificationException("Provider reported error for " + uri);
         }
         return node;
+    }
+
+    /**
+     * Decode a response body. An explicit charset wins; otherwise UTF-8 — the encoding every provider
+     * here actually sends, and the one the JSON spec assumes. Never ISO-8859-1 by accident.
+     */
+    private static String decode(byte[] raw, MediaType contentType) {
+        if (raw == null || raw.length == 0) {
+            return null;
+        }
+        Charset charset = contentType != null && contentType.getCharset() != null
+                ? contentType.getCharset()
+                : StandardCharsets.UTF_8;
+        return new String(raw, charset);
+    }
+
+    /** The body as a {@link JsonNode}, or {@code null} when it is not JSON at all. */
+    private static JsonNode parseOrNull(String body) {
+        try {
+            return JSON.readTree(body);
+        } catch (Exception notJson) {
+            return null;
+        }
+    }
+
+    /**
+     * A body the audit table can actually hold. {@code provider_api_execution.response_json} is
+     * {@code jsonb}, so handing it an HTML error page fails the insert — and because recording is
+     * best-effort inside {@link ProviderCallLog}, that failure is swallowed and the row vanishes.
+     * Wrapping keeps the evidence.
+     */
+    private static String storableJson(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        return parseOrNull(body) != null ? body : wrapUnparseable(body);
+    }
+
+    private static String wrapUnparseable(String body) {
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put("__unparseable", true);
+        envelope.put("__originalChars", body.length());
+        envelope.put("__body", body.length() <= UNPARSEABLE_BODY_LIMIT
+                ? body
+                : body.substring(0, UNPARSEABLE_BODY_LIMIT));
+        return envelope.toString();
     }
 
     /**
@@ -160,18 +250,6 @@ public final class ProviderJson {
                 ProviderCallCatalog.providerFor(uri), ProviderCallCatalog.operationFor(uri), uri,
                 requestJson, responseJson, httpStatus, durationMs,
                 error == null ? ProviderCall.SUCCESS : ProviderCall.FAILED, error));
-    }
-
-    private static boolean isProviderErrorEnvelope(JsonNode node) {
-        String status = node.path("status").asText("");
-        if ("error".equalsIgnoreCase(status)
-                || "failed".equalsIgnoreCase(status)
-                || "failure".equalsIgnoreCase(status)
-                || node.hasNonNull("error")) {
-            return true;
-        }
-        Integer resultCode = integer(node.path("result_code"));
-        return resultCode != null && resultCode != 101;
     }
 
     private static String rawJson(Object value) {
