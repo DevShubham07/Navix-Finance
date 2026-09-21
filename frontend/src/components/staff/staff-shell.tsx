@@ -11,6 +11,7 @@ import { GlobalSearch } from "@/components/staff/global-search";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import { collectionsApi, featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
+import { clearRecent } from "@/lib/staff/search-recents";
 import { cn } from "@/lib/utils";
 import { NAV, navVisible, SEGMENTED_PARENT_PATHS } from "@/components/staff/staff-nav";
 import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
@@ -305,6 +306,11 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
+    // Drop this operator's search history before the session goes: on a shared console the next
+    // person must not inherit the mobiles and PANs the last one was looking up. Done here, where
+    // the id is already in hand, rather than inside `signOutStaff` — that would have cost the
+    // sign-out path an extra round-trip just to re-read an id the shell already has.
+    clearRecent(session.id);
     await signOutStaff();
     queryClient.clear();
     router.push("/staff/login");

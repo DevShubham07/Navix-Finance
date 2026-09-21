@@ -3,7 +3,6 @@
 import * as React from "react";
 import type { StaffRole } from "@/lib/auth/rbac";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
-import { clearRecent } from "@/lib/staff/search-recents";
 
 /**
  * Client-side accessor for the REAL staff session.
@@ -79,15 +78,11 @@ export async function loginStaff(
 
 /** Clear the staff session cookie and notify any mounted `useStaffSession` hooks. */
 export async function signOutStaff(): Promise<void> {
-  // Whoever signs in next on a shared console must not inherit this operator's search history —
-  // those strings are the mobiles and PANs they were looking up.
-  const staffId = (await fetchStaffSession().catch(() => null))?.id;
   try {
     await fetch("/api/auth/staff/logout", { method: "POST", credentials: "same-origin" });
   } catch {
     // best-effort — the cookie is httpOnly; logout is the only way to clear it
   }
-  if (staffId) clearRecent(staffId);
   if (typeof window !== "undefined") window.dispatchEvent(new Event(STAFF_SESSION_EVENT));
 }
 
