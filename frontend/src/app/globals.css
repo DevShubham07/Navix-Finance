@@ -584,6 +584,13 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(20,43,80,.55); display: none; place-items: center; z-index: 200; padding: 24px; overflow-y: auto; }
 .modal-overlay.show { display: grid; animation: fadeUp .25s ease; }
+/* Command-palette variant: anchored near the top rather than centred, so the result list grows
+   downward into the page instead of pushing the input around as hits arrive. Full-bleed on a phone,
+   where the palette is a sheet rather than a card. */
+.modal-overlay--top { align-content: start; padding-top: 12vh; }
+/* Doubled class: the responsive `.modal-overlay { padding: 14px }` override further down this file
+   would otherwise win on source order and leave the full-screen sheet floating in a gutter. */
+@media (max-width: 640px) { .modal-overlay.modal-overlay--top { padding: 0; } }
 .modal { background: #fff; border-radius: var(--radius); max-width: 460px; width: 100%; padding: 38px 34px; text-align: center; box-shadow: var(--shadow-md); max-height: calc(100dvh - 48px); overflow-y: auto; }
 .modal .check { width: 70px; height: 70px; border-radius: 50%; background: var(--ok-bg); color: var(--ok); display: grid; place-items: center; margin: 0 auto 1.4rem; }
 .modal .check svg { width: 36px; height: 36px; }

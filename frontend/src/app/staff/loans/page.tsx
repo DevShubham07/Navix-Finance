@@ -99,9 +99,16 @@ function LoansPageInner() {
   const initialSortKey: SortKey = isSortKey(sortParam) ? sortParam : "dueDate";
   const initialDir: SortDir = dirParam === "asc" ? "asc" : "desc";
 
-  const [search, setSearch] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
-  const [openLoanId, setOpenLoanId] = React.useState<number | null>(null);
+  // Deep link from the global-search palette: `?q=318&open=318` narrows the register to that loan
+  // and opens its detail dialog, so a hit in the palette lands on the record itself.
+  const initialQuery = searchParams.get("q") ?? "";
+  const openParam = Number(searchParams.get("open"));
+
+  const [search, setSearch] = React.useState(initialQuery);
+  const [debounced, setDebounced] = React.useState(initialQuery);
+  const [openLoanId, setOpenLoanId] = React.useState<number | null>(
+    Number.isFinite(openParam) && openParam > 0 ? openParam : null,
+  );
   const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
@@ -360,7 +367,18 @@ function LoansPageInner() {
         </div>
       </PermissionGate>
 
-      <LoanDetailDialog loanId={openLoanId} onClose={() => setOpenLoanId(null)} />
+      <LoanDetailDialog
+        loanId={openLoanId}
+        onClose={() => {
+          setOpenLoanId(null);
+          // Drop `?open=` so a refresh (or a back-navigation) doesn't reopen what was just closed.
+          if (searchParams.has("open")) {
+            const next = new URLSearchParams(searchParams.toString());
+            next.delete("open");
+            router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
+          }
+        }}
+      />
     </div>
   );
 }

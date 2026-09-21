@@ -4,6 +4,7 @@ import com.navix.loan.entity.CustomerProfile;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -98,4 +99,19 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
     /** Same as {@link #findPansIn}, on mobile. */
     @Query("select distinct p.mobile from CustomerProfile p where p.mobile in :mobiles")
     List<String> findMobilesIn(@Param("mobiles") Collection<String> mobiles);
+
+    /**
+     * Profiles whose name / mobile / PAN match {@code needle} (already lower-cased and wrapped in
+     * {@code %}), newest application first — the free-text half of the global-search "Applications"
+     * group.
+     *
+     * <p>{@code ApplicationFlowService.filterByQuery} cannot serve that group: it narrows an
+     * already-loaded status window, so it can only find an application whose stage the caller
+     * already picked. Search has no stage, and loading every application to filter in memory is not
+     * an option — hence one indexed query, capped by the caller's {@link Pageable}.
+     */
+    @Query("select p from CustomerProfile p "
+            + "where lower(p.fullName) like :needle or p.mobile like :needle or lower(p.pan) like :needle "
+            + "order by p.applicationId desc")
+    List<CustomerProfile> searchByNameMobileOrPan(@Param("needle") String needle, Pageable pageable);
 }

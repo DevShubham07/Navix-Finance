@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Phone, Star } from "lucide-react";
 import { Input, Select } from "@/components/ui";
@@ -39,9 +40,18 @@ const SOURCES: LeadSource[] = ["DSA", "REFERRAL", "WALK_IN", "OTHER"];
  * Telecaller work queue — create DSA-style leads and update call disposition (status + ★ + remarks).
  */
 export default function StaffLeadsPage() {
+  return (
+    <React.Suspense fallback={<div className="h-40 animate-pulse rounded bg-grey-100" />}>
+      <StaffLeadsPageInner />
+    </React.Suspense>
+  );
+}
+
+function StaffLeadsPageInner() {
   const myRole = useStaffMe().data?.role;
   const qc = useQueryClient();
-  const [q, setQ] = React.useState("");
+  // Deep link from the global-search palette (`?q=`), so a lead hit lands on that lead.
+  const [q, setQ] = React.useState(useSearchParams().get("q") ?? "");
   // The raw box fed the query key, so a six-letter name was six requests, five of them obsolete
   // before they answered. The input still renders from `q`; only the fetch waits.
   const debouncedQ = useDebouncedValue(q.trim());

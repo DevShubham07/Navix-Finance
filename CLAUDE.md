@@ -418,9 +418,10 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 > **deny-list** (`requireStaff()` rejects only BORROWER/ANONYMOUS) rather than an allowlist — so a new
 > role is open-by-default there. `DSA` is therefore explicitly rejected in
 > `CustomerController.requireStaff`, `ApplicationController.{requireStaff, requireBorrowerOwnsOrStaff}`,
-> `DecisionHistoryController.requireStaff` and `CustomerService.{list, detail}`. **If you add another
-> staff-open surface, add the DSA rejection too** — `hasRole("STAFF")` in `SecurityConfig` is
-> audience-level and a DSA token satisfies it.
+> `DecisionHistoryController.requireStaff`, `CustomerService.{list, detail}`,
+> `ApplicationFlowService.search` and `GlobalSearchService.requireSearchingStaff` (the Cmd/Ctrl+K
+> palette — §8). **If you add another staff-open surface, add the DSA rejection too** —
+> `hasRole("STAFF")` in `SecurityConfig` is audience-level and a DSA token satisfies it.
 
 **Permission tokens** (`frontend/src/lib/auth/rbac.ts`, mirrored by service-level guards): `kyc:approve`
 (the credit roles + ADMIN — the sanction *is* the credit decision, so `loan:approve` now gates
@@ -490,8 +491,19 @@ knows what each section does.
   repay, reborrow, collections, admin). The demo Zustand mock layer no longer gates any real flow.
 - **Cross-cutting UI:** a shared `NotificationBell` (`components/notifications/`) polls the inbox for
   both audiences; the staff shell hides a nav item when its feature flag is off (`navVisible` in
-  `components/staff/staff-shell.tsx`); the borrower picks their repayment date on
+  `components/staff/staff-nav.ts`); the borrower picks their repayment date on
   `/loan/repayment-date` and self-edits on the `/profile` + `/settings` pages.
+- **Global search (staff, Cmd/Ctrl+K):** `components/staff/global-search.tsx`, mounted in the shell
+  header left of the profile cluster (a search pill from `sm` up, a bell-sized icon button below it;
+  the palette is a top-anchored modal on desktop, a full-screen sheet on a phone). Two halves on
+  purpose: **pages** resolve locally from `components/staff/staff-nav.ts` through the sidebar's own
+  `navVisible`, so the palette can never offer a page the role cannot open and can never drift from
+  the sidebar; **records** come from `GET /api/staff/search`, which picks groups by role and
+  delegates each to the same scoped service its list page calls. The nav array lives in
+  `staff-nav.ts` (not the shell) precisely so both consumers share one gate. Hits deep-link via
+  `?q=` (+ `?open=` on loans), which those pages read into their initial search state. Hidden for
+  **DSA** and when the `global-search` flag is off; recents are per-staff-id query **strings** only
+  (`lib/staff/search-recents.ts`), cleared on sign-out.
 
 ---
 
@@ -617,7 +629,9 @@ What holds across all of it, and does not belong in that file:
   inserted; see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)), `digitap-pan` + `digitap-email`
   (**both off, V72** — neither product is provisioned, `412` on every call, so the adapter skips the leg
   entirely; flip a row when Digitap provisions it), `employment-auto-retry` (on — the hourly re-run of
-  EPFO checks a vendor outage parked).
+  EPFO checks a vendor outage parked), `global-search` (**on, V73** — the staff Cmd/Ctrl+K palette;
+  the one flag read with `defaultWhenMissing = TRUE`, since search takes no money-affecting action
+  and exposes nothing a role could not already open, so a fresh environment still gets a console).
 - **Secrets** never committed — env / **SSM SecureString** at runtime (`/navix/<env>/…`). Key vars:
   `BACKEND_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`, `DB_*`, `AUTH_SECRET`, `BORROWER_AUTH_TTL_SECONDS`
   (7-day borrower session), `NAVIX_APP_BASE_URL` (reset-link base), `NAVIX_REMINDERS_CRON`,
