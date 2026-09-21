@@ -153,6 +153,7 @@ not headers): settlement approve/reject enforces **SoD** (proposer ≠ approver)
 | `GET/PUT/DELETE /api/staff` (+`/{id}`) | ADMIN — staff users: list · update role/status · disable |
 | `GET/POST /api/staff/invites` · `POST /accept` | ADMIN — list/create invites (one-time token) · activate |
 | `GET/POST/DELETE /api/admin/blocklist` (+`/{id}`) | ADMIN — fraud blocklist: list · add · remove |
+| `GET /api/staff/search?q=&limit=` | staff, **never DSA** — the Cmd/Ctrl+K palette. Grouped hits (customer · application · loan · collections · lead · staff · blocklist) chosen **by role** and delegated to the same scoped service each list page calls, so a hit is always a row the caller could already open. Mobile/PAN masked, money in paise, a group the role can't see is **absent** (never empty). Flag `global-search` |
 
 ### Notifications (`/api/notifications`) — the caller's in-app inbox
 

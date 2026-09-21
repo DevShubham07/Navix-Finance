@@ -2823,6 +2823,57 @@ export const featureFlagsApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Global search — staff Cmd/Ctrl+K palette (`/api/staff/search`)
+// ---------------------------------------------------------------------------
+
+/** The entity families the palette can return. "feature" (pages) is resolved client-side. */
+export type SearchKind =
+  | "customer"
+  | "application"
+  | "loan"
+  | "collections"
+  | "lead"
+  | "staff"
+  | "blocklist";
+
+/** One hit. `meta` carries money in PAISE (the client formats); mobile/PAN arrive masked. */
+export interface SearchItem {
+  kind: SearchKind;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  meta: Record<string, unknown> | null;
+  /** Where selecting this row navigates — already RBAC-correct for the caller. */
+  href: string;
+  badge: string | null;
+}
+
+export interface SearchGroup {
+  kind: SearchKind;
+  label: string;
+  items: SearchItem[];
+  /** True when the server capped the group — drives the "View all" link. */
+  more: boolean;
+}
+
+export interface GlobalSearchResponse {
+  query: string;
+  /** How the backend read the query: mobile | pan | id | text. */
+  interpretedAs: string;
+  /** Only the groups this role may see; a group it cannot see is absent, never empty. */
+  groups: SearchGroup[];
+}
+
+export const searchApi = {
+  /** Groups are chosen server-side from the caller's role; DSA is rejected outright. */
+  global: (q: string, limit = 5) =>
+    bff<GlobalSearchResponse>(
+      `/api/staff/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+      "GET",
+    ),
+};
+
+// ---------------------------------------------------------------------------
 // Referral (refer-a-friend) — borrower /api/borrower/referral/*, staff /api/staff/referral/*
 // ---------------------------------------------------------------------------
 

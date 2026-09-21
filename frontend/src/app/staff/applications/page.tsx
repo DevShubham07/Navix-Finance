@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Lock, Loader2, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Receipt, Search } from "lucide-react";
 import { PageHeader, RefreshButton } from "@/components/staff/staff-ui";
@@ -42,7 +43,19 @@ import { Input, InfoTooltip } from "@/components/ui";
 const BACK_OFFICE_ROLES: StaffRole[] = ["COLLECTION_HEAD", "COLLECTION_EXECUTIVE"];
 
 export default function StaffApplicationsPage() {
+  return (
+    <React.Suspense fallback={<div className="h-64 rounded border border-line bg-white" />}>
+      <StaffApplicationsPageInner />
+    </React.Suspense>
+  );
+}
+
+function StaffApplicationsPageInner() {
   const me = useStaffMe();
+  // Deep link from the global-search palette: `?q=1042` lands here with the box already narrowed to
+  // that one file, so selecting an application in the palette opens its queue row rather than the
+  // whole pipeline.
+  const initialQuery = useSearchParams().get("q") ?? "";
   // One global Today/Yesterday/Custom/All-time filter, page-wide (not per-panel) — a decided
   // product requirement (see the queue-date-filter module doc).
   const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
@@ -53,8 +66,8 @@ export default function StaffApplicationsPage() {
   // WITHIN the date window above; folded into `QueueRangeProvider` alongside `range` rather than a
   // second provider, so every panel already reading `useQueueRange()` picks up `useQueueQuery()` the
   // same way.
-  const [search, setSearch] = React.useState("");
-  const [query, setQuery] = React.useState("");
+  const [search, setSearch] = React.useState(initialQuery);
+  const [query, setQuery] = React.useState(initialQuery);
   React.useEffect(() => {
     const t = setTimeout(() => setQuery(search.trim()), 300);
     return () => clearTimeout(t);

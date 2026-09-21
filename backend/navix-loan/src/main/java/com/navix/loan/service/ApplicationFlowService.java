@@ -996,6 +996,61 @@ public class ApplicationFlowService {
         return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
     }
 
+    /**
+     * Cross-status application lookup for the staff global-search palette: an id (application id or
+     * loan id) or a free-text match on the customer's name / mobile / PAN, newest first.
+     *
+     * <p>Scoped exactly like {@link #byStatus}: a Credit Executive sees only files assigned to them,
+     * so a hit here is always a file they could already open from their queue. DSA is rejected
+     * outright — it has no application visibility anywhere in the product.
+     *
+     * @param limit hard cap on rows returned (the palette shows a handful per group).
+     */
+    @Transactional(readOnly = true)
+    public List<LoanApplication> search(String needle, int limit) {
+        String role = ActorContext.get().role();
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role) || "DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+        if (needle == null || needle.isBlank() || limit <= 0) {
+            return List.of();
+        }
+        boolean isExecutive = "CREDIT_EXECUTIVE".equals(role);
+        Long execId = isExecutive ? actorIdOrNull() : null;
+        if (isExecutive && execId == null) {
+            return List.of();
+        }
+
+        String trimmed = needle.trim();
+        List<LoanApplication> hits = new java.util.ArrayList<>();
+        if (trimmed.chars().allMatch(Character::isDigit)) {
+            // A bare number is an id: the application's own, or the loan it minted.
+            Long id = Long.parseLong(trimmed);
+            applicationRepository.findById(id).ifPresent(hits::add);
+            applicationRepository.findByLoanId(id).ifPresent(hits::add);
+        } else {
+            // Over-fetch: the executive scoping below is applied after the query, so a page of
+            // matches that all belong to other executives must not starve the result.
+            List<Long> appIds = profileRepository
+                    .searchByNameMobileOrPan("%" + trimmed.toLowerCase(Locale.ROOT) + "%",
+                            org.springframework.data.domain.PageRequest.of(0, Math.max(limit * 4, limit)))
+                    .stream()
+                    .map(CustomerProfile::getApplicationId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            if (!appIds.isEmpty()) {
+                hits.addAll(applicationRepository.findAllById(appIds));
+            }
+        }
+
+        return hits.stream()
+                .filter(a -> execId == null || execId.equals(a.getAssignedExecutiveId()))
+                .sorted(Comparator.comparing(LoanApplication::getId).reversed())
+                .distinct()
+                .limit(limit)
+                .toList();
+    }
+
     /** The calling borrower's own applications, newest first (for the "my loans/transactions" views). */
     @Transactional(readOnly = true)
     public List<LoanApplication> myApplications() {
