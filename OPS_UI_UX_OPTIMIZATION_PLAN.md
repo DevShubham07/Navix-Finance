@@ -25,7 +25,7 @@ repeated gaps:
 
 | Gap (verified) | Where it shows | Evidence |
 |---|---|---|
-| **No skeleton / empty / error / toast primitives** — 31 files inline `animate-pulse` blocks with four different fills, 13 files render a bare `Loading…` string, 35 files hand-roll an empty state with 11 wrapper variants, 50 files render `<p class="text-error-700">` with no retry, and there is **no toast or `aria-live` region anywhere** | every page | shared-layer scan; `frontend/src/components/staff/**`, `frontend/src/app/staff/**` |
+| **No skeleton / empty / error / toast primitives** — 31 files inline `animate-pulse` blocks with four different fills, 13 files render a bare `Loading…` string, 35 files hand-roll an empty state with 11 wrapper variants, 50 files render `<p class="text-error-700">` with no retry (counted over `frontend/src/components/staff/**` and `frontend/src/app/staff/**`; the exact tallies move with the glob, the pattern does not), and there is **no toast and no live region for success feedback** (the only `role="alert"` instances are form errors) | every page | shared-layer scan; `frontend/src/components/staff/**`, `frontend/src/app/staff/**` |
 | **Status colour is hand-rolled** — 23 files keep a private status→class map and 16 files inline `bg-*-100` pills; `ui/Badge` is used by 5 files; `StageBadge`/`KycStatusBadge` have 0 consumers | queues, ledger, telecalling, settlements, verifications | `frontend/src/components/ui/badge.tsx:4-28`, `frontend/src/components/staff/staff-ui.tsx:90-117` |
 | **Table header never sticks; numbers are left-aligned** — `.staff-data-table` pins identity/action *columns* but has no `thead` sticky rule; money cells use `font-mono` (tabular via `tnum`) but `text-align:left` | every register | `frontend/src/app/globals.css:418-433` |
 | **Row hover cannot work on even rows** — 8 files add `hover:bg-grey-50` to `<tr>` but the zebra colour is painted on `<td>` | customers, loans, all-applications… | `frontend/src/app/globals.css:422` |
@@ -34,7 +34,7 @@ repeated gaps:
 | **Refresh is hand-rolled 26 times**; `RefreshButton` used by 2 pages | most pages | `staff-ui.tsx:38-57` |
 | **Session is fetched twice per page load** — the shell's `useStaffSession` is a raw `fetch`, every `PermissionGate`/`ExportMenu` uses the React Query `['staff-me']` key | every page | `frontend/src/lib/auth/staff-session.ts:25-34,90-109`, `pipeline/hooks.ts:30-40` |
 | **Polling is per-page and uncoordinated** — 8 s queue polls, 10 s dashboard, 20 s bell, 30 s sidebar worklist badge, 45 s verifications, 60 s ledger, 120 s telecalling, all fixed | every page | see §2.3 |
-| **Five registers load the whole table and paginate in the browser** — applications queues, loans, collections worklist, telecalling, all-applications, my-decisions, settlements | the heaviest pages | §3 per page |
+| **Seven registers load the whole table and paginate in the browser** — applications queues, loans, collections worklist, telecalling, all-applications, my-decisions, settlements | the heaviest pages | §3 per page |
 
 The plan therefore has two halves:
 
@@ -103,8 +103,11 @@ are — note that in the current build all three font families resolve to Inter 
 ### 2.2 CSS rules to add (all in `frontend/src/app/globals.css`, scoped to the console — never global, per CLAUDE.md §8)
 
 ```css
-/* Sticky header for every register. The page is the scroll container, so top:0 works;
-   the navy background is already on thead th. */
+/* Sticky header for every register. Every register sits inside .staff-table-scroll, whose
+   overflow-x:auto makes IT (not the page) the sticky scrollport, so the wrapper must also be the
+   vertical scroller, bounded to the viewport. Deliberate behaviour change: a long register scrolls
+   inside its panel and the pagination bar stays in view. The navy background is already on thead th. */
+.staff-table-scroll { max-height: calc(100vh - 14rem); overflow: auto; }
 .staff-data-table thead th { position: sticky; top: 0; z-index: 3; }
 .staff-data-table thead .staff-sticky-identity,
 .staff-data-table thead .staff-sticky-actions { z-index: 4; }
@@ -112,7 +115,8 @@ are — note that in the current build all three font families resolve to Inter 
 /* Money and counts: right-aligned tabular figures. */
 .staff-data-table td.num, .staff-data-table th.num { text-align: right; font-feature-settings: "tnum" 1; }
 
-/* Row hover that works on even rows too (the zebra is painted on <td>). */
+/* Row hover that works on even rows too (the zebra is painted on <td>). Only --grey-100 exists as a
+   CSS variable today (globals.css:49); add --grey-50: #FBF7F0 and --gold-50: #E7F6EF to :root. */
 .staff-data-table tbody tr:hover td { background: var(--grey-50); }
 .staff-data-table tbody tr:hover .staff-sticky-identity,
 .staff-data-table tbody tr:hover .staff-sticky-actions { background: var(--grey-50); }
@@ -127,13 +131,14 @@ are — note that in the current build all three font families resolve to Inter 
 ```
 
 Plus two keyframes in `tailwind.config.ts` next to `fadeUp`: `fadeOut` (opacity 1→0) and `rowFlash`
-(`background: var(--gold-50)` → transparent). Nothing else in the motion vocabulary changes.
+(`background: var(--gold-50)` → transparent, with the new `--gold-50` variable above). Nothing else in the motion
+vocabulary changes.
 
 ### 2.3 Data-fetching hygiene (frontend, no backend change)
 
 | Change | Why (verified) | Where |
 |---|---|---|
-| **One session query.** Make `useStaffSession` read through the `['staff-me']` React Query key (or seed it with `queryClient.setQueryData` after its fetch) | every page load hits `/api/auth/staff/me` twice: the shell's raw `fetch` cannot dedupe with the RQ hook used by 32 files; `CustomerOwnerPicker` even calls the raw hook per row (up to 50 fetches on the telecalling page) | `staff-session.ts:25-34,90-109`, `pipeline/hooks.ts:30-40`, `customer-owner-picker.tsx:30-34` |
+| **One session query.** Make `useStaffSession` read through the `['staff-me']` React Query key (or seed it with `queryClient.setQueryData` after its fetch) and invalidate that key on the `navix-staff-session` window event that login/logout dispatch (`staff-session.ts:22,101-106`) | every page load hits `/api/auth/staff/me` twice: the shell's raw `fetch` cannot dedupe with the RQ hook used by 32 files; `CustomerOwnerPicker` even calls the raw hook per row (up to 50 fetches on the telecalling page) | `staff-session.ts:25-34,90-109`, `pipeline/hooks.ts:30-40`, `customer-owner-picker.tsx:30-34` |
 | **Shared query keys for shared endpoints.** `staffApi.performance` is cached as `['staff-dashboard-performance']` on the dashboard and `['staff-performance']` on the performance page; settlements as `['staff-dashboard-settlements']` vs `['collections-settlements']` | navigating between them refetches identical payloads and a decision on one page leaves the other's count stale | `dashboard/page.tsx:53,304-309`, `performance/page.tsx:67-71`, `settlements/page.tsx:31` |
 | **`placeholderData: keepPreviousData` on every keyed list query** | pages whose key changes on filter/period (performance, my-decisions, loans, verifications already has it) blank the table and flash **fabricated zeros in the stat tiles** on every period change | `performance/page.tsx:73,97-106` |
 | **Reset page synchronously with the filter** | with `page` in the key and the reset in a `useEffect`, a filter change on page > 1 fires two requests and discards the first | `accounting/transactions/page.tsx:93-95,99` (same pattern in customers/leads) |
@@ -187,7 +192,6 @@ TELECALLER 2, **ADMIN 15 (+by-ids)**. Intervals: 10 s queues/decisions/performan
 - "DPD split" is a `10 / 5 / 2` string; "By DPD bucket" likewise; sparklines have no axis or legend.
 - The WorkHero's oldest-first pick and the queue table's newest-first order disagree, so the file to act on next is
   at the bottom of the table.
-- Cards render "—" for both *null* and *zero* although the code comment distinguishes them (`:79-84`).
 
 **3. Proposed subtle UI improvements.**
 - A per-source `failed` flag in `RoleQueue`; render "Couldn't load part of your queue — Refresh" (`ErrorState`) instead
@@ -195,9 +199,10 @@ TELECALLER 2, **ADMIN 15 (+by-ids)**. Intervals: 10 s queues/decisions/performan
 - Refresh → `queryClient.invalidateQueries({ predicate })` over the dashboard keys (active only).
 - One `Skeleton variant="stat"` grid per section that keeps the card shape; "Updated 8 s ago" in each section header
   (one clock for the whole board).
-- `tabular-nums` on every `StatCard` value and team-table number (the `num` class); "—" for null, "0" for zero.
+- `tabular-nums` on every `StatCard` value and team-table number (the `num` class).
 - `PeriodPicker` custom range commits on blur / Apply.
-- Queue table sorted oldest-first by default (matching the hero) with the age column visible.
+- Keep the queue table newest-first (the order every role reads today); make the hero's oldest-waiting line link
+  to its row and add an "Oldest first" toggle; show the age column.
 - Fire the referral payouts count inside the same `Promise.all` as the flags (drop one round trip for the
   Disbursement Head); read flags from the shell's `['feature-flags']` query instead of a direct fetch every 10 s.
 
@@ -225,10 +230,11 @@ arrived since the last tick; keep the collapsible chevron rotation already prese
 - `FeatureFlagService.all()` is an uncached `findAll()` hit by the Disbursement Head's queue every 10 s.
 
 **7. Backend/API optimisation opportunities.** Count endpoints for badges (`/collections/worklist/counts`,
-`payouts/count`, `pending-repayments/count`); `bookStats` as one or two SQL aggregates over the scoped customer-id
+`payouts/count`, `pending-repayments/count` — each rejecting DSA like every other staff-open surface, CLAUDE.md §7,
+since `hasRole("STAFF")` alone admits a DSA token); `bookStats` as one or two SQL aggregates over the scoped customer-id
 CTE; resolve `scope()` once per request; `trends` as three `GROUP BY date` projections; `listCases` with
 `assignedOfficerId`/`status` predicates in SQL; the ledger fix of §3.10 with `size=5` from the dashboard; poll
-performance/decisions at `SLOW_MS`; batch the referral name lookup.
+performance/decisions at 60 s (`SLOW_MS`, `dashboard/page.tsx:55`) instead of 10 s (`REFRESH_MS`, `:53`); batch the referral name lookup.
 
 **8. Database optimisation opportunities.** `idx_loan_disbursed_on` (trends + ledger + register);
 `loan_application(assigned_executive_id, status)` (used by `byStatus` for executives and by `scope()` on every
@@ -249,7 +255,7 @@ debounced search that composes with the date window in every query key, the role
 the ledger; a `ReviewLookup` panel; then the role's panels (`page.tsx:160-234`): the Credit Head's `CreditWorkbench`
 (unallocated + per-executive groups + the executive roster), `StatusQueue`s per lifecycle status, the
 `AwaitingRepaymentPanel` (ACTIVE / OVERDUE split client-side, 60 s), `RepaymentVerifyQueue` (Accountant, 8 s),
-collection-payment queues (10 s) and a lazy `ClosedPanel`. Each queue is a `staff-data-table` of 17–18 columns
+collection-payment queues (10 s) and a lazy `ClosedPanel`. Each queue is a `staff-data-table` of 17–19 columns (options such as ☐ and Journey add cells)
 (`AppRow`: S.No., ☐, #id, customer id, date, name ★sticky, mobile, PAN, account, IFSC, loan, `AmountCell` with a
 `req`/`elig` tag, `DueCell`, `CreditBadge`, three staff names, actions ★sticky: ⓘ, Open, Journey + the stage's
 maker-checker buttons). Per 8 s tick an **ADMIN fires 5 requests** (credit-queue, `CREDIT_EXEC_PENDING`,
@@ -264,8 +270,9 @@ while open.
   three places (`application-detail-dialog.tsx:876,1139,1174`) under a 10.4 px body, and the dialog is portaled
   **outside `.navix-crm`** so the console density rules do not even apply inside it.
 - No sticky header on queues that are routinely 25–100 rows tall; no `<caption>`/`aria-label` on `QueueTable`.
-- Account, IFSC, PAN and mobile are shown in full on every row (`app-row.tsx:49-53,86-89`) — a product decision for
-  screen-shared queues, recorded here because the `Masking` helper exists and the search palette already uses it.
+- Account, IFSC, PAN and mobile are shown in full on every row (`app-row.tsx:49-53,86-89`) — an explicit product decision for
+  screen-shared queues (`app-row.tsx:49-53`); recorded here because the backend `com.navix.common.util.Masking`
+  already defines the masking rules and the loan dialog carries a local `maskPan` (`loan-detail-dialog.tsx:50`).
 - The `req` / `elig` tag on the Amount cell is easy to miss; a reader can mistake an eligible limit for a request.
 - Bulk selection is discoverable only by the unlabeled ☐ header (it has an `aria-label`, no visible text); the
   `BulkActionBar` appears only once something is ticked.
@@ -285,12 +292,14 @@ while open.
 - Icon buttons (✓ / ✕ with tooltips) in the repayment queue to match `AppRow`.
 - `staleTime: 15 min` on the executive roster, invalidated from the admin staff page.
 - Optional per-user "mask identifiers" toggle in the header (default off, remembered per staff id) for screen-shared
-  sessions — no backend change, uses the existing `Masking` helper.
+  sessions — client-side only: add `maskPan/maskMobile/maskAccount` to `lib/utils.ts` mirroring
+  `com.navix.common.util.Masking` (lifting the local `maskPan` from `loan-detail-dialog.tsx:50`).
 - `useMemo` the ACTIVE/OVERDUE split.
 
 **4. Data-presentation improvements.** Promote `Due`/DPD and the stage-entered age into the first visible columns for
-the disbursement and repayment panels (identity · amount · due · age · actions), demoting account/IFSC to the
-scroll region or the ⓘ dialog; group the credit queues by day like the customers register; show "in stage 3 d" as a
+the repayment panels (identity · amount · due · age · actions); on the disbursement panel **keep account and IFSC in
+the visible columns** — the Disbursement Head reads them to make the transfer — and reorder only within the scroll
+region; group the credit queues by day like the customers register; show "in stage 3 d" as a
 muted suffix under the status count.
 
 **5. Transition / micro-interaction improvements.** `.btn:active` already scales; add the dialog exit fade and a
@@ -317,8 +326,8 @@ row once; move PDF regeneration to an explicit POST or a job.
 
 **8. Database optimisation opportunities.** All relevant indexes exist (`status` V5, `created_at` + `(status,
 created_at)` V53, `loan_id` V71, `customer_id`, `application_event(application_id)`, unique
-`customer_profile(application_id)`). `loan_application(assigned_executive_id, status)` only if the executive queue
-grows past a few hundred rows.
+`customer_profile(application_id)`). `loan_application(assigned_executive_id, status)` ships in the V74 batch — it also serves
+`scope()` on every book-stats / by-ids call (§3.1).
 
 **9. Expected user impact.** Reviewers stop squinting at 9 px headers and 8.8 px captions, see which file just
 arrived, and can read amounts without misreading a limit as a request. With paging, a busy disbursement day no
@@ -364,8 +373,8 @@ serial), Edit (ADMIN), ⓘ, Open. Dialogs: `CustomerDetailDialog` → `Applicati
 
 **3. Proposed subtle UI improvements.**
 - Fix the invalidation keys (or pass `onDone={invalidateAll}` as `RejectDialog`/`AssignDialog` already do).
-- A **Columns** menu (checkbox list, persisted per staff id in `localStorage`) with a sensible default that hides the
-  six reference columns; the sticky identity/actions columns are never hideable.
+- A **Columns** menu (checkbox list, persisted per staff id in `localStorage`) default: all 22 columns visible, hiding is
+  opt-in and remembered; the sticky identity/actions columns are never hideable.
 - Sticky header; `num` on money; a visible "Sorted by stage date ↓" caption in the toolbar (until server-side sort
   exists — §7).
 - Keep the Reject button visible but **disabled with an `InfoTooltip`** explaining the mixed selection.
@@ -416,8 +425,8 @@ scrolling; opening a row is one request instead of five; bulk actions finish in 
 ### 3.4 Customer 360 — `/staff/customers/[customerId]`
 
 **1. Current-page observations.** Back link + Refresh; a two-column layout (`lg:grid-cols-[1fr_minmax(0,340px)]`,
-`page.tsx:74`): left, a 9-tab panel (`customer-tabs.tsx:39-49` — Personal, Employment, Bank, Credit, Loan
-applications, Verifications, Documents, Call logs, Audit logs) inside a `max-h-[68vh]` scroller; right, the ADMIN
+`page.tsx:74`): left, a 9-tab panel (`customer-tabs.tsx:39-49` — Personal, Employment, Bank, Verifications,
+Credit, Documents, Loan applications, Call logs, Audit logs) inside a `max-h-[68vh]` scroller; right, the ADMIN
 column behind `customer:manage` — credit-score gauge (read-only, animated needle), force-disbursement / reject-sanction
 actions, and **seven correction cards** (sanctioned amount, limit override, salary day, edit KYC, mobile change
 (2-step OTP), blocklist, delete-with-typed-name) driving eight `useMutation`s. First paint fires **more than one
@@ -449,7 +458,8 @@ keys (`['staff-verifications']`, `['staff-verification-progress']`) from the Per
 - A `Badge` ("Admin override" / "Salary rule") on the limit and sanction cards; an amber note under the salary-day
   projection when the projected due date exceeds disbursal + 40 days (`dueDateFromSalary` is already computed
   client-side, `page.tsx:483`).
-- Right column becomes a collapsible "Corrections" accordion with one card open at a time (same cards, same forms).
+- Right column keeps every correction card visible; at most a per-card collapse, all expanded by default (same
+  cards, same forms).
 - Salary inputs with a `₹` `leftIcon` and a live "₹ 42,000" preview.
 
 **4. Data-presentation improvements.** A one-line exposure summary above the Loans list (total principal ·
@@ -473,8 +483,8 @@ card or dialog opens (`loan-detail-dialog.tsx:95-99`). `activity()` (Audit tab) 
 (`:1229-1274`).
 
 **7. Backend/API optimisation opportunities.** `paymentRepository.findByLoanIdIn(loanIds)`; the batched
-`latestProfile` overload; `findStaffByIds` once; drop `providerResponse` from `CreditBriefView` in the customer read
-(serve it only on the explicit credit-brief endpoint); batch `activity()` per customer; share one query key for the
+`latestProfile` overload; `findStaffByIds` once; serve a headline variant of `CreditBriefView` (no `providerResponse`) from
+`CustomerService.detail` and keep the full record on the credit-brief endpoint; batch `activity()` per customer; share one query key for the
 roll-up across page and dialogs; give `VerificationChecksPanel` the `['verifications', appId]` key (or vice versa) so
 the endpoint is read once; defer the owner-picker roster to first open.
 
@@ -484,7 +494,7 @@ the endpoint is read once; defer the owner-picker roster to first open.
 without a credit report in the payload; reviewers get an exposure line instead of adding up loans by eye.
 
 **10. Implementation complexity.** UI: **S–M**. Backend batching: **S–M** (all batched methods already exist). Brief
-payload trim: **S** (one DTO field, check the borrower-safe path is unaffected).
+payload trim: **S** (a headline `CreditBriefView` variant for the customer read; one consumer, `CustomerDetail`).
 
 ---
 
@@ -505,7 +515,7 @@ Override/retry invalidate five keys, of which three are active on this page (`ve
 - The "Not started" bucket is wrong by construction: every `KYC_PENDING` file not on the *current page* of overview
   rows is pushed as a "Not started" card, while the backend deliberately omits fully-passed files when "Include
   cleared" is off — so cleared files and files on other pages are mislabelled (`page.tsx:137-145,183-207`,
-  `ApplicationVerificationService.java:3514-3516`). **High.**
+  `ApplicationVerificationService.java:3520-3524`). **High.**
 - Stat tiles always cover the whole undecided queue and ignore the search term; searching one customer leaves global
   counts on screen (`page.tsx:247-251`).
 - `Retry API` is shown to `CREDIT_EXECUTIVE`/`CREDIT_HEAD` (they hold `verification:retry` in `rbac.ts:113,120`) but the
@@ -535,8 +545,9 @@ Override/retry invalidate five keys, of which three are active on this page (`ve
 - `PaginationBar` gains an optional `unitLabel` ("applications") used here.
 - Hide `Retry API` unless the role is ADMIN (or relax the backend to the credit team — the two must agree; recommend
   aligning `rbac.ts` to the backend, the safer change).
-- Reminder and override buttons open `ConfirmDialog`; after success show a `toast` ("PAN overridden to PASS") — the
-  panel already refetches immediately because its keys are active.
+- The reminder button (a borrower-facing send) opens `ConfirmDialog`; override keeps its one click and gets a `toast`
+  ("PAN overridden to PASS") plus the new audit event — the panel already refetches immediately because its keys
+  are active.
 - Replace the EPFO chip's PASS/FAIL colours with the neutral `info` badge variant + an ⓘ tooltip "advisory, never gates".
 - Keep the Retry button disabled after a client-side timeout until the row's `updatedAt` changes.
 
@@ -684,9 +695,10 @@ roles (the "per-row refetch" claim was refuted, `collections-assign.tsx:71-77,23
   the backend returns is discarded (`collections-assign.tsx:31-37,281`).
 - Bulk assign is 2–3 requests **per loan** run serially — `GET by-loan`, a conditional `POST cases`, `POST assign`
   (`:44-49,370`); 100 loans ≈ 250 round trips with only a busy state.
-- Selection clears whenever the page's row set changes (`useQueueSelection`, `:50`), so multi-page bulk work is lost.
+- Selection clears whenever the page's row set changes (`bulk-actions.tsx:47-51`, wired at
+  `collections/page.tsx:197-204`) — by design, so a bulk assign never touches a loan the operator paged away from;
+  the cost is that a Head cannot assign across pages in one go.
 - Overdue rows are marked by red text in two cells only; no row-level cue; no sticky header; money left-aligned.
-- The `w-[11.5rem]` wrapper and the `w-40` select inside it disagree (`:285-295`), producing a visible jog on render.
 - Export refetches the customer enrichment on every menu open (`page.tsx:223-225`).
 - No "last refreshed" cue although the page is live.
 
@@ -694,10 +706,11 @@ roles (the "per-row refetch" claim was refuted, `collections-assign.tsx:71-77,23
 - Sticky header, `num` on Principal / Outstanding / Salary, a `Days to due` value inside the DPD cell (`+5` / `−3`)
   with the same badge tones as the loans segments, and a soft `error-50` left border on overdue rows.
 - "Updated 6 s ago" next to Refresh (the poll is a feature; say so).
-- Keep selections across pages (store selected loan ids, not row indices) and show "Select all 347 in this bucket".
+- Keep the page-only selection rule the page already enforces (`collections/page.tsx:197-204`: a bulk assign must
+  never touch a loan the operator paged away from); show "N selected on this page" and let large batches use page
+  size 100 + the bucket filter.
 - Bulk assign dialog shows "12 / 40 assigned" with per-loan ✓/✗ and runs 4 in parallel; skip the pre-GET (§7).
-- Fix the select width mismatch (one `w-44`); `setQueryData` the returned case into the worklist row instead of
-  invalidating.
+- `setQueryData` the returned case into the worklist row instead of invalidating.
 
 **4. Data-presentation improvements.** Bucket cards gain a tiny stacked bar of outstanding by DPD band; the
 "Collections exec" column shows an avatar-initial pill + name for read-only roles; group rows by due date inside a
@@ -716,7 +729,7 @@ All filtered/joined columns are indexed (`loan(status, due_date)` V71, `collecti
 **7. Backend/API optimisation opportunities.** `?bucket=&q=&from=&to=&sort=&page=&size=` on `GET /collections/worklist`
 (bucket = a DPD range on `due_date`, computable in SQL); resolve actor names with one `namesFor`; read each
 `loan_application`/`collection_case` batch once; a lightweight `GET /collections/worklist/counts` (count + outstanding
-per bucket) for the six cards **and** the sidebar badge, so the badge stops fetching the full worklist; a
+per bucket; rejects DSA like every other collections read) for the six cards **and** the sidebar badge, so the badge stops fetching the full worklist; a
 `POST /collections/cases/bulk-assign {loanIds, officerId}` that opens-if-missing and assigns in one transaction; make
 `openCase` idempotent-by-POST for the bulk loop (drop the pre-GET); include the export enrichment fields (mobile,
 bank, score) in the worklist row so `byIdsAll` on export disappears.
@@ -769,12 +782,11 @@ Every on-page mutation calls `invalidate()` = case + worklist + interactions (`p
 **3. Proposed subtle UI improvements.**
 - Add `ErrorState` before the empty check in both cards (CallRemarksCard already does this, `page.tsx:234-235`).
 - `toast.success` after log/assign; keep the inline copy on the two cards that already have it.
-- Show PTP date only for `PROMISE_TO_PAY` and make it required there; keep proof-ref for `PAID`.
+- Show PTP date only for `PROMISE_TO_PAY` and prompt for it (a warning, not a hard requirement — the backend accepts a
+  null `promiseToPayDate`, `CollectionsDtos.java:132-145`); keep proof-ref for `PAID`.
 - `inputMode="decimal"`, collapse to one dot / two fraction digits, disable the button on `NaN`.
 - Refresh refetches all six queries; the ADMIN payment dialog invalidates the case and payments keys.
 - First load: `Skeleton variant="row"` per card instead of one page-sized block; keep the two-column layout visible.
-- Collapse the interaction form behind a "Log interaction" header once one interaction exists (the list is what an
-  officer scans first).
 
 **4. Data-presentation improvements.**
 - "Last action *3 h ago by Priya*" line at the top of `InteractionsCard` (needs `loggedByName`, below).
@@ -805,8 +817,8 @@ fade; the officer select shows its 14 px spinner slot already — keep it.
 - Add the four credit-headline fields to `LoanSummary` (built from the `CustomerProfile` already loaded in
   `LoanDirectoryAdapter.toSummary:198-220`), or read them via `GET /customers/by-ids`; drop `customersApi.get` here.
 - Case-scoped payments: skip `findLoans` (or use a light profile projection).
-- Pass the resolved `LoanSummary` into `buildDetail`; return the bare case from `assign` (or `setQueryData` on the
-  page) instead of a second detail build.
+- Pass the resolved `LoanSummary` into `buildDetail`; have the page `setQueryData` the `CaseDetailView` that `assign`
+  already returns instead of invalidating (response shape unchanged), so the second detail build stops being wasted.
 - Add `loggedByStaffId` + `loggedByName` to `InteractionView` (one `namesFor` batch).
 - Invalidate the worklist only from `assignOfficer`.
 - Memoise `scope()` per request (request-scoped attribute) or replace it with a single visibility query.
@@ -814,7 +826,10 @@ fade; the officer select shows its 14 px spinner slot already — keep it.
 
 **8. Database optimisation opportunities.**
 - `collection_case.loan_id` is indexed but **not unique**; `openCase` is check-then-insert, so a concurrent double-open
-  can create two cases (`CollectionCaseRepository.java:16-35`). Add `uq_collection_case_loan_id` after de-duplicating.
+  can create two cases (`CollectionCaseRepository.java:16-35`). Add `uq_collection_case_loan_id` as a **separate, guarded step** —
+  count duplicates, re-point `settlement` / `interaction_log` / `collection_payment` rows to the newest case (there
+  are no FKs to protect them, CLAUDE.md §10), delete the rest, then create the unique index — not part of the
+  index-only V74.
 - `interaction_log` is read `ORDER BY logged_at DESC` on an index covering `collection_case_id` only; cosmetic today,
   add `(collection_case_id, logged_at desc)` when volume grows. Interactions, call logs and remarks are unbounded
   lists — bound with `?limit=` when a case exceeds a few dozen entries.
@@ -851,7 +866,8 @@ id + created + proposer), Amount, Status (private `STATUS_PILL` map, `page.tsx:1
 - Truncated UUIDs (8 chars) with no tooltip; the refresh button is never disabled; no sticky header.
 
 **3. Proposed subtle UI improvements.**
-- Status segment chips (Proposed · Approved · Rejected · All), defaulting to **Proposed**; counts in the chips.
+- Status segment chips (All · Proposed · Approved · Rejected) with counts, defaulting to **All** with `PROPOSED` rows
+  sorted to the top, so the view the Head sees today is unchanged.
 - `ConfirmDialog` on Approve ("Approve ₹X for *name*, loan #N?") and a `RejectDialog` that collects a reason.
 - Pre-flight SoD: if `proposedBy === me.id`, replace the buttons with "You proposed this — another Collection Head must
   decide" (the backend check stays).
@@ -980,12 +996,14 @@ pagination 25/50/100 with `keepPreviousData` (`:69-80`); filters reset the page 
 - The panel drops below the table under `lg`, where the update actions become hard to find.
 
 **3. Proposed subtle UI improvements.**
-- Override the min-width on this table (`min-w-[40rem]`) — or better, scope `84rem` to the pipeline table via a
-  modifier class (§2.4).
+- Override the min-width on this table (`!min-w-[40rem]` — a plain utility loses to the un-layered `globals.css`
+  rule, the same reason every dialog uses `!max-w-*`) — or better, scope `84rem` to the pipeline table via a modifier
+  class (§2.4).
 - Name cell becomes a `<button>` (or row `tabIndex=0` + Enter/Space); `aria-pressed` on the stars; a "clear rating"
   ✕ next to them.
 - Inline `error` on salary/amount when non-empty and not a positive number; block Save.
-- One **Save** button that submits disposition then outcome in sequence (two requests, one click, one toast).
+- One **Save** button that always sends the disposition PUT and sends the outcome PUT **only when the outcome or DSA
+  note changed** (today the page rewrites both on every click, `:374`).
 - Filtered-empty vs true-empty copy; `enabled: hasPermission(role, 'leads:manage')`; reset page in the filter handlers.
 - `StatusBadge kind="lead"` for both chips at one size.
 
@@ -1052,7 +1070,8 @@ poll, **unpaginated** (~9.7 k pre-sanction applications in production per the se
 - Track in-flight ids in a `Set` (or `useMutationState`) so every button shows its own spinner.
 - `StatusBadge kind="application"` (DRAFT neutral, KYC_PENDING info, CREDIT_EXEC_PENDING warning …).
 - Completeness as a 60 px bar + `3/5` label; "no email" → "—" with a warning icon + tooltip.
-- A third collapsed section "Assigned to others" (count + owner column) so dropped rows are visible.
+- A count line "12 assigned to other telecallers" under the section headers; the rows themselves stay hidden unless
+  product approves exposing colleagues' allocations (`telecalling/page.tsx:58-64`).
 - Render assign errors next to the button; `Skeleton variant="table"` on first load; sticky header.
 
 **4. Data-presentation improvements.** Show the owner's name in "My customers" rows when an ADMIN views the page;
@@ -1174,7 +1193,7 @@ raw notes in `title`); client pagination. Two data queries per load — `['decis
   `rows[0]` for the stat cards (`page.tsx:99`) — a Head or ADMIN can see **another staffer's totals labelled as their
   own**. The table (`/decisions`) is scoped to the caller, so cards and rows disagree.
 - Actions outside `DECISION_ACTIONS` (notably `ADMIN_FORCE_DISBURSE`) are counted in "Total actions" but never listed
-  in the table (`:100,354-360`).
+  in the table (`DecisionHistoryService.java:98-100` vs `:242-270`).
 - No search or sort within the loaded list; the application id is not a link (only the customer name is).
 - Remarks live only in a `title` attribute (hover-only, invisible to keyboard and screen readers, `:234`).
 - Period change unmounts the table to "Loading…" and resets to page 1; the Loader2 next to the selector flickers on
@@ -1183,8 +1202,10 @@ raw notes in `title`); client pagination. Two data queries per load — `['decis
   with no sticky identity column although the helpers exist.
 
 **3. Proposed subtle UI improvements.**
-- Always pass the caller's own id when no `staffId` is chosen (one-line fix in `page.tsx` or default `staffId` to
-  `ActorContext.id` in the service); assert on the client that `summaryQ.data.rows.length === 1`.
+- Always pass the caller's own id when no `staffId` is chosen —
+  `staffApi.performance(range.from, range.to, staffId ? Number(staffId) : me.id)` in `page.tsx`. The service must
+  keep `rosterFor(null)` = whole roster, because `/staff/performance` relies on it; assert on the client that
+  `summaryQ.data.rows.length === 1`.
 - Include the force-disbursement action in the table (it is a decision) so "Total actions" equals the row count, or
   caption the card "incl. N routing actions".
 - A client-side search box (application id / customer) and `SortableTh` on When / Decision / Amount — the list is
@@ -1208,8 +1229,7 @@ full-entity over-fetch (`CustomerProfile` for name + PAN, `LoanApplication` for 
 count/sum); per-distinct-assignee `staff_user SELECT`s although `findStaffByIds` exists (`StaffDirectory.java:37`; the
 service comment saying otherwise is stale). The `(actor_id, at)` index exists (`V59:44`).
 
-**7. Backend/API optimisation opportunities.** Default `staffId` to the caller in `summary` when absent from this
-page (or make the page pass it); push the `DECISION_ACTIONS` filter and a `LIMIT` into the events query; return the
+**7. Backend/API optimisation opportunities.** Push the `DECISION_ACTIONS` filter and a `LIMIT` into the events query; return the
 summary's per-person row from the same event read (`/decisions?withSummary=true`) so the trail is read once; batch
 assignee names with `findStaffByIds`; project profile/application lookups to the three fields used.
 
@@ -1237,8 +1257,9 @@ the rows and spins the header icon (the observer's "rows disappear" claim was re
   page shows "Admin access only" (`page.tsx:63,68,83-85`).
 - Search recomputes the filter on every render with no `useMemo`/debounce, so `usePagination`'s memo never hits
   (`:64-81,109`).
-- The incomplete badge says " · no e-sign" but the flag is `termsAcceptedAt` (screen-1 T&C), not the Aadhaar eSign
-  (`:174-177`) — staff look at the wrong step.
+- The incomplete badge says " · no e-sign" but the flag is `agreementAccepted`, set at the agreement-consent step and
+  again on eSign completion (`:174-177`; `ApplicationVerificationService.java:2511,2690`) — a false flag means the
+  agreement itself was never accepted, yet staff look at the eSign step.
 - Status and Completeness are private pills; no sort; no sticky header; no "clear filters"; the row count is easy to miss.
 - In the detail dialog, `briefQ` waits for `appQ` only to skip `DRAFT` although the endpoint already returns an
   `available=false` shell (`application-detail-dialog.tsx:204-208`); `appQ` polls every 8 s while open even in a
@@ -1246,10 +1267,10 @@ the rows and spins the header icon (the observer's "rows disappear" claim was re
 
 **3. Proposed subtle UI improvements.**
 - `enabled: myRole === "ADMIN"` and `retry: false` on 4xx; `useMemo` the filtered rows and debounce the needle 200 ms.
-- Rename the badge to " · T&C not accepted" (tooltip "Terms & Conditions not accepted").
+- Rename the badge to " · agreement not accepted" (tooltip "Agreement documents not yet accepted").
 - `StatusBadge` for status and completeness; `num` on Amount; sticky header; a "Clear" chip when a filter is active;
   the count inside the `TableToolbar`.
-- Start `briefQ` with `enabled: open`; pause the 8 s dialog poll when the document is hidden.
+- Start `briefQ` with `enabled: open` (the 8 s dialog poll already pauses in hidden tabs — TanStack's default).
 
 **4. Data-presentation improvements.** Show `currentStageEnteredAt` (already fetched, only exported) as a "Stage
 since" column; group by status with a collapsible header (same interaction as the customers date groups); sort by
@@ -1263,13 +1284,13 @@ whose status changed; dialog exit fade.
 required-passed counts chunked by 1000 (+ re-apply hops), `findStaff` per distinct assignee (the batched `namesFor`
 exists), and `findByApplicationIdInOrderByAtDesc(all ids)` = **the whole `application_event` table read and sorted**
 to keep one timestamp per application (`AdminApplicationService.java:65-104`). The DTO carries 34 fields, the table
-renders 18; 464 KB at 550 rows (`docs/perf`). Indexes on `loan_application` do not help a filterless `findAll`; there
+renders 18 of them across its 13 columns; 464 KB at 550 rows (`docs/perf`). Indexes on `loan_application` do not help a filterless `findAll`; there
 is no `application_event (application_id, at)` index.
 
 **7. Backend/API optimisation opportunities.** `page/size/q/complete` params →
 `applicationRepository.findAll(spec, PageRequest.of(page, size, Sort.by(DESC, "id")))`, enrich only the page's ids;
-`findLatestEventAt(chunk)`; `namesFor(distinctAssigneeIds)`; a light list DTO with export-only fields served from
-`ExportMenu.onOpen`; an interface projection for the profile columns actually read; `eventViews` resolves actors with
+`findLatestEventAt(chunk)`; `namesFor(distinctAssigneeIds)`; a light list DTO (the 18 rendered fields) with the export-only fields fetched by
+`ExportMenu.onOpen` — a narrowing of `GET /applications/all`, whose only consumer is this page; an interface projection for the profile columns actually read; `eventViews` resolves actors with
 one `namesFor`.
 
 **8. Database optimisation opportunities.** Add `idx_application_event_application_at (application_id, at desc)`.
@@ -1286,16 +1307,16 @@ misdirecting staff to the eSign step.
 Ordered by **impact ÷ disruption**. Each phase is independently shippable and leaves every workflow, route and role
 exactly where it is. Sizes: XS < ½ day · S ≈ 1 day · M ≈ 2–4 days · L ≈ 1–2 weeks (one engineer).
 
-### Phase 0 — correctness fixes that fell out of verification (ship first, ½–1 day total)
+### Phase 0 — correctness fixes that fell out of verification (ship first, ≈ 3–4 days total)
 
 | # | Fix | Page | Size |
 |---|---|---|---|
-| 0.1 | `/staff/my-decisions` sends the caller's own `staffId` when none is chosen (or the service defaults it) so a Head/ADMIN never sees another staffer's totals under "your decisions" | §3.14 | XS |
+| 0.1 | `/staff/my-decisions` sends the caller's own `staffId` when none is chosen (page-side only — the service's whole-roster default is what `/staff/performance` relies on) so a Head/ADMIN never sees another staffer's totals under "your decisions" | §3.14 | XS |
 | 0.2 | `CustomerEditDialog` / `CaseFailureDialog` invalidate `['customers-page']` + `['customers-summary']` (not the legacy `['customers']`) | §3.3 | XS |
 | 0.3 | `AdminLogPaymentDialog` invalidates `['collections-case-by-loan', loanId]` + `['collection-payments']` | §3.8 | XS |
 | 0.4 | `SettlementService.listAll` gets the same `requireOneOf`/DSA rejection as `CollectionsService` (any staff token can list settlements today) | §3.9 | XS |
 | 0.5 | `rbac.ts` stops granting `verification:retry` to credit roles (backend is ADMIN-only) — or the backend relaxes; the two must agree | §3.5 | XS |
-| 0.6 | Rename " · no e-sign" → " · T&C not accepted" on the all-applications completeness badge | §3.15 | XS |
+| 0.6 | Rename " · no e-sign" → " · agreement not accepted" on the all-applications completeness badge (the flag is `agreementAccepted`) | §3.15 | XS |
 | 0.7 | Retry in-flight guard (`RETRY_IN_PROGRESS`) and a KYC-reminder cooldown — both prevent real money/SMS spend | §3.5, §3.12 | S |
 | 0.8 | `manualDecision` appends a `VERIFICATION_OVERRIDE` `application_event` so overrides are auditable | §3.5 | S |
 | 0.9 | Dashboard: a per-source `failed` flag so a backend outage renders an error notice instead of "You're all caught up" | §3.1 | S |
@@ -1308,7 +1329,9 @@ exactly where it is. Sizes: XS < ½ day · S ≈ 1 day · M ≈ 2–4 days · L 
 2. CSS: sticky `thead`, `.num`, working row hover, `rowFlash`, dialog exit, reduced-motion coverage (§2.2); scope
    the `84rem` min-width to the pipeline table via a modifier class so 8-column tables stop scrolling sideways.
 3. `ui/Dialog` gains the focus trap / focus restore / scroll lock `ui/Drawer` already has, an exit animation and a
-   `size` prop (`md` 460 px · `lg` 56 rem · `xl` 80 vw) replacing the seven `!max-w-*` overrides.
+   `size` prop (`md` 460 px · `lg` 56 rem · `xl` 80 vw) replacing the 13 `!max-w-*` overrides (10 staff, 3 borrower).
+   Because `ui/Dialog` is shared, the trap / exit / size changes reach the three borrower dialogs too — behaviour-neutral,
+   but smoke-test them (`components/borrower/terms-modal.tsx`, `components/borrower/loan-details-dialog.tsx`).
 4. One session query (`useStaffSession` → `['staff-me']`); shared query keys for performance and settlements; the
    `CustomerOwnerPicker` reads the role from React Query (removes up to 50 `/me` fetches on the telecalling page).
 5. `keepPreviousData` on every keyed list query; page resets move into filter handlers.
@@ -1316,19 +1339,20 @@ exactly where it is. Sizes: XS < ½ day · S ≈ 1 day · M ≈ 2–4 days · L 
    `RefreshButton`.
 
 **Acceptance:** `npx tsc --noEmit` and ESLint clean; Playwright smoke on the 15 routes; a visual diff shows only
-header stickiness, number alignment, hover and loading-state changes.
+header stickiness (registers now scroll inside their panel), number alignment, hover, loading-state changes and
+the one period-pill restyle.
 
 ### Phase 2 — per-page polish (small, page-local; ≈ 1–1.5 weeks in parallel with Phase 3)
 
 | Page | Items (from §3) | Size |
 |---|---|---|
 | Dashboard | section skeletons that keep shape; "Updated n s ago"; tabular stat values; no collections queries for roles without the section (§3.1) | S |
-| Live applications | `StatusBadge`; `num`; labelled ☐ column + bulk hint; "Updated n s ago" per panel; verify/reject icon buttons; closed-panel immediate fetch; dialog `size="xl"` with 12.8 px body text (§3.2) | S–M |
+| Live applications | `StatusBadge`; `num`; labelled ☐ column + bulk hint; "Updated n s ago" per panel; verify/reject icon buttons; closed-panel immediate fetch; dialog `size="xl"` with type floored at 11 px (§3.2) | S–M |
 | Customers | Columns menu; disabled-with-tooltip mixed reject; open dialog from `latestApplicationId`; bounded-concurrency bulk actions; DPD column | S–M |
 | Customer 360 | toasts on every card; per-card skeletons; corrections accordion; 40-day salary-day warning; exposure line; audit filter chips | S–M |
 | Verifications | collapsible buckets; unit label; confirm on reminder/override; neutral EPFO chip; hide Retry for non-ADMIN | S |
 | Loans | `num`; sticky; ✕ search; breakdown tooltip + "Settled" badge; row-seeded dialog; page reset | S |
-| Collections | overdue row cue; days-to-due; selection kept across pages; bulk progress; select width | S–M |
+| Collections | overdue row cue; days-to-due; "N selected on this page"; bulk progress; "Updated n s ago" | S–M |
 | Collection case | error branches; toasts; PTP date logic; decimal inputs; per-card skeletons; settlements list | S–M |
 | Settlements | status chips (default Proposed); confirm + reject reason; SoD pre-check; borrower/loan columns | S |
 | Transactions | `num`; typed status badge; proof blank for disbursals; one pill style; in-table busy veil | S |
@@ -1340,13 +1364,16 @@ header stickiness, number alignment, hover and loading-state changes.
 
 ### Phase 3 — backend and database (each item is an additive parameter, projection, batch or index; ≈ 2–3 weeks)
 
-Ordered by verified cost. None changes an API's shape for existing callers (new query parameters are optional).
+Ordered by verified cost. Additive for existing callers (new query parameters are optional) **except 3.3, 3.5 and
+3.13, which narrow a response** — a headline brief without `providerResponse` inside `CustomerDetail`, a light list
+DTO for `GET /applications/all`, and dropping the unrendered `createdByStaffName` from the lead list — each with a
+single consumer named in its §3 section.
 
 | # | Change | Evidence | Size |
 |---|---|---|---|
-| 3.1 | **Stop the sidebar badge fetching the full worklist**: `GET /collections/worklist/counts` (per-bucket count + outstanding) used by the six cards and the shell badge | `staff-shell.tsx:120-129` polls the unpaginated worklist every 30 s on every page | S |
+| 3.1 | **Stop the sidebar badge fetching the full worklist**: `GET /collections/worklist/counts` (per-bucket count + outstanding; rejects DSA) used by the six cards and the shell badge | `staff-shell.tsx:120-129` polls the unpaginated worklist every 30 s on every page | S |
 | 3.2 | **Verification overview**: projections (no `raw_response` JSON), SQL tallies (`GROUP BY status`), SQL paging, server-side "not started" | `ApplicationVerificationService.java:3455-3525` | M |
-| 3.3 | **Customer 360 read**: `findByLoanIdIn`, batched `latestProfile`, `findStaffByIds`, drop `providerResponse` from the customer read, batch `activity()` | `CustomerService.java:689-769,1229-1274` | S–M |
+| 3.3 | **Customer 360 read**: `findByLoanIdIn`, batched `latestProfile`, `findStaffByIds`, a headline `CreditBriefView` (no `providerResponse`) for the customer read, batch `activity()` | `CustomerService.java:689-769,1229-1274` | S–M |
 | 3.4 | **Telecalling**: `findLatestEventAt` + projections + `?owner=&page=&size=`; `assignOwner` without two `detail()` calls | `AdminApplicationService.java:138-178`, `CustomerService.java:807-841` | M |
 | 3.5 | **All applications**: `Pageable` + `q` + `complete`, `findLatestEventAt`, `namesFor`, light list DTO | `AdminApplicationService.java:65-104` | M |
 | 3.6 | **Transactions ledger** as one SQL query with `LIMIT/OFFSET`, `FILTER` totals and a streaming export | `TransactionService.java:71-169` | M–L |
@@ -1363,15 +1390,15 @@ Ordered by verified cost. None changes an API's shape for existing callers (new 
 **Indexes (one migration, `V74`):**
 `idx_application_event_application_at (application_id, at desc)` · `idx_loan_disbursed_on (disbursed_on)` ·
 `idx_payment_paid_on (paid_on)` · `idx_settlement_status_created_at (status, created_at desc)` ·
-`idx_lead_outcome (lead_outcome)` · `idx_loan_application_assigned_exec (assigned_executive_id, status)` · `uq_collection_case_loan_id` (after de-dup) · optional `pg_trgm` GIN indexes on
+`idx_lead_outcome (lead_outcome)` · `idx_loan_application_assigned_exec (assigned_executive_id, status)` · optional `pg_trgm` GIN indexes on
 `customer_profile(lower(full_name))`, `(pan)`, `(mobile)` and `lead(lower(name))`, `(mobile)` for the contains-searches.
-All are additive; historical migrations stay immutable.
+All are additive; historical migrations stay immutable. The `uq_collection_case_loan_id` unique index is a separate,
+guarded step after de-duplication (§3.8 §8), not part of V74.
 
 ### Phase 4 — polling policy (½ week, after Phase 3.1)
 
 Keep the product intervals but make them cheap: the sidebar badge and dashboard read the counts endpoints; queue polls
-add `refetchIntervalInBackground: false` explicitly (already the default) and a visible "Updated n s ago"; the detail
-dialog's 8 s poll pauses when `document.hidden`; a single `/me/badges` (unread count + bucket counts) can later replace
+add `refetchIntervalInBackground: false` explicitly (already the default) and a visible "Updated n s ago"; a single `/me/badges` (unread count + bucket counts; rejects DSA like every staff-open endpoint) can later replace
 the 20 s bell + 30 s badge polls with one request.
 
 ### Priority matrix
@@ -1386,7 +1413,8 @@ the 20 s bell + 30 s badge polls with one request.
 
 Navigation and the sidebar; the one-console composition of queues; every action cluster and its SoD/role gates; the
 BFF layout and JWT model; the design tokens by name; the 8 s / 60 s product polling decisions; the borrower-facing
-app.
+app (apart from the shared `ui/Dialog` primitive's focus trap and exit fade, smoke-tested on its three borrower
+dialogs).
 
 ### Verification of the plan itself
 
