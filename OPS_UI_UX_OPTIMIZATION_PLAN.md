@@ -1428,10 +1428,10 @@ dialogs).
 
 ## Appendix A — verification ledger (observer claims that were refuted)
 
-Each page was observed by one agent and independently verified by another. The verifier re-read every cited line. Claims marked REFUTED below are **not** in §3 and should not be re-reported; PARTIAL claims were corrected before use. Counts are per page: confirmed / partial / refuted.
+Each page was observed by one agent and independently verified by another. The verifier re-read every cited line. Claims marked REFUTED below are **not** in §3 and should not be re-reported; PARTIAL claims were corrected before use. Counts are per page: confirmed / partial / refuted. Each entry A.n verifies the page section §3.n above.
 
 
-### 3.1 Dashboard — 24 / 30 / 12
+### A.1 Dashboard — 24 / 30 / 12 (§3.1)
 
 - **Refuted:** dbAccess[2] CustomerService.bookStats: single query computing 15 metrics, SQL window functions/GROUP BY, backend may cache → Not one query and not SQL aggregation. bookStats(): mineCustomerIds() = owner ids (1 query) + decidedCustomerIds() which loads the actor's ENTIRE all-time application_event trail as entities and filters in Java (227-234) + custome… (`backend/navix-loan/src/main/java/com/navix/loan/service/CustomerServic…`)
 - **Refuted:** dbAccess[5] CollectionsService.listCases: scoped to caller's role (Executive own cases, Head team, Admin all), unpaged, JOIN on staff_user → No role scoping: caseRepository.findAll(Sort by createdAt DESC) returns every collection_case row for any collections-capable staff role (requireCollectionsStaff rejects only BORROWER/ANONYMOUS/DSA). Loans and officer names are ba… (`backend/navix-collections/src/main/java/com/navix/collections/service/…`)
@@ -1446,7 +1446,7 @@ Each page was observed by one agent and independently verified by another. The v
 - **Refuted:** friction[16] decidedIds useMemo re-keys the query whenever the decision list order changes, causing spurious refetches → decidedIds is a Set → deduped → numerically sorted array (345), and TanStack hashes queryKeys structurally (JSON), so the same ids in any incoming order yield an identical key — no refetch. Only the cheap useMemo recomputes. (`frontend/src/app/staff/dashboard/page.tsx:344-355, frontend/src/lib/cu…`)
 - **Refuted:** perf[6] polling continues when the tab is hidden / battery saver → TanStack Query v5.62 (package.json:25) defaults refetchIntervalInBackground to false and the interval refetch checks focusManager.isFocused() (document.visibilityState), so all intervals pause while the tab is hidden; the provider… (`frontend/src/app/staff/dashboard/page.tsx:300-410, frontend/src/lib/qu…`)
 
-### 3.2 Live applications — 23 / 33 / 11
+### A.2 Live applications — 23 / 33 / 11 (§3.2)
 
 - **Refuted:** apiCalls[13] ADMIN makes 9+ simultaneous requests every 8s (KYC_PENDING, CREDIT_EXEC_PENDING, SANCTIONED, DISBURSEMENT_PENDING fast-track, standard, f… → Exact count for ADMIN on the 8s tick = 5: credit-queue, CREDIT_EXEC_PENDING, DISBURSEMENT_PENDING (one request shared by fast-track+standard, same query key), DISBURSEMENT_FAILED, staff-pending-repayments. Plus 2 collection-paymen… (`frontend/src/app/staff/applications/page.tsx:160-234; frontend/src/com…`)
 - **Refuted:** dbAccess[1] creditHeadQueue filters KYC_APPROVED AND amountRequested not null; date range on created_at; no pagination; N+1 on enrichment → Returns KYC_PENDING plus KYC_APPROVED via two full findByStatusOrderByCreatedAtDescIdDesc calls, no amountRequested check; the date range is applied in memory after both status sets are loaded. Enrichment is batched (see dbAccess[… (`backend/navix-loan/src/main/java/com/navix/loan/service/ApplicationFlo…`)
@@ -1460,13 +1460,13 @@ Each page was observed by one agent and independently verified by another. The v
 - **Refuted:** perf[4] Debounce: each keystroke fires a request 300ms later; 10 keystrokes = 10 requests → The effect cleanup `clearTimeout(t)` cancels the pending timer on every keystroke, so exactly one setQuery (and one request per panel) fires 300ms after the LAST keystroke. Only a pause >= 300ms mid-typing produces an extra reques… (`frontend/src/app/staff/applications/page.tsx:71-74`)
 - **Refuted:** perf[7] customerQ has no staleTime so it refetches every 60s while mounted → staleTime never triggers a refetch by itself; with no refetchInterval and refetchOnWindowFocus:false, a mounted query never refetches on its own. staleTime only decides whether a remount/focus/reconnect refetches. (`frontend/src/components/staff/application-detail-dialog.tsx:223-227; f…`)
 
-### 3.3 Customers — 24 / 17 / 3
+### A.3 Customers — 24 / 17 / 3 (§3.3)
 
 - **Refuted:** Segment counts aggregated in CustomerSegments.counts(rows) after hydrate - frontend segments.ts:115-135, 'client-side helper used by bookStats() servi… → A Java service cannot call a TypeScript helper. bookStats uses the backend CustomerSegments.counts; the frontend segmentCounts() in segments.ts:115-135 is not used anywhere on this page - the chips read the summary endpoint. (`backend/navix-loan/src/main/java/com/navix/loan/service/CustomerServic…`)
 - **Refuted:** Friction: date-group collapse state is lost on pagination/filter change (useState resets on every page, 203-210) → collapsedDates is never reset while the page is mounted: a date collapsed on page 1 stays collapsed if it recurs on page 2 or under a new filter, and groups start EXPANDED (empty set) - the opposite of 'groups re-appear collapsed'… (`frontend/src/app/staff/customers/page.tsx:203 useState<Set<string>>(ne…`)
 - **Refuted:** Perf: no virtual scroll - 1000+ customers on one date all render at once → A page can never exceed 100 rows, so the premise is impossible; the absence of virtualization is true but immaterial. (`frontend/src/components/staff/pipeline/pagination.tsx:68 (25|50|100);…`)
 
-### 3.4 Customer 360 — 45 / 16 / 7
+### A.4 Customer 360 — 45 / 16 / 7 (§3.4)
 
 - **Refuted:** tables[0] StaffFieldTable (Personal/Employment/Bank/Credit): not sortable/filterable/paginated, stickyHeader TRUE, density py-1.5 text-[10.4px] → Header is NOT sticky: .staff-data-table thead th (globals.css:421) has no position:sticky; only the .staff-sticky-identity/.staff-sticky-actions column classes are sticky (:424-425) and StaffFieldTable uses neither. Cell padding i… (`frontend/src/components/staff/customer-tabs.tsx:649-666; frontend/src/…`)
 - **Refuted:** tables[1] Disbursal txn refs (Bank tab): stickyHeader TRUE, standard .staff-data-table → Same as above — no sticky header in .staff-data-table; the 3-column table also inherits min-width:84rem. (`frontend/src/components/staff/customer-tabs.tsx:579-586; frontend/src/…`)
@@ -1476,7 +1476,7 @@ Each page was observed by one agent and independently verified by another. The v
 - **Refuted:** friction[12] tab switching resets the left pane's scroll position to top → No scroll reset exists. The overflow-y-auto container (page.tsx:77) is not keyed or remounted on tab change — only its child swaps (:78-84) — so the browser keeps scrollTop (clamped to the new content height). If anything the oppo… (`frontend/src/app/staff/customers/[customerId]/page.tsx:76-84`)
 - **Refuted:** perf[1] clicking Verifications, Bank and Credit in quick succession could fire three identical GETs → Bank and Credit share one key and only one tab body is mounted at a time (customer-tabs.tsx:112-152), and React Query dedupes in-flight fetches per key — so no triple fetch. The real duplicate is structural: the Verifications tab… (`frontend/src/components/staff/customer-tabs.tsx:112-152,189,495,600; f…`)
 
-### 3.5 Verification dashboard — 27 / 19 / 6
+### A.5 Verification dashboard — 27 / 19 / 6 (§3.5)
 
 - **Refuted:** progress(appId) — 'No separate DB query — derived from the in-memory snapshot or a lightweight query per app' → progress() runs its own queries: applicationRepo.findById (3241) + statusesOf → findByApplicationIdOrderByIdAsc (3283-3286) = 2 queries minimum, plus 2 more per re-apply hop (statusesOf(source) + findById(source), 3274-3279) up to… (`backend/navix-loan/src/main/java/com/navix/loan/service/ApplicationVer…`)
 - **Refuted:** manualDecision — 'upsert application_verification + append application_event (SoD audit trail); single write per override' → No application_event is appended anywhere in the service (no eventRepository reference). Writes: upsert (findByApplicationIdAndCheckType + save, 3559-3561/3595) plus, for PENNY_DROP/EMPLOYMENT/BUREAU, a derivedFor read (2708-2712)… (`backend/navix-loan/src/main/java/com/navix/loan/service/ApplicationVer…`)
@@ -1485,14 +1485,14 @@ Each page was observed by one agent and independently verified by another. The v
 - **Refuted:** Search + pagination: 'pagination does not respect search across pages; a reviewer paging through gets stale results' → Search is applied server-side BEFORE paging (filter 3494-3510, then group+skip/limit 3514-3520, total = rowsByApp.size() 3525), the query key includes `debounced` (102) and page resets to 1 whenever the term changes (97-99). Every… (`frontend/src/app/staff/verifications/page.tsx:97-99,102; backend/navix…`)
 - **Refuted:** Typing fast (e.g. '1234') fires 4 backend queries, one per debounce window → useDebouncedValue only settles after the value has been unchanged for 300ms (setTimeout cleared on every change, 18-21). Typing four characters quickly yields ONE settled value and one overview request. Only a pause >300ms between… (`frontend/src/hooks/use-debounced-value.ts:15-24; frontend/src/app/staf…`)
 
-### 3.6 Loans register — 26 / 10 / 4
+### A.6 Loans register — 26 / 10 / 4 (§3.6)
 
 - **Refuted:** date-group header count feels off by one because the header row is itself rendered → group.rows contains only loan rows (178-186); the header is a separate <tr> and is not counted. The label 'N loans' is exact; the claim concedes this and the 'feels off' is speculation. (`frontend/src/app/staff/loans/page.tsx:176-187,311-312`)
 - **Refuted:** react-query caches keyed by search+range but no deduplication across users; a second user searching 'John' hits the cache → React Query's cache is per browser tab/session (makeQueryClient), never shared across users; there is no server-side cache at all. Two users always issue two requests; the claim conflates client cache with a shared one. (`frontend/src/lib/query-client.ts:9-18; frontend/src/app/staff/loans/pa…`)
 - **Refuted:** QueueDateFilter supports ALL/TODAY/7D/30D/90D/CUSTOM → QueuePeriod is 'ALL' | 'TODAY' | 'YESTERDAY' | 'CUSTOM' - there are no 7D/30D/90D presets. (`frontend/src/components/staff/pipeline/queue-date-filter.tsx:16,62-85`)
 - **Refuted:** customersApi.list is also called from the page (question to confirm) → page.tsx never imports or calls customersApi; line 121 is a comment saying the search/range semantics 'mirror customersApi.list'. The only page-level data call is loansApi.list. The customer table is never loaded by this page; cus… (`frontend/src/app/staff/loans/page.tsx:15,121-126 (grep: only a comment…`)
 
-### 3.7 Collections worklist — 15 / 16 / 10
+### A.7 Collections worklist — 15 / 16 / 10 (§3.7)
 
 - **Refuted:** GET /api/staff/me -> AuthController#staffMe (inferred); called by useStaffMe at page level (193) and inside collections-assign (89, 227, 353) → The hook fetches /api/auth/staff/me (hooks.ts:31), not /api/staff/me, and that route is a BFF-only handler that decodes the navix_staff cookie and returns {id,name,role} -- it never calls the Spring backend and no AuthController i… (`frontend/src/components/staff/pipeline/hooks.ts:30-40; frontend/src/ap…`)
 - **Refuted:** stickyHeader: YES (thead position: sticky top-0 implied by staff-data-table class, globals.css) → There is no sticky header. `.staff-data-table thead th` (globals.css:421) sets only background/color/font-size/weight/letter-spacing/text-transform -- no `position: sticky` and no `top`. The only sticky rules are `.staff-sticky-id… (`frontend/src/app/globals.css:418-433; frontend/src/app/staff/collectio…`)
@@ -1505,7 +1505,7 @@ Each page was observed by one agent and independently verified by another. The v
 - **Refuted:** Officer names fetched per InlineOfficerSelect mount; each row is a consumer of the query → Observers are free; one shared cache entry, one request per staleness window. Not a performance cost. (`frontend/src/components/staff/collections-assign.tsx:69-77`)
 - **Refuted:** No request dedup for concurrent officer fetches when many rows mount in the same tick → React Query dedupes in-flight fetches on the same queryKey; N rows mounting together produce exactly one request. (`frontend/src/components/staff/collections-assign.tsx:71-77`)
 
-### 3.8 Collection case — 21 / 20 / 10
+### A.8 Collection case — 21 / 20 / 10 (§3.8)
 
 - **Refuted:** load (ADMIN-only): staffApi.loan(loanId) + staffApi.outstanding(loanId, paidOn) fire for the AdminLogPaymentDialog; adminRecordRepayment invalidates 1… → Not a load-time call. AdminLogPaymentDialog is mounted only after the button is clicked ({open && <AdminLogPaymentDialog/>} at :68), so staff-loan and staff-outstanding-asof fire on click, not on page load. The invalidation list h… (`frontend/src/components/staff/admin-log-payment.tsx:56-57,68,82-91,125…`)
 - **Refuted:** assignableOfficers -> staff_user WHERE role IN (...) AND active = true; full table scan; no pagination; cached → Query is findByRoleAndStatusOrderByIdAsc(COLLECTION_EXECUTIVE, ACTIVE): a single equality on role (not IN) and status = ACTIVE (there is no 'active' boolean). idx_staff_user_role covers role, so it is an index lookup, not a full-t… (`backend/navix-collections/src/main/java/com/navix/collections/service/…`)
@@ -1518,13 +1518,13 @@ Each page was observed by one agent and independently verified by another. The v
 - **Refuted:** Waterfall load: caseQ -> interQ -> creditQ -> callRemarksQ (4 sequential fetches); no Promise.all → Two tiers, not four: everything after caseQ starts in parallel (see the friction verdict). caseId/customerId are only known from the case response, so tier 2 cannot start earlier without changing the URL contract. (`frontend/src/app/staff/collections/[loanId]/page.tsx:36-51,77,97,106,1…`)
 - **Refuted:** listOfficersQ fires even when the role lacks collections:manage → AssignCard is never mounted for such roles, so its useQuery never runs. (`frontend/src/app/staff/collections/[loanId]/page.tsx:112-117,321; fron…`)
 
-### 3.9 Settlements — 28 / 4 / 3
+### A.9 Settlements — 28 / 4 / 3 (§3.9)
 
 - **Refuted:** componentsUsed: RefreshButton from staff-ui.tsx:38 is used on this page → The page does NOT use the shared RefreshButton component (page.tsx:6 imports only PageHeader from staff-ui). It renders its own inline <button onClick={() => q.refetch()}> at page.tsx:65-70 with RefreshCw/Loader2 imported directly… (`frontend/src/app/staff/collections/settlements/page.tsx:5-6, 65-70; fr…`)
 - **Refuted:** stickyHeader: 'thead not explicitly sticky but .staff-data-table may apply via globals.css' → globals.css:418-433 puts NO position:sticky on thead. The only sticky rules are the column classes .staff-sticky-identity / .staff-sticky-actions (424-431), and this page uses neither (page.tsx:84-88, 95-112). There is no sticky h… (`frontend/src/app/globals.css:418-433; frontend/src/app/staff/collectio…`)
 - **Refuted:** Amount is displayed twice (table row line 106 and export column line 55) with no dedup → Nothing renders twice. The export `columns` are lazily-evaluated value() functions invoked only when an ADMIN clicks CSV/PDF (export-menu.tsx:62-77); they are not on-screen output. The only real discrepancy is formatting: on-scree… (`frontend/src/app/staff/collections/settlements/page.tsx:53-63, 106; fr…`)
 
-### 3.10 Transactions ledger — 27 / 11 / 5
+### A.10 Transactions ledger — 27 / 11 / 5 (§3.10)
 
 - **Refuted:** tables[Transactions Ledger].stickyHeader: true → The header is not sticky. The only sticky behaviour in the staff table system is horizontal pinning of identity/action COLUMNS via .staff-sticky-identity/.staff-sticky-actions, and this table uses neither. There is no vertical sti… (`frontend/src/app/globals.css:409 (.staff-table-scroll is overflow-x:au…`)
 - **Refuted:** frictionPoints[1]: two repository queries mean both disbursals AND repayments are loaded for the window and filtered in memory; 'no query optimization… → The direction filter already skips the unneeded half: line 80 is `"INCOMING".equals(dir) ? List.of() : loanRepository.findAllForRegister(from, to)` and line 81 is the mirror for OUTGOING. No repository call is made for the exclude… (`backend/navix-loan/src/main/java/com/navix/loan/service/TransactionSer…`)
@@ -1532,33 +1532,33 @@ Each page was observed by one agent and independently verified by another. The v
 - **Refuted:** performanceIssues[1]: presigning happens per page (good) but 100 repayment rows with proofs = '100 S3 DescribeObject API calls'; no batching/caching → S3Presigner.presignGetObject is a local SigV4 computation -- it issues no S3 request at all (no HeadObject/DescribeObject). Cost is microseconds of CPU per URL, and only REPAYMENT rows carry a key (disbursal rows pass null at line… (`backend/navix-storage/src/main/java/com/navix/storage/service/Document…`)
 - **Refuted:** performanceIssues[2]: the 60-second poll is unconditional -- 'a background tab still polls, wasting bandwidth' (no visibility API) → TanStack Query's interval refetch is gated on focusManager.isFocused() unless refetchIntervalInBackground: true is passed (default false). The page does not set it, so the 60s poll pauses while the tab is hidden and resumes on foc… (`frontend/src/app/staff/accounting/transactions/page.tsx:97-114 (refetc…`)
 
-### 3.11 Leads — 18 / 12 / 4
+### A.11 Leads — 18 / 12 / 4 (§3.11)
 
 - **Refuted:** Whole-list invalidation ['leads'] after any mutation refetches every page/pageSize variant (overly broad) → invalidateQueries({queryKey:['leads']}) marks every cached variant stale but refetches only ACTIVE queries (the one key currently observed: [debouncedQ, callStatus, page, pageSize]). Inactive page variants are merely stale and ref… (`frontend/src/app/staff/leads/page.tsx:84; TanStack invalidateQueries d…`)
 - **Refuted:** Money fields accept any string; 'abc', '-500' can be submitted to the backend → They cannot be submitted: mutationFn attaches monthlySalaryPaise/loanAmountInterestedPaise only when Number(value) > 0 (page.tsx:232-235), so 'abc' (NaN) and '-500' are silently DROPPED. The actual defect is silent data loss with… (`frontend/src/app/staff/leads/page.tsx:232-235,282-295; backend/navix-l…`)
 - **Refuted:** leadsApi.stats() defined but never called — missing/incomplete feature → leadsApi.stats IS consumed by the ADMIN lead register (/staff/admin/leads, queryKey ['lead-stats', ...]). The backend gates /api/leads/stats to ADMIN (LeadService:222 requireAdmin), so the telecaller page could not call it anyway.… (`frontend/src/app/staff/admin/leads/page.tsx:84-90; backend/navix-loan/…`)
 - **Refuted:** Invalidation cascades: if user is on page 3, all pages refetch simultaneously → Only the active query refetches (invalidateQueries default refetchType 'active'); other page keys are marked stale, not fetched. One list request per mutation. (`frontend/src/app/staff/leads/page.tsx:84`)
 
-### 3.12 Telecalling — 14 / 13 / 3
+### A.12 Telecalling — 14 / 13 / 3 (§3.12)
 
 - **Refuted:** apiCalls[owner-picker-open]: GET /api/staff/creditExecutives/{role} one per role; controller 'unverified'; fires each time picker is opened, re-mounts… → Wrong path and wrong trigger. Actual call: GET /api/staff/applications/credit-executives?role=TELECALLER -> backend GET /api/applications/credit-executives (ApplicationController:144) -> StaffDirectoryAdapter.listActive -> staffUs… (`frontend/src/lib/api/applications.ts:1649-1653; backend/navix-loan/src…`)
 - **Refuted:** tables.stickyHeader: 'Yes, <thead> is part of staff-data-table' → The <thead> is NOT sticky: .staff-data-table thead th (globals.css:421) sets background/colour/font only - no position:sticky/top. Only the identity (checkbox) and Actions COLUMNS are sticky horizontally (:424-425, left:0 / right:… (`frontend/src/app/globals.css:418-433`)
 - **Refuted:** friction: CustomerOwnerPicker loads staff from the API every time it opens; 3 pickers could fire 3 redundant queries; re-mounts on every table re-rend… → The picker has no open state - it is rendered inline in every row - and its staff list is a shared React Query key ['staff-picker','TELECALLER'] with staleTime 60s, so N pickers = 1 request and re-renders do not remount (rows keye… (`frontend/src/components/staff/customer-owner-picker.tsx:30,41-47; fron…`)
 
-### 3.13 Staff performance — 18 / 14 / 3
+### A.13 Staff performance — 18 / 14 / 3 (§3.13)
 
 - **Refuted:** loadingStates: whole-page replace on q.isLoading; chart and stat cards render underneath but are invisible behind the pulse overlay; table behind the… → There is no overlay and no whole-page replace. The isLoading ternary at 215-217 swaps only the table block for an h-48 animate-pulse div. PageHeader (127-158), PeriodPicker (160-173) and all five StatCards (175-190) render normall… (`frontend/src/app/staff/performance/page.tsx:73-75,97-106,127-190,192,2…`)
 - **Refuted:** table: Value moved is font-mono, right-aligned by CSS class → The cell has only className='font-mono' (284) and .staff-data-table td sets text-align: left (globals.css:420). Numeric columns on this table are all left-aligned. (`frontend/src/app/staff/performance/page.tsx:284; frontend/src/app/glob…`)
 - **Refuted:** performance: useColumnFilters re-filters the row array on every keystroke in the filter popover (column-filter.tsx:62-99) → Keystrokes only touch FilterPanel's local `search` state (136) and the `visible` memo, which filters the already-computed options string list (143-147). applyExcept/filtered/optionsFor are memoised on [rows, selections, byKey] (75… (`frontend/src/components/staff/column-filter.tsx:75-99,136,143-147; fro…`)
 
-### 3.14 My decisions — 18 / 13 / 4
+### A.14 My decisions — 18 / 13 / 4 (§3.14)
 
 - **Refuted:** table: stickyHeader true → No sticky header. `.staff-data-table thead th` (globals.css:421) sets colours only; the only `position: sticky` rules are the per-cell `.staff-sticky-identity` / `.staff-sticky-actions` classes (424-425), which this page never app… (`frontend/src/app/globals.css:418-433; frontend/src/app/staff/my-decisi…`)
 - **Refuted:** friction: Amount column has no ₹ symbol; paiseToINR renders '500.00' → paiseToINR uses Intl.NumberFormat('en-IN', {style:'currency', currency:'INR', maximumFractionDigits:0}) — 500000 paise renders as '₹5,000' (rupee sign, Indian grouping, no decimals). The column is not ambiguous between paise and r… (`frontend/src/lib/api/applications.ts:3431-3438; frontend/src/app/staff…`)
 - **Refuted:** friction: Outcome column is a colour-only Badge (SANCTIONED green / REJECTED red), unreadable for red-green colour-blind staff → statusLabel() returns a plain string ('Sanctioned', 'Rejected', …) — it title-cases the enum; the page renders it as text in a bare <td>. No Badge, no colour is involved. (`frontend/src/lib/api/applications.ts:3441-3447; frontend/src/app/staff…`)
 - **Refuted:** performance: Loader2 re-renders on every isFetching change causing flicker when toggling pages via PaginationBar → Paging is purely in-memory (rows.slice) and never changes q.isFetching, so the spinner does not toggle and there is no flicker — the observer's own evidence concedes this. The remaining complaint ('no visual cue when paging') is n… (`frontend/src/app/staff/my-decisions/page.tsx:139; frontend/src/compone…`)
 
-### 3.15 All applications — 28 / 13 / 4
+### A.15 All applications — 28 / 13 / 4 (§3.15)
 
 - **Refuted:** Detail dialog fires 4+ queries sequentially without batching; each waits for the previous (appQ -> eventsQ -> briefQ -> profileQ -> customersApi.get) → appQ (:195 enabled: open), eventsQ (:201 enabled: open) and profileQ (:213 enabled: open && canReview) all start on the same render when the dialog opens - three parallel requests. Only briefQ (:207) waits for appQ.data (to skip D… (`frontend/src/components/staff/application-detail-dialog.tsx:192-227`)
 - **Refuted:** Info button duplicates the detail dialog's queries; no query deduplication if the user opens both on the same row → Three of the four keys are identical across both dialogs - ['staff-application', id], ['staff-profile', id], ['credit-brief', id] - so React Query serves the second dialog from cache within the 60s staleTime (the info dialog's hea… (`frontend/src/components/staff/application-info-dialog.tsx:10-12,63,68,…`)
