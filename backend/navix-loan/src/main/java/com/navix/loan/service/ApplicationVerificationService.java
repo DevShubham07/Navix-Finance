@@ -223,6 +223,17 @@ public class ApplicationVerificationService {
     private static final Set<ApplicationStatus> UNDECIDED_STATUSES =
             Set.of(ApplicationStatus.DRAFT, ApplicationStatus.KYC_PENDING, ApplicationStatus.REVIEW_PENDING);
 
+    /**
+     * What the Verification Dashboard lists: the undecided files plus {@code SANCTIONED} ones. The
+     * offer journey's checks (DigiLocker, selfie, address, eSign) run <em>after</em> the credit decision
+     * and a failure there does not block the borrower (revamp.md decision 11) — the dashboard is the one
+     * place it surfaces, and where staff send the "redo this step" link from. The employment-retry sweep
+     * deliberately keeps {@link #UNDECIDED_STATUSES}: re-running EPFO on a sanctioned file is not its job.
+     */
+    private static final Set<ApplicationStatus> DASHBOARD_STATUSES = Set.of(
+            ApplicationStatus.DRAFT, ApplicationStatus.KYC_PENDING, ApplicationStatus.REVIEW_PENDING,
+            ApplicationStatus.SANCTIONED);
+
     private final ApplicationVerificationRepository verificationRepo;
     private final CustomerProfileRepository profileRepo;
     private final LoanApplicationRepository applicationRepo;
@@ -3451,9 +3462,10 @@ public class ApplicationVerificationService {
      * pending / never-run) plus the verification rows, enriched with borrower context and filterable by
      * status, check type and a free-text query (borrower name / application id / customer id).
      *
-     * <p>Scoped to {@link #UNDECIDED_STATUSES} — "every application that needs a KYC decision" is this
-     * page's own subtitle, so an already-decided application's checks are historical evidence, not
-     * triage work, here just as they are on the frontend's client-side card grouping. This used to load
+     * <p>Scoped to {@link #DASHBOARD_STATUSES} — the files that still need a KYC decision, plus the
+     * sanctioned ones still walking the offer journey (whose DigiLocker/selfie/address/eSign checks are
+     * live triage work, not history). A disbursed or closed application's checks are historical evidence
+     * and stay out, here just as they do in the frontend's client-side card grouping. This used to load
      * {@code verificationRepo.findAll()}, {@code applicationRepo.findAll()} and
      * {@code profileRepo.findAll()} — the whole company's history, unfiltered — which was always the
      * wrong scope for what this method reports, and at production data volumes made the endpoint take
@@ -3462,7 +3474,7 @@ public class ApplicationVerificationService {
     @Transactional(readOnly = true)
     public VerificationOverview overview(String statusFilter, String checkTypeFilter, String q,
                                          Boolean needsAttention, int page, int size) {
-        List<LoanApplication> undecided = applicationRepo.findByStatusIn(UNDECIDED_STATUSES);
+        List<LoanApplication> undecided = applicationRepo.findByStatusIn(DASHBOARD_STATUSES);
         Map<Long, LoanApplication> appById = undecided.stream()
                 .collect(Collectors.toMap(LoanApplication::getId, a -> a, (a, b) -> a));
         int safeSize = Math.max(1, Math.min(size, OVERVIEW_MAX_PAGE_SIZE));

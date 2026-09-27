@@ -113,6 +113,28 @@ class ApplicationVerificationServiceTest {
      * reflect applications that still need a KYC decision — matching the page's own subtitle,
      * "every application that needs a KYC decision".
      */
+    /**
+     * The offer journey's checks (DigiLocker, selfie, address, eSign) run after sanction and never block
+     * the borrower, so the dashboard is the only place a failure there surfaces — and the place staff
+     * send the "redo this step" link from. A sanctioned file must therefore be in scope, while anything
+     * past disbursal stays historical.
+     */
+    @Test
+    void overview_includesSanctionedFiles_butNothingPastDisbursal() {
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of());
+
+        service.overview(null, null, null, null, 1, 25);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Collection<ApplicationStatus>> statuses =
+                ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(applicationRepo).findByStatusIn(statuses.capture());
+        assertThat(statuses.getValue())
+                .contains(ApplicationStatus.KYC_PENDING, ApplicationStatus.SANCTIONED)
+                .doesNotContain(ApplicationStatus.DISBURSEMENT_PENDING, ApplicationStatus.DISBURSED,
+                        ApplicationStatus.ACTIVE, ApplicationStatus.CLOSED);
+    }
+
     @Test
     void overview_scopesToUndecidedApplications_notTheWholeCompany() {
         LoanApplication undecidedApp = new LoanApplication();

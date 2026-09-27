@@ -23,11 +23,14 @@ const BUCKETS: { key: Bucket; label: string; accent: string }[] = [
 ];
 
 /**
- * Application statuses that still need a KYC decision — the only ones this dashboard triages.
- * Rows for already-decided applications (KYC_APPROVED onward, rejected, closed…) are historical
- * evidence, not work, and would pollute the buckets forever.
+ * Application statuses this dashboard triages — mirrors `ApplicationVerificationService.DASHBOARD_STATUSES`.
+ * The files still awaiting a KYC decision, plus SANCTIONED ones still walking the offer journey: their
+ * DigiLocker / selfie / address / eSign checks run after the credit decision and never block the borrower,
+ * so a failure there surfaces only here — and this is where staff send the "redo this step" link from.
+ * Rows for anything past disbursal (or rejected, closed…) are historical evidence, not work, and would
+ * pollute the buckets forever.
  */
-const UNDECIDED_STATUSES = ["DRAFT", "KYC_PENDING", "REVIEW_PENDING"];
+const UNDECIDED_STATUSES = ["DRAFT", "KYC_PENDING", "REVIEW_PENDING", "SANCTIONED"];
 
 /**
  * The checks a borrower must clear (PASS/REVIEW) before this dashboard calls an application "all
