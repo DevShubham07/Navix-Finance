@@ -298,6 +298,41 @@ class JourneyServiceTest {
         assertThat(journey.current(APP).total()).isEqualTo(6);
     }
 
+    // ---- V74: staff "send the customer a link" reopen -----------------------
+
+    /** A reopened row is excluded from {@code attemptedChecks}, so derivation sends the borrower right
+     *  back to the screen staff just reopened instead of bouncing them past it. */
+    @Test
+    void aReopenedCheckIsIgnoredByDerivation() {
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setAmountRequested(1_500_000L);
+        ApplicationVerification aadhaar = check(ApplicationVerificationService.AADHAAR);
+        aadhaar.setReopenedAt(Instant.now());
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(aadhaar));
+
+        assertThat(journey.current(APP).step()).isEqualTo("OFFER_DIGILOCKER");
+    }
+
+    /** {@code rewind} only moves the pointer back when it is genuinely ahead of the reopened step. */
+    @Test
+    void rewindMovesThePointerBackOnlyWhenItIsAhead() {
+        app.setJourneyStep("OFFER_SANCTION_LETTER");
+        journey.rewind(APP, JourneyService.OfferStep.OFFER_SELFIE);
+        assertThat(app.getJourneyStep()).isEqualTo("OFFER_SELFIE");
+
+        app.setJourneyStep("OFFER_DIGILOCKER"); // already behind the reopened step — leave it alone
+        journey.rewind(APP, JourneyService.OfferStep.OFFER_SELFIE);
+        assertThat(app.getJourneyStep()).isEqualTo("OFFER_DIGILOCKER");
+
+        app.setJourneyStep(null);
+        journey.rewind(APP, JourneyService.OfferStep.OFFER_SELFIE);
+        assertThat(app.getJourneyStep()).isEqualTo("OFFER_SELFIE");
+
+        app.setJourneyStep("BANK"); // an intake pointer, meaningless to the offer registry
+        journey.rewind(APP, JourneyService.OfferStep.OFFER_SELFIE);
+        assertThat(app.getJourneyStep()).isEqualTo("OFFER_SELFIE");
+    }
+
     private static ApplicationVerification check(String type) {
         ApplicationVerification v = new ApplicationVerification();
         v.setApplicationId(APP);

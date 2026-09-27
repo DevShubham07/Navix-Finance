@@ -81,10 +81,11 @@ export type Permission =
   // referral-expense dashboard; ADMIN has oversight.
   | "referral:payout"
   // Re-fire a provider verification (PAN / email / address / bureau / employment / penny-drop) from
-  // the staff console. Held by ADMIN and the credit roles: they already hold kyc:approve, so without
-  // this they could OVERRIDE a stale provider result but not simply re-run it, which is backwards.
-  // Note it is per-action, not per-check — a credit reviewer who can re-run the employment lookup can
-  // also re-run the (billable) bureau pull.
+  // the staff console. ADMIN only — the backend's `retryExternalCheck` is `requireAdmin()`, so a
+  // credit role could open the Retry dialog and still be refused server-side. A credit reviewer who
+  // needs a check re-run does so through "Send link to customer" (the borrower redoes it themselves)
+  // or asks an admin; this token now mirrors the backend gate instead of granting a UI action that
+  // 403s.
   | "verification:retry"
   // The DSA self-service portal (own leads, outreach, own commissions/earnings). DSA gets this and
   // NOTHING else — explicitly not customer:view, not leads:manage, not loan:pipeline: a DSA must
@@ -110,14 +111,12 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:view",
     "loan:pipeline",
     "document:upload",
-    "verification:retry",
     "leads:import",
   ],
   CREDIT_HEAD: [
     "kyc:approve",
     "loan:review",
     "loan:approve",
-    "verification:retry",
     "customer:view",
     "customer:view:all",
     "customer:assign",

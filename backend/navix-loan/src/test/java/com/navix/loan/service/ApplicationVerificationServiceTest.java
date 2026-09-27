@@ -404,6 +404,31 @@ class ApplicationVerificationServiceTest {
         assertThat(result.derived()).isEmpty();
     }
 
+    /**
+     * V74: a staff reopen sets {@code reopenedAt}/{@code reopenedBy} directly on the row (outside this
+     * service — see {@code VerificationOutreachService}); the borrower's own next write through
+     * {@code upsert} must close it, or the row would look reopened forever even after a fresh result.
+     */
+    @Test
+    void manualDecision_clearsAnyPriorReopen() {
+        ActorContext.set(new CurrentActor("17", "Credit Reviewer", "CREDIT_HEAD"));
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        ApplicationVerification existing = row("PAN", "PENDING");
+        existing.setReopenedAt(java.time.Instant.now());
+        existing.setReopenedBy("11");
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PAN"))
+                .thenReturn(Optional.of(existing));
+
+        service.manualDecision(APP, "PAN", true, "confirmed");
+
+        ArgumentCaptor<ApplicationVerification> captor = ArgumentCaptor.forClass(ApplicationVerification.class);
+        verify(verificationRepo).save(captor.capture());
+        assertThat(captor.getValue().getReopenedAt()).isNull();
+        assertThat(captor.getValue().getReopenedBy()).isNull();
+    }
+
     @Test
     void panVerify_mapsAndMarksProfileVerified_andPersistsDob() {
         CustomerProfile p = profile();

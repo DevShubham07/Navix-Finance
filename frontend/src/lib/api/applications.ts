@@ -1238,6 +1238,8 @@ export interface StepResult {
   score?: number | null;
   /** When the check last ran. Optional: rows written before this existed have no value. */
   checkedAt?: string | null;
+  /** When staff last reopened this check for the customer to redo. Optional: only reopened rows carry it. */
+  reopenedAt?: string | null;
 }
 
 /** Result of an OTP send: whether it went out, and (dev/mock only) the code itself. */
@@ -1293,6 +1295,21 @@ export interface ReminderResult {
   sent: boolean;
   pendingCount: number;
   pendingSteps: string;
+}
+
+/**
+ * A one-time "send the customer a link" preview/send result — mirrors backend `ResumeLink`.
+ * `willReopen` tells the caller the send will also reset the check to PENDING and rewind the
+ * borrower's journey pointer; `maskedEmail`/`maskedMobile` are null when that contact is unknown.
+ */
+export interface ResumeLink {
+  url: string;
+  route: string;
+  stepLabel: string;
+  willReopen: boolean;
+  maskedEmail: string | null;
+  maskedMobile: string | null;
+  lastSentAt: string | null;
 }
 
 /** Result of asking the app-scoped verify endpoint for a presigned PUT URL. */
@@ -1862,6 +1879,13 @@ export const staffApi = {
   },
   /** KYC approver / admin nudges the borrower with their pending verification steps (Phase 3.4). */
   sendReminder: (id: number) => bff<ReminderResult>(`${STAFF_BASE}/${id}/send-reminder`, "POST"),
+
+  /** Preview the "send the customer a link" destination for one failed/abandoned check, read-only. */
+  resumeLink: (id: number, checkType: string) =>
+    bff<ResumeLink>(`${STAFF_BASE}/${id}/verifications/${checkType}/resume-link`, "GET"),
+  /** Send that link (email or copy-to-clipboard) — reopens the check when the backend says `willReopen`. */
+  shareResumeLink: (id: number, checkType: string, channel: "EMAIL" | "COPY") =>
+    bff<ResumeLink>(`${STAFF_BASE}/${id}/verifications/${checkType}/resume-link`, "POST", { channel }),
 
   /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
   creditBrief: (id: number) => bff<CreditBriefView>(`${STAFF_BASE}/${id}/credit-brief`, "GET"),

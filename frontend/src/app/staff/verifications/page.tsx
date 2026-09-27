@@ -30,10 +30,13 @@ const BUCKETS: { key: Bucket; label: string; accent: string }[] = [
 const UNDECIDED_STATUSES = ["DRAFT", "KYC_PENDING", "REVIEW_PENDING"];
 
 /**
- * The checks a borrower must clear (PASS/REVIEW) before submit-kyc — mirrors backend
- * `ApplicationVerificationService.REQUIRED`. Needed so an application whose required checks were
- * never RUN (no row at all) isn't mistaken for "all checks passed" just because the few rows it
- * does have are green.
+ * The checks a borrower must clear (PASS/REVIEW) before this dashboard calls an application "all
+ * checks passed" — the union of the backend's two gates: `ApplicationVerificationService.REQUIRED`
+ * (PAN, EMAIL, BUREAU, SALARY, gating submit-kyc) and `REQUIRED_SANCTION` (AADHAAR, SELFIE, ADDRESS,
+ * ESIGN, gating sanction). PENNY_DROP gates nothing server-side; it stays here only so a dashboard
+ * card isn't marked "all checks passed" ahead of the penny-drop step later in the offer journey.
+ * Needed so an application whose required checks were never RUN (no row at all) isn't mistaken for
+ * "all checks passed" just because the few rows it does have are green.
  */
 const REQUIRED_CHECKS = ["PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY", "PENNY_DROP", "SELFIE"];
 

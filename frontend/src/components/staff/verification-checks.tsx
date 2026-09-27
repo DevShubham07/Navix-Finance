@@ -18,12 +18,13 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Bell, ShieldCheck, RotateCcw } from "lucide-react";
+import { Loader2, Bell, ShieldCheck, RotateCcw, Link2 } from "lucide-react";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { staffApi, paiseToINR, type StepResult, type CheckStatus } from "@/lib/api/applications";
 import { humanizeCheck, formatDateTime } from "@/lib/utils";
 import { errMessage } from "@/components/staff/pipeline/hooks";
 import { PermissionGate } from "@/components/staff/pipeline/actions";
+import { ResumeLinkDialog } from "@/components/staff/resume-link-dialog";
 
 /**
  * A placeholder card's status is `NOT_RUN` — deliberately distinct from the real `PENDING` status
@@ -60,13 +61,31 @@ const DERIVED_RENDERED_BY_PROVENANCE: ReadonlySet<string> = new Set([
 
 /**
  * Mirrors the backend allow-list in `ApplicationVerificationService.retryExternalCheck` exactly.
- * `summary()` only returns rows that already exist in `application_verification`, so a check that
- * has never run (e.g. PENNY_DROP on a fresh application) has no card at all — and therefore no
- * "Manual override" or "Retry API" button, even though both endpoints upsert and work fine with no
- * pre-existing row. We backfill a synthetic placeholder card for any retryable check missing from
- * `q.data` so those actions are always reachable.
+ * Gates the "Retry API" button only — ESIGN and AADHAAR are never in this list (the backend refuses
+ * them: a retry re-runs a provider call, but eSign is a borrower-initiated legal act and DigiLocker
+ * needs the borrower's own consent redirect) even though they do get a synthetic placeholder card,
+ * see {@link PLACEHOLDER_CHECKS}.
  */
 const RETRYABLE_CHECKS: readonly string[] = ["PAN", "EMAIL", "ADDRESS", "BUREAU", "EMPLOYMENT", "PENNY_DROP", "SELFIE"];
+
+/**
+ * Checks that get a synthetic `NOT_RUN` placeholder card when `summary()` has no row for them yet —
+ * every retryable check (so Retry API is always reachable) plus ESIGN and AADHAAR, whose most
+ * important case is exactly a never-run/abandoned attempt (customer closed the tab on the sanction
+ * letter, or never opened DigiLocker) and which would otherwise have no card at all to hang a
+ * "Send link to customer" button on. ESIGN/AADHAAR placeholders must not offer Retry — see
+ * {@link RETRYABLE_CHECKS}.
+ */
+const PLACEHOLDER_CHECKS: readonly string[] = [...RETRYABLE_CHECKS, "ESIGN", "AADHAAR"];
+
+/**
+ * Checks for which "Send link to customer" (see `resume-link-dialog.tsx`) makes sense — the
+ * borrower-only Phase-3 steps plus the bureau security question. Mirrors the backend's
+ * `VerificationOutreachService` check→step map exactly; the backend still refuses (e.g.
+ * `STEP_LINK_NOT_ELIGIBLE`, surfaced via `errMessage`, no special-casing here) whenever the
+ * application/check isn't actually eligible (wrong status, no pending bureau question, …).
+ */
+const LINKABLE_CHECKS: readonly string[] = ["ESIGN", "AADHAAR", "DIGILOCKER", "SELFIE", "ADDRESS", "BUREAU"];
 
 /** "monthlySalaryPaise" -> "Monthly salary" (the trailing "Paise" is stripped — see {@link isPaiseKey}). */
 function humanizeKey(key: string): string {
@@ -117,14 +136,16 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
   // The check currently open in the manual-override dialog (KYC approver / admin), or null.
   const [override, setOverride] = React.useState<DisplayStep | null>(null);
   const [retry, setRetry] = React.useState<DisplayStep | null>(null);
+  const [resumeLink, setResumeLink] = React.useState<DisplayStep | null>(null);
 
-  // Real rows first, then a synthetic NOT_RUN placeholder for every retryable check with no row
-  // yet — otherwise a never-run check (PENNY_DROP is the live case) has no card and so no way to
-  // override or retry it, even though both backend endpoints upsert and work with no prior row.
+  // Real rows first, then a synthetic NOT_RUN placeholder for every check in PLACEHOLDER_CHECKS with
+  // no row yet — otherwise a never-run check (PENNY_DROP is the live case, ESIGN/AADHAAR the
+  // abandoned-attempt case) has no card and so no way to override, retry, or send a link for it,
+  // even though the backend endpoints upsert and work with no prior row.
   const steps: DisplayStep[] = React.useMemo(() => {
     const real = q.data ?? [];
     const seen = new Set(real.map((s) => s.checkType));
-    const placeholders: DisplayStep[] = RETRYABLE_CHECKS.filter((c) => !seen.has(c)).map((checkType) => ({
+    const placeholders: DisplayStep[] = PLACEHOLDER_CHECKS.filter((c) => !seen.has(c)).map((checkType) => ({
       checkType,
       status: "NOT_RUN",
       message: "Not run on this application",
@@ -200,22 +221,32 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                   </dl>
                 )}
                 <PermissionGate permission="kyc:approve">
-                  <div className="mt-2 border-t border-line pt-2">
+                  <div className="mt-2 flex flex-wrap gap-2 border-t border-line pt-2">
                     <button
                       onClick={() => setOverride(s)}
                       className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint"
                     >
                       <ShieldCheck size={12} /> Manual override
                     </button>
+                    {LINKABLE_CHECKS.includes(s.checkType) && s.status !== "PASS" && (
+                      <button
+                        onClick={() => setResumeLink(s)}
+                        className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint"
+                      >
+                        <Link2 size={12} /> Send link to customer
+                      </button>
+                    )}
                   </div>
                 </PermissionGate>
-                <PermissionGate permission="verification:retry">
-                  <div className="mt-2">
-                    <button onClick={() => setRetry(s)} className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint">
-                      <RotateCcw size={12} /> Retry API
-                    </button>
-                  </div>
-                </PermissionGate>
+                {RETRYABLE_CHECKS.includes(s.checkType) && (
+                  <PermissionGate permission="verification:retry">
+                    <div className="mt-2">
+                      <button onClick={() => setRetry(s)} className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint">
+                        <RotateCcw size={12} /> Retry API
+                      </button>
+                    </div>
+                  </PermissionGate>
+                )}
               </div>
             );
           })}
@@ -225,6 +256,13 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
         <OverrideDialog applicationId={applicationId} step={override} onClose={() => setOverride(null)} />
       )}
       {retry && <RetryDialog applicationId={applicationId} step={retry} onClose={() => setRetry(null)} />}
+      {resumeLink && (
+        <ResumeLinkDialog
+          applicationId={applicationId}
+          checkType={resumeLink.checkType}
+          onClose={() => setResumeLink(null)}
+        />
+      )}
     </div>
   );
 }
@@ -283,6 +321,7 @@ function Provenance({ step }: { step: DisplayStep }) {
   if (typeof step.score === "number") bits.push(`score ${step.score}`);
   const detail = str(step.derived, "providerDetail");
   if (detail) bits.push(detail);
+  if (step.reopenedAt) bits.push(`reopened for the customer ${formatDateTime(step.reopenedAt)}`);
   if (bits.length === 0) return null;
   return (
     <p className="mt-1 text-[8.8px] text-muted">

@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  * as {@code —}. Available model keys: {@code name}, {@code role}, {@code applicationId}, {@code loanId},
  * {@code customerName}, {@code amount}, {@code netDisbursed}, {@code totalRepayable},
  * {@code outstanding}, {@code dueDate}, {@code settlementAmount}, {@code inviteLink},
- * {@code retryLine}.
+ * {@code retryLine}, {@code stepLabel}, {@code stepLink}.
  */
 @Component
 public class NotificationTemplates {
@@ -63,6 +63,14 @@ public class NotificationTemplates {
                         + "borrowing history. Only you can answer it, and it takes about 20 seconds:"
                         + "\n{questionLink}\n\nIf none of the options look familiar, you can say so on "
                         + "that page and our team will take it from there.\n\n- DhanBoost");
+        // No sms(...) registered on purpose - see NotificationType.VERIFICATION_STEP_LINK.
+        inApp(NotificationType.VERIFICATION_STEP_LINK, "Finish your {stepLabel} step",
+                "Our credit team sent you a link to finish your {stepLabel} step — it takes a minute.");
+        email(NotificationType.VERIFICATION_STEP_LINK, "Finish your DhanBoost {stepLabel} step",
+                "Hi {name},\n\nOur credit team reviewed application #{applicationId} and needs you to "
+                        + "redo one step before we can move forward: {stepLabel}. Log in here to pick up "
+                        + "right where you left off:\n{stepLink}\n\n- DhanBoost");
+
         inApp(NotificationType.KYC_REMINDER, "Finish your verification",
                 "You still have pending verification steps: {pendingSteps}. Log in to complete them.");
         sms(NotificationType.KYC_REMINDER,

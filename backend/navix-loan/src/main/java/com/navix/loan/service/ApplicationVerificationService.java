@@ -263,7 +263,19 @@ public class ApplicationVerificationService {
     public record StepResult(String checkType, String status, String message,
                              Map<String, Object> derived,
                              String provider, String providerTxnId, String clientRefNum,
-                             Double nameMatch, Long score, Instant checkedAt) {
+                             Double nameMatch, Long score, Instant checkedAt, Instant reopenedAt) {
+
+        /**
+         * The pre-V74 full form. Kept as a secondary constructor (delegating with a null
+         * {@code reopenedAt}) so the ~30 existing {@code new StepResult(...)} call sites — none of
+         * which know about a staff reopen — compile unchanged; only {@link #view} passes the real value.
+         */
+        public StepResult(String checkType, String status, String message, Map<String, Object> derived,
+                          String provider, String providerTxnId, String clientRefNum,
+                          Double nameMatch, Long score, Instant checkedAt) {
+            this(checkType, status, message, derived, provider, providerTxnId, clientRefNum,
+                    nameMatch, score, checkedAt, null);
+        }
 
         /** The short form, for the handful of places that synthesise a result rather than read a row. */
         public StepResult(String checkType, String status, String message, Map<String, Object> derived) {
@@ -3309,15 +3321,13 @@ public class ApplicationVerificationService {
      * As {@link #requireCreditTeam(String)}, plus any {@code extraRoles} the caller wants let through
      * (used by {@link #sendKycReminder} to also allow TELECALLER — work item 10 — without loosening
      * the manual verification override, which stays credit-team/admin only).
+     *
+     * <p>Delegates to {@link CreditTeamGuard} so {@link VerificationOutreachService} and
+     * {@link BureauChallengeOutreachService#notifyApplication} share the exact same role list instead
+     * of each carrying their own copy of it.
      */
     private void requireCreditTeamOr(String what, String... extraRoles) {
-        String role = ActorContext.get().role();
-        boolean core = "CREDIT_EXECUTIVE".equals(role) || "CREDIT_HEAD".equals(role) || "ADMIN".equals(role);
-        boolean extra = extraRoles != null && java.util.Arrays.asList(extraRoles).contains(role);
-        if (!core && !extra) {
-            throw new BusinessException("FORBIDDEN_ROLE",
-                    what + " requires CREDIT_EXECUTIVE or CREDIT_HEAD");
-        }
+        CreditTeamGuard.requireCreditTeamOr(what, extraRoles);
     }
 
     @Transactional
@@ -3618,6 +3628,10 @@ public class ApplicationVerificationService {
             row.setS3ObjectKey(s3Key);
         }
         row.setDerived(toJson(derived));
+        // A fresh result closes any staff reopen (V74) — the borrower's own redo is what a reopen was
+        // waiting for, whatever it comes out as (PASS, REVIEW, or another FAIL).
+        row.setReopenedAt(null);
+        row.setReopenedBy(null);
         // Full CRM snapshot: provider provenance + every derived field we persisted for this step.
         Map<String, Object> raw = new LinkedHashMap<>();
         raw.put("provider", nz(provider));
@@ -3734,7 +3748,8 @@ public class ApplicationVerificationService {
         return new StepResult(row.getCheckType(), row.getStatus(), row.getMessage(), derived,
                 row.getProvider(), row.getProviderTxnId(), row.getClientRefNum(),
                 row.getNameMatch(), row.getScore(),
-                row.getUpdatedAt() != null ? row.getUpdatedAt() : row.getCreatedAt());
+                row.getUpdatedAt() != null ? row.getUpdatedAt() : row.getCreatedAt(),
+                row.getReopenedAt());
     }
 
     /** Cross-match PAN / Aadhaar / penny-drop names; store min pairwise on the profile. */

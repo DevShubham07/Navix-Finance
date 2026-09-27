@@ -62,6 +62,17 @@ public enum NotificationType {
      */
     BUREAU_QUESTION_PENDING(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
 
+    /**
+     * The credit team sent the borrower a link back to a failed/abandoned Phase-3 step (DigiLocker,
+     * selfie, address, or the sanction-letter e-sign) — {@code VerificationOutreachService.share}.
+     *
+     * <p>No SMS, same reason as {@link #BUREAU_QUESTION_PENDING}: every registered borrower SMS body
+     * is operator-locked to the static {@code https://dhanboost.com/login}, so an SMS physically
+     * cannot carry this per-customer deep link. IN_APP + EMAIL only until a template with a variable
+     * URL slot is registered.
+     */
+    VERIFICATION_STEP_LINK(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
+
     // ---- CREDIT ----
     LOAN_APPLIED(CREDIT, Set.of(IN_APP), Set.of(TO_CREDIT_HEADS)),
     CREDIT_ASSIGNED(CREDIT, Set.of(IN_APP), Set.of(TO_ASSIGNED_EXECUTIVE)),

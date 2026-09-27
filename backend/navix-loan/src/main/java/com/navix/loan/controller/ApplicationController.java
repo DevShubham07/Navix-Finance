@@ -16,6 +16,7 @@ import com.navix.loan.dto.ApplicationDtos.CreateApplicationRequest;
 import com.navix.loan.dto.ApplicationDtos.DecisionRequest;
 import com.navix.loan.dto.ApplicationDtos.EventView;
 import com.navix.loan.dto.ApplicationDtos.SanctionRequest;
+import com.navix.loan.dto.ApplicationDtos.ShareResumeLinkRequest;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.dto.OfferDtos;
 import com.navix.loan.dto.ReviewDtos.DocumentContentView;
@@ -39,6 +40,7 @@ import com.navix.loan.service.CreditBriefService;
 import com.navix.loan.service.EligibilityService;
 import com.navix.loan.service.JourneyService;
 import com.navix.loan.service.OfferService;
+import com.navix.loan.service.VerificationOutreachService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +72,7 @@ public class ApplicationController {
     private final ApplicationFlowService flow;
     private final CustomerReviewService review;
     private final ApplicationVerificationService verification;
+    private final VerificationOutreachService verificationOutreach;
     private final CreditBriefService creditBrief;
     private final AdminApplicationService adminApplications;
     private final JourneyService journey;
@@ -279,6 +282,26 @@ public class ApplicationController {
     @PostMapping("/{id}/send-reminder")
     public ApiResponse<ApplicationVerificationService.ReminderResult> sendReminder(@PathVariable Long id) {
         return ApiResponse.ok(verification.sendKycReminder(id));
+    }
+
+    /**
+     * "Send the customer a link" preview — what would happen, without sending anything. Credit team /
+     * admin only ({@link VerificationOutreachService#preview}).
+     */
+    @GetMapping("/{id}/verifications/{checkType}/resume-link")
+    public ApiResponse<VerificationOutreachService.ResumeLink> resumeLinkPreview(
+            @PathVariable Long id, @PathVariable String checkType) {
+        requireStaff();
+        return ApiResponse.ok(verificationOutreach.preview(id, checkType));
+    }
+
+    /** Actually send (or hand over) the resume link. Credit team / admin only. */
+    @PostMapping("/{id}/verifications/{checkType}/resume-link")
+    public ApiResponse<VerificationOutreachService.ResumeLink> shareResumeLink(
+            @PathVariable Long id, @PathVariable String checkType,
+            @Valid @RequestBody ShareResumeLinkRequest req) {
+        requireStaff();
+        return ApiResponse.ok(verificationOutreach.share(id, checkType, req.channel()));
     }
 
     /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */

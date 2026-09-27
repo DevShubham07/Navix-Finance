@@ -82,15 +82,22 @@ public class BureauChallengeOutreachService {
     }
 
     /**
-     * Nudge ONE borrower, from the Customers page's failure dialog.
+     * Nudge ONE borrower, from the Customers page's failure dialog, or from
+     * {@link VerificationOutreachService#share} (the "send a resume link" BUREAU card).
      *
      * <p>The cohort run above is the right shape for clearing a backlog and the wrong shape for a
      * button on a row: a staffer looking at one stuck file must not fire a send at up to 200 other
      * people. Same eligibility rules, same idempotency — an application already stamped
      * {@code bureauChallengeNotifiedAt} is reported as skipped rather than re-mailed.
+     *
+     * <p><b>Deliberately credit-team-or-admin, not admin-only</b> — widened for the resume-link
+     * feature so a Credit Executive/Head can nudge a file they are already reviewing, via
+     * {@link CreditTeamGuard} (shared with {@link VerificationOutreachService}). The cohort sweeps
+     * ({@link #preview}, {@link #notifyPending}) stay ADMIN-only through {@link #requireAdmin()} —
+     * mailing dozens of customers at once is still a call only ADMIN should make.
      */
     public OutreachSummary notifyApplication(Long applicationId) {
-        requireAdmin();
+        CreditTeamGuard.requireCreditTeamOr("Nudging the borrower");
         ApplicationVerification row = verificationRepo
                 .findByApplicationIdAndCheckType(applicationId, ApplicationVerificationService.BUREAU)
                 .orElseThrow(() -> new BusinessException("BUREAU_CHALLENGE_NONE",

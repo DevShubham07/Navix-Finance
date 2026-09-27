@@ -190,6 +190,30 @@ public class JourneyService {
     }
 
     /**
+     * The staff-only inverse of {@link #advance(Long, OfferStep)}, for {@code VerificationOutreachService}
+     * ("send a resume link"): {@code advance} never moves the pointer backwards, by design, but a
+     * staff-reopened check needs exactly that — otherwise the stored pointer (left ahead by the
+     * borrower's earlier pass through this step) would keep overriding the derivation that
+     * {@link #attemptedChecks} now excludes the reopened row from, and the borrower would land back
+     * past the screen staff just sent them to redo.
+     *
+     * <p>Only rewinds when the stored pointer either doesn't parse as an {@link OfferStep} (an intake
+     * pointer, or none at all — there is nothing ahead of {@code step} to undo) or parses to a step
+     * strictly past {@code step}. A pointer already at or before {@code step} is left alone, so this
+     * can never accidentally push a borrower forward.
+     */
+    @Transactional
+    public void rewind(Long appId, OfferStep step) {
+        applicationRepository.findById(appId).ifPresent(app -> {
+            Optional<OfferStep> stored = parseOffer(app.getJourneyStep());
+            if (stored.isEmpty() || stored.get().ordinal() > step.ordinal()) {
+                app.setJourneyStep(step.name());
+                applicationRepository.save(app);
+            }
+        });
+    }
+
+    /**
      * Advance by step name, resolving against whichever registry owns it. The controller takes the
      * step as a string because the two enums share one endpoint; an unrecognised name is ignored
      * rather than rejected, since the pointer is advisory and a stale client must not hard-fail.
@@ -308,8 +332,15 @@ public class JourneyService {
         return OfferStep.OFFER_DONE;
     }
 
+    /**
+     * A row a staffer just reopened (V74, "send a resume link") is excluded — it is deliberately no
+     * longer proof the borrower finished this step, which is the whole point of a reopen. Every other
+     * caller of this method is unaffected: a reopen only ever touches a row a staffer explicitly acted
+     * on.
+     */
     private Set<String> attemptedChecks(Long appId) {
         return verificationRepository.findByApplicationIdOrderByIdAsc(appId).stream()
+                .filter(v -> v.getReopenedAt() == null)
                 .map(ApplicationVerification::getCheckType)
                 .collect(Collectors.toSet());
     }
