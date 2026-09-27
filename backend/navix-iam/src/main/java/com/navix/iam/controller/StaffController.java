@@ -19,7 +19,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Staff administration endpoints. RBAC (ADMIN-only) is deferred to go-live (handoff §0.1).
+ * Staff administration endpoints. RBAC is enforced by {@link StaffService}'s {@code requireAdmin()}
+ * guard on every method (ADMIN-only).
  */
 @RestController
 @RequestMapping("/api/staff")

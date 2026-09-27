@@ -4,8 +4,9 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Lock, Loader2, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Receipt, Search } from "lucide-react";
+import { Lock, Loader2, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Receipt } from "lucide-react";
 import { PageHeader, RefreshButton } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
 import { staffApi, isLoanOverdue, type ApplicationView } from "@/lib/api/applications";
 import {
@@ -36,7 +37,7 @@ import {
   type QueuePeriod,
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
-import { Input, InfoTooltip } from "@/components/ui";
+import { InfoTooltip } from "@/components/ui";
 
 /** Roles that don't drive the credit/disbursement pipeline but do need the repayment/closed
  * back-office panels (see `RoleQueues`) — previously left with "no application-pipeline queue". */
@@ -62,16 +63,10 @@ function StaffApplicationsPageInner() {
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
 
-  // The page-wide search box — debounced 300ms (mirrors `app/staff/customers/page.tsx`). Narrows
-  // WITHIN the date window above; folded into `QueueRangeProvider` alongside `range` rather than a
-  // second provider, so every panel already reading `useQueueRange()` picks up `useQueueQuery()` the
-  // same way.
-  const [search, setSearch] = React.useState(initialQuery);
+  // The page-wide search box — commits on Enter/Search, not on keystroke. Narrows WITHIN the date
+  // window above; folded into `QueueRangeProvider` alongside `range` rather than a second provider,
+  // so every panel already reading `useQueueRange()` picks up `useQueueQuery()` the same way.
   const [query, setQuery] = React.useState(initialQuery);
-  React.useEffect(() => {
-    const t = setTimeout(() => setQuery(search.trim()), 300);
-    return () => clearTimeout(t);
-  }, [search]);
 
   if (me.isLoading) {
     return <div className="h-64 rounded border border-line bg-white" />;
@@ -99,17 +94,13 @@ function StaffApplicationsPageInner() {
         {isPipeline && (
           <>
             <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
-            <div className="relative">
-              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-              <Input
-                aria-label="Search applications"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name, mobile, PAN, application or loan #"
-                className="!mb-0"
-                inputClassName="!pl-8 !w-72"
-              />
-            </div>
+            <SearchBar
+              initialValue={query}
+              onSearch={setQuery}
+              placeholder="Search name, mobile, PAN, application or loan #"
+              ariaLabel="Search applications"
+              inputClassName="w-72"
+            />
           </>
         )}
         <RefreshButton

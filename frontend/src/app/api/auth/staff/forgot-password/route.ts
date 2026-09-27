@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { config } from "@/lib/config";
 
-/** Staff forgot-password. POST { email, mobile } -> backend; a generic ack (no enumeration). */
+/** Staff forgot-password. POST { email } -> backend; a generic ack (no enumeration). */
 export async function POST(req: NextRequest) {
   let body: unknown;
   try {
@@ -9,9 +9,8 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  const { email, mobile, captchaToken } = (body ?? {}) as {
+  const { email, captchaToken } = (body ?? {}) as {
     email?: unknown;
-    mobile?: unknown;
     captchaToken?: unknown;
   };
   let backendRes: Response;
@@ -21,7 +20,6 @@ export async function POST(req: NextRequest) {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
         email: typeof email === "string" ? email : "",
-        mobile: typeof mobile === "string" ? mobile : "",
         // Forwarded verbatim — only the backend may judge it.
         captchaToken: typeof captchaToken === "string" ? captchaToken : "",
       }),

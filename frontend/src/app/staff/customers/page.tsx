@@ -4,10 +4,11 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
+import { Loader2, RefreshCw, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
-import { Badge, Input } from "@/components/ui";
+import { Badge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import {
   PermissionGate,
   NoAccessNotice,
@@ -133,8 +134,8 @@ function CustomersPageInner() {
   const me = useStaffMe().data;
   const qc = useQueryClient();
 
-  const [search, setSearch] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
+  // Deep link from the global-search palette's "View all" link (`?q=…`).
+  const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
   const [openId, setOpenId] = React.useState<number | null>(null);
   const [infoCustomerId, setInfoCustomerId] = React.useState<number | null>(null);
   // Carries the name too, so the failure dialog can title itself without a second fetch.
@@ -150,11 +151,6 @@ function CustomersPageInner() {
   // the enforcement is the backend's.
   const fullView = me?.role ? hasPermission(me.role, "customer:view:all") : true;
 
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(search.trim()), 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSizeState] = React.useState(25);
   const setPageSize = React.useCallback((n: number) => {
@@ -164,17 +160,17 @@ function CustomersPageInner() {
   // Any filter change lands on page 1 — page 7 of a different result set is meaningless.
   React.useEffect(() => {
     setPage(1);
-  }, [debounced, range.from, range.to, seg, mine]);
+  }, [range.from, range.to, seg, mine]);
 
   const baseFilters = React.useMemo(
-    () => ({ q: debounced || undefined, from: range.from, to: range.to, mine: mine || undefined }),
-    [debounced, range.from, range.to, mine],
+    () => ({ q: query || undefined, from: range.from, to: range.to, mine: mine || undefined }),
+    [query, range.from, range.to, mine],
   );
 
   // The range MUST be in the key — without it React Query serves the previous window's rows
   // when the filter changes. Normalised to "" because undefined is not a stable key boundary.
   const listQ = useQuery({
-    queryKey: ["customers-page", debounced, range.from ?? "", range.to ?? "", seg, mine, page, pageSize],
+    queryKey: ["customers-page", query, range.from ?? "", range.to ?? "", seg, mine, page, pageSize],
     queryFn: () =>
       customersApi.page({ ...baseFilters, seg: seg === "all" ? undefined : seg, page, size: pageSize }),
     // Keep the previous page on screen while the next one loads instead of flashing a skeleton.
@@ -183,7 +179,7 @@ function CustomersPageInner() {
   // Chip counts are a separate, cheap aggregate. Up to 30s stale is fine here (the table itself is
   // always fresh), and it stops every keystroke re-counting the whole book.
   const summaryQ = useQuery({
-    queryKey: ["customers-summary", debounced, range.from ?? "", range.to ?? "", mine],
+    queryKey: ["customers-summary", query, range.from ?? "", range.to ?? "", mine],
     queryFn: () => customersApi.summary(baseFilters),
     staleTime: 30_000,
   });
@@ -339,13 +335,14 @@ function CustomersPageInner() {
         </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <Input
-            aria-label="Search customers"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+          <SearchBar
+            initialValue={query}
+            onSearch={(t) => {
+              setQuery(t);
+              setPage(1);
+            }}
             placeholder="Name, PAN, mobile, customer or application ID"
-            leftIcon={<Search size={15} />}
-            className="!mb-0"
+            ariaLabel="Search customers"
             inputClassName="w-72"
           />
           <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
@@ -389,7 +386,7 @@ function CustomersPageInner() {
             <p className="px-5 py-4 text-sm text-error-700">{errMessage(listQ.error)}</p>
           ) : pageRows.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted">
-              No customers{debounced ? ` for “${debounced}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
+              No customers{query ? ` for “${query}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
               {period !== "ALL" ? " in the selected date range" : ""}.
             </p>
           ) : (

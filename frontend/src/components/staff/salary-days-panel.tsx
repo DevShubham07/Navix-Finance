@@ -10,20 +10,19 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, CalendarClock } from "lucide-react";
-import { Input, InfoTooltip } from "@/components/ui";
+import { InfoTooltip } from "@/components/ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { customersApi, type CustomerSummary } from "@/lib/api/applications";
 import { errMessage } from "@/components/staff/pipeline/hooks";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 const MIN_QUERY_LENGTH = 2;
 const MAX_RESULTS = 25;
 
 export function SalaryDaysPanel() {
-  const [q, setQ] = React.useState("");
-  // Server-side search (name / mobile / PAN), debounced so a typed name is one query and not one
-  // per keystroke. This panel used to be handed the whole customer book and filter it in the
+  // Server-side search (name / mobile / PAN), committed on Enter/Search — not one request per
+  // keystroke. This panel used to be handed the whole customer book and filter it in the
   // browser — the dashboard no longer fetches that book at all.
-  const needle = useDebouncedValue(q.trim(), 300);
+  const [needle, setNeedle] = React.useState("");
   const search = useQuery({
     queryKey: ["staff-dashboard-salary-search", needle],
     queryFn: () => customersApi.page({ q: needle, size: MAX_RESULTS }),
@@ -39,19 +38,21 @@ export function SalaryDaysPanel() {
         <InfoTooltip content="Search a customer to view or correct the salary-credit day their due dates are computed from. Saving also moves a pending sanctioned offer's repayment date; an already-disbursed loan keeps its due date." />
       </div>
       <div className="rounded border border-line bg-white p-5 shadow-sm">
-        <Input
-          label="Search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Name, mobile, or PAN"
-          className="!mb-3 max-w-sm"
-        />
+        <div className="mb-3 max-w-sm">
+          <SearchBar
+            initialValue={needle}
+            onSearch={setNeedle}
+            placeholder="Name, mobile, or PAN"
+            ariaLabel="Search"
+            inputClassName="w-full"
+          />
+        </div>
         {search.isLoading ? (
           <div className="h-20 animate-pulse rounded bg-grey-100" />
         ) : needle.length < MIN_QUERY_LENGTH ? (
           <p className="text-sm text-muted">Search for a customer to view or change their salary date.</p>
         ) : results.length === 0 ? (
-          <p className="text-sm text-muted">No customers match &ldquo;{q.trim()}&rdquo;.</p>
+          <p className="text-sm text-muted">No customers match &ldquo;{needle}&rdquo;.</p>
         ) : (
           <div className="staff-table-scroll">
             <table className="staff-data-table">

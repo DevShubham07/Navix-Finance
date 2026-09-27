@@ -91,34 +91,36 @@ public class PasswordResetService {
     }
 
     /**
-     * Borrower forgot-password: the email + mobile must match a stored KYC profile. Always returns
-     * (no account-enumeration); only sends the link on a real match.
+     * Borrower forgot-password: the email must match a stored KYC profile's email — the reset link
+     * only ever goes to that inbox, so owning it is the proof; no mobile is asked. Always returns (no
+     * account-enumeration); only sends the link on a real match.
      */
     @Transactional
-    public void requestBorrowerReset(String email, String mobile) {
+    public void requestBorrowerReset(String email) {
         String normEmail = email == null ? "" : email.trim();
-        String digits = mobile == null ? "" : mobile.replaceAll("\\D", "");
-        if (normEmail.isEmpty() || digits.isEmpty()) {
+        if (normEmail.isEmpty()) {
             return;
         }
-        profileRepository.findFirstByMobileOrderByApplicationIdDesc(digits)
-                .filter(p -> p.getEmail() != null && p.getEmail().equalsIgnoreCase(normEmail))
+        profileRepository.findFirstByEmailIgnoreCaseOrderByApplicationIdDesc(normEmail)
+                .filter(p -> p.getMobile() != null && !p.getMobile().isBlank())
                 .ifPresentOrElse(
-                        p -> issueAndSend(BORROWER, AuthController.deriveCustomerId(digits), normEmail),
-                        () -> log.info("borrower forgot-password no match mobile={}", Masking.maskPhone(digits)));
+                        p -> issueAndSend(BORROWER, AuthController.deriveCustomerId(p.getMobile()), normEmail),
+                        () -> log.info("borrower forgot-password no match email={}", Masking.maskEmail(normEmail)));
     }
 
-    /** Staff forgot-password: the email must resolve to an ACTIVE staff whose stored mobile matches. */
+    /**
+     * Staff forgot-password: the email must resolve to an ACTIVE staff account — the reset link only
+     * ever goes to that inbox, so no mobile is required (this also fixes a staffer who never saved
+     * one).
+     */
     @Transactional
-    public void requestStaffReset(String email, String mobile) {
+    public void requestStaffReset(String email) {
         String normEmail = email == null ? "" : email.trim();
-        String digits = mobile == null ? "" : mobile.replaceAll("\\D", "");
-        if (normEmail.isEmpty() || digits.isEmpty()) {
+        if (normEmail.isEmpty()) {
             return;
         }
         staffRepository.findByEmail(normEmail)
                 .filter(s -> s.getStatus() == StaffStatus.ACTIVE)
-                .filter(s -> s.getMobile() != null && s.getMobile().replaceAll("\\D", "").equals(digits))
                 .ifPresentOrElse(
                         s -> issueAndSend(STAFF, s.getId(), normEmail),
                         () -> log.info("staff forgot-password no match email={}", Masking.maskEmail(normEmail)));

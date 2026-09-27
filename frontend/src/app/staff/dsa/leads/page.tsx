@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, UserPlus, Mail, MessageSquare } from "lucide-react"
 import { Input, Select } from "@/components/ui";
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { hasPermission } from "@/lib/auth/rbac";
 import { normalizeMobile } from "@/lib/utils";
@@ -77,12 +78,14 @@ export default function DsaLeadsPage() {
       <NewDsaLeadForm onCreated={invalidate} />
 
       <div className="mt-6 flex flex-wrap items-end gap-3">
-        <Input
-          label="Search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+        <SearchBar
+          initialValue={q}
+          onSearch={(t) => {
+            setQ(t);
+            setPage(1);
+          }}
           placeholder="Name, PAN or mobile"
-          className="!mb-0"
+          ariaLabel="Search"
         />
         <Select
           label="Status"

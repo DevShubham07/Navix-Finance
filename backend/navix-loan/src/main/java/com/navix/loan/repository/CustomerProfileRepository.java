@@ -26,6 +26,14 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
      */
     Optional<CustomerProfile> findFirstByMobileOrderByApplicationIdDesc(String mobile);
 
+    /**
+     * The most recently captured profile for an email address (latest application wins, mirroring
+     * {@link #findFirstByMobileOrderByApplicationIdDesc}). Backs the email-only borrower
+     * forgot-password lookup — the reset link only ever goes to that inbox, so a matching mobile is
+     * no longer required.
+     */
+    Optional<CustomerProfile> findFirstByEmailIgnoreCaseOrderByApplicationIdDesc(String email);
+
     // --- identity uniqueness (a mobile/PAN may belong to only one customer) ---
     // Scoped to OTHER customers: a profile is matched by joining its application to resolve the
     // owning customerId, then excluding the queried customer. This lets the SAME customer

@@ -3,11 +3,11 @@
 import * as React from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowRight, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
+import { Loader2, RefreshCw, ArrowRight, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
-import { Input } from "@/components/ui";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { PermissionGate, NoAccessNotice, errMessage, useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
@@ -104,8 +104,7 @@ function LoansPageInner() {
   const initialQuery = searchParams.get("q") ?? "";
   const openParam = Number(searchParams.get("open"));
 
-  const [search, setSearch] = React.useState(initialQuery);
-  const [debounced, setDebounced] = React.useState(initialQuery);
+  const [query, setQuery] = React.useState(initialQuery);
   const [openLoanId, setOpenLoanId] = React.useState<number | null>(
     Number.isFinite(openParam) && openParam > 0 ? openParam : null,
   );
@@ -113,16 +112,11 @@ function LoansPageInner() {
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = React.useMemo(() => rangeFor(period, custom), [period, custom]);
 
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(search.trim()), 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
   // Search + date range are server-side (mirrors customersApi.list); the segment chip and the sort
   // are both client-side and compose independently on top of whatever the server returned.
   const q = useQuery({
-    queryKey: ["staff-loans", debounced, range.from ?? "", range.to ?? ""],
-    queryFn: () => loansApi.list(debounced || undefined, range),
+    queryKey: ["staff-loans", query, range.from ?? "", range.to ?? ""],
+    queryFn: () => loansApi.list(query || undefined, range),
   });
 
   const rows = React.useMemo(() => q.data ?? [], [q.data]);
@@ -244,14 +238,14 @@ function LoansPageInner() {
         </div>
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <Input
-            aria-label="Search loans"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+          <SearchBar
+            initialValue={query}
+            onSearch={(t) => {
+              setQuery(t);
+              setPage(1);
+            }}
             placeholder="Borrower, mobile, PAN, loan or application ID"
-            leftIcon={<Search size={15} />}
-            className="!mb-0"
-            inputClassName="w-80"
+            ariaLabel="Search loans"
           />
           <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
           {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
@@ -264,7 +258,7 @@ function LoansPageInner() {
             <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
           ) : filtered.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted">
-              No loans{debounced ? ` for “${debounced}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
+              No loans{query ? ` for “${query}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
               {period !== "ALL" ? " in the selected date range" : ""}.
             </p>
           ) : (

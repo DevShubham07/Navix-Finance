@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.auth.AuthDtos.BorrowerLoginRequest;
+import com.navix.auth.AuthDtos.ForgotPasswordRequest;
 import com.navix.auth.AuthDtos.StaffLoginRequest;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
@@ -235,5 +236,37 @@ class AuthControllerTest {
                 controller.borrowerLogin(new BorrowerLoginRequest("9919000001", "123456", null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("contact support");
+    }
+
+    @Test
+    void borrowerForgotPassword_returnsGenericAckAndForwardsEmailOnly() {
+        var resp = controller.borrowerForgotPassword(new ForgotPasswordRequest("a@navix.test", null));
+
+        assertThat(resp.getData().message()).contains("If that email matches an account");
+        verify(passwordResetService).requestBorrowerReset("a@navix.test");
+    }
+
+    @Test
+    void borrowerForgotPassword_rateLimitsAfterThreeRequestsPerEmail() {
+        for (int i = 0; i < 3; i++) {
+            controller.borrowerForgotPassword(new ForgotPasswordRequest("a@navix.test", null));
+        }
+        assertThatThrownBy(() ->
+                controller.borrowerForgotPassword(new ForgotPasswordRequest("a@navix.test", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("TOO_MANY_ATTEMPTS");
+        // A different email is unaffected — the limit is per-email, not global.
+        controller.borrowerForgotPassword(new ForgotPasswordRequest("b@navix.test", null));
+    }
+
+    @Test
+    void staffForgotPassword_rateLimitsAfterThreeRequestsPerEmail() {
+        for (int i = 0; i < 3; i++) {
+            controller.staffForgotPassword(new ForgotPasswordRequest("meera.krishnan@navix.example", null));
+        }
+        assertThatThrownBy(() ->
+                controller.staffForgotPassword(new ForgotPasswordRequest("meera.krishnan@navix.example", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("TOO_MANY_ATTEMPTS");
     }
 }

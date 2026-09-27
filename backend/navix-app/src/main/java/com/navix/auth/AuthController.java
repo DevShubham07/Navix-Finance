@@ -113,6 +113,18 @@ public class AuthController {
     /** Lead sentence only — {@link AttemptLimiter} appends the real remaining wait. */
     private static final String TOO_MANY_LOGINS = "Too many sign-in attempts.";
 
+    /**
+     * Forgot-password requests allowed per email per {@link #RESET_WINDOW} (either audience). Every
+     * request counts, match or not — that's what keeps the limiter from revealing which emails have
+     * an account. Unlike the login limiter, the count window and the block-for duration are the same
+     * fifteen minutes: a reset link is a slow, deliberate action (open the email, click through), not
+     * something worth a short cool-off and a quick retry.
+     */
+    private static final int MAX_RESET_REQUESTS = 3;
+    private static final Duration RESET_WINDOW = Duration.ofMinutes(15);
+    /** Lead sentence only — {@link AttemptLimiter} appends the real remaining wait. */
+    private static final String TOO_MANY_RESETS = "Too many reset requests.";
+
     @PostMapping("/staff/login")
     public ApiResponse<AuthResponse> staffLogin(@Valid @RequestBody StaffLoginRequest req) {
         // Ahead of the limiter on purpose: a bot that cannot answer the challenge must not be able
@@ -286,11 +298,16 @@ public class AuthController {
         return ApiResponse.ok(new MessageResponse("Password set. You can now sign in with it."));
     }
 
-    /** Borrower forgot-password — emails a reset link only when email + mobile match (no enumeration). */
+    /** Borrower forgot-password — emails a reset link only when the email matches (no enumeration). */
     @PostMapping("/borrower/forgot-password")
     public ApiResponse<MessageResponse> borrowerForgotPassword(@Valid @RequestBody ForgotPasswordRequest req) {
         captcha.verify(req.captchaToken(), ACTION_BORROWER_FORGOT);
-        passwordResetService.requestBorrowerReset(req.email(), req.mobile());
+        String email = req.email().trim();
+        if (!email.isEmpty()) {
+            limiter.hit("forgot:borrower:" + email.toLowerCase(Locale.ROOT),
+                    MAX_RESET_REQUESTS, RESET_WINDOW, RESET_WINDOW, TOO_MANY_RESETS);
+        }
+        passwordResetService.requestBorrowerReset(email);
         return ApiResponse.ok(genericResetAck());
     }
 
@@ -301,11 +318,16 @@ public class AuthController {
         return ApiResponse.ok(new MessageResponse("Password updated. You can now sign in."));
     }
 
-    /** Staff forgot-password — emails a reset link only when email + mobile match (no enumeration). */
+    /** Staff forgot-password — emails a reset link only when the email matches (no enumeration). */
     @PostMapping("/staff/forgot-password")
     public ApiResponse<MessageResponse> staffForgotPassword(@Valid @RequestBody ForgotPasswordRequest req) {
         captcha.verify(req.captchaToken(), ACTION_STAFF_FORGOT);
-        passwordResetService.requestStaffReset(req.email(), req.mobile());
+        String email = req.email().trim();
+        if (!email.isEmpty()) {
+            limiter.hit("forgot:staff:" + email.toLowerCase(Locale.ROOT),
+                    MAX_RESET_REQUESTS, RESET_WINDOW, RESET_WINDOW, TOO_MANY_RESETS);
+        }
+        passwordResetService.requestStaffReset(email);
         return ApiResponse.ok(genericResetAck());
     }
 
@@ -318,7 +340,7 @@ public class AuthController {
 
     /** The same acknowledgement whether or not the details matched — so neither leaks account existence. */
     private static MessageResponse genericResetAck() {
-        return new MessageResponse("If those details match an account, we've emailed a reset link.");
+        return new MessageResponse("If that email matches an account, we've emailed a reset link.");
     }
 
     /**

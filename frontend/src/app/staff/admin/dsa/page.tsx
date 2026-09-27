@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Check, Ban, ArrowRightLeft } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LeadCsvImport } from "@/components/staff/lead-csv-import";
@@ -223,7 +224,15 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
           <option value="ENTERED">Entered (earns commission)</option>
           <option value="UPLOADED">Uploaded from a file</option>
         </Select>
-        <Input label="Search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, PAN or mobile" className="!mb-0" />
+        <SearchBar
+          initialValue={q}
+          onSearch={(t) => {
+            setQ(t);
+            setPage(1);
+          }}
+          placeholder="Name, PAN or mobile"
+          ariaLabel="Search"
+        />
         <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="!mb-0" />
         <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="!mb-0" />
         <ExportMenu
