@@ -300,6 +300,11 @@ summary → sanction letter → eSign → 🎉 → account). Carried over: KYC p
 salary day, DigiLocker/selfie/address evidence, references, disbursal account. **Not** carried: the
 eSign — every advance is signed afresh against its own Key Fact Statement. The repayment date is
 recomputed from the carried salary day. Reborrow is blocked while a live application/loan exists.
+**A returning borrower is one with a repaid (CLOSED) loan.** Without one, reborrow returns
+`NO_PRIOR_LOAN` (→ fresh signup, full KYC + credit), and a legacy `PRE_APPROVED` row can't use the
+`apply()` fast-track (`NOT_ELIGIBLE`). Before Sep 2026 a credit-rejected lead with no loans was
+pre-approved here. ADMIN can reject such a lead from Staff → Customers (`PRE_APPROVED → REJECTED`
+via reject-lead, admin-only).
 
 **Invariants:**
 - Every credit assignment/reassignment and decision is appended to `application_event`; reassignment

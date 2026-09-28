@@ -224,6 +224,12 @@ function CustomersPageInner() {
   // live-loan row into a reject/assign run. Scoped to the page on screen: "select all" means the
   // rows the staffer can see, never the thousands behind the pagination.
   const { canBulkReject, canBulkAssign } = useBulkRoleFlags();
+  // Row-level Reject only (not bulk select / assign): ADMIN may also reject a PRE_APPROVED lead — the
+  // manual clean-up for pre-approvals the old reborrow gap minted for customers with no repaid loan.
+  // The backend allows PRE_APPROVED → REJECTED for ADMIN alone (ApplicationFlowService.rejectLead).
+  const rowRejectMode = (c: CustomerSummary): RejectMode | null =>
+    rejectModeFor(c.latestStatus) ??
+    (me?.role === "ADMIN" && c.latestStatus === "PRE_APPROVED" ? "credit" : null);
   const actionableRows = React.useMemo(
     () => pageRows.filter((c) => c.latestApplicationId != null && notActionableReason(c) == null),
     [pageRows],
@@ -588,12 +594,12 @@ function CustomersPageInner() {
                             <UserPlus size={14} />
                           </button>
                         )}
-                        {canBulkReject && c.latestApplicationId != null && rejectModeFor(c.latestStatus) != null && (
+                        {canBulkReject && c.latestApplicationId != null && rowRejectMode(c) != null && (
                           <button
                             onClick={() =>
                               setPendingReject({
                                 ids: [c.latestApplicationId as number],
-                                mode: rejectModeFor(c.latestStatus) as RejectMode,
+                                mode: rowRejectMode(c) as RejectMode,
                               })
                             }
                             className="btn btn-sm btn-outline btn-icon"

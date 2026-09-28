@@ -174,8 +174,9 @@ public class ApplicationFlowService {
      *
      * <p>One advance at a time: a borrower holding a live loan (ACTIVE/OVERDUE/DEFAULTED) — or with a
      * pre-loan application still moving through the pipeline — is <b>blocked</b> and must fully repay /
-     * finish first ({@link #assertCanStartNewApplication}). Rejected if there is no prior application to
-     * borrow against (the caller then falls back to a fresh signup).
+     * finish first ({@link #assertCanStartNewApplication}). Rejected with {@code NO_PRIOR_LOAN} unless the
+     * customer has fully repaid (CLOSED) at least one advance — a rejected or abandoned prior application
+     * is not something to borrow against (the caller then falls back to a fresh signup).
      *
      * <p>Routing is by repayment history alone — credit score does <b>not</b> gate reborrow:
      * <ul>
@@ -211,6 +212,14 @@ public class ApplicationFlowService {
         CustomerProfile prior = latestProfileForCustomer(customerId)
                 .orElseThrow(() -> new BusinessException("NO_PRIOR_LOAN",
                         "No previous application found to borrow against"));
+        // "Returning borrower" means one who has fully repaid an advance. A saved profile alone is not
+        // enough: a lead rejected by credit also has one, and with zero loans isDisqualifiedByHistory
+        // finds nothing bad — so it used to come back PRE_APPROVED and skip KYC + credit (Sep 2026,
+        // #10737 after a fake-salary-slip reject). No repaid loan → NO_PRIOR_LOAN, which the /reloan
+        // page turns into a fresh signup. A delinquent history still takes the auto-reject below.
+        if (!hasRepaidLoan(customerId) && !isDisqualifiedByHistory(customerId)) {
+            throw new BusinessException("NO_PRIOR_LOAN", "No repaid advance found to borrow against");
+        }
         Long salaryPaise = prior.getMonthlySalaryPaise();
         // An ADMIN limit override outlives the application it was set on, so it must be resolved
         // here too — a reborrow mints a NEW row and would otherwise fall back to salary (V69).
@@ -515,6 +524,13 @@ public class ApplicationFlowService {
         if (st != ApplicationStatus.KYC_APPROVED && st != ApplicationStatus.PRE_APPROVED) {
             throw new BusinessException("NOT_APPLICABLE", "Borrower can only apply after approval");
         }
+        // The fast-track below skips credit, so it is only for a borrower who has repaid before. Rows
+        // minted PRE_APPROVED by the old reborrow gap (no repaid loan) stop here instead of reaching
+        // the disbursement desk; an ADMIN rejects them from Staff → Customers.
+        if (st == ApplicationStatus.PRE_APPROVED && !hasRepaidLoan(app.getCustomerId())) {
+            throw new BusinessException("NOT_ELIGIBLE",
+                    "You are not eligible for a pre-approved advance. Please start a fresh application.");
+        }
         if (amountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "Requested amount is below the minimum of ₹1,000");
         }
@@ -632,6 +648,11 @@ public class ApplicationFlowService {
     public LoanApplication rejectLead(Long appId, String remarks) {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
+        // PRE_APPROVED → REJECTED exists only as ADMIN's manual kill switch for pre-approvals the old
+        // reborrow gap minted (see reborrow); it is not a credit-team queue.
+        if (app.getStatus() == ApplicationStatus.PRE_APPROVED && !"ADMIN".equals(ActorContext.get().role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Only an admin can reject a pre-approved lead");
+        }
         requireCreditOwnership(app);
         return rejectWithBlock(app, "REJECT_LEAD", remarks);
     }
@@ -1262,6 +1283,12 @@ public class ApplicationFlowService {
      * <p>This replaced a much broader predicate ("ever overdue, or any payment after the due date"),
      * which under V45 auto-rejects would have turned away anyone who was ever a single day late.
      */
+    /** True if the customer has fully repaid (CLOSED) at least one advance — what makes them "returning". */
+    private boolean hasRepaidLoan(Long customerId) {
+        return loanRepository.findByCustomerId(customerId).stream()
+                .anyMatch(l -> l.getStatus() == LoanStatus.CLOSED);
+    }
+
     private boolean isDisqualifiedByHistory(Long customerId) {
         boolean everWrittenOff = applicationRepository.findByCustomerId(customerId).stream()
                 .anyMatch(a -> a.getStatus() == ApplicationStatus.DEFAULTED

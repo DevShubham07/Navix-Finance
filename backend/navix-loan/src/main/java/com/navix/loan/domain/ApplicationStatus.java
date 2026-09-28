@@ -83,7 +83,9 @@ public enum ApplicationStatus {
         // Pre-approved returning borrower: re-applying carries the prior sanction (→ SANCTIONED, where
         // they re-walk the short offer journey). DISBURSEMENT_PENDING remains legal for rows minted
         // before V45 that already skipped straight to the Disbursement Head.
-        TRANSITIONS.put(PRE_APPROVED, EnumSet.of(SANCTIONED, DISBURSEMENT_PENDING, CANCELLED));
+        // REJECTED: ADMIN-only manual reject (rejectLead guards the role) for pre-approvals minted by
+        // the pre-Sep-2026 reborrow gap, where a customer with no repaid loan was pre-approved.
+        TRANSITIONS.put(PRE_APPROVED, EnumSet.of(SANCTIONED, DISBURSEMENT_PENDING, REJECTED, CANCELLED));
         // Credit Head or assigned Credit Executive sanctions or rejects here; there is no Head
         // counter-approval. CREDIT_EXEC_APPROVED / CREDIT_HEAD_* are off the live path.
         TRANSITIONS.put(CREDIT_EXEC_PENDING, EnumSet.of(SANCTIONED, REJECTED, CANCELLED));

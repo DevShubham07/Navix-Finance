@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -285,6 +286,61 @@ class ApplicationFlowServiceTest {
         assertThatThrownBy(() -> flow.reborrow())
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE");
+    }
+
+    /**
+     * Sep 2026, #10737: the cooling-off lapsed, the borrower tapped "Borrow again", and with no loans
+     * at all isDisqualifiedByHistory found nothing bad — so a lead rejected for a fake salary slip came
+     * back PRE_APPROVED. A rejected prior application is not something to borrow against.
+     */
+    @Test
+    void reborrowWithoutAnyRepaidLoanIsNoPriorLoan() {
+        actor("7", "BORROWER");
+        LoanApplication rejected = priorApp();
+        rejected.setStatus(ApplicationStatus.REJECTED);
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(rejected));
+        when(profileRepository.findByApplicationId(10L)).thenReturn(Optional.of(priorProfile()));
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of()); // never borrowed
+
+        assertThatThrownBy(() -> flow.reborrow())
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NO_PRIOR_LOAN");
+        verify(applicationRepository, never()).save(any());
+    }
+
+    /** A pre-approval minted by the old gap (no repaid loan) must not fast-track to disbursement. */
+    @Test
+    void applyOnPreApprovedWithoutRepaidLoanIsNotEligible() {
+        LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
+        actor("7", "BORROWER");
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> flow.apply(1L, 1_000_000L, "medical", 1_500_000L, 30))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "NOT_ELIGIBLE");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
+    }
+
+    @Test
+    void adminCanRejectAPreApprovedLead() {
+        LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
+        actor("1", "ADMIN");
+
+        flow.rejectLead(1L, "Pre-approved without a repaid loan");
+
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.REJECTED);
+        verify(rejectionRepository).save(any(ApplicationRejection.class));
+    }
+
+    @Test
+    void creditHeadCannotRejectAPreApprovedLead() {
+        LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
+        actor("2", "CREDIT_HEAD");
+
+        assertThatThrownBy(() -> flow.rejectLead(1L, "no"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.PRE_APPROVED);
     }
 
     @Test
@@ -743,6 +799,8 @@ class ApplicationFlowServiceTest {
     @Test
     void applyFromPreApprovedRoutesStraightToDisbursement() {
         LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
+        // A genuine returning borrower: one fully repaid advance behind them.
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5))));
         actor("7", "BORROWER");
         flow.apply(1L, 1_000_000L, "medical", 1_500_000L, 30);
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.DISBURSEMENT_PENDING);
@@ -753,6 +811,8 @@ class ApplicationFlowServiceTest {
     @Test
     void applyWithoutSalaryDayKeepsCarriedDay() {
         LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
+        // A genuine returning borrower: one fully repaid advance behind them.
+        when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5))));
         app.setSalaryCreditDay(15); // carried over by reborrow() from the borrower's first loan
         actor("7", "BORROWER");
         flow.apply(1L, 1_000_000L, "medical", 1_500_000L, null);
