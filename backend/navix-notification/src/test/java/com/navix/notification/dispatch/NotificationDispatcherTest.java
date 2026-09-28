@@ -137,13 +137,14 @@ class NotificationDispatcherTest {
         when(audienceResolver.resolve(any(), any())).thenReturn(List.of(borrower(7)));
         when(loanDirectory.findLoan(anyLong())).thenReturn(Optional.empty());
 
-        // LOAN_DISBURSED fans across IN_APP + SMS + EMAIL; SMS throws but must not abort the others.
+        // LOAN_DISBURSED fans across IN_APP + SMS + EMAIL + WHATSAPP (no WhatsApp sender wired here →
+        // SKIPPED/NO_SENDER); SMS throws but must not abort the others.
         dispatcher.dispatch(NotificationType.LOAN_DISBURSED,
                 NotificationContext.builder().customerId(7L).loanId(2L).build());
 
         verify(notificationRepo, times(1)).save(any(Notification.class));
         ArgumentCaptor<NotificationDelivery> cap = ArgumentCaptor.forClass(NotificationDelivery.class);
-        verify(deliveryRepo, times(3)).save(cap.capture());
+        verify(deliveryRepo, times(4)).save(cap.capture());
         List<NotificationDelivery> deliveries = cap.getAllValues();
 
         assertThat(deliveries).anySatisfy(d -> {
@@ -175,7 +176,7 @@ class NotificationDispatcherTest {
                 NotificationContext.builder().customerId(7L).loanId(2L).build());
 
         ArgumentCaptor<NotificationDelivery> cap = ArgumentCaptor.forClass(NotificationDelivery.class);
-        verify(deliveryRepo, times(3)).save(cap.capture());
+        verify(deliveryRepo, times(4)).save(cap.capture());
         List<NotificationDelivery> deliveries = cap.getAllValues();
         // SMS is suppressed (opted out) — never reaches the throwing sender, recorded as SKIPPED.
         assertThat(deliveries).anySatisfy(d -> {

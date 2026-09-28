@@ -228,7 +228,7 @@ public class NotificationDispatcher {
 
     private static String addressFor(NotificationChannel channel, ContactInfo recipient) {
         return switch (channel) {
-            case SMS -> recipient.mobile();
+            case SMS, WHATSAPP -> recipient.mobile();
             case EMAIL -> recipient.email();
             case IN_APP -> null;
         };

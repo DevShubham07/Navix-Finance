@@ -647,6 +647,7 @@ What holds across all of it, and does not belong in that file:
   `NAVIX_ESIGN_*` (`PROVIDER` signzy|mock · `CALLBACK_URL` + `CALLBACK_SECRET` — **both mandatory when
   the provider is `signzy`**; the app refuses to start otherwise, SSM `/navix/<env>/navix/esign/…`),
   `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
+  `NAVIX_WHATSAPP_*` (`TOKEN` — SSM `/navix/<env>/navix/whatsapp/token` · `ENABLED` · `MOCK` · `OTP_TEMPLATE`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
   `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs),
@@ -694,6 +695,12 @@ The rules that survive outside that file:
   the provider callback only accelerates the closed-tab case.
 - **No verification hard-blocks a borrower.** A failed check is `REVIEW` for a human, not a decline.
 - Set **`NAVIX_BUREAU_FIXTURE`** (any non-blank value) for an offline, non-billable credit brief.
+- **WhatsApp (SmartChat) is a notification channel beside SMS** (`NotificationChannel.WHATSAPP`, same
+  mobile, SMS opt-out covers it). The template *wording* lives with Meta; our code only holds
+  `NotificationTemplates.whatsapp(type, templateName, orderedKeys…)` — never reorder keys or rename a
+  template without an approved one of that name. The login OTP also goes out on the `dhanboost_otp`
+  AUTH template. Token: SSM `/navix/<env>/navix/whatsapp/token`. See
+  [`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md).
 - SMS text must match the registered DLT template char-for-char, use `Rs.` not `₹` (₹ forces UCS-2),
   and any URL must be portal-whitelisted.
 
@@ -707,6 +714,8 @@ The rules that survive outside that file:
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
 - **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V72 Flyway catalog.
+- **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
+  (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 
 **Everything else:**
 - **`aws.md`** — the live cloud deployment (Vercel → ALB → ECS → RDS/S3/SSM): every resource id, the

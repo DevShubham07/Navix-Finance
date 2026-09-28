@@ -149,6 +149,11 @@ and is set only by the demo seed script and tests). Specs + verified corrections
   hosts (which `401` prod keys) — set the `DIGITAP_*_BASE_URL` vars to the prod hosts to use them, or get a
   Digitap UAT key pair. Live-test scripts: `docs/signzy/test-all-signzy.sh`, `docs/digitap/test-all-digitap.sh`;
   ready-to-run curls in `docs/signzy/SIGNZY_LIVE_CURLS.md` + `docs/signzy/SIGNZY_CURLS_DIRECT.md`.
+- **SmartChat WhatsApp** (lifecycle WhatsApp + login OTP on the `dhanboost_otp` AUTH template) —
+  `POST https://smartchatapi.live/portal/Api/send_template_message` (token **header** on POST, **query
+  param** on GET; `insert_template_api` 500s — create templates in the portal). `SmartChatWhatsAppClient`
+  (`navix-app`), `navix.whatsapp.*`, token SSM `/navix/<env>/navix/whatsapp/token`. Everything —
+  quirks, real response envelopes, template catalogue, backlog — in `docs/whatsapp/WHATSAPP_GUIDE.md`.
 - **UltronSMS** (borrower OTP + lifecycle SMS) — `GET https://ultronsms.com/api/mt/SendSMS`, params
   `user/password/senderid/channel/DCS/flashsms/number/text/route/peid/DLTTemplateId`; success envelope
   `{ErrorCode:"0"|"000", JobId}`. Sent by `UltronSmsClient` (`navix-app`), bound from `navix.sms.*`.

@@ -34,6 +34,8 @@ public class BorrowerPreferenceAdapter implements BorrowerPreferenceDirectory {
                     }
                     if (!p.isSmsOptIn()) {
                         out.add(NotificationChannel.SMS);
+                        // No separate toggle: WhatsApp rides the same mobile, so the SMS opt-out covers it.
+                        out.add(NotificationChannel.WHATSAPP);
                     }
                     return (Set<NotificationChannel>) out;
                 })

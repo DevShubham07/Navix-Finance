@@ -10,6 +10,7 @@ import static com.navix.common.notification.NotificationCategory.SYSTEM;
 import static com.navix.common.notification.NotificationChannel.EMAIL;
 import static com.navix.common.notification.NotificationChannel.IN_APP;
 import static com.navix.common.notification.NotificationChannel.SMS;
+import static com.navix.common.notification.NotificationChannel.WHATSAPP;
 import static com.navix.notification.catalog.RecipientPolicy.TO_ACCOUNTANTS;
 import static com.navix.notification.catalog.RecipientPolicy.TO_ADMINS;
 import static com.navix.notification.catalog.RecipientPolicy.TO_ASSIGNED_EXECUTIVE;
@@ -38,19 +39,19 @@ public enum NotificationType {
     // ADMIN + Credit Heads only (product decision) — a submitted KYC is a queue-owner's signal, not
     // something every Credit Executive needs in their inbox. EMAIL added so it lands outside the app.
     KYC_SUBMITTED(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_CREDIT_HEADS, TO_ADMINS)),
-    KYC_APPROVED(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
-    KYC_REJECTED(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
-    KYC_REMINDER(KYC, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
-    REBORROW_PREAPPROVED(KYC, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+    KYC_APPROVED(KYC, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
+    KYC_REJECTED(KYC, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
+    KYC_REMINDER(KYC, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
+    REBORROW_PREAPPROVED(KYC, Set.of(IN_APP, SMS, WHATSAPP), Set.of(TO_BORROWER)),
     /** @deprecated The manual reborrow review was retired in V45 (decision 29). Historical rows only. */
     @Deprecated
     REBORROW_REVIEW_PENDING(KYC, Set.of(IN_APP), Set.of(TO_CREDIT_TEAM, TO_BORROWER)),
-    REBORROW_REVIEW_APPROVED(KYC, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
-    REBORROW_REVIEW_REJECTED(KYC, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+    REBORROW_REVIEW_APPROVED(KYC, Set.of(IN_APP, SMS, WHATSAPP), Set.of(TO_BORROWER)),
+    REBORROW_REVIEW_REJECTED(KYC, Set.of(IN_APP, SMS, WHATSAPP), Set.of(TO_BORROWER)),
     // The bureau rescore backfill (V57+) reopened an intake-time LOW_BUREAU_SCORE auto-reject once a
     // re-pull cleared the floor. No SMS: the DLT templates are still pending approval, same rationale
     // as SANCTIONED_AMOUNT_REVISED/SANCTION_LETTER_SIGNED.
-    KYC_REOPENED_RESCORE(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
+    KYC_REOPENED_RESCORE(KYC, Set.of(IN_APP, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
 
     /**
      * The bureau withheld the report behind a KBA question only the borrower can answer.
@@ -81,17 +82,17 @@ public enum NotificationType {
     // now only fires on a replayed historical event. TO_ADMINS added for audit-replay parity with the
     // live DISBURSEMENT_PENDING notification below (LOAN_APPLIED_FAST_TRACK).
     CREDIT_APPROVED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER, TO_DISBURSEMENT_HEADS, TO_ADMINS)),
-    CREDIT_REJECTED(CREDIT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    CREDIT_REJECTED(CREDIT, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
     /** The Credit Executive's final sanction (V45) — the borrower's offer is ready to accept. */
-    LOAN_SANCTIONED(CREDIT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    LOAN_SANCTIONED(CREDIT, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
     // An ADMIN corrected the sanctioned amount post-approval. Deliberately no SMS — a new DLT
     // template would be needed and every DHANBOOST_*_V1 registration is still pending operator
     // approval, so an SMS leg would silently fail (same rationale as SANCTION_LETTER_SIGNED).
-    SANCTIONED_AMOUNT_REVISED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
+    SANCTIONED_AMOUNT_REVISED(CREDIT, Set.of(IN_APP, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
     // An ADMIN raised the borrower's eligible limit — the ceiling on what they may be advanced
     // (V69). Increases only; a cleared/reduced limit is never pushed. No SMS for the same reason as
     // SANCTIONED_AMOUNT_REVISED above: every DHANBOOST_*_V1 DLT registration is still pending.
-    LOAN_LIMIT_REVISED(CREDIT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
+    LOAN_LIMIT_REVISED(CREDIT, Set.of(IN_APP, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
 
     // ---- DISBURSEMENT ----
     // Every route into DISBURSEMENT_PENDING (fast-track reborrow, offer acceptance, and a retry after
@@ -103,27 +104,27 @@ public enum NotificationType {
     @Deprecated
     DISBURSEMENT_PENDING_ACCOUNTANT(DISBURSEMENT, Set.of(IN_APP), Set.of(TO_ACCOUNTANTS)),
     DISBURSEMENT_FAILED(DISBURSEMENT, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS)),
-    DISBURSEMENT_REJECTED(DISBURSEMENT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
-    LOAN_DISBURSED(DISBURSEMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    DISBURSEMENT_REJECTED(DISBURSEMENT, Set.of(IN_APP, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
+    LOAN_DISBURSED(DISBURSEMENT, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
     // The signed sanction letter, emailed as an attachment (IN_APP + EMAIL only — no SMS, so no new
     // DLT registration is needed for this one).
-    SANCTION_LETTER_SIGNED(DISBURSEMENT, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
+    SANCTION_LETTER_SIGNED(DISBURSEMENT, Set.of(IN_APP, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
 
     // ---- REPAYMENT ----
-    REPAYMENT_RECORDED(REPAYMENT, Set.of(IN_APP), Set.of(TO_ACCOUNTANTS, TO_BORROWER)),
-    REPAYMENT_VERIFIED(REPAYMENT, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+    REPAYMENT_RECORDED(REPAYMENT, Set.of(IN_APP, WHATSAPP), Set.of(TO_ACCOUNTANTS, TO_BORROWER)),
+    REPAYMENT_VERIFIED(REPAYMENT, Set.of(IN_APP, SMS, WHATSAPP), Set.of(TO_BORROWER)),
     // EMAIL added so the rejection reason (SMS body is DLT-locked, can't carry it) reaches the
     // borrower somewhere other than the in-app inbox.
-    REPAYMENT_REJECTED(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    REPAYMENT_REJECTED(REPAYMENT, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
     // Time-driven reminders from the daily PaymentReminderScheduler.
-    PAYMENT_DUE_SOON(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
-    PAYMENT_OVERDUE(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
-    LOAN_CLOSED(REPAYMENT, Set.of(IN_APP, SMS, EMAIL), Set.of(TO_BORROWER)),
+    PAYMENT_DUE_SOON(REPAYMENT, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
+    PAYMENT_OVERDUE(REPAYMENT, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
+    LOAN_CLOSED(REPAYMENT, Set.of(IN_APP, SMS, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
 
     // ---- COLLECTIONS ----
     COLLECTION_CASE_OPENED(COLLECTIONS, Set.of(IN_APP), Set.of(TO_COLLECTION_HEADS, TO_COLLECTION_EXECUTIVES)),
     SETTLEMENT_PROPOSED(COLLECTIONS, Set.of(IN_APP), Set.of(TO_COLLECTION_HEADS)),
-    SETTLEMENT_APPROVED(COLLECTIONS, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+    SETTLEMENT_APPROVED(COLLECTIONS, Set.of(IN_APP, SMS, WHATSAPP), Set.of(TO_BORROWER)),
     SETTLEMENT_REJECTED(COLLECTIONS, Set.of(IN_APP), Set.of(TO_STAFF_SUBJECT)),
     // A collections payment awaits its checker (V47): the Collection Head for a settlement, the
     // Accountant for everything else. Two types, because they are two different desks.
@@ -135,7 +136,7 @@ public enum NotificationType {
     COLLECTION_PAYMENT_REJECTED(COLLECTIONS, Set.of(IN_APP), Set.of(TO_STAFF_SUBJECT, TO_COLLECTION_HEADS)),
 
     // ---- SYSTEM ----
-    APPLICATION_CANCELLED(SYSTEM, Set.of(IN_APP), Set.of(TO_BORROWER)),
+    APPLICATION_CANCELLED(SYSTEM, Set.of(IN_APP, WHATSAPP), Set.of(TO_BORROWER)),
 
     /**
      * A prepaid verification provider is at zero balance — every call to it fails until it is topped
@@ -155,7 +156,7 @@ public enum NotificationType {
     // who settle the two pending ₹-reward payouts.
     REFERRAL_PAYOUT_PENDING(SYSTEM, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS)),
     // The Disbursement Head paid a reward — tell the beneficiary their reward is credited.
-    REFERRAL_REWARD_CREDITED(SYSTEM, Set.of(IN_APP, SMS), Set.of(TO_BORROWER)),
+    REFERRAL_REWARD_CREDITED(SYSTEM, Set.of(IN_APP, SMS, WHATSAPP), Set.of(TO_BORROWER)),
 
     // ---- STAFF / IAM (the subject themselves) ----
     STAFF_INVITED(STAFF_IAM, Set.of(EMAIL), Set.of(TO_STAFF_SUBJECT)),

@@ -239,6 +239,17 @@ navix:
     mock: ${NAVIX_SMS_MOCK:false}
     mock-code: ${NAVIX_SMS_MOCK_CODE:123456}
 
+  # WhatsApp Business via SmartChat (docs/whatsapp/WHATSAPP_GUIDE.md). Template names/variable order
+  # live in NotificationTemplates.whatsapp(...); the approved wording lives in the SmartChat portal.
+  # Token: SSM SecureString /navix/<env>/navix/whatsapp/token. Blank token = every send FAILS (logged,
+  # never blocks the business action).
+  whatsapp:
+    base-url: ${NAVIX_WHATSAPP_BASE_URL:https://smartchatapi.live/portal/Api/}
+    token: ${NAVIX_WHATSAPP_TOKEN:}
+    enabled: ${NAVIX_WHATSAPP_ENABLED:true}
+    mock: ${NAVIX_WHATSAPP_MOCK:false}
+    otp-template: ${NAVIX_WHATSAPP_OTP_TEMPLATE:dhanboost_otp}
+
   # Notification engine (in-app + SMS + email). Delivery is mock/log by default (mirrors the SMS-mock
   # philosophy): in-app is fully persisted, SMS reuses the gateway (mock-aware), and email logs via
   # LogEmailClient. Flip email to real SMTP with NAVIX_EMAIL_PROVIDER=smtp + spring.mail.* configured.

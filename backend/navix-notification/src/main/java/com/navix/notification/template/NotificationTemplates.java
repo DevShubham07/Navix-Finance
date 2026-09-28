@@ -3,11 +3,14 @@ package com.navix.notification.template;
 import static com.navix.common.notification.NotificationChannel.EMAIL;
 import static com.navix.common.notification.NotificationChannel.IN_APP;
 import static com.navix.common.notification.NotificationChannel.SMS;
+import static com.navix.common.notification.NotificationChannel.WHATSAPP;
 
 import com.navix.common.notification.NotificationChannel;
 import com.navix.notification.catalog.NotificationType;
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,6 +21,11 @@ import org.springframework.stereotype.Component;
  * {@code customerName}, {@code amount}, {@code netDisbursed}, {@code totalRepayable},
  * {@code outstanding}, {@code dueDate}, {@code settlementAmount}, {@code inviteLink},
  * {@code retryLine}, {@code stepLabel}, {@code stepLink}.
+ *
+ * <p>WHATSAPP entries are not wording: the approved text lives with Meta (SmartChat portal), so a
+ * {@code whatsapp(type, templateName, keys...)} entry names the template and the model keys that fill
+ * its {@code {{1}}..{{n}}} in order. Renaming a template or reordering its variables here without
+ * re-approving it breaks the send. Catalogue: docs/whatsapp/WHATSAPP_GUIDE.md.
  */
 @Component
 public class NotificationTemplates {
@@ -339,6 +347,36 @@ public class NotificationTemplates {
         email(NotificationType.STAFF_DISABLED, "Your DhanBoost access has been disabled",
                 "Hi {name},\n\nYour DhanBoost staff access has been disabled. If you believe this is in "
                         + "error, contact your administrator.\n\n— DhanBoost");
+
+        // ---------------- WHATSAPP (SmartChat; template name + ordered {{n}} keys) ----------------
+        whatsapp(NotificationType.KYC_APPROVED, "db_kyc_approved", "name", "applicationId");
+        whatsapp(NotificationType.KYC_REJECTED, "db_kyc_rejected", "name", "applicationId");
+        whatsapp(NotificationType.KYC_REMINDER, "db_kyc_reminder", "name", "applicationId", "pendingSteps");
+        whatsapp(NotificationType.KYC_REOPENED_RESCORE, "db_back_in_review", "name", "applicationId");
+        // BUREAU_QUESTION_PENDING: db_bureau_question (link in a body variable) was REJECTED by Meta;
+        // needs a dynamic-URL button template — see the guide's backlog.
+        whatsapp(NotificationType.REBORROW_PREAPPROVED, "db_reborrow_preapproved", "name");
+        whatsapp(NotificationType.REBORROW_REVIEW_APPROVED, "db_reborrow_approved", "name", "applicationId");
+        whatsapp(NotificationType.REBORROW_REVIEW_REJECTED, "db_application_declined", "name", "applicationId");
+        whatsapp(NotificationType.CREDIT_REJECTED, "db_application_declined", "name", "applicationId");
+        whatsapp(NotificationType.LOAN_SANCTIONED, "db_loan_sanctioned", "name", "applicationId");
+        whatsapp(NotificationType.SANCTIONED_AMOUNT_REVISED, "db_amount_revised",
+                "name", "applicationId", "amount", "previousAmount");
+        whatsapp(NotificationType.LOAN_LIMIT_REVISED, "db_limit_increased", "name", "limit");
+        whatsapp(NotificationType.DISBURSEMENT_REJECTED, "db_disbursal_declined", "name", "applicationId");
+        whatsapp(NotificationType.LOAN_DISBURSED, "db_loan_disbursed",
+                "name", "netDisbursed", "totalRepayable", "dueDate");
+        whatsapp(NotificationType.SANCTION_LETTER_SIGNED, "db_sanction_letter_signed", "name", "applicationId");
+        whatsapp(NotificationType.REPAYMENT_RECORDED, "db_payment_recorded", "name", "amount", "loanId");
+        whatsapp(NotificationType.REPAYMENT_VERIFIED, "db_repayment_verified", "name", "amount", "outstanding");
+        whatsapp(NotificationType.REPAYMENT_REJECTED, "db_repayment_rejected", "name", "amount", "loanId", "reason");
+        whatsapp(NotificationType.PAYMENT_DUE_SOON, "db_payment_due_soon", "name", "amount", "loanId", "dueDate");
+        whatsapp(NotificationType.PAYMENT_OVERDUE, "db_payment_overdue", "name", "amount", "loanId", "daysOverdue");
+        whatsapp(NotificationType.LOAN_CLOSED, "db_loan_closed", "name", "applicationId");
+        whatsapp(NotificationType.SETTLEMENT_APPROVED, "db_settlement_approved",
+                "name", "settlementAmount", "loanId");
+        whatsapp(NotificationType.REFERRAL_REWARD_CREDITED, "db_referral_reward", "name", "amount", "txnRef");
+        whatsapp(NotificationType.APPLICATION_CANCELLED, "db_application_cancelled", "name", "applicationId");
     }
 
     /** The template for a type+channel, or {@code null} if none is defined (channel skipped). */
@@ -358,6 +396,11 @@ public class NotificationTemplates {
 
     private void sms(NotificationType t, String body) {
         put(t, SMS, null, body);
+    }
+
+    private void whatsapp(NotificationType t, String templateName, String... keys) {
+        put(t, WHATSAPP, templateName, Arrays.stream(keys).map(k -> "{" + k + "}")
+                .collect(Collectors.joining(TemplateRenderer.WHATSAPP_PARAM_SEPARATOR)));
     }
 
     private void email(NotificationType t, String subject, String body) {
