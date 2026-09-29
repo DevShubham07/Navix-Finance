@@ -321,7 +321,7 @@ class CollectionPaymentServiceTest {
 
     private LoanSummary loanSummary(long loanId, String borrowerName) {
         return new LoanSummary(loanId, 7L, 1L, "ACTIVE", 800_000L, 705_600L, 1_040_000L, 1_040_000L,
-                LocalDate.now().minusDays(30), LocalDate.now(), borrowerName, "ABXXXXX34F",
+                LocalDate.now().minusDays(30), LocalDate.now(), borrowerName, "ABXXXXX34F", "9876543210",
                 "Acme Corp", "SALARIED", 3_200_000L, "HDFC", false);
     }
 

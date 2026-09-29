@@ -29,6 +29,7 @@ public record LoanSummary(
         LocalDate dueDate,
         String borrowerName,
         String panMasked,
+        String mobile,
         String employer,
         String employmentStatus,
         Long monthlySalaryPaise,

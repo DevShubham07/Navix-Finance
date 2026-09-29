@@ -55,6 +55,7 @@ interface Row {
   preDue: boolean;
   caseId: string | null;
   borrowerName: string | null;
+  mobile: string | null;
   pan: string | null;
   employer: string | null;
   salaryPaise: number | null;
@@ -79,6 +80,7 @@ function toRow(w: WorklistRow): Row {
     preDue: w.preDue,
     caseId: w.caseId,
     borrowerName: w.loan?.borrowerName ?? null,
+    mobile: w.loan?.mobile ?? null,
     pan: w.loan?.panMasked ?? null,
     employer: w.loan?.employer ?? null,
     salaryPaise: w.loan?.monthlySalaryPaise ?? null,
@@ -167,7 +169,15 @@ export default function CollectionsBucketPage() {
     const inBucket = (q.data ?? []).filter((w) => w.bucket === bucket).map(toRow);
     return inBucket.filter((r) => {
       if (needle) {
-        const hay = [r.borrowerName, r.pan, r.employer, r.officerName, String(r.loanId)]
+        const hay = [
+          r.customerId != null ? String(r.customerId) : null,
+          r.borrowerName,
+          r.mobile,
+          r.pan,
+          r.employer,
+          r.officerName,
+          String(r.loanId),
+        ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -317,7 +327,7 @@ export default function CollectionsBucketPage() {
             setQuery(t);
             setPage(1);
           }}
-          placeholder="Name, PAN, employer, officer or loan #"
+          placeholder="Customer ID, name, mobile, PAN, employer, officer or loan #"
           ariaLabel="Search"
           inputClassName="max-w-xs"
         />
@@ -357,6 +367,7 @@ export default function CollectionsBucketPage() {
                     />
                   </th>
                 )}
+                <SortableTh label="Customer ID" sortKey="customerId" active={sortKey} dir={dir} onToggle={toggle} />
                 <SortableTh
                   className={canBulkAssign ? undefined : "staff-sticky-identity"}
                   label="Borrower"
@@ -365,6 +376,7 @@ export default function CollectionsBucketPage() {
                   dir={dir}
                   onToggle={toggle}
                 />
+                <th>Mobile</th>
                 <th>PAN</th>
                 <SortableTh label="Loan" sortKey="loanId" active={sortKey} dir={dir} onToggle={toggle} />
                 <SortableTh
@@ -429,6 +441,7 @@ export default function CollectionsBucketPage() {
                       />
                     </td>
                   )}
+                  <td className="font-mono">{r.customerId ?? "—"}</td>
                   <td className={canBulkAssign ? undefined : "staff-sticky-identity"}>
                     <span className="font-semibold text-ink">{dash(r.borrowerName)}</span>
                     {r.preDue && (
@@ -440,6 +453,7 @@ export default function CollectionsBucketPage() {
                       </span>
                     )}
                   </td>
+                  <td className="font-mono text-xs">{dash(r.mobile)}</td>
                   <td className="font-mono text-xs">{dash(r.pan)}</td>
                   <td className="font-mono">#{r.loanId}</td>
                   <td className="font-mono">{paiseToINR(r.principalPaise)}</td>

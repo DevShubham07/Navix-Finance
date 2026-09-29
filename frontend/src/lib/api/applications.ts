@@ -3101,6 +3101,7 @@ export interface LoanSummary {
   dueDate: string | null;
   borrowerName: string | null;
   panMasked: string | null;
+  mobile: string | null;
   employer: string | null;
   employmentStatus: string | null;
   monthlySalaryPaise: number | null;
