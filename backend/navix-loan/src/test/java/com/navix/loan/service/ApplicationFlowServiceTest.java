@@ -224,6 +224,28 @@ class ApplicationFlowServiceTest {
         assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
     }
 
+    /**
+     * esignInit writes a PENDING row before the borrower has signed anything. That row used to satisfy
+     * the gate, and six loans were disbursed on abandoned Signzy sessions (Sep 2026).
+     */
+    @Test
+    void acceptOfferRefusesAStartedButUnsignedESign() {
+        LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
+        app.setSanctionedAmountPaise(2_000_000L);
+        actor("7", "BORROWER");
+        com.navix.loan.entity.ApplicationVerification row = new com.navix.loan.entity.ApplicationVerification();
+        row.setApplicationId(1L);
+        row.setCheckType(ApplicationVerificationService.ESIGN);
+        row.setStatus(ApplicationVerificationService.PENDING);
+        when(verificationRepository.findByApplicationIdAndCheckType(1L, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(row));
+
+        assertThatThrownBy(() -> flow.acceptOffer(1L, 2_000_000L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Sign your sanction letter");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+    }
+
     /** Stand in for the borrower having eSigned their Key Fact Statement (V46). */
     private void esigned(Long appId) {
         com.navix.loan.entity.ApplicationVerification row =

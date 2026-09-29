@@ -696,7 +696,7 @@ public class ApplicationFlowService {
      * file to the Disbursement Head. Phase 3's offer screens (amount → eSign → disbursal account) sit
      * in front of this call, and {@code OfferService.confirmDisbursalAccount} is its normal caller.
      *
-     * <p>Gated on a terminal {@code ESIGN} row. Phase 3's identity checks deliberately pass through
+     * <p>Gated on a {@code PASS} {@code ESIGN} row. Phase 3's identity checks deliberately pass through
      * silently (revamp.md decision 11), but the signature is not a check — it is the borrower's
      * agreement to the Key Fact Statement, and without it this endpoint would be a way to reach
      * disbursement having signed nothing.
@@ -708,8 +708,11 @@ public class ApplicationFlowService {
         if (app.getStatus() != ApplicationStatus.SANCTIONED) {
             throw new BusinessException("NOT_APPLICABLE", "This offer isn't ready to accept");
         }
+        // A PASS row, not merely a row: esignInit writes PENDING the moment the provider session is
+        // minted, so "any row" let a borrower who abandoned the Signzy tab accept the offer unsigned.
         if (verificationRepository
                 .findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
                 .isEmpty()) {
             throw new BusinessException("ESIGN_REQUIRED", "Sign your sanction letter before continuing");
         }

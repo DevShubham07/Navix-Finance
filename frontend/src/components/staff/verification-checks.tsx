@@ -87,6 +87,21 @@ const PLACEHOLDER_CHECKS: readonly string[] = [...RETRYABLE_CHECKS, "ESIGN", "AA
  */
 const LINKABLE_CHECKS: readonly string[] = ["ESIGN", "AADHAAR", "DIGILOCKER", "SELFIE", "ADDRESS", "BUREAU"];
 
+/**
+ * Whether "Send link to customer" is offered on this card — the same eligibility the backend's
+ * `VerificationOutreachService` enforces, applied up front so the button never opens a dialog that
+ * can only say `STEP_LINK_NOT_ELIGIBLE`: the offer-journey steps exist only on a SANCTIONED file
+ * (a KYC_PENDING file's eSign/Aadhaar placeholder cards must not offer them), and the bureau link
+ * only while the file still awaits review *and* the bureau is actually holding a security question.
+ */
+function canSendLink(step: DisplayStep, applicationStatus: string | undefined): boolean {
+  if (step.status === "PASS" || !LINKABLE_CHECKS.includes(step.checkType)) return false;
+  if (step.checkType === "BUREAU") {
+    return applicationStatus === "KYC_PENDING" && step.derived?.bureauChallenge === true;
+  }
+  return applicationStatus === "SANCTIONED";
+}
+
 /** "monthlySalaryPaise" -> "Monthly salary" (the trailing "Paise" is stripped — see {@link isPaiseKey}). */
 function humanizeKey(key: string): string {
   return key
@@ -130,6 +145,13 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
     queryFn: () => staffApi.verificationProgress(applicationId),
     retry: false,
   });
+  // The application's lifecycle status decides which cards may offer "Send link to customer" (see
+  // canSendLink). Same query key as the application dialogs, so it is usually already in the cache.
+  const appQ = useQuery({
+    queryKey: ["staff-application", applicationId],
+    queryFn: () => staffApi.get(applicationId),
+    retry: false,
+  });
   // KYC-approver / admin nudge the borrower with their pending steps (Phase 3.4).
   const remind = useMutation({ mutationFn: () => staffApi.sendReminder(applicationId) });
 
@@ -142,17 +164,23 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
   // no row yet — otherwise a never-run check (PENNY_DROP is the live case, ESIGN/AADHAAR the
   // abandoned-attempt case) has no card and so no way to override, retry, or send a link for it,
   // even though the backend endpoints upsert and work with no prior row.
+  // ESIGN/AADHAAR placeholders only once the file is SANCTIONED: before that the offer journey has
+  // not started, so "NOT RUN" would read as outstanding work on a file still under credit review.
+  const applicationStatus = appQ.data?.status;
   const steps: DisplayStep[] = React.useMemo(() => {
     const real = q.data ?? [];
     const seen = new Set(real.map((s) => s.checkType));
-    const placeholders: DisplayStep[] = PLACEHOLDER_CHECKS.filter((c) => !seen.has(c)).map((checkType) => ({
+    const wanted = PLACEHOLDER_CHECKS.filter(
+      (c) => RETRYABLE_CHECKS.includes(c) || applicationStatus === "SANCTIONED",
+    );
+    const placeholders: DisplayStep[] = wanted.filter((c) => !seen.has(c)).map((checkType) => ({
       checkType,
       status: "NOT_RUN",
       message: "Not run on this application",
       derived: {},
     }));
     return [...real, ...placeholders];
-  }, [q.data]);
+  }, [q.data, applicationStatus]);
   const p = progressQ.data;
 
   return (
@@ -228,7 +256,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                     >
                       <ShieldCheck size={12} /> Manual override
                     </button>
-                    {LINKABLE_CHECKS.includes(s.checkType) && s.status !== "PASS" && (
+                    {canSendLink(s, applicationStatus) && (
                       <button
                         onClick={() => setResumeLink(s)}
                         className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint"

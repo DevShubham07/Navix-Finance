@@ -333,6 +333,35 @@ class JourneyServiceTest {
         assertThat(app.getJourneyStep()).isEqualTo("OFFER_SELFIE");
     }
 
+    /**
+     * The signature is the one offer step a mere row does not satisfy: esignInit writes PENDING as
+     * soon as the provider session is minted, and before this the borrower who closed the Signzy tab
+     * was derived straight onto the disbursal-account screen — six loans went out unsigned (Sep 2026).
+     */
+    @Test
+    void aStartedButUnsignedESignHoldsTheBorrowerOnTheSanctionLetter() {
+        app.setStatus(ApplicationStatus.SANCTIONED);
+        app.setAmountRequested(1_500_000L);
+        app.setJourneyStep("OFFER_DISBURSAL_ACCOUNT"); // the pointer the old derivation let them reach
+        ApplicationVerification pending = check(ApplicationVerificationService.ESIGN);
+        pending.setStatus(ApplicationVerificationService.PENDING);
+        when(verificationRepository.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                check(ApplicationVerificationService.AADHAAR),
+                check(ApplicationVerificationService.SELFIE),
+                check(ApplicationVerificationService.ADDRESS),
+                pending));
+        when(verificationRepository.findByApplicationIdAndCheckType(APP, ApplicationVerificationService.ESIGN))
+                .thenReturn(Optional.of(pending));
+        when(referenceRepository.findByApplicationIdOrderBySlotAsc(APP)).thenReturn(List.of(
+                new com.navix.loan.entity.ApplicationReference(),
+                new com.navix.loan.entity.ApplicationReference()));
+
+        assertThat(journey.current(APP).step()).isEqualTo("OFFER_SANCTION_LETTER");
+
+        pending.setStatus(ApplicationVerificationService.PASS);
+        assertThat(journey.current(APP).step()).isEqualTo("OFFER_DISBURSAL_ACCOUNT");
+    }
+
     private static ApplicationVerification check(String type) {
         ApplicationVerification v = new ApplicationVerification();
         v.setApplicationId(APP);

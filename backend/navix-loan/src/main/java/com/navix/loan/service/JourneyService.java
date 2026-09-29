@@ -290,6 +290,12 @@ public class JourneyService {
         OfferStep resolved = parseOffer(app.getJourneyStep())
                 .filter(stored -> stored.ordinal() > derived.ordinal())
                 .orElse(derived);
+        // The pointer may carry a borrower past a screen that leaves no trace, never past the
+        // signature: a pointer already on the disbursal account (which the old derivation allowed for
+        // an abandoned Signzy session) must not override an unsigned letter.
+        if (resolved.ordinal() > OfferStep.OFFER_SANCTION_LETTER.ordinal() && !signed(app.getId())) {
+            return OfferStep.OFFER_SANCTION_LETTER;
+        }
         // Signing now lives on the agreement page. Historical rows may still hold the retired
         // OFFER_ESIGN pointer; normalize them instead of reopening a separate signing screen.
         return resolved == OfferStep.OFFER_ESIGN ? OfferStep.OFFER_SANCTION_LETTER : resolved;
@@ -305,6 +311,14 @@ public class JourneyService {
      * <p>DigiLocker, selfie and address are satisfied by a row in <em>any</em> terminal status, not
      * by a PASS: a Phase-3 check that fails passes through silently and surfaces only on the staff
      * Verification Dashboard (revamp.md decision 11).
+     *
+     * <p>The signature is the one exception, because it is not a check but the borrower's agreement to
+     * the Key Fact Statement: only a {@code PASS} row proves it. A {@code PENDING} row is a provider
+     * session that was started and never finished (the borrower closed the Signzy tab), a {@code
+     * REVIEW} row is the provider saying nothing was signed — either way the borrower is held on the
+     * sanction letter, where both the Aadhaar and the drawn-signature paths are still open. Before
+     * this, any ESIGN row at all moved them on to the disbursal account and six loans were disbursed
+     * unsigned (Sep 2026); {@code ApplicationFlowService.acceptOffer} enforces the same rule.
      */
     private OfferStep deriveOffer(LoanApplication app) {
         if (app.getAmountRequested() == null) {
@@ -323,7 +337,7 @@ public class JourneyService {
         if (!checks.contains(ApplicationVerificationService.ADDRESS)) {
             return OfferStep.OFFER_ADDRESS;
         }
-        if (!checks.contains(ApplicationVerificationService.ESIGN)) {
+        if (!signed(app.getId())) {
             return OfferStep.OFFER_SANCTION_LETTER;
         }
         if (app.getDisbursalConfirmedAt() == null) {
@@ -343,6 +357,13 @@ public class JourneyService {
                 .filter(v -> v.getReopenedAt() == null)
                 .map(ApplicationVerification::getCheckType)
                 .collect(Collectors.toSet());
+    }
+
+    /** Whether the sanction letter is actually signed — an ESIGN row in {@code PASS}, nothing less. */
+    private boolean signed(Long appId) {
+        return verificationRepository.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
+                .isPresent();
     }
 
     /** The first step the borrower's saved data does not yet prove they finished. */
