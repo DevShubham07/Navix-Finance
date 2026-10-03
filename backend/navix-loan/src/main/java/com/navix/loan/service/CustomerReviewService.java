@@ -16,8 +16,10 @@ import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.entity.ProfileChangeLog;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
+import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.ProfileChangeLogRepository;
+import com.navix.loan.domain.ApplicationStatus;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Collection;
@@ -64,6 +66,8 @@ public class CustomerReviewService {
     private final ProfileChangeLogRepository changeLogRepository;
     /** Changed-only writer — used for the onboarding-wizard slices (see {@link #saveProfile}). */
     private final ProfileChangeLogger changeLogger;
+    /** Read-only here: decides whether the Aadhaar number is still editable (see {@link #saveProfile}). */
+    private final ApplicationVerificationRepository verificationRepository;
 
     @Transactional
     public CustomerProfile saveProfile(Long appId, ProfileRequest req) {
@@ -121,7 +125,13 @@ public class CustomerReviewService {
             log(customerId, appId, "mobile", Masking.maskPhone(p.getMobile()), Masking.maskPhone(mobile));
             p.setMobile(mobile);
         }
-        if (aadhaar != null) {
+        if (aadhaar != null && !aadhaar.equals(p.getAadhaar())) {
+            // The number is what the fraud rule compares against the PAN record (consent step) and
+            // DigiLocker (offer journey). Once either check has run, or the file has left DRAFT, a change
+            // would let a borrower swap in a different number behind a verdict already recorded against
+            // the old one — so it is locked. Before that, a typo may be corrected freely: nothing has
+            // been compared yet, and the check reads whatever is stored when it runs.
+            requireAadhaarEditable(app, p);
             // Masked on the timeline like the PAN: the full number lives on the profile card only.
             log(customerId, appId, "aadhaar", Masking.maskAadhaar(p.getAadhaar()), Masking.maskAadhaar(aadhaar));
             p.setAadhaar(aadhaar);
@@ -532,6 +542,18 @@ public class CustomerReviewService {
     private static String normalizePan(String pan) {
         String t = trimToNull(pan);
         return t == null ? null : t.toUpperCase();
+    }
+
+    /** See the call site in {@link #saveProfile}: the Aadhaar number is locked once a check has read it. */
+    private void requireAadhaarEditable(LoanApplication app, CustomerProfile p) {
+        boolean checked = (app.getStatus() != null && app.getStatus() != ApplicationStatus.DRAFT)
+                || verificationRepository.findByApplicationIdAndCheckType(app.getId(), "PAN").isPresent()
+                || verificationRepository.findByApplicationIdAndCheckType(app.getId(), "AADHAAR").isPresent()
+                || Boolean.TRUE.equals(p.getAadhaarVerified());
+        if (checked) {
+            throw new BusinessException("AADHAAR_LOCKED",
+                    "Your Aadhaar number has already been verified and can no longer be changed.");
+        }
     }
 
     /**

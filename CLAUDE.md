@@ -328,7 +328,9 @@ How a real applicant moves through the product — this is now the **designed, b
    `pan-card` → `consent` → `submitted`. **Where the borrower is is answered server-side** (`GET …/journey`,
    the max of what their saved data proves and the `journey_step` pointer), so a second device resumes
    on the right screen. The two card screens (V75) are **mandatory and document-proven**: `aadhaar` takes
-   the typed 12-digit number (Verhoeff-checked, stored **in full**, `INVALID_AADHAAR` / `DUPLICATE_AADHAAR`)
+   the typed 12-digit number (Verhoeff-checked, stored **in full**, `INVALID_AADHAAR` / `DUPLICATE_AADHAAR`;
+   **locked** — `AADHAAR_LOCKED` — once the PAN check or DigiLocker has read it or the file leaves `DRAFT`, so
+   a number cannot be swapped behind a recorded verdict)
    plus both sides of the card as `AADHAAR_CARD_FRONT`/`AADHAAR_CARD_BACK` (deliberately **not** the
    `AADHAAR_FRONT`/`AADHAAR_BACK` pair the post-sanction DigiLocker fallback writes, so staff can tell
    the two uploads apart), and `pan-card` takes `PAN_CARD_FRONT`/`PAN_CARD_BACK`; photos **or PDFs**, with

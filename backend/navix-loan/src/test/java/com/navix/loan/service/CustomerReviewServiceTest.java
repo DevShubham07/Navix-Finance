@@ -17,6 +17,7 @@ import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
@@ -60,13 +61,16 @@ class CustomerReviewServiceTest {
     private com.navix.loan.repository.ProfileChangeLogRepository changeLogRepository;
     @Mock
     private ProfileChangeLogger changeLogger;
+    @Mock
+    private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
 
     private CustomerReviewService service;
 
     @BeforeEach
     void setUp() {
         service = new CustomerReviewService(applicationRepository, profileRepository, documentRepository,
-                storage, verificationInvalidation, eligibilityService, changeLogRepository, changeLogger);
+                storage, verificationInvalidation, eligibilityService, changeLogRepository, changeLogger,
+                verificationRepository);
         ActorContext.set(BORROWER);
     }
 
@@ -85,6 +89,7 @@ class CustomerReviewServiceTest {
         LoanApplication app = new LoanApplication();
         app.setId(APP_ID);
         app.setCustomerId(CUSTOMER_ID);
+        app.setStatus(ApplicationStatus.DRAFT);
         return app;
     }
 
@@ -177,6 +182,41 @@ class CustomerReviewServiceTest {
         assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("12345678")))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "INVALID_AADHAAR");
+    }
+
+    @Test
+    void aadhaarIsLockedOnceAVerificationHasReadIt_butTheSameValueMayBeResaved() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.existsAadhaarForOtherCustomer(any(), eq(CUSTOMER_ID))).thenReturn(false);
+        CustomerProfile existing = new CustomerProfile();
+        existing.setApplicationId(APP_ID);
+        existing.setAadhaar("234567890124");
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(existing));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        // The consent step has run the PAN check against the stored number.
+        when(verificationRepository.findByApplicationIdAndCheckType(APP_ID, "PAN"))
+                .thenReturn(Optional.of(new com.navix.loan.entity.ApplicationVerification()));
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("999988887779")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "AADHAAR_LOCKED");
+
+        // Re-saving the identical number (a wizard re-render) is not a change and passes.
+        assertThat(service.saveProfile(APP_ID, aadhaarReq("2345 6789 0124")).getAadhaar())
+                .isEqualTo("234567890124");
+    }
+
+    @Test
+    void aadhaarIsLockedOnceTheApplicationHasLeftDraft() {
+        LoanApplication submitted = application();
+        submitted.setStatus(ApplicationStatus.KYC_PENDING);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(submitted));
+        when(profileRepository.existsAadhaarForOtherCustomer(any(), eq(CUSTOMER_ID))).thenReturn(false);
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(new CustomerProfile()));
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("234567890124")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "AADHAAR_LOCKED");
     }
 
     @Test
