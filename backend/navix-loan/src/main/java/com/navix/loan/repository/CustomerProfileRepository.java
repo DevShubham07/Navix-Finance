@@ -47,6 +47,11 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "where p.applicationId = a.id and p.mobile = :mobile and a.customerId <> :customerId")
     boolean existsMobileForOtherCustomer(@Param("mobile") String mobile, @Param("customerId") Long customerId);
 
+    /** Same rule for the Aadhaar number captured at intake (V75): one number, one customer. */
+    @Query("select (count(p) > 0) from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and p.aadhaar = :aadhaar and a.customerId <> :customerId")
+    boolean existsAadhaarForOtherCustomer(@Param("aadhaar") String aadhaar, @Param("customerId") Long customerId);
+
     /**
      * Every mobile this customer has on file across their applications, newest application first.
      * A returning borrower who starts a fresh application while already signed in never passes back

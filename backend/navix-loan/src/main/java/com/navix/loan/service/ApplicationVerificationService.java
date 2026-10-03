@@ -120,6 +120,21 @@ public class ApplicationVerificationService {
     public static final String AADHAAR_FRONT = "AADHAAR_FRONT";
     public static final String AADHAAR_BACK = "AADHAAR_BACK";
     /**
+     * The intake card uploads (V75): both sides of the Aadhaar card, taken on the mandatory
+     * {@code /signup/aadhaar} screen, and both sides of the PAN card from {@code /signup/pan-card}.
+     * Deliberately <b>not</b> the {@link #AADHAAR_FRONT}/{@link #AADHAAR_BACK} pair above — that is the
+     * post-sanction DigiLocker fallback, a different moment with a different reviewer, and staff need
+     * to tell the two uploads apart in the Documents tab. Documents only: no verification row is
+     * written for them, so the offer journey's DigiLocker step still runs ({@code JourneyService}
+     * treats any AADHAAR row as "DigiLocker done"). {@link #intakeCardsComplete} gates submit-kyc.
+     */
+    public static final String AADHAAR_CARD_FRONT = "AADHAAR_CARD_FRONT";
+    public static final String AADHAAR_CARD_BACK = "AADHAAR_CARD_BACK";
+    public static final String PAN_CARD_FRONT = "PAN_CARD_FRONT";
+    public static final String PAN_CARD_BACK = "PAN_CARD_BACK";
+    public static final List<String> INTAKE_CARD_DOC_TYPES =
+            List.of(AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
+    /**
      * The borrower's OTP-verified consent to the credit-bureau enquiry. Deliberately NOT in
      * {@link #REQUIRED} (that would wedge every application whose PAN passed before this shipped)
      * nor in {@link #KNOWN_CHECKS} (staff must not be able to manually assert a borrower's consent).
@@ -396,10 +411,59 @@ public class ApplicationVerificationService {
         derived.put("isSpecified", r.isSpecified());
         derived.put("panNumber", r.panNumber());
         String status = r.valid() ? PASS : FAIL;
+        String message = r.valid() ? "PAN valid" : "PAN not valid";
+        // V75 fraud rule: the Aadhaar number the borrower typed must agree with the masked Aadhaar the
+        // PAN record carries (Fintrix pan_comprehensive returns it; Signzy's 206AB search does not, in
+        // which case there is nothing to compare and DigiLocker completion runs the same check later).
+        String aadhaarMismatch = aadhaarMismatch(profile, r.maskedAadhaar());
+        if (aadhaarMismatch != null) {
+            derived.put("aadhaarMismatch", true);
+            derived.put("applicationRejected", true);
+            message = message + " — Aadhaar mismatch: " + aadhaarMismatch;
+        }
         ApplicationVerification row = upsert(appId, PAN, status, r.provider(), r.txnId(), ref,
-                null, null, null, derived, r.valid() ? "PAN valid" : "PAN not valid");
+                null, null, null, derived, message);
         recomputeNameMatch(appId);
+        if (aadhaarMismatch != null) {
+            rejectForAadhaarMismatch(appId, "PAN record", aadhaarMismatch);
+        }
         return view(row);
+    }
+
+    /**
+     * The V75 cross-check. Null when the two agree or when either side is missing (no number typed —
+     * a pre-V75 file — or a provider that returns no masked Aadhaar); otherwise a staff-readable
+     * description of the disagreement. Compares only the digits the provider's mask reveals
+     * ({@link com.navix.common.util.Aadhaar#matchesMasked}).
+     */
+    static String aadhaarMismatch(CustomerProfile profile, String providerMaskedAadhaar) {
+        String typed = profile != null ? profile.getAadhaar() : null;
+        if (com.navix.common.util.Aadhaar.matchesMasked(typed, providerMaskedAadhaar)
+                != com.navix.common.util.Aadhaar.MaskMatch.MISMATCH) {
+            return null;
+        }
+        return "entered " + com.navix.common.util.Masking.maskAadhaar(typed)
+                + ", provider record " + providerMaskedAadhaar.trim();
+    }
+
+    /**
+     * Auto-reject into the register as {@link ApplicationRejection#FRAUD_REJECTED} with the
+     * {@link ApplicationFlowService#FRAUD_REJECT_BLOCK_DAYS} block. Guarded on the state machine: the
+     * PAN check also runs from the staff retry button on files that are no longer rejectable (e.g.
+     * already disbursed), where the verification row's own mismatch flag is the record and a human
+     * decides. Never lets a rejection failure fail the check that found the problem.
+     */
+    private void rejectForAadhaarMismatch(Long appId, String source, String mismatch) {
+        LoanApplication app = applicationRepo.findById(appId).orElse(null);
+        if (app == null || !app.getStatus().canTransitionTo(ApplicationStatus.REJECTED)) {
+            log.warn("aadhaar mismatch on application={} in status={} — not rejectable, left for review",
+                    appId, app != null ? app.getStatus() : null);
+            return;
+        }
+        flow.autoRejectSystem(appId, ApplicationRejection.FRAUD_REJECTED,
+                "Aadhaar number entered does not match the " + source + " (" + mismatch + ")",
+                ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS);
+        log.info("application={} auto-rejected FRAUD_REJECTED (aadhaar mismatch vs {})", appId, source);
     }
 
     /** Official email + EPFO employer corroboration. */
@@ -548,7 +612,8 @@ public class ApplicationVerificationService {
      *  excluded — that persistence stays inside {@link #verifySalary}, which also records the declared
      *  monthly salary; this generic path is for documents with no accompanying verification step. */
     private static final java.util.Set<String> UPLOADABLE_DOC_TYPES =
-            java.util.Set.of("BANK_STATEMENT", BANK_PROOF, AADHAAR_FRONT, AADHAAR_BACK);
+            java.util.Set.of("BANK_STATEMENT", BANK_PROOF, AADHAAR_FRONT, AADHAAR_BACK,
+                    AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
 
     /**
      * Persist already-uploaded S3 keys as {@link ApplicationDocument} rows under an arbitrary
@@ -950,9 +1015,11 @@ public class ApplicationVerificationService {
                 && a.fullAddress() != null && !a.fullAddress().isBlank()) {
             profile.setAddress(a.fullAddress());
         }
-        // The raw Aadhaar number is no longer captured or stored — DigiLocker completion just records
-        // the verified status, which is what staff see on the profile card.
-        profile.setAadhaarVerified(true);
+        // V75: the typed Aadhaar number must agree with the one DigiLocker just fetched (last four
+        // digits — the masked form is all the provider returns). A disagreement is the fraud rule, so
+        // the card is NOT marked verified and the file is rejected below once the evidence is stored.
+        String aadhaarMismatch = aadhaarMismatch(profile, a.maskedAadhaar());
+        profile.setAadhaarVerified(aadhaarMismatch == null);
         profileRepo.save(profile);
 
         // Server-side ingest of the e-Aadhaar PDF (bytes never reach the browser). Signzy v2 returns
@@ -1005,13 +1072,22 @@ public class ApplicationVerificationService {
         }
 
         Map<String, Object> derived = aadhaarDerived(a);
-        ApplicationVerification row = upsert(appId, AADHAAR, PASS, "DIGILOCKER", a.txnId(), null,
-                null, null, s3Key, derived, "Aadhaar fetched from DigiLocker");
+        if (aadhaarMismatch != null) {
+            derived.put("aadhaarMismatch", true);
+            derived.put("applicationRejected", true);
+        }
+        ApplicationVerification row = upsert(appId, AADHAAR, aadhaarMismatch == null ? PASS : FAIL,
+                "DIGILOCKER", a.txnId(), null, null, null, s3Key, derived,
+                aadhaarMismatch == null ? "Aadhaar fetched from DigiLocker"
+                        : "Aadhaar mismatch: " + aadhaarMismatch);
         double match = recomputeNameMatch(appId);
-        if (match > 0 && match < NAME_MATCH_THRESHOLD) {
+        if (aadhaarMismatch == null && match > 0 && match < NAME_MATCH_THRESHOLD) {
             row.setStatus(REVIEW);
             row.setMessage("Name mismatch vs PAN — manual review");
             verificationRepo.save(row);
+        }
+        if (aadhaarMismatch != null) {
+            rejectForAadhaarMismatch(appId, "Aadhaar DigiLocker returned", aadhaarMismatch);
         }
         // Signzy's requestId is single-use consent state, not customer data. Clear it from the
         // profile and replace the temporary DIGILOCKER row so it cannot be retained in CRM/audits.
@@ -2962,6 +3038,26 @@ public class ApplicationVerificationService {
         return profileRepo.findByApplicationId(appId)
                 .map(p -> p.getTermsAcceptedAt() != null)
                 .orElse(false);
+    }
+
+    /**
+     * The other half of the submit-kyc gate (V75): the typed Aadhaar number plus all four intake card
+     * images ({@link #INTAKE_CARD_DOC_TYPES}) must be on file. Kept apart from
+     * {@link #allRequiredPassed} on purpose — that method also annotates bureau-backfill reopens of
+     * files submitted long before these screens existed, which must not read as "incomplete".
+     */
+    @Transactional(readOnly = true)
+    public boolean intakeCardsComplete(Long appId) {
+        boolean numberTyped = profileRepo.findByApplicationId(appId)
+                .map(p -> p.getAadhaar() != null && !p.getAadhaar().isBlank())
+                .orElse(false);
+        if (!numberTyped) {
+            return false;
+        }
+        Set<String> present = documentRepo.findByApplicationIdOrderByIdAsc(appId).stream()
+                .map(ApplicationDocument::getDocType)
+                .collect(Collectors.toSet());
+        return present.containsAll(INTAKE_CARD_DOC_TYPES);
     }
 
     /** A check has been attempted once it holds any terminal status — PENDING/absent means never run. */

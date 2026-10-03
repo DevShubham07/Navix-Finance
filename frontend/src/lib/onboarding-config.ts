@@ -7,6 +7,8 @@ export const ONBOARDING_STEPS: Array<{ seg: string; step: string; label: string 
   { seg: "email", step: "EMAIL", label: "Email addresses" },
   { seg: "bank", step: "BANK", label: "Salary account" },
   { seg: "payslips", step: "PAYSLIPS", label: "Salary slips" },
+  { seg: "aadhaar", step: "AADHAAR", label: "Aadhaar card" },
+  { seg: "pan-card", step: "PAN_CARD", label: "PAN card" },
   { seg: "consent", step: "CONSENT", label: "Consent & verification" },
   { seg: "submitted", step: "SUBMITTED", label: "With our credit team" },
 ];

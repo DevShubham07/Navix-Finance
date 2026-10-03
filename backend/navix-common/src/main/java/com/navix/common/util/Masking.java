@@ -2,8 +2,10 @@ package com.navix.common.util;
 
 /**
  * Utility for masking sensitive identifiers (PAN, Aadhaar, phone, email) before they are
- * logged, returned to clients, or persisted. Privacy rule: the full Aadhaar number is never
- * stored; it is masked everywhere outside the verification step.
+ * logged or written to the staff activity timeline. The full Aadhaar number IS stored on the
+ * customer profile again since V75 (a product decision that reversed V35) and is shown to staff
+ * unmasked on the profile cards; everywhere else — logs, change log, borrower-facing echoes — it
+ * stays masked to the last four digits.
  */
 public final class Masking {
 

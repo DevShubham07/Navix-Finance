@@ -472,6 +472,11 @@ export interface ProfileView {
   pennyDropVerified?: boolean | null;
   /** EPFO/UAN number (Digitap employment verification) — advisory, may be null (§14 UAN caveats). */
   uan?: string | null;
+  /**
+   * The 12-digit Aadhaar number typed on the intake Aadhaar-card screen (V75), in FULL. Staff and
+   * ADMIN read it unmasked by product decision; a borrower sees their own. Null before V75.
+   */
+  aadhaar?: string | null;
   nameMatchScore?: number | null;
   /** Phase 1 intake — also what the wizard re-hydrates from on another device (revamp.md C1). */
   officialEmail?: string | null;
@@ -512,6 +517,9 @@ export interface ProfileInput {
   termsVersion?: string;
   /** True = "I am not a Politically Exposed Person". */
   pepDeclared?: boolean;
+  /** 12-digit Aadhaar number (V75). Card spacing is stripped server-side; `INVALID_AADHAAR` on a
+   *  failed Verhoeff check, `DUPLICATE_AADHAAR` when another customer already holds it. */
+  aadhaar?: string;
 }
 
 /** Where the borrower is in the onboarding journey, answered server-side (revamp.md C1). */

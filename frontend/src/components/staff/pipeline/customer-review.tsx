@@ -81,11 +81,12 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
           <Row
             label="Aadhaar"
             value={
-              p.aadhaarVerified ? (
-                <span className="inline-flex items-center justify-end gap-1.5"><VerifiedPill /></span>
-              ) : (
-                <span className="text-muted">Not verified</span>
-              )
+              <span className="inline-flex items-center justify-end gap-1.5">
+                {/* The number typed at intake (V75), unmasked for staff by product decision; the pill
+                    is DigiLocker's verdict on it. */}
+                {p.aadhaar ? <span className="font-mono">{p.aadhaar}</span> : null}
+                {p.aadhaarVerified ? <VerifiedPill /> : <span className="text-muted">{p.aadhaar ? "Not verified" : "Not provided"}</span>}
+              </span>
             }
           />
           <Row label="Mobile" value={p.mobile} mono />

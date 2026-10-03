@@ -76,7 +76,7 @@ export default function SignupPayslipsPage() {
       const r = await verificationApi.salary(appId, saved.monthlySalaryPaise, keys, undefined,
         slipPassword.trim() || undefined);
       setResult(r);
-      if (r.status !== "FAIL") await completeStep(appId, "PAYSLIPS", router, "/signup/consent");
+      if (r.status !== "FAIL") await completeStep(appId, "PAYSLIPS", router, "/signup/aadhaar");
     } catch (err) {
       setError(formatApiError(err, "Could not upload your payslips — please try again."));
     } finally {

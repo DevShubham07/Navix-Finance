@@ -3,9 +3,11 @@ package com.navix.loan.service;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationReferenceRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
@@ -41,6 +43,10 @@ public class JourneyService {
         EMAIL("email"),
         BANK("bank"),
         PAYSLIPS("payslips"),
+        /** V75: Aadhaar number + both sides of the card. Proven by the number and the two documents. */
+        AADHAAR("aadhaar"),
+        /** V75: both sides of the PAN card. Proven by the two documents. */
+        PAN_CARD("pan-card"),
         CONSENT("consent"),
         SUBMITTED("submitted"),
         DONE(null);
@@ -106,6 +112,7 @@ public class JourneyService {
     private final CustomerProfileRepository profileRepository;
     private final ApplicationVerificationRepository verificationRepository;
     private final ApplicationReferenceRepository referenceRepository;
+    private final ApplicationDocumentRepository documentRepository;
 
     @Transactional(readOnly = true)
     public JourneyView current(Long appId) {
@@ -279,6 +286,12 @@ public class JourneyService {
             return Step.DONE;
         }
         Step derived = derive(app);
+        // The two card screens (V75) are proven by documents and can never be skipped by the pointer:
+        // a pointer written before they existed (CONSENT, say) would otherwise carry a mid-flow
+        // borrower straight past them into a submit that KYC_INCOMPLETE then refuses.
+        if (derived == Step.AADHAAR || derived == Step.PAN_CARD) {
+            return derived;
+        }
         return parse(app.getJourneyStep())
                 .map(stored -> Step.values()[Math.max(derived.ordinal(),
                         Math.min(stored.ordinal() + 1, Step.DONE.ordinal()))])
@@ -401,6 +414,21 @@ public class JourneyService {
                 .collect(Collectors.toSet());
         if (!checks.contains(ApplicationVerificationService.SALARY)) {
             return Step.PAYSLIPS;
+        }
+        // V75: the card screens are proven by what is on file, not by a pointer — the typed number
+        // plus both Aadhaar sides, then both PAN sides. Documents accumulate (a re-upload adds a row),
+        // so presence of the type is the test.
+        Set<String> docs = documentRepository.findByApplicationIdOrderByIdAsc(app.getId()).stream()
+                .map(ApplicationDocument::getDocType)
+                .collect(Collectors.toSet());
+        if (blank(p.getAadhaar())
+                || !docs.contains(ApplicationVerificationService.AADHAAR_CARD_FRONT)
+                || !docs.contains(ApplicationVerificationService.AADHAAR_CARD_BACK)) {
+            return Step.AADHAAR;
+        }
+        if (!docs.contains(ApplicationVerificationService.PAN_CARD_FRONT)
+                || !docs.contains(ApplicationVerificationService.PAN_CARD_BACK)) {
+            return Step.PAN_CARD;
         }
         if (!checks.contains(ApplicationVerificationService.PAN)) {
             return Step.CONSENT;

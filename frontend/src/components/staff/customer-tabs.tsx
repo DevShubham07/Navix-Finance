@@ -209,6 +209,8 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
       <Section title="Identity & profile">
         <KV k="Full name" v={p?.fullName} />
         <KV k="PAN" v={p?.pan} mono />
+        {/* Typed at intake (V75); shown in full to every staff role by product decision. */}
+        <KV k="Aadhaar number" v={p?.aadhaar} mono />
         <KV k="Mobile" v={p?.mobile} mono />
         <KV k="Email" v={p?.email} />
         <KV k="Official (work) email" v={p?.officialEmail} />
@@ -262,11 +264,29 @@ function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; appli
 
       {latestApp != null && <AadhaarCard applicationId={latestApp.id} />}
 
-      <Section title="Aadhaar card">
+      {/* V75: the mandatory signup upload and the post-sanction DigiLocker fallback are different
+          documents taken at different moments, so they get separate cards rather than one list. */}
+      <Section title="Aadhaar card (signup upload)">
+        <CustomerDocsByType
+          customerId={c.customerId}
+          docTypes={new Set(["AADHAAR_CARD_FRONT", "AADHAAR_CARD_BACK"])}
+          emptyCopy="No Aadhaar card uploaded at signup (application predates the Aadhaar screen)."
+        />
+      </Section>
+
+      <Section title="PAN card (signup upload)">
+        <CustomerDocsByType
+          customerId={c.customerId}
+          docTypes={new Set(["PAN_CARD_FRONT", "PAN_CARD_BACK"])}
+          emptyCopy="No PAN card uploaded at signup (application predates the PAN-card screen)."
+        />
+      </Section>
+
+      <Section title="Aadhaar card (DigiLocker fallback)">
         <CustomerDocsByType
           customerId={c.customerId}
           docTypes={new Set(["AADHAAR_FRONT", "AADHAAR_BACK"])}
-          emptyCopy="No Aadhaar card uploaded."
+          emptyCopy="Not used — DigiLocker completed, or the step has not been reached."
         />
       </Section>
 
@@ -668,8 +688,9 @@ function StaffFieldTable({ rows }: { rows: Array<[string, React.ReactNode, strin
 
 /**
  * The e-Aadhaar card as DigiLocker returned it, off the AADHAAR verification row's `derived`.
- * The number is masked (last 4) — the raw UID is never stored. Rows completed before the
- * backend started recording gender/address show "—" for those two.
+ * The number here is the provider's masked copy (last 4); the full number the borrower typed sits
+ * on the Identity card above (V75). Rows completed before the backend started recording
+ * gender/address show "—" for those two.
  */
 function AadhaarCard({ applicationId }: { applicationId: number }) {
   const { data, isLoading } = useQuery({
@@ -683,7 +704,10 @@ function AadhaarCard({ applicationId }: { applicationId: number }) {
   return (
     <Section title="Aadhaar (DigiLocker)">
       <KV k="Name on Aadhaar" v={d.fullName} />
-      <KV k="Aadhaar number" v={d.maskedAadhaar} mono />
+      <KV k="Aadhaar number (provider, masked)" v={d.maskedAadhaar} mono />
+      {d.aadhaarMismatch ? (
+        <KV k="Cross-check" v={<span className="font-semibold text-error-700">Mismatch vs number entered — fraud-rejected</span>} />
+      ) : null}
       <KV k="Date of birth" v={d.dob} />
       <KV k="Gender" v={d.gender} />
       <KV k="Address" v={d.address} />

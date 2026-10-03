@@ -130,6 +130,14 @@ public class ApplicationFlowService {
     public static final int LOW_BUREAU_SCORE_BLOCK_DAYS = 90;
 
     /**
+     * Block after a {@link ApplicationRejection#FRAUD_REJECTED} auto-reject (V75): the Aadhaar number
+     * the borrower typed and the one the PAN record / DigiLocker hold for them disagree. Longer than
+     * the eligibility blocks above because this is not a circumstance that improves with time — a
+     * year keeps the mobile out of the funnel without pretending the register is a permanent list.
+     */
+    public static final int FRAUD_REJECT_BLOCK_DAYS = 365;
+
+    /**
      * Bureau score floor: a real, numeric score below this auto-rejects the application
      * ({@code ApplicationVerificationService.pullBureau}). Do NOT confuse with
      * {@code RiskScoringService}'s {@code (bureauScore - 300) * 50 / 600} — that 600 is the width of the
@@ -416,6 +424,22 @@ public class ApplicationFlowService {
     @Transactional
     public LoanApplication autoReject(Long appId, String reasonCode, String detail, int blockDays) {
         requireRole("BORROWER");
+        return doAutoReject(appId, reasonCode, detail, blockDays);
+    }
+
+    /**
+     * The same engine rejection, for a rule that fires inside a verification step <em>whoever</em>
+     * triggered it (V75 Aadhaar mismatch): the PAN check also runs from the staff "retry" button and
+     * DigiLocker completion from a callback, so the BORROWER gate on {@link #autoReject} would turn a
+     * fraud verdict into a {@code FORBIDDEN_ROLE} error on exactly those paths. The actor is still
+     * recorded on the {@code application_event} row by {@link #transition}.
+     */
+    @Transactional
+    public LoanApplication autoRejectSystem(Long appId, String reasonCode, String detail, int blockDays) {
+        return doAutoReject(appId, reasonCode, detail, blockDays);
+    }
+
+    private LoanApplication doAutoReject(Long appId, String reasonCode, String detail, int blockDays) {
         LoanApplication app = require(appId);
         Instant blockedUntil = blockDays > 0 ? Instant.now().plus(Duration.ofDays(blockDays)) : null;
         recordRejection(app, reasonCode, detail, true, blockedUntil);

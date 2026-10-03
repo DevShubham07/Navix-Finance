@@ -71,6 +71,7 @@ class SecurityMatrixIT {
     @BeforeEach
     void allowSubmitKyc() {
         when(verificationService.allRequiredPassed(anyLong())).thenReturn(true);
+        when(verificationService.intakeCardsComplete(anyLong())).thenReturn(true);
     }
 
     @Test

@@ -323,6 +323,11 @@ public class ApplicationController {
             throw new BusinessException("KYC_INCOMPLETE",
                     "Complete every step and accept the Terms & Conditions before submitting");
         }
+        // V75: the Aadhaar number and both sides of the Aadhaar and PAN cards are mandatory.
+        if (!verification.intakeCardsComplete(id)) {
+            throw new BusinessException("KYC_INCOMPLETE",
+                    "Upload both sides of your Aadhaar card and PAN card before submitting");
+        }
         return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)));
     }
 

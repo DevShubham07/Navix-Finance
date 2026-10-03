@@ -2011,6 +2011,143 @@ class ApplicationVerificationServiceTest {
         return v;
     }
 
+    // ---- V75: Aadhaar cross-check + intake card gate ---------------------------------------
+
+    private static VerificationPort.PanCheck panCheckWithMaskedAadhaar(String masked) {
+        return new VerificationPort.PanCheck("TXN1", "FINTRIX", true, "SHUBHAM", "2003-03-24", "M",
+                true, masked, "QVEPS0901K", "Haryana", "131001", "operative", "28-03-2019", true, "No");
+    }
+
+    private LoanApplication draftApp() {
+        LoanApplication app = new LoanApplication();
+        app.setId(APP);
+        app.setCustomerId(7L);
+        app.setStatus(ApplicationStatus.DRAFT);
+        return app;
+    }
+
+    @Test
+    void panVerify_aadhaarMismatch_autoRejectsAsFraud() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(draftApp()));
+        when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
+                .thenReturn(panCheckWithMaskedAadhaar("XXXXXXXX9999"));
+
+        var result = service.verifyPan(APP, "QVEPS0901K");
+
+        // The PAN itself is valid; the application is rejected as a side effect, same shape as the
+        // bureau score floor.
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(result.derived()).containsEntry("aadhaarMismatch", true)
+                .containsEntry("applicationRejected", true);
+        assertThat(result.message()).contains("Aadhaar mismatch");
+        verify(flow).autoRejectSystem(eq(APP), eq(com.navix.loan.entity.ApplicationRejection.FRAUD_REJECTED),
+                anyString(), eq(ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS));
+    }
+
+    @Test
+    void panVerify_aadhaarMatchesWhateverTheMaskReveals_doesNotReject() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        // Signzy-style mask (first two + last two visible) — compared positionally, not "last four".
+        when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
+                .thenReturn(panCheckWithMaskedAadhaar("23XXXXXXXX24"));
+
+        var result = service.verifyPan(APP, "QVEPS0901K");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(result.derived()).doesNotContainKey("aadhaarMismatch");
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void panVerify_nothingToCompare_doesNotReject() {
+        // No number typed (a pre-V75 file) and a provider with no masked Aadhaar: both are "unknown".
+        CustomerProfile p = profile();
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
+                .thenReturn(panCheckWithMaskedAadhaar("XXXXXXXX9999"));
+        service.verifyPan(APP, "QVEPS0901K");
+
+        p.setAadhaar("234567890124");
+        when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
+                .thenReturn(panCheckWithMaskedAadhaar(null));
+        service.verifyPan(APP, "QVEPS0901K");
+
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void panVerify_aadhaarMismatchOnAFileThatCannotBeRejected_isRecordedNotThrown() {
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        LoanApplication active = draftApp();
+        active.setStatus(ApplicationStatus.ACTIVE);   // staff retry on a disbursed file
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(active));
+        when(verification.verifyPan(eq("QVEPS0901K"), anyString()))
+                .thenReturn(panCheckWithMaskedAadhaar("XXXXXXXX9999"));
+
+        var result = service.verifyPan(APP, "QVEPS0901K");
+
+        assertThat(result.derived()).containsEntry("aadhaarMismatch", true);
+        verify(flow, never()).autoRejectSystem(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void intakeCardsComplete_needsTheNumberAndAllFourImages() {
+        // No number → false before documents are even read.
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile()));
+        assertThat(service.intakeCardsComplete(APP)).isFalse();
+
+        CustomerProfile p = profile();
+        p.setAadhaar("234567890124");
+        when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(p));
+        when(documentRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                doc("AADHAAR_CARD_FRONT"), doc("AADHAAR_CARD_BACK"), doc("PAN_CARD_FRONT")));
+        assertThat(service.intakeCardsComplete(APP)).isFalse();
+
+        when(documentRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                doc("AADHAAR_CARD_FRONT"), doc("AADHAAR_CARD_BACK"), doc("PAN_CARD_FRONT"), doc("PAN_CARD_BACK"),
+                doc("SALARY_SLIP")));
+        assertThat(service.intakeCardsComplete(APP)).isTrue();
+
+        // The DigiLocker-fallback pair is not the intake upload.
+        when(documentRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                doc("AADHAAR_FRONT"), doc("AADHAAR_BACK"), doc("PAN_CARD_FRONT"), doc("PAN_CARD_BACK")));
+        assertThat(service.intakeCardsComplete(APP)).isFalse();
+    }
+
+    @Test
+    void saveUploadedDocuments_acceptsTheIntakeCardTypes_andStillRefusesUnknownOnes() {
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(draftApp()));
+        lenient().when(documentRepo.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        for (String type : List.of("AADHAAR_CARD_FRONT", "AADHAAR_CARD_BACK", "PAN_CARD_FRONT", "PAN_CARD_BACK")) {
+            service.saveUploadedDocuments(APP, type, List.of("applications/42/" + type.toLowerCase() + "/1.jpg"),
+                    "secret");
+        }
+        ArgumentCaptor<ApplicationDocument> saved = ArgumentCaptor.forClass(ApplicationDocument.class);
+        verify(documentRepo, times(4)).save(saved.capture());
+        assertThat(saved.getAllValues()).extracting(ApplicationDocument::getDocType)
+                .containsExactly("AADHAAR_CARD_FRONT", "AADHAAR_CARD_BACK", "PAN_CARD_FRONT", "PAN_CARD_BACK");
+        assertThat(saved.getAllValues()).extracting(ApplicationDocument::getFilePassword).containsOnly("secret");
+
+        assertThatThrownBy(() -> service.saveUploadedDocuments(APP, "PAN_CARD_SIDE", List.of("k"), null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "UNSUPPORTED_DOC_TYPE");
+    }
+
+    private static ApplicationDocument doc(String type) {
+        ApplicationDocument d = new ApplicationDocument();
+        d.setApplicationId(APP);
+        d.setDocType(type);
+        return d;
+    }
+
     private static ApplicationVerification row(String type, String status) {
         return row(APP, type, status);
     }

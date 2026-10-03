@@ -39,6 +39,11 @@ export const CUSTOMER_LEVEL_DOC_TYPES = new Set([
   // section. BANK_STATEMENT is the new 6-month bank-statement upload (bank-details page).
   "SALARY_SLIP",
   "BANK_STATEMENT",
+  // V75 intake card uploads — identity evidence, so customer-level like PAN/AADHAAR above.
+  "AADHAAR_CARD_FRONT",
+  "AADHAAR_CARD_BACK",
+  "PAN_CARD_FRONT",
+  "PAN_CARD_BACK",
 ]);
 
 /** Friendly labels for docTypes shown to staff; unlisted types fall back to the raw string. */
@@ -47,10 +52,16 @@ export const DOC_TYPE_LABELS: Record<string, string> = {
   BANK_STATEMENT: "Bank statement",
   BUREAU_REPORT: "Bureau report (CRIF)",
   CREDIT_BRIEF: "Credit brief",
-  AADHAAR_PHOTO: "Aadhaar photo",
-  AADHAAR_FRONT: "Aadhaar (front)",
-  AADHAAR_BACK: "Aadhaar (back)",
-  AADHAAR_JPEG: "Aadhaar image",
+  AADHAAR_PHOTO: "Aadhaar photo (DigiLocker)",
+  // Two different Aadhaar-card uploads live side by side (V75) and must read differently: the
+  // mandatory signup upload vs. the post-sanction fallback a borrower takes when DigiLocker fails.
+  AADHAAR_CARD_FRONT: "Aadhaar card (front) — signup",
+  AADHAAR_CARD_BACK: "Aadhaar card (back) — signup",
+  AADHAAR_FRONT: "Aadhaar card (front) — DigiLocker fallback",
+  AADHAAR_BACK: "Aadhaar card (back) — DigiLocker fallback",
+  PAN_CARD_FRONT: "PAN card (front)",
+  PAN_CARD_BACK: "PAN card (back)",
+  AADHAAR_JPEG: "Aadhaar image (DigiLocker)",
   SANCTION_LETTER: "Sanction letter",
   SIGNED_AGREEMENT: "Signed agreement",
   BANK_PROOF: "Bank proof",

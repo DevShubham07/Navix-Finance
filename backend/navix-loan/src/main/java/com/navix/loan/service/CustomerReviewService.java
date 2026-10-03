@@ -5,6 +5,7 @@ import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.common.util.Aadhaar;
 import com.navix.common.util.Masking;
 import com.navix.loan.dto.ReviewDtos.DocumentRequest;
 import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
@@ -73,12 +74,13 @@ public class CustomerReviewService {
 
         String pan = normalizePan(req.pan());
         String mobile = normalizeMobile(req.mobile());
+        String aadhaar = normalizeAadhaar(req.aadhaar());
 
-        // A mobile / PAN may belong to only one customer. Uniqueness is now enforced ACROSS customers
-        // (not per-application): the same customer re-onboarding through a NEW application — which
-        // creates a fresh profile row carrying the same identity — is allowed, while a different person
-        // reusing the PAN / mobile is still rejected. (The Aadhaar number is no longer captured; identity
-        // is anchored on PAN + mobile + DigiLocker verification.)
+        // A mobile / PAN / Aadhaar may belong to only one customer. Uniqueness is enforced ACROSS
+        // customers (not per-application): the same customer re-onboarding through a NEW application —
+        // which creates a fresh profile row carrying the same identity — is allowed, while a different
+        // person reusing the identifier is still rejected. (The Aadhaar number is captured again since
+        // V75 — see CustomerProfile#aadhaar for why it came back after V35 dropped it.)
         if (pan != null && profileRepository.existsPanForOtherCustomer(pan, customerId)) {
             throw new BusinessException("DUPLICATE_PAN",
                     "This PAN is already registered with another customer.");
@@ -86,6 +88,10 @@ public class CustomerReviewService {
         if (mobile != null && profileRepository.existsMobileForOtherCustomer(mobile, customerId)) {
             throw new BusinessException("DUPLICATE_MOBILE",
                     "This mobile number is already registered with another customer.");
+        }
+        if (aadhaar != null && profileRepository.existsAadhaarForOtherCustomer(aadhaar, customerId)) {
+            throw new BusinessException("DUPLICATE_AADHAAR",
+                    "This Aadhaar number is already registered with another customer.");
         }
 
         CustomerProfile p = profileRepository.findByApplicationId(appId).orElseGet(CustomerProfile::new);
@@ -114,6 +120,11 @@ public class CustomerReviewService {
         if (mobile != null) {
             log(customerId, appId, "mobile", Masking.maskPhone(p.getMobile()), Masking.maskPhone(mobile));
             p.setMobile(mobile);
+        }
+        if (aadhaar != null) {
+            // Masked on the timeline like the PAN: the full number lives on the profile card only.
+            log(customerId, appId, "aadhaar", Masking.maskAadhaar(p.getAadhaar()), Masking.maskAadhaar(aadhaar));
+            p.setAadhaar(aadhaar);
         }
         if (req.dob() != null) {
             requireStorableDob(req.dob());
@@ -521,6 +532,23 @@ public class CustomerReviewService {
     private static String normalizePan(String pan) {
         String t = trimToNull(pan);
         return t == null ? null : t.toUpperCase();
+    }
+
+    /**
+     * Card spacing stripped, then the UIDAI shape + Verhoeff check (V75). Refused outright rather than
+     * stored-and-flagged: a mistyped number would later trip the Aadhaar-mismatch fraud rule and reject
+     * the borrower for a typo. Null when not supplied (the wizard saves in slices).
+     */
+    private static String normalizeAadhaar(String aadhaar) {
+        String digits = Aadhaar.normalize(aadhaar);
+        if (digits == null) {
+            return null;
+        }
+        if (!Aadhaar.isValid(digits)) {
+            throw new BusinessException("INVALID_AADHAAR",
+                    "Enter a valid 12-digit Aadhaar number — please check it against your card.");
+        }
+        return digits;
     }
 
     /** Digits only, last 10 (drops a country/STD prefix); must be exactly 10. Null when not supplied. */

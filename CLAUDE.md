@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V72 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V75 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -324,10 +324,22 @@ How a real applicant moves through the product — this is now the **designed, b
    staff); identity = a numeric `customerId` derived from the mobile. (The signup wizard's mobile-OTP
    step establishes the same session early.) With `NAVIX_SMS_MOCK=true` the code is `123456`.
 2. **Phase-1 intake (`/signup/*`, application `DRAFT`)** — `JourneyService.Step` in order: `otp` →
-   `set-password` (optional) → `employment` → `employer` → `email` → `bank` → `payslips` → `consent` →
-   `submitted`. **Where the borrower is is answered server-side** (`GET …/journey`, the max of what
-   their saved data proves and the `journey_step` pointer), so a second device resumes on the right
-   screen. The `email` screen is a real gate: both the personal and the official address must be
+   `set-password` (optional) → `employment` → `employer` → `email` → `bank` → `payslips` → `aadhaar` →
+   `pan-card` → `consent` → `submitted`. **Where the borrower is is answered server-side** (`GET …/journey`,
+   the max of what their saved data proves and the `journey_step` pointer), so a second device resumes
+   on the right screen. The two card screens (V75) are **mandatory and document-proven**: `aadhaar` takes
+   the typed 12-digit number (Verhoeff-checked, stored **in full**, `INVALID_AADHAAR` / `DUPLICATE_AADHAAR`)
+   plus both sides of the card as `AADHAAR_CARD_FRONT`/`AADHAAR_CARD_BACK` (deliberately **not** the
+   `AADHAAR_FRONT`/`AADHAAR_BACK` pair the post-sanction DigiLocker fallback writes, so staff can tell
+   the two uploads apart), and `pan-card` takes `PAN_CARD_FRONT`/`PAN_CARD_BACK`; photos **or PDFs**, with
+   an optional file password. `submit-kyc` refuses (`KYC_INCOMPLETE`, `intakeCardsComplete`) until the
+   number and all four images are on file, and a stale pre-V75 pointer can never skip these screens.
+   **Fraud rule:** the typed number is cross-checked (positionally, against whatever digits the mask
+   reveals — `Aadhaar.matchesMasked`) with the masked Aadhaar the PAN record and DigiLocker return; a
+   mismatch auto-rejects the file into the rejection register as **`FRAUD_REJECTED`** (365-day block,
+   `flow.autoRejectSystem`), the borrower sees only "Your application has been rejected"
+   (`/application-rejected`), and staff/ADMIN read the full number unmasked on the customer Personal tab
+   and the applicant review panel. The `email` screen is a real gate: both the personal and the official address must be
    OTP-confirmed (`emailsSettled`, V52/V65) — distinct from the provider deliverability/employer-match
    check that runs against the same work address. Self-employed applicants are turned away at intake
    (`/self-employed`, 90-day block).
@@ -551,7 +563,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V72** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V75** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -718,7 +730,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V72 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V75 Flyway catalog.
 - **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
   (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 

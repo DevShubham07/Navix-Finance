@@ -44,14 +44,17 @@ public final class ReviewDtos {
             /** T&C version accepted on screen 1 — the accepted-at timestamp is stamped server-side. */
             String termsVersion,
             /** True = "I am not a Politically Exposed Person"; stamped server-side. */
-            Boolean pepDeclared) {
+            Boolean pepDeclared,
+            /** 12-digit Aadhaar number typed on the intake Aadhaar-card screen (V75). Spaces/hyphens are
+             *  stripped server-side; anything that is not twelve Verhoeff-valid digits → {@code INVALID_AADHAAR}. */
+            String aadhaar) {
 
         /** Pre-V44 shape — the Phase-1 fields default to null (they are all optional slices). */
         public ProfileRequest(String fullName, String pan, String mobile, LocalDate dob, String address,
                               String employer, String employmentStatus, Long monthlySalaryPaise,
                               String salaryBank, String email) {
             this(fullName, pan, mobile, dob, address, employer, employmentStatus, monthlySalaryPaise,
-                    salaryBank, email, null, null, null, null, null, null, null, null);
+                    salaryBank, email, null, null, null, null, null, null, null, null, null);
         }
     }
 
@@ -129,7 +132,10 @@ public final class ReviewDtos {
             Instant termsAcceptedAt,
             Instant pepDeclaredAt,
             /** Optional EPFO UAN (12 digits, V66) — staff-visible, same as {@code employer}. */
-            String uan) {
+            String uan,
+            /** The Aadhaar number typed at intake (V75), in FULL — staff and ADMIN read it unmasked by
+             *  product decision; the borrower sees their own. Null for files submitted before V75. */
+            String aadhaar) {
 
         public static ProfileView of(CustomerProfile p) {
             return new ProfileView(
@@ -149,7 +155,8 @@ public final class ReviewDtos {
                     p.getCreditBriefSummary(), p.getCreditBriefGeneratedAt(),
                     p.getOfficialEmail(), p.getSalaryAccountNumber(), p.getSalaryIfsc(),
                     p.getSalaryAccountMobile(), p.getPreviousSalaryDate(),
-                    p.getTermsVersion(), p.getTermsAcceptedAt(), p.getPepDeclaredAt(), p.getUan());
+                    p.getTermsVersion(), p.getTermsAcceptedAt(), p.getPepDeclaredAt(), p.getUan(),
+                    p.getAadhaar());
         }
 
         /**
@@ -167,7 +174,7 @@ public final class ReviewDtos {
                     addressVerified, pennyDropVerified,
                     null, null, null,
                     officialEmail, salaryAccountNumber, salaryIfsc, salaryAccountMobile, previousSalaryDate,
-                    termsVersion, termsAcceptedAt, pepDeclaredAt, uan);
+                    termsVersion, termsAcceptedAt, pepDeclaredAt, uan, aadhaar);
         }
     }
 

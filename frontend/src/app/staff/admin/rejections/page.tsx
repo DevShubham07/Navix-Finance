@@ -18,6 +18,7 @@ const REASONS = [
   { value: "SELF_EMPLOYED", label: "Self-employed" },
   { value: "PAST_DELINQUENCY", label: "Past delinquency" },
   { value: "LOW_BUREAU_SCORE", label: "Low credit score" },
+  { value: "FRAUD_REJECTED", label: "Fraud rejected" },
   { value: "MANUAL", label: "Rejected by credit" },
 ] as const;
 
@@ -25,6 +26,8 @@ const REASON_LABEL: Record<string, string> = {
   SELF_EMPLOYED: "Self-employed",
   PAST_DELINQUENCY: "Past delinquency",
   LOW_BUREAU_SCORE: "Low credit score",
+  /** V75: the Aadhaar number entered disagrees with the one on the PAN record / DigiLocker. */
+  FRAUD_REJECTED: "Fraud rejected",
   MANUAL: "Rejected by credit",
 };
 

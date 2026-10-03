@@ -148,6 +148,47 @@ class CustomerReviewServiceTest {
         assertThat(saved.getMobile()).isEqualTo("9876543210");
     }
 
+    // ---- V75: Aadhaar number slice ------------------------------------------------------
+
+    private static ProfileRequest aadhaarReq(String aadhaar) {
+        return new ProfileRequest(null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, aadhaar);
+    }
+
+    @Test
+    void storesAValidAadhaarWithCardSpacingStripped() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.existsAadhaarForOtherCustomer("234567890124", CUSTOMER_ID)).thenReturn(false);
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        CustomerProfile saved = service.saveProfile(APP_ID, aadhaarReq("2345 6789 0124"));
+
+        assertThat(saved.getAadhaar()).isEqualTo("234567890124");
+    }
+
+    @Test
+    void refusesAnAadhaarThatFailsTheChecksum() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("2345 6789 0125")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "INVALID_AADHAAR");
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("12345678")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "INVALID_AADHAAR");
+    }
+
+    @Test
+    void rejectsAnAadhaarHeldByAnotherCustomer() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.existsAadhaarForOtherCustomer("234567890124", CUSTOMER_ID)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("234567890124")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "DUPLICATE_AADHAAR");
+    }
+
     // ---- document upload gate -------------------------------------------------------
     //
     // Uploading is wider than the rest of the review writes: the borrower plus the two credit
