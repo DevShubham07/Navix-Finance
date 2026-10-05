@@ -47,10 +47,17 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "where p.applicationId = a.id and p.mobile = :mobile and a.customerId <> :customerId")
     boolean existsMobileForOtherCustomer(@Param("mobile") String mobile, @Param("customerId") Long customerId);
 
-    /** Same rule for the Aadhaar number captured at intake (V75): one number, one customer. */
-    @Query("select (count(p) > 0) from CustomerProfile p, LoanApplication a "
-            + "where p.applicationId = a.id and p.aadhaar = :aadhaar and a.customerId <> :customerId")
-    boolean existsAadhaarForOtherCustomer(@Param("aadhaar") String aadhaar, @Param("customerId") Long customerId);
+    /**
+     * The OTHER customers already holding this Aadhaar number (V75). Unlike the PAN / mobile rules
+     * above this is not a hard block: a collision is written as an {@code AADHAAR_DUPLICATE} review
+     * row for the credit team, never reported to the borrower — so the write path cannot be used to
+     * probe which numbers we hold, and a genuine returning borrower on a new mobile is not refused.
+     */
+    @Query("select distinct a.customerId from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and p.aadhaar = :aadhaar and a.customerId <> :customerId "
+            + "order by a.customerId")
+    java.util.List<Long> findOtherCustomerIdsByAadhaar(@Param("aadhaar") String aadhaar,
+                                                       @Param("customerId") Long customerId);
 
     /**
      * Every mobile this customer has on file across their applications, newest application first.

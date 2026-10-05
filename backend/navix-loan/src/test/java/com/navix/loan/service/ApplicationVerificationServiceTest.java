@@ -234,6 +234,31 @@ class ApplicationVerificationServiceTest {
         assertThat(result.failed()).isEqualTo(1);
     }
 
+    /**
+     * The V75 duplicate-Aadhaar flag exists only on a collision: its absence must not hold every clean
+     * file in the attention queue, while a REVIEW row for it must — until a reviewer clears it.
+     */
+    @Test
+    void overview_aadhaarDuplicateFlag_countsOnlyWhenPresent() {
+        LoanApplication cleared = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
+        LoanApplication flagged = appWithStatus(43L, ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(cleared, flagged));
+        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
+        for (Long app : List.of(APP, 43L)) {
+            for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
+                    "PENNY_DROP", "SELFIE")) {
+                rows.add(row(app, check, "PASS"));
+            }
+        }
+        rows.add(row(43L, "AADHAAR_DUPLICATE", "REVIEW"));
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null, null, 1, 25);
+
+        assertThat(result.rows()).extracting("applicationId").containsOnly(43L);
+    }
+
     /** A gating check that never ran is outstanding borrower work, so the file stays in the default. */
     @Test
     void overview_defaultKeepsApplicationsMissingAGatingCheck() {

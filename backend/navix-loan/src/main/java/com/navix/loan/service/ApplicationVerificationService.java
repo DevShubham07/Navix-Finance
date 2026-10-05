@@ -135,6 +135,15 @@ public class ApplicationVerificationService {
     public static final List<String> INTAKE_CARD_DOC_TYPES =
             List.of(AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
     /**
+     * Written by {@code CustomerReviewService.saveProfile} (V75) when the Aadhaar number a borrower
+     * types is already on file for a different customer. A REVIEW row for the credit team — the
+     * borrower is told nothing, so the profile write cannot be used as a "do you hold this number"
+     * oracle, and a genuine returning borrower on a new mobile is not turned away by a hard block.
+     * In {@link #KNOWN_CHECKS} so a reviewer can clear it with the ordinary manual override; gating
+     * on purpose, so the file lands in the dashboard's attention queue until someone has looked.
+     */
+    public static final String AADHAAR_DUPLICATE = "AADHAAR_DUPLICATE";
+    /**
      * The borrower's OTP-verified consent to the credit-bureau enquiry. Deliberately NOT in
      * {@link #REQUIRED} (that would wedge every application whose PAN passed before this shipped)
      * nor in {@link #KNOWN_CHECKS} (staff must not be able to manually assert a borrower's consent).
@@ -205,7 +214,7 @@ public class ApplicationVerificationService {
 
     /** Every recognised check type — guards the staff manual-override target. */
     static final Set<String> KNOWN_CHECKS = Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU,
-            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN);
+            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN, AADHAAR_DUPLICATE);
 
     /**
      * Checks that inform the credit decision but gate nothing, so they stay out of the
@@ -216,9 +225,16 @@ public class ApplicationVerificationService {
     private static final Set<String> OVERVIEW_NON_GATING =
             Set.of(EMPLOYMENT, DIGILOCKER, AGREEMENT, ESIGN);
 
-    /** The gating checks the dashboard counts: every known check that is not {@link #OVERVIEW_NON_GATING}. */
+    /**
+     * The gating checks the dashboard counts: every known check that is not {@link #OVERVIEW_NON_GATING}
+     * — minus {@link #AADHAAR_DUPLICATE}, which exists only on a collision. It must not be a check every
+     * file has to "pass" (almost none have a row), yet when a row IS present and not PASS it still
+     * demands attention: {@link #needsAttention}'s second loop catches it because it is deliberately
+     * absent from {@link #OVERVIEW_NON_GATING}. The frontend mirrors this for free — its bucket maths
+     * only ever subtracts the non-gating list and only requires {@code REQUIRED_CHECKS} to be present.
+     */
     private static final Set<String> OVERVIEW_GATING_CHECKS = KNOWN_CHECKS.stream()
-            .filter(c -> !OVERVIEW_NON_GATING.contains(c))
+            .filter(c -> !OVERVIEW_NON_GATING.contains(c) && !AADHAAR_DUPLICATE.equals(c))
             .collect(Collectors.toUnmodifiableSet());
 
     /** Page-size ceiling for {@link #overview}, mirroring {@code CustomerService.MAX_PAGE_SIZE}. */

@@ -20,6 +20,7 @@ import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import com.navix.loan.repository.ProfileChangeLogRepository;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.entity.ApplicationVerification;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Collection;
@@ -32,6 +33,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +46,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CustomerReviewService {
 
     /** Inline document cap — keeps base64-over-JSON sane for the demo. */
@@ -80,11 +83,13 @@ public class CustomerReviewService {
         String mobile = normalizeMobile(req.mobile());
         String aadhaar = normalizeAadhaar(req.aadhaar());
 
-        // A mobile / PAN / Aadhaar may belong to only one customer. Uniqueness is enforced ACROSS
-        // customers (not per-application): the same customer re-onboarding through a NEW application —
-        // which creates a fresh profile row carrying the same identity — is allowed, while a different
-        // person reusing the identifier is still rejected. (The Aadhaar number is captured again since
-        // V75 — see CustomerProfile#aadhaar for why it came back after V35 dropped it.)
+        // A mobile / PAN may belong to only one customer. Uniqueness is enforced ACROSS customers
+        // (not per-application): the same customer re-onboarding through a NEW application — which
+        // creates a fresh profile row carrying the same identity — is allowed, while a different person
+        // reusing the identifier is still rejected. The Aadhaar number (captured again since V75 — see
+        // CustomerProfile#aadhaar) is deliberately NOT a hard block: a collision becomes an
+        // AADHAAR_DUPLICATE review row for staff (see flagAadhaarDuplicate), so the borrower learns
+        // nothing from the response and a returning borrower on a new mobile is not refused.
         if (pan != null && profileRepository.existsPanForOtherCustomer(pan, customerId)) {
             throw new BusinessException("DUPLICATE_PAN",
                     "This PAN is already registered with another customer.");
@@ -92,10 +97,6 @@ public class CustomerReviewService {
         if (mobile != null && profileRepository.existsMobileForOtherCustomer(mobile, customerId)) {
             throw new BusinessException("DUPLICATE_MOBILE",
                     "This mobile number is already registered with another customer.");
-        }
-        if (aadhaar != null && profileRepository.existsAadhaarForOtherCustomer(aadhaar, customerId)) {
-            throw new BusinessException("DUPLICATE_AADHAAR",
-                    "This Aadhaar number is already registered with another customer.");
         }
 
         CustomerProfile p = profileRepository.findByApplicationId(appId).orElseGet(CustomerProfile::new);
@@ -135,6 +136,7 @@ public class CustomerReviewService {
             // Masked on the timeline like the PAN: the full number lives on the profile card only.
             log(customerId, appId, "aadhaar", Masking.maskAadhaar(p.getAadhaar()), Masking.maskAadhaar(aadhaar));
             p.setAadhaar(aadhaar);
+            flagAadhaarDuplicate(appId, profileRepository.findOtherCustomerIdsByAadhaar(aadhaar, customerId));
         }
         if (req.dob() != null) {
             requireStorableDob(req.dob());
@@ -542,6 +544,37 @@ public class CustomerReviewService {
     private static String normalizePan(String pan) {
         String t = trimToNull(pan);
         return t == null ? null : t.toUpperCase();
+    }
+
+    /**
+     * Record — or clear — the silent duplicate-Aadhaar flag (V75). A collision with another customer
+     * writes an {@code AADHAAR_DUPLICATE} row as REVIEW with the other customer ids in {@code derived};
+     * a number that no longer collides (the borrower corrected a typo while the number was still
+     * editable) deletes the row again. The response to the borrower is identical either way.
+     */
+    private void flagAadhaarDuplicate(Long appId, List<Long> otherCustomerIds) {
+        Optional<ApplicationVerification> existing =
+                verificationRepository.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.AADHAAR_DUPLICATE);
+        if (otherCustomerIds == null || otherCustomerIds.isEmpty()) {
+            existing.ifPresent(verificationRepository::delete);
+            return;
+        }
+        ApplicationVerification row = existing.orElseGet(ApplicationVerification::new);
+        row.setApplicationId(appId);
+        row.setCheckType(ApplicationVerificationService.AADHAAR_DUPLICATE);
+        row.setStatus(ApplicationVerificationService.REVIEW);
+        row.setProvider("SYSTEM");
+        row.setClientRefNum("navix-" + appId + "-AADHAAR_DUPLICATE");
+        String ids = otherCustomerIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+        row.setDerived("{\"otherCustomerIds\":[" + ids + "]}");
+        row.setRawResponse(row.getDerived());
+        row.setMessage("Aadhaar number is also on file for customer"
+                + (otherCustomerIds.size() == 1 ? " #" : "s #") + ids.replace(",", ", #")
+                + " — confirm it is the same person before sanction");
+        row.setReopenedAt(null);
+        row.setReopenedBy(null);
+        verificationRepository.save(row);
+        log.info("aadhaar duplicate flagged application={} otherCustomers={}", appId, otherCustomerIds.size());
     }
 
     /** See the call site in {@link #saveProfile}: the Aadhaar number is locked once a check has read it. */

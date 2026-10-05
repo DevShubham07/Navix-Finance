@@ -518,7 +518,8 @@ export interface ProfileInput {
   /** True = "I am not a Politically Exposed Person". */
   pepDeclared?: boolean;
   /** 12-digit Aadhaar number (V75). Card spacing is stripped server-side; `INVALID_AADHAAR` on a
-   *  failed Verhoeff check, `DUPLICATE_AADHAAR` when another customer already holds it. */
+   *  failed Verhoeff check. A number another customer already holds is accepted and flagged for
+   *  staff (an `AADHAAR_DUPLICATE` review row) — never reported back here. */
   aadhaar?: string;
 }
 

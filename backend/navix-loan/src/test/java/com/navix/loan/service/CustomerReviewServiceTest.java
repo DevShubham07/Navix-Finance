@@ -163,7 +163,6 @@ class CustomerReviewServiceTest {
     @Test
     void storesAValidAadhaarWithCardSpacingStripped() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-        when(profileRepository.existsAadhaarForOtherCustomer("234567890124", CUSTOMER_ID)).thenReturn(false);
         when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
         when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
@@ -187,7 +186,6 @@ class CustomerReviewServiceTest {
     @Test
     void aadhaarIsLockedOnceAVerificationHasReadIt_butTheSameValueMayBeResaved() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-        when(profileRepository.existsAadhaarForOtherCustomer(any(), eq(CUSTOMER_ID))).thenReturn(false);
         CustomerProfile existing = new CustomerProfile();
         existing.setApplicationId(APP_ID);
         existing.setAadhaar("234567890124");
@@ -211,7 +209,6 @@ class CustomerReviewServiceTest {
         LoanApplication submitted = application();
         submitted.setStatus(ApplicationStatus.KYC_PENDING);
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(submitted));
-        when(profileRepository.existsAadhaarForOtherCustomer(any(), eq(CUSTOMER_ID))).thenReturn(false);
         when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(new CustomerProfile()));
 
         assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("234567890124")))
@@ -220,13 +217,43 @@ class CustomerReviewServiceTest {
     }
 
     @Test
-    void rejectsAnAadhaarHeldByAnotherCustomer() {
+    void anAadhaarHeldByAnotherCustomer_isFlaggedForStaffNotRefused() {
         when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
-        when(profileRepository.existsAadhaarForOtherCustomer("234567890124", CUSTOMER_ID)).thenReturn(true);
+        when(profileRepository.findOtherCustomerIdsByAadhaar("234567890124", CUSTOMER_ID))
+                .thenReturn(java.util.List.of(11L, 12L));
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
-        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("234567890124")))
-                .isInstanceOf(BusinessException.class)
-                .hasFieldOrPropertyWithValue("code", "DUPLICATE_AADHAAR");
+        // The borrower's response is the ordinary success — nothing reveals the collision.
+        CustomerProfile saved = service.saveProfile(APP_ID, aadhaarReq("234567890124"));
+        assertThat(saved.getAadhaar()).isEqualTo("234567890124");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(com.navix.loan.entity.ApplicationVerification.class);
+        verify(verificationRepository).save(captor.capture());
+        assertThat(captor.getValue().getCheckType()).isEqualTo("AADHAAR_DUPLICATE");
+        assertThat(captor.getValue().getStatus()).isEqualTo("REVIEW");
+        assertThat(captor.getValue().getDerived()).isEqualTo("{\"otherCustomerIds\":[11,12]}");
+        assertThat(captor.getValue().getMessage()).contains("#11, #12");
+    }
+
+    @Test
+    void correctingTheNumberToOneNobodyElseHolds_clearsTheDuplicateFlag() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        CustomerProfile existing = new CustomerProfile();
+        existing.setApplicationId(APP_ID);
+        existing.setAadhaar("999988887779");
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(existing));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        com.navix.loan.entity.ApplicationVerification flag = new com.navix.loan.entity.ApplicationVerification();
+        // lenient: the editability guard also asks for PAN / AADHAAR rows (absent) with other args.
+        org.mockito.Mockito.lenient()
+                .when(verificationRepository.findByApplicationIdAndCheckType(APP_ID, "AADHAAR_DUPLICATE"))
+                .thenReturn(Optional.of(flag));
+
+        service.saveProfile(APP_ID, aadhaarReq("234567890124"));
+
+        verify(verificationRepository).delete(flag);
+        verify(verificationRepository, org.mockito.Mockito.never()).save(any());
     }
 
     // ---- document upload gate -------------------------------------------------------
