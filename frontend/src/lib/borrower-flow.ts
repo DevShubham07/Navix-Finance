@@ -6,12 +6,14 @@ export function addIsoCalendarDays(iso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Credit's sanction is authoritative; the salary-derived limit is only a legacy fallback. */
+/**
+ * Credit's sanction is the only amount a borrower is ever shown. The salary-derived eligible limit
+ * is staff guidance (revamp.md decision 33) and must never stand in for it.
+ */
 export function preferredApprovedAmountPaise(value: {
   sanctionedAmountPaise?: number | null;
-  eligibleLimitPaise?: number | null;
 }): number | null {
-  return value.sanctionedAmountPaise ?? value.eligibleLimitPaise ?? null;
+  return value.sanctionedAmountPaise ?? null;
 }
 
 /** A geo attempt must resolve an address before the borrower can skip manual entry. */

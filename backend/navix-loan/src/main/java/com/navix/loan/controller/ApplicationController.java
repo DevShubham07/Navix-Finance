@@ -164,12 +164,13 @@ public class ApplicationController {
         // availableLimitPaise: one override lookup for the caller, applied to each of their rows. A
         // returning borrower's newest application is CLOSED, so its stored limit/sanction are both
         // historical — the borrower UI must read "available to borrow" from this instead (V69).
+        // Override only: the salary-derived eligible limit is staff guidance and is never offered to
+        // a borrower as a ceiling (the UI falls back to the sanctioned amount).
         List<LoanApplication> mine = flow.myApplications();
         Long available = mine.isEmpty() ? null
                 : eligibilityService.overrideOf(mine.get(0).getCustomerId()).orElse(null);
         return ApiResponse.ok(mine.stream()
-                .map(a -> ApplicationView.of(a).withAvailableLimit(
-                        available != null ? available : a.getEligibleLimit()))
+                .map(a -> ApplicationView.of(a).withAvailableLimit(available))
                 .toList());
     }
 
@@ -201,7 +202,7 @@ public class ApplicationController {
         requireBorrowerOwnsOrStaff(id);
         LoanApplication app = flow.get(id);
         ApplicationView view = ApplicationView.of(app).withAvailableLimit(
-                eligibilityService.overrideOf(app.getCustomerId()).orElse(app.getEligibleLimit()));
+                eligibilityService.overrideOf(app.getCustomerId()).orElse(null));
         if (!"BORROWER".equals(ActorContext.get().role())) {
             // Staff-only: resolve the real assignee name + current-stage-entered timestamp (never
             // leaked to the borrower-facing read, mirrors /mine).
