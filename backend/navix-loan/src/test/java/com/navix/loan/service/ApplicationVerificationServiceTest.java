@@ -70,6 +70,7 @@ class ApplicationVerificationServiceTest {
     private ApplicationVerificationService service;
 
     private static final Long APP = 42L;
+    private static final String SELFIE_KEY = "applications/42/selfie/9.jpg";
 
     @BeforeEach
     void setUp() {
@@ -3098,11 +3099,12 @@ class ApplicationVerificationServiceTest {
     @Test
     void verifySelfie_passesOnDigitapLivenessAndSendsNoReferencePhoto() {
         when(applicationRepo.findById(APP)).thenReturn(Optional.of(new LoanApplication()));
-        when(storage.presignDownload("selfie-key")).thenReturn("https://s3/selfie.jpg");
+        when(storage.buildApplicationKey(APP, "SELFIE", "jpg")).thenReturn("applications/42/selfie/1.jpg");
+        when(storage.presignDownload(SELFIE_KEY)).thenReturn("https://s3/selfie.jpg");
         when(verification.faceLiveness("https://s3/selfie.jpg", null, "navix-42-SELFIE")).thenReturn(
                 new VerificationPort.FaceLivenessCheck("REQ-FL-1", "DIGITAP", true, 0.97, false, false));
 
-        var result = service.verifySelfie(APP, "selfie-key");
+        var result = service.verifySelfie(APP, SELFIE_KEY);
 
         assertThat(result.status()).isEqualTo("PASS");
         assertThat(result.derived()).containsEntry("live", true).containsEntry("faceMatch", false)
@@ -3114,11 +3116,12 @@ class ApplicationVerificationServiceTest {
     @Test
     void verifySelfie_notLiveGoesToReviewWithoutAskingForTheSignzyFallback() {
         when(applicationRepo.findById(APP)).thenReturn(Optional.of(new LoanApplication()));
-        when(storage.presignDownload("selfie-key")).thenReturn("https://s3/selfie.jpg");
+        when(storage.buildApplicationKey(APP, "SELFIE", "jpg")).thenReturn("applications/42/selfie/1.jpg");
+        when(storage.presignDownload(SELFIE_KEY)).thenReturn("https://s3/selfie.jpg");
         when(verification.faceLiveness(anyString(), isNull(), anyString())).thenReturn(
                 new VerificationPort.FaceLivenessCheck("REQ-FL-2", "DIGITAP", false, 0.12, false, false));
 
-        var result = service.verifySelfie(APP, "selfie-key");
+        var result = service.verifySelfie(APP, SELFIE_KEY);
 
         assertThat(result.status()).isEqualTo("REVIEW");
         assertThat(result.derived()).doesNotContainKey("fallback");
@@ -3131,15 +3134,36 @@ class ApplicationVerificationServiceTest {
     @Test
     void verifySelfie_whenDigitapIsDownKeepsTheSelfieAndSignalsTheSignzyFallback() {
         when(applicationRepo.findById(APP)).thenReturn(Optional.of(new LoanApplication()));
-        when(storage.presignDownload("selfie-key")).thenReturn("https://s3/selfie.jpg");
+        when(storage.buildApplicationKey(APP, "SELFIE", "jpg")).thenReturn("applications/42/selfie/1.jpg");
+        when(storage.presignDownload(SELFIE_KEY)).thenReturn("https://s3/selfie.jpg");
         when(verification.faceLiveness(anyString(), isNull(), anyString()))
                 .thenThrow(new IllegalStateException("digitap down"));
 
-        var result = service.verifySelfie(APP, "selfie-key");
+        var result = service.verifySelfie(APP, SELFIE_KEY);
 
         assertThat(result.status()).isEqualTo("REVIEW");
         assertThat(result.derived()).containsEntry("fallback", true).containsEntry("providerError", true);
         verify(documentRepo).save(any());
         verify(verificationRepo).save(any());
+    }
+
+    /**
+     * The selfie key is client-supplied. Naming another application's stored selfie must be refused
+     * before anything is presigned, sent to the provider or filed against this application.
+     */
+    @Test
+    void verifySelfie_refusesAKeyFromAnotherApplication() {
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(new LoanApplication()));
+        when(storage.buildApplicationKey(APP, "SELFIE", "jpg")).thenReturn("applications/42/selfie/1.jpg");
+
+        assertThatThrownBy(() -> service.verifySelfie(APP, "applications/99/selfie/7.jpg"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not belong");
+        assertThatThrownBy(() -> service.verifySelfie(APP, "applications/42/selfie/../../99/selfie/7.jpg"))
+                .isInstanceOf(BusinessException.class);
+
+        verify(storage, never()).presignDownload(anyString());
+        verify(documentRepo, never()).save(any());
+        verifyNoInteractions(verification);
     }
 }

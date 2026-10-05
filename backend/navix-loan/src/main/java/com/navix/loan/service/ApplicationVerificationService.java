@@ -2470,6 +2470,14 @@ public class ApplicationVerificationService {
             throw new BusinessException("SELFIE_REQUIRED", "selfieObjectKey is required");
         }
         requireApplication(appId);
+        // The key comes from the client. It must be one this application's own selfie upload was issued
+        // (same folder buildApplicationKey mints) — otherwise a borrower could name another applicant's
+        // stored selfie, pass liveness on that person's face and have it filed as their own.
+        String issued = storage.buildApplicationKey(appId, SELFIE, "jpg");
+        String ownFolder = issued.substring(0, issued.lastIndexOf('/') + 1);
+        if (!selfieObjectKey.startsWith(ownFolder) || selfieObjectKey.contains("..")) {
+            throw new BusinessException("INVALID_SELFIE_KEY", "That selfie upload does not belong to this application");
+        }
         String imageUrl = storage.presignDownload(selfieObjectKey);
         String ref = ref(appId, SELFIE);
 
