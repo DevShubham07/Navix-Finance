@@ -2458,9 +2458,11 @@ public class ApplicationVerificationService {
     }
 
     /**
-     * Face-match the uploaded selfie against the DigiLocker Aadhaar photo (presigned GET URLs → Digitap
-     * Face Match). When no Aadhaar photo has been captured yet, degrades to a single-image face/quality
-     * check on the selfie alone.
+     * The SELFIE step's PRIMARY path: passive liveness on the captured selfie (presigned GET URL →
+     * Digitap Face Liveness v4). Liveness only — the selfie is not compared to the Aadhaar photo here
+     * (product decision, Oct 2026); staff see both images side by side on review. If Digitap cannot run,
+     * the REVIEW row written below is the safety net and {@code derived.fallback=true} tells the
+     * frontend to try the Signzy video journey ({@link #selfieLivenessInit}) as the secondary.
      */
     @Transactional
     public StepResult verifySelfie(Long appId, String selfieObjectKey) {
@@ -2469,12 +2471,6 @@ public class ApplicationVerificationService {
         }
         requireApplication(appId);
         String imageUrl = storage.presignDownload(selfieObjectKey);
-        // Reference photo = the Aadhaar face captured at DigiLocker completion (if present).
-        String referenceUrl = documentRepo
-                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, AADHAAR_PHOTO)
-                .map(d -> storage.presignDownload(d.getS3ObjectKey()))
-                .orElse(null);
-        boolean matched = referenceUrl != null;
         String ref = ref(appId, SELFIE);
 
         // Persist the selfie regardless of the provider outcome, so a KYC approver always has the
@@ -2489,15 +2485,16 @@ public class ApplicationVerificationService {
 
         VerificationPort.FaceLivenessCheck r;
         try {
-            r = verification.faceLiveness(imageUrl, referenceUrl, ref);
+            r = verification.faceLiveness(imageUrl, null, ref);
         } catch (RuntimeException providerFailure) {
-            // The face-match provider couldn't run (e.g. insufficient balance / upstream error).
-            // Don't hard-block onboarding with a 500 — record the selfie for manual review and let the
-            // borrower continue, mirroring the penny-drop step. (Product decision: never stop the
-            // borrower at this step; a KYC approver makes the final call.)
+            // Digitap liveness couldn't run (e.g. insufficient balance / upstream error). Don't
+            // hard-block onboarding with a 500 — record the selfie for manual review so the borrower can
+            // always continue, and flag `fallback` so the frontend tries the Signzy video journey first.
+            // (Product decision: never stop the borrower at this step; a KYC approver makes the final call.)
             Map<String, Object> derived = new LinkedHashMap<>();
-            derived.put("faceMatch", matched);
+            derived.put("faceMatch", false);
             derived.put("providerError", true);
+            derived.put("fallback", true);
             return view(upsert(appId, SELFIE, REVIEW, "DIGITAP", null, ref, null, null, selfieObjectKey,
                     derived,
                     "We couldn't run the face check right now — you can continue; our team will review your selfie."));
@@ -2505,7 +2502,7 @@ public class ApplicationVerificationService {
 
         boolean live = r.live() && !r.multipleFaces();
         Map<String, Object> derived = new LinkedHashMap<>();
-        derived.put("faceMatch", matched);
+        derived.put("faceMatch", false);
         derived.put("live", r.live());
         derived.put("confidence", r.confidence());
         derived.put("personImageBlurry", r.personImageBlurry());
@@ -2513,20 +2510,19 @@ public class ApplicationVerificationService {
         // Fail → flagged for manual review (not hard block); approver decides.
         String status = live ? PASS : REVIEW;
         Long score = r.confidence() != null ? Math.round(r.confidence() * 100) : null;
-        String msg = matched
-                ? (live ? "Face matched to Aadhaar photo" : "Face match low — manual review")
-                : (live ? "Selfie quality check passed" : "Selfie check low — manual review");
+        String msg = live ? "Liveness check passed" : "Liveness check low — manual review";
         return view(upsert(appId, SELFIE, status, r.provider(), r.txnId(), ref, null, score, selfieObjectKey,
                 derived, msg));
     }
 
     /**
-     * Start the Signzy liveness video journey for the SELFIE step (primary path). Uses the DigiLocker
-     * Aadhaar face (if present) as the {@code matchImage} so the journey does liveness AND a 1:1
-     * face-match in one. Persists the session token on the SELFIE row; the frontend redirects the borrower
-     * to {@code derived.videoUrl} and then polls {@link #selfieLivenessResult}. If Signzy liveness is
-     * unavailable (not provisioned / upstream error), returns {@code derived.fallback=true} — the frontend
-     * then uses the camera-capture + Digitap face-match path ({@link #verifySelfie}). Never hard-blocks.
+     * Start the Signzy liveness video journey for the SELFIE step — the SECONDARY path, used only when
+     * Digitap liveness ({@link #verifySelfie}) could not run. Uses the DigiLocker Aadhaar face (if
+     * present) as the {@code matchImage} so the journey does liveness AND a 1:1 face-match in one.
+     * Persists the session token on the SELFIE row; the frontend shows {@code derived.videoUrl} and then
+     * polls {@link #selfieLivenessResult}. If Signzy is unavailable too, returns
+     * {@code derived.fallback=true} and writes nothing, so the REVIEW row {@link #verifySelfie} left
+     * behind stands and the borrower continues to manual review. Never hard-blocks.
      */
     @Transactional
     public StepResult selfieLivenessInit(Long appId) {
@@ -2548,11 +2544,11 @@ public class ApplicationVerificationService {
             return view(upsert(appId, SELFIE, PENDING, s.provider(), s.txnId(), ref, null, null, null,
                     derived, "Liveness session started"));
         } catch (RuntimeException signzyUnavailable) {
-            // Signzy liveness can't run — tell the frontend to fall back to camera capture (Digitap).
+            // Signzy liveness can't run either — both providers are down; the frontend moves on.
             Map<String, Object> derived = new LinkedHashMap<>();
             derived.put("fallback", true);
             return new StepResult(SELFIE, PENDING,
-                    "Liveness unavailable — capture a selfie instead", derived);
+                    "Liveness unavailable — our team will review your selfie", derived);
         }
     }
 

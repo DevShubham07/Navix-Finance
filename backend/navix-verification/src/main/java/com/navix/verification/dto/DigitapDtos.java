@@ -123,6 +123,21 @@ public final class DigitapDtos {
     ) {
     }
 
+    // ---- Face Liveness v4 : /fmfl/v4/face-liveness (svc host) ----
+    public record FaceLivenessRequest(
+            @JsonProperty("client_ref_num") String clientRefNum,
+            @JsonProperty("input_image") String inputImage) {
+    }
+
+    public record FaceLivenessResponse(
+            String txnId,
+            Boolean live,
+            Double confidence,
+            Boolean multipleFaces,
+            Boolean personImageBlurry
+    ) {
+    }
+
     // ---- Email Verification : /cv/email_verification/v1 (svc host) ----
     public record EmailRequest(
             @JsonProperty("client_ref_num") String clientRefNum,

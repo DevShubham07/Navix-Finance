@@ -3088,4 +3088,58 @@ class ApplicationVerificationServiceTest {
         verify(flow).autoReject(eq(APP), eq(ApplicationRejection.LOW_BUREAU_SCORE), any(),
                 eq(ApplicationFlowService.LOW_BUREAU_SCORE_BLOCK_DAYS));
     }
+
+    // ---------------------------------------------------------------- selfie (Digitap primary, Signzy secondary)
+
+    /**
+     * Digitap Face Liveness is the SELFIE primary and it is liveness ONLY: the Aadhaar photo must not be
+     * sent as a reference (product decision, Oct 2026), and a live verdict is a PASS on its own.
+     */
+    @Test
+    void verifySelfie_passesOnDigitapLivenessAndSendsNoReferencePhoto() {
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(new LoanApplication()));
+        when(storage.presignDownload("selfie-key")).thenReturn("https://s3/selfie.jpg");
+        when(verification.faceLiveness("https://s3/selfie.jpg", null, "navix-42-SELFIE")).thenReturn(
+                new VerificationPort.FaceLivenessCheck("REQ-FL-1", "DIGITAP", true, 0.97, false, false));
+
+        var result = service.verifySelfie(APP, "selfie-key");
+
+        assertThat(result.status()).isEqualTo("PASS");
+        assertThat(result.derived()).containsEntry("live", true).containsEntry("faceMatch", false)
+                .doesNotContainKey("fallback");
+        verify(documentRepo, never()).findFirstByApplicationIdAndDocTypeOrderByIdDesc(any(), any());
+    }
+
+    /** Not live (or a second face in frame) is a human's call, never a hard stop and never a second paid check. */
+    @Test
+    void verifySelfie_notLiveGoesToReviewWithoutAskingForTheSignzyFallback() {
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(new LoanApplication()));
+        when(storage.presignDownload("selfie-key")).thenReturn("https://s3/selfie.jpg");
+        when(verification.faceLiveness(anyString(), isNull(), anyString())).thenReturn(
+                new VerificationPort.FaceLivenessCheck("REQ-FL-2", "DIGITAP", false, 0.12, false, false));
+
+        var result = service.verifySelfie(APP, "selfie-key");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).doesNotContainKey("fallback");
+    }
+
+    /**
+     * Digitap down: the selfie is kept and a REVIEW row is written first (so the borrower can always
+     * continue), and {@code fallback} tells the page to try the Signzy video journey as the secondary.
+     */
+    @Test
+    void verifySelfie_whenDigitapIsDownKeepsTheSelfieAndSignalsTheSignzyFallback() {
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(new LoanApplication()));
+        when(storage.presignDownload("selfie-key")).thenReturn("https://s3/selfie.jpg");
+        when(verification.faceLiveness(anyString(), isNull(), anyString()))
+                .thenThrow(new IllegalStateException("digitap down"));
+
+        var result = service.verifySelfie(APP, "selfie-key");
+
+        assertThat(result.status()).isEqualTo("REVIEW");
+        assertThat(result.derived()).containsEntry("fallback", true).containsEntry("providerError", true);
+        verify(documentRepo).save(any());
+        verify(verificationRepo).save(any());
+    }
 }

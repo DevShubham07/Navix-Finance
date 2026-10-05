@@ -41,6 +41,9 @@ public final class ProviderCallCatalog {
         ROUTES.put("/cv/email_verification/v1", new Route("EMAIL", "DIGITAP"));
         ROUTES.put("/ent/v1/address-verification", new Route("ADDRESS", "DIGITAP"));
         ROUTES.put("/fmfl/v2/face-match", new Route("FACE_MATCH", "DIGITAP"));
+        // The selfie PRIMARY since Oct 2026 — same LIVENESS operation as Signzy's video journey, so
+        // the dashboard shows the two selfie providers side by side.
+        ROUTES.put("/fmfl/v4/face-liveness", new Route("LIVENESS", "DIGITAP"));
         ROUTES.put("/cv/v3/uan_basic/sync", new Route("UAN", "DIGITAP"));
         // Signzy — the two bureaux stay distinguishable because the router tries Experian then CRIF.
         ROUTES.put("/api/v3/bureau/experian-lite", new Route("BUREAU", "SIGNZY_EXPERIAN"));
