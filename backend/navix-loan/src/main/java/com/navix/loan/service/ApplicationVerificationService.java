@@ -3316,7 +3316,13 @@ public class ApplicationVerificationService {
                 .findFirst()
                 .orElse(null);
         boolean aadhaarSettled = PASS.equals(aadhaarStatus) || REVIEW.equals(aadhaarStatus);
+        // AADHAAR_DUPLICATE is staff-only evidence (V75): shown to a borrower it would hand back the very
+        // "is this number known to you" answer the silent flag exists to withhold, plus other customers'
+        // ids. Dropped from the borrower's read entirely, not merely redacted.
+        CurrentActor reader = ActorContext.get();
+        boolean borrowerReading = reader != null && "BORROWER".equals(reader.role());
         return rows.stream()
+                .filter(row -> !(borrowerReading && AADHAAR_DUPLICATE.equals(row.getCheckType())))
                 .map(row -> {
                     if (DIGILOCKER.equals(row.getCheckType()) && aadhaarSettled
                             && !PASS.equals(row.getStatus()) && !REVIEW.equals(row.getStatus())) {
@@ -3471,8 +3477,11 @@ public class ApplicationVerificationService {
         // derived holds the score aggregates, any identityMismatch, and the KBA question + its
         // order/report ids — wiping any of them would blank the very evidence the reviewer just acted
         // on, and for BUREAU would also destroy the handles needed to ever answer that challenge.
+        // AADHAAR_DUPLICATE (V75) likewise: its derived is the list of other customers holding the
+        // number, which is the whole audit trail of what the reviewer compared.
         Map<String, Object> derived = Map.of();
-        if (PENNY_DROP.equals(type) || EMPLOYMENT.equals(type) || BUREAU.equals(type)) {
+        if (PENNY_DROP.equals(type) || EMPLOYMENT.equals(type) || BUREAU.equals(type)
+                || AADHAAR_DUPLICATE.equals(type)) {
             derived = new LinkedHashMap<>(derivedFor(appId, type));
             derived.put("manualOverride", true);
             derived.put("manualBy", actor);

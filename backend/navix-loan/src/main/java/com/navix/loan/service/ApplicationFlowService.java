@@ -626,6 +626,16 @@ public class ApplicationFlowService {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
         requireCreditOwnership(app);
+        // V75: a duplicate-Aadhaar flag is silent to the borrower but never to the sanction. It must be
+        // explicitly cleared (manual override → PASS) before money is approved; an untouched REVIEW row,
+        // or a FAIL ("not the same person"), stops the file here rather than failing open.
+        verificationRepository.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.AADHAAR_DUPLICATE)
+                .filter(row -> !ApplicationVerificationService.PASS.equals(row.getStatus()))
+                .ifPresent(row -> {
+                    throw new BusinessException("AADHAAR_DUPLICATE_UNRESOLVED",
+                            "This Aadhaar number is also on file for another customer. Clear the "
+                                    + "'Aadhaar duplicate' check on the Verifications tab (or reject the lead) before sanctioning.");
+                });
         if (sanctionedAmountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "The sanctioned amount is below the minimum of ₹1,000");
         }

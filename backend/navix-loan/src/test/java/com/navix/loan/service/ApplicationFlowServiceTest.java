@@ -258,6 +258,27 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
+    void sanctionIsBlockedWhileADuplicateAadhaarFlagIsUnresolved() {
+        LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
+        actor("head1", "CREDIT_HEAD");
+        com.navix.loan.entity.ApplicationVerification flag = new com.navix.loan.entity.ApplicationVerification();
+        flag.setCheckType("AADHAAR_DUPLICATE");
+        flag.setStatus("REVIEW");
+        when(verificationRepository.findByApplicationIdAndCheckType(1L, "AADHAAR_DUPLICATE"))
+                .thenReturn(java.util.Optional.of(flag));
+
+        assertThatThrownBy(() -> flow.sanction(1L, 2_000_000L, 20, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "AADHAAR_DUPLICATE_UNRESOLVED");
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
+
+        // A reviewer who confirmed it is the same person (manual override → PASS) unblocks it.
+        flag.setStatus("PASS");
+        flow.sanction(1L, 2_000_000L, 20, null);
+        assertThat(app.getStatus()).isEqualTo(ApplicationStatus.SANCTIONED);
+    }
+
+    @Test
     void sanctionRejectsAnInvalidSalaryCreditDay() {
         LoanApplication app = appAt(ApplicationStatus.CREDIT_EXEC_PENDING);
         app.setAssignedExecutiveId(55L);

@@ -2166,6 +2166,18 @@ class ApplicationVerificationServiceTest {
                 .hasFieldOrPropertyWithValue("code", "UNSUPPORTED_DOC_TYPE");
     }
 
+    @Test
+    void summary_hidesTheDuplicateAadhaarFlagFromTheBorrower_butNotFromStaff() {
+        when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
+                row("PAN", "PASS"), row("AADHAAR_DUPLICATE", "REVIEW")));
+
+        ActorContext.set(new com.navix.common.security.CurrentActor("7", "Borrower", "BORROWER"));
+        assertThat(service.summary(APP)).extracting("checkType").containsExactly("PAN");
+
+        ActorContext.set(new com.navix.common.security.CurrentActor("41", "Reviewer", "CREDIT_EXECUTIVE"));
+        assertThat(service.summary(APP)).extracting("checkType").containsExactly("PAN", "AADHAAR_DUPLICATE");
+    }
+
     private static ApplicationDocument doc(String type) {
         ApplicationDocument d = new ApplicationDocument();
         d.setApplicationId(APP);
