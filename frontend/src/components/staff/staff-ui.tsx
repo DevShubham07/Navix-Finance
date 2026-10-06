@@ -79,7 +79,13 @@ export function StatCard({
         <div className="text-sm text-muted">{label}</div>
         {info ? <InfoTooltip content={info} /> : null}
       </div>
-      <div className="mt-1 font-serif text-2xl font-bold text-navy lg:text-3xl">{value}</div>
+      {/* `tabular-nums` so a tile's figure does not jitter in width as a poll changes its digits,
+          and so a row of tiles reads as aligned figures. `null`/`undefined` renders an em dash:
+          an unmeasured value must never read as a measured zero, which is exactly how the
+          performance page's tiles misled during every period change. */}
+      <div className="mt-1 font-serif text-2xl font-bold tabular-nums text-navy lg:text-3xl">
+        {value ?? "—"}
+      </div>
       {hint ? <div className="mt-1 text-xs text-muted">{hint}</div> : null}
     </div>
   );

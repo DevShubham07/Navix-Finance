@@ -123,7 +123,7 @@ export function SortableTh({ label, sortKey, active, dir, onToggle, className }:
     : "none";
 
   return (
-    <th className={className} aria-sort={ariaSort}>
+    <th scope="col" className={className} aria-sort={ariaSort}>
       <button
         type="button"
         onClick={() => onToggle(sortKey)}

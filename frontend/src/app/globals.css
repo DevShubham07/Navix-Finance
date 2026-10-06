@@ -416,6 +416,12 @@ table.data td strong { color: var(--navy); }
 /* Widened for the Failure column — at 78rem a 21st column crowded the sticky identity and
    actions cells instead of scrolling. */
 .staff-data-table { min-width: 84rem; }
+/* Opt-out of the 84rem floor for NARROW registers. The floor is sized for the 17–22 column
+   pipeline/customer grids; an 8-column table such as the leads register, sitting beside a 320px side
+   panel, was forced into a horizontal scroll at every common laptop width purely by inheriting it.
+   A modifier rather than lowering the global value, because 15 wide registers depend on the floor
+   to keep their sticky identity/actions columns from crushing the middle. */
+.staff-data-table.staff-table-fit { min-width: 0; }
 .staff-data-table th,
 .staff-data-table td { border-bottom: 1px solid var(--line); padding: 8px 14px; text-align: left; }
 .staff-data-table thead th { background: var(--navy); color: #fff; font-size: 0.576rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }

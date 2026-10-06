@@ -11,7 +11,7 @@
  */
 
 import * as React from "react";
-import { Input } from "@/components/ui";
+import { CustomRangeInputs } from "@/components/staff/custom-range-inputs";
 
 export type QueuePeriod = "ALL" | "TODAY" | "YESTERDAY" | "CUSTOM";
 
@@ -102,6 +102,7 @@ export function QueueDateFilter({
           <button
             key={p.key}
             type="button"
+            aria-pressed={period === p.key}
             onClick={() => setPeriod(p.key)}
             className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
               period === p.key ? "bg-navy text-white" : "text-muted hover:text-ink"
@@ -112,23 +113,8 @@ export function QueueDateFilter({
         ))}
       </div>
       {period === "CUSTOM" ? (
-        <div className="flex items-center gap-2">
-          <Input
-            type="date"
-            value={custom.from ?? ""}
-            onChange={(e) => setCustom({ ...custom, from: e.target.value || undefined })}
-            className="!mb-0 !w-40"
-            aria-label="From date"
-          />
-          <span className="text-xs text-muted">to</span>
-          <Input
-            type="date"
-            value={custom.to ?? ""}
-            onChange={(e) => setCustom({ ...custom, to: e.target.value || undefined })}
-            className="!mb-0 !w-40"
-            aria-label="To date"
-          />
-        </div>
+        // Commits on Apply, not per keystroke — see CustomRangeInputs for why.
+        <CustomRangeInputs value={custom} onApply={setCustom} />
       ) : null}
     </div>
   );
