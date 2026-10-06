@@ -321,8 +321,9 @@ class SignzyClientsTest {
                 "PROVIDER_CALL",
                 "provider=SIGNZY",
                 "operation=PAN",
-                "requestPayload={\"panNumber\":\"ABCPE1234Z\",\"maskedName\":\"false\"}",
-                "responsePayload={\"error\":{\"message\":\"PAN ABCPE1234Z is not entitled\"}}");
+                "requestPayload={\"panNumber\":\"[REDACTED]\",\"maskedName\":\"false\"}",
+                "responsePayload={\"error\":{\"message\":\"PAN [REDACTED] is not entitled\"}}");
+        assertThat(output).doesNotContain("ABCPE1234Z");
         b.server().verify();
     }
 

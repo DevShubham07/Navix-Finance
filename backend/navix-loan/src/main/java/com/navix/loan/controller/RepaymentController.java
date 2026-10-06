@@ -32,14 +32,19 @@ public class RepaymentController {
 
     /**
      * Record a repayment (full, partial or prepayment) against the loan. Borrower (own loan only —
-     * the service checks ownership), Accountant (two-step record→verify) or Admin. Collections roles
-     * are excluded on purpose: their payments go through the maker-checker
-     * {@code CollectionPaymentService} path instead.
+     * the service checks ownership) or Admin. Collections roles are excluded on purpose: their
+     * payments go through the maker-checker {@code CollectionPaymentService} path instead.
+     *
+     * <p>The Accountant is excluded too. The Accountant is the checker who verifies a recorded
+     * payment, and a payment row does not store who recorded it, so an Accountant who could also
+     * record would make and check the same payment alone — a loan closed on an invented
+     * transaction reference with no second person involved. No screen records as an Accountant;
+     * the payments they verify come from the borrower, from ADMIN, or from collections.
      */
     @PostMapping
     public ApiResponse<PaymentView> record(@PathVariable Long loanId,
                                            @Valid @RequestBody RepaymentRequest request) {
-        requireRole("BORROWER", "ACCOUNTANT", "ADMIN");
+        requireRole("BORROWER", "ADMIN");
         requireOwnProofKey(request.proofUrl());
         return ApiResponse.ok(repaymentService.view(repaymentService.recordPayment(
                 loanId, request.amountPaise(), request.method(), request.txnRef(),
@@ -52,8 +57,8 @@ public class RepaymentController {
      *
      * <p>Deliberately not open to the ACCOUNTANT. This path collapses the record→verify maker-checker
      * into one actor, which only ADMIN (who bypasses role checks anyway, and whose corrections are
-     * already an accepted oversight power) may do. An Accountant wanting the same outcome still
-     * records and verifies as two steps, leaving the two-actor trail intact.
+     * already an accepted oversight power) may do. An Accountant cannot record at all (see
+     * {@link #record}), so verification always follows someone else's entry.
      *
      * <p>The closure that follows — and the borrower's LOAN_CLOSED notification — is the ordinary
      * verify path; nothing here is special-cased.
