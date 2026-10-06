@@ -296,4 +296,13 @@ class CustomerReviewServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("ADMIN");
     }
+
+    @Test
+    void uploadedContentType_keepsRenderableTypes_andDowngradesScriptableOnes() {
+        assertThat(CustomerReviewService.safeContentType("application/pdf")).isEqualTo("application/pdf");
+        assertThat(CustomerReviewService.safeContentType("IMAGE/PNG")).isEqualTo("image/png");
+        assertThat(CustomerReviewService.safeContentType("text/html")).isEqualTo("application/octet-stream");
+        assertThat(CustomerReviewService.safeContentType("image/svg+xml")).isEqualTo("application/octet-stream");
+        assertThat(CustomerReviewService.safeContentType(null)).isEqualTo("application/octet-stream");
+    }
 }

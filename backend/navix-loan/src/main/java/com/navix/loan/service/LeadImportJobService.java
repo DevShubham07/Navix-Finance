@@ -41,6 +41,9 @@ public class LeadImportJobService {
 
     private static final List<String> LIVE_STATUSES = List.of(LeadImportJob.QUEUED, LeadImportJob.RUNNING);
 
+    /** Key prefix {@code StorageCategory.LEAD_IMPORT} mints for the CSV/XLSX upload. */
+    static final String LEAD_IMPORT_PREFIX = "leads/import/";
+
     /**
      * Roles allowed to see the per-row detail of an import result. Mirrors {@code customer:view} in
      * the frontend's RBAC map — every staff role except DSA, which is firewalled from customer data.
@@ -67,6 +70,14 @@ public class LeadImportJobService {
     public ImportJobView start(ImportFileRequest req) {
         Long staffId = LeadImportService.requireStaffId();
         String role = ActorContext.get().role();
+        // The runner fetches this key server-side, so it must be a lead-import upload — not another
+        // object in the bucket (a KYC scan) dressed up as a list. Refused outright rather than kept as
+        // a FAILED row: a key from outside this prefix was not uploaded by this flow, so there is no
+        // operator file to keep reachable.
+        String s3Key = req.s3Key();
+        if (s3Key == null || !s3Key.startsWith(LEAD_IMPORT_PREFIX) || s3Key.contains("..")) {
+            throw new BusinessException("INVALID_IMPORT_KEY", "That file was not uploaded as a lead list");
+        }
 
         LeadImportJob job = new LeadImportJob();
         job.setS3Key(req.s3Key());
