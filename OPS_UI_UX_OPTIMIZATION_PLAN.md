@@ -95,6 +95,45 @@
 
 ---
 
+## Implementation status — 2026-10-06
+
+Branch `claude/ops-ui-ux-optimization-dokoco`. Every commit below type-checks on its own; on the branch head
+`tsc`, ESLint and Vitest are clean (**431 frontend tests**, from 99 before this work) and the backend suite passes.
+Each implementation batch was done by one agent per disjoint file group and then independently reviewed by a
+second agent that re-read the diff and fixed what it found; the riskiest changes were then re-checked by hand.
+
+| Phase | State | Commits |
+|---|---|---|
+| **0** — correctness | **Done** except 0.5 (already shipped in `696f37f`) and the backend half of 0.7 | `6daab1f` (0.4 settlement guard, 0.8 override audit event) · `7f7720b` (0.1, 0.2, 0.3, 0.6, 0.9, 0.10, 0.11) |
+| **1.0** — test harness | **Done** — jsdom + Testing Library, a `node`/`dom` workspace split, cleanup and `offsetParent` shims | `e663f91` |
+| **1** — shared foundation | **Done** — Skeleton, EmptyState, ErrorState, StatusBadge, Money, Toaster/toast, ConfirmDialog; register CSS; `ui/Drawer` portalled; `ui/Dialog` focus trap + scroll lock + `size` | `7540027` · `e7b98ec` · `7a85e64` |
+| **1** — adoption | **Done** across 61 files: 87 skeletons, 73 empty states, 61 retryable errors, 70 `num` columns, 64 confirmations, 20 status badges, 2 confirm dialogs, 8 sticky registers | `f6d8752` · `cb22a19` · `fe02a74` · `55f68dc` · `d2fa32c` |
+| **2** — per-page polish | **Done** for every item that survived the review's cuts, plus the verifications "Not started" fix | `5a0831c` (shared) · `ffd4a9f` · `cc6b44f` · `eda9678` · `d9f91c5` · `26c90ee` · `a3761d4` · `36ec73d` · `f074543` · `6789e33` |
+| **3** — backend / DB | **Not started** — re-measure with the `docs/perf` harness first (§4 "What this plan did not measure") | — |
+| **4** — polling | **Recommended for deletion** (Appendix C.4) | — |
+
+**Cut, not deferred** (per §4 and Appendix C.4 — do not re-propose without operator evidence): the Columns menu,
+`rowFlash`, "Updated n s ago" labels, the identifier-masking toggle, the dialog exit fade, the group-height
+animation, the 11 px type floor, the corrections accordion, writing the case into worklist rows with
+`setQueryData`, the optimistic settlement flip, making Customer 360's current application clickable, and a
+ConfirmDialog on settlement approve/reject.
+
+**Deferred to Phase 3 because they need backend data:** the loans outstanding breakdown and "Settled" badge;
+settlement borrower / loan / outstanding columns and a reject reason; "who logged" on collection interactions and a
+case settlements list; the telecalling stale-days fallback to `created_at`; counting `ADMIN_FORCE_DISBURSE` in
+my-decisions' rows; the reminder cooldown (backend half of 0.7, whose write point must be at publish time, never on
+delivery — CLAUDE.md §12).
+
+**Found during implementation and still open** (each is small; none was in a brief):
+- Dashboard: a failed Outcomes, Your-borrowers or Collections-desk query renders that section's "nothing yet" copy
+  instead of an error, and the queue badge reads "0 pending" while loading — the unmeasured-as-empty pattern in
+  empty-state text rather than tile values.
+- Transactions ledger: period ranges are computed in the browser's timezone, not IST.
+- Product questions, not defects: whether the customers chip counts should follow the search term; the verifications
+  "Never run" tile counts the 4 required checks while a card's "missing" counts the 8 gating ones.
+
+---
+
 ## 0. Executive summary
 
 The console is structurally sound: one design language, one table treatment (`.staff-data-table`), one query client,
