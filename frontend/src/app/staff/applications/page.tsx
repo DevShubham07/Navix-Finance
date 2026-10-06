@@ -259,13 +259,20 @@ function AwaitingRepaymentPanel() {
   // ACTIVE for the whole repayment window — so grouping by `app.status` put every past-due loan in
   // the "active" bucket and left "overdue" permanently empty. Both queues are still fetched: an
   // application CAN legitimately sit in the OVERDUE status, it just usually doesn't.
-  const all = [...(overdueQ.data ?? []), ...(activeQ.data ?? [])];
-  // Newest application first within each column, using the real created_at (V53) — falls back to
-  // id when createdAt is somehow absent, since id is still monotonic.
-  const byNewest = (a: ApplicationView, b: ApplicationView) =>
-    (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id - a.id;
-  const overdueApps = all.filter((a) => isLoanOverdue(a)).sort(byNewest);
-  const activeApps = all.filter((a) => !isLoanOverdue(a)).sort(byNewest);
+  //
+  // Memoised on the two result sets: React Query keeps a poll's `data` reference when nothing
+  // changed, so an unchanged 60s poll no longer re-filters and re-sorts both lists.
+  const { overdueApps, activeApps } = React.useMemo(() => {
+    const all = [...(overdueQ.data ?? []), ...(activeQ.data ?? [])];
+    // Newest application first within each column, using the real created_at (V53) — falls back
+    // to id when createdAt is somehow absent, since id is still monotonic.
+    const byNewest = (a: ApplicationView, b: ApplicationView) =>
+      (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id - a.id;
+    return {
+      overdueApps: all.filter((a) => isLoanOverdue(a)).sort(byNewest),
+      activeApps: all.filter((a) => !isLoanOverdue(a)).sort(byNewest),
+    };
+  }, [overdueQ.data, activeQ.data]);
   const isLoading = activeQ.isLoading || overdueQ.isLoading;
 
   return (
@@ -362,6 +369,7 @@ function RepaymentColumn({
       ) : (
         <QueueTable
           apps={apps}
+          caption={`Awaiting repayment — ${title}`}
           actions={(a) => (
             <>
               {/* ADMIN-only, and only on a live loan: log money that already came in, on the date it
@@ -420,7 +428,7 @@ function ClosedPanel() {
           ) : apps.length === 0 ? (
             <EmptyState title="Nothing in the CLOSED queue." />
           ) : (
-            <QueueTable apps={apps} actions={() => null} />
+            <QueueTable apps={apps} actions={() => null} caption="Closed (fully repaid)" />
           )}
         </div>
       )}

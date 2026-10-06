@@ -20,6 +20,7 @@ import { useStaffMe } from "@/components/staff/pipeline/hooks";
 import { useQueueRange, useQueueQuery } from "@/components/staff/pipeline/queue-date-filter";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { useBulkQueue, BulkActionBar, type QueueSelection, type RejectMode } from "@/components/staff/pipeline/bulk-actions";
+import { bulkSelectionHint } from "@/lib/staff/queue-bulk";
 
 export function StatusQueue({
   title,
@@ -125,10 +126,13 @@ export function CreditWorkbench() {
     queryFn: () => staffApi.listByStatus("CREDIT_EXEC_PENDING", range, query || undefined),
     refetchInterval: 8000,
   });
+  // The active-executive roster is static reference data — it changes when an admin activates or
+  // deactivates someone, not between visits to this page — so it is not refetched on every mount.
+  // The panel's Refresh button still refetches it explicitly (below).
   const execQ = useQuery({
     queryKey: ["staff-executives"],
     queryFn: () => staffApi.creditExecutives(),
-    staleTime: 60_000,
+    staleTime: 15 * 60_000,
   });
   const refresh = () => {
     void unallocatedQ.refetch();
@@ -140,8 +144,17 @@ export function CreditWorkbench() {
   // Keyed by staff id, never by name: two active executives can genuinely share a display name,
   // and keying on the title made React collapse their panels into one ("two children with the
   // same key") — one executive's queue silently disappeared.
-  const groups = [
-    { key: "unallocated", title: "Unallocated", apps: unallocatedQ.data ?? [], actions: (app: ApplicationView) => <AssignActions app={app} compact /> },
+  // Unallocated rows get no row-level control. `AssignActions compact` renders nothing (assignment
+  // happens in the detail dialog), but mounting it per row also mounts its own ["staff-executives"]
+  // observer at a 60s staleTime, which refetches the roster on every workbench mount and defeats the
+  // 15-minute staleTime above. The rendered row is identical.
+  const groups: {
+    key: string;
+    title: string;
+    apps: ApplicationView[];
+    actions: (app: ApplicationView) => React.ReactNode;
+  }[] = [
+    { key: "unallocated", title: "Unallocated", apps: unallocatedQ.data ?? [], actions: () => null },
     { key: "mine", title: "Assigned to me", apps: assigned.filter((app) => app.assignedExecutiveId === myId), actions: (app: ApplicationView) => <CreditDecisionActions app={app} compact /> },
     ...(execQ.data ?? []).map((executive) => ({
       key: `exec-${executive.id}`,
@@ -211,6 +224,7 @@ function CreditGroupPanel({
         actions={actions}
         info="Credit review remains one stage. The Credit Head may decide any file or reassign it; executives can decide only their own files."
         selection={selection}
+        caption={`Credit review — ${title}`}
       />
       {dialogs}
     </>
@@ -228,6 +242,7 @@ export function QueuePanel({
   info,
   withLoanHistory,
   selection,
+  caption,
 }: {
   title: string;
   countBadge: string;
@@ -240,7 +255,15 @@ export function QueuePanel({
   withLoanHistory?: boolean;
   /** Bulk select + assign/reject — see `pipeline/bulk-actions.tsx`. Omit for the plain table. */
   selection?: QueueSelection;
+  /** The table's visually-hidden caption; defaults to `title`. */
+  caption?: string;
 }) {
+  // Only while nothing is ticked and there is something to tick; once rows are selected the bulk
+  // bar (count + buttons) takes its place. Names only the bulk actions this queue offers the role.
+  const bulkHint =
+    selection && selection.selected.size === 0 && apps.length > 0
+      ? bulkSelectionHint({ canAssign: selection.onAssign != null, canReject: selection.onReject != null })
+      : null;
   return (
     <section className="rounded border border-line bg-white shadow-sm">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
@@ -251,6 +274,7 @@ export function QueuePanel({
           <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{apps.length}</span>
         </div>
         <div className="flex items-center gap-3">
+          {bulkHint && <span className="text-xs text-muted">{bulkHint}</span>}
           {selection && (
             <BulkActionBar count={selection.selected.size} onAssign={selection.onAssign} onReject={selection.onReject} />
           )}
@@ -274,7 +298,7 @@ export function QueuePanel({
       ) : apps.length === 0 ? (
         <EmptyState title={`Nothing in the ${countBadge} queue.`} />
       ) : (
-        <QueueTable apps={apps} actions={actions} withLoanHistory={withLoanHistory} selection={selection} />
+        <QueueTable apps={apps} actions={actions} withLoanHistory={withLoanHistory} selection={selection} caption={caption ?? title} />
       )}
     </section>
   );
@@ -293,6 +317,7 @@ export function QueueTable({
   withLoanHistory,
   showJourney = true,
   selection,
+  caption,
 }: {
   apps: ApplicationView[];
   actions: (app: ApplicationView) => React.ReactNode;
@@ -301,6 +326,8 @@ export function QueueTable({
   /** Bulk select + assign/reject — see `pipeline/bulk-actions.tsx`. Omitted, this table renders
    *  byte-identical to before bulk actions existed: no checkbox column, no layout shift. */
   selection?: QueueSelection;
+  /** Names the queue for assistive tech (a visually-hidden `<caption>`). Defaults to a generic name. */
+  caption?: string;
 }) {
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(apps);
 
@@ -308,37 +335,43 @@ export function QueueTable({
     <div>
       <div className="staff-table-scroll">
         <table className="staff-data-table">
+          <caption className="sr-only">{caption ?? "Applications"}</caption>
           <thead>
             <tr>
-              <th>S.No.</th>
+              <th scope="col">S.No.</th>
               {selection && (
-                <th className="staff-sticky-identity">
-                  <input
-                    type="checkbox"
-                    checked={selection.allSelected}
-                    onChange={selection.toggleAll}
-                    aria-label="Select all"
-                  />
+                <th scope="col" className="staff-sticky-identity">
+                  {/* Visible word, not just a bare box: the column is otherwise unlabelled and the
+                      bulk actions it unlocks go unnoticed. The aria-label stays the precise name. */}
+                  <label className="inline-flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={selection.allSelected}
+                      onChange={selection.toggleAll}
+                      aria-label="Select all"
+                    />
+                    <span aria-hidden>Select</span>
+                  </label>
                 </th>
               )}
-              <th className={selection ? undefined : "staff-sticky-identity"}>Application</th>
-              <th>Customer ID</th>
-              <th>Date</th>
-              <th>Customer</th>
-              <th>Mobile</th>
-              <th>PAN</th>
-              <th>Account</th>
-              <th>IFSC</th>
-              <th>Loan</th>
-              <th className="num">Amount</th>
-              <th>Due</th>
-              <th>Credit</th>
+              <th scope="col" className={selection ? undefined : "staff-sticky-identity"}>Application</th>
+              <th scope="col">Customer ID</th>
+              <th scope="col">Date</th>
+              <th scope="col">Customer</th>
+              <th scope="col">Mobile</th>
+              <th scope="col">PAN</th>
+              <th scope="col">Account</th>
+              <th scope="col">IFSC</th>
+              <th scope="col">Loan</th>
+              <th scope="col" className="num">Amount</th>
+              <th scope="col">Due</th>
+              <th scope="col">Credit</th>
               {/* Who worked the file. "Credit exec" is who DECIDED it — on a reassigned or
                   Head-decided file that is not the assignee. Blank until the stage happens. */}
-              <th title="The credit executive who decided this file">Credit exec</th>
-              <th title="Who released the money">Disbursed by</th>
-              <th title="The assigned collections executive">Collections exec</th>
-              <th className="staff-sticky-actions">Actions</th>
+              <th scope="col" title="The credit executive who decided this file">Credit exec</th>
+              <th scope="col" title="Who released the money">Disbursed by</th>
+              <th scope="col" title="The assigned collections executive">Collections exec</th>
+              <th scope="col" className="staff-sticky-actions">Actions</th>
             </tr>
           </thead>
           <tbody>

@@ -21,6 +21,12 @@ export function dpdFor(dueDate: string | null | undefined): number {
  * Amount plus the tag that says what it IS — a drawn request or the eligible limit. The tag is not
  * decoration: without it a limit reads as a request, which changes how a file is triaged.
  *
+ * The two read differently on purpose, not just by tag: a request is the figure in ink with "req"
+ * after it; a limit is muted, at normal weight, with "elig" in FRONT ("elig ₹25,000"), so a reader
+ * scanning the column meets the qualifier before the number and never takes a limit for an ask.
+ * Both set their own colour, so they read the same inside the callers' `font-semibold text-ink`
+ * wrapper.
+ *
  * Renders a fragment, so the alignment belongs to the caller: put it in a `<td className="num">`
  * (with `num` on the column's `<th>` too) so the amounts right-align as one tabular column.
  */
@@ -31,12 +37,23 @@ export function AmountCell({
   amountPaise: number | null | undefined;
   isRequested: boolean;
 }) {
+  const figure = amountPaise != null ? paiseToINR(amountPaise) : "—";
+  if (isRequested) {
+    return (
+      <>
+        <span className="font-mono text-ink">{figure}</span>{" "}
+        <span className="text-xs text-muted" title="Amount requested">
+          req
+        </span>
+      </>
+    );
+  }
   return (
     <>
-      <span className="font-mono">{amountPaise != null ? paiseToINR(amountPaise) : "—"}</span>{" "}
-      <span className="text-xs text-muted" title={isRequested ? "Amount requested" : "Eligible limit"}>
-        {isRequested ? "req" : "elig"}
-      </span>
+      <span className="text-xs font-normal text-muted" title="Eligible limit">
+        elig
+      </span>{" "}
+      <span className="font-mono font-normal text-muted">{figure}</span>
     </>
   );
 }

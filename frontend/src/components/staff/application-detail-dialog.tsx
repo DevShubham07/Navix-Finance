@@ -202,10 +202,15 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
     enabled: open,
   });
   // get(id) is borrower-safe (no credit fields); the staff-only headline comes from the brief endpoint.
+  // Starts with the dialog, in parallel with `appQ`, rather than waiting on it to rule out DRAFT:
+  // `CreditBriefService.view` has no status gate — with no parsed bureau facts it answers a
+  // headline-less shell (never an error; every badge/detail below renders nothing from it), and a
+  // DRAFT whose bureau pull already ran at intake gets its real brief. Same key and the same
+  // ungated call `application-info-dialog.tsx` already makes.
   const briefQ = useQuery({
     queryKey: ["credit-brief", id],
     queryFn: () => staffApi.creditBrief(id),
-    enabled: open && appQ.data != null && appQ.data.status !== "DRAFT",
+    enabled: open,
   });
   // Backs the header identity (name/mobile/PAN/risk) and the Basic details tab.
   const profileQ = useQuery({
@@ -249,11 +254,11 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
 
   return (
     <>
-      {/* !max-w / !w: globals.css's un-layered `.modal { max-width: 460px }` outranks plain
-          utilities in the cascade (mirrors customer-detail-dialog.tsx). 80vw since V45 — the
-          credit decision is now made off this one surface, so it carries the whole file. Type
-          size is deliberately unchanged; emphasis comes from the KV weights, not scaling. */}
-      <Dialog open={open} onClose={onClose} className="!max-w-[80vw] !w-[80vw]">
+      {/* size="xl" caps it at 80vw; `!w` pins it there (`size` sets only the max-width, and
+          globals.css's un-layered `.modal` outranks a plain `w-` utility). 80vw since V45 — the
+          credit decision is made off this one surface, so it carries the whole file. Type size is
+          deliberately unchanged; emphasis comes from the KV weights, not scaling. */}
+      <Dialog open={open} onClose={onClose} size="xl" className="!w-[80vw]">
         <div className="border-b border-line pb-3">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">

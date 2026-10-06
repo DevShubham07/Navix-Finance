@@ -251,10 +251,13 @@ export function AssignActions({ app, compact }: { app: ApplicationView; compact?
   // Sourced from the dedicated staff-readable endpoint, NOT adminApi.listStaff() — that route is
   // ADMIN-only, so it 403'd for the Credit Head and left this picker permanently empty
   // ("No active credit executives"), making assignment impossible for the role that owns the step.
+  // Same key, endpoint and shape as the workbench roster and the bulk AssignDialog, so the same
+  // staleTime: React Query applies staleness per observer, and a shorter value here made every
+  // mount of this picker refetch a roster the other two treat as fresh for 15 minutes.
   const execQ = useQuery({
     queryKey: ["staff-executives"],
     queryFn: () => staffApi.creditExecutives(),
-    staleTime: 60_000,
+    staleTime: 15 * 60_000,
   });
   const execs = execQ.data ?? [];
   const m = useMutation({

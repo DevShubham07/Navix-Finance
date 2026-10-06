@@ -3,10 +3,12 @@
 /**
  * Bulk assign / bulk reject on the live-applications queues.
  *
- * There is NO batch endpoint on the backend and this module must never add one — a sequential
- * loop over the existing per-id endpoints (`staffApi.rejectLead`, `staffApi.disbursementDecision`,
- * `staffApi.assign`) keeps every audited SoD/ownership/event-trail guard those endpoints already
- * enforce, for free. This is the same shape as the telecalling queue's bulk "Send to selected"
+ * There is NO batch endpoint on the backend and this module must never add one — a loop over the
+ * existing per-id endpoints (`staffApi.rejectLead`, `staffApi.disbursementDecision`,
+ * `staffApi.assign`), still exactly one call per id, keeps every audited SoD/ownership/event-trail
+ * guard those endpoints already enforce, for free. The loop runs up to four ids at once
+ * (`runWithConcurrency`, lib/staff/queue-bulk.ts) and reports progress; it never merges calls.
+ * This is the same shape as the telecalling queue's bulk "Send to selected"
  * (`app/staff/telecalling/page.tsx`): a `Set<number>` selection, a header checkbox that toggles
  * all, a bulk button that only appears once something is selected, and a per-row try/catch so one
  * failure doesn't abort the rest.
@@ -19,8 +21,9 @@ import * as React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ErrorState, Select } from "@/components/ui";
+import { ErrorState, InfoTooltip, Select } from "@/components/ui";
 import { staffApi } from "@/lib/api/applications";
+import { runWithConcurrency, DEFAULT_BULK_CONCURRENCY } from "@/lib/staff/queue-bulk";
 import { useRefreshAfterAction, errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
 
 /** Roles that may bulk-reject (heads of the maker-checker stages + ADMIN). */
@@ -39,6 +42,14 @@ export function useBulkRoleFlags() {
 
 /** Which per-id reject call a {@link RejectDialog} should loop. */
 export type RejectMode = "credit" | "disbursement";
+
+/**
+ * The {@link BulkActionBar} `rejectDisabledReason` for a selection spanning both reject modes: one
+ * bulk run loops exactly one endpoint (`rejectLead` vs `disbursementDecision`), so there is no single
+ * mode to run it under.
+ */
+export const MIXED_REJECT_MODES_REASON =
+  "The selection mixes credit-stage and disbursement-pending files, which are rejected through different steps. Select files of one kind to reject them in bulk.";
 
 /** Set-based multi-select, the same shape `telecalling/page.tsx` uses for its bulk send. */
 export function useQueueSelection(rowIds: number[]) {
@@ -87,19 +98,38 @@ function ResultSummary({ verb, result }: { verb: string; result: BulkResult }) {
 }
 
 /** Exported so other bulk surfaces (the collections register's bulk officer assign) reuse the same
- *  one-at-a-time loop and partial-failure shape instead of growing a second one. */
+ *  one-at-a-time loop and partial-failure shape instead of growing a second one. Strictly one id in
+ *  flight — the same runner the dialogs below use, at concurrency 1. */
 export async function runSequentially(ids: number[], call: (id: number) => Promise<unknown>): Promise<BulkResult> {
-  const ok: number[] = [];
-  const failed: BulkResult["failed"] = [];
-  for (const id of ids) {
-    try {
-      await call(id);
-      ok.push(id);
-    } catch (e) {
-      failed.push({ id, message: errMessage(e) });
-    }
-  }
-  return { ok, failed };
+  return runWithConcurrency(ids, call, { concurrency: 1, describeError: errMessage });
+}
+
+interface BulkProgress {
+  done: number;
+  total: number;
+}
+
+/**
+ * Up to {@link DEFAULT_BULK_CONCURRENCY} per-id calls in flight, with a running count — still one
+ * existing endpoint call per id (see the module doc), so every guard runs per id.
+ */
+function runBulk(ids: number[], call: (id: number) => Promise<unknown>, onProgress: (p: BulkProgress) => void) {
+  onProgress({ done: 0, total: ids.length });
+  return runWithConcurrency(ids, call, {
+    concurrency: DEFAULT_BULK_CONCURRENCY,
+    describeError: errMessage,
+    onProgress: (done, total) => onProgress({ done, total }),
+  });
+}
+
+/** "12 / 40 done" while a bulk run is in flight. Silent for a single id — nothing to count. */
+function ProgressLine({ pending, progress }: { pending: boolean; progress: BulkProgress | null }) {
+  if (!pending || !progress || progress.total < 2) return null;
+  return (
+    <p role="status" aria-live="polite" className="mt-2 text-xs text-muted">
+      {progress.done} / {progress.total} done
+    </p>
+  );
 }
 
 /**
@@ -125,20 +155,25 @@ export function RejectDialog({
   const refresh = useRefreshAfterAction();
   const [reason, setReason] = React.useState("");
   const [result, setResult] = React.useState<BulkResult | null>(null);
+  const [progress, setProgress] = React.useState<BulkProgress | null>(null);
 
   React.useEffect(() => {
     if (open) {
       setReason("");
       setResult(null);
+      setProgress(null);
     }
   }, [open]);
 
   const m = useMutation({
     mutationFn: () =>
-      runSequentially(ids, (id) =>
-        mode === "credit"
-          ? staffApi.rejectLead(id, reason.trim())
-          : staffApi.disbursementDecision(id, false, undefined, reason.trim()),
+      runBulk(
+        ids,
+        (id) =>
+          mode === "credit"
+            ? staffApi.rejectLead(id, reason.trim())
+            : staffApi.disbursementDecision(id, false, undefined, reason.trim()),
+        setProgress,
       ),
     onSuccess: (r) => {
       setResult(r);
@@ -184,6 +219,7 @@ export function RejectDialog({
             rows={3}
             className="w-full rounded border border-line px-2 py-1.5 text-sm"
           />
+          <ProgressLine pending={m.isPending} progress={progress} />
           {m.error && <p className="mt-2 text-xs text-error-700">{errMessage(m.error)}</p>}
           <DialogFooter>
             <button type="button" onClick={onClose} disabled={m.isPending} className="btn btn-sm btn-outline">
@@ -221,23 +257,27 @@ export function AssignDialog({
   const refresh = useRefreshAfterAction();
   const [execId, setExecId] = React.useState("");
   const [result, setResult] = React.useState<BulkResult | null>(null);
+  const [progress, setProgress] = React.useState<BulkProgress | null>(null);
 
   React.useEffect(() => {
     if (open) {
       setExecId("");
       setResult(null);
+      setProgress(null);
     }
   }, [open]);
 
+  // Static reference data: the active-executive roster changes when an admin activates or
+  // deactivates someone, not between dialog opens. Same key and staleTime as the credit workbench.
   const execQ = useQuery({
     queryKey: ["staff-executives"],
     queryFn: () => staffApi.creditExecutives(),
-    staleTime: 60_000,
+    staleTime: 15 * 60_000,
   });
   const execs = execQ.data ?? [];
 
   const m = useMutation({
-    mutationFn: () => runSequentially(ids, (id) => staffApi.assign(id, Number.parseInt(execId, 10))),
+    mutationFn: () => runBulk(ids, (id) => staffApi.assign(id, Number.parseInt(execId, 10)), setProgress),
     onSuccess: (r) => {
       setResult(r);
       r.ok.forEach((id) => refresh(id));
@@ -293,6 +333,7 @@ export function AssignDialog({
               ))}
             </Select>
           )}
+          <ProgressLine pending={m.isPending} progress={progress} />
           {m.error && <p className="mt-2 text-xs text-error-700">{errMessage(m.error)}</p>}
           <DialogFooter>
             <button type="button" onClick={onClose} disabled={m.isPending} className="btn btn-sm btn-outline">
@@ -384,15 +425,22 @@ export function useBulkQueue(
  * The bulk-action bar rendered in a {@link QueuePanel} header once something is selected.
  * `canReject`/`canAssign` are read by the caller off {@link useStaffMe} per the brief's role
  * gating (bulk reject: heads + ADMIN; bulk assign: CREDIT_HEAD/ADMIN, credit panels only).
+ *
+ * `rejectDisabledReason`: for a role that CAN bulk reject but whose current selection cannot be
+ * run as one reject (e.g. it mixes credit-stage and DISBURSEMENT_PENDING files, which loop two
+ * different endpoints). Pass it with `onReject` omitted and the Reject button stays in place,
+ * disabled, with the reason beside it — rather than vanishing as the selection changes.
  */
 export function BulkActionBar({
   count,
   onReject,
   onAssign,
+  rejectDisabledReason,
 }: {
   count: number;
   onReject?: () => void;
   onAssign?: () => void;
+  rejectDisabledReason?: string;
 }) {
   if (count === 0) return null;
   return (
@@ -403,7 +451,7 @@ export function BulkActionBar({
           Assign selected
         </button>
       )}
-      {onReject && (
+      {onReject ? (
         <button
           type="button"
           onClick={onReject}
@@ -411,7 +459,19 @@ export function BulkActionBar({
         >
           Reject selected
         </button>
-      )}
+      ) : rejectDisabledReason ? (
+        // A disabled button takes no hover or focus, so the reason lives on a focusable ⓘ beside it.
+        <span className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            disabled
+            className="btn btn-sm bg-error-600 border-error-600 text-white disabled:opacity-50"
+          >
+            Reject selected
+          </button>
+          <InfoTooltip content={rejectDisabledReason} label="Why is Reject selected unavailable?" />
+        </span>
+      ) : null}
     </div>
   );
 }
