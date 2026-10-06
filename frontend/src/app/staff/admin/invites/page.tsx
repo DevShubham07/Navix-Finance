@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Mail, Copy, Check } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
@@ -84,9 +84,9 @@ export default function AdminInvitesPage() {
       </div>
 
       {q.isLoading ? (
-        <div className="h-32 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={5} className="rounded border border-line bg-white" />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
           <table className="staff-data-table">
@@ -110,7 +110,7 @@ export default function AdminInvitesPage() {
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={5} className="text-center text-muted">No invites yet.</td></tr>
+                <EmptyState title="No invites yet." inTable={5} />
               )}
             </tbody>
           </table>

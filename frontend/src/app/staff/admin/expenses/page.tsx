@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Wallet, Trash2, Paperclip, FileText } from "lucide-react";
-import { Input } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
@@ -74,11 +74,16 @@ export default function AdminExpensesPage() {
       setReceipt(null);
       if (receiptInputRef.current) receiptInputRef.current.value = "";
       invalidate();
+      toast.success("Expense added");
     },
   });
   const remove = useMutation({
     mutationFn: (id: number) => adminApi.removeExpense(id),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast.success("Expense removed");
+      // Returned so the mutation stays pending until the refetch lands, as before.
+      return invalidate();
+    },
   });
 
   const rows = q.data ?? [];
@@ -142,9 +147,9 @@ export default function AdminExpensesPage() {
       </div>
 
       {q.isLoading ? (
-        <div className="h-32 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={9} className="rounded border border-line bg-white" />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
           <div className="staff-table-scroll">
@@ -155,7 +160,7 @@ export default function AdminExpensesPage() {
                   <th className="whitespace-nowrap">Date</th>
                   <th>Description</th>
                   <th>Paid to</th>
-                  <th className="whitespace-nowrap text-right">Amount</th>
+                  <th className="num whitespace-nowrap text-right">Amount</th>
                   <th>Notes</th>
                   <th>Receipt</th>
                   <th className="whitespace-nowrap">Added by</th>
@@ -173,7 +178,7 @@ export default function AdminExpensesPage() {
                     <td>
                       <span className="block max-w-[12rem] truncate text-ink" title={e.paidTo}>{e.paidTo}</span>
                     </td>
-                    <td className="whitespace-nowrap text-right font-semibold text-ink">{paiseToINR(e.amountPaise)}</td>
+                    <td className="num whitespace-nowrap text-right font-semibold text-ink">{paiseToINR(e.amountPaise)}</td>
                     <td>
                       <span className="block max-w-[16rem] truncate text-muted" title={e.notes ?? ""}>{e.notes || "—"}</span>
                     </td>
@@ -200,7 +205,7 @@ export default function AdminExpensesPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={9} className="text-center text-muted">No expenses recorded yet.</td></tr>
+                  <EmptyState title="No expenses recorded yet." inTable={9} />
                 )}
               </tbody>
               {rows.length > 0 && (
@@ -209,7 +214,7 @@ export default function AdminExpensesPage() {
                     <td className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted" colSpan={4}>
                       Total · {rows.length} {rows.length === 1 ? "expense" : "expenses"}
                     </td>
-                    <td className="whitespace-nowrap text-right font-bold text-navy">{paiseToINR(total)}</td>
+                    <td className="num whitespace-nowrap text-right font-bold text-navy">{paiseToINR(total)}</td>
                     <td colSpan={4} />
                   </tr>
                 </tfoot>

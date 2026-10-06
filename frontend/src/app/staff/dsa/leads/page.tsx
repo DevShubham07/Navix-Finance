@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, UserPlus, Mail, MessageSquare } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
@@ -102,7 +102,7 @@ export default function DsaLeadsPage() {
         </Select>
       </div>
 
-      {list.isError && <p className="mt-3 text-sm text-red-700">{errMessage(list.error)}</p>}
+      {list.isError && <ErrorState error={list.error} onRetry={() => void list.refetch()} className="mt-3 py-4" />}
 
       <div className="staff-table-scroll mt-4 rounded-lg border border-navy/10 bg-white">
         <table className="staff-data-table">
@@ -116,19 +116,22 @@ export default function DsaLeadsPage() {
               <th>Status</th>
               <th>Outcome</th>
               <th>Note from us</th>
-              <th className="text-right">Net disbursed</th>
-              <th className="text-right">Commission</th>
+              <th className="num text-right">Net disbursed</th>
+              <th className="num text-right">Commission</th>
               <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={11} className="py-8 text-center text-navy/40">
-                  {list.isLoading ? "Loading…" : "No leads yet — add one above."}
-                </td>
-              </tr>
-            )}
+            {rows.length === 0 &&
+              (list.isLoading ? (
+                <tr>
+                  <td colSpan={11}>
+                    <Skeleton variant="table" rows={8} cols={11} />
+                  </td>
+                </tr>
+              ) : (
+                <EmptyState inTable={11} title="No leads yet — add one above." />
+              ))}
             {pageRows.map((row, i) => (
               <tr key={row.id}>
                 <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
@@ -148,8 +151,8 @@ export default function DsaLeadsPage() {
                 <td className="staff-cell max-w-[16rem] text-navy/70" title={row.dsaNote ?? undefined}>
                   {row.dsaNote ?? "—"}
                 </td>
-                <td className="text-right">{paiseToINR(row.netDisbursedPaise)}</td>
-                <td className="text-right font-semibold text-navy">{paiseToINR(row.commissionPaise)}</td>
+                <td className="num text-right">{paiseToINR(row.netDisbursedPaise)}</td>
+                <td className="num text-right font-semibold text-navy">{paiseToINR(row.commissionPaise)}</td>
                 <td className="text-right">
                   {row.uploaded ? (
                     <span className="text-xs text-navy/40" title="Leads from an uploaded list are view-only">
@@ -237,6 +240,7 @@ function NewDsaLeadForm({ onCreated }: { onCreated: () => void }) {
       setNotes("");
       setOpen(false);
       onCreated();
+      toast.success("Lead saved");
     },
   });
 

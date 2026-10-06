@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
@@ -31,11 +31,15 @@ export default function AdminBlocklistPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-blocklist"] });
   const add = useMutation({
     mutationFn: () => adminApi.addBlocklist({ type, value: value.trim(), reason: reason.trim() || undefined }),
-    onSuccess: () => { setValue(""); setReason(""); invalidate(); },
+    onSuccess: () => { setValue(""); setReason(""); invalidate(); toast.success("Added to blocklist"); },
   });
   const remove = useMutation({
     mutationFn: (id: number) => adminApi.removeBlocklist(id),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast.success("Removed from blocklist");
+      // Returned so the mutation stays pending until the refetch lands, as before.
+      return invalidate();
+    },
   });
 
   const rows = q.data ?? [];
@@ -81,9 +85,9 @@ export default function AdminBlocklistPage() {
       </div>
 
       {q.isLoading ? (
-        <div className="h-32 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={5} className="rounded border border-line bg-white" />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="rounded border border-line bg-white shadow-sm">
           <div className="staff-table-scroll">
@@ -113,7 +117,7 @@ export default function AdminBlocklistPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={5} className="text-center text-muted">No active blocklist entries.</td></tr>
+                  <EmptyState title="No active blocklist entries." inTable={5} />
                 )}
               </tbody>
             </table>

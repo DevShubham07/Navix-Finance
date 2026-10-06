@@ -3,10 +3,10 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Info } from "lucide-react";
-import { Select } from "@/components/ui";
+import { EmptyState, ErrorState, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { ExportMenu } from "@/components/staff/export-menu";
@@ -128,12 +128,15 @@ export default function AdminAllApplicationsPage() {
       </div>
 
       {q.isLoading ? (
-        <div className="h-40 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={13} className="rounded border border-line bg-white" />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <div className="staff-table-scroll">
+          {/* `staff-register-scroll` pins the header (globals.css); PaginationBar is already a sibling
+              after this scroller, so it stays put. The offset clears the shell header, PageHeader,
+              the search/completeness toolbar and the pagination footer. */}
+          <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "24rem" } as React.CSSProperties}>
             <table className="staff-data-table">
               <thead>
                 <tr>
@@ -146,7 +149,7 @@ export default function AdminAllApplicationsPage() {
                   <th className="whitespace-nowrap">Mobile</th>
                   <th className="whitespace-nowrap">Status</th>
                   <th className="whitespace-nowrap">Completeness</th>
-                  <th className="whitespace-nowrap text-right">Amount</th>
+                  <th className="num whitespace-nowrap text-right">Amount</th>
                   <th className="whitespace-nowrap">Credit</th>
                   <th className="whitespace-nowrap">Risk</th>
                   <th className="text-right">Open</th>
@@ -166,7 +169,7 @@ export default function AdminAllApplicationsPage() {
                     <td className="whitespace-nowrap font-mono text-ink">{a.salaryIfsc || "—"}</td>
                     <td className="whitespace-nowrap font-mono text-muted">{a.mobile || "—"}</td>
                     <td className="whitespace-nowrap">
-                      <span className="rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">{statusLabel(a.status)}</span>
+                      <StatusBadge kind="application" value={a.status} />
                     </td>
                     <td className="whitespace-nowrap">
                       {a.complete ? (
@@ -182,7 +185,7 @@ export default function AdminAllApplicationsPage() {
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap text-right text-ink">
+                    <td className="num whitespace-nowrap text-right text-ink">
                       {a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "—"}
                     </td>
                     <td className="whitespace-nowrap text-muted">
@@ -214,7 +217,7 @@ export default function AdminAllApplicationsPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={13} className="text-center text-muted">No applications match.</td></tr>
+                  <EmptyState title="No applications match." inTable={13} />
                 )}
               </tbody>
             </table>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Gift, Check, Clock } from "lucide-react";
-import { Input } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
@@ -70,6 +70,7 @@ export default function ReferralPayoutsPage() {
         return next;
       });
       invalidate();
+      toast.success("Payout marked paid");
     },
   });
 
@@ -155,9 +156,11 @@ export default function ReferralPayoutsPage() {
       </div>
 
       {payoutsQ.isLoading ? (
-        <div className="h-32 animate-pulse rounded border border-line bg-white" />
+        <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
+          <Skeleton variant="table" rows={8} cols={tab === "PENDING" ? 6 : 8} />
+        </div>
       ) : payoutsQ.error ? (
-        <p className="text-sm text-error-700">{errMessage(payoutsQ.error)}</p>
+        <ErrorState error={payoutsQ.error} onRetry={() => void payoutsQ.refetch()} />
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
           <div className="staff-table-scroll">
@@ -167,7 +170,7 @@ export default function ReferralPayoutsPage() {
                   <th>S.No.</th>
                   <th>Beneficiary</th>
                   <th>Referral</th>
-                  <th className="whitespace-nowrap text-right">Amount</th>
+                  <th className="num whitespace-nowrap text-right">Amount</th>
                   <th className="whitespace-nowrap">Loan #</th>
                   {tab === "PENDING" ? (
                     <th className="text-right">Pay &amp; log txn id</th>
@@ -191,7 +194,7 @@ export default function ReferralPayoutsPage() {
                     <td className="text-muted">
                       with {p.counterpartyName ?? (p.counterpartyCustomerId ? `#${p.counterpartyCustomerId}` : "—")}
                     </td>
-                    <td className="whitespace-nowrap text-right font-semibold text-ink">{paiseToINR(p.amountPaise)}</td>
+                    <td className="num whitespace-nowrap text-right font-semibold text-ink">{paiseToINR(p.amountPaise)}</td>
                     <td className="whitespace-nowrap text-muted">{p.qualifyingLoanId ? `#${p.qualifyingLoanId}` : "—"}</td>
                     {tab === "PENDING" ? (
                       <td>
@@ -222,11 +225,10 @@ export default function ReferralPayoutsPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={tab === "PENDING" ? 6 : 8} className="text-center text-muted">
-                      {tab === "PENDING" ? "No pending referral payouts." : "No referral rewards paid yet."}
-                    </td>
-                  </tr>
+                  <EmptyState
+                    inTable={tab === "PENDING" ? 6 : 8}
+                    title={tab === "PENDING" ? "No pending referral payouts." : "No referral rewards paid yet."}
+                  />
                 )}
               </tbody>
             </table>

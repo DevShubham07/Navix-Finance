@@ -18,6 +18,8 @@ import {
   Ban,
 } from "lucide-react";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
+// Aliased: this file already has a local `EmptyState` (the palette's recents / "Jump to" home).
+import { EmptyState as NoMatches, ErrorState } from "@/components/ui";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useGlobalSearchHotkey } from "@/hooks/use-global-search-hotkey";
@@ -398,20 +400,19 @@ function SearchPalette({
               })}
 
               {results.isError && (
-                <p className="m-0 px-4 py-6 text-center text-sm text-error-700">
-                  {formatApiError(results.error, "Search is unavailable right now.")}
-                </p>
+                <ErrorState
+                  error={results.error}
+                  title={formatApiError(results.error, "Search is unavailable right now.")}
+                  onRetry={() => void results.refetch()}
+                  className="py-6"
+                />
               )}
 
               {noResults && (
-                <div className="px-4 py-8 text-center">
-                  <p className="m-0 text-sm text-ink">
-                    No matches for <span className="font-semibold">“{q.trim()}”</span>
-                  </p>
-                  <p className="m-0 mt-1 text-xs text-muted">
-                    {QUERY_KIND_LABEL[interpreted.kind]} — try a name, mobile, PAN or #id.
-                  </p>
-                </div>
+                <NoMatches
+                  title={`No matches for “${q.trim()}”`}
+                  hint={`${QUERY_KIND_LABEL[interpreted.kind]} — try a name, mobile, PAN or #id.`}
+                />
               )}
 
               {!searchable && featureHits.length === 0 && (

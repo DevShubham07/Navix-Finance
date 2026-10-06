@@ -3,9 +3,7 @@
 import * as React from "react";
 import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 import { RefreshCw, Loader2 } from "lucide-react";
-import { Badge, InfoTooltip } from "@/components/ui";
-import type { AppStage } from "@/lib/domain/application";
-import type { KycCheckStatus } from "@/lib/domain/kyc";
+import { InfoTooltip } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /** Page title + subtitle + optional right-aligned actions. */
@@ -85,33 +83,4 @@ export function StatCard({
       {hint ? <div className="mt-1 text-xs text-muted">{hint}</div> : null}
     </div>
   );
-}
-
-const STAGE_META: Record<AppStage, { label: string; variant: React.ComponentProps<typeof Badge>["variant"] }> = {
-  KYC_REVIEW: { label: "KYC review", variant: "warning" },
-  CREDIT_QUEUE: { label: "Credit queue", variant: "info" },
-  CREDIT_REVIEW: { label: "In review", variant: "info" },
-  CREDIT_DECISION: { label: "Awaiting decision", variant: "warning" },
-  DISBURSEMENT: { label: "Disbursement", variant: "primary" },
-  ACCOUNTING: { label: "Accounting", variant: "primary" },
-  ACTIVE: { label: "Active", variant: "success" },
-  REPAID: { label: "Repaid", variant: "neutral" },
-  REJECTED: { label: "Rejected", variant: "error" },
-};
-
-export function StageBadge({ stage }: { stage: AppStage }) {
-  const m = STAGE_META[stage];
-  return <Badge variant={m.variant}>{m.label}</Badge>;
-}
-
-const KYC_META: Record<KycCheckStatus, { label: string; variant: React.ComponentProps<typeof Badge>["variant"] }> = {
-  PASSED: { label: "Passed", variant: "success" },
-  FAILED: { label: "Failed", variant: "error" },
-  PENDING: { label: "Pending", variant: "neutral" },
-  MANUAL_REVIEW: { label: "Manual review", variant: "warning" },
-};
-
-export function KycStatusBadge({ status }: { status: KycCheckStatus }) {
-  const m = KYC_META[status];
-  return <Badge variant={m.variant} size="sm">{m.label}</Badge>;
 }
