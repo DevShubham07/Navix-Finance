@@ -68,12 +68,20 @@ function triggerDownload(content: BlobPart, filename: string, mime: string): voi
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+/**
+ * One CSV cell: RFC-4180 quoting, plus formula neutralising. Borrower-typed text (an address, a
+ * reference's name) reaches these files, and a spreadsheet runs a cell starting with = + - @ as a
+ * formula — a leading apostrophe makes it plain text. Real negative numbers are left alone.
+ */
+export function csvCell(v: string | number | null | undefined): string {
+  const raw = cell(v);
+  const s = /^[=+\-@\t\r]/.test(raw) && !NUMERIC.test(raw) ? `'${raw}` : raw;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 /** Write rows to a CSV download. Values are quoted/escaped per RFC-4180 when needed. */
 export function exportCsv<Row>(fileBase: string, columns: ExportColumn<Row>[], rows: Row[]): void {
-  const esc = (v: string | number | null | undefined) => {
-    const s = cell(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
+  const esc = csvCell;
   const header = columns.map((c) => esc(c.header)).join(",");
   const body = rows.map((r) => columns.map((c) => esc(c.value(r))).join(",")).join("\n");
   // BOM so Excel reads UTF-8 (₹ etc.) correctly.

@@ -368,6 +368,9 @@ public class CustomerService {
 
     private static final String BUREAU_CHECK = "BUREAU";
 
+    private static final org.slf4j.Logger HANDOVER_LOG =
+            org.slf4j.LoggerFactory.getLogger(CustomerService.class);
+
     private static final com.fasterxml.jackson.databind.ObjectMapper HANDOVER_JSON =
             new com.fasterxml.jackson.databind.ObjectMapper();
 
@@ -390,6 +393,9 @@ public class CustomerService {
         if (ids.isEmpty()) {
             return List.of();
         }
+        // Who pulled full identity numbers, and for how many files — never the numbers themselves.
+        HANDOVER_LOG.info("collection-handover export: staff={} applications={}",
+                ActorContext.get().id(), ids.size());
         Map<Long, CustomerProfile> profiles = nullSafe(profileRepository.findByApplicationIdIn(ids)).stream()
                 .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
         Map<Long, LoanApplication> apps = nullSafe(applicationRepository.findAllById(ids)).stream()
