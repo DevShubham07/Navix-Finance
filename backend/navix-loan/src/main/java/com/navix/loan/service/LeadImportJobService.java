@@ -176,12 +176,14 @@ public class LeadImportJobService {
     private ImportJobView toView(LeadImportJob job, String role) {
         boolean maySeeDetail = DETAIL_ROLES.contains(role);
         List<ImportIssue> issues = maySeeDetail ? readIssues(job.getIssuesJson()) : List.of();
-        // "Already a customer" is a membership answer: a DSA uploading a one-row file learns whether
-        // that mobile/PAN is ours, which createLead deliberately hides behind a generic alreadyKnown.
-        // Roles without customer:view see those rows counted as plain duplicates instead.
+        // "Already a customer" (and "merged into an existing lead") are membership answers: a DSA
+        // uploading a one-row file would learn whether that mobile/PAN is a customer of ours, or a
+        // lead someone else holds — which createLead deliberately hides behind one generic
+        // alreadyKnown. Roles without customer:view get that same single "already known" figure.
         int skippedDuplicates = maySeeDetail ? job.getSkippedDuplicates()
-                : job.getSkippedDuplicates() + job.getSkippedCustomers();
+                : job.getSkippedDuplicates() + job.getSkippedCustomers() + job.getMergedCount();
         int skippedCustomers = maySeeDetail ? job.getSkippedCustomers() : 0;
+        int mergedCount = maySeeDetail ? job.getMergedCount() : 0;
         return new ImportJobView(
                 job.getId(),
                 job.getStatus(),
@@ -190,7 +192,7 @@ public class LeadImportJobService {
                 job.getTotalRows(),
                 job.getProcessedRows(),
                 job.getInsertedCount(),
-                job.getMergedCount(),
+                mergedCount,
                 skippedDuplicates,
                 skippedCustomers,
                 job.getIssueCount(),

@@ -49,7 +49,7 @@ class LeadImportJobServiceTest {
     }
 
     @Test
-    void aDsaSeesExistingCustomersOnlyAsDuplicates_staffStillSeeTheSplit() {
+    void aDsaSeesOneAlreadyKnownCount_staffStillSeeTheSplit() {
         LeadImportJob job = new LeadImportJob();
         job.setId(5L);
         job.setStatus(LeadImportJob.SUCCEEDED);
@@ -57,6 +57,7 @@ class LeadImportJobServiceTest {
         job.setUploadedByStaffId(9L);
         job.setSkippedDuplicates(2);
         job.setSkippedCustomers(3);
+        job.setMergedCount(4);
         job.setCreatedAt(Instant.now());
         when(jobRepository.findById(5L)).thenReturn(Optional.of(job));
         var service = new LeadImportJobService(jobRepository, events, new ObjectMapper());
@@ -64,11 +65,13 @@ class LeadImportJobServiceTest {
         ActorContext.set(new CurrentActor("9", "Dee", "DSA"));
         var dsaView = service.get(5L);
         assertThat(dsaView.skippedCustomers()).isZero();
-        assertThat(dsaView.skippedDuplicates()).isEqualTo(5);
+        assertThat(dsaView.mergedCount()).isZero();
+        assertThat(dsaView.skippedDuplicates()).isEqualTo(9); // one "already known" figure
 
         ActorContext.set(new CurrentActor("4", "Tara", "TELECALLER"));
         var staffView = service.get(5L);
         assertThat(staffView.skippedCustomers()).isEqualTo(3);
+        assertThat(staffView.mergedCount()).isEqualTo(4);
         assertThat(staffView.skippedDuplicates()).isEqualTo(2);
     }
 }

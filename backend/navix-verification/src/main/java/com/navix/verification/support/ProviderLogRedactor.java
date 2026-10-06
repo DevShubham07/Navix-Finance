@@ -84,6 +84,8 @@ final class ProviderLogRedactor {
                     object.put(key, MASK);
                 } else if (value.isTextual()) {
                     object.put(key, redactText(value.asText()));
+                } else if (value.isIntegralNumber() && looksLikeAnIdentifier(value.asText())) {
+                    object.put(key, MASK); // a bare 9876543210 / account number under a neutral key
                 }
             }
         } else if (node instanceof ArrayNode array) {
@@ -93,6 +95,8 @@ final class ProviderLogRedactor {
                     redactNode(value);
                 } else if (value.isTextual()) {
                     array.set(i, TextNode.valueOf(redactText(value.asText())));
+                } else if (value.isIntegralNumber() && looksLikeAnIdentifier(value.asText())) {
+                    array.set(i, TextNode.valueOf(MASK));
                 }
             }
         }
@@ -126,6 +130,11 @@ final class ProviderLogRedactor {
         }
         String text = value.asText();
         return !text.isBlank() && !"true".equalsIgnoreCase(text) && !"false".equalsIgnoreCase(text);
+    }
+
+    /** A number that reads as a mobile, or as a 12–18 digit Aadhaar/account number. */
+    private static boolean looksLikeAnIdentifier(String digits) {
+        return MOBILE.matcher(digits).matches() || LONG_DIGITS.matcher(digits).matches();
     }
 
     static String redactText(String text) {

@@ -41,4 +41,13 @@ class ProviderLogRedactorTest {
                 .isEqualTo("upstream said PAN [REDACTED] unknown");
         assertThat(ProviderLogRedactor.redact(null)).isNull();
     }
+
+    @Test
+    void masksNumericIdentifiersUnderNeutralKeys_keepsOrdinaryNumbers() {
+        String out = ProviderLogRedactor.redact(
+                "{\"contact\":9876543210,\"ref\":[123456789012],\"score\":812,\"result_code\":101}");
+
+        assertThat(out).isEqualTo(
+                "{\"contact\":\"[REDACTED]\",\"ref\":[\"[REDACTED]\"],\"score\":812,\"result_code\":101}");
+    }
 }
