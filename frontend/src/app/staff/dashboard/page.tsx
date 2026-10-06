@@ -48,8 +48,12 @@ import {
   collectionsStats,
 } from "@/lib/staff/my-stats";
 import { useMounted } from "@/hooks/use-mounted";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { SalaryDaysPanel } from "@/components/staff/salary-days-panel";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
+import { collectionBucketCounts } from "@/lib/collection-buckets";
+import { bookDpdStack, caseBucketStack, type DpdStack } from "@/lib/staff/dashboard-dpd-stack";
+import { referralPayoutsGate } from "@/lib/staff/dashboard-referral-gate";
 
 const REFRESH_MS = 10_000;   // small, actionable queues
 // ponytail: two tiers, not per-query tuning — revisit when the backend lists are paged.
@@ -78,23 +82,6 @@ const DASHBOARD_QUERY_KEYS = new Set([
   "staff-dashboard-trends",
   "admin-dashboard-txns",
 ]);
-
-/** Zero-filled segment counts — what the admin strip renders until the summary lands. Written out
- *  rather than derived so the compiler checks it against every `CustomerSegment`. */
-const EMPTY_SEGMENT_COUNTS: SegmentCounts = {
-  all: 0,
-  incomplete: 0,
-  pending: 0,
-  review: 0,
-  approved: 0,
-  disbursementPending: 0,
-  active: 0,
-  overdue: 0,
-  hold: 0,
-  rejected: 0,
-  closed: 0,
-  unallocated: 0,
-};
 
 // ---------------------------------------------------------------------------
 // Formatting helpers — a null metric is unmeasurable, never a fabricated 0.
@@ -218,6 +205,8 @@ const collectionPaymentsExtra = (count: number): QueueExtra =>
   ({ key: "collection-payments", label: "Collections payments to validate", count, href: "/staff/applications" });
 const settlementsExtra = (count: number): QueueExtra =>
   ({ key: "settlements", label: "Settlements to approve", count, href: "/staff/collections/settlements" });
+const referralPayoutsExtra = (count: number): QueueExtra =>
+  ({ key: "referral-payouts", label: "Referral payouts to settle", count, href: "/staff/disbursement/referrals" });
 
 /**
  * The live items for a role's action queue — the union of everything the role's queue
@@ -252,21 +241,17 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
       break;
     }
     case "DISBURSEMENT_HEAD": {
-      const [pending, failedTransfers, flags] = await Promise.all([
+      // Pending referral payouts are counted by their own query in the component (referralPayoutsQuery),
+      // gated on the shell's cached feature flags — so they no longer wait here on a flags read.
+      const [pending, failedTransfers] = await Promise.all([
         safe(staffApi.listByStatus("DISBURSEMENT_PENDING")),
         safe(staffApi.listByStatus("DISBURSEMENT_FAILED")),
-        featureFlagsApi.get().catch(() => ({} as Record<string, boolean>)),
       ]);
-      const extras: QueueExtra[] = [];
-      let failed = pending.failed || failedTransfers.failed;
-      if (flags.referral !== false) {
-        const payouts = await countOf(staffReferralApi.payouts("PENDING"));
-        failed = failed || payouts.failed;
-        if (payouts.value > 0) {
-          extras.push({ key: "referral-payouts", label: "Referral payouts to settle", count: payouts.value, href: "/staff/disbursement/referrals" });
-        }
-      }
-      base = { apps: [...pending.value, ...failedTransfers.value], extras, failed };
+      base = {
+        apps: [...pending.value, ...failedTransfers.value],
+        extras: [],
+        failed: pending.failed || failedTransfers.failed,
+      };
       break;
     }
     case "ACCOUNTANT": {
@@ -346,6 +331,33 @@ export default function StaffDashboardPage() {
     queryKey: ["staff-dashboard-queue", role, session?.id],
     queryFn: () => fetchRoleQueue(role as StaffRole),
     enabled: mounted && !!role && has("work"),
+    refetchInterval: REFRESH_MS,
+  });
+
+  // Feature flags — the staff shell's own cache entry (same key, queryFn and staleTime), so this
+  // observer dedupes onto the shell's read instead of re-reading every flag on the queue's 10s
+  // cycle. Only the Disbursement Head's queue reads a flag (referral). Re-read on the slow tier,
+  // not never: nothing else refreshes this entry while the page stays open (no focus refetch, the
+  // shell never remounts), and the payouts endpoint rejects once the kill switch is off — so a flag
+  // flipped mid-session would otherwise pin "Couldn't load part of your queue" until a reload.
+  const flagsQuery = useQuery({
+    queryKey: ["feature-flags"],
+    queryFn: () => featureFlagsApi.get(),
+    enabled: mounted && role === "DISBURSEMENT_HEAD" && has("work"),
+    staleTime: 60_000,
+    refetchInterval: SLOW_MS,
+  });
+  const referralOn = referralPayoutsGate(flagsQuery.data, flagsQuery.isError);
+
+  // Disbursement Head's pending referral payouts — a query of its own, so it runs alongside the
+  // queue's two lists instead of after them. It still waits for the referral flag when the shell has
+  // not cached it yet: firing first would ask the backend for a feature that may be switched off.
+  // Keyed under the queue's prefix because it is part of the role queue (it used to be fetched
+  // inside fetchRoleQueue), so the page's Refresh scope keeps covering it.
+  const referralPayoutsQuery = useQuery({
+    queryKey: ["staff-dashboard-queue", "referral-payouts", session?.id],
+    queryFn: () => countOf(staffReferralApi.payouts("PENDING")),
+    enabled: mounted && role === "DISBURSEMENT_HEAD" && has("work") && referralOn === true,
     refetchInterval: REFRESH_MS,
   });
 
@@ -476,6 +488,11 @@ export default function StaffDashboardPage() {
     : (casesQuery.data ?? []).filter((c) => c.assignedOfficerId === sid);
   const caseExtras: QueueExtra[] =
     myCases.length > 0 ? [{ key: "cases", label: "Your open collection cases", count: myCases.length, href: "/staff/applications" }] : [];
+  // Counted only while the referral flag is on — a flag switched off drops the line even if a count
+  // from before is still cached.
+  const countsReferralPayouts = role === "DISBURSEMENT_HEAD" && referralOn === true;
+  const pendingPayouts = countsReferralPayouts ? referralPayoutsQuery.data?.value ?? 0 : 0;
+  const payoutExtras: QueueExtra[] = pendingPayouts > 0 ? [referralPayoutsExtra(pendingPayouts)] : [];
 
   if (!mounted || !session || !role) {
     return <div className="h-64 rounded border border-line bg-white" />;
@@ -490,9 +507,10 @@ export default function StaffDashboardPage() {
   const queue = QUEUE[role];
   const queueData: RoleQueue = queueQuery.data ?? { apps: [], extras: [], failed: false };
   const myApps = queueData.apps;
-  // Extras order MUST match fetchRoleQueue's old push order: queue's own extras (repayments /
-  // referral payouts), then settlements, then cases, then my-customers/my-overdue.
-  const extras = [...queueData.extras, ...settlementExtras, ...caseExtras, ...myCustomerExtras];
+  // Extras order MUST match fetchRoleQueue's old push order: queue's own extras (repayments), then
+  // referral payouts (once pushed inside fetchRoleQueue too), then settlements, then cases, then
+  // my-customers/my-overdue.
+  const extras = [...queueData.extras, ...payoutExtras, ...settlementExtras, ...caseExtras, ...myCustomerExtras];
   const activeExtras = extras.filter((e) => e.count > 0);
   // Headline count = the union of everything the role's queue page(s) list: application
   // rows + non-application actionable sources (repayments, payouts, settlements, cases).
@@ -503,7 +521,9 @@ export default function StaffDashboardPage() {
   const queueLoading =
     queueQuery.isLoading ||
     ((role === "COLLECTION_HEAD" || isAdmin) && settlementsQuery.isLoading) ||
-    (role === "COLLECTION_EXECUTIVE" && casesQuery.isLoading);
+    (role === "COLLECTION_EXECUTIVE" && casesQuery.isLoading) ||
+    // The payouts line waits on the referral flag, then on its own count.
+    (role === "DISBURSEMENT_HEAD" && (referralOn === undefined || (referralOn && referralPayoutsQuery.isLoading)));
   // "Could not load" vs. "genuinely empty". fetchRoleQueue carries the flag for the sources it
   // deliberately swallows; the queries that feed the extras (book stats, settlements, cases) report
   // their own failure the same way. The headline count is only trustworthy when none of them failed
@@ -513,7 +533,8 @@ export default function StaffDashboardPage() {
     queueData.failed ||
     bookStatsQuery.isError ||
     ((role === "COLLECTION_HEAD" || isAdmin) && settlementsQuery.isError) ||
-    (role === "COLLECTION_EXECUTIVE" && casesQuery.isError);
+    (role === "COLLECTION_EXECUTIVE" && casesQuery.isError) ||
+    (countsReferralPayouts && (referralPayoutsQuery.isError || referralPayoutsQuery.data?.failed === true));
 
   const decisions = performanceQuery.data ? decisionStats(performanceQuery.data, range.from) : null;
   const outcomes = has("outcomes") && windowedDecisionsQuery.data
@@ -530,6 +551,7 @@ export default function StaffDashboardPage() {
   // across every dashboard query so a manual refresh gives visible feedback.
   const fetching =
     queueQuery.isFetching ||
+    referralPayoutsQuery.isFetching ||
     performanceQuery.isFetching ||
     windowedDecisionsQuery.isFetching ||
     bookStatsQuery.isFetching ||
@@ -688,7 +710,7 @@ export default function StaffDashboardPage() {
           </section>
 
           <SegmentBar
-            counts={segmentSummaryQuery.data ?? EMPTY_SEGMENT_COUNTS}
+            counts={segmentSummaryQuery.data ?? null}
             loading={segmentSummaryQuery.isLoading}
           />
           <SalaryDaysPanel />
@@ -780,6 +802,9 @@ function WorkHero({
   const olderThan24h = items.filter((a) => (stageAgeHours(a) ?? 0) > 24).length;
   const olderThan48h = items.filter((a) => (stageAgeHours(a) ?? 0) > 48).length;
 
+  // The id is captured on click, so the dialog stays on that file even if a poll changes `oldest`.
+  const [detailId, setDetailId] = React.useState<number | null>(null);
+
   return (
     <section className="mb-8 rounded-lg border border-gold-soft bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -813,9 +838,18 @@ function WorkHero({
       ) : oldest ? (
         <div className="mt-5 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-tint px-2.5 py-1 text-xs font-semibold text-navy">
-              <Clock size={12} /> Oldest waiting{oldestAgeHours != null ? ` · ${mins(oldestAgeHours * 60)} in stage` : ""}
-            </span>
+            {/* Same detail dialog as the queue row's "Open", so the file that has waited longest can be
+                acted on from here — the queue table below does not lead with it. */}
+            <button
+              type="button"
+              onClick={() => setDetailId(oldest.id)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-navy-tint px-2.5 py-1 text-xs font-semibold text-navy hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-navy"
+              title={`Open application #${oldest.id}`}
+            >
+              <Clock size={12} aria-hidden /> Oldest waiting · #{oldest.id}
+              {oldestAgeHours != null ? ` · ${mins(oldestAgeHours * 60)} in stage` : ""}
+              <ArrowRight size={12} aria-hidden />
+            </button>
             {(olderThan24h > 0 || olderThan48h > 0) && (
               <span className="text-xs text-muted">
                 {olderThan24h} item{olderThan24h === 1 ? "" : "s"} over 24h waiting
@@ -851,6 +885,10 @@ function WorkHero({
         <div className="mt-4">
           <QueueLoadError onRefresh={onRefresh} />
         </div>
+      )}
+
+      {detailId != null && (
+        <ApplicationDetailDialog applicationId={detailId} onClose={() => setDetailId(null)} />
       )}
     </section>
   );
@@ -1037,11 +1075,7 @@ function BorrowersSection({ stats, loading }: { stats: BookStatsView | null; loa
           </Link>
           <StatCard label="Outstanding" value={paiseToINR(stats.outstandingPaise)} />
           <StatCard label="At risk" value={paiseToINR(stats.atRiskPaise)} accent={stats.atRiskPaise > 0 ? "error" : "navy"} />
-          <StatCard
-            label="DPD split"
-            value={`${stats.dpd.d1to30} / ${stats.dpd.d31to60} / ${stats.dpd.d60plus}`}
-            hint="1-30 / 31-60 / 60+ days"
-          />
+          <DpdStackCard label="DPD split" stack={bookDpdStack(stats.dpd)} hint="Borrowers in your book, by days past due." />
           <StatCard label="Due next 7 days" value={stats.dueNext7Days} accent="gold" />
           <StatCard label="Avg ticket" value={stats.avgTicketPaise != null ? paiseToINR(stats.avgTicketPaise) : "—"} />
           <StatCard label="Largest exposure" value={paiseToINR(stats.largestExposurePaise)} />
@@ -1087,12 +1121,12 @@ function CollectionsSection({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Open cases" value={stats.myCases.length} />
-          <StatCard
+          <DpdStackCard
             label="By DPD bucket"
-            value={(Object.keys(stats.byBucket) as (keyof typeof stats.byBucket)[])
-              .filter((b) => stats.byBucket[b].length > 0)
-              .map((b) => `${b}: ${stats.byBucket[b].length}`)
-              .join(" · ") || "—"}
+            stack={caseBucketStack(collectionBucketCounts(stats.myCases))}
+            hint="Your open cases. Each bucket links to its full list on DPD buckets."
+            hideEmptySegments
+            emptyText="No open cases."
           />
           <StatCard label="Outstanding (your cases)" value={paiseToINR(stats.myCasesOutstandingPaise)} accent="error" />
           <StatCard label="Recovered by you" value={paiseToINR(stats.recoveredPaise)} accent="success" />
@@ -1141,14 +1175,15 @@ function TeamSection({
       ) : (
         <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
           <table className="staff-data-table">
+            <caption className="sr-only">Your team&apos;s decisions in the selected period</caption>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Role</th>
-                <th className="num text-right">Actions</th>
-                <th className="text-right">Approval rate</th>
-                <th className="text-right">Avg turnaround</th>
-                <th className="num text-right">In queue now</th>
+                <th scope="col">Name</th>
+                <th scope="col">Role</th>
+                <th scope="col" className="num text-right">Actions</th>
+                <th scope="col" className="text-right">Approval rate</th>
+                <th scope="col" className="text-right">Avg turnaround</th>
+                <th scope="col" className="num text-right">In queue now</th>
               </tr>
             </thead>
             <tbody>
@@ -1184,7 +1219,8 @@ function SegmentBar({
   counts,
   loading,
 }: {
-  counts: SegmentCounts;
+  /** null until the summary is measured (still loading, or failed) — each tile then reads "—". */
+  counts: SegmentCounts | null;
   loading: boolean;
 }) {
   const chips: CustomerSegment[] = ["all", ...SEGMENTS];
@@ -1205,13 +1241,14 @@ function SegmentBar({
           {chips.map((seg) => {
             const href =
               seg === "all" ? "/staff/customers" : `/staff/customers?seg=${seg}`;
-            const amber = seg === "unallocated" && counts.unallocated > 0;
+            const amber = seg === "unallocated" && (counts?.unallocated ?? 0) > 0;
+            const red = seg === "overdue" && (counts?.overdue ?? 0) > 0;
             return (
               <Link key={seg} href={href} className="block transition hover:opacity-90">
                 <StatCard
                   label={SEGMENT_LABEL[seg]}
-                  value={counts[seg]}
-                  accent={amber ? "gold" : seg === "overdue" && counts.overdue > 0 ? "error" : "navy"}
+                  value={counts ? counts[seg] : null}
+                  accent={amber ? "gold" : red ? "error" : "navy"}
                 />
               </Link>
             );
@@ -1219,6 +1256,89 @@ function SegmentBar({
         </div>
       )}
     </section>
+  );
+}
+
+/** Segment colours, mildest to most severe. Never the only signal: every count is also written out. */
+const DPD_TONE: Record<string, string> = {
+  UPCOMING: "bg-info-500",
+  T0_T7: "bg-warning-500",
+  T8_T30: "bg-warning-700",
+  T30_T60: "bg-error-500",
+  T60_T90: "bg-error-700",
+  T90_PLUS: "bg-error-900",
+  d1to30: "bg-warning-500",
+  d31to60: "bg-error-500",
+  d60plus: "bg-error-800",
+};
+
+/**
+ * A days-past-due tile: a small stacked bar plus a legend that writes each segment's count as text.
+ * A segment that carries an `href` links there from both the bar (pointer) and the legend
+ * (keyboard / screen reader — the bar itself is hidden from assistive tech).
+ */
+function DpdStackCard({
+  label,
+  stack,
+  hint,
+  hideEmptySegments,
+  emptyText,
+}: {
+  label: string;
+  stack: DpdStack;
+  hint?: string;
+  /** Leave zero-count segments out of the legend (a six-bucket legend is mostly zeros otherwise). */
+  hideEmptySegments?: boolean;
+  /** Shown instead of the legend when it would be empty. */
+  emptyText?: string;
+}) {
+  const labelId = React.useId();
+  const filled = stack.segments.filter((seg) => seg.count > 0);
+  const legend = hideEmptySegments ? filled : stack.segments;
+  return (
+    <div className="rounded border border-line bg-white p-5 shadow-sm">
+      <div id={labelId} className="text-sm text-muted">{label}</div>
+      <div className="mt-3 flex h-2.5 gap-px overflow-hidden rounded-full bg-grey-100" aria-hidden>
+        {filled.map((seg) => {
+          const cls = cn("h-full min-w-[4px]", DPD_TONE[seg.key] ?? "bg-navy");
+          const style = { width: `${seg.pct}%` };
+          const title = `${seg.label}: ${seg.count}`;
+          return seg.href ? (
+            <Link key={seg.key} href={seg.href} tabIndex={-1} className={cls} style={style} title={title} />
+          ) : (
+            <span key={seg.key} className={cls} style={style} title={title} />
+          );
+        })}
+      </div>
+      {legend.length === 0 ? (
+        <p className="mt-2 text-xs text-muted">{emptyText ?? "—"}</p>
+      ) : (
+        <ul aria-labelledby={labelId} className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          {legend.map((seg) => {
+            const body = (
+              <>
+                <span aria-hidden className={cn("h-2 w-2 flex-shrink-0 rounded-sm", DPD_TONE[seg.key] ?? "bg-navy")} />
+                <span className="text-muted">{seg.label}</span>
+                <span className="font-semibold tabular-nums text-ink">{seg.count}</span>
+              </>
+            );
+            return (
+              <li key={seg.key}>
+                {seg.href ? (
+                  <Link href={seg.href} className="inline-flex items-center gap-1 hover:underline">
+                    {body}
+                    <span className="sr-only"> — open this bucket</span>
+                  </Link>
+                ) : (
+                  <span className="inline-flex items-center gap-1">{body}</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {hint ? <div className="mt-1 text-xs text-muted">{hint}</div> : null}
+    </div>
   );
 }
 
@@ -1352,8 +1472,9 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
 function AdminTransactions({ page, loading }: { page?: TransactionPage; loading: boolean }) {
   // Totals come off the page envelope, not the rows: the ledger is server-paged, so summing the
   // rows in hand would quietly report one page's money as the company's.
-  const totalIn = page?.totalInPaise ?? 0;
-  const totalOut = page?.totalOutPaise ?? 0;
+  // Undefined until the page lands (or when it failed) — paiseToINR renders that as "—", not ₹0.
+  const totalIn = page?.totalInPaise;
+  const totalOut = page?.totalOutPaise;
   const latest = (page?.rows ?? []).slice(0, 5);
 
   return (
