@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { PermissionGate, NoAccessNotice, errMessage, useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice, useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
@@ -29,6 +30,7 @@ import {
   segmentCounts,
   type LoanSegment,
 } from "@/lib/loans/segments";
+import { loanRegisterDpd, loanRegisterDpdLabel } from "@/lib/loans/loan-register-dpd";
 import { formatDate } from "@/lib/utils";
 
 /** Date columns that make sense to group rows under — the other sortable columns (amount/DPD) would
@@ -72,6 +74,25 @@ function loanStatusLabel(status: string): string {
     .join(" ");
 }
 
+type OpenLoan = { loanId: number; customerId?: number | null; applicationId?: number | null };
+
+/** All three ids come off the same register row, so they always describe the same loan. */
+function openFromRow(l: LoanRegisterRow): OpenLoan {
+  return { loanId: l.loanId, customerId: l.customerId, applicationId: l.applicationId };
+}
+
+/** "12d" when late, "due today" / "not due" while current (IST day), "—" otherwise. */
+function DpdCell({ row }: { row: LoanRegisterRow }) {
+  const state = loanRegisterDpd(row);
+  const tone =
+    state.kind === "overdue"
+      ? "font-semibold text-error-700"
+      : state.kind === "due-today"
+        ? "font-medium text-ink"
+        : "text-muted";
+  return <td className={`num whitespace-nowrap ${tone}`}>{loanRegisterDpdLabel(state)}</td>;
+}
+
 /**
  * Loans register — every disbursed loan, past and present, company-wide. ADMIN + COLLECTION_HEAD
  * only (`loan:register`). Mirrors the Customers page's shape (search+range server-side, segment
@@ -105,8 +126,10 @@ function LoansPageInner() {
   const openParam = Number(searchParams.get("open"));
 
   const [query, setQuery] = React.useState(initialQuery);
-  const [openLoanId, setOpenLoanId] = React.useState<number | null>(
-    Number.isFinite(openParam) && openParam > 0 ? openParam : null,
+  // The open loan plus, when opened from a row, the ids that row already carries — so the dialog can
+  // start the customer read without first waiting on the loan. A `?open=` deep link has only the id.
+  const [openLoan, setOpenLoan] = React.useState<OpenLoan | null>(
+    Number.isFinite(openParam) && openParam > 0 ? { loanId: openParam } : null,
   );
   const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
   const [custom, setCustom] = React.useState<QueueRange>({});
@@ -117,6 +140,9 @@ function LoansPageInner() {
   const q = useQuery({
     queryKey: ["staff-loans", query, range.from ?? "", range.to ?? ""],
     queryFn: () => loansApi.list(query || undefined, range),
+    // Keep the rows (and the segment-chip counts derived from them) on screen while a new search or
+    // date range loads, instead of flashing "(0)" on every chip. No identity in this key.
+    placeholderData: keepPreviousData,
   });
 
   const rows = React.useMemo(() => q.data ?? [], [q.data]);
@@ -141,15 +167,29 @@ function LoansPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortKey, dir]);
 
+  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(sorted);
+
+  // A new segment or date window starts again at page 1 — the search box already does (onSearch
+  // below). Picking "Custom" changes no window until its range is applied, so it keeps the page.
   function setSeg(next: LoanSegment) {
     const p = new URLSearchParams(searchParams.toString());
     if (next === "all") p.delete("seg");
     else p.set("seg", next);
     const qs = p.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname);
+    if (next !== seg) setPage(1);
   }
-
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(sorted);
+  function resetPageIfRangeChanges(next: QueueRange) {
+    if ((next.from ?? "") !== (range.from ?? "") || (next.to ?? "") !== (range.to ?? "")) setPage(1);
+  }
+  function changePeriod(next: QueuePeriod) {
+    setPeriod(next);
+    resetPageIfRangeChanges(rangeFor(next, custom));
+  }
+  function changeCustom(next: QueueRange) {
+    setCustom(next);
+    resetPageIfRangeChanges(rangeFor(period, next));
+  }
 
   // Grouping follows the active date sort; switched off entirely for amount/DPD sorts, where date
   // headers would interleave meaninglessly (see DATE_SORT_KEYS).
@@ -247,124 +287,140 @@ function LoansPageInner() {
             placeholder="Borrower, mobile, PAN, loan or application ID"
             ariaLabel="Search loans"
           />
-          <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
+          <QueueDateFilter period={period} setPeriod={changePeriod} custom={custom} setCustom={changeCustom} />
           {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
         </div>
 
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          {q.isLoading ? (
-            <div className="h-40 animate-pulse rounded bg-grey-100" />
+        <div className="rounded border border-line bg-white shadow-sm">
+          {/* Under keepPreviousData an empty previous result must not read as "No loans for <the
+              new term>" before the new response has said so — show the skeleton instead. */}
+          {q.isLoading || (q.isPlaceholderData && filtered.length === 0) ? (
+            <Skeleton variant="table" rows={8} cols={15} />
           ) : q.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
+            <ErrorState error={q.error} onRetry={() => void q.refetch()} />
           ) : filtered.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-muted">
-              No loans{query ? ` for “${query}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
-              {period !== "ALL" ? " in the selected date range" : ""}.
-            </p>
+            <EmptyState
+              title={`No loans${query ? ` for “${query}”` : ""}${seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}${
+                period !== "ALL" ? " in the selected date range" : ""
+              }.`}
+            />
           ) : (
-            <table className="staff-data-table">
-              <thead>
-                <tr>
-                  <th>S.No.</th>
-                  <th className="staff-sticky-identity">Loan</th>
-                  <th>Borrower</th>
-                  <SortableTh label="Sanctioned" sortKey="sanctionedAt" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh label="Disbursed" sortKey="disbursedOn" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
-                  <th>Cycle</th>
-                  <SortableTh label="Principal" sortKey="principalPaise" active={sortKey} dir={dir} onToggle={toggle} />
-                  <th>Net disbursed</th>
-                  <th>Repayable</th>
-                  <SortableTh label="Outstanding" sortKey="outstandingPaise" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} />
-                  <th>Status</th>
-                  <th>Officer</th>
-                  <th className="staff-sticky-actions text-right">Open</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  let running = (page - 1) * pageSize;
-                  return dateGroups.map((group) => {
-                    const isCollapsed = groupField ? collapsedDates.has(group.key) : false;
-                    const groupRows = group.rows.map((l) => {
-                      running += 1;
-                      return { l, sno: running };
-                    });
-                    return (
-                      <React.Fragment key={group.key}>
-                        {groupField && (
-                          <tr>
-                            <td colSpan={15} className="bg-grey-50 px-3 py-2">
-                              <button
-                                type="button"
-                                onClick={() => toggleDate(group.key)}
-                                className="flex items-center gap-1.5 font-semibold text-ink"
-                              >
-                                {isCollapsed ? <ChevronRightIcon size={14} /> : <ChevronDown size={14} />}
-                                {group.key === "unknown" ? "Date unknown" : formatDate(group.key)} · {group.rows.length} loan
-                                {group.rows.length === 1 ? "" : "s"}
-                              </button>
-                            </td>
-                          </tr>
-                        )}
-                        {!isCollapsed &&
-                          groupRows.map(({ l, sno }) => (
-                            <tr key={l.loanId} className="hover:bg-grey-50">
-                              <td className="text-muted">{sno}</td>
-                              <td className="staff-cell staff-sticky-identity">
-                                <button onClick={() => setOpenLoanId(l.loanId)} className="font-semibold text-navy hover:underline">
-                                  #{l.loanId}
+            // `staff-register-scroll` pins the header; PaginationBar sits after the scroller so it
+            // does not scroll away with the rows. The offset clears the shell header, PageHeader, the
+            // segment-chip row and the search/date toolbar.
+            // Dimmed and aria-busy while the previous search/range's rows stand in for the next
+            // one's (keepPreviousData), so they never look current (mirrors the transactions ledger).
+            <div
+              className={`staff-table-scroll staff-register-scroll transition-opacity ${q.isPlaceholderData ? "opacity-60" : ""}`}
+              style={{ "--register-offset": "24rem" } as React.CSSProperties}
+            >
+              <table className="staff-data-table" aria-busy={q.isPlaceholderData}>
+                <caption className="sr-only">Loans register</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">S.No.</th>
+                    <th scope="col" className="staff-sticky-identity">Loan</th>
+                    <th scope="col">Borrower</th>
+                    <SortableTh label="Sanctioned" sortKey="sanctionedAt" active={sortKey} dir={dir} onToggle={toggle} />
+                    <SortableTh label="Disbursed" sortKey="disbursedOn" active={sortKey} dir={dir} onToggle={toggle} />
+                    <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
+                    <th scope="col">Cycle</th>
+                    <SortableTh label="Principal" sortKey="principalPaise" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                    <th scope="col" className="num">Net disbursed</th>
+                    <th scope="col" className="num">Repayable</th>
+                    <SortableTh label="Outstanding" sortKey="outstandingPaise" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                    <SortableTh label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                    <th scope="col">Status</th>
+                    <th scope="col">Officer</th>
+                    <th scope="col" className="staff-sticky-actions text-right">Open</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    let running = (page - 1) * pageSize;
+                    return dateGroups.map((group) => {
+                      const isCollapsed = groupField ? collapsedDates.has(group.key) : false;
+                      const groupRows = group.rows.map((l) => {
+                        running += 1;
+                        return { l, sno: running };
+                      });
+                      return (
+                        <React.Fragment key={group.key}>
+                          {groupField && (
+                            <tr>
+                              <td colSpan={15} className="bg-grey-50 px-3 py-2">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleDate(group.key)}
+                                  className="flex items-center gap-1.5 font-semibold text-ink"
+                                >
+                                  {isCollapsed ? <ChevronRightIcon size={14} /> : <ChevronDown size={14} />}
+                                  {group.key === "unknown" ? "Date unknown" : formatDate(group.key)} · {group.rows.length} loan
+                                  {group.rows.length === 1 ? "" : "s"}
                                 </button>
                               </td>
-                              <td className="staff-cell" title={l.borrowerName}>
-                                <span className="block truncate font-medium text-ink">{l.borrowerName}</span>
-                                <span className="block truncate text-xs text-muted">{l.mobile} · {l.panMasked}</span>
-                              </td>
-                              <td className="whitespace-nowrap text-muted">{l.sanctionedAt ? formatDate(l.sanctionedAt) : "—"}</td>
-                              <td className="whitespace-nowrap text-muted">{l.disbursedOn ? formatDate(l.disbursedOn) : "—"}</td>
-                              <td className="whitespace-nowrap">
-                                <span className={l.dpd > 0 ? "font-semibold text-error-700" : "text-ink"}>
-                                  {l.dueDate ? formatDate(l.dueDate) : "—"}
-                                </span>
-                              </td>
-                              <td className="text-muted">{ordinal(l.loanCycle)}</td>
-                              <td className="font-mono text-ink">{paiseToINR(l.principalPaise)}</td>
-                              <td className="font-mono text-ink">{paiseToINR(l.netDisbursedPaise)}</td>
-                              <td className="font-mono text-ink">{paiseToINR(l.totalRepayablePaise)}</td>
-                              <td className="font-mono font-semibold text-ink">{paiseToINR(l.outstandingPaise)}</td>
-                              <td className={l.dpd > 0 ? "font-semibold text-error-700" : "text-muted"}>{l.dpd > 0 ? `${l.dpd}d` : "—"}</td>
-                              <td>
-                                <Badge variant={SEGMENT_TONE[segmentOf(l)]} size="sm">
-                                  {loanStatusLabel(l.status)}
-                                </Badge>
-                              </td>
-                              <td className="staff-cell text-ink">{l.assignedOfficerName ?? <span className="text-muted">Unallocated</span>}</td>
-                              <td className="staff-sticky-actions text-right">
-                                <span className="inline-flex items-center gap-2">
-                                  <AdminLogPaymentButton loanId={l.loanId} loanStatus={l.status} compact />
-                                  <button onClick={() => setOpenLoanId(l.loanId)} className="inline-flex items-center gap-1 text-navy hover:underline">
-                                    Open <ArrowRight size={14} />
-                                  </button>
-                                </span>
-                              </td>
                             </tr>
-                          ))}
-                      </React.Fragment>
-                    );
-                  });
-                })()}
-              </tbody>
-            </table>
+                          )}
+                          {!isCollapsed &&
+                            groupRows.map(({ l, sno }) => (
+                              <tr key={l.loanId} className="hover:bg-grey-50">
+                                <td className="text-muted">{sno}</td>
+                                <td className="staff-cell staff-sticky-identity">
+                                  <button onClick={() => setOpenLoan(openFromRow(l))} className="font-semibold text-navy hover:underline">
+                                    #{l.loanId}
+                                  </button>
+                                </td>
+                                <td className="staff-cell" title={l.borrowerName}>
+                                  <span className="block truncate font-medium text-ink">{l.borrowerName}</span>
+                                  <span className="block truncate text-xs text-muted">{l.mobile} · {l.panMasked}</span>
+                                </td>
+                                <td className="whitespace-nowrap text-muted">{l.sanctionedAt ? formatDate(l.sanctionedAt) : "—"}</td>
+                                <td className="whitespace-nowrap text-muted">{l.disbursedOn ? formatDate(l.disbursedOn) : "—"}</td>
+                                <td className="whitespace-nowrap">
+                                  <span className={l.dpd > 0 ? "font-semibold text-error-700" : "text-ink"}>
+                                    {l.dueDate ? formatDate(l.dueDate) : "—"}
+                                  </span>
+                                </td>
+                                <td className="text-muted">{ordinal(l.loanCycle)}</td>
+                                <td className="num font-mono text-ink">{paiseToINR(l.principalPaise)}</td>
+                                <td className="num font-mono text-ink">{paiseToINR(l.netDisbursedPaise)}</td>
+                                <td className="num font-mono text-ink">{paiseToINR(l.totalRepayablePaise)}</td>
+                                <td className="num font-mono font-semibold text-ink">{paiseToINR(l.outstandingPaise)}</td>
+                                <DpdCell row={l} />
+                                <td>
+                                  <Badge variant={SEGMENT_TONE[segmentOf(l)]} size="sm">
+                                    {loanStatusLabel(l.status)}
+                                  </Badge>
+                                </td>
+                                <td className="staff-cell text-ink">{l.assignedOfficerName ?? <span className="text-muted">Unallocated</span>}</td>
+                                <td className="staff-sticky-actions text-right">
+                                  <span className="inline-flex items-center gap-2">
+                                    <AdminLogPaymentButton loanId={l.loanId} loanStatus={l.status} compact />
+                                    <button onClick={() => setOpenLoan(openFromRow(l))} className="inline-flex items-center gap-1 text-navy hover:underline">
+                                      Open <ArrowRight size={14} />
+                                    </button>
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
           )}
           <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       </PermissionGate>
 
       <LoanDetailDialog
-        loanId={openLoanId}
+        loanId={openLoan?.loanId ?? null}
+        customerId={openLoan?.customerId}
+        applicationId={openLoan?.applicationId}
         onClose={() => {
-          setOpenLoanId(null);
+          setOpenLoan(null);
           // Drop `?open=` so a refresh (or a back-navigation) doesn't reopen what was just closed.
           if (searchParams.has("open")) {
             const next = new URLSearchParams(searchParams.toString());

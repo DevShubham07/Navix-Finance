@@ -375,7 +375,7 @@ export function FilterableTh({
   const open = () => setAnchor(btnRef.current?.getBoundingClientRect() ?? null);
 
   return (
-    <th className={className} aria-sort={ariaSort}>
+    <th scope="col" className={className} aria-sort={ariaSort}>
       <div className="flex items-center gap-1">
         <button
           type="button"

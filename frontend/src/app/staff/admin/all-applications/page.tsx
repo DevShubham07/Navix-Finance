@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, ArrowRight, Info } from "lucide-react";
-import { Select } from "@/components/ui";
+import { Loader2, RefreshCw, ArrowRight, Info, FilterX } from "lucide-react";
+import { EmptyState, ErrorState, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { ExportMenu } from "@/components/staff/export-menu";
@@ -15,8 +15,13 @@ import type { ExportColumn } from "@/lib/export/exporters";
 import { hasPermission } from "@/lib/auth/rbac";
 import { staffApi, paiseToINR, statusLabel, type AdminApplicationView } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
-
-type CompletenessFilter = "ALL" | "COMPLETE" | "INCOMPLETE";
+import { formatDateTime } from "@/lib/utils";
+import {
+  filterAdminApplications,
+  isAdminApplicationsFilterActive,
+  retryUnlessClientError,
+  type CompletenessFilter,
+} from "@/lib/staff/admin-all-applications";
 
 /** Paise -> plain rupee string (2 dp) for the export columns; "" when null. */
 const rupees = (p: number | null) => (p == null ? "" : (p / 100).toFixed(2));
@@ -61,25 +66,49 @@ const EXPORT_COLUMNS: ExportColumn<AdminApplicationView>[] = [
  * PDF export. Live `/api/applications/all`. ADMIN only.
  */
 export default function AdminAllApplicationsPage() {
-  const myRole = useStaffMe().data?.role;
+  const me = useStaffMe();
+  const myRole = me.data?.role;
+  // `/api/applications/all` is ADMIN-only server-side. The register used to fire before `/me` had
+  // answered — so every other role sent a request it could only ever have refused (FORBIDDEN_ROLE),
+  // retried it once, and only then reached "Admin access only". It now waits for the role.
+  const isAdmin = myRole === "ADMIN";
   const [query, setQuery] = React.useState("");
+  // Bumped to remount the SearchBar, whose draft text is its own state, when "Clear" resets the
+  // search from outside it.
+  const [searchKey, setSearchKey] = React.useState(0);
   const [filter, setFilter] = React.useState<CompletenessFilter>("ALL");
   const [openId, setOpenId] = React.useState<number | null>(null);
   const [infoId, setInfoId] = React.useState<number | null>(null);
-  const q = useQuery({ queryKey: ["admin-all-applications"], queryFn: staffApi.listAllApplications });
-
-  const all = q.data ?? [];
-  const needle = query.trim().toLowerCase();
-  const rows = all.filter((a) => {
-    if (filter === "COMPLETE" && !a.complete) return false;
-    if (filter === "INCOMPLETE" && a.complete) return false;
-    if (!needle) return true;
-    return [a.id, a.customerId, a.fullName, a.pan, a.mobile, a.email, statusLabel(a.status)]
-      .filter((v) => v != null)
-      .map((v) => String(v).toLowerCase())
-      .some((s) => s.includes(needle));
+  const q = useQuery({
+    queryKey: ["admin-all-applications"],
+    queryFn: staffApi.listAllApplications,
+    enabled: isAdmin,
+    // A 4xx (refused, signed out) will not change on a second ask; only a 5xx/network blip is retried.
+    retry: retryUnlessClientError,
   });
+
+  // Memoised so `rows` keeps its identity between renders that change nothing it depends on —
+  // usePagination's own memo over `rows` can then hit instead of re-slicing every render.
+  const rows = React.useMemo(() => filterAdminApplications(q.data ?? [], filter, query), [q.data, filter, query]);
+  const allCount = q.data?.length ?? 0;
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const filtered = isAdminApplicationsFilterActive(filter, query);
+
+  const clearFilters = () => {
+    setQuery("");
+    setFilter("ALL");
+    setSearchKey((k) => k + 1);
+    setPage(1);
+  };
+
+  // "Clear" unmounts itself along with the filter it cleared, which would drop keyboard focus on
+  // <body>. Hand it to the (just remounted) search box instead — the next thing a reader is likely
+  // to want after clearing a search.
+  const toolbarRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (searchKey === 0) return;
+    toolbarRef.current?.querySelector("input")?.focus();
+  }, [searchKey]);
 
   if (myRole && !hasPermission(myRole, "staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
@@ -95,16 +124,20 @@ export default function AdminAllApplicationsPage() {
           columns={EXPORT_COLUMNS}
           rows={rows}
         />
+        {/* `refetch()` ignores `enabled`, so the button is held until the role is known to be ADMIN. */}
         <button
-          onClick={() => q.refetch()}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
+          type="button"
+          onClick={() => void q.refetch()}
+          disabled={!isAdmin}
+          className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
-      <div className="mb-4 flex flex-wrap items-end gap-2">
+      <div ref={toolbarRef} className="mb-4 flex flex-wrap items-end gap-2">
         <SearchBar
+          key={searchKey}
           initialValue={query}
           onSearch={(t) => {
             setQuery(t);
@@ -124,32 +157,57 @@ export default function AdminAllApplicationsPage() {
             { value: "INCOMPLETE", label: "Incomplete only" },
           ]}
         />
-        <span className="pb-2 text-xs text-muted">{rows.length} of {all.length}</span>
+        {filtered && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="mb-1 flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:bg-grey-100 hover:text-ink"
+          >
+            <FilterX size={13} /> Clear
+          </button>
+        )}
+        {/* Only once the register has loaded — "0 of 0" before then would read as an empty register. */}
+        {q.data && (
+          <span className="pb-2 text-xs text-muted" aria-live="polite">
+            {rows.length} of {allCount}
+          </span>
+        )}
       </div>
 
-      {q.isLoading ? (
-        <div className="h-40 animate-pulse rounded border border-line bg-white" />
+      {!isAdmin && !me.isPending ? (
+        // `/me` answered without a session (or failed): nothing to ask the register for, and saying
+        // "Admin access only" to a signed-out admin would be wrong.
+        <ErrorState error={me.error} title="Couldn't confirm your staff session." onRetry={() => void me.refetch()} />
+      ) : q.isPending ? (
+        // Pending covers both "waiting for /me" (the query is disabled until the role is known) and
+        // the fetch itself.
+        <Skeleton variant="table" rows={8} cols={14} className="rounded border border-line bg-white" />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-          <div className="staff-table-scroll">
+          {/* `staff-register-scroll` pins the header (globals.css); PaginationBar is already a sibling
+              after this scroller, so it stays put. The offset clears the shell header, PageHeader,
+              the search/completeness toolbar and the pagination footer. */}
+          <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "24rem" } as React.CSSProperties}>
             <table className="staff-data-table">
+              <caption className="sr-only">All applications</caption>
               <thead>
                 <tr>
-                  <th>S.No.</th>
-                  <th className="whitespace-nowrap">App</th>
-                  <th>Customer</th>
-                  <th className="whitespace-nowrap">PAN</th>
-                  <th className="whitespace-nowrap">Account</th>
-                  <th className="whitespace-nowrap">IFSC</th>
-                  <th className="whitespace-nowrap">Mobile</th>
-                  <th className="whitespace-nowrap">Status</th>
-                  <th className="whitespace-nowrap">Completeness</th>
-                  <th className="whitespace-nowrap text-right">Amount</th>
-                  <th className="whitespace-nowrap">Credit</th>
-                  <th className="whitespace-nowrap">Risk</th>
-                  <th className="text-right">Open</th>
+                  <th scope="col">S.No.</th>
+                  <th scope="col" className="whitespace-nowrap">App</th>
+                  <th scope="col">Customer</th>
+                  <th scope="col" className="whitespace-nowrap">PAN</th>
+                  <th scope="col" className="whitespace-nowrap">Account</th>
+                  <th scope="col" className="whitespace-nowrap">IFSC</th>
+                  <th scope="col" className="whitespace-nowrap">Mobile</th>
+                  <th scope="col" className="whitespace-nowrap">Status</th>
+                  <th scope="col" className="whitespace-nowrap">Stage since</th>
+                  <th scope="col" className="whitespace-nowrap">Completeness</th>
+                  <th scope="col" className="num whitespace-nowrap text-right">Amount</th>
+                  <th scope="col" className="whitespace-nowrap">Credit</th>
+                  <th scope="col" className="whitespace-nowrap">Risk</th>
+                  <th scope="col" className="text-right">Open</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
@@ -166,19 +224,28 @@ export default function AdminAllApplicationsPage() {
                     <td className="whitespace-nowrap font-mono text-ink">{a.salaryIfsc || "—"}</td>
                     <td className="whitespace-nowrap font-mono text-muted">{a.mobile || "—"}</td>
                     <td className="whitespace-nowrap">
-                      <span className="rounded-full bg-grey-100 px-2.5 py-0.5 text-xs font-semibold text-ink">{statusLabel(a.status)}</span>
+                      <StatusBadge kind="application" value={a.status} />
+                    </td>
+                    {/* When the application entered its CURRENT status (latest application_event.at),
+                        formatted like every other "in stage since" in the console. */}
+                    <td className="whitespace-nowrap text-muted">
+                      {a.currentStageEnteredAt ? formatDateTime(a.currentStageEnteredAt) : "—"}
                     </td>
                     <td className="whitespace-nowrap">
                       {a.complete ? (
                         <span className="rounded-full bg-success-50 px-2.5 py-0.5 text-xs font-semibold text-success-700">Complete</span>
                       ) : (
                         <span className="rounded-full bg-warning-50 px-2.5 py-0.5 text-xs font-semibold text-warning-700"
-                          title={a.agreementAccepted ? "" : "Agreement not accepted"}>
-                          {a.stepsCompleted}/{a.stepsRequired}{a.agreementAccepted ? "" : " · no e-sign"}
+                          title={a.agreementAccepted ? "" : "Borrower has not accepted the signup terms"}>
+                          {a.stepsCompleted}/{a.stepsRequired}
+                          {/* `agreementAccepted` is CustomerProfile.termsAcceptedAt — the signup
+                              screen-1 T&C tick (AdminApplicationService#listAll), NOT the
+                              agreement-documents step and NOT the Aadhaar eSign. */}
+                          {a.agreementAccepted ? "" : " · terms & conditions not accepted"}
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap text-right text-ink">
+                    <td className="num whitespace-nowrap text-right text-ink">
                       {a.amountRequestedPaise != null ? paiseToINR(a.amountRequestedPaise) : "—"}
                     </td>
                     <td className="whitespace-nowrap text-muted">
@@ -210,7 +277,7 @@ export default function AdminAllApplicationsPage() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={13} className="text-center text-muted">No applications match.</td></tr>
+                  <EmptyState title="No applications match." inTable={14} />
                 )}
               </tbody>
             </table>

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { LeadCsvImport } from "@/components/staff/lead-csv-import";
@@ -49,13 +50,11 @@ export default function LeadImportPage() {
       <h2 className="mb-2 text-base">Your recent imports</h2>
       <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
         {jobs.isLoading ? (
-          <div className="h-24 animate-pulse bg-white" />
+          <Skeleton variant="table" rows={4} cols={10} />
         ) : jobs.error ? (
-          <p className="px-5 py-4 text-sm text-error-700">{errMessage(jobs.error)}</p>
+          <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} />
         ) : rows.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted">
-            You haven&apos;t imported any lead lists yet.
-          </p>
+          <EmptyState title="You haven't imported any lead lists yet." />
         ) : (
           <table className="staff-data-table">
             <thead>
@@ -63,12 +62,12 @@ export default function LeadImportPage() {
                 <th>Started</th>
                 <th>File</th>
                 <th>Status</th>
-                <th>Rows</th>
-                <th>Imported</th>
-                <th>Merged</th>
-                <th>Duplicates</th>
-                <th>Customers</th>
-                <th>Problems</th>
+                <th className="num">Rows</th>
+                <th className="num">Imported</th>
+                <th className="num">Merged</th>
+                <th className="num">Duplicates</th>
+                <th className="num">Customers</th>
+                <th className="num">Problems</th>
                 <th>Original</th>
               </tr>
             </thead>
@@ -80,15 +79,15 @@ export default function LeadImportPage() {
                   <td className={job.status === "FAILED" ? "font-semibold text-error-700" : undefined}>
                     {job.status}
                   </td>
-                  <td className="font-mono">
+                  <td className="num font-mono">
                     {job.processedRows.toLocaleString("en-IN")}
                     {job.totalRows ? ` / ${job.totalRows.toLocaleString("en-IN")}` : ""}
                   </td>
-                  <td className="font-mono">{job.insertedCount.toLocaleString("en-IN")}</td>
-                  <td className="font-mono">{job.mergedCount.toLocaleString("en-IN")}</td>
-                  <td className="font-mono">{job.skippedDuplicates.toLocaleString("en-IN")}</td>
-                  <td className="font-mono">{job.skippedCustomers.toLocaleString("en-IN")}</td>
-                  <td className="font-mono">{job.issueCount.toLocaleString("en-IN")}</td>
+                  <td className="num font-mono">{job.insertedCount.toLocaleString("en-IN")}</td>
+                  <td className="num font-mono">{job.mergedCount.toLocaleString("en-IN")}</td>
+                  <td className="num font-mono">{job.skippedDuplicates.toLocaleString("en-IN")}</td>
+                  <td className="num font-mono">{job.skippedCustomers.toLocaleString("en-IN")}</td>
+                  <td className="num font-mono">{job.issueCount.toLocaleString("en-IN")}</td>
                   <td>
                     <OriginalFileLink job={job} />
                   </td>

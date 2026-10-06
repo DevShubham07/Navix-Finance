@@ -12,8 +12,11 @@
  * are now threaded through `staffApi.manualVerificationDecision(..., notes)` into the audit
  * trail (the client + backend already accepted `notes`; only the call site was dropping it).
  *
- * Query keys (`staff-verifications`, `staff-verification-progress`) are intentionally
- * unchanged — other surfaces share them.
+ * Query keys: the checks are read under `["verifications", id]`, the key Customer 360's tabs use for
+ * the same `staffApi.verifications(id)` payload, so opening the Verifications tab there costs no extra
+ * round trip. The application dialogs, the stage dialog and the force-disbursement action still read
+ * that payload under `["staff-verifications", id]`, so every write here invalidates both (and the
+ * application-info dialog's `["customer-verifications", id]`). `staff-verification-progress` is unchanged.
  */
 
 import * as React from "react";
@@ -22,9 +25,16 @@ import { Loader2, Bell, ShieldCheck, RotateCcw, Link2 } from "lucide-react";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { staffApi, paiseToINR, type StepResult, type CheckStatus } from "@/lib/api/applications";
 import { humanizeCheck, formatDateTime } from "@/lib/utils";
+import {
+  isRetryOutcomeUnknown,
+  isRetryStillRunning,
+  providerAttribution,
+  retryGuardKey,
+} from "@/lib/staff/verification-dashboard";
 import { errMessage } from "@/components/staff/pipeline/hooks";
 import { PermissionGate } from "@/components/staff/pipeline/actions";
 import { ResumeLinkDialog } from "@/components/staff/resume-link-dialog";
+import { ConfirmDialog, EmptyState, ErrorState, Skeleton, StatusBadge, toast } from "@/components/ui";
 
 /**
  * A placeholder card's status is `NOT_RUN` — deliberately distinct from the real `PENDING` status
@@ -36,19 +46,14 @@ type DisplayStatus = CheckStatus | "NOT_RUN";
 type DisplayStep = Omit<StepResult, "status"> & { status: DisplayStatus };
 
 /**
- * Status pill styling per verification outcome (green PASS / amber REVIEW / red FAIL / grey
- * PENDING / grey NOT_RUN — a synthetic placeholder card, see {@link RETRYABLE_CHECKS}).
+ * The {@link StatusBadge} kind for a check's status pill. EMPLOYMENT (the EPFO/UAN lookup) gates
+ * nothing, so it renders as `advisory` and its PASS/FAIL stay out of the gating green/red; every
+ * other check is a real `verification`. A synthetic `NOT_RUN` placeholder is in neither enum and
+ * falls through to the badge's neutral tone, reading "Not Run".
  */
-const CHECK_PILL: Record<DisplayStatus, string> = {
-  PASS: "bg-success-100 text-success-700",
-  REVIEW: "bg-warning-100 text-warning-800",
-  FAIL: "bg-error-100 text-error-700",
-  PENDING: "bg-grey-100 text-muted",
-  NOT_RUN: "bg-grey-100 text-muted",
-};
-
-/** Pill label per status — "NOT_RUN" reads as "NOT RUN" for humans; the underlying value is unchanged. */
-const CHECK_PILL_LABEL: Partial<Record<DisplayStatus, string>> = { NOT_RUN: "NOT RUN" };
+function checkKind(checkType: string): "advisory" | "verification" {
+  return checkType === "EMPLOYMENT" ? "advisory" : "verification";
+}
 
 /**
  * Failure keys {@link Provenance} renders in prose, hidden from the generic `derived` table below it
@@ -134,8 +139,11 @@ function stringifyDerived(value: unknown): string {
  * {@link CustomerReview} and the `/staff/verifications` dashboard.
  */
 export function VerificationChecksPanel({ applicationId }: { applicationId: number }) {
+  const qc = useQueryClient();
+  // Same key and queryFn as Customer 360's tabs (customer-tabs.tsx): identical endpoint, identical
+  // StepResult[] shape, no `select` — so one cache entry serves both.
   const q = useQuery({
-    queryKey: ["staff-verifications", applicationId],
+    queryKey: ["verifications", applicationId],
     queryFn: () => staffApi.verifications(applicationId),
     retry: false,
   });
@@ -152,13 +160,44 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
     queryFn: () => staffApi.get(applicationId),
     retry: false,
   });
-  // KYC-approver / admin nudge the borrower with their pending steps (Phase 3.4).
-  const remind = useMutation({ mutationFn: () => staffApi.sendReminder(applicationId) });
+  // KYC-approver / admin nudge the borrower with their pending steps (Phase 3.4). A real in-app +
+  // SMS + email + WhatsApp send with no cooldown, so it sits behind a confirm. The endpoint only
+  // publishes an event, so the toast says "queued", never "sent"; `sent: false` means nothing was
+  // pending and nothing was published.
+  const [confirmRemind, setConfirmRemind] = React.useState(false);
+  const remind = useMutation({
+    mutationFn: () => staffApi.sendReminder(applicationId),
+    onSuccess: (r) => {
+      setConfirmRemind(false);
+      if (r.sent) toast.success("Reminder queued");
+      else toast.info("Nothing pending — no reminder sent");
+    },
+  });
 
   // The check currently open in the manual-override dialog (KYC approver / admin), or null.
   const [override, setOverride] = React.useState<DisplayStep | null>(null);
   const [retry, setRetry] = React.useState<DisplayStep | null>(null);
   const [resumeLink, setResumeLink] = React.useState<DisplayStep | null>(null);
+  // Retry in-flight guard: check type -> its row's `checkedAt` (the row's updatedAt) when a retry was
+  // sent. A retry is a billable provider call, and the client stops waiting at 120s without aborting
+  // it — so once the outcome is unknown, Retry stays off for that check until its row is written
+  // again. Held in component state on purpose: closing and reopening the panel clears it.
+  // Keyed by application + check type (retryGuardKey): the panel can be re-pointed at another
+  // application without unmounting, and one file's guard must never touch another file's button.
+  const [retryInFlight, setRetryInFlight] = React.useState<Record<string, string | null>>({});
+  const holdRetry = (key: string, baseline: string | null) =>
+    setRetryInFlight((prev) => ({ ...prev, [key]: baseline }));
+  const releaseRetry = (key: string) =>
+    setRetryInFlight((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  const refreshChecks = () => {
+    void q.refetch();
+    void progressQ.refetch();
+  };
 
   // Real rows first, then a synthetic NOT_RUN placeholder for every check in PLACEHOLDER_CHECKS with
   // no row yet — otherwise a never-run check (PENNY_DROP is the live case, ESIGN/AADHAAR the
@@ -182,6 +221,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
     return [...real, ...placeholders];
   }, [q.data, applicationStatus]);
   const p = progressQ.data;
+  const retryLive = retry ? steps.find((s) => s.checkType === retry.checkType) ?? retry : null;
 
   return (
     <div className="mt-5">
@@ -190,7 +230,11 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Verification checks</span>
           <PermissionGate permission="kyc:approve">
             <button
-              onClick={() => remind.mutate()}
+              onClick={() => {
+                // Clear a previous failed attempt so the confirm opens without a stale error.
+                remind.reset();
+                setConfirmRemind(true);
+              }}
               disabled={remind.isPending || remind.isSuccess}
               title="Remind the borrower of their pending verification steps"
               className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint disabled:opacity-50"
@@ -214,23 +258,30 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
         </div>
       )}
       {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} variant="row" />
+          ))}
+        </div>
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
       ) : steps.length === 0 ? (
-        <p className="text-sm text-muted">No verification checks recorded yet.</p>
+        <EmptyState title="No verification checks recorded yet." className="py-4" />
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">
           {steps.map((s, i) => {
             const entries = Object.entries(s.derived ?? {})
               .filter(([k]) => !DERIVED_RENDERED_BY_PROVENANCE.has(k));
+            const retryRunning = isRetryStillRunning(
+              retryInFlight,
+              retryGuardKey(applicationId, s.checkType),
+              s.checkedAt,
+            );
             return (
               <div key={`${s.checkType}-${i}`} className="rounded border border-line bg-grey-50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-navy">{humanizeCheck(s.checkType)}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[s.status]}`}>
-                    {CHECK_PILL_LABEL[s.status] ?? s.status}
-                  </span>
+                  <StatusBadge kind={checkKind(s.checkType)} value={s.status} />
                 </div>
                 {s.message ? <p className="mt-1 text-xs text-ink/90">{s.message}</p> : null}
                 <Provenance step={s} />
@@ -269,9 +320,14 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                 {RETRYABLE_CHECKS.includes(s.checkType) && (
                   <PermissionGate permission="verification:retry">
                     <div className="mt-2">
-                      <button onClick={() => setRetry(s)} className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint">
+                      <button
+                        onClick={() => setRetry(s)}
+                        disabled={retryRunning}
+                        className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint disabled:cursor-not-allowed disabled:opacity-50"
+                      >
                         <RotateCcw size={12} /> Retry API
                       </button>
+                      {retryRunning && <StillRunningNote onRefresh={refreshChecks} />}
                     </div>
                   </PermissionGate>
                 )}
@@ -283,14 +339,53 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
       {override && (
         <OverrideDialog applicationId={applicationId} step={override} onClose={() => setOverride(null)} />
       )}
-      {retry && <RetryDialog applicationId={applicationId} step={retry} onClose={() => setRetry(null)} />}
+      {retry && retryLive && (
+        <RetryDialog
+          applicationId={applicationId}
+          step={retry}
+          currentCheckedAt={retryLive.checkedAt ?? null}
+          stillRunning={isRetryStillRunning(
+            retryInFlight,
+            retryGuardKey(applicationId, retry.checkType),
+            retryLive.checkedAt,
+          )}
+          onSent={(baseline) => holdRetry(retryGuardKey(applicationId, retry.checkType), baseline)}
+          onAnswered={() => releaseRetry(retryGuardKey(applicationId, retry.checkType))}
+          onRefresh={refreshChecks}
+          onClose={() => setRetry(null)}
+        />
+      )}
       {resumeLink && (
         <ResumeLinkDialog
           applicationId={applicationId}
           checkType={resumeLink.checkType}
-          onClose={() => setResumeLink(null)}
+          onClose={() => {
+            setResumeLink(null);
+            // The dialog refreshes `staff-verifications` after a send (a send can reopen the check);
+            // this panel reads the same rows under `verifications`, so refresh that copy too.
+            void qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
+          }}
         />
       )}
+      <ConfirmDialog
+        open={confirmRemind}
+        onClose={() => setConfirmRemind(false)}
+        onConfirm={() => remind.mutate()}
+        busy={remind.isPending}
+        title="Send the borrower a reminder?"
+        confirmLabel="Send reminder"
+        body={
+          <>
+            <p className="m-0">
+              The borrower is sent their pending verification steps by in-app notification, SMS, email
+              and WhatsApp. There is no cooldown — every confirm sends again.
+            </p>
+            {remind.error ? (
+              <p className="m-0 mt-2 text-xs text-error-700">{errMessage(remind.error)}</p>
+            ) : null}
+          </>
+        }
+      />
     </div>
   );
 }
@@ -313,11 +408,15 @@ function str(derived: Record<string, unknown> | undefined, key: string): string 
  * request values never leave `provider_api_execution`). Rows written before that keep only
  * `providerErrorCode`, which is why the code falls back to it.
  */
-export function providerLine(step: {
-  provider?: string | null;
-  checkedAt?: string | null;
-  derived?: Record<string, unknown>;
-}): string | null {
+export function providerLine(
+  step: {
+    provider?: string | null;
+    checkedAt?: string | null;
+    derived?: Record<string, unknown>;
+  },
+  /** `labelled` words the answering party ("Answered by DIGITAP") — the checks panel's form. */
+  opts?: { labelled?: boolean },
+): string | null {
   const bits: string[] = [];
   if (step.derived?.providerError === true) {
     bits.push("Provider unavailable");
@@ -326,7 +425,13 @@ export function providerLine(step: {
     const code = str(step.derived, "providerCode") ?? str(step.derived, "providerErrorCode");
     if (code) bits.push(code);
   } else if (step.provider) {
-    bits.push(step.provider === "MANUAL" ? "Manual override" : step.provider);
+    bits.push(
+      opts?.labelled
+        ? providerAttribution(step.provider) ?? step.provider
+        : step.provider === "MANUAL"
+          ? "Manual override"
+          : step.provider,
+    );
   }
   if (step.checkedAt) bits.push(formatDateTime(step.checkedAt));
   return bits.length > 0 ? bits.join(" · ") : null;
@@ -343,7 +448,7 @@ export function providerLine(step: {
  */
 function Provenance({ step }: { step: DisplayStep }) {
   const bits: string[] = [];
-  const line = providerLine(step);
+  const line = providerLine(step, { labelled: true });
   if (line) bits.push(line);
   if (typeof step.nameMatch === "number") bits.push(`name match ${Math.round(step.nameMatch * 100)}%`);
   if (typeof step.score === "number") bits.push(`score ${step.score}`);
@@ -364,18 +469,60 @@ function Provenance({ step }: { step: DisplayStep }) {
   );
 }
 
-function RetryDialog({ applicationId, step, onClose }: { applicationId: number; step: DisplayStep; onClose: () => void }) {
+/** The retry guard's explanation, with the refetch it asks for one click away. */
+function StillRunningNote({ onRefresh }: { onRefresh: () => void }) {
+  return (
+    <p className="mt-1 text-[8.8px] text-warning-800">
+      Still running at the provider — refresh in a minute.{" "}
+      <button type="button" onClick={onRefresh} className="font-semibold underline hover:text-navy">
+        Refresh
+      </button>
+    </p>
+  );
+}
+
+function RetryDialog({
+  applicationId,
+  step,
+  currentCheckedAt,
+  stillRunning,
+  onSent,
+  onAnswered,
+  onRefresh,
+  onClose,
+}: {
+  applicationId: number;
+  step: DisplayStep;
+  /** The check's row timestamp right now — the guard's baseline when Retry is pressed. */
+  currentCheckedAt: string | null;
+  /** A retry for this check went out and its outcome is not known yet. */
+  stillRunning: boolean;
+  onSent: (baseline: string | null) => void;
+  /** The server answered (either way), so the guard can lift. */
+  onAnswered: () => void;
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
   const fields = retryFields(step.checkType);
   const [input, setInput] = React.useState<Record<string, string>>({});
   const missingRequired = fields.some((field) => field.required && !input[field.key]?.trim());
+  // These callbacks live on useMutation (not on mutate()), so they still run if the dialog is
+  // closed mid-call — the guard is the panel's, and it must hear how the call ended.
   const retry = useMutation({
     mutationFn: () => staffApi.retryVerification(
       applicationId,
       step.checkType,
       Object.fromEntries(Object.entries(input).filter(([, value]) => value.trim() !== "")),
     ),
+    onMutate: () => onSent(currentCheckedAt),
+    onError: (error) => {
+      // A 120s give-up or a gateway timeout leaves the provider call possibly running: keep the
+      // guard. Any other error is the server's answer, and retrying after it is fine.
+      if (!isRetryOutcomeUnknown(error)) onAnswered();
+    },
     onSuccess: () => {
+      onAnswered();
       qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verif-overview"] });
@@ -383,6 +530,7 @@ function RetryDialog({ applicationId, step, onClose }: { applicationId: number; 
       qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
       // application-info-dialog.tsx still reads the same rows under its own key.
       qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
+      toast.success(`${humanizeCheck(step.checkType)} check re-run`);
       onClose();
     },
   });
@@ -406,7 +554,8 @@ function RetryDialog({ applicationId, step, onClose }: { applicationId: number; 
       ))}
     </div>
     {retry.error && <p className="mt-2 text-xs text-error-700">{errMessage(retry.error)}</p>}
-    <DialogFooter><button className="btn btn-sm btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-sm btn-navy" disabled={retry.isPending || missingRequired} onClick={() => retry.mutate()}>{retry.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Retry</button></DialogFooter>
+    {stillRunning && !retry.isPending && <StillRunningNote onRefresh={onRefresh} />}
+    <DialogFooter><button className="btn btn-sm btn-outline" onClick={onClose}>Cancel</button><button className="btn btn-sm btn-navy" disabled={retry.isPending || missingRequired || stillRunning} onClick={() => retry.mutate()}>{retry.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Retry</button></DialogFooter>
   </Dialog>;
 }
 
@@ -462,7 +611,7 @@ function OverrideDialog({
   const decide = useMutation({
     mutationFn: (d: boolean) =>
       staffApi.manualVerificationDecision(applicationId, step.checkType, d, notes.trim() || undefined),
-    onSuccess: () => {
+    onSuccess: (_result, d) => {
       qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
       // The dashboard groups applications off this overview query; refresh it so a card's
@@ -474,6 +623,7 @@ function OverrideDialog({
       qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
       // application-info-dialog.tsx still reads the same rows under its own key.
       qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
+      toast.success(`${humanizeCheck(step.checkType)} overridden to ${d ? "PASS" : "FAIL"}`);
       onClose();
     },
   });
@@ -490,9 +640,7 @@ function OverrideDialog({
       <div className="mb-4 rounded border border-line bg-grey-50 p-3">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Current status</span>
-          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[step.status]}`}>
-            {CHECK_PILL_LABEL[step.status] ?? step.status}
-          </span>
+          <StatusBadge kind={checkKind(step.checkType)} value={step.status} />
         </div>
         {step.message ? <p className="mt-1.5 text-xs text-ink/90">{step.message}</p> : null}
       </div>

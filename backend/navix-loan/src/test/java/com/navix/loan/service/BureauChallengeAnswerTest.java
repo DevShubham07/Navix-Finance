@@ -62,6 +62,7 @@ class BureauChallengeAnswerTest {
     @Mock private PennyDropGuard pennyDropGuard;
     @Mock private com.navix.common.featureflag.FeatureFlagService featureFlags;
     @Mock private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
+    @Mock private com.navix.loan.repository.ApplicationEventRepository applicationEventRepo;
 
     private ApplicationVerificationService service;
 
@@ -74,7 +75,8 @@ class BureauChallengeAnswerTest {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
                 new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
-                creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags);
+                creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags,
+                applicationEventRepo);
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(profileRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         ActorContext.set(new CurrentActor("7", "Borrower", "BORROWER"));

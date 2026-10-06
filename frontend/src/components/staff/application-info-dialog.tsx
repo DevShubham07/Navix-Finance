@@ -11,16 +11,18 @@
  * `["credit-brief", id]`, `["staff-loan", loanId]`) so opening ⓘ then `Open` on the same row never
  * refetches.
  *
- * Accepts either `applicationId` directly (queue rows already know it) or `customerId` (the
- * Customers page only has a customer row — this resolves to that customer's newest application via
- * the same `["customer-detail", customerId]` cache `CustomerDetailDialog`/`ApplicationDetailDialog`
- * already populate).
+ * Accepts either `applicationId` directly (queue rows, and Customers rows that carry
+ * `latestApplicationId`) or `customerId`, which first resolves to that customer's newest application
+ * via the `["customer-detail", customerId]` roll-up. That resolve is a whole extra round trip before
+ * the parallel fetches below can start, so pass `applicationId` whenever the caller has it; the
+ * Customers page only falls back to `customerId` for a row with no application on file.
  */
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, Loader2, User, Landmark, Banknote, Gauge } from "lucide-react";
+import { X, User, Landmark, Banknote, Gauge } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
+import { ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { bureauScoreLabel } from "@/lib/credit/bureau-label";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
@@ -30,17 +32,16 @@ import { buildCostBreakdown, dueDateFromSalary, daysBetween } from "@/lib/calc/l
 import {
   staffApi,
   customersApi,
-  statusLabel,
   paiseToINR,
   type ApplicationView,
   type LoanView,
 } from "@/lib/api/applications";
-import { errMessage } from "@/components/staff/pipeline/hooks";
 
 export interface ApplicationInfoDialogProps {
   /** Open directly against a known application id (queue rows, the applications register). */
   applicationId?: number | null;
-  /** Open against a customer — resolves to that customer's newest application (Customers page). */
+  /** Open against a customer — resolves to that customer's newest application (Customers rows with
+   *  no `latestApplicationId`; prefer `applicationId` whenever the caller has it). */
   customerId?: number | null;
   onClose: () => void;
 }
@@ -114,11 +115,7 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
               {app && <span>#{app.customerId}</span>}
               {(p?.mobile ?? app?.customerMobile) && <span>· {p?.mobile ?? app?.customerMobile}</span>}
-              {app && (
-                <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">
-                  {statusLabel(app.status)}
-                </span>
-              )}
+              {app && <StatusBadge kind="application" value={app.status} />}
               {briefQ.data?.available && (
                 <CreditBadge
                   starRating={briefQ.data.starRating}
@@ -150,11 +147,15 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
       */}
       <div className="mt-3 grid max-h-[70vh] grid-cols-1 gap-3 overflow-y-auto pr-1 text-xs sm:grid-cols-2">
         {loading ? (
-          <p className="flex items-center gap-2 py-8 text-sm text-muted">
-            <Loader2 size={15} className="animate-spin" /> Loading…
-          </p>
+          // One placeholder card per InfoSection below, in the same two-column grid.
+          <>
+            <Skeleton variant="row" />
+            <Skeleton variant="row" />
+            <Skeleton variant="row" />
+            <Skeleton variant="row" />
+          </>
         ) : appQ.error ? (
-          <p className="py-8 text-sm text-error-700">{errMessage(appQ.error)}</p>
+          <ErrorState error={appQ.error} onRetry={() => void appQ.refetch()} className="sm:col-span-2" />
         ) : !app ? (
           <p className="py-8 text-sm text-muted">No application found.</p>
         ) : (
@@ -175,7 +176,7 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
 
             <InfoSection icon={Gauge} title="Credit bureau">
               {briefQ.isPending && briefQ.fetchStatus !== "idle" ? (
-                <p className="text-sm text-muted">Loading…</p>
+                <Skeleton variant="line" rows={3} />
               ) : briefQ.data?.bureauState === "NO_RECORD" ? (
                 <p className="text-sm text-muted">{bureauStateLabel("NO_RECORD", "long")}.</p>
               ) : briefQ.data?.bureauState === "FOUND" ? (
@@ -222,11 +223,16 @@ export function ApplicationInfoDialog({ applicationId, customerId, onClose }: Ap
             <InfoSection icon={Banknote} title="Loan disbursement details">
               {hasLoan ? (
                 loanQ.isLoading ? (
-                  <p className="text-sm text-muted">Loading…</p>
+                  <Skeleton variant="line" rows={4} />
                 ) : loanQ.data ? (
                   <ActualDisbursement loan={loanQ.data} />
                 ) : (
-                  <p className="text-sm text-error-700">Could not load the loan.</p>
+                  <ErrorState
+                    error={loanQ.error}
+                    title="Could not load the loan."
+                    onRetry={() => void loanQ.refetch()}
+                    className="py-4"
+                  />
                 )
               ) : app.amountRequestedPaise == null ? (
                 <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">

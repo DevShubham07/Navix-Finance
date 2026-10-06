@@ -16,6 +16,8 @@ import { useStaffSession } from "@/lib/auth/staff-session";
 import { hasPermission } from "@/lib/auth/rbac";
 import { formatDateTime } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/tooltip";
+import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
+import { LIMIT_BASIS_LABEL, limitBasisOf } from "@/lib/customers/customer-360";
 import {
   customersApi,
   staffApi,
@@ -74,6 +76,17 @@ export function docTypeLabel(docType: string): string {
   return DOC_TYPE_LABELS[docType.toUpperCase()] ?? docType;
 }
 
+/** First-load placeholder for the card-row lists below (documents, remarks). */
+function RowsSkeleton() {
+  return (
+    <div className="space-y-1.5">
+      <Skeleton variant="row" />
+      <Skeleton variant="row" />
+      <Skeleton variant="row" />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Documents (admin replace = delete-then-upload)
 // ---------------------------------------------------------------------------
@@ -92,7 +105,7 @@ export function DocumentsTab({
 }) {
   if (customerId != null) return <GroupedDocumentsTab customerId={customerId} />;
   if (applicationId != null) return <SingleApplicationDocuments applicationId={applicationId} />;
-  return <p className="py-6 text-sm text-muted">No application to attach documents to.</p>;
+  return <EmptyState title="No application to attach documents to." />;
 }
 
 /** Customer identity proofs are grouped by type; loan-specific documents stay under applications. */
@@ -124,7 +137,10 @@ function GroupedDocumentsTab({ customerId }: { customerId: number }) {
   }));
   const del = useMutation({
     mutationFn: ({ appId, docId }: { appId: number; docId: number }) => staffApi.deleteDocument(appId, docId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["customer-documents", customerId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["customer-documents", customerId] });
+      toast.success("Document deleted");
+    },
   });
 
   // Expand the newest application by default, once data arrives.
@@ -136,8 +152,8 @@ function GroupedDocumentsTab({ customerId }: { customerId: number }) {
     setOpenIds(next);
   };
 
-  if (groupsQ.isLoading) return <p className="text-sm text-muted">Loading…</p>;
-  if (groups.length === 0) return <p className="text-sm text-muted">No documents uploaded.</p>;
+  if (groupsQ.isLoading) return <RowsSkeleton />;
+  if (groups.length === 0) return <EmptyState title="No documents uploaded." />;
 
   return (
     <div className="space-y-2">
@@ -227,6 +243,7 @@ function SingleApplicationDocuments({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff-docs", applicationId] });
       if (customerId != null) qc.invalidateQueries({ queryKey: ["customer-documents", customerId] });
+      toast.success("Document deleted");
     },
   });
 
@@ -236,9 +253,9 @@ function SingleApplicationDocuments({
   return (
     <div className="space-y-3">
       {documents == null && docsQ.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <RowsSkeleton />
       ) : docs.length === 0 ? (
-        <p className="text-sm text-muted">No documents uploaded.</p>
+        <EmptyState title="No documents uploaded." className="py-4" />
       ) : (
         <ul className="space-y-1.5">
           {docs.map((d) => (
@@ -362,8 +379,8 @@ export function CustomerDocsByType({
       .map((doc) => ({ applicationId: group.applicationId, doc })),
   );
 
-  if (groupsQ.isLoading) return <p className="text-sm text-muted">Loading…</p>;
-  if (rows.length === 0) return <p className="text-sm text-muted">{emptyCopy}</p>;
+  if (groupsQ.isLoading) return <RowsSkeleton />;
+  if (rows.length === 0) return <EmptyState title={emptyCopy} className="py-4" />;
 
   return (
     <ul className="space-y-1.5">
@@ -461,6 +478,7 @@ function DocumentUpload({
       if (customerId != null) qc.invalidateQueries({ queryKey: ["customer-documents", customerId] });
       setFile(null);
       setDocType("");
+      toast.success("Document uploaded");
     },
   });
 
@@ -513,6 +531,7 @@ export function RemarksTab({ customerId }: { customerId: number }) {
       setBody("");
       qc.invalidateQueries({ queryKey: ["customer-remarks", customerId] });
       qc.invalidateQueries({ queryKey: ["customer-activity", customerId] });
+      toast.success("Remark added");
     },
   });
   const remarks = q.data ?? [];
@@ -537,9 +556,9 @@ export function RemarksTab({ customerId }: { customerId: number }) {
         </div>
       </div>
       {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <RowsSkeleton />
       ) : remarks.length === 0 ? (
-        <p className="text-sm text-muted">No remarks yet.</p>
+        <EmptyState title="No remarks yet." className="py-4" />
       ) : (
         <ul className="space-y-2">
           {remarks.map((r) => (
@@ -578,6 +597,31 @@ export function KV({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boole
         {v || "—"}
       </dd>
     </div>
+  );
+}
+
+/**
+ * Where an eligible limit comes from — an ADMIN override stored on the customer, or the
+ * 25%-of-monthly-salary rule. Shared by the customer page's limit / approved-amount cards and the
+ * Employment tab so the three never word it differently.
+ */
+export function LimitBasisBadge({
+  overridePaise,
+  className,
+}: {
+  overridePaise: number | null | undefined;
+  className?: string;
+}) {
+  const basis = limitBasisOf(overridePaise);
+  return (
+    <Badge
+      variant={basis === "ADMIN_OVERRIDE" ? "warning" : "neutral"}
+      size="sm"
+      className={className}
+      title={basis === "ADMIN_OVERRIDE" ? "Set by an admin on this customer" : "25% of monthly salary"}
+    >
+      {LIMIT_BASIS_LABEL[basis]}
+    </Badge>
   );
 }
 

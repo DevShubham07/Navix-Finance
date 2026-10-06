@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw, QrCode, FileText, Save, CheckCircle2 } from "lucide-react";
-import { Input, ZoomableQr } from "@/components/ui";
+import { Loader2, RefreshCw, QrCode, FileText, Save } from "lucide-react";
+import { ErrorState, Input, Skeleton, ZoomableQr, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { hasPermission } from "@/lib/auth/rbac";
@@ -81,6 +81,7 @@ export default function AdminPaymentSettingsPage() {
       setQrFile(null);
       setPdfFile(null);
       qc.invalidateQueries({ queryKey: ["payment-settings"] });
+      toast.success("Payment settings saved");
     },
   });
 
@@ -105,9 +106,16 @@ export default function AdminPaymentSettingsPage() {
       </PageHeader>
 
       {q.isLoading ? (
-        <div className="h-64 animate-pulse rounded border border-line bg-white" />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded border border-line bg-white p-5 shadow-sm">
+            <Skeleton variant="line" rows={6} />
+          </div>
+          <div className="rounded border border-line bg-white p-5 shadow-sm">
+            <Skeleton variant="line" rows={6} />
+          </div>
+        </div>
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Editable fields */}
@@ -145,9 +153,6 @@ export default function AdminPaymentSettingsPage() {
             <button onClick={() => save.mutate()} disabled={save.isPending} className="btn btn-gold mt-5 disabled:opacity-50">
               {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save changes
             </button>
-            {save.isSuccess && (
-              <p className="mt-2 flex items-center gap-1.5 text-sm text-success-700"><CheckCircle2 size={14} /> Saved.</p>
-            )}
             {save.error && <p className="mt-2 text-sm text-error-700">{errMessage(save.error)}</p>}
           </div>
 

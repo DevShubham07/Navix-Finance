@@ -29,11 +29,14 @@ import {
   DrawerTitle,
   DrawerBody,
   DrawerFooter,
+  ErrorState,
+  Skeleton,
+  StatusBadge,
 } from "@/components/ui";
 import { hasPermission } from "@/lib/auth/rbac";
-import { staffApi, statusLabel, paiseToINR } from "@/lib/api/applications";
+import { staffApi, paiseToINR } from "@/lib/api/applications";
 import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
-import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
+import { useStaffMe, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import { JourneyStepper } from "@/components/staff/journey-stepper";
 import { JourneyAssignee } from "@/components/staff/journey-assignee";
 import { StageDetailDialog } from "@/components/staff/stage-detail-dialog";
@@ -105,9 +108,9 @@ export function ApplicationJourney({ applicationId, open, onClose, onOpenDetail 
           </div>
           {app && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-              <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">
-                {statusLabel(app.status)}
-              </span>
+              {/* `humaniseStatus` (StatusBadge's default label) is the same title-casing as
+                  `statusLabel`, so the text is unchanged — only the tone now follows the status. */}
+              <StatusBadge kind="application" value={app.status} />
               <span className="truncate">{customerName}</span>
               {customerMobile && <span>· {customerMobile}</span>}
               <span>· {paiseToINR(app.amountRequestedPaise)}</span>
@@ -124,9 +127,7 @@ export function ApplicationJourney({ applicationId, open, onClose, onOpenDetail 
           {isLoading ? (
             <JourneySkeleton />
           ) : appQ.error ? (
-            <div className="rounded border border-error-100 bg-error-50 px-4 py-3 text-sm text-error-700">
-              {errMessage(appQ.error)}
-            </div>
+            <ErrorState error={appQ.error} onRetry={() => void appQ.refetch()} />
           ) : !app || !journey ? (
             <p className="text-sm text-muted">Application #{applicationId} not found.</p>
           ) : (
@@ -166,16 +167,18 @@ export function ApplicationJourney({ applicationId, open, onClose, onOpenDetail 
   );
 }
 
+/**
+ * Stepper-shaped placeholder: a stage dot beside the shared two-line {@link Skeleton}. The dot has
+ * no `Skeleton` variant, so it repeats the primitive's own bar classes — including `.skeleton`, so
+ * the `prefers-reduced-motion` block in globals.css stills it along with the lines.
+ */
 function JourneySkeleton() {
   return (
     <div className="space-y-5" aria-hidden>
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="flex items-start gap-4">
-          <div className="h-8 w-8 flex-shrink-0 animate-pulse rounded-full bg-grey-200" />
-          <div className="flex-1 space-y-2 pt-1">
-            <div className="h-3 w-1/3 animate-pulse rounded bg-grey-200" />
-            <div className="h-2.5 w-1/2 animate-pulse rounded bg-grey-100" />
-          </div>
+          <div className="skeleton h-8 w-8 flex-shrink-0 animate-pulse rounded-full bg-grey-100" />
+          <Skeleton variant="line" rows={2} className="flex-1 pt-1" />
         </div>
       ))}
     </div>

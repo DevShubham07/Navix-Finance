@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, AlertTriangle, Clock, UserRound, X } from "lucide-react";
+import { Check, CheckCircle2, AlertTriangle, Clock, Loader2, UserRound, X } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
-import { Select } from "@/components/ui";
+import { EmptyState, Select, Skeleton } from "@/components/ui";
 import {
   staffApi,
   paiseToINR,
@@ -86,25 +86,30 @@ export function RepaymentVerifyQueue() {
       )}
 
       {q.isLoading ? (
-        <div className="h-20 animate-pulse rounded bg-grey-100" />
+        <Skeleton variant="table" rows={5} cols={9} />
       ) : rows.length === 0 ? (
-        <p className="flex items-center gap-2 py-4 text-sm text-muted">
-          <CheckCircle2 size={16} className="text-success-600" /> No repayments awaiting verification.
-        </p>
+        <EmptyState
+          title="No repayments awaiting verification."
+          icon={<CheckCircle2 size={16} className="text-success-600" />}
+          className="py-4"
+        />
       ) : (
         <div className="staff-table-scroll">
           <table className="staff-data-table">
+            <caption className="sr-only">Repayments awaiting verification</caption>
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                <th className="py-2 pr-3 font-semibold">S.No.</th>
-                <th className="py-2 pr-3 font-semibold">Customer</th>
-                <th className="py-2 pr-3 font-semibold">Loan</th>
-                <th className="py-2 pr-3 font-semibold">Amount</th>
-                <th className="py-2 pr-3 font-semibold">Method</th>
-                <th className="py-2 pr-3 font-semibold">Reference</th>
-                <th className="py-2 pr-3 font-semibold">Proof</th>
-                <th className="py-2 pr-3 font-semibold">Paid on</th>
-                <th className="py-2 font-semibold" />
+                <th scope="col" className="py-2 pr-3 font-semibold">S.No.</th>
+                <th scope="col" className="py-2 pr-3 font-semibold">Customer</th>
+                <th scope="col" className="py-2 pr-3 font-semibold">Loan</th>
+                <th scope="col" className="num py-2 pr-3 font-semibold">Amount</th>
+                <th scope="col" className="py-2 pr-3 font-semibold">Method</th>
+                <th scope="col" className="py-2 pr-3 font-semibold">Reference</th>
+                <th scope="col" className="py-2 pr-3 font-semibold">Proof</th>
+                <th scope="col" className="py-2 pr-3 font-semibold">Paid on</th>
+                <th scope="col" className="py-2 font-semibold">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -120,7 +125,7 @@ export function RepaymentVerifyQueue() {
                     ) : <span className="text-muted">Customer details unavailable</span>}
                   </td>
                   <td className="py-2.5 pr-3 font-semibold text-ink">#{p.loanId}</td>
-                  <td className="py-2.5 pr-3">
+                  <td className="num py-2.5 pr-3">
                     {paiseToINR(p.amountPaise)}
                     {p.partial && (
                       <span className="ml-1 rounded-full bg-gold-50 px-1.5 py-0.5 text-xs text-gold-dark">partial</span>
@@ -140,23 +145,44 @@ export function RepaymentVerifyQueue() {
                           <UserRound size={15} /> Customer
                         </button>
                       )}
+                      {/* Icon buttons, like the application queues' row actions (AppRow): the word
+                          lives in aria-label + title, and the label names the row's loan so a
+                          screen reader hears which payment it acts on, not "Verify" ×N. */}
                       <button
                         type="button"
                         onClick={() => verify.mutate(p)}
                         disabled={busy(p)}
-                        className="btn btn-gold btn-sm"
+                        className="btn btn-gold btn-sm btn-icon"
+                        aria-label={
+                          verify.isPending && verify.variables?.id === p.id
+                            ? `Verifying payment on loan #${p.loanId}`
+                            : `Verify payment of ${paiseToINR(p.amountPaise)} on loan #${p.loanId}`
+                        }
+                        title="Verify payment"
                       >
-                        <CheckCircle2 size={15} />{" "}
-                        {verify.isPending && verify.variables?.id === p.id ? "Verifying…" : "Verify"}
+                        {verify.isPending && verify.variables?.id === p.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Check size={14} />
+                        )}
                       </button>
                       <button
                         type="button"
                         onClick={() => setRejectTarget(p)}
                         disabled={busy(p)}
-                        className="btn btn-sm border-error-600 bg-error-600 text-white hover:bg-error-700 disabled:opacity-50"
+                        className="btn btn-sm btn-icon border-error-600 bg-error-600 text-white hover:bg-error-700 disabled:opacity-50"
+                        aria-label={
+                          reject.isPending && reject.variables?.p.id === p.id
+                            ? `Rejecting payment on loan #${p.loanId}`
+                            : `Reject payment of ${paiseToINR(p.amountPaise)} on loan #${p.loanId}`
+                        }
+                        title="Reject payment"
                       >
-                        <X size={15} />{" "}
-                        {reject.isPending && reject.variables?.p.id === p.id ? "Rejecting…" : "Reject"}
+                        {reject.isPending && reject.variables?.p.id === p.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <X size={14} />
+                        )}
                       </button>
                     </div>
                   </td>

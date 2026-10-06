@@ -13,7 +13,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Mail, Copy, Check, MessageSquareOff } from "lucide-react";
-import { Input } from "@/components/ui";
+import { ErrorState, Input, Skeleton, toast } from "@/components/ui";
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { staffApi } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
@@ -43,9 +43,15 @@ export function ResumeLinkDialog({
     qc.invalidateQueries({ queryKey: ["resume-link", applicationId, checkType] });
   };
 
+  // An EMAIL share publishes a notification event rather than delivering the mail itself, so the
+  // toast says "queued". COPY only records the send (the clipboard write is local).
   const share = useMutation({
     mutationFn: (channel: "EMAIL" | "COPY") => staffApi.shareResumeLink(applicationId, checkType, channel),
-    onSuccess: invalidateAfterShare,
+    onSuccess: (sent, channel) => {
+      invalidateAfterShare();
+      if (channel === "COPY") toast.success("Link copied and logged.");
+      else toast.success(sent.maskedEmail ? `Link queued for email to ${sent.maskedEmail}` : "Link queued for email");
+    },
   });
 
   const copyLink = async () => {
@@ -71,9 +77,9 @@ export function ResumeLinkDialog({
       </DialogHeader>
 
       {preview.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <Skeleton variant="line" rows={4} />
       ) : preview.error ? (
-        <p className="text-sm text-error-700">{errMessage(preview.error)}</p>
+        <ErrorState error={preview.error} onRetry={() => void preview.refetch()} className="py-4" />
       ) : link ? (
         <>
           <p className="text-sm text-ink">
@@ -99,11 +105,6 @@ export function ResumeLinkDialog({
           />
 
           {share.error && <p className="mt-2 text-xs text-error-700">{errMessage(share.error)}</p>}
-          {share.isSuccess && (
-            <p className="mt-2 text-xs text-success-700">
-              {share.variables === "EMAIL" ? `Emailed to ${link.maskedEmail}` : "Link copied and logged."}
-            </p>
-          )}
 
           <p className="mt-3 text-xs text-muted">
             SMS can&apos;t carry a per-customer link until a DLT template is approved.

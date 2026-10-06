@@ -6,19 +6,19 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
-import { Badge } from "@/components/ui";
+import { Badge, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import {
   PermissionGate,
   NoAccessNotice,
-  errMessage,
   useStaffMe,
   useQueueSelection,
   useBulkRoleFlags,
   RejectDialog,
   AssignDialog,
   BulkActionBar,
+  MIXED_REJECT_MODES_REASON,
   type RejectMode,
 } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
@@ -34,6 +34,7 @@ import {
 import { CaseFailureDialog } from "@/components/staff/case-failure-dialog";
 import { CustomerEditDialog } from "@/components/staff/customer-edit-dialog";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import {
   customersApi,
@@ -53,6 +54,11 @@ import {
 import { hasPermission } from "@/lib/auth/rbac";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
+import {
+  customerRowTarget,
+  dateWindowChanged,
+  type CustomerRowTarget,
+} from "@/lib/customers/customers-register";
 
 const ZERO_COUNTS: CustomerSummaryCounts = {
   all: 0,
@@ -136,8 +142,10 @@ function CustomersPageInner() {
 
   // Deep link from the global-search palette's "View all" link (`?q=…`).
   const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
-  const [openId, setOpenId] = React.useState<number | null>(null);
-  const [infoCustomerId, setInfoCustomerId] = React.useState<number | null>(null);
+  // "Open" and ⓘ go straight to the row's latest application when it has one; only a customer with
+  // no application on file falls back to the customer view (see customerRowTarget).
+  const [openTarget, setOpenTarget] = React.useState<CustomerRowTarget | null>(null);
+  const [infoTarget, setInfoTarget] = React.useState<CustomerRowTarget | null>(null);
   // Carries the name too, so the failure dialog can title itself without a second fetch.
   const [failureCustomer, setFailureCustomer] =
     React.useState<{ id: number; name: string | null } | null>(null);
@@ -151,16 +159,35 @@ function CustomersPageInner() {
   // the enforcement is the backend's.
   const fullView = me?.role ? hasPermission(me.role, "customer:view:all") : true;
 
+  // Any filter change lands on page 1 — page 7 of a different result set is meaningless. The reset
+  // happens in the same update as the filter change (never in an effect afterwards), so the list
+  // query is never asked for the old page number under the new filter.
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSizeState] = React.useState(25);
   const setPageSize = React.useCallback((n: number) => {
     setPageSizeState(n);
     setPage(1);
   }, []);
-  // Any filter change lands on page 1 — page 7 of a different result set is meaningless.
-  React.useEffect(() => {
+  const changePeriod = (next: QueuePeriod) => {
+    if (dateWindowChanged(range, rangeFor(next, custom))) setPage(1);
+    setPeriod(next);
+  };
+  const changeCustom = (next: QueueRange) => {
+    if (dateWindowChanged(range, rangeFor(period, next))) setPage(1);
+    setCustom(next);
+  };
+  // `seg` and `mine` live in the URL and also change from outside this page's handlers (the sidebar's
+  // segment links, back/forward). A setPage(1) inside setSeg would not help either: router.replace
+  // commits the new URL only after Next resolves the navigation, so the reset would land first and
+  // fetch the OLD segment's page 1. Instead the reset is applied during the render that first sees
+  // the new URL values; React discards that render and re-runs it with page 1 before committing, so
+  // no query is ever issued for the stale page.
+  const urlScope = `${seg}|${mine ? "mine" : "all"}`;
+  const [pagedScope, setPagedScope] = React.useState(urlScope);
+  if (pagedScope !== urlScope) {
+    setPagedScope(urlScope);
     setPage(1);
-  }, [range.from, range.to, seg, mine]);
+  }
 
   const baseFilters = React.useMemo(
     () => ({ q: query || undefined, from: range.from, to: range.to, mine: mine || undefined }),
@@ -351,7 +378,7 @@ function CustomersPageInner() {
             ariaLabel="Search customers"
             inputClassName="w-72"
           />
-          <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
+          <QueueDateFilter period={period} setPeriod={changePeriod} custom={custom} setCustom={changeCustom} />
           {mine && (
             <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
               My customers
@@ -366,16 +393,21 @@ function CustomersPageInner() {
                   ? () => setPendingReject({ ids: selectedIds, mode: bulkRejectMode })
                   : undefined
               }
+              // A mixed selection keeps Reject in place but disabled, with the reason in a tooltip.
+              // It used to make the button vanish, with a small warning line elsewhere in the
+              // toolbar — so the operator saw the control disappear rather than learning why.
+              // This is the only screen where a selection can span both reject modes.
+              rejectDisabledReason={
+                canBulkReject && mixedRejectModes ? MIXED_REJECT_MODES_REASON : undefined
+              }
             />
           )}
-          {canBulkReject && mixedRejectModes && (
-            <span
-              className="text-xs text-warning-700"
-              title="Selected applications span both credit-stage and disbursement-pending rejects — select rows of only one kind to bulk reject."
-            >
-              Select one stage at a time to bulk reject
-            </span>
-          )}
+          {/* The order is fixed server-side (CustomerBookQuery: stage date desc, nulls last) and the
+              register has no sortable headers, so say so rather than leave the reader guessing. */}
+          <span className="ml-auto text-xs text-muted">
+            Sorted by stage date <span aria-hidden>↓</span>
+            <span className="sr-only">, newest first</span>
+          </span>
         </div>
 
         {!fullView && (
@@ -385,27 +417,33 @@ function CustomersPageInner() {
           </p>
         )}
 
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+        <div className="rounded border border-line bg-white shadow-sm">
           {listQ.isLoading ? (
-            <div className="h-40 animate-pulse rounded bg-grey-100" />
+            <Skeleton variant="table" rows={8} cols={colCount} />
           ) : listQ.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(listQ.error)}</p>
+            <ErrorState error={listQ.error} onRetry={() => void listQ.refetch()} />
           ) : pageRows.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-muted">
-              No customers{query ? ` for “${query}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
-              {period !== "ALL" ? " in the selected date range" : ""}.
-            </p>
+            <EmptyState
+              title={`No customers${query ? ` for “${query}”` : ""}${seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}${
+                period !== "ALL" ? " in the selected date range" : ""
+              }.`}
+            />
           ) : (
+            // `staff-register-scroll` bounds the scroller so the sticky `thead` has something to stick
+            // to; PaginationBar now sits after it, inside the panel, so it no longer scrolls away.
+            // Offset clears the shell header, PageHeader, the segment-chip strip and the search/date row.
+            <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "28rem" } as React.CSSProperties}>
             <table className="staff-data-table">
+              <caption className="sr-only">Customers, grouped by stage date, newest first</caption>
               <thead>
                 {/* Column set deliberately mirrors the live-applications queue (identity, date,
                     contact, PAN, bank, loan, amount, due, credit) so a staffer reads the same row
                     shape on both screens. Account/IFSC/amount/due describe the customer's LATEST
                     application; the roll-up columns (Owner/Loans/Outstanding) are customer-only. */}
                 <tr>
-                  <th>S.No.</th>
+                  <th scope="col">S.No.</th>
                   {showBulkColumn && (
-                    <th className="staff-sticky-identity">
+                    <th scope="col" className="staff-sticky-identity">
                       <input
                         type="checkbox"
                         checked={actionableIds.length > 0 && sel.selected.size === actionableIds.length}
@@ -414,28 +452,28 @@ function CustomersPageInner() {
                       />
                     </th>
                   )}
-                  <th className={showBulkColumn ? undefined : "staff-sticky-identity"}>Customer</th>
-                  <th title="Signup / application start date">Date</th>
-                  <th>Mobile</th>
-                  <th>PAN</th>
-                  <th>Account</th>
-                  <th>IFSC</th>
-                  <th>Loan</th>
-                  <th>Amount</th>
-                  <th>Due</th>
-                  <th>Owner</th>
-                  <th>Loans</th>
-                  <th>Outstanding</th>
-                  <th>Bureau</th>
-                  <th title="Why this file has no usable credit decision yet">Failure</th>
-                  <th>Latest status</th>
-                  <th title="When this customer entered their current status">Stage date</th>
+                  <th scope="col" className={showBulkColumn ? undefined : "staff-sticky-identity"}>Customer</th>
+                  <th scope="col" title="Signup / application start date">Date</th>
+                  <th scope="col">Mobile</th>
+                  <th scope="col">PAN</th>
+                  <th scope="col">Account</th>
+                  <th scope="col">IFSC</th>
+                  <th scope="col">Loan</th>
+                  <th scope="col" className="num">Amount</th>
+                  <th scope="col">Due</th>
+                  <th scope="col">Owner</th>
+                  <th scope="col" className="num">Loans</th>
+                  <th scope="col" className="num">Outstanding</th>
+                  <th scope="col">Bureau</th>
+                  <th scope="col" title="Why this file has no usable credit decision yet">Failure</th>
+                  <th scope="col">Latest status</th>
+                  <th scope="col" title="When this customer entered their current status">Stage date</th>
                   {/* Who worked the file. "Credit exec" is who DECIDED it, which on a reassigned or
                       Head-decided file is not the same person as Owner. Blank until it happens. */}
-                  <th title="The credit executive who decided the latest application">Credit exec</th>
-                  <th title="Who released the money">Disbursed by</th>
-                  <th title="The assigned collections executive">Collections exec</th>
-                  <th className="staff-sticky-actions text-right">Open</th>
+                  <th scope="col" title="The credit executive who decided the latest application">Credit exec</th>
+                  <th scope="col" title="Who released the money">Disbursed by</th>
+                  <th scope="col" title="The assigned collections executive">Collections exec</th>
+                  <th scope="col" className="staff-sticky-actions text-right">Open</th>
                 </tr>
               </thead>
               <tbody>
@@ -485,7 +523,7 @@ function CustomersPageInner() {
                     )}
                     <td className={`staff-cell${showBulkColumn ? "" : " staff-sticky-identity"}`}>
                       <button
-                        onClick={() => setOpenId(c.customerId)}
+                        onClick={() => setOpenTarget(customerRowTarget(c))}
                         className="flex max-w-full items-center gap-2 text-left"
                         title={c.name ?? undefined}
                       >
@@ -514,7 +552,7 @@ function CustomersPageInner() {
                     <td className="font-mono text-ink">{c.accountNumber || "—"}</td>
                     <td className="font-mono text-ink">{c.ifsc || "—"}</td>
                     <td className="font-mono text-muted">{c.latestLoanId != null ? `#${c.latestLoanId}` : "—"}</td>
-                    <td>
+                    <td className="num">
                       <span className="font-semibold text-ink">
                         <AmountCell amountPaise={c.amountPaise} isRequested={c.amountIsRequested === true} />
                       </span>
@@ -523,8 +561,8 @@ function CustomersPageInner() {
                       <DueCell dueDate={c.loanDueDate} markedPendingAt={c.markedPendingAt} />
                     </td>
                     <td className="staff-cell text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>
-                    <td className="text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
-                    <td className="font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
+                    <td className="num text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
+                    <td className="num font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
                     <td>
                       {c.starRating != null || c.creditScore != null ? (
                         <CreditBadge starRating={c.starRating} creditScore={c.creditScore} bureauSource={c.bureauSource} />
@@ -564,11 +602,7 @@ function CustomersPageInner() {
                       )}
                     </td>
                     <td>
-                      {c.latestStatus ? (
-                        <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">
-                          {statusLabel(c.latestStatus as ApplicationStatus)}
-                        </span>
-                      ) : "—"}
+                      {c.latestStatus ? <StatusBadge kind="application" value={c.latestStatus} /> : "—"}
                     </td>
                     <td className="whitespace-nowrap text-muted">
                       {c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "—"}
@@ -620,14 +654,14 @@ function CustomersPageInner() {
                           </button>
                         </PermissionGate>
                         <button
-                          onClick={() => setInfoCustomerId(c.customerId)}
+                          onClick={() => setInfoTarget(customerRowTarget(c))}
                           className="btn btn-sm btn-outline btn-icon"
                           aria-label="Quick summary"
                           title="Quick summary"
                         >
                           <Info size={14} />
                         </button>
-                        <button onClick={() => setOpenId(c.customerId)} className="inline-flex items-center gap-1 text-navy hover:underline">
+                        <button onClick={() => setOpenTarget(customerRowTarget(c))} className="inline-flex items-center gap-1 text-navy hover:underline">
                           Open <ArrowRight size={14} />
                         </button>
                       </div>
@@ -640,6 +674,7 @@ function CustomersPageInner() {
                 })()}
               </tbody>
             </table>
+            </div>
           )}
           <PaginationBar
             page={page}
@@ -652,8 +687,24 @@ function CustomersPageInner() {
         </div>
       </PermissionGate>
 
-      <CustomerDetailDialog customerId={openId} onClose={() => setOpenId(null)} />
-      <ApplicationInfoDialog customerId={infoCustomerId} onClose={() => setInfoCustomerId(null)} />
+      {openTarget?.kind === "application" && (
+        // Mounted per open (keyed by id) so every open lands on Overview, as it did when this went
+        // through CustomerDetailDialog's hand-over.
+        <ApplicationDetailDialog
+          key={openTarget.applicationId}
+          applicationId={openTarget.applicationId}
+          onClose={() => setOpenTarget(null)}
+        />
+      )}
+      <CustomerDetailDialog
+        customerId={openTarget?.kind === "customer" ? openTarget.customerId : null}
+        onClose={() => setOpenTarget(null)}
+      />
+      <ApplicationInfoDialog
+        applicationId={infoTarget?.kind === "application" ? infoTarget.applicationId : null}
+        customerId={infoTarget?.kind === "customer" ? infoTarget.customerId : null}
+        onClose={() => setInfoTarget(null)}
+      />
       {failureCustomer && (
         <CaseFailureDialog
           customerId={failureCustomer.id}

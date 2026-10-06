@@ -2,19 +2,28 @@
 
 import * as React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, X, ChevronRight } from "lucide-react";
+import { Loader2, RefreshCw, X, ChevronRight, ChevronDown } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
-import { staffApi, type VerificationOverviewRow } from "@/lib/api/applications";
+import { staffApi } from "@/lib/api/applications";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { formatDateTime } from "@/lib/utils";
+import {
+  buildVerificationCards,
+  formatCheckedAgo,
+  groupVerificationCards,
+  type VerificationAppCard as AppCard,
+  type VerificationBucket as Bucket,
+} from "@/lib/staff/verification-dashboard";
 
-/** The four application-wise buckets, in triage priority order. */
-type Bucket = "failures" | "awaiting" | "passed" | "notStarted";
-
+/**
+ * The four application-wise buckets, in triage priority order. The roll-up rules (which checks gate,
+ * which statuses count) live in `lib/staff/verification-dashboard.ts`, mirrored by the backend.
+ */
 const BUCKETS: { key: Bucket; label: string; accent: string }[] = [
   { key: "failures", label: "Has failures", accent: "text-error-700" },
   { key: "awaiting", label: "Awaiting borrower steps", accent: "text-warning-800" },
@@ -23,69 +32,10 @@ const BUCKETS: { key: Bucket; label: string; accent: string }[] = [
 ];
 
 /**
- * Application statuses this dashboard triages — mirrors `ApplicationVerificationService.DASHBOARD_STATUSES`.
- * The files still awaiting a KYC decision, plus SANCTIONED ones still walking the offer journey: their
- * DigiLocker / selfie / address / eSign checks run after the credit decision and never block the borrower,
- * so a failure there surfaces only here — and this is where staff send the "redo this step" link from.
- * Rows for anything past disbursal (or rejected, closed…) are historical evidence, not work, and would
- * pollute the buckets forever.
- */
-const UNDECIDED_STATUSES = ["DRAFT", "KYC_PENDING", "REVIEW_PENDING", "SANCTIONED"];
-
-/**
- * The checks a borrower must clear (PASS/REVIEW) before this dashboard calls an application "all
- * checks passed" — the union of the backend's two gates: `ApplicationVerificationService.REQUIRED`
- * (PAN, EMAIL, BUREAU, SALARY, gating submit-kyc) and `REQUIRED_SANCTION` (AADHAAR, SELFIE, ADDRESS,
- * ESIGN, gating sanction). PENNY_DROP gates nothing server-side; it stays here only so a dashboard
- * card isn't marked "all checks passed" ahead of the penny-drop step later in the offer journey.
- * Needed so an application whose required checks were never RUN (no row at all) isn't mistaken for
- * "all checks passed" just because the few rows it does have are green.
- */
-const REQUIRED_CHECKS = ["PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY", "PENNY_DROP", "SELFIE"];
-
-/**
- * Checks that inform the credit decision but gate nothing, and so must be kept out of the bucket
- * maths below.
- *
- * EMPLOYMENT is the EPFO/UAN lookup. It can never return PASS for a borrower the EPFO has no record
- * of — a first job, a cash employer, a non-PF establishment all land in REVIEW legitimately — and it
- * is deliberately absent from the backend's REQUIRED set for exactly that reason. Counting it in
- * `pendingReview` would drag a large share of otherwise-clean files out of "All checks passed" and
- * into "Awaiting borrower steps", where there is no borrower step to take. It gets its own chip on
- * the card instead: visible, not gating.
- *
- * DIGILOCKER, AGREEMENT and ESIGN are the other three types the backend recognises
- * ({@code ApplicationVerificationService.KNOWN_CHECKS} minus {@link REQUIRED_CHECKS} minus
- * EMPLOYMENT). All three are Phase-3 checks that only fire once an application is sanctioned — this
- * dashboard is scoped to applications still awaiting that decision (see {@link UNDECIDED_STATUSES}),
- * so a row for one of them here is incidental (a staff manual retry, or a historical row), not
- * routine triage work. They used to leak into the card's denominator: two applications both reading
- * "8/10 passed" were not actually at the same point — one might be missing 2 of the 8 truly-required
- * checks, the other could have cleared all 8 and simply picked up 2 of these extras along the way.
- * Excluding them keeps the fraction a stable, comparable X/8 everywhere.
- */
-const NON_GATING_CHECKS = ["EMPLOYMENT", "DIGILOCKER", "AGREEMENT", "ESIGN"];
-
-/** One application rolled up from its verification rows (or a never-started KYC_PENDING app). */
-interface AppCard {
-  applicationId: number;
-  customerId: number | null;
-  borrowerName: string | null;
-  borrowerMobile: string | null;
-  total: number;
-  passed: number;
-  failed: number;
-  pendingReview: number;
-  /** EPFO/UAN outcome, shown as its own chip. Advisory — see {@link NON_GATING_CHECKS}. */
-  employmentStatus: string | null;
-  lastUpdate: string | null;
-  bucket: Bucket;
-}
-
-/**
  * Verification dashboard: every application that needs a KYC decision, grouped **application-wise**
  * into triage buckets (has failures → awaiting borrower → all passed → not started). Each card opens
  * the shared {@link VerificationChecksPanel}, where a KYC approver can override a check with remarks.
+ * "Not started" comes from the server (`notStarted`), computed over the whole undecided queue.
  */
 export default function VerificationsDashboardPage() {
   const [query, setQuery] = React.useState("");
@@ -95,6 +45,15 @@ export default function VerificationsDashboardPage() {
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(25);
   const [includeCleared, setIncludeCleared] = React.useState(false);
+  // Collapsed buckets — this visit only, deliberately not persisted.
+  const [collapsed, setCollapsed] = React.useState<ReadonlySet<Bucket>>(() => new Set());
+  const toggleBucket = (key: Bucket) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   // Any change to what is being asked for puts you back at the first page — page 4 of the old
   // filter is a meaningless offset into the new one.
@@ -121,109 +80,26 @@ export default function VerificationsDashboardPage() {
     // loading skeleton.
     placeholderData: keepPreviousData,
   });
-  // Enrich: KYC_PENDING applications with zero verification rows form the "Not started" bucket.
-  const pendingQ = useQuery({
-    queryKey: ["staff-verif-kyc-pending"],
-    queryFn: () => staffApi.listByStatus("KYC_PENDING"),
-    refetchInterval: 45_000,
-  });
-
   const data = q.data;
   // `total` counts matching APPLICATIONS — the unit the server pages by — so the bar can't be
   // derived from `rows.length` (one application contributes many rows).
   const total = data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  const cards = React.useMemo<AppCard[]>(() => {
-    // Group verification rows by application — only applications still awaiting a KYC decision.
-    // (applicationStatus is null on rows from before the field existed; treat those as undecided
-    // rather than silently hiding them.)
-    const rows = (data?.rows ?? []).filter(
-      (r) => r.applicationStatus == null || UNDECIDED_STATUSES.includes(r.applicationStatus),
-    );
-    const byApp = new Map<number, VerificationOverviewRow[]>();
-    for (const r of rows) {
-      const list = byApp.get(r.applicationId) ?? [];
-      list.push(r);
-      byApp.set(r.applicationId, list);
-    }
-    const out: AppCard[] = [];
-    for (const [applicationId, checks] of byApp) {
-      const gating = checks.filter((c) => !NON_GATING_CHECKS.includes(c.checkType));
-      const employment = checks.find((c) => c.checkType === "EMPLOYMENT") ?? null;
-      const failed = gating.filter((c) => c.status === "FAIL").length;
-      const passed = gating.filter((c) => c.status === "PASS").length;
-      // Required checks with no recorded row at all are still outstanding borrower work — count
-      // them as pending so a barely-started application can't read as "all checks passed".
-      const cleared = new Set(
-        gating.filter((c) => c.status === "PASS" || c.status === "REVIEW").map((c) => c.checkType),
-      );
-      const recorded = new Set(gating.map((c) => c.checkType));
-      const missingRequired = REQUIRED_CHECKS.filter((t) => !recorded.has(t)).length;
-      const pendingReview =
-        gating.filter((c) => c.status === "PENDING" || c.status === "REVIEW").length + missingRequired;
-      const requiredCleared = REQUIRED_CHECKS.every((t) => cleared.has(t));
-      const lastUpdate = checks.reduce<string | null>(
-        (acc, c) => (c.updatedAt && (!acc || c.updatedAt > acc) ? c.updatedAt : acc),
-        null,
-      );
-      const bucket: Bucket =
-        failed > 0 ? "failures" : !requiredCleared || pendingReview > 0 ? "awaiting" : "passed";
-      out.push({
-        applicationId,
-        customerId: checks.find((c) => c.customerId != null)?.customerId ?? null,
-        borrowerName: checks.find((c) => c.borrowerName != null)?.borrowerName ?? null,
-        borrowerMobile: checks.find((c) => c.borrowerMobile != null)?.borrowerMobile ?? null,
-        total: gating.length + missingRequired,
-        employmentStatus: employment?.status ?? null,
-        passed,
-        failed,
-        pendingReview,
-        lastUpdate,
-        bucket,
-      });
-    }
-
-    // "Not started": KYC_PENDING applications that have no verification rows yet.
-    const term = query.trim().toLowerCase();
-    for (const app of pendingQ.data ?? []) {
-      if (byApp.has(app.id)) continue;
-      if (
-        term &&
-        !`${app.id} ${app.customerId ?? ""} ${app.customerName ?? ""} ${app.customerMobile ?? ""}`
-          .toLowerCase()
-          .includes(term)
-      )
-        continue;
-      out.push({
-        applicationId: app.id,
-        customerId: app.customerId,
-        borrowerName: app.customerName ?? null,
-        borrowerMobile: app.customerMobile ?? null,
-        total: 0,
-        passed: 0,
-        failed: 0,
-        pendingReview: 0,
-        employmentStatus: null,
-        lastUpdate: null,
-        bucket: "notStarted",
-      });
-    }
-    return out;
-  }, [data?.rows, pendingQ.data, query]);
-
-  const grouped = React.useMemo(() => {
-    const g: Record<Bucket, AppCard[]> = { failures: [], awaiting: [], passed: [], notStarted: [] };
-    for (const c of cards) g[c.bucket].push(c);
-    // Newest activity first within a bucket (not-started apps have no timestamp — leave order stable).
-    for (const k of Object.keys(g) as Bucket[]) {
-      g[k].sort((a, b) => (b.lastUpdate ?? "").localeCompare(a.lastUpdate ?? ""));
-    }
-    return g;
-  }, [cards]);
-
-  const loading = q.isLoading || pendingQ.isLoading;
-  const anyError = q.error || pendingQ.error;
+  // "Not started" comes from the server, computed over the whole undecided queue — never derived
+  // from this page's rows, which once showed a file whose checks were on another page (or that was
+  // fully cleared and so filtered out) as "never verified".
+  const notStarted = data?.notStarted;
+  const notStartedTotal = data?.notStartedTotal ?? 0;
+  const cards = React.useMemo<AppCard[]>(
+    () => buildVerificationCards(data?.rows ?? [], notStarted ?? []),
+    [data?.rows, notStarted],
+  );
+  const grouped = React.useMemo(() => groupVerificationCards(cards), [cards]);
+  const searchTerm = query.trim();
+  // "Last checked … ago" is measured against when this board was fetched (a pure value that moves
+  // with every 45s poll), not a clock read during render.
+  const fetchedAt = q.dataUpdatedAt;
 
   return (
     <div>
@@ -236,17 +112,18 @@ export default function VerificationsDashboardPage() {
         }
       >
         <button
-          onClick={() => {
-            q.refetch();
-            pendingQ.refetch();
-          }}
+          onClick={() => void q.refetch()}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
-          {q.isFetching || pendingQ.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+          {q.isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
       <PermissionGate permission="kyc:approve" fallback={<NoAccessNotice />}>
+        {/* The tallies are queue-wide by design; say so while a search narrows the cards below. */}
+        {searchTerm && (
+          <p className="mb-1.5 text-xs text-muted">Tallies (all undecided files) — the search does not narrow these.</p>
+        )}
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Tile label="Pending" value={data?.pending} valueClass="text-muted" />
           <Tile label="Failed" value={data?.failed} valueClass="text-error-700" />
@@ -276,32 +153,62 @@ export default function VerificationsDashboardPage() {
           />
         </div>
 
-        {loading ? (
-          <div className="h-40 animate-pulse rounded bg-grey-100" />
-        ) : anyError ? (
-          <p className="rounded border border-line bg-white px-5 py-4 text-sm text-error-700 shadow-sm">
-            {errMessage(q.error ?? pendingQ.error)}
-          </p>
+        {q.isLoading ? (
+          // The board is a grid of application cards, so the placeholder is too.
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} variant="row" />
+            ))}
+          </div>
+        ) : q.error ? (
+          <div className="rounded border border-line bg-white shadow-sm">
+            <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
+          </div>
         ) : cards.length === 0 ? (
-          <p className="rounded border border-line bg-white px-5 py-8 text-center text-sm text-muted shadow-sm">
-            No applications need attention{query.trim() ? ` for “${query.trim()}”` : ""}.
-            {!includeCleared && " Tick “Include cleared” to see the files that have already passed."}
-          </p>
+          <div className="rounded border border-line bg-white shadow-sm">
+            <EmptyState
+              title={`No applications need attention${searchTerm ? ` for “${searchTerm}”` : ""}.`}
+              hint={!includeCleared ? "Tick “Include cleared” to see the files that have already passed." : undefined}
+            />
+          </div>
         ) : (
           <div className="space-y-6">
             {BUCKETS.map((b) => {
               const list = grouped[b.key];
               if (list.length === 0) return null;
+              const isCollapsed = collapsed.has(b.key);
+              const panelId = `verif-bucket-${b.key}`;
+              const capped = b.key === "notStarted" && notStartedTotal > list.length;
               return (
                 <section key={b.key}>
-                  <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-navy">
-                    <span className={b.accent}>{b.label}</span>
-                    <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">{list.length}</span>
+                  <h2 className="mb-2 text-sm font-semibold text-navy">
+                    <button
+                      type="button"
+                      onClick={() => toggleBucket(b.key)}
+                      aria-expanded={!isCollapsed}
+                      aria-controls={panelId}
+                      className="flex items-center gap-2 rounded pr-1 hover:bg-grey-100"
+                    >
+                      <ChevronDown
+                        size={14}
+                        aria-hidden
+                        className={`text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                      />
+                      <span className={b.accent}>{b.label}</span>
+                      <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">{list.length}</span>
+                    </button>
                   </h2>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {list.map((c) => (
-                      <AppCardTile key={c.applicationId} card={c} onOpen={() => setSelected(c)} />
-                    ))}
+                  <div id={panelId} hidden={isCollapsed}>
+                    {capped && (
+                      <p className="mb-2 text-xs text-muted">
+                        Showing {list.length} of {notStartedTotal.toLocaleString("en-IN")}, newest first. Search to find an older one.
+                      </p>
+                    )}
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {list.map((c) => (
+                        <AppCardTile key={c.applicationId} card={c} fetchedAt={fetchedAt} onOpen={() => setSelected(c)} />
+                      ))}
+                    </div>
                   </div>
                 </section>
               );
@@ -314,6 +221,7 @@ export default function VerificationsDashboardPage() {
                   setPage={setPage}
                   total={total}
                   pageSize={pageSize}
+                  unitLabel="applications"
                   setPageSize={(size) => {
                     setPageSize(size);
                     setPage(1);
@@ -374,24 +282,25 @@ function Tile({ label, value, valueClass }: { label: string; value: number | und
 /**
  * The EPFO/UAN outcome as a standalone chip. Deliberately outside the passed/failed/pending counts:
  * this check gates nothing, so it must not move an application between buckets (see
- * {@link NON_GATING_CHECKS}). A REVIEW here reads "we could not confirm employment", not "the borrower
- * still owes us a step" — hence the neutral wording rather than a warning colour.
+ * `NON_GATING_CHECKS` in lib/staff/verification-dashboard.ts). A REVIEW here reads "we could not confirm employment", not "the borrower
+ * still owes us a step" — hence the neutral wording rather than a warning colour. `kind="advisory"`
+ * carries the same rule into the colour: PASS/FAIL stay out of the gating green/red, so an "EPFO
+ * failed" chip never reads as a blocker on a file that is perfectly sanctionable.
  */
 function EmploymentChip({ status }: { status: string | null }) {
   if (!status) return null;
   const label =
     status === "PASS" ? "EPFO ok" : status === "FAIL" ? "EPFO failed" : "EPFO unconfirmed";
-  const tone =
-    status === "PASS"
-      ? "bg-success-100 text-success-700"
-      : status === "FAIL"
-        ? "bg-error-100 text-error-700"
-        : "bg-grey-100 text-muted";
-  return <span className={`rounded-full px-1.5 py-0.5 font-semibold ${tone}`}>{label}</span>;
+  return (
+    <StatusBadge kind="advisory" value={status}>
+      {label}
+    </StatusBadge>
+  );
 }
 
-function AppCardTile({ card, onOpen }: { card: AppCard; onOpen: () => void }) {
+function AppCardTile({ card, fetchedAt, onOpen }: { card: AppCard; fetchedAt: number; onOpen: () => void }) {
   const pct = card.total > 0 ? Math.round((card.passed / card.total) * 100) : 0;
+  const checkedAgo = fetchedAt > 0 ? formatCheckedAgo(card.lastUpdate, fetchedAt) : null;
   return (
     <button
       onClick={onOpen}
@@ -424,6 +333,7 @@ function AppCardTile({ card, onOpen }: { card: AppCard; onOpen: () => void }) {
           <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-grey-200">
             <div className="h-full rounded-full bg-success-600 transition-all" style={{ width: `${pct}%` }} />
           </div>
+          {checkedAgo && <div className="mt-1 text-[8.8px] text-muted">Last checked {checkedAgo}</div>}
         </>
       ) : (
         <div className="mt-3 text-xs text-muted">No verification checks started yet.</div>

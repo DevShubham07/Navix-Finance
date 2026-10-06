@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send, Phone, IndianRupee, Calendar } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
 import {
@@ -18,6 +18,7 @@ import {
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
+import { LimitBasisBadge } from "@/components/staff/detail-parts";
 import {
   customersApi,
   adminApi,
@@ -28,6 +29,12 @@ import {
   type ApplicationView,
 } from "@/lib/api/applications";
 import { dueDateFromSalary } from "@/lib/calc/loan-math";
+import {
+  SALARY_DUE_MAX_DAYS,
+  istCalendarToday,
+  rupeeInputPreview,
+  salaryDueWindow,
+} from "@/lib/customers/customer-360";
 import { formatDate } from "@/lib/utils";
 
 /** Loan statuses that mean the loan is still live (vs. a past/closed loan). */
@@ -44,7 +51,10 @@ export default function CustomerDetailPage() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["customer", id] });
     qc.invalidateQueries({ queryKey: ["customer-detail", id] });
-    qc.invalidateQueries({ queryKey: ["customers"] });
+    // The customers register reads ["customers-page", …] / ["customers-summary", …];
+    // React Query prefix-matches element-by-element, so a bare ["customers"] matches neither.
+    qc.invalidateQueries({ queryKey: ["customers-page"] });
+    qc.invalidateQueries({ queryKey: ["customers-summary"] });
   };
 
   const c = q.data;
@@ -67,9 +77,13 @@ export default function CustomerDetailPage() {
 
       <PermissionGate permission="customer:view" fallback={<NoAccessNotice />}>
         {q.isLoading ? (
-          <div className="h-48 animate-pulse rounded border border-line bg-white" />
-        ) : q.error || !c ? (
-          <p className="text-sm text-error-700">{q.error ? errMessage(q.error) : "Customer not found."}</p>
+          <div className="rounded border border-line bg-white p-4 shadow-sm">
+            <Skeleton variant="line" rows={8} />
+          </div>
+        ) : q.error ? (
+          <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+        ) : !c ? (
+          <p className="text-sm text-error-700">Customer not found.</p>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
             <div className="min-w-0 rounded border border-line bg-white p-4 shadow-sm">
@@ -105,7 +119,12 @@ export default function CustomerDetailPage() {
                   </Card>
                 )}
                 {sanctionedApp && (
-                  <SanctionedAmountCard customerId={id} app={sanctionedApp} onSaved={invalidate} />
+                  <SanctionedAmountCard
+                    customerId={id}
+                    app={sanctionedApp}
+                    overridePaise={c.limitOverridePaise ?? null}
+                    onSaved={invalidate}
+                  />
                 )}
                 <LimitOverrideCard
                   customerId={id}
@@ -157,7 +176,10 @@ function DeleteCustomerCard({ customerId, name, hasLiveLoan }: { customerId: num
   const [typed, setTyped] = React.useState("");
   const m = useMutation({
     mutationFn: () => customersApi.remove(customerId),
-    onSuccess: () => router.push("/staff/customers"),
+    onSuccess: () => {
+      toast.success("Customer deleted");
+      router.push("/staff/customers");
+    },
   });
   const confirmed = typed.trim() === name.trim();
 
@@ -237,7 +259,10 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
         salaryBank: salaryBank.trim() || null,
         address: address.trim() || null,
       }),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      onSaved();
+      toast.success("Customer details saved");
+    },
   });
 
   return (
@@ -246,14 +271,31 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
       <Input label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} className="!mb-2" />
       <Input label="Employer" value={employer} onChange={(e) => setEmployer(e.target.value)} className="!mb-2" />
       <Input label="Employment status" value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} className="!mb-2" />
-      <Input label="Monthly salary (₹)" inputMode="numeric" value={salary} onChange={(e) => setSalary(e.target.value.replace(/[^\d]/g, ""))} className="!mb-2" />
-      <Input label="Annual salary (₹)" inputMode="numeric" value={annualSalary} onChange={(e) => setAnnualSalary(e.target.value.replace(/[^\d]/g, ""))} className="!mb-2" />
+      {/* ₹ prefix + a grouped preview under each salary field — display only; the raw digits are
+          what is submitted, exactly as before. */}
+      <Input
+        label="Monthly salary (₹)"
+        inputMode="numeric"
+        value={salary}
+        onChange={(e) => setSalary(e.target.value.replace(/[^\d]/g, ""))}
+        leftIcon={<span aria-hidden="true">₹</span>}
+        helperText={rupeeInputPreview(salary) ?? undefined}
+        className="!mb-2"
+      />
+      <Input
+        label="Annual salary (₹)"
+        inputMode="numeric"
+        value={annualSalary}
+        onChange={(e) => setAnnualSalary(e.target.value.replace(/[^\d]/g, ""))}
+        leftIcon={<span aria-hidden="true">₹</span>}
+        helperText={rupeeInputPreview(annualSalary) ?? undefined}
+        className="!mb-2"
+      />
       <Input label="Salary percentage (%)" inputMode="decimal" value={salaryPct} onChange={(e) => setSalaryPct(e.target.value.replace(/[^\d.]/g, ""))} className="!mb-2" />
       <Input label="Increment percentage (%)" inputMode="decimal" value={incrementPct} onChange={(e) => setIncrementPct(e.target.value.replace(/[^\d.]/g, ""))} className="!mb-2" />
       <Input label="Salary bank" value={salaryBank} onChange={(e) => setSalaryBank(e.target.value)} className="!mb-2" />
       <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} className="!mb-3" />
       {m.error && <p className="mb-2 text-sm text-error-700">{errMessage(m.error)}</p>}
-      {m.isSuccess && <p className="mb-2 text-sm text-success-700">Saved.</p>}
       <button onClick={() => m.mutate()} disabled={m.isPending} className="btn btn-sm btn-navy btn-block disabled:opacity-50">
         {m.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save changes
       </button>
@@ -279,7 +321,7 @@ function MobileChangeCard({ detail, onSaved }: { detail: CustomerDetail; onSaved
   });
   const confirm = useMutation({
     mutationFn: () => customersApi.confirmMobileChange(detail.customerId, newMobile.trim(), otp.trim()),
-    onSuccess: () => { setSent(false); setNewMobile(""); setOtp(""); onSaved(); },
+    onSuccess: () => { setSent(false); setNewMobile(""); setOtp(""); onSaved(); toast.success("Mobile number updated"); },
   });
 
   return (
@@ -363,20 +405,23 @@ function LimitOverrideCard({
 
   const save = useMutation({
     mutationFn: (limitPaise: number | null) => customersApi.setLimitOverride(customerId, limitPaise),
-    onSuccess: () => onSaved(),
+    onSuccess: (_data, limitPaise) => {
+      onSaved();
+      toast.success(limitPaise == null ? "Limit reset to 25% of salary" : "Maximum loan amount saved");
+    },
   });
 
   return (
     <Card title="Maximum loan amount (admin)" icon={<IndianRupee size={16} />}>
       <p className="mb-3 text-xs text-muted">
-        Current limit:{" "}
-        <span className="font-mono text-ink">
-          {paiseToINR(overridePaise ?? currentLimitPaise)}
-        </span>{" "}
-        {overridePaise != null ? "— set by an admin" : "— 25% of monthly salary"}.
+        <span className="mb-1 flex flex-wrap items-center gap-1.5">
+          Current limit:
+          <span className="font-mono text-ink">{paiseToINR(overridePaise ?? currentLimitPaise)}</span>
+          <LimitBasisBadge overridePaise={overridePaise} />
+        </span>
         {overridePaise != null && currentLimitPaise != null && currentLimitPaise !== overridePaise
-          ? ` The salary rule alone would give ${paiseToINR(currentLimitPaise)}.`
-          : ""}{" "}
+          ? `The salary rule alone would give ${paiseToINR(currentLimitPaise)}. `
+          : ""}
         A limit set here sticks — it survives a salary re-check and carries into future re-borrows,
         raising what the borrower can actually draw. They are emailed when it increases.
       </p>
@@ -422,19 +467,26 @@ function LimitOverrideCard({
 function SanctionedAmountCard({
   customerId,
   app,
+  overridePaise,
   onSaved,
 }: {
   customerId: number;
-  app: { id: number; sanctionedAmountPaise?: number | null };
+  app: { id: number; sanctionedAmountPaise?: number | null; eligibleLimitPaise?: number | null };
+  /** The customer's ADMIN limit override, if any — decides which basis badge the limit carries. */
+  overridePaise: number | null;
   onSaved: () => void;
 }) {
   const currentPaise = app.sanctionedAmountPaise ?? null;
+  const eligibleLimitPaise = overridePaise ?? app.eligibleLimitPaise ?? null;
   const [amount, setAmount] = React.useState(currentPaise != null ? String(Math.round(currentPaise / 100)) : "");
   const newAmountPaise = amount ? rupeesToPaise(Number(amount.replace(/[^\d]/g, ""))) : 0;
 
   const save = useMutation({
     mutationFn: () => customersApi.changeSanctionedAmount(customerId, app.id, newAmountPaise),
-    onSuccess: () => onSaved(),
+    onSuccess: () => {
+      onSaved();
+      toast.success("Approved amount updated");
+    },
   });
 
   return (
@@ -443,6 +495,16 @@ function SanctionedAmountCard({
         Currently approved: <span className="font-mono text-ink">{currentPaise != null ? `₹${(currentPaise / 100).toLocaleString("en-IN")}` : "—"}</span>.
         Saves immediately and emails the customer the revised approved amount. Only available before disbursement.
       </p>
+      {/* Context for the correction, not a cap: the backend checks only the ₹1,000 floor and the
+          amount the borrower already chose to draw. Left out when no limit is on file, so a basis
+          badge never labels a figure the payload does not carry. */}
+      {eligibleLimitPaise != null && (
+        <p className="-mt-1.5 mb-3 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+          Eligible limit:
+          <span className="font-mono text-ink">{paiseToINR(eligibleLimitPaise)}</span>
+          <LimitBasisBadge overridePaise={overridePaise} />
+        </p>
+      )}
       <Input
         label="New approved amount (₹)"
         inputMode="numeric"
@@ -480,11 +542,17 @@ function SalaryDayCard({
 }) {
   const [day, setDay] = React.useState(String(app.salaryCreditDay ?? 1));
   const hasPendingOffer = app.status === "SANCTIONED" && app.loanId == null;
-  const projectedDue = dueDateFromSalary({ disbursedOn: new Date(), salaryDay: Number(day) });
+  // Projected from today's IST date — the backend recomputes a pending offer from LocalDate.now(IST).
+  const todayIst = istCalendarToday();
+  const projectedDue = dueDateFromSalary({ disbursedOn: todayIst, salaryDay: Number(day) });
+  const dueWindow = salaryDueWindow(todayIst, projectedDue);
 
   const save = useMutation({
     mutationFn: () => customersApi.changeSalaryDay(customerId, Number(day)),
-    onSuccess: () => onSaved(),
+    onSuccess: () => {
+      onSaved();
+      toast.success("Salary credit day updated");
+    },
   });
 
   return (
@@ -504,6 +572,19 @@ function SalaryDayCard({
           <option key={d} value={d}>{d}</option>
         ))}
       </Select>
+      {/* The live region stays mounted so a note that appears after a day change is announced —
+          a region inserted together with its text is often missed by screen readers. */}
+      <div role="status">
+        {dueWindow.exceeds && (
+          <p className="mb-2 flex items-start gap-1.5 rounded border border-warning-100 bg-warning-50 px-2 py-1.5 text-xs text-warning-800">
+            <AlertTriangle size={13} className="mt-px flex-shrink-0" aria-hidden="true" />
+            <span>
+              That due date is {dueWindow.days} days after a disbursal today — beyond the {SALARY_DUE_MAX_DAYS}-day
+              limit. Check the salary day before saving.
+            </span>
+          </p>
+        )}
+      </div>
       <p className="mb-3 text-xs text-muted">
         {hasPendingOffer ? "Also moves the pending offer's repayment date. " : null}
         Active loans keep their existing due date.
@@ -528,7 +609,7 @@ function BlocklistCard({ customerId }: { customerId: number }) {
   const [reason, setReason] = React.useState("");
   const m = useMutation({
     mutationFn: () => adminApi.addBlocklist({ type, value: value.trim(), reason: reason.trim() || `Flagged from customer #${customerId}` }),
-    onSuccess: () => { setValue(""); setReason(""); },
+    onSuccess: () => { setValue(""); setReason(""); toast.success("Added to blocklist"); },
   });
   return (
     <Card title="Add to blocklist (admin)" icon={<Ban size={16} />}>
@@ -537,7 +618,6 @@ function BlocklistCard({ customerId }: { customerId: number }) {
       <Input label="Value" value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. ABCDE1234F" className="!mb-2" />
       <Input label="Reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional" className="!mb-3" />
       {m.error && <p className="mb-2 text-sm text-error-700">{errMessage(m.error)}</p>}
-      {m.isSuccess && <p className="mb-2 text-sm text-success-700">Added to blocklist.</p>}
       <button onClick={() => m.mutate()} disabled={m.isPending || !value.trim()} className="btn btn-sm bg-error-600 border-error-600 text-white hover:bg-error-700 btn-block disabled:opacity-50">
         {m.isPending ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />} Add to blocklist
       </button>

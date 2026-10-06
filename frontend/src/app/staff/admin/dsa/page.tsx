@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Check, Ban, ArrowRightLeft } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
@@ -98,7 +98,14 @@ export default function AdminDsaPage() {
         ))}
       </div>
 
-      {tab === "ROSTER" && <RosterTab rows={rosterRows} loading={roster.isLoading} error={roster.error} />}
+      {tab === "ROSTER" && (
+        <RosterTab
+          rows={rosterRows}
+          loading={roster.isLoading}
+          error={roster.error}
+          onRetry={() => void roster.refetch()}
+        />
+      )}
       {tab === "LEADS" && <LeadsTab dsaOptions={rosterRows} />}
       {tab === "COMMISSIONS" && <CommissionsTab dsaOptions={rosterRows} />}
       {tab === "OUTREACH" && <OutreachTab dsaOptions={rosterRows} />}
@@ -110,16 +117,18 @@ function RosterTab({
   rows,
   loading,
   error,
+  onRetry,
 }: {
   rows: AdminDsaRosterView[];
   loading: boolean;
   error: unknown;
+  onRetry: () => void;
 }) {
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
   return (
     <div>
       {error ? (
-        <p className="text-sm text-error-700">{errMessage(error)}</p>
+        <ErrorState error={error} onRetry={onRetry} />
       ) : (
         <div className="rounded border border-line bg-white shadow-sm">
           <div className="staff-table-scroll">
@@ -129,11 +138,11 @@ function RosterTab({
                   <th>S.No.</th>
                   <th>DSA</th>
                   <th>Status</th>
-                  <th className="text-right">Leads</th>
-                  <th className="text-right">Converted</th>
-                  <th className="text-right">Accrued</th>
-                  <th className="text-right">Payable</th>
-                  <th className="text-right">Paid</th>
+                  <th className="num text-right">Leads</th>
+                  <th className="num text-right">Converted</th>
+                  <th className="num text-right">Accrued</th>
+                  <th className="num text-right">Payable</th>
+                  <th className="num text-right">Paid</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -146,20 +155,23 @@ function RosterTab({
                         {r.active ? "Active" : "Disabled"}
                       </span>
                     </td>
-                    <td className="text-right">{r.leadsAdded}</td>
-                    <td className="text-right">{r.leadsConverted}</td>
-                    <td className="text-right">{paiseToINR(r.accruedPaise)}</td>
-                    <td className="text-right">{paiseToINR(r.payablePaise)}</td>
-                    <td className="text-right font-semibold text-ink">{paiseToINR(r.paidPaise)}</td>
+                    <td className="num text-right">{r.leadsAdded}</td>
+                    <td className="num text-right">{r.leadsConverted}</td>
+                    <td className="num text-right">{paiseToINR(r.accruedPaise)}</td>
+                    <td className="num text-right">{paiseToINR(r.payablePaise)}</td>
+                    <td className="num text-right font-semibold text-ink">{paiseToINR(r.paidPaise)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="text-center text-muted">
-                      {loading ? "Loading…" : "No DSAs yet."}
-                    </td>
-                  </tr>
-                )}
+                {rows.length === 0 &&
+                  (loading ? (
+                    <tr>
+                      <td colSpan={8}>
+                        <Skeleton variant="table" rows={8} cols={8} />
+                      </td>
+                    </tr>
+                  ) : (
+                    <EmptyState title="No DSAs yet." inTable={8} />
+                  ))}
               </tbody>
             </table>
           </div>
@@ -263,9 +275,9 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
       </div>
 
       {leads.isLoading ? (
-        <div className="h-32 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={10} className="rounded border border-line bg-white" />
       ) : leads.error ? (
-        <p className="text-sm text-error-700">{errMessage(leads.error)}</p>
+        <ErrorState error={leads.error} onRetry={() => void leads.refetch()} />
       ) : (
         <div className="rounded border border-line bg-white shadow-sm">
           <div className="staff-table-scroll">
@@ -306,11 +318,7 @@ function LeadsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                     <td className="whitespace-nowrap text-muted">{formatDateTime(l.createdAt)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="text-center text-muted">No leads match these filters.</td>
-                  </tr>
-                )}
+                {rows.length === 0 && <EmptyState title="No leads match these filters." inTable={10} />}
               </tbody>
             </table>
           </div>
@@ -342,6 +350,7 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
     onSuccess: (_d, vars) => {
       setTxnRefs((m) => ({ ...m, [vars.id]: "" }));
       invalidate();
+      toast.success("Commission marked paid");
     },
   });
   const voidMut = useMutation({
@@ -349,6 +358,7 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
     onSuccess: (_d, vars) => {
       setVoidReasons((m) => ({ ...m, [vars.id]: "" }));
       invalidate();
+      toast.success("Commission voided");
     },
   });
   const reassign = useMutation({
@@ -358,6 +368,7 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
       setReassignTo((m) => ({ ...m, [vars.id]: "" }));
       setReassignReason((m) => ({ ...m, [vars.id]: "" }));
       invalidate();
+      toast.success("Commission reassigned");
     },
   });
 
@@ -398,9 +409,9 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
       </div>
 
       {commissions.isLoading ? (
-        <div className="h-32 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={7} className="rounded border border-line bg-white" />
       ) : commissions.error ? (
-        <p className="text-sm text-error-700">{errMessage(commissions.error)}</p>
+        <ErrorState error={commissions.error} onRetry={() => void commissions.refetch()} />
       ) : (
         <div className="rounded border border-line bg-white shadow-sm">
           <div className="staff-table-scroll">
@@ -410,8 +421,8 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                   <th>S.No.</th>
                   <th>DSA</th>
                   <th>PAN</th>
-                  <th className="text-right">Net disbursed</th>
-                  <th className="text-right">Commission</th>
+                  <th className="num text-right">Net disbursed</th>
+                  <th className="num text-right">Commission</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -422,8 +433,8 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                     <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
                   <td className="text-ink">{c.dsaName ?? `#${c.dsaStaffId}`}</td>
                   <td className="font-mono text-xs">{c.pan ?? "—"}</td>
-                  <td className="text-right">{paiseToINR(c.netDisbursedPaise)}</td>
-                  <td className="text-right font-semibold text-ink">{paiseToINR(c.amountPaise)}</td>
+                  <td className="num text-right">{paiseToINR(c.netDisbursedPaise)}</td>
+                  <td className="num text-right font-semibold text-ink">{paiseToINR(c.amountPaise)}</td>
                   <td>
                     <span className="inline-block rounded bg-navy-tint px-2 py-0.5 text-[8px] font-semibold uppercase text-navy">
                       {c.status}
@@ -515,11 +526,7 @@ function CommissionsTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-center text-muted">No commissions match these filters.</td>
-                </tr>
-              )}
+              {rows.length === 0 && <EmptyState title="No commissions match these filters." inTable={7} />}
               </tbody>
             </table>
           </div>
@@ -556,9 +563,9 @@ function OutreachTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
       </div>
 
       {outreach.isLoading ? (
-        <div className="h-32 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={7} className="rounded border border-line bg-white" />
       ) : outreach.error ? (
-        <p className="text-sm text-error-700">{errMessage(outreach.error)}</p>
+        <ErrorState error={outreach.error} onRetry={() => void outreach.refetch()} />
       ) : (
         <div className="rounded border border-line bg-white shadow-sm">
           <div className="staff-table-scroll">
@@ -594,11 +601,7 @@ function OutreachTab({ dsaOptions }: { dsaOptions: AdminDsaRosterView[] }) {
                     <td className="whitespace-nowrap text-muted">{formatDateTime(o.createdAt)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="text-center text-muted">No outreach sent yet.</td>
-                  </tr>
-                )}
+                {rows.length === 0 && <EmptyState title="No outreach sent yet." inTable={7} />}
               </tbody>
             </table>
           </div>

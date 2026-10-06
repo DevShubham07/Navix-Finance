@@ -15,7 +15,7 @@ import * as React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input, Select } from "@/components/ui";
+import { Input, Select, Skeleton, toast } from "@/components/ui";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
 import { buildCostBreakdown, daysBetween, dueDateFromSalary } from "@/lib/calc/loan-math";
 import { formatDate, formatINR } from "@/lib/utils";
@@ -53,6 +53,7 @@ export function SanctionDialog({
       }),
     onSuccess: () => {
       refresh(app.id);
+      toast.success(`Application #${app.id} sanctioned`);
       onClose();
     },
   });
@@ -106,7 +107,7 @@ export function SanctionDialog({
       <div className="mt-4 rounded border border-line bg-ivory p-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Salary account</p>
         {profile.isLoading ? (
-          <p className="text-sm text-muted">Loading…</p>
+          <Skeleton variant="line" rows={2} />
         ) : (
           <dl className="grid gap-x-6 gap-y-1 text-[10.4px] sm:grid-cols-3">
             <Kv label="Bank" value={profile.data?.salaryBank} />

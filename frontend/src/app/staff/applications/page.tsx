@@ -37,7 +37,7 @@ import {
   type QueuePeriod,
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
-import { InfoTooltip } from "@/components/ui";
+import { EmptyState, ErrorState, InfoTooltip, Skeleton } from "@/components/ui";
 
 /** Roles that don't drive the credit/disbursement pipeline but do need the repayment/closed
  * back-office panels (see `RoleQueues`) — previously left with "no application-pipeline queue". */
@@ -259,13 +259,20 @@ function AwaitingRepaymentPanel() {
   // ACTIVE for the whole repayment window — so grouping by `app.status` put every past-due loan in
   // the "active" bucket and left "overdue" permanently empty. Both queues are still fetched: an
   // application CAN legitimately sit in the OVERDUE status, it just usually doesn't.
-  const all = [...(overdueQ.data ?? []), ...(activeQ.data ?? [])];
-  // Newest application first within each column, using the real created_at (V53) — falls back to
-  // id when createdAt is somehow absent, since id is still monotonic.
-  const byNewest = (a: ApplicationView, b: ApplicationView) =>
-    (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id - a.id;
-  const overdueApps = all.filter((a) => isLoanOverdue(a)).sort(byNewest);
-  const activeApps = all.filter((a) => !isLoanOverdue(a)).sort(byNewest);
+  //
+  // Memoised on the two result sets: React Query keeps a poll's `data` reference when nothing
+  // changed, so an unchanged 60s poll no longer re-filters and re-sorts both lists.
+  const { overdueApps, activeApps } = React.useMemo(() => {
+    const all = [...(overdueQ.data ?? []), ...(activeQ.data ?? [])];
+    // Newest application first within each column, using the real created_at (V53) — falls back
+    // to id when createdAt is somehow absent, since id is still monotonic.
+    const byNewest = (a: ApplicationView, b: ApplicationView) =>
+      (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id - a.id;
+    return {
+      overdueApps: all.filter((a) => isLoanOverdue(a)).sort(byNewest),
+      activeApps: all.filter((a) => !isLoanOverdue(a)).sort(byNewest),
+    };
+  }, [overdueQ.data, activeQ.data]);
   const isLoading = activeQ.isLoading || overdueQ.isLoading;
 
   return (
@@ -304,6 +311,7 @@ function AwaitingRepaymentPanel() {
           tone="error"
           note="Past the due date — the 2%/day late penalty is accruing (after a 1-day salary grace, capped at 30 days). Put a collections executive on these."
           apps={overdueApps}
+          isLoading={isLoading}
           emptyText="Nothing overdue."
         />
         <RepaymentColumn
@@ -311,6 +319,7 @@ function AwaitingRepaymentPanel() {
           tone="navy"
           note="Disbursed and still inside the due date. Interest is accruing at 1%/day; no penalty yet."
           apps={activeApps}
+          isLoading={isLoading}
           emptyText="No active loans."
         />
       </div>
@@ -324,12 +333,15 @@ function RepaymentColumn({
   tone,
   note,
   apps,
+  isLoading,
   emptyText,
 }: {
   title: string;
   tone: "error" | "navy";
   note: string;
   apps: ApplicationView[];
+  /** First load of either source query — both columns draw from both, so both wait on both. */
+  isLoading: boolean;
   emptyText: string;
 }) {
   return (
@@ -350,11 +362,14 @@ function RepaymentColumn({
         </span>
         <InfoTooltip content={note} />
       </div>
-      {apps.length === 0 ? (
-        <p className="px-5 py-6 text-center text-sm text-muted">{emptyText}</p>
+      {isLoading ? (
+        <Skeleton variant="table" rows={5} cols={17} />
+      ) : apps.length === 0 ? (
+        <EmptyState title={emptyText} />
       ) : (
         <QueueTable
           apps={apps}
+          caption={`Awaiting repayment — ${title}`}
           actions={(a) => (
             <>
               {/* ADMIN-only, and only on a live loan: log money that already came in, on the date it
@@ -406,14 +421,14 @@ function ClosedPanel() {
 
       {open && (
         <div className="border-t border-line">
-          {q.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
+          {q.isLoading ? (
+            <Skeleton variant="table" rows={5} cols={17} />
+          ) : q.error ? (
+            <ErrorState error={q.error} onRetry={() => void q.refetch()} />
           ) : apps.length === 0 ? (
-            <p className="px-5 py-6 text-center text-sm text-muted">
-              Nothing in the <code className="text-xs">CLOSED</code> queue.
-            </p>
+            <EmptyState title="Nothing in the CLOSED queue." />
           ) : (
-            <QueueTable apps={apps} actions={() => null} />
+            <QueueTable apps={apps} actions={() => null} caption="Closed (fully repaid)" />
           )}
         </div>
       )}

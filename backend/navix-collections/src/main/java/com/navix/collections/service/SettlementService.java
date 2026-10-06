@@ -14,6 +14,7 @@ import com.navix.common.notification.event.SettlementApprovedEvent;
 import com.navix.common.notification.event.SettlementProposedEvent;
 import com.navix.common.notification.event.SettlementRejectedEvent;
 import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import lombok.RequiredArgsConstructor;
@@ -199,8 +200,10 @@ public class SettlementService {
         }
     }
 
+    /** One settlement by id. Staff-only, same guard as {@link #listAll()}. */
     @Transactional(readOnly = true)
     public Settlement getSettlement(UUID settlementId) {
+        requireNonDsaStaff();
         return settlementRepository.findById(settlementId)
                 .orElseThrow(() -> new ResourceNotFoundException("Settlement", String.valueOf(settlementId)));
     }
@@ -211,6 +214,9 @@ public class SettlementService {
      * <p>One {@link StaffDirectory#namesFor} batches every proposer/approver/rejecter name for the
      * whole page, rather than the up-to-three {@code findStaff} calls per row the single-row
      * {@link #toView(Settlement)} costs.
+     *
+     * <p>Guarded by {@link #requireNonDsaStaff()}: this read carried no authorization at all, so
+     * any staff bearer — a DSA included — could list every settlement ever proposed.
      */
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {

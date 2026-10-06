@@ -4,7 +4,7 @@ import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, UserPlus, UserX, UserCheck } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -119,9 +119,9 @@ function AdminStaffPageInner() {
       </div>
 
       {q.isLoading ? (
-        <div className="h-40 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={5} className="rounded border border-line bg-white" />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
           <table className="staff-data-table">
@@ -139,7 +139,7 @@ function AdminStaffPageInner() {
                 <StaffRow key={s.id} staff={s} index={(page - 1) * pageSize + i} />
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={5} className="text-center text-muted">No {STATUS_LABEL[tab].toLowerCase()} staff accounts.</td></tr>
+                <EmptyState title={`No ${STATUS_LABEL[tab].toLowerCase()} staff accounts.`} inTable={5} />
               )}
             </tbody>
           </table>
@@ -177,6 +177,7 @@ function CreateStaffForm() {
       setName("");
       setPassword("");
       setRole("CREDIT_EXECUTIVE");
+      toast.success("Staff account created");
     },
   });
 
@@ -215,8 +216,6 @@ function CreateStaffForm() {
         </button>
         {create.error ? (
           <span className="text-xs text-error-700">{errMessage(create.error)}</span>
-        ) : create.isSuccess ? (
-          <span className="text-xs text-success-700">Staff account created.</span>
         ) : null}
       </div>
     </div>
@@ -243,18 +242,27 @@ function StaffRow({ staff, index }: { staff: StaffResponse; index: number }) {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-staff"] });
   const save = useMutation({
     mutationFn: () => adminApi.updateStaff(staff.id, { role, status }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast.success("Staff account updated");
+      // Returned so the mutation stays pending until the refetch lands, as before.
+      return invalidate();
+    },
   });
   const disable = useMutation({
     mutationFn: () => adminApi.disableStaff(staff.id),
     onSuccess: () => {
       setArmed(false);
       invalidate();
+      toast.success("Staff account disabled");
     },
   });
   const enable = useMutation({
     mutationFn: () => adminApi.updateStaff(staff.id, { role, status: "ACTIVE" }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      toast.success("Staff account enabled");
+      // Returned so the mutation stays pending until the refetch lands, as before.
+      return invalidate();
+    },
   });
 
   const error = save.error || disable.error || enable.error;

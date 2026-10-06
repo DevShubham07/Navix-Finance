@@ -11,12 +11,17 @@
  * A customer with no application at all (a lead that never applied) can't open the application
  * dialog, so they fall back to the customer tabs on their own — the one case where the two
  * surfaces still differ, because there is genuinely no application to show.
+ *
+ * A caller that already knows the application id should open {@link ApplicationDetailDialog}
+ * directly: coming through here fetches the whole customer roll-up just to read that id back. The
+ * Customers register opens on the row's `latestApplicationId` and only routes rows without one here.
  */
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, X, ExternalLink } from "lucide-react";
+import { X, ExternalLink } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
+import { ErrorState, Skeleton } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -72,11 +77,13 @@ export function CustomerDetailDialog({
 
       <div className="mt-3 max-h-[68vh] overflow-y-auto pr-1 text-[10.4px]">
         {detailQ.isLoading ? (
-          <p className="flex items-center gap-2 py-8 text-sm text-muted">
-            <Loader2 size={15} className="animate-spin" /> Loading…
-          </p>
+          <Skeleton variant="line" rows={6} className="py-6" />
         ) : detailQ.error ? (
-          <p className="py-8 text-sm text-error-700">Could not load this customer.</p>
+          <ErrorState
+            error={detailQ.error}
+            title="Could not load this customer."
+            onRetry={() => void detailQ.refetch()}
+          />
         ) : !c || customerId == null ? null : (
           <>
             <CustomerTabBody

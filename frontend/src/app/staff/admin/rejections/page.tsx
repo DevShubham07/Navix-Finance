@@ -3,9 +3,9 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
-import { Select } from "@/components/ui";
+import { EmptyState, ErrorState, Select, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import type { ExportColumn } from "@/lib/export/exporters";
 import { hasPermission } from "@/lib/auth/rbac";
@@ -107,13 +107,11 @@ export default function AdminRejectionsPage() {
       </div>
 
       {q.isLoading ? (
-        <div className="h-40 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={12} className="rounded border border-line bg-white" />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : rows.length === 0 ? (
-        <p className="rounded border border-line bg-white px-5 py-8 text-center text-sm text-muted shadow-sm">
-          No rejections yet.
-        </p>
+        <EmptyState title="No rejections yet." className="rounded border border-line bg-white shadow-sm" />
       ) : (
         <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
           <div className="staff-table-scroll">
@@ -125,7 +123,7 @@ export default function AdminRejectionsPage() {
                   <th>PAN</th>
                   <th>Account</th>
                   <th>IFSC</th>
-                  <th>Amount</th>
+                  <th className="num">Amount</th>
                   <th>Credit</th>
                   <th>Reason</th>
                   <th>Detail</th>
@@ -151,7 +149,7 @@ export default function AdminRejectionsPage() {
                       <td className="font-mono text-muted">{r.pan ?? "—"}</td>
                       <td className="font-mono text-muted">{r.salaryAccountNumber ?? "—"}</td>
                       <td className="font-mono text-muted">{r.salaryIfsc ?? "—"}</td>
-                      <td className="text-ink">
+                      <td className="num text-ink">
                         {r.amountRequestedPaise != null ? paiseToINR(r.amountRequestedPaise) : "—"}
                       </td>
                       <td>

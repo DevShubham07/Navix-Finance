@@ -20,11 +20,16 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, UserPlus } from "lucide-react";
-import { Dialog, DialogFooter, DialogHeader, DialogTitle, Select } from "@/components/ui";
+import { Dialog, DialogFooter, DialogHeader, DialogTitle, ErrorState, Select, toast } from "@/components/ui";
 import { hasPermission } from "@/lib/auth/rbac";
 import { collectionsApi } from "@/lib/api/applications";
 import { errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
-import { runSequentially } from "@/components/staff/pipeline/bulk-actions";
+import { DEFAULT_BULK_CONCURRENCY, runWithConcurrency } from "@/lib/staff/queue-bulk";
+import {
+  bulkAssignProgressLabel,
+  perLoanAssignOutcomes,
+  type LoanAssignOutcome,
+} from "@/lib/collections/bulk-assign-outcomes";
 
 /** Every surface that renders an assignment. A reassign must not leave the worklist row, the case
  *  lists and the two dashboard queues disagreeing about who owns the loan. */
@@ -62,6 +67,9 @@ function useAssignOfficer(loanId: number) {
       for (const key of ASSIGN_INVALIDATE_KEYS) {
         qc.invalidateQueries({ queryKey: key });
       }
+      // Both the dialog (which just closes) and the inline cell (whose select already shows the
+      // choice optimistically) were otherwise silent about whether the assign actually landed.
+      toast.success("Officer assigned");
     },
   });
 }
@@ -168,7 +176,12 @@ function AssignDialog({
       {officersQ.isLoading ? (
         <p className="text-sm text-muted">Loading officers…</p>
       ) : officersQ.error ? (
-        <p className="text-sm text-error-700">Couldn&apos;t load officers — {errMessage(officersQ.error)}</p>
+        <ErrorState
+          error={officersQ.error}
+          title={`Couldn't load officers — ${errMessage(officersQ.error)}`}
+          onRetry={() => void officersQ.refetch()}
+          className="py-4"
+        />
       ) : officers.length === 0 ? (
         <p className="text-sm text-muted">No active collections executives.</p>
       ) : (
@@ -335,6 +348,11 @@ export function InlineOfficerSelect({
  * endpoint and adding one would move the ownership/role checks off the audited per-case endpoint the
  * Head already uses. A failure on one loan is recorded and the loop continues, so a single stale row
  * can't cost the operator the other nineteen.
+ *
+ * Up to {@link DEFAULT_BULK_CONCURRENCY} loans run at once (each loan's own GET → open → assign stays
+ * strictly in order inside `openCaseThenAssign`). The pre-GET is kept on purpose: `openCase`
+ * re-runs `markInCollections` on every call, so posting blindly could re-flag a loan whose status
+ * changed since the register was loaded.
  */
 export function BulkAssignOfficerDialog({
   loanIds,
@@ -354,12 +372,16 @@ export function BulkAssignOfficerDialog({
   const canManage = role != null && hasPermission(role, "collections:manage");
 
   const [officerId, setOfficerId] = React.useState("");
-  const [result, setResult] = React.useState<Awaited<ReturnType<typeof runSequentially>> | null>(null);
+  // Captured per run, not read back from `loanIds`: the caller clears its selection once the run
+  // finishes (and the 8s worklist poll can reset it mid-run), so the prop is not the set that ran.
+  const [outcomes, setOutcomes] = React.useState<LoanAssignOutcome[] | null>(null);
+  const [progress, setProgress] = React.useState<{ ok: number; failed: number; total: number } | null>(null);
 
   React.useEffect(() => {
     if (open) {
       setOfficerId("");
-      setResult(null);
+      setOutcomes(null);
+      setProgress(null);
     }
   }, [open]);
 
@@ -367,9 +389,27 @@ export function BulkAssignOfficerDialog({
   const officers = officersQ.data ?? [];
 
   const m = useMutation({
-    mutationFn: () => runSequentially(loanIds, (loanId) => openCaseThenAssign(loanId, Number.parseInt(officerId, 10))),
+    mutationFn: async () => {
+      const ids = [...loanIds];
+      const officer = Number.parseInt(officerId, 10);
+      setProgress({ ok: 0, failed: 0, total: ids.length });
+      const r = await runWithConcurrency(
+        ids,
+        async (loanId) => {
+          try {
+            await openCaseThenAssign(loanId, officer);
+          } catch (e) {
+            setProgress((p) => (p ? { ...p, failed: p.failed + 1 } : p));
+            throw e;
+          }
+          setProgress((p) => (p ? { ...p, ok: p.ok + 1 } : p));
+        },
+        { concurrency: DEFAULT_BULK_CONCURRENCY, describeError: errMessage },
+      );
+      return perLoanAssignOutcomes(ids, r);
+    },
     onSuccess: (r) => {
-      setResult(r);
+      setOutcomes(r);
       // Once for the whole run, not per row: the register polls anyway, and N invalidations would
       // fire N refetches of the same worklist while the loop is still going.
       for (const key of ASSIGN_INVALIDATE_KEYS) {
@@ -382,7 +422,11 @@ export function BulkAssignOfficerDialog({
   // Fail closed — a Collection Executive reads this register, they never set assignments.
   if (!canManage) return null;
 
-  const count = loanIds.length;
+  // Once a run has started, the title counts the loans that ran — `loanIds` empties when the caller
+  // clears its selection at the end of the run.
+  const count = progress?.total ?? loanIds.length;
+  const okCount = outcomes?.filter((o) => o.ok).length ?? 0;
+  const failedCount = outcomes ? outcomes.length - okCount : 0;
 
   return (
     <Dialog open={open} onClose={onClose} className="max-w-md" aria-label="Assign a collections executive in bulk">
@@ -391,26 +435,33 @@ export function BulkAssignOfficerDialog({
           Assign {count} loan{count === 1 ? "" : "s"}?
         </DialogTitle>
         <p className="text-sm text-muted">
-          Each selected loan is assigned to this executive, one at a time. Only ACTIVE collections
-          executives can be assigned.
+          Each selected loan is assigned to this executive, up to {DEFAULT_BULK_CONCURRENCY} at a time.
+          Only ACTIVE collections executives can be assigned.
         </p>
       </DialogHeader>
 
-      {result ? (
+      {outcomes ? (
         <>
           <p className="text-xs text-ink">
-            {result.ok.length} assigned
-            {result.failed.length > 0 && (
-              <span className="text-error-700">
-                , {result.failed.length} failed (loan #{result.failed.map((f) => f.id).join(", #")})
-              </span>
-            )}
-            .
+            {okCount} assigned
+            {failedCount > 0 && <span className="text-error-700">, {failedCount} failed</span>}.
           </p>
-          {result.failed.length > 0 && (
-            // The ids alone don't say what to do next; the first reason usually applies to all.
-            <p className="mt-1 text-xs text-muted">{result.failed[0].message}</p>
-          )}
+          {/* Per loan, in the order they were selected — each failure carries its own reason. */}
+          <ul
+            aria-label="Result per loan"
+            className="mt-2 max-h-56 divide-y divide-line overflow-y-auto rounded border border-line text-xs"
+          >
+            {outcomes.map((o) => (
+              <li key={o.loanId} className="flex items-start justify-between gap-3 px-3 py-1.5">
+                <span className="shrink-0 font-mono text-ink">Loan #{o.loanId}</span>
+                {o.ok ? (
+                  <span className="text-success-700">Assigned</span>
+                ) : (
+                  <span className="text-right text-error-700">{o.message}</span>
+                )}
+              </li>
+            ))}
+          </ul>
           <DialogFooter>
             <button type="button" onClick={onClose} className="btn btn-sm btn-navy">
               Done
@@ -422,7 +473,12 @@ export function BulkAssignOfficerDialog({
           {officersQ.isLoading ? (
             <p className="text-sm text-muted">Loading officers…</p>
           ) : officersQ.error ? (
-            <p className="text-sm text-error-700">Couldn&apos;t load officers — {errMessage(officersQ.error)}</p>
+            <ErrorState
+              error={officersQ.error}
+              title={`Couldn't load officers — ${errMessage(officersQ.error)}`}
+              onRetry={() => void officersQ.refetch()}
+              className="py-4"
+            />
           ) : officers.length === 0 ? (
             <p className="text-sm text-muted">No active collections executives.</p>
           ) : (
@@ -442,6 +498,11 @@ export function BulkAssignOfficerDialog({
             </Select>
           )}
 
+          {m.isPending && progress && (
+            <p role="status" aria-live="polite" className="mt-2 text-xs text-muted">
+              {bulkAssignProgressLabel(progress)}
+            </p>
+          )}
           {m.error && <p className="mt-2 text-sm text-error-700">{errMessage(m.error)}</p>}
 
           <DialogFooter>

@@ -19,10 +19,12 @@ import com.navix.common.verification.VerificationPort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
+import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.CustomerProfileRepository;
+import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
@@ -175,6 +177,14 @@ public class ApplicationVerificationService {
     public static final String PENDING = "PENDING";
 
     /**
+     * {@code application_event.action} for a staff manual override of a check's verdict — see
+     * {@link #logVerificationOverride}. Deliberately absent from
+     * {@link DecisionHistoryService#DECISION_ACTIONS}: an override is audit, not a lifecycle decision,
+     * and counting it would restate every staffer's historical totals.
+     */
+    public static final String VERIFICATION_OVERRIDE = "VERIFICATION_OVERRIDE";
+
+    /**
      * Intake checks — the ones the Phase-1 consent screen fires, and the set every completeness
      * surface reports on. They must have been <b>attempted</b> to submit; a FAIL still goes to the
      * credit team flagged (revamp.md decision 10).
@@ -219,7 +229,7 @@ public class ApplicationVerificationService {
     /**
      * Checks that inform the credit decision but gate nothing, so they stay out of the
      * pending-API dashboard's bucket maths. Mirrors the frontend constant of the same meaning
-     * (`frontend/src/app/staff/verifications/page.tsx`) — the two must agree, or the server's default
+     * (`frontend/src/lib/staff/verification-dashboard.ts`) — the two must agree, or the server's default
      * "needs attention" page and the card the page draws from it would disagree about the same file.
      */
     private static final Set<String> OVERVIEW_NON_GATING =
@@ -240,12 +250,18 @@ public class ApplicationVerificationService {
     /** Page-size ceiling for {@link #overview}, mirroring {@code CustomerService.MAX_PAGE_SIZE}. */
     private static final int OVERVIEW_MAX_PAGE_SIZE = 100;
 
+    /**
+     * Ceiling on {@link VerificationOverview#notStarted()}. The list is not paged, so it is capped
+     * instead; {@link VerificationOverview#notStartedTotal()} still reports the full count.
+     */
+    static final int OVERVIEW_NOT_STARTED_CAP = 200;
+
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
 
     /**
      * Application statuses {@link #overview} triages — mirrors the frontend's identically-named
-     * constant (`frontend/src/app/staff/verifications/page.tsx`), which is the page's whole reason
+     * constant (`frontend/src/lib/staff/verification-dashboard.ts`), which is the page's whole reason
      * to exist: "every application that needs a KYC decision". Scoping the query to these three
      * statuses, rather than the whole company's history, is what keeps the dashboard's three
      * lookups (verification rows, applications, profiles) bounded by the size of this queue instead
@@ -288,6 +304,10 @@ public class ApplicationVerificationService {
     // see manualDecision. Safe edge: PennyDropGuard depends only on its two repositories.
     private final PennyDropGuard pennyDropGuard;
     private final com.navix.common.featureflag.FeatureFlagService featureFlags;
+    // The append-only application_event trail (CLAUDE.md §5/§12). Injected so a human override of a
+    // verification verdict lands on it — see logVerificationOverride. Read-free edge: this service
+    // only ever appends.
+    private final ApplicationEventRepository eventRepo;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     /**
@@ -348,10 +368,23 @@ public class ApplicationVerificationService {
      * page's headline counts and must not move when the reviewer turns a page. {@code rows} is the
      * requested page, and {@code total} counts <b>applications</b> (not rows), because the page groups
      * rows into one card per application and pages at that granularity.
+     *
+     * <p>{@code notStarted} is the page's "Not started" bucket: {@code KYC_PENDING} applications with no
+     * verification row at all, newest first, capped at {@link #OVERVIEW_NOT_STARTED_CAP}. It is not
+     * paged (it rides along on every page) and {@code notStartedTotal} carries the true count when the
+     * list is capped. It used to be assembled in the browser by subtracting the <em>current page's</em>
+     * applications from an unpaginated KYC_PENDING list, which showed a file whose checks sat on another
+     * page, or which was fully cleared and so filtered out, as "never verified".
      */
     public record VerificationOverview(int passed, int review, int failed, int pending, int neverRun,
                                        List<VerificationOverviewRow> rows,
-                                       int page, int size, long total) {
+                                       int page, int size, long total,
+                                       List<NotStartedApplication> notStarted, long notStartedTotal) {
+    }
+
+    /** One {@code KYC_PENDING} application with no verification row yet — see {@link VerificationOverview}. */
+    public record NotStartedApplication(Long applicationId, Long customerId, String borrowerName,
+                                        String borrowerMobile) {
     }
 
     // ---------------------------------------------------------------- steps
@@ -3492,7 +3525,7 @@ public class ApplicationVerificationService {
         if (!KNOWN_CHECKS.contains(type)) {
             throw new BusinessException("UNKNOWN_CHECK", "Unknown verification check: " + checkType);
         }
-        requireApplication(appId);
+        LoanApplication app = requireApplication(appId);
         String actor = ActorContext.get().name();
         String trimmed = notes != null ? notes.trim() : "";
         String message = (pass ? "Manually approved" : "Manually rejected") + " by " + actor
@@ -3515,10 +3548,61 @@ public class ApplicationVerificationService {
         }
         StepResult result = view(upsert(appId, type, pass ? PASS : FAIL, "MANUAL",
                 null, null, null, null, null, derived, message));
+        logVerificationOverride(app, type, pass, trimmed);
         if (PENNY_DROP.equals(type) && pass) {
             acceptDisbursalAccountManually(appId, derived);
         }
         return result;
+    }
+
+    /**
+     * Append the override to the append-only {@code application_event} trail, so a human overruling a
+     * verification verdict is visible to the maker-checker audit (CLAUDE.md §5/§12). Before this the
+     * override lived only on the verification row's {@code message}/{@code derived}, which the trail
+     * never shows — the one staff action on this service that moves a check's verdict was invisible
+     * next to every credit and disbursement decision beside it.
+     *
+     * <p><b>{@code from_status} == {@code to_status} == the application's current status.</b> An
+     * override moves a <em>check</em>, never the aggregate: the file stays exactly where it was (that
+     * is the whole point of an override — it unblocks the stage it is already in). The column is
+     * {@code not null}, so leaving {@code to_status} empty is not an option, and writing some other
+     * status would be a lie the SoD replay reads back: {@code ApplicationFlowService.actorOf} resolves
+     * "who drove the transition INTO status X" by matching {@code to_status}, so a fabricated value
+     * here would make this reviewer look like the actor of a transition they never performed. Same
+     * status on both sides is what the other non-transition writers already do — {@code REASSIGN} and
+     * {@code MARK_PENDING} in {@code ApplicationFlowService}, {@code REVERIFY} in
+     * {@code VerificationInvalidationService}, {@code STEP_LINK_SENT} in
+     * {@code VerificationOutreachService}.
+     *
+     * <p><b>{@code VERIFICATION_OVERRIDE} is deliberately NOT in
+     * {@link DecisionHistoryService#DECISION_ACTIONS}.</b> That set drives two live surfaces —
+     * {@code /staff/performance} + {@code /staff/my-decisions} totals, and
+     * {@code CustomerService}'s "applications I decided on" visibility scope — so adding it would
+     * silently restate every staffer's historical action count and widen which customers a credit
+     * executive can see, neither of which this audit fix is entitled to do. An override is also not a
+     * lifecycle decision: it clears one check so the real decision (sanction / reject) can be taken,
+     * and that decision is already counted. This matches the existing audit-only actions
+     * ({@code REVERIFY}, {@code STEP_LINK_SENT}), which are likewise absent from the set.
+     * {@code eventViews} filters nothing, so the row still shows on the application audit trail —
+     * which is exactly the visibility this fix is for.
+     *
+     * <p>Notes use the established {@code key=value … — remark} shape. {@code DecisionNotes} sees no
+     * known key in it and so returns the whole string as the remark verbatim; nothing is lost.
+     */
+    private void logVerificationOverride(LoanApplication app, String checkType, boolean pass,
+                                         String remarks) {
+        CurrentActor actor = ActorContext.get();
+        ApplicationEvent event = new ApplicationEvent();
+        event.setApplicationId(app.getId());
+        event.setFromStatus(app.getStatus());
+        event.setToStatus(app.getStatus());
+        event.setActorId(actor != null ? actor.id() : "system");
+        event.setActorRole(actor != null ? actor.role() : null);
+        event.setAction(VERIFICATION_OVERRIDE);
+        event.setNotes("checkType=" + checkType + " decision=" + (pass ? PASS : FAIL)
+                + (remarks == null || remarks.isEmpty() ? "" : " — " + remarks));
+        event.setAt(Instant.now());
+        eventRepo.save(event);
     }
 
     /**
@@ -3627,7 +3711,7 @@ public class ApplicationVerificationService {
         int safeSize = Math.max(1, Math.min(size, OVERVIEW_MAX_PAGE_SIZE));
         int safePage = Math.max(1, page);
         if (appById.isEmpty()) {
-            return new VerificationOverview(0, 0, 0, 0, 0, List.of(), safePage, safeSize, 0L);
+            return new VerificationOverview(0, 0, 0, 0, 0, List.of(), safePage, safeSize, 0L, List.of(), 0L);
         }
         List<ApplicationVerification> all = verificationRepo.findByApplicationIdIn(appById.keySet());
         Map<Long, CustomerProfile> profByApp = profileRepo.findByApplicationIdIn(appById.keySet()).stream()
@@ -3702,13 +3786,39 @@ public class ApplicationVerificationService {
         for (Long appId : pageAppIds) {
             rows.addAll(rowsByApp.get(appId));
         }
+
+        // "Not started": KYC_PENDING files with no verification row at all, from the applications and
+        // profiles already loaded above — no extra query. KYC_PENDING only: DASHBOARD_STATUSES also
+        // holds DRAFT, and the abandoned intakes there are not files waiting on a reviewer. Same free-
+        // text search as the rows; the row-level status/checkType filters have no row to match here.
+        List<NotStartedApplication> notStarted = appById.values().stream()
+                .filter(a -> a.getStatus() == ApplicationStatus.KYC_PENDING)
+                .filter(a -> !presentByApp.containsKey(a.getId()))
+                .sorted(java.util.Comparator.comparing(LoanApplication::getCreatedAt,
+                                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+                        .thenComparing(LoanApplication::getId,
+                                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .map(a -> {
+                    CustomerProfile p = profByApp.get(a.getId());
+                    return new NotStartedApplication(a.getId(), a.getCustomerId(),
+                            p != null ? p.getFullName() : null,
+                            p != null ? p.getMobile() : null);
+                })
+                .filter(n -> needle.isEmpty() || overviewMatches(n.borrowerName(), n.borrowerMobile(),
+                        n.applicationId(), n.customerId(), needle))
+                .toList();
+        List<NotStartedApplication> notStartedPage = notStarted.size() > OVERVIEW_NOT_STARTED_CAP
+                ? List.copyOf(notStarted.subList(0, OVERVIEW_NOT_STARTED_CAP))
+                : notStarted;
+
         return new VerificationOverview(passed, review, failed, pending, neverRun,
-                List.copyOf(rows), safePage, safeSize, rowsByApp.size());
+                List.copyOf(rows), safePage, safeSize, rowsByApp.size(),
+                notStartedPage, notStarted.size());
     }
 
     /**
      * Does this application still need a reviewer's attention? Mirrors the dashboard's own bucket
-     * rule (`frontend/src/app/staff/verifications/page.tsx`): an application is "all checks passed"
+     * rule (`frontend/src/lib/staff/verification-dashboard.ts`): an application is "all checks passed"
      * only when every gating check has a row reading PASS. Anything else — a FAIL, a REVIEW, a
      * PENDING, or a gating check that never ran — is the failures or awaiting bucket, i.e. work.
      *
@@ -3734,16 +3844,22 @@ public class ApplicationVerificationService {
     }
 
     private static boolean overviewMatches(VerificationOverviewRow r, String needle) {
-        if (r.borrowerName() != null && r.borrowerName().toLowerCase().contains(needle)) {
+        return overviewMatches(r.borrowerName(), r.borrowerMobile(), r.applicationId(), r.customerId(), needle);
+    }
+
+    /** The dashboard's free-text search — shared by the rows and the "Not started" list so they agree. */
+    private static boolean overviewMatches(String borrowerName, String borrowerMobile, Long applicationId,
+                                           Long customerId, String needle) {
+        if (borrowerName != null && borrowerName.toLowerCase().contains(needle)) {
             return true;
         }
-        if (r.borrowerMobile() != null && r.borrowerMobile().contains(needle)) {
+        if (borrowerMobile != null && borrowerMobile.contains(needle)) {
             return true;
         }
-        if (r.applicationId() != null && String.valueOf(r.applicationId()).contains(needle)) {
+        if (applicationId != null && String.valueOf(applicationId).contains(needle)) {
             return true;
         }
-        return r.customerId() != null && String.valueOf(r.customerId()).contains(needle);
+        return customerId != null && String.valueOf(customerId).contains(needle);
     }
 
     private static String norm(String s) {

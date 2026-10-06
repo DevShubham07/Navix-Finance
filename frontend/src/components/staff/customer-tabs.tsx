@@ -8,7 +8,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Check, XCircle } from "lucide-react";
-import { Select } from "@/components/ui";
+import { EmptyState, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { type TabDef } from "@/components/ui/tabs";
 import { displayAnnualSalaryPaise, formatDate, formatDateTime } from "@/lib/utils";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
@@ -17,11 +17,30 @@ import { formatRupees } from "@/components/staff/credit/tradeline-table";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
-import { Bool, CallLogRow, CustomerDocsByType, DocumentsTab, KV, NeedsManualReviewBadge, RemarksTab, Section } from "@/components/staff/detail-parts";
+import {
+  Bool,
+  CallLogRow,
+  CustomerDocsByType,
+  DocumentsTab,
+  KV,
+  LimitBasisBadge,
+  NeedsManualReviewBadge,
+  RemarksTab,
+  Section,
+} from "@/components/staff/detail-parts";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { stageOf, STAGE_LABELS } from "@/lib/domain/journey";
+import {
+  AUDIT_FILTER_ALL,
+  auditTypeChips,
+  auditTypeLabel,
+  customerExposure,
+  filterActivityByType,
+  isoDayToLocalDate,
+  resolveAuditFilter,
+} from "@/lib/customers/customer-360";
 import {
   customersApi,
   staffApi,
@@ -118,7 +137,7 @@ export function CustomerTabBody({
         return latestAppId != null ? (
           <VerificationChecksPanel applicationId={latestAppId} />
         ) : (
-          <p className="text-sm text-muted">No application to show verifications for.</p>
+          <EmptyState title="No application to show verifications for." />
         );
       case "credit":
         return <CreditTab c={detail} latestAppId={latestAppId} />;
@@ -390,11 +409,12 @@ function EmploymentTab({ c, customerId }: { c: CustomerDetail; customerId: numbe
           <KV
             k="Eligible limit"
             v={
-              c.limitOverridePaise != null
-                ? `${paiseToINR(c.limitOverridePaise)} (set by admin)`
-                : latestApp?.eligibleLimitPaise != null
-                  ? paiseToINR(latestApp.eligibleLimitPaise)
-                  : null
+              c.limitOverridePaise != null || latestApp?.eligibleLimitPaise != null ? (
+                <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                  {paiseToINR(c.limitOverridePaise ?? latestApp?.eligibleLimitPaise ?? null)}
+                  <LimitBasisBadge overridePaise={c.limitOverridePaise} className="px-1.5 py-0 text-[9.6px]" />
+                </span>
+              ) : null
             }
           />
         </Section>
@@ -572,7 +592,7 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
       </Section>
       <Section title="Penny-drop derived">
         {pennyQ.isLoading ? (
-          <p className="text-sm text-muted">Loading…</p>
+          <Skeleton variant="table" rows={9} cols={4} />
         ) : emptyPennyCopy ? (
           <p className="text-sm text-muted">{emptyPennyCopy}</p>
         ) : (
@@ -594,7 +614,7 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
       </Section>
       <Section title="Disbursal txn refs">
         {c.loans.length === 0 ? (
-          <p className="text-sm text-muted">No loans.</p>
+          <EmptyState title="No loans." className="py-4" />
         ) : (
           <div className="staff-table-scroll">
             <table className="staff-data-table">
@@ -741,12 +761,14 @@ function LoansTab({
   currentApplicationId?: number | null;
 }) {
   const [selectedLoanId, setSelectedLoanId] = React.useState<number | null>(null);
+  const exposure = customerExposure(c);
+  const lastPaidOn = isoDayToLocalDate(exposure.lastVerifiedPaymentOn);
 
   return (
     <div className="space-y-4">
       <Section title={`Applications (${c.applications.length})`}>
         {c.applications.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <ul className="divide-y divide-line">
             {c.applications.map((a: ApplicationView) => (
@@ -792,9 +814,28 @@ function LoansTab({
 
       <Section title={`Loans (${c.loans.length})`}>
         {c.loans.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <div className="space-y-3">
+            {/* Exposure in one line, from figures already on the customer payload — a figure the
+                payload does not carry is left out rather than fetched. */}
+            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs text-muted">
+              <span>
+                Total principal{" "}
+                <span className="font-mono text-ink">{paiseToINR(exposure.totalPrincipalPaise)}</span>
+              </span>
+              {exposure.totalOutstandingPaise != null && (
+                <span>
+                  · Outstanding{" "}
+                  <span className="font-mono text-ink">{paiseToINR(exposure.totalOutstandingPaise)}</span>
+                </span>
+              )}
+              {lastPaidOn && (
+                <span>
+                  · Last verified payment <span className="text-ink">{formatDate(lastPaidOn)}</span>
+                </span>
+              )}
+            </p>
             {c.loans.map((l) => (
               <LoanCard
                 key={l.id}
@@ -809,7 +850,7 @@ function LoansTab({
 
       <Section title={`Payments (${c.payments.length})`}>
         {c.payments.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <ul className="divide-y divide-line">
             {c.payments.map((pm) => (
@@ -820,9 +861,7 @@ function LoansTab({
                   {pm.partial ? <span className="text-muted"> · partial</span> : null}{" "}
                   <PaymentProofLink url={pm.proofUrl} className="text-xs" />
                 </span>
-                <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">
-                  {pm.status}
-                </span>
+                <StatusBadge kind="payment" value={pm.status} />
                 {/* A REJECTED pill with no reason is a dead end — the reason is already on the row. */}
                 {pm.status === "REJECTED" && (
                   <p className="w-full text-xs text-error-700">
@@ -871,7 +910,10 @@ function LoanCard({
 function CancelButton({ appId, onDone }: { appId: number; onDone?: () => void }) {
   const m = useMutation({
     mutationFn: () => staffApi.cancel(appId, "Cancelled by admin from customer page"),
-    onSuccess: () => onDone?.(),
+    onSuccess: () => {
+      onDone?.();
+      toast.success("Application cancelled");
+    },
   });
   return (
     <button
@@ -918,6 +960,7 @@ function CallLogsTab({ customerId, loans }: { customerId: number; loans: LoanVie
       setCallbackOn("");
       qc.invalidateQueries({ queryKey: ["customer-call-logs", customerId] });
       qc.invalidateQueries({ queryKey: ["customer-activity", customerId] });
+      toast.success("Call logged");
     },
   });
 
@@ -985,9 +1028,13 @@ function CallLogsTab({ customerId, loans }: { customerId: number; loans: LoanVie
       {add.error && <p className="text-xs text-error-700">{errMessage(add.error)}</p>}
 
       {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <div className="space-y-2">
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+        </div>
       ) : logs.length === 0 ? (
-        <p className="text-sm text-muted">No call logs yet.</p>
+        <EmptyState title="No call logs yet." />
       ) : (
         <ul className="space-y-2">
           {logs.map((r) => (
@@ -1031,12 +1078,51 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
     queryKey: ["customer-activity", customerId],
     queryFn: () => customersApi.activity(customerId),
   });
-  if (q.isLoading) return <p className="text-sm text-muted">Loading…</p>;
+  const [selectedType, setSelectedType] = React.useState<string>(AUDIT_FILTER_ALL);
+  if (q.isLoading) {
+    return (
+      <div className="space-y-2">
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+      </div>
+    );
+  }
   const items = q.data ?? [];
-  if (items.length === 0) return <p className="text-sm text-muted">No activity recorded yet.</p>;
-  const groups = groupActivity(items, apps);
+  if (items.length === 0) return <EmptyState title="No activity recorded yet." />;
+  // Chips come from the types actually in the loaded feed; filtering is client-side only.
+  const chips = auditTypeChips(items);
+  const activeType = resolveAuditFilter(chips, selectedType);
+  const groups = groupActivity(filterActivityByType(items, activeType), apps);
+  const chipClass = (on: boolean) =>
+    `rounded-full border px-2 py-0.5 text-[9.6px] font-semibold ${
+      on ? "border-navy bg-navy text-white" : "border-line bg-white text-muted hover:bg-grey-100 hover:text-ink"
+    }`;
   return (
     <div className="space-y-4">
+      {chips.length > 1 && (
+        <div role="group" aria-label="Filter activity by type" className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            aria-pressed={activeType === AUDIT_FILTER_ALL}
+            onClick={() => setSelectedType(AUDIT_FILTER_ALL)}
+            className={chipClass(activeType === AUDIT_FILTER_ALL)}
+          >
+            All ({items.length})
+          </button>
+          {chips.map((chip) => (
+            <button
+              key={chip.type}
+              type="button"
+              aria-pressed={activeType === chip.type}
+              onClick={() => setSelectedType(chip.type)}
+              className={chipClass(activeType === chip.type)}
+            >
+              {chip.label} ({chip.count})
+            </button>
+          ))}
+        </div>
+      )}
       {groups.map((group) => (
         <Section
           key={group.app?.id ?? "unattached"}
@@ -1049,9 +1135,9 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
                     ? ` · ${paiseToINR(group.app.amountRequestedPaise)}`
                     : ""}
                 </span>
-                <span className="rounded-full bg-grey-100 px-2 py-0.5 text-[10px] font-semibold text-muted">
+                <StatusBadge kind="application" value={group.app.status}>
                   {statusLabel(group.app.status)}
-                </span>
+                </StatusBadge>
                 {group.app.status !== "REJECTED" && group.app.status !== "CANCELLED" ? (
                   <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[10px] font-semibold text-navy">
                     {STAGE_LABELS[stageOf(group.app.status).stage]}
@@ -1070,7 +1156,14 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
           }
         >
           {group.entries.length === 0 ? (
-            <p className="text-sm text-muted">No activity recorded for this application yet.</p>
+            <EmptyState
+              title={
+                activeType === AUDIT_FILTER_ALL
+                  ? "No activity recorded for this application yet."
+                  : `No ${auditTypeLabel(activeType).toLowerCase()} events for this application.`
+              }
+              className="py-4"
+            />
           ) : (
             <ul className="space-y-2">
               {group.entries.map((e: ActivityEntry, i) => (

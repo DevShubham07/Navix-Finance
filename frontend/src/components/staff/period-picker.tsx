@@ -2,10 +2,18 @@
 
 import * as React from "react";
 import { PRESETS, type Range } from "@/lib/period";
+import { CustomRangeInputs } from "@/components/staff/custom-range-inputs";
 
 /**
- * The reporting-period pill row + custom date inputs, shared by the staff-performance dashboard and
- * the decision history. Same control on both so a period means the same thing wherever it is set.
+ * The reporting-period pill row + custom date inputs, shared by the staff-performance dashboard, the
+ * decision history and the dashboard. Same control on all three so a period means the same thing
+ * wherever it is set.
+ *
+ * Visually it matches `QueueDateFilter` (square navy pills on a grey track) — the console used to
+ * carry two competing period controls, this one rounded-full and gold, that one square and navy, and
+ * the square style won because it already sits inside the toolbars of nine pages.
+ *
+ * A custom range is committed with **Apply**, not on every keystroke; see `CustomRangeInputs`.
  */
 export function PeriodPicker({
   preset,
@@ -19,42 +27,35 @@ export function PeriodPicker({
   onCustom: (r: Range) => void;
 }) {
   const pill = (active: boolean) =>
-    `rounded-full px-3 py-1 text-sm font-semibold transition ${
-      active ? "bg-gold text-white" : "text-muted hover:text-navy"
+    `rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
+      active ? "bg-navy text-white" : "text-muted hover:text-ink"
     }`;
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <span className="text-xs font-semibold uppercase tracking-wide text-muted">Period</span>
-      <div className="flex flex-wrap items-center gap-1 rounded-full border border-line bg-white p-1">
+      <div className="flex flex-wrap gap-1 rounded border border-line bg-grey-50 p-1">
         {PRESETS.map((p) => (
-          <button key={p.key} onClick={() => onPreset(p.key)} className={pill(preset === p.key)}>
+          <button
+            key={p.key}
+            type="button"
+            aria-pressed={preset === p.key}
+            onClick={() => onPreset(p.key)}
+            className={pill(preset === p.key)}
+          >
             {p.label}
           </button>
         ))}
-        <button onClick={() => onPreset("custom")} className={pill(preset === "custom")}>
+        <button
+          type="button"
+          aria-pressed={preset === "custom"}
+          onClick={() => onPreset("custom")}
+          className={pill(preset === "custom")}
+        >
           Custom
         </button>
       </div>
-      {preset === "custom" && (
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            aria-label="From"
-            value={custom.from ?? ""}
-            onChange={(e) => onCustom({ ...custom, from: e.target.value || undefined })}
-            className="rounded border border-line px-2 py-1 text-sm"
-          />
-          <span className="text-xs text-muted">→</span>
-          <input
-            type="date"
-            aria-label="To"
-            value={custom.to ?? ""}
-            onChange={(e) => onCustom({ ...custom, to: e.target.value || undefined })}
-            className="rounded border border-line px-2 py-1 text-sm"
-          />
-        </div>
-      )}
+      {preset === "custom" && <CustomRangeInputs value={custom} onApply={onCustom} />}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, UserCog, Lock } from "lucide-react";
-import { Input, ToggleRow } from "@/components/ui";
+import { ErrorState, Input, Skeleton, ToggleRow, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage } from "@/components/staff/live-pipeline";
 import { STAFF_ROLE_LABELS } from "@/lib/auth/rbac";
@@ -37,7 +37,10 @@ export default function StaffProfilePage() {
         department: department.trim() || null,
         designation: designation.trim() || null,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-my-profile"] }),
+    onSuccess: () => {
+      toast.success("Profile saved");
+      return qc.invalidateQueries({ queryKey: ["staff-my-profile"] });
+    },
   });
 
   const saveEmailOptIn = useMutation({
@@ -45,6 +48,7 @@ export default function StaffProfilePage() {
     onMutate: (emailOptIn) => {
       qc.setQueryData<typeof me>(["staff-my-profile"], (prev) => (prev ? { ...prev, emailOptIn } : prev)); // optimistic
     },
+    onSuccess: (_data, emailOptIn) => toast.success(emailOptIn ? "Email notifications on" : "Email notifications off"),
     onSettled: () => qc.invalidateQueries({ queryKey: ["staff-my-profile"] }),
   });
 
@@ -53,9 +57,15 @@ export default function StaffProfilePage() {
       <PageHeader title="My profile" subtitle="Your account details. Update your name, department and designation." />
 
       {q.isLoading ? (
-        <div className="h-48 animate-pulse rounded border border-line bg-white" />
+        <div className="max-w-xl rounded border border-line bg-white p-6 shadow-sm">
+          <Skeleton variant="line" rows={6} />
+        </div>
       ) : q.error || !me ? (
-        <p className="text-sm text-error-700">{q.error ? errMessage(q.error) : "Could not load your profile."}</p>
+        <ErrorState
+          error={q.error}
+          title={q.error ? undefined : "Could not load your profile."}
+          onRetry={() => void q.refetch()}
+        />
       ) : (
         <div className="max-w-xl rounded border border-line bg-white p-6 shadow-sm">
           <div className="mb-4 flex items-center gap-2 font-serif text-base font-semibold text-navy">
@@ -82,7 +92,6 @@ export default function StaffProfilePage() {
           <Input label="Designation" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Analyst" className="!mb-4" />
 
           {save.error && <p className="mb-2 text-sm text-error-700">{errMessage(save.error)}</p>}
-          {save.isSuccess && <p className="mb-2 text-sm text-success-700">Saved.</p>}
 
           <button onClick={() => save.mutate()} disabled={save.isPending} className="btn btn-navy disabled:opacity-50">
             {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save changes

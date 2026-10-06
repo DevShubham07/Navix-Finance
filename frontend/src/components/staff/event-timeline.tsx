@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { EventView } from "@/lib/api/applications";
+import { EmptyState } from "@/components/ui";
 import { cn, formatDateTime } from "@/lib/utils";
 
 /**
@@ -103,7 +104,7 @@ function actorLabel(e: TimelineEvent): string {
  */
 export function EventTimeline({ events, className, dense }: EventTimelineProps) {
   if (events.length === 0) {
-    return <p className={cn("text-sm text-muted", className)}>No events recorded yet.</p>;
+    return <EmptyState title="No events recorded yet." className={className} />;
   }
   return (
     <ol className={cn("relative", className)} data-testid="event-timeline">

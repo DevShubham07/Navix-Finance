@@ -4,10 +4,11 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { hasPermission } from "@/lib/auth/rbac";
 import { dsaApi, paiseToINR, type DsaCommissionStatus } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 
 const STATUS_TONE: Record<DsaCommissionStatus, string> = {
   ACCRUED: "bg-amber-50 text-amber-900",
@@ -64,7 +65,14 @@ export default function DsaEarningsPage() {
       </div>
 
       {(summary.isError || commissions.isError) && (
-        <p className="mt-3 text-sm text-red-700">{errMessage(summary.error ?? commissions.error)}</p>
+        <ErrorState
+          error={summary.error ?? commissions.error}
+          onRetry={() => {
+            void summary.refetch();
+            void commissions.refetch();
+          }}
+          className="mt-3 py-4"
+        />
       )}
 
       <div className="staff-table-scroll mt-6 rounded-lg border border-navy/10 bg-white">
@@ -75,27 +83,30 @@ export default function DsaEarningsPage() {
               <th>PAN</th>
               <th>Name</th>
               <th>Mobile</th>
-              <th className="text-right">Net disbursed</th>
-              <th className="text-right">Commission</th>
+              <th className="num text-right">Net disbursed</th>
+              <th className="num text-right">Commission</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={7} className="py-8 text-center text-navy/40">
-                  {commissions.isLoading ? "Loading…" : "No commissions yet — they accrue once a lead's loan disburses."}
-                </td>
-              </tr>
-            )}
+            {rows.length === 0 &&
+              (commissions.isLoading ? (
+                <tr>
+                  <td colSpan={7}>
+                    <Skeleton variant="table" rows={8} cols={7} />
+                  </td>
+                </tr>
+              ) : (
+                <EmptyState inTable={7} title="No commissions yet — they accrue once a lead's loan disburses." />
+              ))}
             {pageRows.map((c, i) => (
               <tr key={c.id}>
                 <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
                 <td className="font-mono text-xs">{c.pan ?? "—"}</td>
                 <td className="staff-cell font-medium text-navy">{c.name ?? "—"}</td>
                 <td className="font-mono text-xs">{c.mobile ?? "—"}</td>
-                <td className="text-right">{paiseToINR(c.netDisbursedPaise)}</td>
-                <td className="text-right font-semibold text-navy">{paiseToINR(c.amountPaise)}</td>
+                <td className="num text-right">{paiseToINR(c.netDisbursedPaise)}</td>
+                <td className="num text-right font-semibold text-navy">{paiseToINR(c.amountPaise)}</td>
                 <td>
                   <span className={`inline-block rounded px-2 py-0.5 text-[8px] font-semibold uppercase ${STATUS_TONE[c.status]}`}>
                     {c.status}

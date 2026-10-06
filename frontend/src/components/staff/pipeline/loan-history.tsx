@@ -14,7 +14,8 @@ import { Loader2, Banknote, ArrowRight } from "lucide-react";
 import { customersApi, paiseToINR, type LoanView } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
-import { errMessage, OPEN_LOAN_STATUSES } from "@/components/staff/pipeline/hooks";
+import { OPEN_LOAN_STATUSES } from "@/components/staff/pipeline/hooks";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 
 export function LoanHistory({ customerId }: { customerId: number }) {
   const [load, setLoad] = React.useState(false);
@@ -50,11 +51,14 @@ export function LoanHistory({ customerId }: { customerId: number }) {
       </div>
 
       {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <div className="space-y-2">
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+        </div>
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
       ) : !c || c.loans.length === 0 ? (
-        <p className="text-sm text-muted">No loans yet for this customer.</p>
+        <EmptyState title="No loans yet for this customer." className="py-4" />
       ) : (
         <div className="space-y-3 text-sm">
           {current && (
@@ -76,7 +80,7 @@ export function LoanHistory({ customerId }: { customerId: number }) {
           <div>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Past loans ({past.length})</div>
             {past.length === 0 ? (
-              <p className="text-xs text-muted">None.</p>
+              <EmptyState title="None." className="py-4" />
             ) : (
               <ul className="divide-y divide-line">
                 {past.map((l: LoanView) => (

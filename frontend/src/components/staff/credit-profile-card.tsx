@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Gauge, Download, Loader2, FileText } from "lucide-react";
-import { InfoTooltip } from "@/components/ui";
+import { ErrorState, InfoTooltip, Skeleton } from "@/components/ui";
 import { StarRating } from "@/components/ui/star-rating";
 import { PdfPreviewDialog } from "@/components/staff/pdf-preview-dialog";
 import { staffApi, type CreditBriefFacts, type CreditBriefDetail } from "@/lib/api/applications";
@@ -204,11 +204,14 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
       </div>
 
       {briefQ.isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Loader2 size={14} className="animate-spin" /> Loading…
-        </div>
+        <Skeleton variant="line" rows={4} />
       ) : briefQ.isError ? (
-        <div className="text-sm text-error-700">Couldn&apos;t load bureau data.</div>
+        <ErrorState
+          error={briefQ.error}
+          title="Couldn't load bureau data."
+          onRetry={() => void briefQ.refetch()}
+          className="py-4"
+        />
       ) : !brief || brief.bureauState === "NOT_FETCHED" ? (
         <div className="text-sm text-muted">
           {bureauStateLabel("NOT_FETCHED", "long")} — the credit brief is generated automatically

@@ -10,6 +10,7 @@ import {
   type ProviderApiHistoryFilters,
 } from "@/lib/api/applications";
 import { useStaffSession } from "@/lib/auth/staff-session";
+import { EmptyState, Skeleton } from "@/components/ui";
 
 const SOURCES = ["", "LIVE", "MANUAL"];
 const STATUSES = ["", "SUCCESS", "FAILED"];
@@ -91,7 +92,7 @@ export default function ProviderApiDashboardPage() {
         <label className="field"><span>To</span><input type="date" value={filters.to?.slice(0,10) ?? ""} onChange={(e)=>setFilter("to", e.target.value ? `${e.target.value}T23:59:59Z` : "")}/></label>
         <div className="flex items-end"><button className="btn" onClick={()=>{ setFilters(EMPTY_FILTERS); setPage(0); }}>Reset</button></div>
       </div>
-      {historyQ.isLoading ? <Loader2 className="animate-spin"/> : <div className="space-y-3">{(historyQ.data?.rows ?? []).map((row)=><HistoryRow key={row.id} row={row}/>)}{total === 0 && <p className="text-sm text-muted">No provider calls match these filters.</p>}</div>}
+      {historyQ.isLoading ? <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} variant="row" />)}</div> : <div className="space-y-3">{(historyQ.data?.rows ?? []).map((row)=><HistoryRow key={row.id} row={row}/>)}{total === 0 && <EmptyState title="No provider calls match these filters." />}</div>}
       {total > 0 && <div className="mt-4 flex items-center justify-between text-sm text-muted"><span>Showing {shownFrom}–{shownTo} of {total}</span><span className="flex gap-2"><button className="btn" disabled={page === 0} onClick={()=>setPage(p=>Math.max(p-1,0))}>Previous</button><button className="btn" disabled={shownTo >= total} onClick={()=>setPage(p=>p+1)}>Next</button></span></div>}
     </section></div>;
 }

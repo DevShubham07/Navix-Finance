@@ -17,7 +17,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, HandCoins } from "lucide-react";
-import { Dialog, DialogHeader, DialogTitle, Input, Select } from "@/components/ui";
+import { Dialog, DialogHeader, DialogTitle, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { LoanBreakdown } from "@/components/staff/loan-breakdown";
 import { errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
 import {
@@ -130,13 +130,23 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
         ["staff-dashboard-queue"],
         ["collections-worklist"],
         ["collections-cases"],
-        ["customers"],
+        // The collection-case workspace this dialog is opened from keys by the LOAN id as a
+        // *string* (it comes straight from the route param), so the number has to be coerced or
+        // the prefix match misses and the LoanCard keeps the pre-payment outstanding on screen.
+        ["collections-case-by-loan", String(loanId)],
+        // Same workspace: the payments list (CasePaymentsCard / RecordPaymentCard).
+        ["collection-payments"],
+        // The customers register reads ["customers-page", …] / ["customers-summary", …];
+        // React Query prefix-matches element-by-element, so a bare ["customers"] matched neither.
+        ["customers-page"],
+        ["customers-summary"],
         // The customer roll-up now carries the per-loan outstanding breakdown the Loans tab renders
         // (`outstandingByLoanId`), so without this the tab keeps showing the pre-payment figures.
         ["customer-detail"],
       ]) {
         qc.invalidateQueries({ queryKey: key });
       }
+      toast.success("Payment recorded");
       onClose();
     },
   });
@@ -204,9 +214,9 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
         <div className="rounded border border-line bg-ivory p-4 text-sm">
           <p className="mb-2 font-semibold text-navy">If they paid on {paidOn}</p>
           {outQ.isLoading ? (
-            <div className="h-24 animate-pulse rounded bg-white" />
+            <Skeleton variant="line" rows={5} />
           ) : outQ.error ? (
-            <p className="text-error-700">{errMessage(outQ.error)}</p>
+            <ErrorState error={outQ.error} onRetry={() => void outQ.refetch()} className="py-4" />
           ) : loan && outQ.data ? (
             <>
               <LoanBreakdown loan={loan} outstanding={outQ.data} />

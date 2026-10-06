@@ -6,12 +6,14 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowDownLeft, ArrowUpRight, ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe, errMessage } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
+import { EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { ledgerRowsCaption } from "@/lib/staff/transactions-ledger";
 
 const TABS: { key: "ALL" | TransactionDirection; label: string }[] = [
   { key: "ALL", label: "All" },
@@ -87,10 +89,17 @@ export default function TransactionsPage() {
   const range = React.useMemo(() => periodRange(period), [period]);
 
   // Any change to the filter puts you back on page 1 — an offset into the old result set means
-  // nothing in the new one.
-  React.useEffect(() => {
+  // nothing in the new one. The reset happens in the same handler as the filter change, not in an
+  // effect after it: an effect let one render commit with the NEW filter and the OLD page, which
+  // fired a request for that stale page before the reset fired the page-1 request.
+  const choosePeriod = (next: Period) => {
+    setPeriod(next);
     setPage(1);
-  }, [direction, period]);
+  };
+  const chooseTab = (next: "ALL" | TransactionDirection) => {
+    setTab(next);
+    setPage(1);
+  };
 
   const q = useQuery({
     // Period filtering is now server-side (timezone-free), so the query keys on the range too.
@@ -121,6 +130,9 @@ export default function TransactionsPage() {
   const net = totalIn - totalOut;
   const total = q.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  // A new page or filter is loading behind `keepPreviousData`: the old rows stay on screen, so say
+  // they are about to change rather than leave them looking current.
+  const refreshing = q.isFetching && !q.isLoading;
 
   return (
     <div>
@@ -179,12 +191,18 @@ export default function TransactionsPage() {
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Period</span>
-          <div className="flex flex-wrap items-center gap-1 rounded-full border border-line bg-white p-1">
+          {/* The console's period control: square navy pills on a grey track (QueueDateFilter /
+              PeriodPicker), so the one toolbar no longer carries two active colours. */}
+          <div className="flex flex-wrap gap-1 rounded border border-line bg-grey-50 p-1">
             {PERIODS.map((p) => (
               <button
                 key={p.key}
-                onClick={() => setPeriod(p.key)}
-                className={`rounded-full px-3 py-1 text-sm font-semibold transition ${period === p.key ? "bg-gold text-white" : "text-muted hover:text-navy"}`}
+                type="button"
+                aria-pressed={period === p.key}
+                onClick={() => choosePeriod(p.key)}
+                className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  period === p.key ? "bg-navy text-white" : "text-muted hover:text-ink"
+                }`}
               >
                 {p.label}
               </button>
@@ -197,7 +215,10 @@ export default function TransactionsPage() {
             {TABS.map((t) => (
               <button
                 key={t.key}
-                onClick={() => setTab(t.key)}
+                type="button"
+                // The selected direction is otherwise told by colour alone.
+                aria-pressed={tab === t.key}
+                onClick={() => chooseTab(t.key)}
                 className={`rounded-full px-3 py-1 text-sm font-semibold transition ${tab === t.key ? "bg-navy text-white" : "text-muted hover:text-navy"}`}
               >
                 {t.label}
@@ -224,7 +245,7 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3 sm:max-w-2xl">
+        <div className="mb-2 grid grid-cols-1 gap-4 sm:grid-cols-3 sm:max-w-2xl">
           <div className="rounded border border-success-100 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowDownLeft size={14} className="text-success-600" /> Inflow · {periodLabel}</div>
             <div className="mt-1 font-serif text-xl font-bold text-success-700">{paiseToINR(totalIn)}</div>
@@ -240,30 +261,49 @@ export default function TransactionsPage() {
             </div>
           </div>
         </div>
+        {/* The cards total the whole period; the table below is one page of it. Only once the
+            server has answered for THIS filter — a count of 0 before then, or the previous
+            filter's count under the new period's label while `keepPreviousData` holds it on screen,
+            would be a claim, not a measurement. */}
+        <p className="mb-4 min-h-[1rem] text-xs text-muted">
+          {q.data && !q.isPlaceholderData ? ledgerRowsCaption(periodLabel, total) : null}
+        </p>
 
         <div className="rounded border border-line bg-white shadow-sm">
           {q.isLoading ? (
-            <div className="h-40 animate-pulse rounded bg-grey-100" />
+            <Skeleton variant="table" rows={8} cols={9} />
           ) : q.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
+            <ErrorState error={q.error} onRetry={() => void q.refetch()} />
           ) : rows.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-muted">
-              No transactions{query ? ` for “${query}”` : ""}.
-            </p>
+            <EmptyState
+              title={query ? `No transactions for “${query}”.` : "No transactions."}
+              hint={query ? "Try a different name, PAN or reference, or widen the period." : undefined}
+            />
           ) : (
-            <div className="staff-table-scroll">
-              <table className="staff-data-table">
+            // `staff-register-scroll` bounds the wrapper so the sticky `thead` has something to
+            // stick to (see globals.css). Safe on this page specifically because `PaginationBar`
+            // is a sibling *after* this div — on customers/loans/collections/my-decisions/leads/
+            // settlements it sits inside the scroller and would scroll away with the rows, so
+            // those need the bar lifted out before they can adopt this class.
+            // The offset clears the shell header, PageHeader, the period/direction toolbar, the
+            // search row, the three stat cards and the period · rows caption under them.
+            <div
+              className={`staff-table-scroll staff-register-scroll transition-opacity ${refreshing ? "opacity-60" : ""}`}
+              style={{ "--register-offset": "27.5rem" } as React.CSSProperties}
+            >
+              <table className="staff-data-table" aria-busy={refreshing}>
+                <caption className="sr-only">Transactions ledger</caption>
                 <thead>
                   <tr>
-                    <th>S.No.</th>
-                    <th>Date</th>
-                    <th>Borrower</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>Reference</th>
-                    <th>Proof</th>
-                    <th>Status</th>
-                    <th>Loan</th>
+                    <th scope="col">S.No.</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Borrower</th>
+                    <th scope="col">Type</th>
+                    <th scope="col" className="num">Amount</th>
+                    <th scope="col">Reference</th>
+                    <th scope="col">Proof</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Loan</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -309,15 +349,29 @@ function TxnRow({ t, sno }: { t: TransactionView; sno: number }) {
           {t.type === "REPAYMENT" ? "Repayment" : "Disbursal"}
         </span>
       </td>
-      <td className={`font-semibold ${incoming ? "text-success-700" : "text-ink"}`}>
+      {/* `num` right-aligns tabular figures (globals.css). The signed +/− stays, so direction is
+          readable without relying on the colour alone. */}
+      <td className={`num font-mono font-semibold ${incoming ? "text-success-700" : "text-ink"}`}>
         {incoming ? "+" : "−"}{paiseToINR(t.amountPaise)}
       </td>
       <td className="staff-cell text-muted" title={t.txnRef || undefined}>{t.txnRef || "—"}</td>
+      {/* A disbursal row can never carry a payment proof, so printing "—" there made the column
+          read as "missing" on ~half the ledger. Blank for disbursals; "—" only when a repayment
+          genuinely has no proof attached. */}
       <td>
-        <PaymentProofLink url={t.proofUrl} className="text-xs" />
-        {!t.proofUrl && <span className="text-xs text-muted">—</span>}
+        {t.type === "REPAYMENT" ? (
+          <>
+            <PaymentProofLink url={t.proofUrl} className="text-xs" />
+            {!t.proofUrl && <span className="text-xs text-muted">—</span>}
+          </>
+        ) : null}
       </td>
-      <td className="text-muted">{t.status ?? "—"}</td>
+      {/* The two row kinds carry different enums under one header — a disbursal row's status is a
+          LoanStatus, a repayment row's is a PaymentStatus. Keying StatusBadge on `t.type` keeps
+          them visually distinct instead of printing raw enum names side by side. */}
+      <td>
+        <StatusBadge kind={t.type === "REPAYMENT" ? "payment" : "application"} value={t.status} />
+      </td>
       <td className="text-muted">{t.loanId != null ? `#${t.loanId}` : "—"}</td>
     </tr>
   );

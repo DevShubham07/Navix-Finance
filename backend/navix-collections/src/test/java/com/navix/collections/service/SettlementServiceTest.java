@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.navix.collections.dto.CollectionsDtos.SettlementView;
@@ -217,6 +218,57 @@ class SettlementServiceTest {
         assertThat(views.get(1).approvedByName()).isEqualTo("Arjun Patel");
         verify(staffDirectory, times(1)).namesFor(any());
         verify(staffDirectory, never()).findStaff(anyLong());
+    }
+
+    /**
+     * {@code /api/collections/**} is gated on {@code ROLE_STAFF} only, which is audience-level — a DSA
+     * bearer satisfies it (CLAUDE.md §7). This read carried no guard at all, so a DSA could list every
+     * settlement ever proposed. The rejection must land before the repository is touched.
+     */
+    @Test
+    void listAllRejectsADsaToken() {
+        ActorContext.set(new CurrentActor("31", "Agent Rao", "DSA"));
+
+        assertThatThrownBy(() -> service.listAll())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Staff role required");
+
+        verify(settlementRepository, never()).findAll(any(org.springframework.data.domain.Sort.class));
+        verifyNoInteractions(staffDirectory);
+    }
+
+    @Test
+    void listAllRejectsABorrowerToken() {
+        ActorContext.set(new CurrentActor("77", "Borrower", "BORROWER"));
+
+        assertThatThrownBy(() -> service.listAll())
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Staff role required");
+
+        verify(settlementRepository, never()).findAll(any(org.springframework.data.domain.Sort.class));
+    }
+
+    /** The same hole on the single-row read. */
+    @Test
+    void getSettlementRejectsADsaToken() {
+        ActorContext.set(new CurrentActor("31", "Agent Rao", "DSA"));
+
+        assertThatThrownBy(() -> service.getSettlement(settlementId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Staff role required");
+
+        verifyNoInteractions(settlementRepository);
+    }
+
+    /** A collections role still reads the worklist — the guard is a deny-list, not a new allow-list. */
+    @Test
+    void listAllStillAllowsACollectionsRole() {
+        ActorContext.set(OFFICER);
+        when(settlementRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(java.util.List.of(proposedByOfficer()));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of(9L, "Sana Khan"));
+
+        assertThat(service.listAll()).hasSize(1);
     }
 
     @Test

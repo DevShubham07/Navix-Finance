@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
+import { EmptyState, ErrorState, StatusBadge } from "@/components/ui";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
 import { EventTimeline } from "@/components/staff/event-timeline";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
@@ -59,7 +60,6 @@ import {
   type EventView,
   type DocumentView,
   type PaymentView,
-  type CheckStatus,
   type StepResult,
 } from "@/lib/api/applications";
 import {
@@ -111,14 +111,6 @@ const STAGE_BLURB: Record<JourneyStageKey, string> = {
   ACTIVE_REPAYMENT:
     "The loan is live; the borrower repays on their salary day and an accountant verifies the payment.",
   CLOSED: "The loan is fully repaid and the application is closed.",
-};
-
-/** Verification status pill (mirrors CHECK_PILL in live-pipeline). */
-const CHECK_PILL: Record<CheckStatus, string> = {
-  PASS: "bg-success-100 text-success-700",
-  REVIEW: "bg-warning-100 text-warning-800",
-  FAIL: "bg-error-100 text-error-700",
-  PENDING: "bg-grey-100 text-muted",
 };
 
 function OutcomePill({ state }: { state: JourneyStageState }) {
@@ -248,7 +240,7 @@ export function StageDetailDialog({
               <section>
                 <h4 className="mb-2 font-semibold text-ink">Audit trail — {stage.label}</h4>
                 {stage.events.length === 0 ? (
-                  <p className="text-muted">No events recorded for this stage.</p>
+                  <EmptyState title="No events recorded for this stage." className="py-4" />
                 ) : (
                   <EventTimeline events={stage.events} dense />
                 )}
@@ -302,21 +294,22 @@ function Row({ label, value, strong }: { label: string; value: React.ReactNode; 
   );
 }
 
-function SectionError({ error }: { error: unknown }) {
+function SectionError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   if (!error) return null;
   // Only an actual authorization error reads as a role limitation; anything else
-  // (network, 500…) surfaces its real message in the error convention.
+  // (network, 500…) surfaces its real message in the error convention, with a retry.
   if (error instanceof ApplicationApiError && error.code === "FORBIDDEN_ROLE") {
     return (
       <p className="text-xs text-muted">Your role doesn&apos;t have access to these details.</p>
     );
   }
-  const msg =
-    error instanceof Error && error.message ? error.message : "Details couldn't be loaded.";
   return (
-    <p className="flex items-start gap-1.5 text-xs text-error-700">
-      <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" /> {msg}
-    </p>
+    <ErrorState
+      error={error}
+      title={error instanceof Error && error.message ? undefined : "Details couldn't be loaded."}
+      onRetry={onRetry}
+      className="py-4"
+    />
   );
 }
 
@@ -425,7 +418,7 @@ function KycSection({ applicationId, showCreditBrief }: { applicationId: number;
             </div>
           </>
         ) : (
-          <SectionError error={progressQ.error} />
+          <SectionError error={progressQ.error} onRetry={() => void progressQ.refetch()} />
         )}
       </section>
 
@@ -433,9 +426,9 @@ function KycSection({ applicationId, showCreditBrief }: { applicationId: number;
         <h4 className="mb-2 font-semibold text-ink">Checks</h4>
         {checks.length === 0 ? (
           checksQ.error ? (
-            <SectionError error={checksQ.error} />
+            <SectionError error={checksQ.error} onRetry={() => void checksQ.refetch()} />
           ) : (
-            <p className="text-muted">No verification checks recorded yet.</p>
+            <EmptyState title="No verification checks recorded yet." className="py-4" />
           )
         ) : (
           <ul className="space-y-1.5">
@@ -447,11 +440,11 @@ function KycSection({ applicationId, showCreditBrief }: { applicationId: number;
                 <span className="font-medium text-ink">{humanizeCheck(c.checkType)}</span>
                 <span className="flex items-center gap-2">
                   {c.message && <span className="text-xs text-muted">{c.message}</span>}
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[c.status]}`}
-                  >
-                    {c.status}
-                  </span>
+                  {/* Employment/EPFO never gates a transition, so it must not wear the gating colours. */}
+                  <StatusBadge
+                    kind={c.checkType === "EMPLOYMENT" ? "advisory" : "verification"}
+                    value={c.status}
+                  />
                 </span>
               </li>
             ))}
@@ -466,9 +459,9 @@ function KycSection({ applicationId, showCreditBrief }: { applicationId: number;
         </h4>
         {docs.length === 0 ? (
           docsQ.error ? (
-            <SectionError error={docsQ.error} />
+            <SectionError error={docsQ.error} onRetry={() => void docsQ.refetch()} />
           ) : (
-            <p className="text-muted">No documents uploaded.</p>
+            <EmptyState title="No documents uploaded." className="py-4" />
           )
         ) : (
           <ul className="space-y-1.5">
@@ -673,7 +666,7 @@ function DisbursementSection({ app, events }: { app: ApplicationView; events: Ev
       ) : app.loanId == null ? (
         <p className="text-muted">Funds not released yet — no loan has been minted.</p>
       ) : (
-        <SectionError error={loanQ.error} />
+        <SectionError error={loanQ.error} onRetry={() => void loanQ.refetch()} />
       )}
     </section>
   );
@@ -732,7 +725,7 @@ function ActiveSection({ app }: { app: ApplicationView }) {
             <LoanBreakdown loan={loan} outstanding={outQ.data} />
           </>
         ) : (
-          <SectionError error={loanQ.error} />
+          <SectionError error={loanQ.error} onRetry={() => void loanQ.refetch()} />
         )}
       </section>
 
@@ -742,7 +735,7 @@ function ActiveSection({ app }: { app: ApplicationView }) {
           {payQ.isLoading && <Loader2 size={12} className="animate-spin text-muted" />}
         </h4>
         {payments.length === 0 ? (
-          <p className="text-muted">No repayments recorded yet.</p>
+          <EmptyState title="No repayments recorded yet." className="py-4" />
         ) : (
           <ul className="divide-y divide-line rounded border border-line">
             {payments.map((p) => (
@@ -756,12 +749,6 @@ function ActiveSection({ app }: { app: ApplicationView }) {
 }
 
 function PaymentLi({ p }: { p: PaymentView }) {
-  const tone =
-    p.status === "VERIFIED"
-      ? "bg-success-50 text-success-700"
-      : p.status === "REJECTED"
-        ? "bg-error-50 text-error-700"
-        : "bg-gold-50 text-gold-dark";
   return (
     <li className="flex items-center justify-between gap-2 px-3 py-2">
       <span>
@@ -774,9 +761,7 @@ function PaymentLi({ p }: { p: PaymentView }) {
         </span>{" "}
         <PaymentProofLink url={p.proofUrl} className="text-xs" />
       </span>
-      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${tone}`}>
-        {p.status.replace(/_/g, " ").toLowerCase()}
-      </span>
+      <StatusBadge kind="payment" value={p.status} />
     </li>
   );
 }
@@ -810,7 +795,7 @@ function ClosedSection({ app }: { app: ApplicationView }) {
       ) : app.loanId == null ? (
         <p className="text-muted">No loan is associated with this application.</p>
       ) : (
-        <SectionError error={loanQ.error} />
+        <SectionError error={loanQ.error} onRetry={() => void loanQ.refetch()} />
       )}
     </section>
   );

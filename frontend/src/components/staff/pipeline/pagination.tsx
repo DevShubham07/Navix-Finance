@@ -56,6 +56,14 @@ export interface PaginationBarProps {
   pageSize: number;
   setPageSize: (size: number) => void;
   pageSizeOptions?: number[];
+  /**
+   * What one counted item is, plural — "applications", "loans". Omit for plain rows.
+   *
+   * Needed where a page's unit is not a table row: the verifications dashboard pages by
+   * APPLICATION (each card aggregates many check rows), so "Showing 1–25 of 140" with "Rows per
+   * page" told a reviewer the wrong thing about what was being counted.
+   */
+  unitLabel?: string;
 }
 
 export function PaginationBar({
@@ -66,6 +74,7 @@ export function PaginationBar({
   pageSize,
   setPageSize,
   pageSizeOptions = [25, 50, 100],
+  unitLabel,
 }: PaginationBarProps) {
   if (total === 0) return null;
 
@@ -76,12 +85,13 @@ export function PaginationBar({
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-white px-3 py-2 text-xs text-muted">
       <span>
         Showing {start}–{end} of {total}
+        {unitLabel ? ` ${unitLabel}` : ""}
       </span>
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-1.5">
-          Rows per page
+          {unitLabel ? `${unitLabel.charAt(0).toUpperCase()}${unitLabel.slice(1)} per page` : "Rows per page"}
           <select
-            aria-label="Rows per page"
+            aria-label={unitLabel ? `${unitLabel} per page` : "Rows per page"}
             value={pageSize}
             onChange={(e) => setPageSize(Number(e.target.value))}
             className="rounded border border-line px-1.5 py-1 text-xs text-ink"

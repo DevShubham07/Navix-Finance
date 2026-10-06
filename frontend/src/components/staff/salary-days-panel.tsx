@@ -10,7 +10,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, CalendarClock } from "lucide-react";
-import { InfoTooltip } from "@/components/ui";
+import { EmptyState, InfoTooltip, Skeleton, toast } from "@/components/ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import { customersApi, type CustomerSummary } from "@/lib/api/applications";
 import { errMessage } from "@/components/staff/pipeline/hooks";
@@ -48,11 +48,11 @@ export function SalaryDaysPanel() {
           />
         </div>
         {search.isLoading ? (
-          <div className="h-20 animate-pulse rounded bg-grey-100" />
+          <Skeleton variant="table" rows={3} cols={6} />
         ) : needle.length < MIN_QUERY_LENGTH ? (
           <p className="text-sm text-muted">Search for a customer to view or change their salary date.</p>
         ) : results.length === 0 ? (
-          <p className="text-sm text-muted">No customers match &ldquo;{needle}&rdquo;.</p>
+          <EmptyState title={`No customers match “${needle}”.`} className="py-4" />
         ) : (
           <div className="staff-table-scroll">
             <table className="staff-data-table">
@@ -88,7 +88,11 @@ function SalaryDayRow({ c }: { c: CustomerSummary }) {
       customersApi.changeSalaryDay(customerId, day),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff-dashboard-salary-search"] });
-      qc.invalidateQueries({ queryKey: ["customers"] });
+      // The customers register reads ["customers-page", …] / ["customers-summary", …];
+      // React Query prefix-matches element-by-element, so a bare ["customers"] matches neither.
+      qc.invalidateQueries({ queryKey: ["customers-page"] });
+      qc.invalidateQueries({ queryKey: ["customers-summary"] });
+      toast.success("Salary day saved");
     },
   });
 

@@ -3,10 +3,10 @@
 import * as React from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LeadsTracker } from "@/components/staff/leads-tracker";
 import { OutcomeChip, OUTCOME_LABEL } from "@/components/staff/lead-outcome";
@@ -253,9 +253,15 @@ export default function AdminLeadsPage() {
       </div>
 
       {(stats.isError || list.isError) && (
-        <p className="mb-3 text-sm text-red-700">
-          {errMessage(stats.error ?? list.error)}
-        </p>
+        // One notice for both queries, so its retry refetches both.
+        <ErrorState
+          error={stats.error ?? list.error}
+          onRetry={() => {
+            void stats.refetch();
+            void list.refetch();
+          }}
+          className="mb-3 py-4"
+        />
       )}
 
       <section className="mb-8">
@@ -289,13 +295,17 @@ export default function AdminLeadsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="text-center text-navy/40">
-                    {list.isLoading ? "Loading…" : "No leads in this filter."}
-                  </td>
-                </tr>
-              )}
+              {/* 12 = the header's column count (this row used to span only 10). */}
+              {rows.length === 0 &&
+                (list.isLoading ? (
+                  <tr>
+                    <td colSpan={12}>
+                      <Skeleton variant="table" rows={8} cols={12} />
+                    </td>
+                  </tr>
+                ) : (
+                  <EmptyState title="No leads in this filter." inTable={12} />
+                ))}
               {pageRows.map((row, i) => (
                 <tr key={row.id} className="border-b border-navy/5">
                   <td className="text-navy/50">{(page - 1) * pageSize + i + 1}</td>

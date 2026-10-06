@@ -88,7 +88,8 @@ export function AppRow({
         <td className="font-mono text-ink">{account || "—"}</td>
         <td className="font-mono text-ink">{ifsc || "—"}</td>
         <td className="font-mono text-muted">{app.loanId != null ? `#${app.loanId}` : "—"}</td>
-        <td>
+        {/* `num` right-aligns the figure under its `th.num` header (globals.css). */}
+        <td className="num">
           <span className="font-semibold text-ink">
             <AmountCell
               amountPaise={app.amountRequestedPaise ?? app.eligibleLimitPaise}
