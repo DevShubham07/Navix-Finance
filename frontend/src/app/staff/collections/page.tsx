@@ -37,7 +37,15 @@ import { hasPermission } from "@/lib/auth/rbac";
 import { BulkAssignOfficerDialog, InlineOfficerSelect } from "@/components/staff/collections-assign";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
-import { collectionsApi, customersApi, paiseToINR, type CustomerSummary, type WorklistRow } from "@/lib/api/applications";
+import {
+  collectionsApi,
+  customersApi,
+  paiseToINR,
+  type CollectionHandoverRow,
+  type CustomerSummary,
+  type WorklistRow,
+} from "@/lib/api/applications";
+import { collectionHandoverColumns } from "@/lib/export/collection-handover-columns";
 import { COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
 import { worklistDueCue, worklistDueLabel, type WorklistDueCue } from "@/lib/collections/worklist-due";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
@@ -173,6 +181,27 @@ export default function CollectionsBucketPage() {
   }, [customersQ.data]);
   const customerFor = (id: number | null) => (id != null ? customersById.get(id) : undefined);
 
+  // The agency-handover half of the export: full identity, both addresses, references and every
+  // verification result, keyed by the loan's own application. Same on-demand rule as above.
+  const worklistApplicationIds = React.useMemo(() => {
+    const ids = new Set<number>();
+    for (const w of q.data ?? []) {
+      if (w.loan?.applicationId != null) ids.add(w.loan.applicationId);
+    }
+    return [...ids].sort((a, b) => a - b);
+  }, [q.data]);
+  const exportHandoverQuery = {
+    queryKey: ["collections-export-handover", worklistApplicationIds],
+    queryFn: () => customersApi.collectionHandoverAll(worklistApplicationIds),
+    staleTime: EXPORT_ENRICHMENT_STALE_MS,
+  };
+  const handoverQ = useQuery({ ...exportHandoverQuery, enabled: false });
+  const handover = React.useMemo(() => {
+    const m = new Map<number, CollectionHandoverRow>();
+    for (const h of handoverQ.data ?? []) m.set(h.applicationId, h);
+    return collectionHandoverColumns<Row>((id) => (id != null ? m.get(id) : undefined));
+  }, [handoverQ.data]);
+
   // Counts across ALL buckets, from the unfiltered set — the header cards are a map of the whole
   // book, so they must not move when the operator narrows one bucket.
   const counts = React.useMemo(() => {
@@ -257,18 +286,20 @@ export default function CollectionsBucketPage() {
           rows={sorted}
           onOpen={() => {
             void qc.prefetchQuery(exportCustomersQuery);
+            void qc.prefetchQuery(exportHandoverQuery);
           }}
-          disabled={customersQ.isFetching}
+          disabled={customersQ.isFetching || handoverQ.isFetching}
+          // Ordered for the reader outside the company: who, their PAN, where they live — then
+          // how to reach them, what they owe, and every check result we hold.
           columns={[
-            { header: "Loan", value: (r) => String(r.loanId) },
-            { header: "Customer ID", value: (r) => (r.customerId != null ? String(r.customerId) : "—") },
             { header: "Borrower", value: (r) => dash(r.borrowerName) },
-            { header: "Mobile", value: (r) => dash(customerFor(r.customerId)?.mobile) },
-            { header: "PAN", value: (r) => dash(r.pan) },
-            { header: "Employer", value: (r) => dash(r.employer) },
-            { header: "Account", value: (r) => dash(customerFor(r.customerId)?.accountNumber) },
-            { header: "IFSC", value: (r) => dash(customerFor(r.customerId)?.ifsc) },
-            { header: "Monthly salary (₹)", value: (r) => (r.salaryPaise != null ? (r.salaryPaise / 100).toFixed(2) : "") },
+            { header: "PAN", value: (r) => dash(customerFor(r.customerId)?.pan ?? r.pan) },
+            ...handover.addresses,
+            { header: "Mobile", value: (r) => dash(customerFor(r.customerId)?.mobile ?? r.mobile) },
+            ...handover.contact,
+            ...handover.identity,
+            ...handover.references,
+            { header: "Loan", value: (r) => String(r.loanId) },
             { header: "Principal (₹)", value: (r) => (r.principalPaise != null ? (r.principalPaise / 100).toFixed(2) : "") },
             { header: "Outstanding (₹)", value: (r) => (r.outstandingPaise != null ? (r.outstandingPaise / 100).toFixed(2) : "") },
             { header: "Disbursed on", value: (r) => (r.disbursedOn ? formatDate(r.disbursedOn) : "—") },
@@ -276,20 +307,17 @@ export default function CollectionsBucketPage() {
             { header: "DPD", value: (r) => String(r.dpd) },
             { header: "Pre-due", value: (r) => (r.preDue ? "Yes" : "No") },
             { header: "Loan status", value: (r) => dash(r.loanStatus) },
-            {
-              header: "Credit score",
-              value: (r) => {
-                const s = customerFor(r.customerId)?.creditScore;
-                return s != null ? String(s) : "—";
-              },
-            },
-            {
-              header: "Credit rating",
-              value: (r) => {
-                const s = customerFor(r.customerId)?.starRating;
-                return s != null ? s.toFixed(1) : "—";
-              },
-            },
+            ...handover.sanction,
+            ...handover.bank,
+            { header: "Employer", value: (r) => dash(r.employer) },
+            { header: "Monthly salary (₹)", value: (r) => (r.salaryPaise != null ? (r.salaryPaise / 100).toFixed(2) : "") },
+            ...handover.employment,
+            ...handover.company,
+            ...handover.pan,
+            ...handover.digilocker,
+            ...handover.selfieAndEsign,
+            ...handover.credit,
+            { header: "Customer ID", value: (r) => (r.customerId != null ? String(r.customerId) : "—") },
             { header: "Credit exec", value: (r) => dash(r.creditDecidedByName) },
             { header: "Disbursed by", value: (r) => dash(r.disbursedByName) },
             { header: "Collections exec", value: (r) => dash(r.officerName) },
@@ -316,6 +344,7 @@ export default function CollectionsBucketPage() {
                 return c?.loanCount != null ? String(c.loanCount) : "—";
               },
             },
+            ...handover.consent,
           ]}
         />
         <button

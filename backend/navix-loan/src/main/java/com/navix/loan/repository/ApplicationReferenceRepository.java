@@ -12,5 +12,9 @@ public interface ApplicationReferenceRepository extends JpaRepository<Applicatio
 
     List<ApplicationReference> findByApplicationIdOrderBySlotAsc(Long applicationId);
 
+    /** Batched twin of the above, for the collections handover export. */
+    List<ApplicationReference> findByApplicationIdInOrderByApplicationIdAscSlotAsc(
+            java.util.Collection<Long> applicationIds);
+
     Optional<ApplicationReference> findByApplicationIdAndSlot(Long applicationId, Short slot);
 }

@@ -133,6 +133,67 @@ class CustomerServiceTest {
         assertThat(cs.pan()).isEqualTo("ABCDE1234F");           // staff see the full, unmasked PAN
     }
 
+    // ---- collectionHandover(): the DPD-bucket export that leaves the company ----
+
+    private com.navix.loan.entity.ApplicationVerification check(long appId, String type, Long score, String derived) {
+        var v = new com.navix.loan.entity.ApplicationVerification();
+        v.setApplicationId(appId);
+        v.setCheckType(type);
+        v.setStatus("PASS");
+        v.setScore(score);
+        v.setDerived(derived);
+        return v;
+    }
+
+    @Test
+    void collectionHandoverIsAdminOnly() {
+        ActorContext.set(new CurrentActor("31", "Head", "COLLECTION_HEAD"));
+
+        assertThatThrownBy(() -> service.collectionHandover(List.of(2L)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ADMIN");
+    }
+
+    @Test
+    void collectionHandoverCarriesWhitelistedResultsAndNeverTheBureauReport() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
+        CustomerProfile p = profile(2, "Asha Rao", "ABCDE1234F");
+        p.setAadhaar("234567890124");
+        p.setBureauScore(712L);
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(p));
+        when(applicationRepository.findAllById(any()))
+                .thenReturn(List.of(app(2, 9000001L, ApplicationStatus.ACTIVE)));
+        when(verificationRepository.findByApplicationIdIn(any())).thenReturn(List.of(
+                check(2, "AADHAAR", null, "{\"address\":\"12 MG Road, Pune\",\"pincode\":\"411001\",\"dscSubject\":\"x\"}"),
+                check(2, "ADDRESS", null, "{\"address\":\"Baner, Pune\"}"),
+                check(2, "DIGILOCKER", null, "{\"status\":\"done\",\"url\":\"https://provider/session\"}"),
+                check(2, "BUREAU", 712L, "{\"totalBalance\":500000,\"overdueAccounts\":2}"),
+                check(2, "AADHAAR_PHOTO", null, "{}")));
+        var ref = new com.navix.loan.entity.ApplicationReference();
+        ref.setApplicationId(2L);
+        ref.setFullName("Ravi Rao");
+        ref.setMobile("9876543210");
+        ref.setRelation("SIBLING");
+        when(referenceRepository.findByApplicationIdInOrderByApplicationIdAscSlotAsc(any()))
+                .thenReturn(List.of(ref));
+
+        var rows = service.collectionHandover(List.of(2L, 2L));
+
+        assertThat(rows).hasSize(1);
+        var row = rows.get(0);
+        assertThat(row.profile()).containsEntry("pan", "ABCDE1234F").containsEntry("aadhaar", "234567890124");
+        assertThat(row.checks().get("AADHAAR").derived())
+                .containsEntry("address", "12 MG Road, Pune")
+                .doesNotContainKey("dscSubject");
+        assertThat(row.checks().get("ADDRESS").derived()).containsEntry("address", "Baner, Pune");
+        assertThat(row.checks().get("DIGILOCKER").derived()).doesNotContainKey("url");
+        // The agency gets the score, not what is behind it.
+        assertThat(row.checks().get("BUREAU").score()).isEqualTo(712L);
+        assertThat(row.checks().get("BUREAU").derived()).isEmpty();
+        assertThat(row.checks()).doesNotContainKey("AADHAAR_PHOTO");
+        assertThat(row.references()).extracting("mobile").containsExactly("9876543210");
+    }
+
     // ---- page() / summary() / export(): filtering, sorting and paging live in CustomerBookQuery ----
 
     @Test

@@ -20,6 +20,9 @@ import com.navix.loan.dto.CustomerDtos.AddCallLogRequest;
 import com.navix.loan.dto.CustomerDtos.ApplicationDocumentGroup;
 import com.navix.loan.dto.CustomerDtos.BookStats;
 import com.navix.loan.dto.CustomerDtos.CallLogView;
+import com.navix.loan.dto.CustomerDtos.CollectionHandoverRow;
+import com.navix.loan.dto.CustomerDtos.HandoverCheck;
+import com.navix.loan.dto.CustomerDtos.HandoverReference;
 import com.navix.loan.dto.CustomerDtos.DpdBuckets;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.dto.CustomerDtos.CustomerDetail;
@@ -334,6 +337,172 @@ public class CustomerService {
                 .filter(id -> scope == null || scope.permits(id))
                 .toList();
         return hydrate(kept);
+    }
+
+    /**
+     * Which {@code derived} keys of each check type the collections handover export may carry.
+     * A whitelist, not a blacklist: {@code derived} also holds provider URLs, session tokens and
+     * KBA challenge data, and a key added there later must not leak into a file that leaves the
+     * company. BUREAU is deliberately empty — the agency gets the score, never the report.
+     */
+    static final Map<String, Set<String>> HANDOVER_DERIVED_KEYS = Map.of(
+            "PAN", Set.of("fullName", "dob", "gender", "panStatus", "aadhaarLinked", "maskedAadhaar",
+                    "addressState", "addressZip", "panAllotmentDate", "compliant", "panNotFound",
+                    "aadhaarMismatch"),
+            "AADHAAR", Set.of("fullName", "dob", "gender", "maskedAadhaar", "address", "addressLine",
+                    "landmark", "city", "district", "state", "pincode", "country", "aadhaarMismatch"),
+            "DIGILOCKER", Set.of("status", "completed", "failed"),
+            "ADDRESS", Set.of("address", "manualAddress", "district", "state", "pincode", "country",
+                    "withinIndia", "confidenceScore"),
+            "EMPLOYMENT", Set.of("found", "employed", "employedAtDeclaredEmployer", "employerName",
+                    "declaredEmployer", "dateOfJoining", "dateOfExit", "tenureMonths",
+                    "employeeNameMatch", "employerNameMatch", "recentPfFiling", "hasPfFilings",
+                    "establishmentId", "leaveReason", "uan", "reason"),
+            "EMAIL", Set.of("verified", "establishmentMatched", "individualMatched", "genericEmail",
+                    "matchedEstablishment", "companyName", "personName", "domain"),
+            "SALARY", Set.of("monthlySalaryPaise", "eligibleLimitPaise"),
+            "PENNY_DROP", Set.of("accountExists", "accountNumber", "ifsc", "bank", "beneficiaryName",
+                    "nameMatch", "bankRrn"),
+            "SELFIE", Set.of("live", "faceMatch", "faceMatched", "matchPercentage", "livenessScore"),
+            "ESIGN", Set.of("signedAt", "latitude", "longitude", "accuracyMeters"));
+
+    private static final String BUREAU_CHECK = "BUREAU";
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper HANDOVER_JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /**
+     * Everything on file behind these applications — profile, verification results, references —
+     * for the ADMIN DPD-bucket export handed to an outside collection agency. Keyed by application
+     * rather than customer because a reborrow copies the carried evidence onto the new application
+     * ({@code ApplicationFlowService.carryOverForReapply}), so the loan's own application always
+     * holds the full set. ADMIN only: this is the one read that returns PAN and Aadhaar in full
+     * for a whole bucket at once.
+     */
+    @Transactional(readOnly = true)
+    public List<CollectionHandoverRow> collectionHandover(List<Long> applicationIds) {
+        requireAdmin();
+        if (applicationIds == null || applicationIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = applicationIds.stream()
+                .filter(Objects::nonNull).distinct().limit(MAX_PAGE_SIZE).toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, CustomerProfile> profiles = nullSafe(profileRepository.findByApplicationIdIn(ids)).stream()
+                .collect(Collectors.toMap(CustomerProfile::getApplicationId, p -> p, (a, b) -> a));
+        Map<Long, LoanApplication> apps = nullSafe(applicationRepository.findAllById(ids)).stream()
+                .collect(Collectors.toMap(LoanApplication::getId, a -> a, (a, b) -> a));
+        Map<Long, Map<String, HandoverCheck>> checks = new HashMap<>();
+        for (ApplicationVerification v : nullSafe(verificationRepository.findByApplicationIdIn(ids))) {
+            boolean bureau = BUREAU_CHECK.equals(v.getCheckType());
+            Set<String> keys = HANDOVER_DERIVED_KEYS.get(v.getCheckType());
+            if (keys == null && !bureau) {
+                continue;
+            }
+            checks.computeIfAbsent(v.getApplicationId(), k -> new java.util.LinkedHashMap<>())
+                    .put(v.getCheckType(), new HandoverCheck(v.getStatus(), v.getProvider(),
+                            v.getMessage(), v.getNameMatch(), v.getScore(), v.getUpdatedAt(),
+                            bureau ? Map.of() : whitelisted(v.getDerived(), keys)));
+        }
+        Map<Long, List<HandoverReference>> references = new HashMap<>();
+        for (ApplicationReference r
+                : nullSafe(referenceRepository.findByApplicationIdInOrderByApplicationIdAscSlotAsc(ids))) {
+            references.computeIfAbsent(r.getApplicationId(), k -> new ArrayList<>())
+                    .add(new HandoverReference(r.getFullName(), r.getMobile(), r.getRelation()));
+        }
+        return ids.stream()
+                .filter(id -> apps.containsKey(id) || profiles.containsKey(id))
+                .map(id -> new CollectionHandoverRow(id,
+                        handoverProfile(profiles.get(id)),
+                        handoverApplication(apps.get(id)),
+                        checks.getOrDefault(id, Map.of()),
+                        references.getOrDefault(id, List.of())))
+                .toList();
+    }
+
+    /** The whitelisted slice of a check's {@code derived} JSON; unparseable JSON yields nothing. */
+    private static Map<String, Object> whitelisted(String derivedJson, Set<String> keys) {
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        if (derivedJson == null || derivedJson.isBlank()) {
+            return out;
+        }
+        try {
+            Map<String, Object> all = HANDOVER_JSON.readValue(derivedJson,
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { });
+            for (String key : keys) {
+                Object value = all.get(key);
+                if (value != null) {
+                    out.put(key, value);
+                }
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            // A malformed audit blob must not fail the whole export; the row's status still shows.
+        }
+        return out;
+    }
+
+    private static Map<String, Object> handoverProfile(CustomerProfile p) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        if (p == null) {
+            return m;
+        }
+        m.put("fullName", p.getFullName());
+        m.put("pan", p.getPan());
+        m.put("aadhaar", p.getAadhaar());
+        m.put("dob", p.getDob());
+        m.put("mobile", p.getMobile());
+        m.put("email", p.getEmail());
+        m.put("officialEmail", p.getOfficialEmail());
+        m.put("address", p.getAddress());
+        m.put("employer", p.getEmployer());
+        m.put("employmentStatus", p.getEmploymentStatus());
+        m.put("uan", p.getUan());
+        m.put("monthlySalaryPaise", p.getMonthlySalaryPaise());
+        m.put("annualSalaryPaise", p.getAnnualSalaryPaise());
+        m.put("salaryBank", p.getSalaryBank());
+        m.put("salaryAccountNumber", p.getSalaryAccountNumber());
+        m.put("salaryIfsc", p.getSalaryIfsc());
+        m.put("salaryAccountMobile", p.getSalaryAccountMobile());
+        m.put("previousSalaryDate", p.getPreviousSalaryDate());
+        m.put("emergencyContactName", p.getEmergencyContactName());
+        m.put("emergencyContactPhone", p.getEmergencyContactPhone());
+        m.put("emergencyContactRelation", p.getEmergencyContactRelation());
+        // The score and its headline only — the credit brief (facts, summary, verdict) stays in-house.
+        m.put("bureauScore", p.getBureauScore());
+        m.put("bureauSource", p.getBureauSource());
+        m.put("creditStarRating", p.getCreditStarRating());
+        m.put("riskCategory", p.getRiskCategory());
+        m.put("panVerified", p.getPanVerified());
+        m.put("aadhaarLinked", p.getAadhaarLinked());
+        m.put("aadhaarVerified", p.getAadhaarVerified());
+        m.put("emailVerified", p.getEmailVerified());
+        m.put("personalEmailVerified", p.getPersonalEmailVerified());
+        m.put("officialEmailOtpVerified", p.getOfficialEmailOtpVerified());
+        m.put("addressVerified", p.getAddressVerified());
+        m.put("pennyDropVerified", p.getPennyDropVerified());
+        m.put("nameMatchScore", p.getNameMatchScore());
+        m.put("termsAcceptedAt", p.getTermsAcceptedAt());
+        m.put("pepDeclaredAt", p.getPepDeclaredAt());
+        return m;
+    }
+
+    private static Map<String, Object> handoverApplication(LoanApplication a) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        if (a == null) {
+            return m;
+        }
+        m.put("salaryCreditDay", a.getSalaryCreditDay());
+        m.put("purpose", a.getPurpose());
+        m.put("sanctionedAmountPaise", a.getSanctionedAmountPaise());
+        m.put("approvedRepaymentDate", a.getApprovedRepaymentDate());
+        m.put("sanctionTenureDays", a.getSanctionTenureDays());
+        m.put("disbursalAccountNumber", a.getDisbursalAccountNumber());
+        m.put("disbursalIfsc", a.getDisbursalIfsc());
+        m.put("disbursalHolderName", a.getDisbursalHolderName());
+        m.put("disbursalBank", a.getDisbursalBank());
+        return m;
     }
 
     /**

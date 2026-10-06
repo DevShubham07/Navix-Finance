@@ -191,7 +191,8 @@ class SecurityMatrixIT {
     @Test
     void dsaBearer_onCustomersEndpoints_isForbiddenRole() throws Exception {
         for (String path : List.of("/api/customers/page", "/api/customers/summary",
-                "/api/customers/book-stats", "/api/customers/by-ids?ids=1")) {
+                "/api/customers/book-stats", "/api/customers/by-ids?ids=1",
+                "/api/customers/collection-handover?applicationIds=1")) {
             mvc.perform(get(path).header("Authorization", bearer("50", "DSA")))
                     .andExpect(status().isUnprocessableEntity())
                     .andExpect(jsonPath("$.error.code").value("FORBIDDEN_ROLE"));

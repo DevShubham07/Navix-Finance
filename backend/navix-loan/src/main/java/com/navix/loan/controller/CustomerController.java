@@ -106,6 +106,17 @@ public class CustomerController {
     }
 
     /**
+     * Everything on file behind these applications, for the DPD-bucket export handed to an outside
+     * collection agency. ADMIN only — enforced in the service.
+     */
+    @GetMapping("/collection-handover")
+    public ApiResponse<List<com.navix.loan.dto.CustomerDtos.CollectionHandoverRow>> collectionHandover(
+            @RequestParam("applicationIds") List<Long> applicationIds) {
+        requireStaff();
+        return ApiResponse.ok(customerService.collectionHandover(applicationIds));
+    }
+
+    /**
      * The caller's own book (owned by or decided by them), aggregated server-side: lifecycle counts,
      * exposure, DPD bands and the headline averages. Replaces shipping every customer row to the
      * browser so the dashboard can count them there.

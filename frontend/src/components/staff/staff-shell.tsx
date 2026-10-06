@@ -157,8 +157,14 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: StaffRole; path
                           pathname === pathOnly ? "bg-white/10 font-semibold text-white shadow-[inset_3px_0_0_0_var(--gold)]" : "text-navix-200 hover:bg-white/5 hover:text-white",
                         )}>
                           <Icon size={17} className="flex-shrink-0" />
-                          <span className="flex-1 truncate">{label}</span>
-                          <ChevronRight size={14} className="opacity-60 transition-transform group-open:rotate-90" />
+                          <Link
+                            href={href}
+                            onClick={onNavigate}
+                            className="flex-1 truncate !text-inherit hover:!text-inherit"
+                          >
+                            {label}
+                          </Link>
+                          <ChevronRight size={14} className="flex-shrink-0 opacity-60 transition-transform group-open:rotate-90" />
                         </summary>
                         <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
                           {COLLECTION_BUCKETS.map((item) => (

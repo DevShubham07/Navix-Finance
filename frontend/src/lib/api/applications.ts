@@ -683,6 +683,28 @@ export interface CustomerSummary {
   failureRetryable?: boolean;
 }
 
+/** One verification check in the collections handover export (mirrors backend `HandoverCheck`).
+ *  `derived` carries only the server-whitelisted keys for that check type. */
+export interface HandoverCheck {
+  status: string | null;
+  provider: string | null;
+  message: string | null;
+  nameMatch: number | null;
+  score: number | null;
+  at: string | null;
+  derived: Record<string, unknown>;
+}
+
+/** Everything on file behind one loan's application (mirrors backend `CollectionHandoverRow`). */
+export interface CollectionHandoverRow {
+  applicationId: number;
+  profile: Record<string, unknown>;
+  application: Record<string, unknown>;
+  /** Keyed by check type: PAN, AADHAAR, DIGILOCKER, ADDRESS, EMPLOYMENT, EMAIL, … */
+  checks: Record<string, HandoverCheck>;
+  references: { name: string | null; mobile: string | null; relation: string | null }[];
+}
+
 /** A customer's full history: latest profile + every application, loan and payment (mirrors backend). */
 export interface CustomerDetail {
   customerId: number;
@@ -2011,6 +2033,27 @@ export const customersApi = {
       chunks.push(ids.slice(i, i + CUSTOMER_IDS_CHUNK));
     }
     const pages = await Promise.all(chunks.map((chunk) => customersApi.byIds(chunk)));
+    return pages.flat();
+  },
+
+  /**
+   * ADMIN only. Everything on file behind these applications — full PAN/Aadhaar, verification
+   * results, references — for the DPD-bucket export handed to a collection agency. Chunked like
+   * {@link byIdsAll}; the server applies the same cap.
+   */
+  collectionHandoverAll: async (applicationIds: number[]) => {
+    const chunks: number[][] = [];
+    for (let i = 0; i < applicationIds.length; i += CUSTOMER_IDS_CHUNK) {
+      chunks.push(applicationIds.slice(i, i + CUSTOMER_IDS_CHUNK));
+    }
+    const pages = await Promise.all(
+      chunks.map((chunk) =>
+        bff<CollectionHandoverRow[]>(
+          `${CUSTOMERS_BASE}/collection-handover?applicationIds=${chunk.join(",")}`,
+          "GET",
+        ),
+      ),
+    );
     return pages.flat();
   },
 

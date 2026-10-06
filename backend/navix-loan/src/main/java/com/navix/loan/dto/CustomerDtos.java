@@ -119,6 +119,39 @@ public final class CustomerDtos {
             boolean failureRetryable) {
     }
 
+    /**
+     * One verification check as the collections handover export carries it. {@code derived} holds
+     * only the keys {@code CustomerService.HANDOVER_DERIVED_KEYS} whitelists for that check type —
+     * never the raw provider response, a URL, a token or any bureau report detail.
+     */
+    public record HandoverCheck(
+            String status,
+            String provider,
+            String message,
+            Double nameMatch,
+            Long score,
+            Instant at,
+            Map<String, Object> derived) {
+    }
+
+    public record HandoverReference(String name, String mobile, String relation) {
+    }
+
+    /**
+     * Everything on file behind one loan's application, for the ADMIN DPD-bucket export that is
+     * handed to an outside collection agency. Maps rather than a wide positional record: the
+     * frontend owns the column order, and a newly stored field costs one entry here, not a
+     * constructor change. Identity numbers (PAN, Aadhaar) are in full by product decision.
+     */
+    public record CollectionHandoverRow(
+            Long applicationId,
+            Map<String, Object> profile,
+            Map<String, Object> application,
+            /** Keyed by check type (PAN, AADHAAR, ADDRESS, EMPLOYMENT, …). */
+            Map<String, HandoverCheck> checks,
+            List<HandoverReference> references) {
+    }
+
     /** One page of the Customers list. {@code page} is 1-indexed; {@code total} counts every match. */
     public record CustomerPage(List<CustomerSummary> rows, int page, int size, long total) {
     }
