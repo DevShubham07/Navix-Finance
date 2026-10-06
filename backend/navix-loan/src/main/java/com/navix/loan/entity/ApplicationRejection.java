@@ -25,6 +25,12 @@ public class ApplicationRejection extends BaseAuditEntity {
     public static final String PAST_DELINQUENCY = "PAST_DELINQUENCY";
     public static final String LOW_BUREAU_SCORE = "LOW_BUREAU_SCORE";
     public static final String MANUAL = "MANUAL";
+    /**
+     * Engine rule (V75): the Aadhaar number the borrower typed does not match the masked Aadhaar the
+     * PAN record or DigiLocker returned for the same person (compared on the digits the mask reveals). The identity
+     * documents disagree with each other, so the file is rejected outright rather than parked.
+     */
+    public static final String FRAUD_REJECTED = "FRAUD_REJECTED";
 
     @Column(name = "application_id")
     private Long applicationId;

@@ -101,4 +101,30 @@ class BureauChallengeOutreachServiceTest {
         // The stamp that makes the sweep idempotent is merged into the existing derived, not over it.
         verify(verificationRepo).save(any());
     }
+
+    /**
+     * V74's "send the customer a link" feature lets a Credit Executive/Head chase the ONE file they
+     * are reviewing without needing ADMIN — {@code CreditTeamGuard}. The cohort sweeps
+     * ({@code preview}/{@code notifyPending}) are untouched and stay ADMIN-only.
+     */
+    @Test
+    void notifyApplicationAcceptsCreditExecutiveNotJustAdmin() {
+        ActorContext.set(new CurrentActor("ce-1", "Credit Exec", "CREDIT_EXECUTIVE"));
+        when(verificationRepo.findByApplicationIdAndCheckType(9750L, "BUREAU"))
+                .thenReturn(Optional.of(bureauRow(9750L, "{\"bureauChallenge\":true}")));
+        when(applicationRepo.findById(9750L)).thenReturn(Optional.of(kycPending(9750L, 501L)));
+
+        var summary = service.notifyApplication(9750L);
+
+        assertThat(summary.notified()).isEqualTo(1);
+        verify(eventPublisher).publishEvent(any(BureauQuestionPendingEvent.class));
+    }
+
+    @Test
+    void notifyApplicationRejectsANonCreditRole() {
+        ActorContext.set(new CurrentActor("tc-1", "Telecaller", "TELECALLER"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.notifyApplication(9750L))
+                .isInstanceOf(com.navix.common.exception.BusinessException.class);
+    }
 }

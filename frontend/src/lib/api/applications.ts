@@ -472,6 +472,11 @@ export interface ProfileView {
   pennyDropVerified?: boolean | null;
   /** EPFO/UAN number (Digitap employment verification) — advisory, may be null (§14 UAN caveats). */
   uan?: string | null;
+  /**
+   * The 12-digit Aadhaar number typed on the intake Aadhaar-card screen (V75), in FULL. Staff and
+   * ADMIN read it unmasked by product decision; a borrower sees their own. Null before V75.
+   */
+  aadhaar?: string | null;
   nameMatchScore?: number | null;
   /** Phase 1 intake — also what the wizard re-hydrates from on another device (revamp.md C1). */
   officialEmail?: string | null;
@@ -512,6 +517,10 @@ export interface ProfileInput {
   termsVersion?: string;
   /** True = "I am not a Politically Exposed Person". */
   pepDeclared?: boolean;
+  /** 12-digit Aadhaar number (V75). Card spacing is stripped server-side; `INVALID_AADHAAR` on a
+   *  failed Verhoeff check. A number another customer already holds is accepted and flagged for
+   *  staff (an `AADHAAR_DUPLICATE` review row) — never reported back here. */
+  aadhaar?: string;
 }
 
 /** Where the borrower is in the onboarding journey, answered server-side (revamp.md C1). */
@@ -1238,6 +1247,8 @@ export interface StepResult {
   score?: number | null;
   /** When the check last ran. Optional: rows written before this existed have no value. */
   checkedAt?: string | null;
+  /** When staff last reopened this check for the customer to redo. Optional: only reopened rows carry it. */
+  reopenedAt?: string | null;
 }
 
 /** Result of an OTP send: whether it went out, and (dev/mock only) the code itself. */
@@ -1293,6 +1304,21 @@ export interface ReminderResult {
   sent: boolean;
   pendingCount: number;
   pendingSteps: string;
+}
+
+/**
+ * A one-time "send the customer a link" preview/send result — mirrors backend `ResumeLink`.
+ * `willReopen` tells the caller the send will also reset the check to PENDING and rewind the
+ * borrower's journey pointer; `maskedEmail`/`maskedMobile` are null when that contact is unknown.
+ */
+export interface ResumeLink {
+  url: string;
+  route: string;
+  stepLabel: string;
+  willReopen: boolean;
+  maskedEmail: string | null;
+  maskedMobile: string | null;
+  lastSentAt: string | null;
 }
 
 /** Result of asking the app-scoped verify endpoint for a presigned PUT URL. */
@@ -1862,6 +1888,13 @@ export const staffApi = {
   },
   /** KYC approver / admin nudges the borrower with their pending verification steps (Phase 3.4). */
   sendReminder: (id: number) => bff<ReminderResult>(`${STAFF_BASE}/${id}/send-reminder`, "POST"),
+
+  /** Preview the "send the customer a link" destination for one failed/abandoned check, read-only. */
+  resumeLink: (id: number, checkType: string) =>
+    bff<ResumeLink>(`${STAFF_BASE}/${id}/verifications/${checkType}/resume-link`, "GET"),
+  /** Send that link (email or copy-to-clipboard) — reopens the check when the backend says `willReopen`. */
+  shareResumeLink: (id: number, checkType: string, channel: "EMAIL" | "COPY") =>
+    bff<ResumeLink>(`${STAFF_BASE}/${id}/verifications/${checkType}/resume-link`, "POST", { channel }),
 
   /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
   creditBrief: (id: number) => bff<CreditBriefView>(`${STAFF_BASE}/${id}/credit-brief`, "GET"),
@@ -3077,6 +3110,7 @@ export interface LoanSummary {
   dueDate: string | null;
   borrowerName: string | null;
   panMasked: string | null;
+  mobile: string | null;
   employer: string | null;
   employmentStatus: string | null;
   monthlySalaryPaise: number | null;

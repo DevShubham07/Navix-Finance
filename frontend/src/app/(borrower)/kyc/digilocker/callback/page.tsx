@@ -3,10 +3,10 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle2, ArrowRight, AlertTriangle } from "lucide-react";
-import { readStoredAppId } from "@/lib/api/live-journey";
+import { clearBorrowerClientState, readStoredAppId } from "@/lib/api/live-journey";
 import { verificationApi, ApplicationApiError } from "@/lib/api/applications";
 
-type Phase = "working" | "done" | "unavailable" | "denied" | "failed";
+type Phase = "working" | "done" | "unavailable" | "denied" | "failed" | "rejected";
 
 const RETRY_MS = 4000;
 const MAX_ATTEMPTS = 45; // ~3min of retrying while the provider materialises the Aadhaar XML
@@ -51,6 +51,13 @@ export default function KycDigiLockerCallbackPage() {
       try {
         const r = await verificationApi.digilockerComplete(appId);
         if (cancelled) return;
+        if (r.derived?.applicationRejected) {
+          // V75 fraud rule: the Aadhaar DigiLocker returned is not the one the borrower typed at
+          // intake. The backend has rejected the application; the reason stays staff-only.
+          clearBorrowerClientState();
+          setPhase("rejected");
+          return;
+        }
         if (r.status === "REVIEW" && r.derived?.validDsc === false) {
           // The backend has the e-Aadhaar and will never fetch it again, so sending the borrower
           // back to retry would only burn consent sessions for a verdict that is already final.
@@ -140,6 +147,23 @@ export default function KycDigiLockerCallbackPage() {
             </p>
             <button onClick={() => router.push("/loan/digilocker")} className="btn btn-gold btn-block">
               Start DigiLocker again <ArrowRight size={16} />
+            </button>
+          </>
+        ) : phase === "rejected" ? (
+          <>
+            <span className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-error-50 text-error-600">
+              <AlertTriangle size={32} />
+            </span>
+            <h1 className="text-2xl">Your application has been rejected</h1>
+            <p className="mb-6 text-muted">
+              We&apos;re unable to take your application forward. If you believe this is a mistake,
+              please contact our support team.
+            </p>
+            <button onClick={() => router.push("/support")} className="btn btn-outline btn-block">
+              Contact support
+            </button>
+            <button onClick={() => router.push("/")} className="btn btn-gold btn-block mt-3">
+              Back to home
             </button>
           </>
         ) : phase === "failed" ? (

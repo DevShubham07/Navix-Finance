@@ -76,8 +76,8 @@ export default function SettingsPage() {
                 onChange={(v) => setPref({ emailOptIn: v })}
               />
               <ToggleRow
-                label="SMS notifications"
-                description="Due-date and repayment alerts by text message."
+                label="SMS & WhatsApp notifications"
+                description="Due-date and repayment alerts by text message and WhatsApp."
                 on={prefs.smsOptIn}
                 disabled={save.isPending}
                 onChange={(v) => setPref({ smsOptIn: v })}

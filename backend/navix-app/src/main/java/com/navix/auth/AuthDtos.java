@@ -56,10 +56,10 @@ public final class AuthDtos {
     public record SetPasswordRequest(@NotBlank String password) {
     }
 
-    /** Forgot-password: the email + mobile that must match an account before a reset link is sent.
+    /** Forgot-password: the email that must match an account before a reset link is sent — the link
+     *  only ever goes to that inbox, so owning it is the proof; no mobile is asked.
      *  {@code captchaToken}: see {@link StaffLoginRequest}. */
-    public record ForgotPasswordRequest(@NotBlank String email, @NotBlank String mobile,
-                                        String captchaToken) {
+    public record ForgotPasswordRequest(@NotBlank String email, String captchaToken) {
     }
 
     /** Reset-password landing: the one-time token from the email link + the chosen new password. */

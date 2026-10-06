@@ -15,6 +15,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class TemplateRenderer {
 
+    /** Joins a WhatsApp template's ordered parameter values in {@link RenderedMessage#body()}. */
+    public static final String WHATSAPP_PARAM_SEPARATOR = "\u001F";
+
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{(\\w+)\\}");
 
     private final NotificationTemplates templates;

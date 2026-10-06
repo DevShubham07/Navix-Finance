@@ -9,13 +9,12 @@ import { useOffer, completeOfferStep, nextOfferRoute, prevOfferRoute } from "@/l
 import { verificationApi, type StepResult } from "@/lib/api/applications";
 import { formatApiError } from "@/lib/api/errors";
 
-// Primary path = Signzy Liveness Secure: an in-page video journey (passive liveness + face-match
-// against the DigiLocker Aadhaar photo), embedded in an iframe with `allow="camera"` — the provider's
-// designed flow. We poll the backend for the result (our DB is authoritative, mirroring DigiLocker).
-// Fallback = the legacy camera-capture selfie → Digitap face-match, used when Signzy liveness is
-// unavailable (backend returns derived.fallback === true) or init fails.
+// Primary path = camera-capture selfie → Digitap Face Liveness (passive liveness on the one image;
+// no face-match). Secondary = Signzy Liveness Secure: an in-page video journey (liveness + face-match
+// against the DigiLocker Aadhaar photo) in an iframe with `allow="camera"`, polled to completion (our
+// DB is authoritative, mirroring DigiLocker). It runs only when Digitap could not check the selfie —
+// the backend says so with derived.fallback === true, having already parked the selfie for review.
 type Phase =
-  | "idle"
   | "starting"
   | "liveness"
   | "capture-idle"
@@ -29,19 +28,18 @@ const POLL_LIMIT = 45; // ~3 min; then advance so the borrower is never stuck (d
 const next = () => nextOfferRoute("selfie");
 
 /**
- * Screen 6: the face check. Moved from `/signup/selfie` — unchanged in substance, since it already
- * face-matches against the DigiLocker Aadhaar photo, which Phase 3 now captures two screens earlier.
- * Never blocks: a REVIEW or an exhausted retry advances the borrower and drops to staff review.
+ * Screen 6: the face check. Never blocks: a REVIEW, an exhausted retry, or both providers being down
+ * advances the borrower and drops to staff review.
  */
 export default function LoanSelfiePage() {
   const router = useRouter();
   const { appId } = useOffer();
-  const [phase, setPhase] = React.useState<Phase>("idle");
+  const [phase, setPhase] = React.useState<Phase>("capture-idle");
   const [videoUrl, setVideoUrl] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<StepResult | null>(null);
   const [error, setError] = React.useState<string>();
 
-  // Fallback camera-capture state.
+  // Camera-capture state.
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const [failCount, setFailCount] = React.useState(0);
@@ -69,7 +67,7 @@ export default function LoanSelfiePage() {
     }, 700);
   }, [appId, router, stopPoll, stopCamera]);
 
-  // ---- Primary: Signzy liveness video journey ----
+  // ---- Secondary: Signzy liveness video journey ----
   const pollLiveness = React.useCallback(async () => {
     if (appId == null) return;
     try {
@@ -96,24 +94,21 @@ export default function LoanSelfiePage() {
     setResult(null);
     try {
       const r = await verificationApi.selfieLivenessInit(appId);
-      if (r.derived?.fallback === true) {
-        setPhase("capture-idle"); // Signzy liveness unavailable → camera-capture fallback.
-        return;
-      }
       const url = typeof r.derived?.videoUrl === "string" ? (r.derived.videoUrl as string) : null;
-      if (!url) { setPhase("capture-idle"); return; }
+      // Signzy unavailable too: the selfie is already parked for staff review, so move on.
+      if (r.derived?.fallback === true || !url) { advance(); return; }
+      stopCamera();
       setVideoUrl(url);
       setPhase("liveness");
       stopPoll();
       polls.current = 0;
       timer.current = setInterval(() => { void pollLiveness(); }, POLL_MS);
-    } catch (err) {
-      setError(formatApiError(err, "Couldn't start the liveness check — capture a selfie instead."));
-      setPhase("capture-idle");
+    } catch {
+      advance(); // same as above — never hard-block on the secondary.
     }
   };
 
-  // ---- Fallback: camera capture → Digitap face-match ----
+  // ---- Primary: camera capture → Digitap liveness ----
   const startCamera = async () => {
     setError(undefined);
     setResult(null);
@@ -155,6 +150,10 @@ export default function LoanSelfiePage() {
       const { key, url } = await verificationApi.presignUpload(appId, { docType: "SELFIE", fileName: "selfie.jpg", contentType: "image/jpeg" });
       await verificationApi.putToPresignedUrl(url, blob, "image/jpeg");
       const r = await verificationApi.selfie(appId, key);
+      if (r.derived?.fallback === true) {
+        await startLiveness(); // Digitap couldn't check it → Signzy video journey.
+        return;
+      }
       setResult(r);
       if (r.status === "PASS" || r.status === "REVIEW") {
         advance();
@@ -181,11 +180,11 @@ export default function LoanSelfiePage() {
         <h1 className="text-2xl">Verify it&apos;s really you</h1>
         <p className="mx-auto mb-6 max-w-md text-muted">
           {inCaptureMode
-            ? "We couldn't start the quick video check — take a selfie instead. Look straight at the camera in good lighting."
-            : "A quick, secure face check confirms you're a real person and matches you to your Aadhaar photo. It takes a few seconds."}
+            ? "Take a quick selfie so we can confirm you're a real person. Look straight at the camera in good lighting."
+            : "We couldn't check your selfie automatically — complete this quick video check instead. It takes a few seconds."}
         </p>
 
-        {/* Primary: Signzy liveness iframe. allow="camera" delegates camera to the provider frame. */}
+        {/* Secondary: Signzy liveness iframe. allow="camera" delegates camera to the provider frame. */}
         {phase === "liveness" && videoUrl ? (
           <div className="mx-auto mb-4 w-full max-w-sm overflow-hidden rounded-2xl border border-line bg-black">
             <iframe
@@ -197,7 +196,7 @@ export default function LoanSelfiePage() {
           </div>
         ) : null}
 
-        {/* Fallback: camera capture circle. */}
+        {/* Primary: camera capture circle. */}
         {inCaptureMode ? (
           <div className="relative mx-auto mb-3 grid aspect-square w-full max-w-xs place-items-center overflow-hidden rounded-full border-4 border-dashed border-line bg-grey-100">
             <video
@@ -215,8 +214,8 @@ export default function LoanSelfiePage() {
           </div>
         ) : null}
 
-        {/* Idle hero icon (before starting). */}
-        {phase === "idle" || phase === "starting" ? (
+        {/* Hero icon while the video check starts. */}
+        {phase === "starting" ? (
           <div className="relative mx-auto mb-4 grid aspect-square w-full max-w-xs place-items-center overflow-hidden rounded-full border-4 border-dashed border-line bg-grey-100">
             <ScanFace size={64} className="text-muted" />
           </div>
@@ -229,11 +228,7 @@ export default function LoanSelfiePage() {
         ) : null}
 
         {/* Actions */}
-        {phase === "idle" ? (
-          <button onClick={startLiveness} className="btn btn-navy">
-            <ScanFace size={16} /> Start face check
-          </button>
-        ) : phase === "starting" ? (
+        {phase === "starting" ? (
           <div className="flex items-center justify-center gap-2 text-sm text-muted">
             <Loader2 size={16} className="animate-spin" /> Starting…
           </div>

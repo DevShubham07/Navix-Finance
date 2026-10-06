@@ -5,6 +5,7 @@ import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.Loan;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.service.VerificationOutreachService.Channel;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -39,6 +40,10 @@ public final class ApplicationDtos {
      * release skips the accountant gate (also recorded by the accountant on confirmation).
      */
     public record DecisionRequest(boolean decision, Long approvedAmountPaise, String notes, String txnRef) {
+    }
+
+    /** Body for {@code POST .../verifications/{checkType}/resume-link} — how to deliver the link. */
+    public record ShareResumeLinkRequest(@NotNull Channel channel) {
     }
 
     /**

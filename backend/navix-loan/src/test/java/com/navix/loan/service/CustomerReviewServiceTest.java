@@ -17,6 +17,7 @@ import com.navix.loan.dto.ReviewDtos.EditProfileRequest;
 import com.navix.loan.dto.ReviewDtos.ProfileRequest;
 import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.CustomerProfile;
+import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
@@ -60,13 +61,16 @@ class CustomerReviewServiceTest {
     private com.navix.loan.repository.ProfileChangeLogRepository changeLogRepository;
     @Mock
     private ProfileChangeLogger changeLogger;
+    @Mock
+    private com.navix.loan.repository.ApplicationVerificationRepository verificationRepository;
 
     private CustomerReviewService service;
 
     @BeforeEach
     void setUp() {
         service = new CustomerReviewService(applicationRepository, profileRepository, documentRepository,
-                storage, verificationInvalidation, eligibilityService, changeLogRepository, changeLogger);
+                storage, verificationInvalidation, eligibilityService, changeLogRepository, changeLogger,
+                verificationRepository);
         ActorContext.set(BORROWER);
     }
 
@@ -85,6 +89,7 @@ class CustomerReviewServiceTest {
         LoanApplication app = new LoanApplication();
         app.setId(APP_ID);
         app.setCustomerId(CUSTOMER_ID);
+        app.setStatus(ApplicationStatus.DRAFT);
         return app;
     }
 
@@ -146,6 +151,109 @@ class CustomerReviewServiceTest {
         assertThat(saved.getApplicationId()).isEqualTo(APP_ID);
         assertThat(saved.getPan()).isEqualTo("ABCDE1234F");
         assertThat(saved.getMobile()).isEqualTo("9876543210");
+    }
+
+    // ---- V75: Aadhaar number slice ------------------------------------------------------
+
+    private static ProfileRequest aadhaarReq(String aadhaar) {
+        return new ProfileRequest(null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, aadhaar);
+    }
+
+    @Test
+    void storesAValidAadhaarWithCardSpacingStripped() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        CustomerProfile saved = service.saveProfile(APP_ID, aadhaarReq("2345 6789 0124"));
+
+        assertThat(saved.getAadhaar()).isEqualTo("234567890124");
+    }
+
+    @Test
+    void refusesAnAadhaarThatFailsTheChecksum() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("2345 6789 0125")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "INVALID_AADHAAR");
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("12345678")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "INVALID_AADHAAR");
+    }
+
+    @Test
+    void aadhaarIsLockedOnceAVerificationHasReadIt_butTheSameValueMayBeResaved() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        CustomerProfile existing = new CustomerProfile();
+        existing.setApplicationId(APP_ID);
+        existing.setAadhaar("234567890124");
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(existing));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        // The consent step has run the PAN check against the stored number.
+        when(verificationRepository.findByApplicationIdAndCheckType(APP_ID, "PAN"))
+                .thenReturn(Optional.of(new com.navix.loan.entity.ApplicationVerification()));
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("999988887779")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "AADHAAR_LOCKED");
+
+        // Re-saving the identical number (a wizard re-render) is not a change and passes.
+        assertThat(service.saveProfile(APP_ID, aadhaarReq("2345 6789 0124")).getAadhaar())
+                .isEqualTo("234567890124");
+    }
+
+    @Test
+    void aadhaarIsLockedOnceTheApplicationHasLeftDraft() {
+        LoanApplication submitted = application();
+        submitted.setStatus(ApplicationStatus.KYC_PENDING);
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(submitted));
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(new CustomerProfile()));
+
+        assertThatThrownBy(() -> service.saveProfile(APP_ID, aadhaarReq("234567890124")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "AADHAAR_LOCKED");
+    }
+
+    @Test
+    void anAadhaarHeldByAnotherCustomer_isFlaggedForStaffNotRefused() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        when(profileRepository.findOtherCustomerIdsByAadhaar("234567890124", CUSTOMER_ID))
+                .thenReturn(java.util.List.of(11L, 12L));
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.empty());
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        // The borrower's response is the ordinary success — nothing reveals the collision.
+        CustomerProfile saved = service.saveProfile(APP_ID, aadhaarReq("234567890124"));
+        assertThat(saved.getAadhaar()).isEqualTo("234567890124");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(com.navix.loan.entity.ApplicationVerification.class);
+        verify(verificationRepository).save(captor.capture());
+        assertThat(captor.getValue().getCheckType()).isEqualTo("AADHAAR_DUPLICATE");
+        assertThat(captor.getValue().getStatus()).isEqualTo("REVIEW");
+        assertThat(captor.getValue().getDerived()).isEqualTo("{\"otherCustomerIds\":[11,12]}");
+        assertThat(captor.getValue().getMessage()).contains("#11, #12");
+    }
+
+    @Test
+    void correctingTheNumberToOneNobodyElseHolds_clearsTheDuplicateFlag() {
+        when(applicationRepository.findById(APP_ID)).thenReturn(Optional.of(application()));
+        CustomerProfile existing = new CustomerProfile();
+        existing.setApplicationId(APP_ID);
+        existing.setAadhaar("999988887779");
+        when(profileRepository.findByApplicationId(APP_ID)).thenReturn(Optional.of(existing));
+        when(profileRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        com.navix.loan.entity.ApplicationVerification flag = new com.navix.loan.entity.ApplicationVerification();
+        // lenient: the editability guard also asks for PAN / AADHAAR rows (absent) with other args.
+        org.mockito.Mockito.lenient()
+                .when(verificationRepository.findByApplicationIdAndCheckType(APP_ID, "AADHAAR_DUPLICATE"))
+                .thenReturn(Optional.of(flag));
+
+        service.saveProfile(APP_ID, aadhaarReq("234567890124"));
+
+        verify(verificationRepository).delete(flag);
+        verify(verificationRepository, org.mockito.Mockito.never()).save(any());
     }
 
     // ---- document upload gate -------------------------------------------------------

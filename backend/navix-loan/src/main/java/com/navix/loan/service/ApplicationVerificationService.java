@@ -120,6 +120,30 @@ public class ApplicationVerificationService {
     public static final String AADHAAR_FRONT = "AADHAAR_FRONT";
     public static final String AADHAAR_BACK = "AADHAAR_BACK";
     /**
+     * The intake card uploads (V75): both sides of the Aadhaar card, taken on the mandatory
+     * {@code /signup/aadhaar} screen, and both sides of the PAN card from {@code /signup/pan-card}.
+     * Deliberately <b>not</b> the {@link #AADHAAR_FRONT}/{@link #AADHAAR_BACK} pair above — that is the
+     * post-sanction DigiLocker fallback, a different moment with a different reviewer, and staff need
+     * to tell the two uploads apart in the Documents tab. Documents only: no verification row is
+     * written for them, so the offer journey's DigiLocker step still runs ({@code JourneyService}
+     * treats any AADHAAR row as "DigiLocker done"). {@link #intakeCardsComplete} gates submit-kyc.
+     */
+    public static final String AADHAAR_CARD_FRONT = "AADHAAR_CARD_FRONT";
+    public static final String AADHAAR_CARD_BACK = "AADHAAR_CARD_BACK";
+    public static final String PAN_CARD_FRONT = "PAN_CARD_FRONT";
+    public static final String PAN_CARD_BACK = "PAN_CARD_BACK";
+    public static final List<String> INTAKE_CARD_DOC_TYPES =
+            List.of(AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
+    /**
+     * Written by {@code CustomerReviewService.saveProfile} (V75) when the Aadhaar number a borrower
+     * types is already on file for a different customer. A REVIEW row for the credit team — the
+     * borrower is told nothing, so the profile write cannot be used as a "do you hold this number"
+     * oracle, and a genuine returning borrower on a new mobile is not turned away by a hard block.
+     * In {@link #KNOWN_CHECKS} so a reviewer can clear it with the ordinary manual override; gating
+     * on purpose, so the file lands in the dashboard's attention queue until someone has looked.
+     */
+    public static final String AADHAAR_DUPLICATE = "AADHAAR_DUPLICATE";
+    /**
      * The borrower's OTP-verified consent to the credit-bureau enquiry. Deliberately NOT in
      * {@link #REQUIRED} (that would wedge every application whose PAN passed before this shipped)
      * nor in {@link #KNOWN_CHECKS} (staff must not be able to manually assert a borrower's consent).
@@ -190,7 +214,7 @@ public class ApplicationVerificationService {
 
     /** Every recognised check type — guards the staff manual-override target. */
     static final Set<String> KNOWN_CHECKS = Set.of(PAN, EMAIL, ADDRESS, DIGILOCKER, AADHAAR, BUREAU,
-            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN);
+            SALARY, EMPLOYMENT, PENNY_DROP, SELFIE, AGREEMENT, ESIGN, AADHAAR_DUPLICATE);
 
     /**
      * Checks that inform the credit decision but gate nothing, so they stay out of the
@@ -201,9 +225,16 @@ public class ApplicationVerificationService {
     private static final Set<String> OVERVIEW_NON_GATING =
             Set.of(EMPLOYMENT, DIGILOCKER, AGREEMENT, ESIGN);
 
-    /** The gating checks the dashboard counts: every known check that is not {@link #OVERVIEW_NON_GATING}. */
+    /**
+     * The gating checks the dashboard counts: every known check that is not {@link #OVERVIEW_NON_GATING}
+     * — minus {@link #AADHAAR_DUPLICATE}, which exists only on a collision. It must not be a check every
+     * file has to "pass" (almost none have a row), yet when a row IS present and not PASS it still
+     * demands attention: {@link #needsAttention}'s second loop catches it because it is deliberately
+     * absent from {@link #OVERVIEW_NON_GATING}. The frontend mirrors this for free — its bucket maths
+     * only ever subtracts the non-gating list and only requires {@code REQUIRED_CHECKS} to be present.
+     */
     private static final Set<String> OVERVIEW_GATING_CHECKS = KNOWN_CHECKS.stream()
-            .filter(c -> !OVERVIEW_NON_GATING.contains(c))
+            .filter(c -> !OVERVIEW_NON_GATING.contains(c) && !AADHAAR_DUPLICATE.equals(c))
             .collect(Collectors.toUnmodifiableSet());
 
     /** Page-size ceiling for {@link #overview}, mirroring {@code CustomerService.MAX_PAGE_SIZE}. */
@@ -222,6 +253,17 @@ public class ApplicationVerificationService {
      */
     private static final Set<ApplicationStatus> UNDECIDED_STATUSES =
             Set.of(ApplicationStatus.DRAFT, ApplicationStatus.KYC_PENDING, ApplicationStatus.REVIEW_PENDING);
+
+    /**
+     * What the Verification Dashboard lists: the undecided files plus {@code SANCTIONED} ones. The
+     * offer journey's checks (DigiLocker, selfie, address, eSign) run <em>after</em> the credit decision
+     * and a failure there does not block the borrower (revamp.md decision 11) — the dashboard is the one
+     * place it surfaces, and where staff send the "redo this step" link from. The employment-retry sweep
+     * deliberately keeps {@link #UNDECIDED_STATUSES}: re-running EPFO on a sanctioned file is not its job.
+     */
+    private static final Set<ApplicationStatus> DASHBOARD_STATUSES = Set.of(
+            ApplicationStatus.DRAFT, ApplicationStatus.KYC_PENDING, ApplicationStatus.REVIEW_PENDING,
+            ApplicationStatus.SANCTIONED);
 
     private final ApplicationVerificationRepository verificationRepo;
     private final CustomerProfileRepository profileRepo;
@@ -263,7 +305,19 @@ public class ApplicationVerificationService {
     public record StepResult(String checkType, String status, String message,
                              Map<String, Object> derived,
                              String provider, String providerTxnId, String clientRefNum,
-                             Double nameMatch, Long score, Instant checkedAt) {
+                             Double nameMatch, Long score, Instant checkedAt, Instant reopenedAt) {
+
+        /**
+         * The pre-V74 full form. Kept as a secondary constructor (delegating with a null
+         * {@code reopenedAt}) so the ~30 existing {@code new StepResult(...)} call sites — none of
+         * which know about a staff reopen — compile unchanged; only {@link #view} passes the real value.
+         */
+        public StepResult(String checkType, String status, String message, Map<String, Object> derived,
+                          String provider, String providerTxnId, String clientRefNum,
+                          Double nameMatch, Long score, Instant checkedAt) {
+            this(checkType, status, message, derived, provider, providerTxnId, clientRefNum,
+                    nameMatch, score, checkedAt, null);
+        }
 
         /** The short form, for the handful of places that synthesise a result rather than read a row. */
         public StepResult(String checkType, String status, String message, Map<String, Object> derived) {
@@ -373,10 +427,59 @@ public class ApplicationVerificationService {
         derived.put("isSpecified", r.isSpecified());
         derived.put("panNumber", r.panNumber());
         String status = r.valid() ? PASS : FAIL;
+        String message = r.valid() ? "PAN valid" : "PAN not valid";
+        // V75 fraud rule: the Aadhaar number the borrower typed must agree with the masked Aadhaar the
+        // PAN record carries (Fintrix pan_comprehensive returns it; Signzy's 206AB search does not, in
+        // which case there is nothing to compare and DigiLocker completion runs the same check later).
+        String aadhaarMismatch = aadhaarMismatch(profile, r.maskedAadhaar());
+        if (aadhaarMismatch != null) {
+            derived.put("aadhaarMismatch", true);
+            derived.put("applicationRejected", true);
+            message = message + " — Aadhaar mismatch: " + aadhaarMismatch;
+        }
         ApplicationVerification row = upsert(appId, PAN, status, r.provider(), r.txnId(), ref,
-                null, null, null, derived, r.valid() ? "PAN valid" : "PAN not valid");
+                null, null, null, derived, message);
         recomputeNameMatch(appId);
+        if (aadhaarMismatch != null) {
+            rejectForAadhaarMismatch(appId, "PAN record", aadhaarMismatch);
+        }
         return view(row);
+    }
+
+    /**
+     * The V75 cross-check. Null when the two agree or when either side is missing (no number typed —
+     * a pre-V75 file — or a provider that returns no masked Aadhaar); otherwise a staff-readable
+     * description of the disagreement. Compares only the digits the provider's mask reveals
+     * ({@link com.navix.common.util.Aadhaar#matchesMasked}).
+     */
+    static String aadhaarMismatch(CustomerProfile profile, String providerMaskedAadhaar) {
+        String typed = profile != null ? profile.getAadhaar() : null;
+        if (com.navix.common.util.Aadhaar.matchesMasked(typed, providerMaskedAadhaar)
+                != com.navix.common.util.Aadhaar.MaskMatch.MISMATCH) {
+            return null;
+        }
+        return "entered " + com.navix.common.util.Masking.maskAadhaar(typed)
+                + ", provider record " + providerMaskedAadhaar.trim();
+    }
+
+    /**
+     * Auto-reject into the register as {@link ApplicationRejection#FRAUD_REJECTED} with the
+     * {@link ApplicationFlowService#FRAUD_REJECT_BLOCK_DAYS} block. Guarded on the state machine: the
+     * PAN check also runs from the staff retry button on files that are no longer rejectable (e.g.
+     * already disbursed), where the verification row's own mismatch flag is the record and a human
+     * decides. Never lets a rejection failure fail the check that found the problem.
+     */
+    private void rejectForAadhaarMismatch(Long appId, String source, String mismatch) {
+        LoanApplication app = applicationRepo.findById(appId).orElse(null);
+        if (app == null || !app.getStatus().canTransitionTo(ApplicationStatus.REJECTED)) {
+            log.warn("aadhaar mismatch on application={} in status={} — not rejectable, left for review",
+                    appId, app != null ? app.getStatus() : null);
+            return;
+        }
+        flow.autoRejectSystem(appId, ApplicationRejection.FRAUD_REJECTED,
+                "Aadhaar number entered does not match the " + source + " (" + mismatch + ")",
+                ApplicationFlowService.FRAUD_REJECT_BLOCK_DAYS);
+        log.info("application={} auto-rejected FRAUD_REJECTED (aadhaar mismatch vs {})", appId, source);
     }
 
     /** Official email + EPFO employer corroboration. */
@@ -525,7 +628,8 @@ public class ApplicationVerificationService {
      *  excluded — that persistence stays inside {@link #verifySalary}, which also records the declared
      *  monthly salary; this generic path is for documents with no accompanying verification step. */
     private static final java.util.Set<String> UPLOADABLE_DOC_TYPES =
-            java.util.Set.of("BANK_STATEMENT", BANK_PROOF, AADHAAR_FRONT, AADHAAR_BACK);
+            java.util.Set.of("BANK_STATEMENT", BANK_PROOF, AADHAAR_FRONT, AADHAAR_BACK,
+                    AADHAAR_CARD_FRONT, AADHAAR_CARD_BACK, PAN_CARD_FRONT, PAN_CARD_BACK);
 
     /**
      * Persist already-uploaded S3 keys as {@link ApplicationDocument} rows under an arbitrary
@@ -927,9 +1031,11 @@ public class ApplicationVerificationService {
                 && a.fullAddress() != null && !a.fullAddress().isBlank()) {
             profile.setAddress(a.fullAddress());
         }
-        // The raw Aadhaar number is no longer captured or stored — DigiLocker completion just records
-        // the verified status, which is what staff see on the profile card.
-        profile.setAadhaarVerified(true);
+        // V75: the typed Aadhaar number must agree with the one DigiLocker just fetched (last four
+        // digits — the masked form is all the provider returns). A disagreement is the fraud rule, so
+        // the card is NOT marked verified and the file is rejected below once the evidence is stored.
+        String aadhaarMismatch = aadhaarMismatch(profile, a.maskedAadhaar());
+        profile.setAadhaarVerified(aadhaarMismatch == null);
         profileRepo.save(profile);
 
         // Server-side ingest of the e-Aadhaar PDF (bytes never reach the browser). Signzy v2 returns
@@ -982,13 +1088,22 @@ public class ApplicationVerificationService {
         }
 
         Map<String, Object> derived = aadhaarDerived(a);
-        ApplicationVerification row = upsert(appId, AADHAAR, PASS, "DIGILOCKER", a.txnId(), null,
-                null, null, s3Key, derived, "Aadhaar fetched from DigiLocker");
+        if (aadhaarMismatch != null) {
+            derived.put("aadhaarMismatch", true);
+            derived.put("applicationRejected", true);
+        }
+        ApplicationVerification row = upsert(appId, AADHAAR, aadhaarMismatch == null ? PASS : FAIL,
+                "DIGILOCKER", a.txnId(), null, null, null, s3Key, derived,
+                aadhaarMismatch == null ? "Aadhaar fetched from DigiLocker"
+                        : "Aadhaar mismatch: " + aadhaarMismatch);
         double match = recomputeNameMatch(appId);
-        if (match > 0 && match < NAME_MATCH_THRESHOLD) {
+        if (aadhaarMismatch == null && match > 0 && match < NAME_MATCH_THRESHOLD) {
             row.setStatus(REVIEW);
             row.setMessage("Name mismatch vs PAN — manual review");
             verificationRepo.save(row);
+        }
+        if (aadhaarMismatch != null) {
+            rejectForAadhaarMismatch(appId, "Aadhaar DigiLocker returned", aadhaarMismatch);
         }
         // Signzy's requestId is single-use consent state, not customer data. Clear it from the
         // profile and replace the temporary DIGILOCKER row so it cannot be retained in CRM/audits.
@@ -2343,9 +2458,11 @@ public class ApplicationVerificationService {
     }
 
     /**
-     * Face-match the uploaded selfie against the DigiLocker Aadhaar photo (presigned GET URLs → Digitap
-     * Face Match). When no Aadhaar photo has been captured yet, degrades to a single-image face/quality
-     * check on the selfie alone.
+     * The SELFIE step's PRIMARY path: passive liveness on the captured selfie (presigned GET URL →
+     * Digitap Face Liveness v4). Liveness only — the selfie is not compared to the Aadhaar photo here
+     * (product decision, Oct 2026); staff see both images side by side on review. If Digitap cannot run,
+     * the REVIEW row written below is the safety net and {@code derived.fallback=true} tells the
+     * frontend to try the Signzy video journey ({@link #selfieLivenessInit}) as the secondary.
      */
     @Transactional
     public StepResult verifySelfie(Long appId, String selfieObjectKey) {
@@ -2353,13 +2470,15 @@ public class ApplicationVerificationService {
             throw new BusinessException("SELFIE_REQUIRED", "selfieObjectKey is required");
         }
         requireApplication(appId);
+        // The key comes from the client. It must be one this application's own selfie upload was issued
+        // (same folder buildApplicationKey mints) — otherwise a borrower could name another applicant's
+        // stored selfie, pass liveness on that person's face and have it filed as their own.
+        String issued = storage.buildApplicationKey(appId, SELFIE, "jpg");
+        String ownFolder = issued.substring(0, issued.lastIndexOf('/') + 1);
+        if (!selfieObjectKey.startsWith(ownFolder) || selfieObjectKey.contains("..")) {
+            throw new BusinessException("INVALID_SELFIE_KEY", "That selfie upload does not belong to this application");
+        }
         String imageUrl = storage.presignDownload(selfieObjectKey);
-        // Reference photo = the Aadhaar face captured at DigiLocker completion (if present).
-        String referenceUrl = documentRepo
-                .findFirstByApplicationIdAndDocTypeOrderByIdDesc(appId, AADHAAR_PHOTO)
-                .map(d -> storage.presignDownload(d.getS3ObjectKey()))
-                .orElse(null);
-        boolean matched = referenceUrl != null;
         String ref = ref(appId, SELFIE);
 
         // Persist the selfie regardless of the provider outcome, so a KYC approver always has the
@@ -2374,15 +2493,16 @@ public class ApplicationVerificationService {
 
         VerificationPort.FaceLivenessCheck r;
         try {
-            r = verification.faceLiveness(imageUrl, referenceUrl, ref);
+            r = verification.faceLiveness(imageUrl, null, ref);
         } catch (RuntimeException providerFailure) {
-            // The face-match provider couldn't run (e.g. insufficient balance / upstream error).
-            // Don't hard-block onboarding with a 500 — record the selfie for manual review and let the
-            // borrower continue, mirroring the penny-drop step. (Product decision: never stop the
-            // borrower at this step; a KYC approver makes the final call.)
+            // Digitap liveness couldn't run (e.g. insufficient balance / upstream error). Don't
+            // hard-block onboarding with a 500 — record the selfie for manual review so the borrower can
+            // always continue, and flag `fallback` so the frontend tries the Signzy video journey first.
+            // (Product decision: never stop the borrower at this step; a KYC approver makes the final call.)
             Map<String, Object> derived = new LinkedHashMap<>();
-            derived.put("faceMatch", matched);
+            derived.put("faceMatch", false);
             derived.put("providerError", true);
+            derived.put("fallback", true);
             return view(upsert(appId, SELFIE, REVIEW, "DIGITAP", null, ref, null, null, selfieObjectKey,
                     derived,
                     "We couldn't run the face check right now — you can continue; our team will review your selfie."));
@@ -2390,7 +2510,7 @@ public class ApplicationVerificationService {
 
         boolean live = r.live() && !r.multipleFaces();
         Map<String, Object> derived = new LinkedHashMap<>();
-        derived.put("faceMatch", matched);
+        derived.put("faceMatch", false);
         derived.put("live", r.live());
         derived.put("confidence", r.confidence());
         derived.put("personImageBlurry", r.personImageBlurry());
@@ -2398,20 +2518,19 @@ public class ApplicationVerificationService {
         // Fail → flagged for manual review (not hard block); approver decides.
         String status = live ? PASS : REVIEW;
         Long score = r.confidence() != null ? Math.round(r.confidence() * 100) : null;
-        String msg = matched
-                ? (live ? "Face matched to Aadhaar photo" : "Face match low — manual review")
-                : (live ? "Selfie quality check passed" : "Selfie check low — manual review");
+        String msg = live ? "Liveness check passed" : "Liveness check low — manual review";
         return view(upsert(appId, SELFIE, status, r.provider(), r.txnId(), ref, null, score, selfieObjectKey,
                 derived, msg));
     }
 
     /**
-     * Start the Signzy liveness video journey for the SELFIE step (primary path). Uses the DigiLocker
-     * Aadhaar face (if present) as the {@code matchImage} so the journey does liveness AND a 1:1
-     * face-match in one. Persists the session token on the SELFIE row; the frontend redirects the borrower
-     * to {@code derived.videoUrl} and then polls {@link #selfieLivenessResult}. If Signzy liveness is
-     * unavailable (not provisioned / upstream error), returns {@code derived.fallback=true} — the frontend
-     * then uses the camera-capture + Digitap face-match path ({@link #verifySelfie}). Never hard-blocks.
+     * Start the Signzy liveness video journey for the SELFIE step — the SECONDARY path, used only when
+     * Digitap liveness ({@link #verifySelfie}) could not run. Uses the DigiLocker Aadhaar face (if
+     * present) as the {@code matchImage} so the journey does liveness AND a 1:1 face-match in one.
+     * Persists the session token on the SELFIE row; the frontend shows {@code derived.videoUrl} and then
+     * polls {@link #selfieLivenessResult}. If Signzy is unavailable too, returns
+     * {@code derived.fallback=true} and writes nothing, so the REVIEW row {@link #verifySelfie} left
+     * behind stands and the borrower continues to manual review. Never hard-blocks.
      */
     @Transactional
     public StepResult selfieLivenessInit(Long appId) {
@@ -2433,11 +2552,11 @@ public class ApplicationVerificationService {
             return view(upsert(appId, SELFIE, PENDING, s.provider(), s.txnId(), ref, null, null, null,
                     derived, "Liveness session started"));
         } catch (RuntimeException signzyUnavailable) {
-            // Signzy liveness can't run — tell the frontend to fall back to camera capture (Digitap).
+            // Signzy liveness can't run either — both providers are down; the frontend moves on.
             Map<String, Object> derived = new LinkedHashMap<>();
             derived.put("fallback", true);
             return new StepResult(SELFIE, PENDING,
-                    "Liveness unavailable — capture a selfie instead", derived);
+                    "Liveness unavailable — our team will review your selfie", derived);
         }
     }
 
@@ -2941,6 +3060,26 @@ public class ApplicationVerificationService {
                 .orElse(false);
     }
 
+    /**
+     * The other half of the submit-kyc gate (V75): the typed Aadhaar number plus all four intake card
+     * images ({@link #INTAKE_CARD_DOC_TYPES}) must be on file. Kept apart from
+     * {@link #allRequiredPassed} on purpose — that method also annotates bureau-backfill reopens of
+     * files submitted long before these screens existed, which must not read as "incomplete".
+     */
+    @Transactional(readOnly = true)
+    public boolean intakeCardsComplete(Long appId) {
+        boolean numberTyped = profileRepo.findByApplicationId(appId)
+                .map(p -> p.getAadhaar() != null && !p.getAadhaar().isBlank())
+                .orElse(false);
+        if (!numberTyped) {
+            return false;
+        }
+        Set<String> present = documentRepo.findByApplicationIdOrderByIdAsc(appId).stream()
+                .map(ApplicationDocument::getDocType)
+                .collect(Collectors.toSet());
+        return present.containsAll(INTAKE_CARD_DOC_TYPES);
+    }
+
     /** A check has been attempted once it holds any terminal status — PENDING/absent means never run. */
     private static boolean attempted(String status) {
         return PASS.equals(status) || REVIEW.equals(status) || FAIL.equals(status);
@@ -3181,7 +3320,13 @@ public class ApplicationVerificationService {
                 .findFirst()
                 .orElse(null);
         boolean aadhaarSettled = PASS.equals(aadhaarStatus) || REVIEW.equals(aadhaarStatus);
+        // AADHAAR_DUPLICATE is staff-only evidence (V75): shown to a borrower it would hand back the very
+        // "is this number known to you" answer the silent flag exists to withhold, plus other customers'
+        // ids. Dropped from the borrower's read entirely, not merely redacted.
+        CurrentActor reader = ActorContext.get();
+        boolean borrowerReading = reader != null && "BORROWER".equals(reader.role());
         return rows.stream()
+                .filter(row -> !(borrowerReading && AADHAAR_DUPLICATE.equals(row.getCheckType())))
                 .map(row -> {
                     if (DIGILOCKER.equals(row.getCheckType()) && aadhaarSettled
                             && !PASS.equals(row.getStatus()) && !REVIEW.equals(row.getStatus())) {
@@ -3309,15 +3454,13 @@ public class ApplicationVerificationService {
      * As {@link #requireCreditTeam(String)}, plus any {@code extraRoles} the caller wants let through
      * (used by {@link #sendKycReminder} to also allow TELECALLER — work item 10 — without loosening
      * the manual verification override, which stays credit-team/admin only).
+     *
+     * <p>Delegates to {@link CreditTeamGuard} so {@link VerificationOutreachService} and
+     * {@link BureauChallengeOutreachService#notifyApplication} share the exact same role list instead
+     * of each carrying their own copy of it.
      */
     private void requireCreditTeamOr(String what, String... extraRoles) {
-        String role = ActorContext.get().role();
-        boolean core = "CREDIT_EXECUTIVE".equals(role) || "CREDIT_HEAD".equals(role) || "ADMIN".equals(role);
-        boolean extra = extraRoles != null && java.util.Arrays.asList(extraRoles).contains(role);
-        if (!core && !extra) {
-            throw new BusinessException("FORBIDDEN_ROLE",
-                    what + " requires CREDIT_EXECUTIVE or CREDIT_HEAD");
-        }
+        CreditTeamGuard.requireCreditTeamOr(what, extraRoles);
     }
 
     @Transactional
@@ -3338,8 +3481,11 @@ public class ApplicationVerificationService {
         // derived holds the score aggregates, any identityMismatch, and the KBA question + its
         // order/report ids — wiping any of them would blank the very evidence the reviewer just acted
         // on, and for BUREAU would also destroy the handles needed to ever answer that challenge.
+        // AADHAAR_DUPLICATE (V75) likewise: its derived is the list of other customers holding the
+        // number, which is the whole audit trail of what the reviewer compared.
         Map<String, Object> derived = Map.of();
-        if (PENNY_DROP.equals(type) || EMPLOYMENT.equals(type) || BUREAU.equals(type)) {
+        if (PENNY_DROP.equals(type) || EMPLOYMENT.equals(type) || BUREAU.equals(type)
+                || AADHAAR_DUPLICATE.equals(type)) {
             derived = new LinkedHashMap<>(derivedFor(appId, type));
             derived.put("manualOverride", true);
             derived.put("manualBy", actor);
@@ -3441,9 +3587,10 @@ public class ApplicationVerificationService {
      * pending / never-run) plus the verification rows, enriched with borrower context and filterable by
      * status, check type and a free-text query (borrower name / application id / customer id).
      *
-     * <p>Scoped to {@link #UNDECIDED_STATUSES} — "every application that needs a KYC decision" is this
-     * page's own subtitle, so an already-decided application's checks are historical evidence, not
-     * triage work, here just as they are on the frontend's client-side card grouping. This used to load
+     * <p>Scoped to {@link #DASHBOARD_STATUSES} — the files that still need a KYC decision, plus the
+     * sanctioned ones still walking the offer journey (whose DigiLocker/selfie/address/eSign checks are
+     * live triage work, not history). A disbursed or closed application's checks are historical evidence
+     * and stay out, here just as they do in the frontend's client-side card grouping. This used to load
      * {@code verificationRepo.findAll()}, {@code applicationRepo.findAll()} and
      * {@code profileRepo.findAll()} — the whole company's history, unfiltered — which was always the
      * wrong scope for what this method reports, and at production data volumes made the endpoint take
@@ -3452,7 +3599,7 @@ public class ApplicationVerificationService {
     @Transactional(readOnly = true)
     public VerificationOverview overview(String statusFilter, String checkTypeFilter, String q,
                                          Boolean needsAttention, int page, int size) {
-        List<LoanApplication> undecided = applicationRepo.findByStatusIn(UNDECIDED_STATUSES);
+        List<LoanApplication> undecided = applicationRepo.findByStatusIn(DASHBOARD_STATUSES);
         Map<Long, LoanApplication> appById = undecided.stream()
                 .collect(Collectors.toMap(LoanApplication::getId, a -> a, (a, b) -> a));
         int safeSize = Math.max(1, Math.min(size, OVERVIEW_MAX_PAGE_SIZE));
@@ -3618,6 +3765,10 @@ public class ApplicationVerificationService {
             row.setS3ObjectKey(s3Key);
         }
         row.setDerived(toJson(derived));
+        // A fresh result closes any staff reopen (V74) — the borrower's own redo is what a reopen was
+        // waiting for, whatever it comes out as (PASS, REVIEW, or another FAIL).
+        row.setReopenedAt(null);
+        row.setReopenedBy(null);
         // Full CRM snapshot: provider provenance + every derived field we persisted for this step.
         Map<String, Object> raw = new LinkedHashMap<>();
         raw.put("provider", nz(provider));
@@ -3734,7 +3885,8 @@ public class ApplicationVerificationService {
         return new StepResult(row.getCheckType(), row.getStatus(), row.getMessage(), derived,
                 row.getProvider(), row.getProviderTxnId(), row.getClientRefNum(),
                 row.getNameMatch(), row.getScore(),
-                row.getUpdatedAt() != null ? row.getUpdatedAt() : row.getCreatedAt());
+                row.getUpdatedAt() != null ? row.getUpdatedAt() : row.getCreatedAt(),
+                row.getReopenedAt());
     }
 
     /** Cross-match PAN / Aadhaar / penny-drop names; store min pairwise on the profile. */

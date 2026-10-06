@@ -4,6 +4,7 @@ import com.navix.common.entity.BaseAuditEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -70,4 +71,17 @@ public class ApplicationVerification extends BaseAuditEntity {
 
     @Column(name = "message", length = 1000)
     private String message;
+
+    /**
+     * When a staffer reopened this step for the customer to redo (V74, "send a resume link"). Null
+     * once the borrower's own next write ({@code ApplicationVerificationService.upsert}) closes it.
+     * {@code JourneyService.attemptedChecks} ignores a row while this is set, so the reopened step
+     * actually resumes instead of the borrower bouncing past it.
+     */
+    @Column(name = "reopened_at")
+    private Instant reopenedAt;
+
+    /** Staff id who reopened this step; null unless {@link #reopenedAt} is set. */
+    @Column(name = "reopened_by", length = 64)
+    private String reopenedBy;
 }

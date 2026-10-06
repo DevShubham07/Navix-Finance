@@ -38,6 +38,16 @@ public class CustomerProfile extends BaseAuditEntity {
     @Column(name = "pan", length = 10)
     private String pan;
 
+    /**
+     * The 12-digit Aadhaar number the borrower types on the intake Aadhaar-card screen (V75). Stored
+     * in FULL and shown to staff unmasked — a product decision that reversed V35, because the number
+     * now feeds the fraud rule: it is cross-checked (on the digits the mask reveals) against the masked
+     * Aadhaar the PAN record and DigiLocker return, and a mismatch auto-rejects the application
+     * ({@code ApplicationRejection.FRAUD_REJECTED}). Verhoeff-validated and unique across customers.
+     */
+    @Column(name = "aadhaar", length = 12)
+    private String aadhaar;
+
     /** Borrower's mobile (normalised to 10 digits); surfaced masked. Unique across customers. */
     @Column(name = "mobile", length = 15)
     private String mobile;

@@ -155,7 +155,7 @@ class CollectionsServiceTest {
         return new LoanSummary(loanId, 7L, 1L, "ACTIVE",
                 800_000L, 705_600L, 1_040_000L, 1_040_000L,
                 LocalDate.now().minusDays(30), dueDate,
-                "Asha Verma", "ABXXXXX34F", "Acme Corp", "SALARIED", 3_200_000L, "HDFC",
+                "Asha Verma", "ABXXXXX34F", "9876543210", "Acme Corp", "SALARIED", 3_200_000L, "HDFC",
                 dueDate != null && dueDate.isAfter(LocalDate.now()));
     }
 
@@ -203,7 +203,7 @@ class CollectionsServiceTest {
     void worklistDropsSettledLoans() {
         LoanSummary closed = new LoanSummary(4L, 7L, 1L, "CLOSED", 800_000L, 705_600L, 1_040_000L, 0L,
                 LocalDate.now().minusDays(30), LocalDate.now().minusDays(2),
-                "Asha Verma", "ABXXXXX34F", "Acme Corp", "SALARIED", 3_200_000L, "HDFC", false);
+                "Asha Verma", "ABXXXXX34F", "9876543210", "Acme Corp", "SALARIED", 3_200_000L, "HDFC", false);
         when(loanDirectory.listCollectible(any())).thenReturn(java.util.List.of(closed));
 
         assertThat(service.worklist(LocalDate.now())).isEmpty();
@@ -413,7 +413,7 @@ class CollectionsServiceTest {
         CollectionCase c = existingCase();
         LoanSummary closed = new LoanSummary(2L, 7L, 1L, "CLOSED", 800_000L, 705_600L, 1_040_000L, 0L,
                 LocalDate.now().minusDays(30), LocalDate.now().minusDays(2),
-                "Asha Verma", "ABXXXXX34F", "Acme Corp", "SALARIED", 3_200_000L, "HDFC", false);
+                "Asha Verma", "ABXXXXX34F", "9876543210", "Acme Corp", "SALARIED", 3_200_000L, "HDFC", false);
         when(caseRepository.findAll(any(org.springframework.data.domain.Sort.class)))
                 .thenReturn(List.of(c));
         when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of(2L, closed));

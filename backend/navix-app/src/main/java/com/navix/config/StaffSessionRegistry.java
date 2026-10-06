@@ -1,5 +1,6 @@
 package com.navix.config;
 
+import com.navix.iam.domain.StaffStatus;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
 import java.time.Duration;
@@ -30,7 +31,7 @@ public class StaffSessionRegistry {
     private final StaffUserRepository staffRepository;
     private final Map<Long, CachedSession> cache = new ConcurrentHashMap<>();
 
-    private record CachedSession(String sessionId, Instant expiresAt) {
+    private record CachedSession(String sessionId, boolean active, Instant expiresAt) {
     }
 
     public StaffSessionRegistry(StaffUserRepository staffRepository) {
@@ -38,27 +39,32 @@ public class StaffSessionRegistry {
     }
 
     /**
-     * True when {@code sessionId} is the staffer's CURRENT session. A token with no {@code sid}
-     * claim (minted before this feature shipped) is grandfathered as current, so deploying this
-     * change never signs anyone out on its own — only the staffer's NEXT login starts enforcing it.
+     * Is this session still valid: the account is ACTIVE, AND {@code sessionId} is the staffer's
+     * CURRENT session. A disabled (or still-INVITED) account fails regardless of {@code sessionId} —
+     * including a sid-less token — so disabling an account ends every session it holds, not just the
+     * ones minted after single-session tracking shipped. A token with no {@code sid} claim (minted
+     * before that feature shipped) is otherwise grandfathered as current, so deploying this change
+     * never signs anyone out on its own — only the staffer's NEXT login starts enforcing it. A staff
+     * row that can't be found is left exactly as permissive as today (grandfathered current) rather
+     * than treated as disabled.
      */
     public boolean isCurrent(String staffId, String sessionId) {
-        if (sessionId == null) {
-            return true;
-        }
         Long id = parse(staffId);
         if (id == null) {
             return true;
         }
         CachedSession cached = cache.get(id);
-        String current;
-        if (cached != null && Instant.now().isBefore(cached.expiresAt())) {
-            current = cached.sessionId();
-        } else {
-            current = staffRepository.findById(id).map(StaffUser::getActiveSessionId).orElse(null);
-            cache.put(id, new CachedSession(current, Instant.now().plus(TTL)));
+        if (cached == null || !Instant.now().isBefore(cached.expiresAt())) {
+            cached = staffRepository.findById(id)
+                    .map(s -> new CachedSession(s.getActiveSessionId(), s.getStatus() == StaffStatus.ACTIVE,
+                            Instant.now().plus(TTL)))
+                    .orElse(new CachedSession(null, true, Instant.now().plus(TTL)));
+            cache.put(id, cached);
         }
-        return current == null || current.equals(sessionId);
+        if (!cached.active()) {
+            return false;
+        }
+        return sessionId == null || cached.sessionId() == null || cached.sessionId().equals(sessionId);
     }
 
     /** Evict the cached session id for {@code staffId} so the next request re-reads the database. */

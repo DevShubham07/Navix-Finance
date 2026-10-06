@@ -78,9 +78,10 @@ public class StaffService {
     public StaffResponse updateStaff(Long id, UpdateStaffRequest request) {
         requireAdmin();
         StaffUser staff = requireStaff(id);
+        guardSelfModify(staff, request.status(), request.role());
         StaffRole previousRole = staff.getRole();
+        applyStatus(staff, request.status());
         staff.setRole(request.role());
-        staff.setStatus(request.status());
         StaffUser saved = staffUserRepository.save(staff);
         if (previousRole != request.role()) {
             eventPublisher.publishEvent(new StaffAccountEvent(saved.getId(), saved.getEmail(), saved.getName(),
@@ -94,10 +95,50 @@ public class StaffService {
     public void disableStaff(Long id) {
         requireAdmin();
         StaffUser staff = requireStaff(id);
-        staff.setStatus(StaffStatus.DISABLED);
+        guardSelfModify(staff, StaffStatus.DISABLED, staff.getRole());
+        applyStatus(staff, StaffStatus.DISABLED);
         staffUserRepository.save(staff);
-        eventPublisher.publishEvent(new StaffAccountEvent(staff.getId(), staff.getEmail(), staff.getName(),
-                staff.getRole().name(), StaffAccountEvent.ChangeType.DISABLED, null, Instant.now()));
+    }
+
+    /**
+     * An admin may not disable or reassign their own account — the caller's identity comes from
+     * {@link #currentStaffId()}, not anything the request body claims.
+     */
+    private void guardSelfModify(StaffUser staff, StaffStatus newStatus, StaffRole newRole) {
+        boolean disabling = newStatus == StaffStatus.DISABLED;
+        boolean roleChange = newRole != staff.getRole();
+        if ((disabling || roleChange) && staff.getId().equals(currentStaffId())) {
+            throw new BusinessException("SELF_MODIFY", "You cannot disable or change the role of your own account");
+        }
+    }
+
+    /**
+     * Validate and apply a status transition, shared by {@link #updateStaff} and {@link
+     * #disableStaff}. A no-op transition (same → same) is left alone. Throws {@code
+     * ILLEGAL_TRANSITION} for anything {@link StaffStatus#canTransitionTo} forbids — in particular,
+     * nothing may move back to {@code INVITED} — and {@code LAST_ADMIN} when disabling the last
+     * ACTIVE admin. Publishes {@code StaffAccountEvent(DISABLED)} whenever the status becomes
+     * DISABLED; {@code updateStaff}'s ROLE_CHANGED event is published separately by its caller.
+     */
+    private void applyStatus(StaffUser staff, StaffStatus newStatus) {
+        StaffStatus previous = staff.getStatus();
+        if (previous == newStatus) {
+            return;
+        }
+        if (!previous.canTransitionTo(newStatus)) {
+            throw new BusinessException("ILLEGAL_TRANSITION",
+                    "Cannot move a staff account from " + previous + " to " + newStatus);
+        }
+        if (newStatus == StaffStatus.DISABLED && previous == StaffStatus.ACTIVE
+                && staff.getRole() == StaffRole.ADMIN
+                && staffUserRepository.countByRoleAndStatus(StaffRole.ADMIN, StaffStatus.ACTIVE) <= 1) {
+            throw new BusinessException("LAST_ADMIN", "At least one ACTIVE admin must remain");
+        }
+        staff.setStatus(newStatus);
+        if (newStatus == StaffStatus.DISABLED) {
+            eventPublisher.publishEvent(new StaffAccountEvent(staff.getId(), staff.getEmail(), staff.getName(),
+                    staff.getRole().name(), StaffAccountEvent.ChangeType.DISABLED, null, Instant.now()));
+        }
     }
 
     /** The calling staffer's own account (resolved from the JWT subject). Any authenticated staff. */

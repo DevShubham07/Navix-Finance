@@ -7,6 +7,7 @@ import com.navix.common.notification.event.CollectionCaseOpenedEvent;
 import com.navix.common.notification.event.CollectionPaymentDecidedEvent;
 import com.navix.common.notification.event.CollectionPaymentRaisedEvent;
 import com.navix.common.notification.event.BureauQuestionPendingEvent;
+import com.navix.common.notification.event.VerificationStepLinkEvent;
 import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ProviderHealthEvent;
@@ -28,6 +29,8 @@ import com.navix.notification.dispatch.NotificationContext;
 import com.navix.notification.dispatch.NotificationDispatcher;
 import com.navix.notification.email.EmailAttachment;
 import com.navix.notification.template.NotificationFormat;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.util.List;
 import org.slf4j.Logger;
@@ -126,6 +129,25 @@ public class NotificationEventListener {
                 .applicationId(e.applicationId())
                 .put("questionLink",
                         frontendBaseUrl + "/login?next=/credit-question%3FappId%3D" + e.applicationId())
+                .build());
+    }
+
+    /**
+     * The credit team's "send a resume link" nudge for a failed/abandoned Phase-3 step
+     * ({@code VerificationOutreachService.share}, EMAIL channel). {@code route} is the bare offer-step
+     * path (e.g. {@code /loan/selfie}); the borrower must log in first, so the link sent is the same
+     * {@code /login?next=<route>} shape as {@link #onBureauQuestionPending}.
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onVerificationStepLink(VerificationStepLinkEvent e) {
+        String stepLink = frontendBaseUrl + "/login?next="
+                + URLEncoder.encode(e.route(), StandardCharsets.UTF_8);
+        dispatcher.dispatch(NotificationType.VERIFICATION_STEP_LINK, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("stepLabel", e.stepLabel())
+                .put("stepLink", stepLink)
                 .build());
     }
 

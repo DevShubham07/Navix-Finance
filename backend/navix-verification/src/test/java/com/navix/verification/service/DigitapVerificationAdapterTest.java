@@ -14,17 +14,19 @@ import static org.mockito.Mockito.when;
 import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.verification.VerificationPort.BureauCheck;
 import com.navix.common.verification.VerificationPort.EmailCheck;
+import com.navix.common.verification.VerificationPort.FaceLivenessCheck;
 import com.navix.common.verification.VerificationPort.PanCheck;
 import com.navix.verification.client.DigitapAddressClient;
 import com.navix.verification.client.DigitapCreditClient;
 import com.navix.verification.client.DigitapCrifClient;
 import com.navix.verification.client.DigitapEmailClient;
-import com.navix.verification.client.DigitapFaceMatchClient;
+import com.navix.verification.client.DigitapFaceLivenessClient;
 import com.navix.verification.client.DigitapPanClient;
 import com.navix.verification.client.DigitapUanClient;
 import com.navix.verification.dto.DigitapDtos.CreditResponse;
 import com.navix.verification.dto.DigitapDtos.CrifResponse;
 import com.navix.verification.dto.DigitapDtos.EmailResponse;
+import com.navix.verification.dto.DigitapDtos.FaceLivenessResponse;
 import com.navix.verification.dto.DigitapDtos.PanResponse;
 import com.navix.verification.exception.CapabilityNotSupportedException;
 import com.navix.verification.exception.VerificationException;
@@ -51,13 +53,13 @@ class DigitapVerificationAdapterTest {
     private final DigitapAddressClient addressClient = mock(DigitapAddressClient.class);
     private final DigitapCrifClient crifClient = mock(DigitapCrifClient.class);
     private final DigitapCreditClient creditClient = mock(DigitapCreditClient.class);
-    private final DigitapFaceMatchClient faceMatchClient = mock(DigitapFaceMatchClient.class);
+    private final DigitapFaceLivenessClient faceLivenessClient = mock(DigitapFaceLivenessClient.class);
     private final DigitapUanClient uanClient = mock(DigitapUanClient.class);
     private final FeatureFlagService featureFlags = mock(FeatureFlagService.class);
 
     private final DigitapVerificationAdapter adapter = new DigitapVerificationAdapter(
             panClient, emailClient, addressClient, crifClient, creditClient,
-            faceMatchClient, uanClient, featureFlags);
+            faceLivenessClient, uanClient, featureFlags);
 
     private void crifEnabled(boolean on) {
         when(featureFlags.isEnabled(eq(CRIF_FLAG), anyBoolean())).thenReturn(on);
@@ -199,5 +201,37 @@ class DigitapVerificationAdapterTest {
         assertThat(r.verified()).isTrue();
         assertThat(r.matchedEstablishment()).isEqualTo("ACME PVT LTD");
         verify(emailClient).verify("a@b.com", "John Doe", "ACME", "ref");
+    }
+
+    /**
+     * The selfie check is Face Liveness v4 on the selfie alone. The reference (Aadhaar) photo the port
+     * still carries must never reach Digitap — this product does no document face-match, and the
+     * verdict is the provider's {@code is_live}, not a match score.
+     */
+    @Test
+    void faceLivenessSendsOnlyTheSelfieAndMapsTheVerdict() {
+        when(faceLivenessClient.check("https://s3/selfie.jpg", "ref"))
+                .thenReturn(new FaceLivenessResponse("REQ-FL-1", true, 0.97, true, false));
+
+        FaceLivenessCheck r = adapter.faceLiveness("https://s3/selfie.jpg", "https://s3/aadhaar.jpg", "ref");
+
+        assertThat(r.provider()).isEqualTo("DIGITAP");
+        assertThat(r.txnId()).isEqualTo("REQ-FL-1");
+        assertThat(r.live()).isTrue();
+        assertThat(r.confidence()).isEqualTo(0.97);
+        assertThat(r.multipleFaces()).isTrue();
+        assertThat(r.personImageBlurry()).isFalse();
+    }
+
+    /** A response with no verdict at all is "not live", never a pass by omission. */
+    @Test
+    void faceLivenessWithNoVerdictIsNotLive() {
+        when(faceLivenessClient.check("https://s3/selfie.jpg", "ref"))
+                .thenReturn(new FaceLivenessResponse("REQ-FL-2", null, null, null, null));
+
+        FaceLivenessCheck r = adapter.faceLiveness("https://s3/selfie.jpg", null, "ref");
+
+        assertThat(r.live()).isFalse();
+        assertThat(r.multipleFaces()).isFalse();
     }
 }

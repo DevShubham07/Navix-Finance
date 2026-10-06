@@ -23,7 +23,9 @@ math, schema and endpoints lives once in §5/§7/§9/§10/§11.
 
 **KYC, credit & disbursement**
 - **Two-phase borrower journey** (V44/V46) — a **Phase-1 intake** (`JourneyService.Step`: otp ·
-  set-password · employment · employer · email · bank · payslips · consent · submitted), then, after a
+  set-password · employment · employer · email · bank · payslips · aadhaar · pan-card · consent ·
+  submitted — the two card screens are V75: typed Aadhaar number + both card sides, both PAN sides,
+  all mandatory before submit, with the Aadhaar-mismatch `FRAUD_REJECTED` rule), then, after a
   Credit Executive sanctions, a **Phase-3 offer journey** (`OfferStep`: amount · repayment-date ·
   DigiLocker · references · summary · selfie · address · sanction-letter · eSign · 🎉 · disbursal
   account). Resume is answered **server-side** (`GET …/journey`), not from localStorage. Each
@@ -160,12 +162,17 @@ logins and seed data are in §4. Remaining go-live work is in §13 / `PRODUCTION
   (`applicant_profile` ↔ onboarding `Borrower`); PII-at-rest encryption.
 - 🔴 Persisted `borrower_standing` table (standing is recomputed from loan history today); design-system
   polish; full-Aadhaar masking; compliance/regulatory alignment (NBFC/DLG, reporting, product copy).
-- ⚠️ **Known exception to "never store the raw Aadhaar number".** The manual-proof fallbacks store
-  borrower-uploaded images of identity and bank instruments: `AADHAAR_FRONT` / `AADHAAR_BACK` (the
-  DigiLocker alternative) and `BANK_PROOF` (a cancelled cheque or passbook, the penny-drop
-  alternative). An Aadhaar card image necessarily carries the **full** Aadhaar number, so these
-  documents are a deliberate, product-approved exception to the masking rule stated in the security
-  guidance — not an oversight. They are handled exactly like every other KYC document (S3, SSE-KMS,
+- ⚠️ **The raw Aadhaar number is stored again (V75, product decision 2026-10-03).** V35 had dropped it;
+  it came back because the intake `/signup/aadhaar` screen types it and the fraud rule compares it with
+  the provider's masked copy. It sits in plaintext on `customer_profile.aadhaar`, is Verhoeff-validated
+  and unique across customers, is masked on the staff change-log timeline, and is shown **unmasked to
+  every staff role and ADMIN** on the customer Personal tab and the applicant review panel. PII-at-rest
+  encryption (D4) now covers one more column. The card images are likewise on file for everyone: the
+  mandatory signup uploads `AADHAAR_CARD_FRONT` / `AADHAAR_CARD_BACK` + `PAN_CARD_FRONT` / `PAN_CARD_BACK`,
+  and the older manual-proof fallbacks `AADHAAR_FRONT` / `AADHAAR_BACK` (the DigiLocker alternative) and
+  `BANK_PROOF` (a cancelled cheque or passbook, the penny-drop alternative). An Aadhaar card image
+  necessarily carries the **full** Aadhaar number, so these documents are a deliberate, product-approved
+  exception to the masking rule stated in the security guidance — not an oversight. They are handled exactly like every other KYC document (S3, SSE-KMS,
   short-lived presigned GETs, never logged, never exported), and are readable by any staff role that
   can already open a document. Two consequences to weigh before an audit or a masking pass: the
   images are **not** redacted at rest, and the presigned-URL route is **not** narrowed to the roles

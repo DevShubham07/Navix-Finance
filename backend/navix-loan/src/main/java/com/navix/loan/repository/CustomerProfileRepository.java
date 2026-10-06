@@ -26,6 +26,14 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
      */
     Optional<CustomerProfile> findFirstByMobileOrderByApplicationIdDesc(String mobile);
 
+    /**
+     * The most recently captured profile for an email address (latest application wins, mirroring
+     * {@link #findFirstByMobileOrderByApplicationIdDesc}). Backs the email-only borrower
+     * forgot-password lookup — the reset link only ever goes to that inbox, so a matching mobile is
+     * no longer required.
+     */
+    Optional<CustomerProfile> findFirstByEmailIgnoreCaseOrderByApplicationIdDesc(String email);
+
     // --- identity uniqueness (a mobile/PAN may belong to only one customer) ---
     // Scoped to OTHER customers: a profile is matched by joining its application to resolve the
     // owning customerId, then excluding the queried customer. This lets the SAME customer
@@ -38,6 +46,18 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
     @Query("select (count(p) > 0) from CustomerProfile p, LoanApplication a "
             + "where p.applicationId = a.id and p.mobile = :mobile and a.customerId <> :customerId")
     boolean existsMobileForOtherCustomer(@Param("mobile") String mobile, @Param("customerId") Long customerId);
+
+    /**
+     * The OTHER customers already holding this Aadhaar number (V75). Unlike the PAN / mobile rules
+     * above this is not a hard block: a collision is written as an {@code AADHAAR_DUPLICATE} review
+     * row for the credit team, never reported to the borrower — so the write path cannot be used to
+     * probe which numbers we hold, and a genuine returning borrower on a new mobile is not refused.
+     */
+    @Query("select distinct a.customerId from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and p.aadhaar = :aadhaar and a.customerId <> :customerId "
+            + "order by a.customerId")
+    java.util.List<Long> findOtherCustomerIdsByAadhaar(@Param("aadhaar") String aadhaar,
+                                                       @Param("customerId") Long customerId);
 
     /**
      * Every mobile this customer has on file across their applications, newest application first.

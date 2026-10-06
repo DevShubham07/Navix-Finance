@@ -212,6 +212,7 @@ public class LoanDirectoryAdapter implements LoanDirectory {
                 loan.getDueDate(),
                 profile != null ? profile.getFullName() : null,
                 profile != null ? profile.getPan() : null,
+                profile != null ? profile.getMobile() : null,
                 profile != null ? profile.getEmployer() : null,
                 profile != null ? profile.getEmploymentStatus() : null,
                 profile != null ? profile.getMonthlySalaryPaise() : null,

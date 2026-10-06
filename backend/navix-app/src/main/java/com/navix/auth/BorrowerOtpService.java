@@ -2,6 +2,7 @@ package com.navix.auth;
 
 import com.navix.common.exception.BusinessException;
 import com.navix.common.verification.OtpVerifierPort;
+import com.navix.common.whatsapp.WhatsAppGateway;
 import com.navix.sms.SmsException;
 import com.navix.sms.SmsProperties;
 import com.navix.sms.UltronSmsClient;
@@ -38,6 +39,7 @@ public class BorrowerOtpService implements OtpVerifierPort {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final UltronSmsClient smsClient;
+    private final WhatsAppGateway whatsApp;
     private final SmsProperties props;
     private final AttemptLimiter limiter;
     private final Map<String, Otp> store = new ConcurrentHashMap<>();
@@ -81,6 +83,13 @@ public class BorrowerOtpService implements OtpVerifierPort {
             } catch (SmsException e) {
                 // No PII / code in the log; surfaced to the caller via sent=false.
                 log.warn("OTP SMS delivery failed: {}", e.getMessage());
+            }
+            // Same code over WhatsApp (AUTHENTICATION template) — a second route when SMS/DLT fails.
+            try {
+                whatsApp.sendOtp("91" + number, code);
+                sent = true;
+            } catch (RuntimeException e) {
+                log.warn("OTP WhatsApp delivery failed: {}", e.getMessage());
             }
         }
         // Surface the code to the caller in mock or dev-echo mode (never in real prod).

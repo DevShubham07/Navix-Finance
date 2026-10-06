@@ -2,15 +2,14 @@
 
 import * as React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, X, ChevronRight } from "lucide-react";
-import { Input } from "@/components/ui";
+import { Loader2, RefreshCw, X, ChevronRight } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { staffApi, type VerificationOverviewRow } from "@/lib/api/applications";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatDateTime } from "@/lib/utils";
 
 /** The four application-wise buckets, in triage priority order. */
@@ -24,17 +23,23 @@ const BUCKETS: { key: Bucket; label: string; accent: string }[] = [
 ];
 
 /**
- * Application statuses that still need a KYC decision — the only ones this dashboard triages.
- * Rows for already-decided applications (KYC_APPROVED onward, rejected, closed…) are historical
- * evidence, not work, and would pollute the buckets forever.
+ * Application statuses this dashboard triages — mirrors `ApplicationVerificationService.DASHBOARD_STATUSES`.
+ * The files still awaiting a KYC decision, plus SANCTIONED ones still walking the offer journey: their
+ * DigiLocker / selfie / address / eSign checks run after the credit decision and never block the borrower,
+ * so a failure there surfaces only here — and this is where staff send the "redo this step" link from.
+ * Rows for anything past disbursal (or rejected, closed…) are historical evidence, not work, and would
+ * pollute the buckets forever.
  */
-const UNDECIDED_STATUSES = ["DRAFT", "KYC_PENDING", "REVIEW_PENDING"];
+const UNDECIDED_STATUSES = ["DRAFT", "KYC_PENDING", "REVIEW_PENDING", "SANCTIONED"];
 
 /**
- * The checks a borrower must clear (PASS/REVIEW) before submit-kyc — mirrors backend
- * `ApplicationVerificationService.REQUIRED`. Needed so an application whose required checks were
- * never RUN (no row at all) isn't mistaken for "all checks passed" just because the few rows it
- * does have are green.
+ * The checks a borrower must clear (PASS/REVIEW) before this dashboard calls an application "all
+ * checks passed" — the union of the backend's two gates: `ApplicationVerificationService.REQUIRED`
+ * (PAN, EMAIL, BUREAU, SALARY, gating submit-kyc) and `REQUIRED_SANCTION` (AADHAAR, SELFIE, ADDRESS,
+ * ESIGN, gating sanction). PENNY_DROP gates nothing server-side; it stays here only so a dashboard
+ * card isn't marked "all checks passed" ahead of the penny-drop step later in the offer journey.
+ * Needed so an application whose required checks were never RUN (no row at all) isn't mistaken for
+ * "all checks passed" just because the few rows it does have are green.
  */
 const REQUIRED_CHECKS = ["PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY", "PENNY_DROP", "SELFIE"];
 
@@ -83,8 +88,7 @@ interface AppCard {
  * the shared {@link VerificationChecksPanel}, where a KYC approver can override a check with remarks.
  */
 export default function VerificationsDashboardPage() {
-  const [search, setSearch] = React.useState("");
-  const debounced = useDebouncedValue(search.trim());
+  const [query, setQuery] = React.useState("");
   const [selected, setSelected] = React.useState<AppCard | null>(null);
   // Paging is the SERVER's now: it pages by application (an application's checks are never split
   // across pages), and by default returns only the ones that still need a reviewer.
@@ -96,13 +100,13 @@ export default function VerificationsDashboardPage() {
   // filter is a meaningless offset into the new one.
   React.useEffect(() => {
     setPage(1);
-  }, [debounced, includeCleared]);
+  }, [includeCleared]);
 
   const q = useQuery({
-    queryKey: ["staff-verif-overview", debounced, page, pageSize, includeCleared],
+    queryKey: ["staff-verif-overview", query, page, pageSize, includeCleared],
     queryFn: () =>
       staffApi.verificationOverview({
-        q: debounced || undefined,
+        q: query || undefined,
         // `undefined` is the server's default (needs-attention only); only ask for the whole
         // undecided queue when the reviewer opts in.
         needsAttention: includeCleared ? false : undefined,
@@ -181,7 +185,7 @@ export default function VerificationsDashboardPage() {
     }
 
     // "Not started": KYC_PENDING applications that have no verification rows yet.
-    const term = debounced.toLowerCase();
+    const term = query.trim().toLowerCase();
     for (const app of pendingQ.data ?? []) {
       if (byApp.has(app.id)) continue;
       if (
@@ -206,7 +210,7 @@ export default function VerificationsDashboardPage() {
       });
     }
     return out;
-  }, [data?.rows, pendingQ.data, debounced]);
+  }, [data?.rows, pendingQ.data, query]);
 
   const grouped = React.useMemo(() => {
     const g: Record<Bucket, AppCard[]> = { failures: [], awaiting: [], passed: [], notStarted: [] };
@@ -260,13 +264,14 @@ export default function VerificationsDashboardPage() {
             />
             Include cleared
           </label>
-          <Input
-            aria-label="Search by borrower / application / customer id"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+          <SearchBar
+            initialValue={query}
+            onSearch={(t) => {
+              setQuery(t);
+              setPage(1);
+            }}
             placeholder="Search borrower / app # / customer #"
-            leftIcon={<Search size={15} />}
-            className="!mb-0"
+            ariaLabel="Search by borrower / application / customer id"
             inputClassName="w-72"
           />
         </div>
@@ -279,7 +284,7 @@ export default function VerificationsDashboardPage() {
           </p>
         ) : cards.length === 0 ? (
           <p className="rounded border border-line bg-white px-5 py-8 text-center text-sm text-muted shadow-sm">
-            No applications need attention{debounced ? ` for “${debounced}”` : ""}.
+            No applications need attention{query.trim() ? ` for “${query.trim()}”` : ""}.
             {!includeCleared && " Tick “Include cleared” to see the files that have already passed."}
           </p>
         ) : (

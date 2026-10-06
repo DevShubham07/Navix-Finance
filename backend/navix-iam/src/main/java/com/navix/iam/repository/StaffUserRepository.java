@@ -19,4 +19,7 @@ public interface StaffUserRepository extends JpaRepository<StaffUser, Long> {
 
     /** Active-by-role lookup for assignee pickers (activation gating). */
     List<StaffUser> findByRoleAndStatusOrderByIdAsc(StaffRole role, StaffStatus status);
+
+    /** Backs the {@code LAST_ADMIN} guard: how many staff of {@code role} currently sit in {@code status}. */
+    long countByRoleAndStatus(StaffRole role, StaffStatus status);
 }

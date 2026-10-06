@@ -6,6 +6,7 @@ import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tansta
 import { Loader2, RefreshCw, Phone, Star } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { OutcomeChip, OUTCOME_LABEL } from "@/components/staff/lead-outcome";
 import { hasPermission } from "@/lib/auth/rbac";
@@ -22,7 +23,6 @@ import {
   type CreateLeadInput,
 } from "@/lib/api/applications";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 const CALL_STATUSES: LeadCallStatus[] = [
   "NOT_CALLED",
@@ -52,9 +52,6 @@ function StaffLeadsPageInner() {
   const qc = useQueryClient();
   // Deep link from the global-search palette (`?q=`), so a lead hit lands on that lead.
   const [q, setQ] = React.useState(useSearchParams().get("q") ?? "");
-  // The raw box fed the query key, so a six-letter name was six requests, five of them obsolete
-  // before they answered. The input still renders from `q`; only the fetch waits.
-  const debouncedQ = useDebouncedValue(q.trim());
   const [callStatus, setCallStatus] = React.useState<LeadCallStatus | "">("");
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   // Server paging — the lead table grows without limit and was being fetched whole to show 25 rows.
@@ -64,13 +61,13 @@ function StaffLeadsPageInner() {
   // A new filter means a new result set; page 3 of the old one is not a position in it.
   React.useEffect(() => {
     setPage(1);
-  }, [debouncedQ, callStatus]);
+  }, [callStatus]);
 
   const list = useQuery({
-    queryKey: ["leads", debouncedQ, callStatus, page, pageSize],
+    queryKey: ["leads", q, callStatus, page, pageSize],
     queryFn: () =>
       leadsApi.list({
-        q: debouncedQ || undefined,
+        q: q || undefined,
         callStatus: callStatus || undefined,
         page,
         size: pageSize,
@@ -114,12 +111,14 @@ function StaffLeadsPageInner() {
       <NewLeadForm onCreated={invalidate} />
 
       <div className="mt-6 flex flex-wrap items-end gap-3">
-        <Input
-          label="Search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+        <SearchBar
+          initialValue={q}
+          onSearch={(t) => {
+            setQ(t);
+            setPage(1);
+          }}
           placeholder="Name or mobile"
-          className="!mb-0"
+          ariaLabel="Search"
         />
         <Select
           label="Call status"

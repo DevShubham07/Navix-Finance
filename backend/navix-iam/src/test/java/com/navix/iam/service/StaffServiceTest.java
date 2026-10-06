@@ -19,6 +19,7 @@ import com.navix.iam.dto.StaffDtos.UpdateMyProfileRequest;
 import com.navix.iam.dto.StaffDtos.UpdateStaffRequest;
 import com.navix.iam.entity.StaffUser;
 import com.navix.iam.repository.StaffUserRepository;
+import com.navix.common.notification.event.StaffAccountEvent;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -37,12 +39,15 @@ class StaffServiceTest {
     @Mock
     private StaffUserRepository staffUserRepository;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private StaffService staffService;
 
     @BeforeEach
     void setUp() {
-        staffService = new StaffService(staffUserRepository, passwordEncoder, event -> {});
+        staffService = new StaffService(staffUserRepository, passwordEncoder, eventPublisher);
         // All staff-management ops are ADMIN-only; default the actor to ADMIN (negative tests override).
         ActorContext.set(new CurrentActor("1", "Admin", "ADMIN"));
     }
@@ -149,6 +154,92 @@ class StaffServiceTest {
 
         assertThatThrownBy(() -> staffService.disableStaff(99L))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void disableStaffPublishesDisabledEvent() {
+        StaffUser existing = staff(5L, StaffRole.ACCOUNTANT, StaffStatus.ACTIVE);
+        when(staffUserRepository.findById(5L)).thenReturn(Optional.of(existing));
+
+        staffService.disableStaff(5L);
+
+        ArgumentCaptor<StaffAccountEvent> captor = ArgumentCaptor.forClass(StaffAccountEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue().staffId()).isEqualTo(5L);
+        assertThat(captor.getValue().changeType()).isEqualTo(StaffAccountEvent.ChangeType.DISABLED);
+    }
+
+    @Test
+    void disableStaffCannotDisableOwnAccount() {
+        // ActorContext is staff id "1" (see setUp); target the same account.
+        StaffUser self = staff(1L, StaffRole.ADMIN, StaffStatus.ACTIVE);
+        when(staffUserRepository.findById(1L)).thenReturn(Optional.of(self));
+
+        assertThatThrownBy(() -> staffService.disableStaff(1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("SELF_MODIFY");
+        verify(staffUserRepository, never()).save(any());
+    }
+
+    @Test
+    void updateStaffCannotChangeOwnRole() {
+        StaffUser self = staff(1L, StaffRole.ADMIN, StaffStatus.ACTIVE);
+        when(staffUserRepository.findById(1L)).thenReturn(Optional.of(self));
+
+        assertThatThrownBy(() -> staffService.updateStaff(1L,
+                new UpdateStaffRequest(StaffRole.ACCOUNTANT, StaffStatus.ACTIVE)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("SELF_MODIFY");
+        verify(staffUserRepository, never()).save(any());
+    }
+
+    @Test
+    void updateStaffOwnAccountWithNoRoleOrStatusChangeIsAllowed() {
+        // SELF_MODIFY only fires on an actual disable or role change — a no-op PUT on one's own
+        // account (e.g. re-submitting the same role/status) must not be blocked.
+        StaffUser self = staff(1L, StaffRole.ADMIN, StaffStatus.ACTIVE);
+        when(staffUserRepository.findById(1L)).thenReturn(Optional.of(self));
+        when(staffUserRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        StaffResponse result = staffService.updateStaff(1L,
+                new UpdateStaffRequest(StaffRole.ADMIN, StaffStatus.ACTIVE));
+
+        assertThat(result.role()).isEqualTo(StaffRole.ADMIN);
+    }
+
+    @Test
+    void updateStaffRejectsTransitionBackToInvited() {
+        StaffUser existing = staff(5L, StaffRole.ACCOUNTANT, StaffStatus.ACTIVE);
+        when(staffUserRepository.findById(5L)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> staffService.updateStaff(5L,
+                new UpdateStaffRequest(StaffRole.ACCOUNTANT, StaffStatus.INVITED)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("ILLEGAL_TRANSITION");
+        verify(staffUserRepository, never()).save(any());
+    }
+
+    @Test
+    void disableStaffRejectsDisablingTheLastActiveAdmin() {
+        StaffUser lastAdmin = staff(5L, StaffRole.ADMIN, StaffStatus.ACTIVE);
+        when(staffUserRepository.findById(5L)).thenReturn(Optional.of(lastAdmin));
+        when(staffUserRepository.countByRoleAndStatus(StaffRole.ADMIN, StaffStatus.ACTIVE)).thenReturn(1L);
+
+        assertThatThrownBy(() -> staffService.disableStaff(5L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code").isEqualTo("LAST_ADMIN");
+        verify(staffUserRepository, never()).save(any());
+    }
+
+    @Test
+    void disableStaffAllowsDisablingAnAdminWhenAnotherActiveAdminRemains() {
+        StaffUser admin = staff(5L, StaffRole.ADMIN, StaffStatus.ACTIVE);
+        when(staffUserRepository.findById(5L)).thenReturn(Optional.of(admin));
+        when(staffUserRepository.countByRoleAndStatus(StaffRole.ADMIN, StaffStatus.ACTIVE)).thenReturn(2L);
+
+        staffService.disableStaff(5L);
+
+        assertThat(admin.getStatus()).isEqualTo(StaffStatus.DISABLED);
     }
 
     @Test

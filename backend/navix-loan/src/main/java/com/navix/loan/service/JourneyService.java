@@ -3,9 +3,11 @@ package com.navix.loan.service;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
+import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationReferenceRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.CustomerProfileRepository;
@@ -41,6 +43,10 @@ public class JourneyService {
         EMAIL("email"),
         BANK("bank"),
         PAYSLIPS("payslips"),
+        /** V75: Aadhaar number + both sides of the card. Proven by the number and the two documents. */
+        AADHAAR("aadhaar"),
+        /** V75: both sides of the PAN card. Proven by the two documents. */
+        PAN_CARD("pan-card"),
         CONSENT("consent"),
         SUBMITTED("submitted"),
         DONE(null);
@@ -106,6 +112,7 @@ public class JourneyService {
     private final CustomerProfileRepository profileRepository;
     private final ApplicationVerificationRepository verificationRepository;
     private final ApplicationReferenceRepository referenceRepository;
+    private final ApplicationDocumentRepository documentRepository;
 
     @Transactional(readOnly = true)
     public JourneyView current(Long appId) {
@@ -190,6 +197,30 @@ public class JourneyService {
     }
 
     /**
+     * The staff-only inverse of {@link #advance(Long, OfferStep)}, for {@code VerificationOutreachService}
+     * ("send a resume link"): {@code advance} never moves the pointer backwards, by design, but a
+     * staff-reopened check needs exactly that — otherwise the stored pointer (left ahead by the
+     * borrower's earlier pass through this step) would keep overriding the derivation that
+     * {@link #attemptedChecks} now excludes the reopened row from, and the borrower would land back
+     * past the screen staff just sent them to redo.
+     *
+     * <p>Only rewinds when the stored pointer either doesn't parse as an {@link OfferStep} (an intake
+     * pointer, or none at all — there is nothing ahead of {@code step} to undo) or parses to a step
+     * strictly past {@code step}. A pointer already at or before {@code step} is left alone, so this
+     * can never accidentally push a borrower forward.
+     */
+    @Transactional
+    public void rewind(Long appId, OfferStep step) {
+        applicationRepository.findById(appId).ifPresent(app -> {
+            Optional<OfferStep> stored = parseOffer(app.getJourneyStep());
+            if (stored.isEmpty() || stored.get().ordinal() > step.ordinal()) {
+                app.setJourneyStep(step.name());
+                applicationRepository.save(app);
+            }
+        });
+    }
+
+    /**
      * Advance by step name, resolving against whichever registry owns it. The controller takes the
      * step as a string because the two enums share one endpoint; an unrecognised name is ignored
      * rather than rejected, since the pointer is advisory and a stale client must not hard-fail.
@@ -255,6 +286,12 @@ public class JourneyService {
             return Step.DONE;
         }
         Step derived = derive(app);
+        // The two card screens (V75) are proven by documents and can never be skipped by the pointer:
+        // a pointer written before they existed (CONSENT, say) would otherwise carry a mid-flow
+        // borrower straight past them into a submit that KYC_INCOMPLETE then refuses.
+        if (derived == Step.AADHAAR || derived == Step.PAN_CARD) {
+            return derived;
+        }
         return parse(app.getJourneyStep())
                 .map(stored -> Step.values()[Math.max(derived.ordinal(),
                         Math.min(stored.ordinal() + 1, Step.DONE.ordinal()))])
@@ -266,6 +303,12 @@ public class JourneyService {
         OfferStep resolved = parseOffer(app.getJourneyStep())
                 .filter(stored -> stored.ordinal() > derived.ordinal())
                 .orElse(derived);
+        // The pointer may carry a borrower past a screen that leaves no trace, never past the
+        // signature: a pointer already on the disbursal account (which the old derivation allowed for
+        // an abandoned Signzy session) must not override an unsigned letter.
+        if (resolved.ordinal() > OfferStep.OFFER_SANCTION_LETTER.ordinal() && !signed(app.getId())) {
+            return OfferStep.OFFER_SANCTION_LETTER;
+        }
         // Signing now lives on the agreement page. Historical rows may still hold the retired
         // OFFER_ESIGN pointer; normalize them instead of reopening a separate signing screen.
         return resolved == OfferStep.OFFER_ESIGN ? OfferStep.OFFER_SANCTION_LETTER : resolved;
@@ -281,6 +324,14 @@ public class JourneyService {
      * <p>DigiLocker, selfie and address are satisfied by a row in <em>any</em> terminal status, not
      * by a PASS: a Phase-3 check that fails passes through silently and surfaces only on the staff
      * Verification Dashboard (revamp.md decision 11).
+     *
+     * <p>The signature is the one exception, because it is not a check but the borrower's agreement to
+     * the Key Fact Statement: only a {@code PASS} row proves it. A {@code PENDING} row is a provider
+     * session that was started and never finished (the borrower closed the Signzy tab), a {@code
+     * REVIEW} row is the provider saying nothing was signed — either way the borrower is held on the
+     * sanction letter, where both the Aadhaar and the drawn-signature paths are still open. Before
+     * this, any ESIGN row at all moved them on to the disbursal account and six loans were disbursed
+     * unsigned (Sep 2026); {@code ApplicationFlowService.acceptOffer} enforces the same rule.
      */
     private OfferStep deriveOffer(LoanApplication app) {
         if (app.getAmountRequested() == null) {
@@ -299,7 +350,7 @@ public class JourneyService {
         if (!checks.contains(ApplicationVerificationService.ADDRESS)) {
             return OfferStep.OFFER_ADDRESS;
         }
-        if (!checks.contains(ApplicationVerificationService.ESIGN)) {
+        if (!signed(app.getId())) {
             return OfferStep.OFFER_SANCTION_LETTER;
         }
         if (app.getDisbursalConfirmedAt() == null) {
@@ -308,10 +359,24 @@ public class JourneyService {
         return OfferStep.OFFER_DONE;
     }
 
+    /**
+     * A row a staffer just reopened (V74, "send a resume link") is excluded — it is deliberately no
+     * longer proof the borrower finished this step, which is the whole point of a reopen. Every other
+     * caller of this method is unaffected: a reopen only ever touches a row a staffer explicitly acted
+     * on.
+     */
     private Set<String> attemptedChecks(Long appId) {
         return verificationRepository.findByApplicationIdOrderByIdAsc(appId).stream()
+                .filter(v -> v.getReopenedAt() == null)
                 .map(ApplicationVerification::getCheckType)
                 .collect(Collectors.toSet());
+    }
+
+    /** Whether the sanction letter is actually signed — an ESIGN row in {@code PASS}, nothing less. */
+    private boolean signed(Long appId) {
+        return verificationRepository.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
+                .isPresent();
     }
 
     /** The first step the borrower's saved data does not yet prove they finished. */
@@ -349,6 +414,21 @@ public class JourneyService {
                 .collect(Collectors.toSet());
         if (!checks.contains(ApplicationVerificationService.SALARY)) {
             return Step.PAYSLIPS;
+        }
+        // V75: the card screens are proven by what is on file, not by a pointer — the typed number
+        // plus both Aadhaar sides, then both PAN sides. Documents accumulate (a re-upload adds a row),
+        // so presence of the type is the test.
+        Set<String> docs = documentRepository.findByApplicationIdOrderByIdAsc(app.getId()).stream()
+                .map(ApplicationDocument::getDocType)
+                .collect(Collectors.toSet());
+        if (blank(p.getAadhaar())
+                || !docs.contains(ApplicationVerificationService.AADHAAR_CARD_FRONT)
+                || !docs.contains(ApplicationVerificationService.AADHAAR_CARD_BACK)) {
+            return Step.AADHAAR;
+        }
+        if (!docs.contains(ApplicationVerificationService.PAN_CARD_FRONT)
+                || !docs.contains(ApplicationVerificationService.PAN_CARD_BACK)) {
+            return Step.PAN_CARD;
         }
         if (!checks.contains(ApplicationVerificationService.PAN)) {
             return Step.CONSENT;

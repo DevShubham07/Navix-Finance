@@ -16,6 +16,7 @@ import com.navix.loan.dto.ApplicationDtos.CreateApplicationRequest;
 import com.navix.loan.dto.ApplicationDtos.DecisionRequest;
 import com.navix.loan.dto.ApplicationDtos.EventView;
 import com.navix.loan.dto.ApplicationDtos.SanctionRequest;
+import com.navix.loan.dto.ApplicationDtos.ShareResumeLinkRequest;
 import com.navix.loan.dto.CreditBriefDtos.CreditBriefView;
 import com.navix.loan.dto.OfferDtos;
 import com.navix.loan.dto.ReviewDtos.DocumentContentView;
@@ -39,6 +40,7 @@ import com.navix.loan.service.CreditBriefService;
 import com.navix.loan.service.EligibilityService;
 import com.navix.loan.service.JourneyService;
 import com.navix.loan.service.OfferService;
+import com.navix.loan.service.VerificationOutreachService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +72,7 @@ public class ApplicationController {
     private final ApplicationFlowService flow;
     private final CustomerReviewService review;
     private final ApplicationVerificationService verification;
+    private final VerificationOutreachService verificationOutreach;
     private final CreditBriefService creditBrief;
     private final AdminApplicationService adminApplications;
     private final JourneyService journey;
@@ -161,12 +164,13 @@ public class ApplicationController {
         // availableLimitPaise: one override lookup for the caller, applied to each of their rows. A
         // returning borrower's newest application is CLOSED, so its stored limit/sanction are both
         // historical — the borrower UI must read "available to borrow" from this instead (V69).
+        // Override only: the salary-derived eligible limit is staff guidance and is never offered to
+        // a borrower as a ceiling (the UI falls back to the sanctioned amount).
         List<LoanApplication> mine = flow.myApplications();
         Long available = mine.isEmpty() ? null
                 : eligibilityService.overrideOf(mine.get(0).getCustomerId()).orElse(null);
         return ApiResponse.ok(mine.stream()
-                .map(a -> ApplicationView.of(a).withAvailableLimit(
-                        available != null ? available : a.getEligibleLimit()))
+                .map(a -> ApplicationView.of(a).withAvailableLimit(available))
                 .toList());
     }
 
@@ -198,7 +202,7 @@ public class ApplicationController {
         requireBorrowerOwnsOrStaff(id);
         LoanApplication app = flow.get(id);
         ApplicationView view = ApplicationView.of(app).withAvailableLimit(
-                eligibilityService.overrideOf(app.getCustomerId()).orElse(app.getEligibleLimit()));
+                eligibilityService.overrideOf(app.getCustomerId()).orElse(null));
         if (!"BORROWER".equals(ActorContext.get().role())) {
             // Staff-only: resolve the real assignee name + current-stage-entered timestamp (never
             // leaked to the borrower-facing read, mirrors /mine).
@@ -281,6 +285,26 @@ public class ApplicationController {
         return ApiResponse.ok(verification.sendKycReminder(id));
     }
 
+    /**
+     * "Send the customer a link" preview — what would happen, without sending anything. Credit team /
+     * admin only ({@link VerificationOutreachService#preview}).
+     */
+    @GetMapping("/{id}/verifications/{checkType}/resume-link")
+    public ApiResponse<VerificationOutreachService.ResumeLink> resumeLinkPreview(
+            @PathVariable Long id, @PathVariable String checkType) {
+        requireStaff();
+        return ApiResponse.ok(verificationOutreach.preview(id, checkType));
+    }
+
+    /** Actually send (or hand over) the resume link. Credit team / admin only. */
+    @PostMapping("/{id}/verifications/{checkType}/resume-link")
+    public ApiResponse<VerificationOutreachService.ResumeLink> shareResumeLink(
+            @PathVariable Long id, @PathVariable String checkType,
+            @Valid @RequestBody ShareResumeLinkRequest req) {
+        requireStaff();
+        return ApiResponse.ok(verificationOutreach.share(id, checkType, req.channel()));
+    }
+
     /** Staff-only credit brief: 1–5★ rating + categorized bureau facts + the CREDIT_BRIEF PDF doc id. */
     @GetMapping("/{id}/credit-brief")
     public ApiResponse<CreditBriefView> creditBrief(@PathVariable Long id) {
@@ -299,6 +323,11 @@ public class ApplicationController {
         if (!verification.allRequiredPassed(id)) {
             throw new BusinessException("KYC_INCOMPLETE",
                     "Complete every step and accept the Terms & Conditions before submitting");
+        }
+        // V75: the Aadhaar number and both sides of the Aadhaar and PAN cards are mandatory.
+        if (!verification.intakeCardsComplete(id)) {
+            throw new BusinessException("KYC_INCOMPLETE",
+                    "Upload both sides of your Aadhaar card and PAN card before submitting");
         }
         return ApiResponse.ok(ApplicationView.of(flow.submitKyc(id)));
     }

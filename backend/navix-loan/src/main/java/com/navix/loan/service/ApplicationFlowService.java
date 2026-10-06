@@ -130,6 +130,14 @@ public class ApplicationFlowService {
     public static final int LOW_BUREAU_SCORE_BLOCK_DAYS = 90;
 
     /**
+     * Block after a {@link ApplicationRejection#FRAUD_REJECTED} auto-reject (V75): the Aadhaar number
+     * the borrower typed and the one the PAN record / DigiLocker hold for them disagree. Longer than
+     * the eligibility blocks above because this is not a circumstance that improves with time — a
+     * year keeps the mobile out of the funnel without pretending the register is a permanent list.
+     */
+    public static final int FRAUD_REJECT_BLOCK_DAYS = 365;
+
+    /**
      * Bureau score floor: a real, numeric score below this auto-rejects the application
      * ({@code ApplicationVerificationService.pullBureau}). Do NOT confuse with
      * {@code RiskScoringService}'s {@code (bureauScore - 300) * 50 / 600} — that 600 is the width of the
@@ -174,8 +182,9 @@ public class ApplicationFlowService {
      *
      * <p>One advance at a time: a borrower holding a live loan (ACTIVE/OVERDUE/DEFAULTED) — or with a
      * pre-loan application still moving through the pipeline — is <b>blocked</b> and must fully repay /
-     * finish first ({@link #assertCanStartNewApplication}). Rejected if there is no prior application to
-     * borrow against (the caller then falls back to a fresh signup).
+     * finish first ({@link #assertCanStartNewApplication}). Rejected with {@code NO_PRIOR_LOAN} unless the
+     * customer has fully repaid (CLOSED) at least one advance — a rejected or abandoned prior application
+     * is not something to borrow against (the caller then falls back to a fresh signup).
      *
      * <p>Routing is by repayment history alone — credit score does <b>not</b> gate reborrow:
      * <ul>
@@ -211,6 +220,14 @@ public class ApplicationFlowService {
         CustomerProfile prior = latestProfileForCustomer(customerId)
                 .orElseThrow(() -> new BusinessException("NO_PRIOR_LOAN",
                         "No previous application found to borrow against"));
+        // "Returning borrower" means one who has fully repaid an advance. A saved profile alone is not
+        // enough: a lead rejected by credit also has one, and with zero loans isDisqualifiedByHistory
+        // finds nothing bad — so it used to come back PRE_APPROVED and skip KYC + credit (Sep 2026,
+        // #10737 after a fake-salary-slip reject). No repaid loan → NO_PRIOR_LOAN, which the /reloan
+        // page turns into a fresh signup. A delinquent history still takes the auto-reject below.
+        if (!hasRepaidLoan(customerId) && !isDisqualifiedByHistory(customerId)) {
+            throw new BusinessException("NO_PRIOR_LOAN", "No repaid advance found to borrow against");
+        }
         Long salaryPaise = prior.getMonthlySalaryPaise();
         // An ADMIN limit override outlives the application it was set on, so it must be resolved
         // here too — a reborrow mints a NEW row and would otherwise fall back to salary (V69).
@@ -407,6 +424,22 @@ public class ApplicationFlowService {
     @Transactional
     public LoanApplication autoReject(Long appId, String reasonCode, String detail, int blockDays) {
         requireRole("BORROWER");
+        return doAutoReject(appId, reasonCode, detail, blockDays);
+    }
+
+    /**
+     * The same engine rejection, for a rule that fires inside a verification step <em>whoever</em>
+     * triggered it (V75 Aadhaar mismatch): the PAN check also runs from the staff "retry" button and
+     * DigiLocker completion from a callback, so the BORROWER gate on {@link #autoReject} would turn a
+     * fraud verdict into a {@code FORBIDDEN_ROLE} error on exactly those paths. The actor is still
+     * recorded on the {@code application_event} row by {@link #transition}.
+     */
+    @Transactional
+    public LoanApplication autoRejectSystem(Long appId, String reasonCode, String detail, int blockDays) {
+        return doAutoReject(appId, reasonCode, detail, blockDays);
+    }
+
+    private LoanApplication doAutoReject(Long appId, String reasonCode, String detail, int blockDays) {
         LoanApplication app = require(appId);
         Instant blockedUntil = blockDays > 0 ? Instant.now().plus(Duration.ofDays(blockDays)) : null;
         recordRejection(app, reasonCode, detail, true, blockedUntil);
@@ -515,6 +548,13 @@ public class ApplicationFlowService {
         if (st != ApplicationStatus.KYC_APPROVED && st != ApplicationStatus.PRE_APPROVED) {
             throw new BusinessException("NOT_APPLICABLE", "Borrower can only apply after approval");
         }
+        // The fast-track below skips credit, so it is only for a borrower who has repaid before. Rows
+        // minted PRE_APPROVED by the old reborrow gap (no repaid loan) stop here instead of reaching
+        // the disbursement desk; an ADMIN rejects them from Staff → Customers.
+        if (st == ApplicationStatus.PRE_APPROVED && !hasRepaidLoan(app.getCustomerId())) {
+            throw new BusinessException("NOT_ELIGIBLE",
+                    "You are not eligible for a pre-approved advance. Please start a fresh application.");
+        }
         if (amountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "Requested amount is below the minimum of ₹1,000");
         }
@@ -586,6 +626,16 @@ public class ApplicationFlowService {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
         requireCreditOwnership(app);
+        // V75: a duplicate-Aadhaar flag is silent to the borrower but never to the sanction. It must be
+        // explicitly cleared (manual override → PASS) before money is approved; an untouched REVIEW row,
+        // or a FAIL ("not the same person"), stops the file here rather than failing open.
+        verificationRepository.findByApplicationIdAndCheckType(appId, ApplicationVerificationService.AADHAAR_DUPLICATE)
+                .filter(row -> !ApplicationVerificationService.PASS.equals(row.getStatus()))
+                .ifPresent(row -> {
+                    throw new BusinessException("AADHAAR_DUPLICATE_UNRESOLVED",
+                            "This Aadhaar number is also on file for another customer. Clear the "
+                                    + "'Aadhaar duplicate' check on the Verifications tab (or reject the lead) before sanctioning.");
+                });
         if (sanctionedAmountPaise < LoanMath.MIN_LOAN_PAISE) {
             throw new BusinessException("AMOUNT_TOO_LOW", "The sanctioned amount is below the minimum of ₹1,000");
         }
@@ -632,6 +682,11 @@ public class ApplicationFlowService {
     public LoanApplication rejectLead(Long appId, String remarks) {
         requireAnyRole("CREDIT_EXECUTIVE", "CREDIT_HEAD");
         LoanApplication app = require(appId);
+        // PRE_APPROVED → REJECTED exists only as ADMIN's manual kill switch for pre-approvals the old
+        // reborrow gap minted (see reborrow); it is not a credit-team queue.
+        if (app.getStatus() == ApplicationStatus.PRE_APPROVED && !"ADMIN".equals(ActorContext.get().role())) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Only an admin can reject a pre-approved lead");
+        }
         requireCreditOwnership(app);
         return rejectWithBlock(app, "REJECT_LEAD", remarks);
     }
@@ -675,7 +730,7 @@ public class ApplicationFlowService {
      * file to the Disbursement Head. Phase 3's offer screens (amount → eSign → disbursal account) sit
      * in front of this call, and {@code OfferService.confirmDisbursalAccount} is its normal caller.
      *
-     * <p>Gated on a terminal {@code ESIGN} row. Phase 3's identity checks deliberately pass through
+     * <p>Gated on a {@code PASS} {@code ESIGN} row. Phase 3's identity checks deliberately pass through
      * silently (revamp.md decision 11), but the signature is not a check — it is the borrower's
      * agreement to the Key Fact Statement, and without it this endpoint would be a way to reach
      * disbursement having signed nothing.
@@ -687,8 +742,11 @@ public class ApplicationFlowService {
         if (app.getStatus() != ApplicationStatus.SANCTIONED) {
             throw new BusinessException("NOT_APPLICABLE", "This offer isn't ready to accept");
         }
+        // A PASS row, not merely a row: esignInit writes PENDING the moment the provider session is
+        // minted, so "any row" let a borrower who abandoned the Signzy tab accept the offer unsigned.
         if (verificationRepository
                 .findByApplicationIdAndCheckType(appId, ApplicationVerificationService.ESIGN)
+                .filter(v -> ApplicationVerificationService.PASS.equals(v.getStatus()))
                 .isEmpty()) {
             throw new BusinessException("ESIGN_REQUIRED", "Sign your sanction letter before continuing");
         }
@@ -1262,6 +1320,12 @@ public class ApplicationFlowService {
      * <p>This replaced a much broader predicate ("ever overdue, or any payment after the due date"),
      * which under V45 auto-rejects would have turned away anyone who was ever a single day late.
      */
+    /** True if the customer has fully repaid (CLOSED) at least one advance — what makes them "returning". */
+    private boolean hasRepaidLoan(Long customerId) {
+        return loanRepository.findByCustomerId(customerId).stream()
+                .anyMatch(l -> l.getStatus() == LoanStatus.CLOSED);
+    }
+
     private boolean isDisqualifiedByHistory(Long customerId) {
         boolean everWrittenOff = applicationRepository.findByCustomerId(customerId).stream()
                 .anyMatch(a -> a.getStatus() == ApplicationStatus.DEFAULTED

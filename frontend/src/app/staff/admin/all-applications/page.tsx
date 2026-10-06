@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowRight, Info } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { Loader2, RefreshCw, ArrowRight, Info } from "lucide-react";
+import { Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
@@ -61,14 +62,14 @@ const EXPORT_COLUMNS: ExportColumn<AdminApplicationView>[] = [
  */
 export default function AdminAllApplicationsPage() {
   const myRole = useStaffMe().data?.role;
-  const [search, setSearch] = React.useState("");
+  const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<CompletenessFilter>("ALL");
   const [openId, setOpenId] = React.useState<number | null>(null);
   const [infoId, setInfoId] = React.useState<number | null>(null);
   const q = useQuery({ queryKey: ["admin-all-applications"], queryFn: staffApi.listAllApplications });
 
   const all = q.data ?? [];
-  const needle = search.trim().toLowerCase();
+  const needle = query.trim().toLowerCase();
   const rows = all.filter((a) => {
     if (filter === "COMPLETE" && !a.complete) return false;
     if (filter === "INCOMPLETE" && a.complete) return false;
@@ -103,14 +104,14 @@ export default function AdminAllApplicationsPage() {
       </PageHeader>
 
       <div className="mb-4 flex flex-wrap items-end gap-2">
-        <Input
-          aria-label="Search applications"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+        <SearchBar
+          initialValue={query}
+          onSearch={(t) => {
+            setQuery(t);
+            setPage(1);
+          }}
           placeholder="Search name, PAN, mobile, ID or status"
-          leftIcon={<Search size={15} />}
-          className="!mb-0"
-          inputClassName="w-80"
+          ariaLabel="Search applications"
         />
         <Select
           aria-label="Completeness"

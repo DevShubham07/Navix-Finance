@@ -15,6 +15,7 @@ import com.navix.common.verification.ProviderFailureDetails;
 import com.navix.verification.dto.DigitapDtos.AddressResponse;
 import com.navix.verification.dto.DigitapDtos.CreditResponse;
 import com.navix.verification.dto.DigitapDtos.EmailResponse;
+import com.navix.verification.dto.DigitapDtos.FaceLivenessResponse;
 import com.navix.verification.dto.DigitapDtos.FaceMatchResponse;
 import com.navix.verification.dto.DigitapDtos.PanResponse;
 import com.navix.verification.exception.VerificationException;
@@ -128,6 +129,31 @@ class DigitapClientsTest {
         assertThat(r.txnId()).isEqualTo("REQ-FM-1");
         assertThat(r.sameFace()).isTrue();
         assertThat(r.confidence()).isEqualTo(0.9998);
+        assertThat(r.personImageBlurry()).isFalse();
+        b.server().verify();
+    }
+
+    /** Envelope and field names as returned by production on 2026-10-05 (note {@code req_id}). */
+    @Test
+    void faceLivenessMapsResult() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/fmfl/v4/face-liveness"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.input_image").value("https://s3/selfie.jpg"))
+                .andExpect(jsonPath("$.client_ref_num").exists())
+                .andRespond(withSuccess("""
+                        {"status":"success","client_ref_num":"ref-1","req_id":"REQ-FL-1","http_status_code":200,
+                        "result":{"is_live":true,"is_person_image_blurry":false,"liveness_confidence":1.0,
+                        "person_image_correctly_identified":true,"multiple_face_detected":false}}
+                        """, MediaType.APPLICATION_JSON));
+
+        FaceLivenessResponse r = new DigitapFaceLivenessClient(b.restClient())
+                .check("https://s3/selfie.jpg", "ref-1");
+
+        assertThat(r.txnId()).isEqualTo("REQ-FL-1");
+        assertThat(r.live()).isTrue();
+        assertThat(r.confidence()).isEqualTo(1.0);
+        assertThat(r.multipleFaces()).isFalse();
         assertThat(r.personImageBlurry()).isFalse();
         b.server().verify();
     }

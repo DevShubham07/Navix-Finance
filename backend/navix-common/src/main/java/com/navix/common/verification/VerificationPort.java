@@ -74,10 +74,10 @@ public interface VerificationPort {
                                      String employerName, String uan, String clientRef);
 
     /**
-     * Selfie face check — Digitap Face Match. Matches the uploaded selfie ({@code imageUrl}) against a
-     * reference photo ({@code referenceImageUrl}, typically the DigiLocker Aadhaar face). When
-     * {@code referenceImageUrl} is null the call degrades to a single-image quality/face-detection check.
-     * Both are presigned image URLs. {@code FaceLivenessCheck.live} carries the match/pass result.
+     * Selfie liveness check (synchronous) — Digitap Face Liveness v4, the SELFIE step's primary. Passive
+     * liveness on the uploaded selfie ({@code imageUrl}, a presigned image URL);
+     * {@code FaceLivenessCheck.live} carries the verdict. {@code referenceImageUrl} is unused by the
+     * current provider (liveness only, no document face-match) — callers pass null.
      */
     FaceLivenessCheck faceLiveness(String imageUrl, String referenceImageUrl, String clientRef);
 

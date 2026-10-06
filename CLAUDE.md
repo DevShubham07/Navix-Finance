@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V72 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V75 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -300,6 +300,11 @@ summary → sanction letter → eSign → 🎉 → account). Carried over: KYC p
 salary day, DigiLocker/selfie/address evidence, references, disbursal account. **Not** carried: the
 eSign — every advance is signed afresh against its own Key Fact Statement. The repayment date is
 recomputed from the carried salary day. Reborrow is blocked while a live application/loan exists.
+**A returning borrower is one with a repaid (CLOSED) loan.** Without one, reborrow returns
+`NO_PRIOR_LOAN` (→ fresh signup, full KYC + credit), and a legacy `PRE_APPROVED` row can't use the
+`apply()` fast-track (`NOT_ELIGIBLE`). Before Sep 2026 a credit-rejected lead with no loans was
+pre-approved here. ADMIN can reject such a lead from Staff → Customers (`PRE_APPROVED → REJECTED`
+via reject-lead, admin-only).
 
 **Invariants:**
 - Every credit assignment/reassignment and decision is appended to `application_event`; reassignment
@@ -319,10 +324,27 @@ How a real applicant moves through the product — this is now the **designed, b
    staff); identity = a numeric `customerId` derived from the mobile. (The signup wizard's mobile-OTP
    step establishes the same session early.) With `NAVIX_SMS_MOCK=true` the code is `123456`.
 2. **Phase-1 intake (`/signup/*`, application `DRAFT`)** — `JourneyService.Step` in order: `otp` →
-   `set-password` (optional) → `employment` → `employer` → `email` → `bank` → `payslips` → `consent` →
-   `submitted`. **Where the borrower is is answered server-side** (`GET …/journey`, the max of what
-   their saved data proves and the `journey_step` pointer), so a second device resumes on the right
-   screen. The `email` screen is a real gate: both the personal and the official address must be
+   `set-password` (optional) → `employment` → `employer` → `email` → `bank` → `payslips` → `aadhaar` →
+   `pan-card` → `consent` → `submitted`. **Where the borrower is is answered server-side** (`GET …/journey`,
+   the max of what their saved data proves and the `journey_step` pointer), so a second device resumes
+   on the right screen. The two card screens (V75) are **mandatory and document-proven**: `aadhaar` takes
+   the typed 12-digit number (Verhoeff-checked, stored **in full**, `INVALID_AADHAAR`; a number another customer
+   already holds is **accepted and flagged**, not refused — an `AADHAAR_DUPLICATE` REVIEW row, staff-only (dropped
+   from the borrower's `verify/summary`), that **blocks `sanction`** (`AADHAAR_DUPLICATE_UNRESOLVED`) until the
+   credit team clears it with the ordinary override, so the write is never a "do you hold this number" oracle;
+   **locked** — `AADHAAR_LOCKED` — once the PAN check or DigiLocker has read it or the file leaves `DRAFT`, so
+   a number cannot be swapped behind a recorded verdict)
+   plus both sides of the card as `AADHAAR_CARD_FRONT`/`AADHAAR_CARD_BACK` (deliberately **not** the
+   `AADHAAR_FRONT`/`AADHAAR_BACK` pair the post-sanction DigiLocker fallback writes, so staff can tell
+   the two uploads apart), and `pan-card` takes `PAN_CARD_FRONT`/`PAN_CARD_BACK`; photos **or PDFs**, with
+   an optional file password. `submit-kyc` refuses (`KYC_INCOMPLETE`, `intakeCardsComplete`) until the
+   number and all four images are on file, and a stale pre-V75 pointer can never skip these screens.
+   **Fraud rule:** the typed number is cross-checked (positionally, against whatever digits the mask
+   reveals — `Aadhaar.matchesMasked`) with the masked Aadhaar the PAN record and DigiLocker return; a
+   mismatch auto-rejects the file into the rejection register as **`FRAUD_REJECTED`** (365-day block,
+   `flow.autoRejectSystem`), the borrower sees only "Your application has been rejected"
+   (`/application-rejected`), and staff/ADMIN read the full number unmasked on the customer Personal tab
+   and the applicant review panel. The `email` screen is a real gate: both the personal and the official address must be
    OTP-confirmed (`emailsSettled`, V52/V65) — distinct from the provider deliverability/employer-match
    check that runs against the same work address. Self-employed applicants are turned away at intake
    (`/self-employed`, 90-day block).
@@ -546,7 +568,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V72** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V75** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -647,6 +669,7 @@ What holds across all of it, and does not belong in that file:
   `NAVIX_ESIGN_*` (`PROVIDER` signzy|mock · `CALLBACK_URL` + `CALLBACK_SECRET` — **both mandatory when
   the provider is `signzy`**; the app refuses to start otherwise, SSM `/navix/<env>/navix/esign/…`),
   `NAVIX_S3_*`, `NAVIX_SMS_*` (incl. `NAVIX_SMS_MOCK`),
+  `NAVIX_WHATSAPP_*` (`TOKEN` — SSM `/navix/<env>/navix/whatsapp/token` · `ENABLED` · `MOCK` · `OTP_TEMPLATE`),
   `NAVIX_EMAIL_*` (`PROVIDER` log|smtp|ses|resend · `ENABLED` · `FROM` · `CONFIGURATION_SET` for SES · `RESEND_API_KEY`),
   `NAVIX_SES_EVENTS_*` (`ENABLED` · `QUEUE` — the SES bounce/complaint SQS listener), `NAVIX_NOTIF_*` (async pool sizing),
   `NAVIX_BUREAU_FIXTURE` (demo-only, default off — a bundled credit report for local briefs),
@@ -694,6 +717,12 @@ The rules that survive outside that file:
   the provider callback only accelerates the closed-tab case.
 - **No verification hard-blocks a borrower.** A failed check is `REVIEW` for a human, not a decline.
 - Set **`NAVIX_BUREAU_FIXTURE`** (any non-blank value) for an offline, non-billable credit brief.
+- **WhatsApp (SmartChat) is a notification channel beside SMS** (`NotificationChannel.WHATSAPP`, same
+  mobile, SMS opt-out covers it). The template *wording* lives with Meta; our code only holds
+  `NotificationTemplates.whatsapp(type, templateName, orderedKeys…)` — never reorder keys or rename a
+  template without an approved one of that name. The login OTP also goes out on the `dhanboost_otp`
+  AUTH template. Token: SSM `/navix/<env>/navix/whatsapp/token`. See
+  [`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md).
 - SMS text must match the registered DLT template char-for-char, use `Rs.` not `₹` (₹ forces UCS-2),
   and any URL must be portal-whitelisted.
 
@@ -706,7 +735,9 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V72 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V75 Flyway catalog.
+- **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
+  (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 
 **Everything else:**
 - **`aws.md`** — the live cloud deployment (Vercel → ALB → ECS → RDS/S3/SSM): every resource id, the

@@ -5,6 +5,7 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LeadsTracker } from "@/components/staff/leads-tracker";
@@ -201,12 +202,14 @@ export default function AdminLeadsPage() {
             </option>
           ))}
         </Select>
-        <Input
-          label="Search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+        <SearchBar
+          initialValue={q}
+          onSearch={(t) => {
+            setQ(t);
+            setPage(1);
+          }}
           placeholder="Name or mobile"
-          className="!mb-0"
+          ariaLabel="Search"
         />
         <Select
           label="Status"

@@ -7,7 +7,7 @@ import com.navix.verification.client.DigitapAddressClient;
 import com.navix.verification.client.DigitapCreditClient;
 import com.navix.verification.client.DigitapCrifClient;
 import com.navix.verification.client.DigitapEmailClient;
-import com.navix.verification.client.DigitapFaceMatchClient;
+import com.navix.verification.client.DigitapFaceLivenessClient;
 import com.navix.verification.client.DigitapPanClient;
 import com.navix.verification.client.DigitapUanClient;
 import com.navix.verification.dto.DigitapDtos;
@@ -31,9 +31,6 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class DigitapVerificationAdapter implements VerificationPort {
-
-    /** Below this face-match confidence the selfie is treated as not-live. */
-    private static final double FACE_CONFIDENCE_THRESHOLD = 0.60;
 
     /** UAN Advanced {@code result_code}: record resolved. */
     private static final int UAN_RESULT_OK = 101;
@@ -73,7 +70,7 @@ public class DigitapVerificationAdapter implements VerificationPort {
     private final DigitapAddressClient addressClient;
     private final DigitapCrifClient crifClient;
     private final DigitapCreditClient creditClient;
-    private final DigitapFaceMatchClient faceMatchClient;
+    private final DigitapFaceLivenessClient faceLivenessClient;
     private final DigitapUanClient uanClient;
     private final FeatureFlagService featureFlags;
 
@@ -176,19 +173,11 @@ public class DigitapVerificationAdapter implements VerificationPort {
 
     @Override
     public FaceLivenessCheck faceLiveness(String imageUrl, String referenceImageUrl, String clientRef) {
-        // Digitap Face Match: selfie (person) vs the reference/Aadhaar photo (card).
-        DigitapDtos.FaceMatchResponse r = faceMatchClient.match(imageUrl, referenceImageUrl, clientRef);
-        boolean live;
-        if (referenceImageUrl != null && !referenceImageUrl.isBlank()) {
-            // True 1:1 match: the same face, above the confidence threshold, on a non-blurry selfie.
-            live = Boolean.TRUE.equals(r.sameFace())
-                    && !Boolean.TRUE.equals(r.personImageBlurry())
-                    && (r.confidence() == null || r.confidence() >= FACE_CONFIDENCE_THRESHOLD);
-        } else {
-            // No reference photo → degrade to a single-image quality/face-detection check.
-            live = !Boolean.TRUE.equals(r.personImageBlurry());
-        }
-        return new FaceLivenessCheck(r.txnId(), "DIGITAP", live, r.confidence(), false, r.personImageBlurry());
+        // Digitap Face Liveness v4: passive liveness on the selfie alone. referenceImageUrl is ignored —
+        // this product has no document face-match (product decision Oct 2026: liveness only).
+        DigitapDtos.FaceLivenessResponse r = faceLivenessClient.check(imageUrl, clientRef);
+        return new FaceLivenessCheck(r.txnId(), "DIGITAP", Boolean.TRUE.equals(r.live()), r.confidence(),
+                Boolean.TRUE.equals(r.multipleFaces()), r.personImageBlurry());
     }
 
     @Override

@@ -23,7 +23,13 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 > - **Onboarding verification** (BORROWER, ownership-checked): `POST /api/applications/{id}/verify/{pan,
 >   email,address,digilocker/init,bureau,salary,penny-drop,selfie,agreement,presign-upload}`,
 >   `POST …/verify/digilocker/complete`, `GET …/verify/{digilocker/status,summary}`; `submit-kyc` is gated
->   (`KYC_INCOMPLETE`). Staff-readable `GET /api/applications/{id}/verifications`, `GET …/documents/{docId}/url`.
+>   (`KYC_INCOMPLETE` — every REQUIRED check attempted **and**, since V75, `intakeCardsComplete`: the typed
+>   Aadhaar number plus `AADHAAR_CARD_FRONT`/`AADHAAR_CARD_BACK`/`PAN_CARD_FRONT`/`PAN_CARD_BACK` on file).
+>   `POST …/verify/documents` allow-lists those four alongside `BANK_STATEMENT`/`BANK_PROOF`/`AADHAAR_FRONT`/
+>   `AADHAAR_BACK` (`UNSUPPORTED_DOC_TYPE` otherwise; `filePassword` optional). `verify/pan` and
+>   `digilocker/complete` return `derived.aadhaarMismatch` + `derived.applicationRejected` when the typed
+>   Aadhaar disagrees with the provider's masked copy — the application is already `REJECTED`
+>   (`FRAUD_REJECTED`) by then. Staff-readable `GET /api/applications/{id}/verifications`, `GET …/documents/{docId}/url`.
 >   `digilocker/complete` no longer answers only the retryable `DIGILOCKER_NOT_READY`: the provider's
 >   verdicts are classified (§14), so it also returns **`DIGILOCKER_UPSTREAM_DOWN`** (DigiLocker itself is
 >   down — back off rather than keep polling at 4s), **`DIGILOCKER_CONSENT_DENIED`** (the borrower
@@ -63,8 +69,9 @@ All actions resolve the actor from the **JWT bearer** (`JwtAuthFilter` → `Acto
 | `POST /{id}/retry-disbursement` | DISBURSEMENT_HEAD | failed → DISBURSEMENT_PENDING |
 | `GET /rejections?reason=` · `GET /telecalling` | staff | rejection register · the telecalling queue |
 | `POST /{id}/verifications/{checkType}/retry` | staff (`verification:retry`) | re-run one provider check |
+| `GET`/`POST /{id}/verifications/{checkType}/resume-link` | credit roles / ADMIN | "send the customer a link" back to a failed/abandoned check (ESIGN, AADHAAR/DIGILOCKER, SELFIE, ADDRESS, or BUREAU when a security question is pending). GET previews; POST `{ "channel": "EMAIL" \| "COPY" }` reopens the step (except ESIGN with no prior attempt, and BUREAU, which never reopens) + rewinds the journey pointer + audits `STEP_REOPENED`/`STEP_LINK_SENT`, then EMAIL notifies the borrower (BUREAU delegates to the existing bureau-nudge send) |
 | `POST /{id}/cancel` | borrower/staff | → CANCELLED (pre-disbursement) |
-| `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read; the staff-only credit score/★ rating are **stripped** for a borrower reading their own profile). A DOB in the future or more than 100 years back → `INVALID_DOB` (no age rule here — the ADMIN correction path keeps its own 18+ check) |
+| `PUT /{id}/profile` · `GET /{id}/profile` | borrower writes · any reads | applicant KYC details (PAN masked on read; `aadhaar` — the 12-digit number typed on `/signup/aadhaar`, V75 — is Verhoeff-checked on write (`INVALID_AADHAAR`; a collision with another customer is accepted and written as an `AADHAAR_DUPLICATE` REVIEW row for staff — omitted from the borrower's `verify/summary`, and `sanction` refuses with `AADHAAR_DUPLICATE_UNRESOLVED` until a reviewer overrides it to PASS), locked once a PAN/AADHAAR check has read it or the file has left DRAFT (`AADHAAR_LOCKED`), and returned **in full** to staff; the staff-only credit score/★ rating are **stripped** for a borrower reading their own profile). A DOB in the future or more than 100 years back → `INVALID_DOB` (no age rule here — the ADMIN correction path keeps its own 18+ check) |
 | `POST /{id}/documents` · `GET /{id}/documents` · `GET /{id}/documents/{docId}` | borrower uploads · any reads | documents (base64; metadata list + content for view/download) — the auto-generated `CREDIT_BRIEF` PDF rides this list |
 | `GET /{id}/credit-brief` | staff only | bureau credit brief: 1–5★ rating + categorized facts (A/B/C) + summary + the `CREDIT_BRIEF` PDF doc id (`CreditBriefView`); borrower/anonymous → `FORBIDDEN_ROLE` |
 

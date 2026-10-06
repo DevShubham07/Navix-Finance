@@ -21,7 +21,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Eye } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { Input } from "@/components/ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage } from "@/components/staff/live-pipeline";
 import { useTableSort, SortableTh } from "@/components/staff/sortable-table";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
@@ -55,6 +55,7 @@ interface Row {
   preDue: boolean;
   caseId: string | null;
   borrowerName: string | null;
+  mobile: string | null;
   pan: string | null;
   employer: string | null;
   salaryPaise: number | null;
@@ -79,6 +80,7 @@ function toRow(w: WorklistRow): Row {
     preDue: w.preDue,
     caseId: w.caseId,
     borrowerName: w.loan?.borrowerName ?? null,
+    mobile: w.loan?.mobile ?? null,
     pan: w.loan?.panMasked ?? null,
     employer: w.loan?.employer ?? null,
     salaryPaise: w.loan?.monthlySalaryPaise ?? null,
@@ -104,12 +106,8 @@ export default function CollectionsBucketPage() {
   const bucket = isDpdBucket(raw) ? raw : "UPCOMING";
   const meta = COLLECTION_BUCKETS.find((item) => item.bucket === bucket)!;
 
-  const [query, setQuery] = React.useState("");
-  const [debounced, setDebounced] = React.useState("");
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(query.trim().toLowerCase()), 300);
-    return () => clearTimeout(t);
-  }, [query]);
+  // Deep link from the global-search palette (`?q=…`).
+  const [query, setQuery] = React.useState(search.get("q") ?? "");
 
   // Quick-view only. "Open" still navigates to the collections case workspace — that page is where
   // interactions, settlement and the case itself get created, and none of that lives in this dialog.
@@ -167,14 +165,23 @@ export default function CollectionsBucketPage() {
   }, [q.data]);
 
   const filtered = React.useMemo(() => {
+    const needle = query.trim().toLowerCase();
     const inBucket = (q.data ?? []).filter((w) => w.bucket === bucket).map(toRow);
     return inBucket.filter((r) => {
-      if (debounced) {
-        const hay = [r.borrowerName, r.pan, r.employer, r.officerName, String(r.loanId)]
+      if (needle) {
+        const hay = [
+          r.customerId != null ? String(r.customerId) : null,
+          r.borrowerName,
+          r.mobile,
+          r.pan,
+          r.employer,
+          r.officerName,
+          String(r.loanId),
+        ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
-        if (!hay.includes(debounced)) return false;
+        if (!hay.includes(needle)) return false;
       }
       // The date window filters on the due date — for a collections register "which of these fall
       // due today" is the question, and a case-opened date is meaningless on rows with no case.
@@ -182,7 +189,7 @@ export default function CollectionsBucketPage() {
       if (range.to && (!r.dueDate || r.dueDate > range.to)) return false;
       return true;
     });
-  }, [q.data, bucket, debounced, range.from, range.to]);
+  }, [q.data, bucket, query, range.from, range.to]);
 
   // Most overdue first: the top of a collections list should be the loan that has run longest.
   const { sorted, sortKey, dir, toggle } = useTableSort<Row>(filtered, "dpd", "desc");
@@ -314,12 +321,15 @@ export default function CollectionsBucketPage() {
       </div>
 
       <div className="mb-3 flex flex-wrap items-end gap-3">
-        <Input
-          label="Search"
-          placeholder="Name, PAN, employer, officer or loan #"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="!mb-0 max-w-xs"
+        <SearchBar
+          initialValue={query}
+          onSearch={(t) => {
+            setQuery(t);
+            setPage(1);
+          }}
+          placeholder="Customer ID, name, mobile, PAN, employer, officer or loan #"
+          ariaLabel="Search"
+          inputClassName="max-w-xs"
         />
         <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
         {canBulkAssign && (
@@ -337,7 +347,7 @@ export default function CollectionsBucketPage() {
         ) : total === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-muted">
             No loans in {meta.label}
-            {debounced ? ` for “${query.trim()}”` : ""}
+            {query.trim() ? ` for “${query.trim()}”` : ""}
             {period !== "ALL" ? " in the selected date range" : ""}.
           </p>
         ) : (
@@ -357,6 +367,7 @@ export default function CollectionsBucketPage() {
                     />
                   </th>
                 )}
+                <SortableTh label="Customer ID" sortKey="customerId" active={sortKey} dir={dir} onToggle={toggle} />
                 <SortableTh
                   className={canBulkAssign ? undefined : "staff-sticky-identity"}
                   label="Borrower"
@@ -365,6 +376,7 @@ export default function CollectionsBucketPage() {
                   dir={dir}
                   onToggle={toggle}
                 />
+                <th>Mobile</th>
                 <th>PAN</th>
                 <SortableTh label="Loan" sortKey="loanId" active={sortKey} dir={dir} onToggle={toggle} />
                 <SortableTh
@@ -429,6 +441,7 @@ export default function CollectionsBucketPage() {
                       />
                     </td>
                   )}
+                  <td className="font-mono">{r.customerId ?? "—"}</td>
                   <td className={canBulkAssign ? undefined : "staff-sticky-identity"}>
                     <span className="font-semibold text-ink">{dash(r.borrowerName)}</span>
                     {r.preDue && (
@@ -440,6 +453,7 @@ export default function CollectionsBucketPage() {
                       </span>
                     )}
                   </td>
+                  <td className="font-mono text-xs">{dash(r.mobile)}</td>
                   <td className="font-mono text-xs">{dash(r.pan)}</td>
                   <td className="font-mono">#{r.loanId}</td>
                   <td className="font-mono">{paiseToINR(r.principalPaise)}</td>

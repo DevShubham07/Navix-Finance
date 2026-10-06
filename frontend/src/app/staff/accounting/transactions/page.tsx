@@ -3,16 +3,15 @@
 import * as React from "react";
 import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, ArrowDownLeft, ArrowUpRight, ArrowLeft } from "lucide-react";
-import { Input } from "@/components/ui";
+import { Loader2, RefreshCw, ArrowDownLeft, ArrowUpRight, ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
+import { SearchBar } from "@/components/staff/search-bar";
 import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe, errMessage } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { formatDate } from "@/lib/utils";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 const TABS: { key: "ALL" | TransactionDirection; label: string }[] = [
   { key: "ALL", label: "All" },
@@ -78,8 +77,7 @@ export default function TransactionsPage() {
   const role = useStaffMe().data?.role;
   const [tab, setTab] = React.useState<"ALL" | TransactionDirection>("ALL");
   const [period, setPeriod] = React.useState<Period>("MONTH");
-  const [search, setSearch] = React.useState("");
-  const debounced = useDebouncedValue(search.trim());
+  const [query, setQuery] = React.useState("");
   // Server paging: the ledger is every money movement the company has ever made, so it was never a
   // list to fetch whole and slice in the browser.
   const [page, setPage] = React.useState(1);
@@ -92,14 +90,14 @@ export default function TransactionsPage() {
   // nothing in the new one.
   React.useEffect(() => {
     setPage(1);
-  }, [debounced, direction, period]);
+  }, [direction, period]);
 
   const q = useQuery({
     // Period filtering is now server-side (timezone-free), so the query keys on the range too.
-    queryKey: ["staff-transactions", debounced, direction, range?.from ?? "", range?.to ?? "", page, pageSize],
+    queryKey: ["staff-transactions", query, direction, range?.from ?? "", range?.to ?? "", page, pageSize],
     queryFn: () =>
       staffApi.transactions(
-        debounced || undefined,
+        query || undefined,
         direction,
         range ? { from: range.from, to: range.to } : undefined,
         { page, size: pageSize },
@@ -152,7 +150,7 @@ export default function TransactionsPage() {
             const out: TransactionView[] = [];
             const dateWindow = range ? { from: range.from, to: range.to } : undefined;
             for (let p = 1; ; p += 1) {
-              const chunk = await staffApi.transactions(debounced || undefined, direction, dateWindow, {
+              const chunk = await staffApi.transactions(query || undefined, direction, dateWindow, {
                 page: p,
                 size: 100,
               });
@@ -207,13 +205,14 @@ export default function TransactionsPage() {
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <Input
-              aria-label="Search transactions by borrower"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+            <SearchBar
+              initialValue={query}
+              onSearch={(t) => {
+                setQuery(t);
+                setPage(1);
+              }}
               placeholder="Search borrower / mobile / loan #"
-              leftIcon={<Search size={15} />}
-              className="!mb-0"
+              ariaLabel="Search transactions by borrower"
               inputClassName="w-64"
             />
             <button
@@ -249,7 +248,7 @@ export default function TransactionsPage() {
             <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
           ) : rows.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted">
-              No transactions{debounced ? ` for “${debounced}”` : ""}.
+              No transactions{query ? ` for “${query}”` : ""}.
             </p>
           ) : (
             <div className="staff-table-scroll">

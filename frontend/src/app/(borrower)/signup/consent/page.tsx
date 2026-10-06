@@ -109,7 +109,15 @@ export default function SignupConsentPage() {
       // All four run here. A FAIL is recorded and passed on to the credit team, so failures are
       // caught per-call and never stop the borrower.
       const pan = saved?.pan ?? "";
-      if (pan) await verificationApi.pan(appId, pan).catch(() => {});
+      if (pan) {
+        const panResult = await verificationApi.pan(appId, pan).catch(() => null);
+        // V75 fraud rule: the Aadhaar number typed on screen 9 disagreed with the Aadhaar on the PAN
+        // record. The backend has already rejected the application; nothing else may run against it.
+        if (panResult?.derived?.applicationRejected) {
+          router.replace("/application-rejected");
+          return;
+        }
+      }
       if (saved?.officialEmail) await verificationApi.email(appId, saved.officialEmail).catch(() => {});
       // Keep the result: a KBA challenge here is the freshest order we will ever have (minted
       // seconds ago), so answering it right now costs no extra provider call.
@@ -211,7 +219,7 @@ export default function SignupConsentPage() {
           and leaves a footprint. The button must not look available until the borrower has actually
           entered the code AND given consent, which is what the submit handler already required. */}
       <WizardActions
-        backHref="/signup/payslips"
+        backHref="/signup/pan-card"
         submit
         continueLabel="Confirm & submit"
         loading={busy}
