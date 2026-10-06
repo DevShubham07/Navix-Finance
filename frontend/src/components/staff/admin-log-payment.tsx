@@ -17,7 +17,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, HandCoins } from "lucide-react";
-import { Dialog, DialogHeader, DialogTitle, Input, Select } from "@/components/ui";
+import { Dialog, DialogHeader, DialogTitle, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { LoanBreakdown } from "@/components/staff/loan-breakdown";
 import { errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
 import {
@@ -146,6 +146,7 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
       ]) {
         qc.invalidateQueries({ queryKey: key });
       }
+      toast.success("Payment recorded");
       onClose();
     },
   });
@@ -213,9 +214,9 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
         <div className="rounded border border-line bg-ivory p-4 text-sm">
           <p className="mb-2 font-semibold text-navy">If they paid on {paidOn}</p>
           {outQ.isLoading ? (
-            <div className="h-24 animate-pulse rounded bg-white" />
+            <Skeleton variant="line" rows={5} />
           ) : outQ.error ? (
-            <p className="text-error-700">{errMessage(outQ.error)}</p>
+            <ErrorState error={outQ.error} onRetry={() => void outQ.refetch()} className="py-4" />
           ) : loan && outQ.data ? (
             <>
               <LoanBreakdown loan={loan} outstanding={outQ.data} />

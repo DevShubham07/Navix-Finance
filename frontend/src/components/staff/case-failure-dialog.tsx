@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Send } from "lucide-react";
-import { Badge } from "@/components/ui";
+import { Badge, EmptyState, ErrorState, Skeleton, toast } from "@/components/ui";
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import {
@@ -69,12 +69,19 @@ export function CaseFailureDialog({
     onSuccess: () => {
       setArmed(false);
       invalidate();
+      toast.success("Credit check re-run");
     },
   });
 
+  // The endpoint publishes a notification event rather than delivering one, so a fresh send is
+  // "queued"; `notified: 0` means the borrower already had this nudge and nothing was published.
   const notify = useMutation({
     mutationFn: () => customersApi.notifyBureauChallenge(applicationId as number),
-    onSuccess: invalidate,
+    onSuccess: (r) => {
+      invalidate();
+      if (r.notified) toast.success("Borrower notification queued");
+      else toast.info("Borrower was already notified.");
+    },
   });
 
   return (
@@ -84,9 +91,9 @@ export function CaseFailureDialog({
       </DialogHeader>
 
       {q.isLoading ? (
-        <div className="h-24 animate-pulse rounded bg-grey-100" />
+        <Skeleton variant="line" rows={5} />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
       ) : !detail || isNoFailure(reason) ? (
         <p className="text-sm text-muted">
           Nothing is outstanding on this customer&apos;s latest file.
@@ -116,10 +123,11 @@ export function CaseFailureDialog({
             {detail.attempts.length === 0 ? (
               // An empty list is genuinely ambiguous, so say which it is. The oldest applications are
               // both the most likely to be investigated and the most likely to be past the window.
-              <p className="text-sm text-muted">
-                No provider call history retained. Calls are kept for {detail.attemptRetentionDays} days,
-                so an older attempt may simply have aged out rather than never having been made.
-              </p>
+              <EmptyState
+                title="No provider call history retained."
+                hint={`Calls are kept for ${detail.attemptRetentionDays} days, so an older attempt may simply have aged out rather than never having been made.`}
+                className="py-4"
+              />
             ) : (
               <ul className="flex flex-col gap-1">
                 {detail.attempts.map((a, i) => (
@@ -147,12 +155,6 @@ export function CaseFailureDialog({
 
           {(retry.error || notify.error) && (
             <p className="text-sm text-error-700">{errMessage(retry.error ?? notify.error)}</p>
-          )}
-          {retry.isSuccess && <p className="text-sm text-success-700">Credit check re-run.</p>}
-          {notify.isSuccess && (
-            <p className="text-sm text-success-700">
-              {notify.data?.notified ? "Borrower notified." : "Borrower was already notified."}
-            </p>
           )}
         </div>
       )}

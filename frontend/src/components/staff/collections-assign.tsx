@@ -20,7 +20,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, UserPlus } from "lucide-react";
-import { Dialog, DialogFooter, DialogHeader, DialogTitle, Select } from "@/components/ui";
+import { Dialog, DialogFooter, DialogHeader, DialogTitle, ErrorState, Select, toast } from "@/components/ui";
 import { hasPermission } from "@/lib/auth/rbac";
 import { collectionsApi } from "@/lib/api/applications";
 import { errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
@@ -62,6 +62,9 @@ function useAssignOfficer(loanId: number) {
       for (const key of ASSIGN_INVALIDATE_KEYS) {
         qc.invalidateQueries({ queryKey: key });
       }
+      // Both the dialog (which just closes) and the inline cell (whose select already shows the
+      // choice optimistically) were otherwise silent about whether the assign actually landed.
+      toast.success("Officer assigned");
     },
   });
 }
@@ -168,7 +171,12 @@ function AssignDialog({
       {officersQ.isLoading ? (
         <p className="text-sm text-muted">Loading officers…</p>
       ) : officersQ.error ? (
-        <p className="text-sm text-error-700">Couldn&apos;t load officers — {errMessage(officersQ.error)}</p>
+        <ErrorState
+          error={officersQ.error}
+          title={`Couldn't load officers — ${errMessage(officersQ.error)}`}
+          onRetry={() => void officersQ.refetch()}
+          className="py-4"
+        />
       ) : officers.length === 0 ? (
         <p className="text-sm text-muted">No active collections executives.</p>
       ) : (
@@ -422,7 +430,12 @@ export function BulkAssignOfficerDialog({
           {officersQ.isLoading ? (
             <p className="text-sm text-muted">Loading officers…</p>
           ) : officersQ.error ? (
-            <p className="text-sm text-error-700">Couldn&apos;t load officers — {errMessage(officersQ.error)}</p>
+            <ErrorState
+              error={officersQ.error}
+              title={`Couldn't load officers — ${errMessage(officersQ.error)}`}
+              onRetry={() => void officersQ.refetch()}
+              className="py-4"
+            />
           ) : officers.length === 0 ? (
             <p className="text-sm text-muted">No active collections executives.</p>
           ) : (

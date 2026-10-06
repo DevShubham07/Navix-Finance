@@ -25,6 +25,7 @@ import { humanizeCheck, formatDateTime } from "@/lib/utils";
 import { errMessage } from "@/components/staff/pipeline/hooks";
 import { PermissionGate } from "@/components/staff/pipeline/actions";
 import { ResumeLinkDialog } from "@/components/staff/resume-link-dialog";
+import { ConfirmDialog, EmptyState, ErrorState, Skeleton, StatusBadge, toast } from "@/components/ui";
 
 /**
  * A placeholder card's status is `NOT_RUN` — deliberately distinct from the real `PENDING` status
@@ -36,19 +37,14 @@ type DisplayStatus = CheckStatus | "NOT_RUN";
 type DisplayStep = Omit<StepResult, "status"> & { status: DisplayStatus };
 
 /**
- * Status pill styling per verification outcome (green PASS / amber REVIEW / red FAIL / grey
- * PENDING / grey NOT_RUN — a synthetic placeholder card, see {@link RETRYABLE_CHECKS}).
+ * The {@link StatusBadge} kind for a check's status pill. EMPLOYMENT (the EPFO/UAN lookup) gates
+ * nothing, so it renders as `advisory` and its PASS/FAIL stay out of the gating green/red; every
+ * other check is a real `verification`. A synthetic `NOT_RUN` placeholder is in neither enum and
+ * falls through to the badge's neutral tone, reading "Not Run".
  */
-const CHECK_PILL: Record<DisplayStatus, string> = {
-  PASS: "bg-success-100 text-success-700",
-  REVIEW: "bg-warning-100 text-warning-800",
-  FAIL: "bg-error-100 text-error-700",
-  PENDING: "bg-grey-100 text-muted",
-  NOT_RUN: "bg-grey-100 text-muted",
-};
-
-/** Pill label per status — "NOT_RUN" reads as "NOT RUN" for humans; the underlying value is unchanged. */
-const CHECK_PILL_LABEL: Partial<Record<DisplayStatus, string>> = { NOT_RUN: "NOT RUN" };
+function checkKind(checkType: string): "advisory" | "verification" {
+  return checkType === "EMPLOYMENT" ? "advisory" : "verification";
+}
 
 /**
  * Failure keys {@link Provenance} renders in prose, hidden from the generic `derived` table below it
@@ -152,8 +148,19 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
     queryFn: () => staffApi.get(applicationId),
     retry: false,
   });
-  // KYC-approver / admin nudge the borrower with their pending steps (Phase 3.4).
-  const remind = useMutation({ mutationFn: () => staffApi.sendReminder(applicationId) });
+  // KYC-approver / admin nudge the borrower with their pending steps (Phase 3.4). A real in-app +
+  // SMS + email + WhatsApp send with no cooldown, so it sits behind a confirm. The endpoint only
+  // publishes an event, so the toast says "queued", never "sent"; `sent: false` means nothing was
+  // pending and nothing was published.
+  const [confirmRemind, setConfirmRemind] = React.useState(false);
+  const remind = useMutation({
+    mutationFn: () => staffApi.sendReminder(applicationId),
+    onSuccess: (r) => {
+      setConfirmRemind(false);
+      if (r.sent) toast.success("Reminder queued");
+      else toast.info("Nothing pending — no reminder sent");
+    },
+  });
 
   // The check currently open in the manual-override dialog (KYC approver / admin), or null.
   const [override, setOverride] = React.useState<DisplayStep | null>(null);
@@ -190,7 +197,11 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Verification checks</span>
           <PermissionGate permission="kyc:approve">
             <button
-              onClick={() => remind.mutate()}
+              onClick={() => {
+                // Clear a previous failed attempt so the confirm opens without a stale error.
+                remind.reset();
+                setConfirmRemind(true);
+              }}
               disabled={remind.isPending || remind.isSuccess}
               title="Remind the borrower of their pending verification steps"
               className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[8.8px] font-semibold text-navy hover:bg-navy-tint disabled:opacity-50"
@@ -214,11 +225,15 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
         </div>
       )}
       {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} variant="row" />
+          ))}
+        </div>
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
       ) : steps.length === 0 ? (
-        <p className="text-sm text-muted">No verification checks recorded yet.</p>
+        <EmptyState title="No verification checks recorded yet." className="py-4" />
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">
           {steps.map((s, i) => {
@@ -228,9 +243,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
               <div key={`${s.checkType}-${i}`} className="rounded border border-line bg-grey-50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold text-navy">{humanizeCheck(s.checkType)}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[s.status]}`}>
-                    {CHECK_PILL_LABEL[s.status] ?? s.status}
-                  </span>
+                  <StatusBadge kind={checkKind(s.checkType)} value={s.status} />
                 </div>
                 {s.message ? <p className="mt-1 text-xs text-ink/90">{s.message}</p> : null}
                 <Provenance step={s} />
@@ -291,6 +304,25 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
           onClose={() => setResumeLink(null)}
         />
       )}
+      <ConfirmDialog
+        open={confirmRemind}
+        onClose={() => setConfirmRemind(false)}
+        onConfirm={() => remind.mutate()}
+        busy={remind.isPending}
+        title="Send the borrower a reminder?"
+        confirmLabel="Send reminder"
+        body={
+          <>
+            <p className="m-0">
+              The borrower is sent their pending verification steps by in-app notification, SMS, email
+              and WhatsApp. There is no cooldown — every confirm sends again.
+            </p>
+            {remind.error ? (
+              <p className="m-0 mt-2 text-xs text-error-700">{errMessage(remind.error)}</p>
+            ) : null}
+          </>
+        }
+      />
     </div>
   );
 }
@@ -383,6 +415,7 @@ function RetryDialog({ applicationId, step, onClose }: { applicationId: number; 
       qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
       // application-info-dialog.tsx still reads the same rows under its own key.
       qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
+      toast.success(`${humanizeCheck(step.checkType)} check re-run`);
       onClose();
     },
   });
@@ -462,7 +495,7 @@ function OverrideDialog({
   const decide = useMutation({
     mutationFn: (d: boolean) =>
       staffApi.manualVerificationDecision(applicationId, step.checkType, d, notes.trim() || undefined),
-    onSuccess: () => {
+    onSuccess: (_result, d) => {
       qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
       // The dashboard groups applications off this overview query; refresh it so a card's
@@ -474,6 +507,7 @@ function OverrideDialog({
       qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
       // application-info-dialog.tsx still reads the same rows under its own key.
       qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
+      toast.success(`${humanizeCheck(step.checkType)} overridden to ${d ? "PASS" : "FAIL"}`);
       onClose();
     },
   });
@@ -490,9 +524,7 @@ function OverrideDialog({
       <div className="mb-4 rounded border border-line bg-grey-50 p-3">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Current status</span>
-          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CHECK_PILL[step.status]}`}>
-            {CHECK_PILL_LABEL[step.status] ?? step.status}
-          </span>
+          <StatusBadge kind={checkKind(step.checkType)} value={step.status} />
         </div>
         {step.message ? <p className="mt-1.5 text-xs text-ink/90">{step.message}</p> : null}
       </div>

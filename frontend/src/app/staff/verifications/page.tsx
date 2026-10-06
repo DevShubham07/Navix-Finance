@@ -6,10 +6,11 @@ import { Loader2, RefreshCw, X, ChevronRight } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { PermissionGate, NoAccessNotice, errMessage } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { staffApi, type VerificationOverviewRow } from "@/lib/api/applications";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { formatDateTime } from "@/lib/utils";
 
 /** The four application-wise buckets, in triage priority order. */
@@ -277,16 +278,31 @@ export default function VerificationsDashboardPage() {
         </div>
 
         {loading ? (
-          <div className="h-40 animate-pulse rounded bg-grey-100" />
+          // The board is a grid of application cards, so the placeholder is too.
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} variant="row" />
+            ))}
+          </div>
         ) : anyError ? (
-          <p className="rounded border border-line bg-white px-5 py-4 text-sm text-error-700 shadow-sm">
-            {errMessage(q.error ?? pendingQ.error)}
-          </p>
+          <div className="rounded border border-line bg-white shadow-sm">
+            {/* One message covers both queries, so the retry refetches both. */}
+            <ErrorState
+              error={q.error ?? pendingQ.error}
+              onRetry={() => {
+                void q.refetch();
+                void pendingQ.refetch();
+              }}
+              className="py-4"
+            />
+          </div>
         ) : cards.length === 0 ? (
-          <p className="rounded border border-line bg-white px-5 py-8 text-center text-sm text-muted shadow-sm">
-            No applications need attention{query.trim() ? ` for “${query.trim()}”` : ""}.
-            {!includeCleared && " Tick “Include cleared” to see the files that have already passed."}
-          </p>
+          <div className="rounded border border-line bg-white shadow-sm">
+            <EmptyState
+              title={`No applications need attention${query.trim() ? ` for “${query.trim()}”` : ""}.`}
+              hint={!includeCleared ? "Tick “Include cleared” to see the files that have already passed." : undefined}
+            />
+          </div>
         ) : (
           <div className="space-y-6">
             {BUCKETS.map((b) => {
@@ -375,19 +391,19 @@ function Tile({ label, value, valueClass }: { label: string; value: number | und
  * The EPFO/UAN outcome as a standalone chip. Deliberately outside the passed/failed/pending counts:
  * this check gates nothing, so it must not move an application between buckets (see
  * {@link NON_GATING_CHECKS}). A REVIEW here reads "we could not confirm employment", not "the borrower
- * still owes us a step" — hence the neutral wording rather than a warning colour.
+ * still owes us a step" — hence the neutral wording rather than a warning colour. `kind="advisory"`
+ * carries the same rule into the colour: PASS/FAIL stay out of the gating green/red, so an "EPFO
+ * failed" chip never reads as a blocker on a file that is perfectly sanctionable.
  */
 function EmploymentChip({ status }: { status: string | null }) {
   if (!status) return null;
   const label =
     status === "PASS" ? "EPFO ok" : status === "FAIL" ? "EPFO failed" : "EPFO unconfirmed";
-  const tone =
-    status === "PASS"
-      ? "bg-success-100 text-success-700"
-      : status === "FAIL"
-        ? "bg-error-100 text-error-700"
-        : "bg-grey-100 text-muted";
-  return <span className={`rounded-full px-1.5 py-0.5 font-semibold ${tone}`}>{label}</span>;
+  return (
+    <StatusBadge kind="advisory" value={status}>
+      {label}
+    </StatusBadge>
+  );
 }
 
 function AppCardTile({ card, onOpen }: { card: AppCard; onOpen: () => void }) {

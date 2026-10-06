@@ -22,7 +22,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Eye } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { errMessage } from "@/components/staff/live-pipeline";
 import { useTableSort, SortableTh } from "@/components/staff/sortable-table";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import {
@@ -40,6 +39,7 @@ import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { collectionsApi, customersApi, paiseToINR, type CustomerSummary, type WorklistRow } from "@/lib/api/applications";
 import { COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 /** Flattened row: the sort primitive compares top-level keys, and `loan` is a nested object. */
@@ -339,162 +339,175 @@ export default function CollectionsBucketPage() {
         )}
       </div>
 
-      <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+      {/* The panel look lives on this outer wrapper so `PaginationBar` can sit AFTER the scroller,
+          not inside it — bounding the scroller (`staff-register-scroll`) would otherwise scroll the
+          pagination away with the rows. */}
+      <div className="rounded border border-line bg-white shadow-sm">
         {q.error ? (
-          <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
+          <ErrorState error={q.error} onRetry={() => void q.refetch()} />
         ) : q.isLoading ? (
-          <div className="h-32 animate-pulse bg-white" />
+          <Skeleton variant="table" rows={8} cols={canBulkAssign ? 17 : 16} />
         ) : total === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted">
-            No loans in {meta.label}
-            {query.trim() ? ` for “${query.trim()}”` : ""}
-            {period !== "ALL" ? " in the selected date range" : ""}.
-          </p>
+          <EmptyState
+            title={`No loans in ${meta.label}${query.trim() ? ` for “${query.trim()}”` : ""}${
+              period !== "ALL" ? " in the selected date range" : ""
+            }.`}
+          />
         ) : (
-          <table className="staff-data-table">
-            <thead>
-              <tr>
-                <th>S.No.</th>
-                {canBulkAssign && (
-                  // Takes over the sticky-left slot while it renders — two cells pinned at `left: 0`
-                  // would sit on top of each other.
-                  <th className="staff-sticky-identity">
-                    <input
-                      type="checkbox"
-                      checked={allPageSelected}
-                      onChange={toggleAllOnPage}
-                      aria-label="Select all loans on this page"
-                    />
-                  </th>
-                )}
-                <SortableTh label="Customer ID" sortKey="customerId" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh
-                  className={canBulkAssign ? undefined : "staff-sticky-identity"}
-                  label="Borrower"
-                  sortKey="borrowerName"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                />
-                <th>Mobile</th>
-                <th>PAN</th>
-                <SortableTh label="Loan" sortKey="loanId" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh
-                  label="Principal"
-                  sortKey="principalPaise"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                />
-                <SortableTh
-                  label="Outstanding"
-                  sortKey="outstandingPaise"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                />
-                <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} />
-                <th>Employer</th>
-                <SortableTh
-                  label="Salary"
-                  sortKey="salaryPaise"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                />
-                <SortableTh
-                  label="Credit exec"
-                  sortKey="creditDecidedByName"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                />
-                <SortableTh
-                  label="Disbursed by"
-                  sortKey="disbursedByName"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                />
-                <SortableTh
-                  label="Collections exec"
-                  sortKey="officerName"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                />
-                <th className="staff-sticky-actions text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((r, i) => (
-                <tr key={r.loanId}>
-                  <td>{(page - 1) * pageSize + i + 1}</td>
+          // Offset clears the shell header, PageHeader, the bucket-card row and the search/date/bulk
+          // toolbar above the register.
+          <div
+            className="staff-table-scroll staff-register-scroll"
+            style={{ "--register-offset": "30rem" } as React.CSSProperties}
+          >
+            <table className="staff-data-table">
+              <thead>
+                <tr>
+                  <th>S.No.</th>
                   {canBulkAssign && (
-                    <td className="staff-sticky-identity">
+                    // Takes over the sticky-left slot while it renders — two cells pinned at `left: 0`
+                    // would sit on top of each other.
+                    <th className="staff-sticky-identity">
                       <input
                         type="checkbox"
-                        checked={selection.selected.has(r.loanId)}
-                        onChange={() => selection.toggle(r.loanId)}
-                        aria-label={`Select loan #${r.loanId}`}
+                        checked={allPageSelected}
+                        onChange={toggleAllOnPage}
+                        aria-label="Select all loans on this page"
+                      />
+                    </th>
+                  )}
+                  <SortableTh label="Customer ID" sortKey="customerId" active={sortKey} dir={dir} onToggle={toggle} />
+                  <SortableTh
+                    className={canBulkAssign ? undefined : "staff-sticky-identity"}
+                    label="Borrower"
+                    sortKey="borrowerName"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                  />
+                  <th>Mobile</th>
+                  <th>PAN</th>
+                  <SortableTh label="Loan" sortKey="loanId" active={sortKey} dir={dir} onToggle={toggle} />
+                  <SortableTh
+                    className="num"
+                    label="Principal"
+                    sortKey="principalPaise"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                  />
+                  <SortableTh
+                    className="num"
+                    label="Outstanding"
+                    sortKey="outstandingPaise"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                  />
+                  <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
+                  <SortableTh className="num" label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} />
+                  <th>Employer</th>
+                  <SortableTh
+                    className="num"
+                    label="Salary"
+                    sortKey="salaryPaise"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                  />
+                  <SortableTh
+                    label="Credit exec"
+                    sortKey="creditDecidedByName"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                  />
+                  <SortableTh
+                    label="Disbursed by"
+                    sortKey="disbursedByName"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                  />
+                  <SortableTh
+                    label="Collections exec"
+                    sortKey="officerName"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                  />
+                  <th className="staff-sticky-actions text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((r, i) => (
+                  <tr key={r.loanId}>
+                    <td>{(page - 1) * pageSize + i + 1}</td>
+                    {canBulkAssign && (
+                      <td className="staff-sticky-identity">
+                        <input
+                          type="checkbox"
+                          checked={selection.selected.has(r.loanId)}
+                          onChange={() => selection.toggle(r.loanId)}
+                          aria-label={`Select loan #${r.loanId}`}
+                        />
+                      </td>
+                    )}
+                    <td className="font-mono">{r.customerId ?? "—"}</td>
+                    <td className={canBulkAssign ? undefined : "staff-sticky-identity"}>
+                      <span className="font-semibold text-ink">{dash(r.borrowerName)}</span>
+                      {r.preDue && (
+                        <span
+                          className="ml-2 rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy"
+                          title="Not yet due — a courtesy follow-up, not a delinquency"
+                        >
+                          Not yet due
+                        </span>
+                      )}
+                    </td>
+                    <td className="font-mono text-xs">{dash(r.mobile)}</td>
+                    <td className="font-mono text-xs">{dash(r.pan)}</td>
+                    <td className="font-mono">#{r.loanId}</td>
+                    <td className="num font-mono">{paiseToINR(r.principalPaise)}</td>
+                    <td className="num font-mono font-semibold">{paiseToINR(r.outstandingPaise)}</td>
+                    <td className={r.dpd > 0 ? "font-semibold text-error-700" : undefined}>
+                      {r.dueDate ? formatDate(r.dueDate) : "—"}
+                    </td>
+                    <td className={r.dpd > 0 ? "num font-semibold text-error-700" : "num"}>{r.dpd}</td>
+                    <td>{dash(r.employer)}</td>
+                    <td className="num font-mono">{r.salaryPaise != null ? paiseToINR(r.salaryPaise) : "—"}</td>
+                    <td>{dash(r.creditDecidedByName)}</td>
+                    <td>{dash(r.disbursedByName)}</td>
+                    <td>
+                      <InlineOfficerSelect
+                        loanId={r.loanId}
+                        officerId={r.officerId}
+                        officerName={r.officerName}
                       />
                     </td>
-                  )}
-                  <td className="font-mono">{r.customerId ?? "—"}</td>
-                  <td className={canBulkAssign ? undefined : "staff-sticky-identity"}>
-                    <span className="font-semibold text-ink">{dash(r.borrowerName)}</span>
-                    {r.preDue && (
-                      <span
-                        className="ml-2 rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy"
-                        title="Not yet due — a courtesy follow-up, not a delinquency"
-                      >
-                        Not yet due
-                      </span>
-                    )}
-                  </td>
-                  <td className="font-mono text-xs">{dash(r.mobile)}</td>
-                  <td className="font-mono text-xs">{dash(r.pan)}</td>
-                  <td className="font-mono">#{r.loanId}</td>
-                  <td className="font-mono">{paiseToINR(r.principalPaise)}</td>
-                  <td className="font-mono font-semibold">{paiseToINR(r.outstandingPaise)}</td>
-                  <td className={r.dpd > 0 ? "font-semibold text-error-700" : undefined}>
-                    {r.dueDate ? formatDate(r.dueDate) : "—"}
-                  </td>
-                  <td className={r.dpd > 0 ? "font-semibold text-error-700" : undefined}>{r.dpd}</td>
-                  <td>{dash(r.employer)}</td>
-                  <td className="font-mono">{r.salaryPaise != null ? paiseToINR(r.salaryPaise) : "—"}</td>
-                  <td>{dash(r.creditDecidedByName)}</td>
-                  <td>{dash(r.disbursedByName)}</td>
-                  <td>
-                    <InlineOfficerSelect
-                      loanId={r.loanId}
-                      officerId={r.officerId}
-                      officerName={r.officerName}
-                    />
-                  </td>
-                  <td className="staff-sticky-actions">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <AdminLogPaymentButton loanId={r.loanId} loanStatus={r.loanStatus} compact />
-                      {r.applicationId != null && (
-                        <button
-                          onClick={() => setPreviewApplicationId(r.applicationId)}
-                          className="btn btn-sm btn-outline btn-icon"
-                          aria-label="Quick view application"
-                          title="Quick view — see the application without leaving the worklist"
-                        >
-                          <Eye size={14} />
-                        </button>
-                      )}
-                      <Link href={`/staff/collections/${r.loanId}`} className="btn btn-sm btn-outline">
-                        Open <ArrowRight size={14} />
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <td className="staff-sticky-actions">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <AdminLogPaymentButton loanId={r.loanId} loanStatus={r.loanStatus} compact />
+                        {r.applicationId != null && (
+                          <button
+                            onClick={() => setPreviewApplicationId(r.applicationId)}
+                            className="btn btn-sm btn-outline btn-icon"
+                            aria-label="Quick view application"
+                            title="Quick view — see the application without leaving the worklist"
+                          >
+                            <Eye size={14} />
+                          </button>
+                        )}
+                        <Link href={`/staff/collections/${r.loanId}`} className="btn btn-sm btn-outline">
+                          Open <ArrowRight size={14} />
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {total > 0 && (
           <PaginationBar

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, RefreshCw, Phone, HandCoins, UserPlus, Banknote, User } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import { CreditBadge } from "@/components/staff/credit-badge";
@@ -71,9 +71,15 @@ export default function CollectionsCasePage() {
       </PageHeader>
 
       {caseQ.isLoading ? (
-        <div className="h-32 animate-pulse rounded border border-line bg-white" />
-      ) : caseQ.error || !c ? (
-        <p className="text-sm text-error-700">{caseQ.error ? errMessage(caseQ.error) : "Case not found."}</p>
+        <div className="space-y-6">
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+        </div>
+      ) : caseQ.error ? (
+        <ErrorState error={caseQ.error} onRetry={() => void caseQ.refetch()} />
+      ) : !c ? (
+        <p className="text-sm text-error-700">Case not found.</p>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,360px)]">
           <div className="space-y-6">
@@ -100,6 +106,8 @@ export default function CollectionsCasePage() {
               caseId={caseId}
               interactions={interQ.data ?? []}
               loading={interQ.isLoading}
+              error={interQ.error}
+              onRetry={() => void interQ.refetch()}
               onLogged={invalidate}
             />
 
@@ -230,11 +238,14 @@ function CallRemarksCard({ customerId }: { customerId: number | null }) {
         <Phone size={16} /> Call history &amp; remarks
       </div>
       {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <div className="space-y-2">
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+        </div>
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
       ) : logs.length === 0 ? (
-        <p className="text-sm text-muted">No calls logged for this borrower.</p>
+        <EmptyState title="No calls logged for this borrower." className="py-4" />
       ) : (
         <ul className="space-y-2">
           {logs.map((l) => (
@@ -251,8 +262,17 @@ function CallRemarksCard({ customerId }: { customerId: number | null }) {
 }
 
 function InteractionsCard({
-  caseId, interactions, loading, onLogged,
-}: { caseId: string; interactions: InteractionView[]; loading: boolean; onLogged: () => void }) {
+  caseId, interactions, loading, error, onRetry, onLogged,
+}: {
+  caseId: string;
+  interactions: InteractionView[];
+  loading: boolean;
+  /** The interactions query's failure. Without it a failed GET read as "No interactions logged yet."
+   *  — and an officer could conclude nobody had called the borrower. */
+  error: unknown;
+  onRetry: () => void;
+  onLogged: () => void;
+}) {
   const [type, setType] = React.useState("CALL");
   const [outcome, setOutcome] = React.useState("CONNECTED");
   const [ptp, setPtp] = React.useState("");
@@ -264,7 +284,7 @@ function InteractionsCard({
       promiseToPayDate: ptp || undefined,
       proofRef: proof.trim() || undefined,
     }),
-    onSuccess: () => { setProof(""); setPtp(""); onLogged(); },
+    onSuccess: () => { setProof(""); setPtp(""); onLogged(); toast.success("Interaction logged"); },
   });
 
   return (
@@ -285,9 +305,11 @@ function InteractionsCard({
       {log.error && <p className="mb-2 text-sm text-error-700">{errMessage(log.error)}</p>}
 
       {loading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <Skeleton variant="line" rows={3} />
+      ) : error ? (
+        <ErrorState error={error} onRetry={onRetry} className="py-4" />
       ) : interactions.length === 0 ? (
-        <p className="text-sm text-muted">No interactions logged yet.</p>
+        <EmptyState title="No interactions logged yet." className="py-4" />
       ) : (
         <ul className="divide-y divide-line text-sm">
           {interactions.map((i) => (
@@ -322,7 +344,10 @@ function AssignCard({ caseId, currentOfficerName, onAssigned }: { caseId: string
   const [officerId, setOfficerId] = React.useState("");
   const assign = useMutation({
     mutationFn: () => collectionsApi.assignOfficer(caseId, Number(officerId)),
-    onSuccess: onAssigned,
+    onSuccess: () => {
+      onAssigned();
+      toast.success("Officer assigned");
+    },
   });
   const officers = officersQ.data ?? [];
   return (

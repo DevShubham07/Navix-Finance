@@ -13,6 +13,7 @@
 
 import * as React from "react";
 import { KV } from "@/components/staff/detail-parts";
+import { EmptyState } from "@/components/ui";
 import type {
   Tradeline,
   Enquiry,
@@ -334,7 +335,7 @@ export function TradelineTable({
   const truncated = tradelineCount != null && tradelineCount > tradelines.length;
 
   if (tradelines.length === 0) {
-    return <p className="text-sm text-muted">No tradelines parsed for this report.</p>;
+    return <EmptyState title="No tradelines parsed for this report." className="py-4" />;
   }
 
   return (
@@ -435,7 +436,7 @@ function sortEnquiries(rows: Enquiry[]): Enquiry[] {
 export function EnquiryTable({ enquiries }: { enquiries: Enquiry[] }) {
   const sorted = React.useMemo(() => sortEnquiries(enquiries), [enquiries]);
   if (sorted.length === 0) {
-    return <p className="text-sm text-muted">No enquiries parsed for this report.</p>;
+    return <EmptyState title="No enquiries parsed for this report." className="py-4" />;
   }
   return (
     <div className="max-h-[20rem] overflow-auto rounded border border-line">
@@ -599,7 +600,7 @@ export function TopExposuresBlock({ tradelines }: { tradelines: Tradeline[] }) {
     .filter((t) => isDefaultVisible(t) && (t.currentBalanceRupees ?? 0) > 0)
     .sort((a, b) => (b.currentBalanceRupees ?? 0) - (a.currentBalanceRupees ?? 0))
     .slice(0, 4);
-  if (top.length === 0) return <p className="text-sm text-muted">No live exposures to show.</p>;
+  if (top.length === 0) return <EmptyState title="No live exposures to show." className="py-4" />;
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {top.map((t, i) => (

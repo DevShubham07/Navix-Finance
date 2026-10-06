@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, HandCoins, Loader2, ShieldCheck, XCircle } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import {
   collectionsApi,
@@ -24,16 +24,20 @@ import { formatDateTime } from "@/lib/utils";
  * off part of the debt.
  */
 
-const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
-  PENDING_HEAD: { text: "Awaiting Collection Head", cls: "bg-gold-tint text-gold-dark" },
-  PENDING_ACCOUNTANT: { text: "Awaiting accountant", cls: "bg-navy-tint text-navy" },
-  VALIDATED: { text: "Validated", cls: "bg-success-50 text-success-700" },
-  REJECTED: { text: "Rejected", cls: "bg-error-50 text-error-700" },
+/** Human labels only — the tone comes from `StatusBadge kind="collectionPayment"`. */
+const STATUS_LABEL: Record<string, string> = {
+  PENDING_HEAD: "Awaiting Collection Head",
+  PENDING_ACCOUNTANT: "Awaiting accountant",
+  VALIDATED: "Validated",
+  REJECTED: "Rejected",
 };
 
 export function PaymentStatusPill({ status }: { status: string }) {
-  const s = STATUS_LABEL[status] ?? { text: status, cls: "bg-grey-100 text-muted" };
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s.cls}`}>{s.text}</span>;
+  return (
+    <StatusBadge kind="collectionPayment" value={status}>
+      {STATUS_LABEL[status] ?? status}
+    </StatusBadge>
+  );
 }
 
 function kindLabel(kind: CollectionPaymentKind) {
@@ -61,12 +65,19 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
         txnRef: txnRef.trim() || undefined,
         proofRef: proofRef.trim() || undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       setAmount("");
       setTxnRef("");
       setProofRef("");
       qc.invalidateQueries({ queryKey: ["collection-payments"] });
       onRaised?.();
+      // Was a success line that never cleared; the payment itself stays visible (with its status)
+      // in "Payments collected" once the list refetches.
+      toast.success(
+        `Recorded ${paiseToINR(data.amountPaise)} — ${
+          data.status === "PENDING_HEAD" ? "waiting on the Collection Head." : "waiting on the accountant."
+        }`,
+      );
     },
   });
 
@@ -106,14 +117,6 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
           placeholder="Screenshot reference or a note"
         />
         {raise.error && <p className="mb-2 text-sm text-error-700">{errMessage(raise.error)}</p>}
-        {raise.data && (
-          <p className="mb-2 text-sm text-success-700">
-            Recorded {paiseToINR(raise.data.amountPaise)} —{" "}
-            {raise.data.status === "PENDING_HEAD"
-              ? "waiting on the Collection Head."
-              : "waiting on the accountant."}
-          </p>
-        )}
         <button
           onClick={() => raise.mutate()}
           disabled={raise.isPending || !amount}
@@ -147,9 +150,12 @@ export function CasePaymentsCard({ caseId }: { caseId: string }) {
         <ShieldCheck size={16} /> Payments collected
       </div>
       {q.isLoading ? (
-        <div className="h-16 animate-pulse rounded bg-grey-100" />
+        <Skeleton variant="line" rows={3} />
+      ) : q.error ? (
+        // Without this branch a failed GET read as "No payments recorded on this case yet."
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-muted">No payments recorded on this case yet.</p>
+        <EmptyState title="No payments recorded on this case yet." className="py-4" />
       ) : (
         <ul className="divide-y divide-line">
           {rows.map((p) => (
@@ -188,7 +194,10 @@ export function CollectionPaymentApprovalQueue() {
   });
   const approve = useMutation({
     mutationFn: (id: string) => collectionsApi.headApprovePayment(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["collection-payments"] }),
+    onSuccess: () => {
+      toast.success("Settlement payment approved");
+      return qc.invalidateQueries({ queryKey: ["collection-payments"] });
+    },
   });
 
   return (
@@ -246,7 +255,10 @@ function ValidateActions({ payment, onDone }: { payment: CollectionPaymentView; 
   const [remarks, setRemarks] = React.useState("");
   const m = useMutation({
     mutationFn: (accept: boolean) => collectionsApi.validatePayment(payment.id, accept, remarks.trim() || undefined),
-    onSuccess: onDone,
+    onSuccess: (_data, accept) => {
+      toast.success(accept ? "Payment validated" : "Payment rejected");
+      return onDone();
+    },
   });
 
   return (
@@ -310,9 +322,12 @@ function QueueShell({
       <p className="mb-3 text-xs text-muted">{info}</p>
       {error ? <p className="mb-2 text-sm text-error-700">{errMessage(error)}</p> : null}
       {loading ? (
-        <div className="h-20 animate-pulse rounded border border-line bg-white" />
+        <div className="space-y-3">
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+        </div>
       ) : rows.length === 0 ? (
-        <p className="rounded border border-line bg-white px-4 py-6 text-center text-sm text-muted">{empty}</p>
+        <EmptyState title={empty} className="rounded border border-line bg-white" />
       ) : (
         <ul className="space-y-3">
           {rows.map((p) => (
