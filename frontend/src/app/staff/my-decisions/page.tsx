@@ -12,11 +12,11 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
-import { Select } from "@/components/ui";
+import { EmptyState, ErrorState, Select, Skeleton, StatusBadge } from "@/components/ui";
 import Link from "next/link";
 import { PeriodPicker } from "@/components/staff/period-picker";
 import { rangeFor, presetMatching, type Range } from "@/lib/period";
-import { staffApi, statusLabel, paiseToINR, type ApplicationStatus } from "@/lib/api/applications";
+import { staffApi, paiseToINR } from "@/lib/api/applications";
 import { useStaffMe, errMessage } from "@/components/staff/pipeline/hooks";
 import { customerPageHref } from "@/lib/customers/customer-page";
 import { formatDate } from "@/lib/utils";
@@ -188,76 +188,86 @@ export default function MyDecisionsPage() {
         </p>
       ) : null}
 
-      <section className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+      <section className="rounded border border-line bg-white shadow-sm">
         {q.error ? (
-          <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
+          <ErrorState error={q.error} onRetry={() => void q.refetch()} />
         ) : q.isLoading ? (
-          <p className="px-5 py-6 text-center text-sm text-muted">Loading…</p>
+          <Skeleton variant="table" rows={8} cols={13} />
         ) : rows.length === 0 ? (
-          <p className="px-5 py-6 text-center text-sm text-muted">No decisions recorded yet.</p>
+          <EmptyState title="No decisions recorded yet." />
         ) : (
           <>
-          <table className="staff-data-table">
-            <thead>
-              {/* What was decided, broken out of the raw event payload. The backend used to hand
-                  this page strings like "amountPaise=500000 salaryCreditDay=1" and they were
-                  rendered verbatim; DecisionNotes now parses them, so each value gets a real
-                  column and "Remark" carries only what a human actually typed. */}
-              <tr>
-                <th>S.No.</th>
-                <th>When</th>
-                <th>Application</th>
-                <th>Customer ID</th>
-                <th>Customer</th>
-                <th>PAN</th>
-                <th>Decision</th>
-                <th>Outcome</th>
-                <th className="text-right">Amount</th>
-                <th>Repayment date</th>
-                <th>Assignee</th>
-                <th>Txn ref</th>
-                <th>Remark</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((r, i) => (
-                <tr key={`${r.applicationId}-${r.at}-${i}`}>
-                  <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
-                  <td className="whitespace-nowrap text-muted">{formatDate(r.at)}</td>
-                  <td className="font-mono">#{r.applicationId}</td>
-                  <td className="font-mono text-muted">
-                    {r.customerId != null ? `#${r.customerId}` : "—"}
-                  </td>
-                  <td className="staff-cell">
-                    {r.customerId != null && r.customerName ? (
-                      <Link href={customerPageHref(r.customerId)} className="font-semibold text-navy hover:underline">
-                        {r.customerName}
-                      </Link>
-                    ) : (
-                      (r.customerName ?? "—")
-                    )}
-                  </td>
-                  <td className="font-mono text-ink">{r.pan || "—"}</td>
-                  <td className="font-semibold text-navy">{ACTION_LABEL[r.action] ?? r.action}</td>
-                  <td>{statusLabel(r.toStatus as ApplicationStatus)}</td>
-                  <td className="whitespace-nowrap text-right font-mono text-ink">
-                    {r.amountPaise != null ? paiseToINR(r.amountPaise) : "—"}
-                  </td>
-                  <td className="whitespace-nowrap">
-                    {r.repaymentDate ? formatDate(r.repaymentDate) : "—"}
-                  </td>
-                  <td className="staff-cell">
-                    {r.assigneeName ?? (r.assigneeId != null ? `#${r.assigneeId}` : "—")}
-                  </td>
-                  <td className="font-mono text-muted">{r.txnRef || "—"}</td>
-                  {/* The raw event payload stays as the tooltip — audit trail, not a column. */}
-                  <td className="staff-cell text-muted" title={r.notes ?? undefined}>
-                    {r.remark ?? "—"}
-                  </td>
+          {/* `staff-register-scroll` pins the header; PaginationBar sits after the scroller so it
+              does not scroll away with the rows. The offset clears the shell header, PageHeader,
+              the period row and the stat-card row. */}
+          <div
+            className="staff-table-scroll staff-register-scroll"
+            style={{ "--register-offset": "30rem" } as React.CSSProperties}
+          >
+            <table className="staff-data-table">
+              <thead>
+                {/* What was decided, broken out of the raw event payload. The backend used to hand
+                    this page strings like "amountPaise=500000 salaryCreditDay=1" and they were
+                    rendered verbatim; DecisionNotes now parses them, so each value gets a real
+                    column and "Remark" carries only what a human actually typed. */}
+                <tr>
+                  <th>S.No.</th>
+                  <th>When</th>
+                  <th>Application</th>
+                  <th>Customer ID</th>
+                  <th>Customer</th>
+                  <th>PAN</th>
+                  <th>Decision</th>
+                  <th>Outcome</th>
+                  <th className="num text-right">Amount</th>
+                  <th>Repayment date</th>
+                  <th>Assignee</th>
+                  <th>Txn ref</th>
+                  <th>Remark</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {pageRows.map((r, i) => (
+                  <tr key={`${r.applicationId}-${r.at}-${i}`}>
+                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
+                    <td className="whitespace-nowrap text-muted">{formatDate(r.at)}</td>
+                    <td className="font-mono">#{r.applicationId}</td>
+                    <td className="font-mono text-muted">
+                      {r.customerId != null ? `#${r.customerId}` : "—"}
+                    </td>
+                    <td className="staff-cell">
+                      {r.customerId != null && r.customerName ? (
+                        <Link href={customerPageHref(r.customerId)} className="font-semibold text-navy hover:underline">
+                          {r.customerName}
+                        </Link>
+                      ) : (
+                        (r.customerName ?? "—")
+                      )}
+                    </td>
+                    <td className="font-mono text-ink">{r.pan || "—"}</td>
+                    <td className="font-semibold text-navy">{ACTION_LABEL[r.action] ?? r.action}</td>
+                    <td>
+                      <StatusBadge kind="application" value={r.toStatus} />
+                    </td>
+                    <td className="num whitespace-nowrap text-right font-mono text-ink">
+                      {r.amountPaise != null ? paiseToINR(r.amountPaise) : "—"}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {r.repaymentDate ? formatDate(r.repaymentDate) : "—"}
+                    </td>
+                    <td className="staff-cell">
+                      {r.assigneeName ?? (r.assigneeId != null ? `#${r.assigneeId}` : "—")}
+                    </td>
+                    <td className="font-mono text-muted">{r.txnRef || "—"}</td>
+                    {/* The raw event payload stays as the tooltip — audit trail, not a column. */}
+                    <td className="staff-cell text-muted" title={r.notes ?? undefined}>
+                      {r.remark ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <PaginationBar
             page={page}
             pageCount={pageCount}

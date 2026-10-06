@@ -17,11 +17,12 @@ import {
 } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { NoAccessNotice } from "@/components/staff/live-pipeline";
-import { InfoTooltip } from "@/components/ui";
+import { EmptyState, InfoTooltip, Skeleton } from "@/components/ui";
 import { PipelineBar } from "@/components/staff/pipeline-bar";
 import { QueueTable } from "@/components/staff/pipeline/status-queue";
 import { PeriodPicker } from "@/components/staff/period-picker";
 import { rangeFor as decisionRangeFor, type Range } from "@/lib/period";
+import { STAGE_ORDER } from "@/lib/domain/journey";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import {
@@ -592,7 +593,8 @@ export default function StaffDashboardPage() {
           </div>
 
           {queueLoading ? (
-            <div className="h-40 animate-pulse rounded border border-line bg-white" />
+            // QueueTable's 17 columns (S.No. … Actions, no journey column).
+            <Skeleton variant="table" rows={6} cols={17} className="rounded border border-line bg-white" />
           ) : headlineCount ? (
             <div className="space-y-3">
               {myApps.length > 0 && (
@@ -610,9 +612,10 @@ export default function StaffDashboardPage() {
               Couldn&apos;t load your queue — Refresh to try again.
             </div>
           ) : (
-            <div className="rounded border border-line bg-white p-8 text-center text-sm text-muted">
-              You&apos;re all caught up — nothing in your queue.
-            </div>
+            <EmptyState
+              title="You're all caught up — nothing in your queue."
+              className="rounded border border-line bg-white"
+            />
           )}
         </section>
       )}
@@ -673,7 +676,12 @@ export default function StaffDashboardPage() {
               <InfoTooltip content="Live application load across the loan lifecycle, company-wide. Your role's stage is highlighted; terminal (closed) loans are shown subdued." />
             </div>
             {stats.isLoading ? (
-              <div className="h-24 animate-pulse rounded border border-line bg-white" />
+              // One tile per pipeline stage, at PipelineBar's own tile width.
+              <div className="flex gap-2 overflow-hidden">
+                {STAGE_ORDER.map((key) => (
+                  <Skeleton key={key} variant="stat" className="min-w-[7.5rem] flex-1" />
+                ))}
+              </div>
             ) : (
               <PipelineBar stats={stats.data ?? {}} role={role} />
             )}
@@ -783,7 +791,8 @@ function WorkHero({
           <p className="mt-1 text-sm text-muted">{queue.label}</p>
           <div className="mt-3 flex items-baseline gap-2">
             {loading ? (
-              <span className="inline-block h-9 w-12 animate-pulse rounded bg-grey-100" />
+              // Keeps the figure's h-9 footprint so the row does not jump when the count lands.
+              <Skeleton rows={1} className="flex h-9 w-12 flex-col justify-center" />
             ) : (
               <span className="font-serif text-4xl font-bold text-navy lg:text-5xl">{count}</span>
             )}
@@ -800,7 +809,7 @@ function WorkHero({
       </div>
 
       {loading ? (
-        <div className="mt-5 h-16 animate-pulse rounded border border-line bg-grey-50" />
+        <Skeleton variant="row" className="mt-5" />
       ) : oldest ? (
         <div className="mt-5 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -872,7 +881,11 @@ function DecisionsSection({
       </div>
       {error && <p className="mb-3 text-sm text-error-700">Couldn&apos;t load your decision totals.</p>}
       {loading ? (
-        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 8 }, (_, i) => (
+            <Skeleton key={i} variant="stat" />
+          ))}
+        </div>
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -946,7 +959,11 @@ function OutcomesSection({ stats, loading }: { stats: ReturnType<typeof outcomeS
         <InfoTooltip content="What happened to the borrowers you approved in the selected period — the truest read on decision quality. A dash means there's nothing to measure yet, never a real zero." />
       </div>
       {loading ? (
-        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 6 }, (_, i) => (
+            <Skeleton key={i} variant="stat" />
+          ))}
+        </div>
       ) : !stats || stats.approvedCount === 0 ? (
         <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
           No approvals in this period yet.
@@ -995,7 +1012,11 @@ function BorrowersSection({ stats, loading }: { stats: BookStatsView | null; loa
         </Link>
       </div>
       {loading ? (
-        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 15 }, (_, i) => (
+            <Skeleton key={i} variant="stat" />
+          ))}
+        </div>
       ) : !stats || stats.total === 0 ? (
         <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
           Nothing allocated to you yet.
@@ -1054,7 +1075,11 @@ function CollectionsSection({
         <InfoTooltip content="Your assigned cases, what you've recovered, and your settlement activity. Recovery rate is recovered ÷ outstanding across your cases." />
       </div>
       {loading ? (
-        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: isHead ? 9 : 7 }, (_, i) => (
+            <Skeleton key={i} variant="stat" />
+          ))}
+        </div>
       ) : !stats ? (
         <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
           No collections data yet.
@@ -1110,11 +1135,9 @@ function TeamSection({
         <InfoTooltip content="Everyone reporting to you in the selected period. Click a row to see their full decision history." />
       </div>
       {loading ? (
-        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={4} cols={6} className="rounded border border-line bg-white shadow-sm" />
       ) : rows.length === 0 ? (
-        <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
-          No team data yet.
-        </div>
+        <EmptyState title="No team data yet." className="rounded border border-line bg-white" />
       ) : (
         <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
           <table className="staff-data-table">
@@ -1122,10 +1145,10 @@ function TeamSection({
               <tr>
                 <th>Name</th>
                 <th>Role</th>
-                <th className="text-right">Actions</th>
+                <th className="num text-right">Actions</th>
                 <th className="text-right">Approval rate</th>
                 <th className="text-right">Avg turnaround</th>
-                <th className="text-right">In queue now</th>
+                <th className="num text-right">In queue now</th>
               </tr>
             </thead>
             <tbody>
@@ -1141,10 +1164,10 @@ function TeamSection({
                       </Link>
                     </td>
                     <td className="text-muted">{r.role}</td>
-                    <td className="text-right">{r.totalActions}</td>
+                    <td className="num text-right">{r.totalActions}</td>
                     <td className="text-right">{pct(approvalRate)}</td>
                     <td className="text-right">{mins(r.avgTurnaroundMinutes)}</td>
-                    <td className="text-right">{r.pendingNow}</td>
+                    <td className="num text-right">{r.pendingNow}</td>
                   </tr>
                 );
               })}
@@ -1172,7 +1195,11 @@ function SegmentBar({
         <InfoTooltip content="Every customer rolled up into lifecycle segments, counted server-side. Unallocated is tinted when the backlog is non-zero." />
       </div>
       {loading ? (
-        <div className="h-24 animate-pulse rounded border border-line bg-white" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {chips.map((seg) => (
+            <Skeleton key={seg} variant="stat" />
+          ))}
+        </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {chips.map((seg) => {
@@ -1224,7 +1251,14 @@ function ExtraActionRow({ extra }: { extra: QueueExtra }) {
 /** 30-day activity trends — applications, disbursals and repayments per day with week-over-week deltas. */
 function TrendsSection({ data, loading }: { data?: TrendResponse; loading: boolean }) {
   if (loading) {
-    return <div className="mb-8 h-32 animate-pulse rounded border border-line bg-white" />;
+    // One tile per TrendCard, at the card's height (header + sparkline + footer).
+    return (
+      <div className="mb-8 grid gap-4 sm:grid-cols-3">
+        {Array.from({ length: 3 }, (_, i) => (
+          <Skeleton key={i} variant="stat" className="h-32" />
+        ))}
+      </div>
+    );
   }
   if (!data || data.points.length === 0) return null;
   return (
@@ -1342,9 +1376,9 @@ function AdminTransactions({ page, loading }: { page?: TransactionPage; loading:
       </div>
 
       {loading ? (
-        <div className="h-20 animate-pulse rounded bg-grey-100" />
+        <Skeleton rows={5} />
       ) : latest.length === 0 ? (
-        <p className="text-sm text-muted">No transactions yet.</p>
+        <EmptyState title="No transactions yet." className="py-4" />
       ) : (
         <ul className="divide-y divide-line text-sm">
           {latest.map((t) => {

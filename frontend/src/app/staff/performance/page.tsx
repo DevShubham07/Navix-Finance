@@ -33,6 +33,7 @@ import { useColumnFilters, FilterableTh, type FilterColumn } from "@/components/
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { PeriodPicker } from "@/components/staff/period-picker";
 import { InfoTooltip } from "@/components/ui/tooltip";
+import { EmptyState, Skeleton } from "@/components/ui";
 import { rangeFor, periodLabelFor, type Range } from "@/lib/period";
 import { staffApi, paiseToINR, type StaffPerformanceRow } from "@/lib/api/applications";
 
@@ -213,98 +214,104 @@ export default function StaffPerformancePage() {
       )}
 
       {q.isLoading ? (
-        <div className="h-48 animate-pulse rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={13} className="rounded border border-line bg-white shadow-sm" />
       ) : (
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          <table className="staff-data-table">
-            <thead>
-              <tr>
-                <th>S.No.</th>
-                <FilterableTh
-                  label="Staff"
-                  sortKey="staffName"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                  setSort={setSort}
-                  options={optionsFor("staffName")}
-                  selected={selectionFor("staffName")}
-                  onApply={(v) => setFilter("staffName", v)}
-                />
-                <FilterableTh
-                  label="Role"
-                  sortKey="role"
-                  active={sortKey}
-                  dir={dir}
-                  onToggle={toggle}
-                  setSort={setSort}
-                  options={optionsFor("role")}
-                  selected={selectionFor("role")}
-                  onApply={(v) => setFilter("role", v)}
-                />
-                <SortableTh label="Approved" sortKey="accepted" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="Rejected" sortKey="rejected" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="In queue now" sortKey="pendingNow" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="Actions" sortKey="totalActions" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="Active days" sortKey="activeDays" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="Avg turnaround" sortKey="avgTurnaroundMinutes" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="Value moved" sortKey="moneyPaise" active={sortKey} dir={dir} onToggle={toggle} />
-                <SortableTh label="Calls" sortKey="callsMade" active={sortKey} dir={dir} onToggle={toggle} />
-                <th>First / last action</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.length === 0 ? (
+        <div className="rounded border border-line bg-white shadow-sm">
+          {/* `staff-register-scroll` pins the header; PaginationBar sits after the scroller so it
+              does not scroll away with the rows. The offset clears the shell header, PageHeader,
+              the period row, the stat-card row and the 180px chart (~46rem) — capped by min() so
+              that on a laptop-height viewport the register keeps at least 20rem of rows instead
+              of collapsing to its header row. */}
+          <div
+            className="staff-table-scroll staff-register-scroll"
+            style={{ "--register-offset": "min(46rem, calc(100dvh - 20rem))" } as React.CSSProperties}
+          >
+            <table className="staff-data-table">
+              <thead>
                 <tr>
-                  <td colSpan={13} className="py-8 text-center text-muted">
-                    No staff activity in this period.
-                  </td>
+                  <th>S.No.</th>
+                  <FilterableTh
+                    label="Staff"
+                    sortKey="staffName"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                    setSort={setSort}
+                    options={optionsFor("staffName")}
+                    selected={selectionFor("staffName")}
+                    onApply={(v) => setFilter("staffName", v)}
+                  />
+                  <FilterableTh
+                    label="Role"
+                    sortKey="role"
+                    active={sortKey}
+                    dir={dir}
+                    onToggle={toggle}
+                    setSort={setSort}
+                    options={optionsFor("role")}
+                    selected={selectionFor("role")}
+                    onApply={(v) => setFilter("role", v)}
+                  />
+                  <SortableTh label="Approved" sortKey="accepted" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                  <SortableTh label="Rejected" sortKey="rejected" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                  <SortableTh label="In queue now" sortKey="pendingNow" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                  <SortableTh label="Actions" sortKey="totalActions" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                  <SortableTh label="Active days" sortKey="activeDays" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                  <SortableTh label="Avg turnaround" sortKey="avgTurnaroundMinutes" active={sortKey} dir={dir} onToggle={toggle} />
+                  <SortableTh label="Value moved" sortKey="moneyPaise" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                  <SortableTh label="Calls" sortKey="callsMade" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                  <th>First / last action</th>
+                  <th></th>
                 </tr>
-              ) : (
-                pageRows.map((r, i) => (
-                  <tr key={r.staffId}>
-                    <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
-                    <td className="staff-cell">
-                      {r.staffName}
-                      {!r.active && <span className="ml-1 text-xs text-muted">(inactive)</span>}
-                    </td>
-                    <td className="staff-cell">{ROLE_LABEL[r.role] ?? r.role}</td>
-                    <td className="font-semibold text-success-700">{r.accepted}</td>
-                    <td className="font-semibold text-error-700">{r.rejected}</td>
-                    <td>{r.pendingNow}</td>
-                    <td>{r.totalActions}</td>
-                    <td>{r.activeDays}</td>
-                    <td>
-                      {humanMinutes(r.avgTurnaroundMinutes)}
-                      {r.avgTurnaroundMinutes == null && r.totalActions > 0 && (
-                        <InfoTooltip content="No decision in this period had a matching assignment to measure from, so there is nothing to average — this is not a zero wait." />
-                      )}
-                    </td>
-                    <td className="font-mono">{r.moneyPaise ? paiseToINR(r.moneyPaise) : "—"}</td>
-                    <td>
-                      {r.callsMade}
-                      {callsPartial && r.callsMade === 0 && callsNote && (
-                        <InfoTooltip content={callsNote} />
-                      )}
-                    </td>
-                    <td className="text-muted">
-                      {clockTime(r.firstActionAt)} / {clockTime(r.lastActionAt)}
-                    </td>
-                    <td>
-                      {/* Carry the window through, so the totals on the next page match these. */}
-                      <Link
-                        href={`/staff/my-decisions?staffId=${r.staffId}${range.from ? `&from=${range.from}` : ""}${range.to ? `&to=${range.to}` : ""}`}
-                        className="text-xs font-semibold text-navy underline"
-                      >
-                        Open
-                      </Link>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {pageRows.length === 0 ? (
+                  <EmptyState title="No staff activity in this period." inTable={13} />
+                ) : (
+                  pageRows.map((r, i) => (
+                    <tr key={r.staffId}>
+                      <td className="text-muted">{(page - 1) * pageSize + i + 1}</td>
+                      <td className="staff-cell">
+                        {r.staffName}
+                        {!r.active && <span className="ml-1 text-xs text-muted">(inactive)</span>}
+                      </td>
+                      <td className="staff-cell">{ROLE_LABEL[r.role] ?? r.role}</td>
+                      <td className="num font-semibold text-success-700">{r.accepted}</td>
+                      <td className="num font-semibold text-error-700">{r.rejected}</td>
+                      <td className="num">{r.pendingNow}</td>
+                      <td className="num">{r.totalActions}</td>
+                      <td className="num">{r.activeDays}</td>
+                      <td>
+                        {humanMinutes(r.avgTurnaroundMinutes)}
+                        {r.avgTurnaroundMinutes == null && r.totalActions > 0 && (
+                          <InfoTooltip content="No decision in this period had a matching assignment to measure from, so there is nothing to average — this is not a zero wait." />
+                        )}
+                      </td>
+                      <td className="num font-mono">{r.moneyPaise ? paiseToINR(r.moneyPaise) : "—"}</td>
+                      <td className="num">
+                        {r.callsMade}
+                        {callsPartial && r.callsMade === 0 && callsNote && (
+                          <InfoTooltip content={callsNote} />
+                        )}
+                      </td>
+                      <td className="text-muted">
+                        {clockTime(r.firstActionAt)} / {clockTime(r.lastActionAt)}
+                      </td>
+                      <td>
+                        {/* Carry the window through, so the totals on the next page match these. */}
+                        <Link
+                          href={`/staff/my-decisions?staffId=${r.staffId}${range.from ? `&from=${range.from}` : ""}${range.to ? `&to=${range.to}` : ""}`}
+                          className="text-xs font-semibold text-navy underline"
+                        >
+                          Open
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
           <PaginationBar
             page={page}
             pageCount={pageCount}
