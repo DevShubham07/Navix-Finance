@@ -1031,6 +1031,18 @@ export class ApplicationApiError extends Error {
   }
 }
 
+/**
+ * `staffApi.retryVerification` stopped waiting at 120s. The request itself is not aborted, so the
+ * provider call may still be running — and may still bill — after this is thrown. A typed error so
+ * the UI can tell "gave up waiting" apart from "the server said no".
+ */
+export class VerificationRetryTimeoutError extends Error {
+  constructor() {
+    super("Verification retry timed out after 120 seconds.");
+    this.name = "VerificationRetryTimeoutError";
+  }
+}
+
 type Method = "GET" | "POST" | "PUT" | "DELETE";
 
 async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> {
@@ -1297,6 +1309,22 @@ export interface VerificationOverview {
   /** Matching APPLICATIONS (the paging unit), not rows. The five tallies above always cover the
    *  whole undecided queue, whatever page or filter is showing. */
   total: number;
+  /**
+   * The "Not started" bucket: KYC_PENDING applications with no verification row at all, newest
+   * first, capped at 200, with the same `q` search as the rows. Not paged — the same list comes back
+   * on every page. Optional only so a backend that predates it (mid-deploy) reads as an empty bucket.
+   */
+  notStarted?: VerificationNotStarted[];
+  /** True size of the "Not started" bucket; larger than `notStarted.length` when the list is capped. */
+  notStartedTotal?: number;
+}
+
+/** One KYC_PENDING application with no verification row yet — mirrors backend `NotStartedApplication`. */
+export interface VerificationNotStarted {
+  applicationId: number;
+  customerId: number | null;
+  borrowerName: string | null;
+  borrowerMobile: string | null;
 }
 
 /** Result of a staff-triggered KYC reminder (Phase 3.4). */
@@ -1861,7 +1889,7 @@ export const staffApi = {
     try {
       return await Promise.race([
         bff<StepResult>(`${STAFF_BASE}/${id}/verifications/${checkType}/retry`, "POST", input),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Verification retry timed out after 120 seconds.")), 120_000); }),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new VerificationRetryTimeoutError()), 120_000); }),
       ]);
     } finally { if (timer) clearTimeout(timer); }
   },

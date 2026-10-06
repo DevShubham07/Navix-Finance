@@ -177,6 +177,8 @@ class ApplicationVerificationServiceTest {
         assertThat(result.passed()).isZero();
         assertThat(result.failed()).isZero();
         assertThat(result.rows()).isEmpty();
+        assertThat(result.notStarted()).isEmpty();
+        assertThat(result.notStartedTotal()).isZero();
         verifyNoInteractions(verificationRepo);
         // profileRepo.save/findByApplicationId are stubbed lenient() elsewhere in this class but not
         // called here — this asserts no interaction on the specific method overview() would use.
@@ -355,6 +357,135 @@ class ApplicationVerificationServiceTest {
 
         assertThat(result.page()).isEqualTo(1);
         assertThat(result.size()).isEqualTo(100);
+    }
+
+    // ------------------------------------------------------- overview "Not started" bucket
+    //
+    // The page used to build this bucket itself: every KYC_PENDING application (a second, unpaginated
+    // poll) that was not on the CURRENT page of rows. A file whose checks sat on page 2, or that was
+    // fully cleared and so filtered out of the default page, was shown to a reviewer as never verified.
+    // The server now names the bucket from the whole undecided queue it has already loaded.
+
+    /** A KYC_PENDING file with no verification row at all is "Not started", with its borrower context. */
+    @Test
+    void overview_notStarted_listsKycPendingApplicationsWithNoRows() {
+        LoanApplication untouched = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
+        untouched.setCustomerId(501L);
+        LoanApplication started = appWithStatus(43L, ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(untouched, started));
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of(row(43L, "PAN", "FAIL")));
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of(profile()));
+
+        var result = service.overview(null, null, null, null, 1, 25);
+
+        assertThat(result.notStarted()).containsExactly(new ApplicationVerificationService.NotStartedApplication(
+                APP, 501L, "SHUBHAM", "7206485966"));
+        assertThat(result.notStartedTotal()).isEqualTo(1);
+        // The bucket rides beside the rows; it does not change what the rows page over.
+        assertThat(result.total()).isEqualTo(1);
+        assertThat(result.rows()).extracting("applicationId").containsOnly(43L);
+    }
+
+    /**
+     * The defect this replaces: a file with rows is never "Not started", whether its rows are on a
+     * page the reviewer is not looking at or were dropped from the default page as fully cleared.
+     */
+    @Test
+    void overview_notStarted_excludesFilesWhoseRowsAreOnAnotherPageOrCleared() {
+        LoanApplication onPageOne = appWithStatus(1L, ApplicationStatus.KYC_PENDING);
+        LoanApplication onPageTwo = appWithStatus(2L, ApplicationStatus.KYC_PENDING);
+        LoanApplication cleared = appWithStatus(3L, ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(onPageOne, onPageTwo, cleared));
+        java.util.List<ApplicationVerification> rows = new java.util.ArrayList<>();
+        rows.add(row(1L, "PAN", "FAIL"));
+        rows.add(row(2L, "PAN", "FAIL"));
+        for (String check : List.of("PAN", "EMAIL", "ADDRESS", "AADHAAR", "BUREAU", "SALARY",
+                "PENNY_DROP", "SELFIE")) {
+            rows.add(row(3L, check, "PASS"));
+        }
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(rows);
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var firstPage = service.overview(null, null, null, null, 1, 1);
+
+        assertThat(firstPage.total()).isEqualTo(2);          // the cleared file is off the default
+        assertThat(firstPage.rows()).extracting("applicationId").containsOnly(1L);
+        assertThat(firstPage.notStarted()).isEmpty();
+        assertThat(firstPage.notStartedTotal()).isZero();
+    }
+
+    /**
+     * Only KYC_PENDING: DASHBOARD_STATUSES also holds DRAFT (about a thousand abandoned intakes) and
+     * SANCTIONED, neither of which is a file waiting for its first check.
+     */
+    @Test
+    void overview_notStarted_ignoresDraftAndOtherStatusesWithNoRows() {
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(
+                appWithStatus(1L, ApplicationStatus.DRAFT),
+                appWithStatus(2L, ApplicationStatus.REVIEW_PENDING),
+                appWithStatus(3L, ApplicationStatus.SANCTIONED),
+                appWithStatus(4L, ApplicationStatus.KYC_PENDING)));
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null, null, 1, 25);
+
+        assertThat(result.notStarted()).extracting("applicationId").containsExactly(4L);
+        assertThat(result.notStartedTotal()).isEqualTo(1);
+    }
+
+    /** The list is capped, newest first, while notStartedTotal keeps the true count. */
+    @Test
+    void overview_notStarted_capsTheListNewestFirstButReportsTheTrueTotal() {
+        int count = ApplicationVerificationService.OVERVIEW_NOT_STARTED_CAP + 5;
+        java.time.Instant base = java.time.Instant.parse("2026-10-01T00:00:00Z");
+        java.util.List<LoanApplication> apps = new java.util.ArrayList<>();
+        for (long id = 1; id <= count; id++) {
+            LoanApplication a = appWithStatus(id, ApplicationStatus.KYC_PENDING);
+            a.setCreatedAt(base.plusSeconds(id * 60));       // higher id = newer
+            apps.add(a);
+        }
+        java.util.Collections.shuffle(apps, new java.util.Random(7));
+        when(applicationRepo.findByStatusIn(any())).thenReturn(apps);
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+
+        var result = service.overview(null, null, null, null, 1, 25);
+
+        assertThat(result.notStarted()).hasSize(ApplicationVerificationService.OVERVIEW_NOT_STARTED_CAP);
+        assertThat(result.notStartedTotal()).isEqualTo(count);
+        assertThat(result.notStarted().get(0).applicationId()).isEqualTo((long) count);
+        // The five oldest are the ones left out.
+        assertThat(result.notStarted()).extracting("applicationId")
+                .doesNotContain(1L, 2L, 3L, 4L, 5L)
+                .contains(6L);
+    }
+
+    /** The bucket honours the same free-text search as the rows: name, mobile, app id, customer id. */
+    @Test
+    void overview_notStarted_appliesTheSearch() {
+        LoanApplication shubham = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
+        shubham.setCustomerId(501L);
+        LoanApplication other = appWithStatus(77L, ApplicationStatus.KYC_PENDING);
+        other.setCustomerId(902L);
+        when(applicationRepo.findByStatusIn(any())).thenReturn(List.of(shubham, other));
+        when(verificationRepo.findByApplicationIdIn(any())).thenReturn(List.of());
+        CustomerProfile otherProfile = new CustomerProfile();
+        otherProfile.setApplicationId(77L);
+        otherProfile.setFullName("Asha Rao");
+        otherProfile.setMobile("9000000001");
+        when(profileRepo.findByApplicationIdIn(any())).thenReturn(List.of(profile(), otherProfile));
+
+        var byName = service.overview(null, null, "  shub ", null, 1, 25);
+        assertThat(byName.notStarted()).extracting("applicationId").containsExactly(APP);
+        assertThat(byName.notStartedTotal()).isEqualTo(1);
+
+        var byCustomer = service.overview(null, null, "902", null, 1, 25);
+        assertThat(byCustomer.notStarted()).extracting("applicationId").containsExactly(77L);
+
+        var noMatch = service.overview(null, null, "nobody", null, 1, 25);
+        assertThat(noMatch.notStarted()).isEmpty();
+        assertThat(noMatch.notStartedTotal()).isZero();
     }
 
     private static LoanApplication appWithStatus(Long id, ApplicationStatus status) {

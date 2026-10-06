@@ -229,7 +229,7 @@ public class ApplicationVerificationService {
     /**
      * Checks that inform the credit decision but gate nothing, so they stay out of the
      * pending-API dashboard's bucket maths. Mirrors the frontend constant of the same meaning
-     * (`frontend/src/app/staff/verifications/page.tsx`) — the two must agree, or the server's default
+     * (`frontend/src/lib/staff/verification-dashboard.ts`) — the two must agree, or the server's default
      * "needs attention" page and the card the page draws from it would disagree about the same file.
      */
     private static final Set<String> OVERVIEW_NON_GATING =
@@ -250,12 +250,18 @@ public class ApplicationVerificationService {
     /** Page-size ceiling for {@link #overview}, mirroring {@code CustomerService.MAX_PAGE_SIZE}. */
     private static final int OVERVIEW_MAX_PAGE_SIZE = 100;
 
+    /**
+     * Ceiling on {@link VerificationOverview#notStarted()}. The list is not paged, so it is capped
+     * instead; {@link VerificationOverview#notStartedTotal()} still reports the full count.
+     */
+    static final int OVERVIEW_NOT_STARTED_CAP = 200;
+
     /** Permissive name-match cutoff: below this is REVIEW (not hard fail) — approver decides. */
     static final double NAME_MATCH_THRESHOLD = 0.60;
 
     /**
      * Application statuses {@link #overview} triages — mirrors the frontend's identically-named
-     * constant (`frontend/src/app/staff/verifications/page.tsx`), which is the page's whole reason
+     * constant (`frontend/src/lib/staff/verification-dashboard.ts`), which is the page's whole reason
      * to exist: "every application that needs a KYC decision". Scoping the query to these three
      * statuses, rather than the whole company's history, is what keeps the dashboard's three
      * lookups (verification rows, applications, profiles) bounded by the size of this queue instead
@@ -362,10 +368,23 @@ public class ApplicationVerificationService {
      * page's headline counts and must not move when the reviewer turns a page. {@code rows} is the
      * requested page, and {@code total} counts <b>applications</b> (not rows), because the page groups
      * rows into one card per application and pages at that granularity.
+     *
+     * <p>{@code notStarted} is the page's "Not started" bucket: {@code KYC_PENDING} applications with no
+     * verification row at all, newest first, capped at {@link #OVERVIEW_NOT_STARTED_CAP}. It is not
+     * paged (it rides along on every page) and {@code notStartedTotal} carries the true count when the
+     * list is capped. It used to be assembled in the browser by subtracting the <em>current page's</em>
+     * applications from an unpaginated KYC_PENDING list, which showed a file whose checks sat on another
+     * page, or which was fully cleared and so filtered out, as "never verified".
      */
     public record VerificationOverview(int passed, int review, int failed, int pending, int neverRun,
                                        List<VerificationOverviewRow> rows,
-                                       int page, int size, long total) {
+                                       int page, int size, long total,
+                                       List<NotStartedApplication> notStarted, long notStartedTotal) {
+    }
+
+    /** One {@code KYC_PENDING} application with no verification row yet — see {@link VerificationOverview}. */
+    public record NotStartedApplication(Long applicationId, Long customerId, String borrowerName,
+                                        String borrowerMobile) {
     }
 
     // ---------------------------------------------------------------- steps
@@ -3670,7 +3689,7 @@ public class ApplicationVerificationService {
         int safeSize = Math.max(1, Math.min(size, OVERVIEW_MAX_PAGE_SIZE));
         int safePage = Math.max(1, page);
         if (appById.isEmpty()) {
-            return new VerificationOverview(0, 0, 0, 0, 0, List.of(), safePage, safeSize, 0L);
+            return new VerificationOverview(0, 0, 0, 0, 0, List.of(), safePage, safeSize, 0L, List.of(), 0L);
         }
         List<ApplicationVerification> all = verificationRepo.findByApplicationIdIn(appById.keySet());
         Map<Long, CustomerProfile> profByApp = profileRepo.findByApplicationIdIn(appById.keySet()).stream()
@@ -3745,13 +3764,39 @@ public class ApplicationVerificationService {
         for (Long appId : pageAppIds) {
             rows.addAll(rowsByApp.get(appId));
         }
+
+        // "Not started": KYC_PENDING files with no verification row at all, from the applications and
+        // profiles already loaded above — no extra query. KYC_PENDING only: DASHBOARD_STATUSES also
+        // holds DRAFT, and the abandoned intakes there are not files waiting on a reviewer. Same free-
+        // text search as the rows; the row-level status/checkType filters have no row to match here.
+        List<NotStartedApplication> notStarted = appById.values().stream()
+                .filter(a -> a.getStatus() == ApplicationStatus.KYC_PENDING)
+                .filter(a -> !presentByApp.containsKey(a.getId()))
+                .sorted(java.util.Comparator.comparing(LoanApplication::getCreatedAt,
+                                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+                        .thenComparing(LoanApplication::getId,
+                                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .map(a -> {
+                    CustomerProfile p = profByApp.get(a.getId());
+                    return new NotStartedApplication(a.getId(), a.getCustomerId(),
+                            p != null ? p.getFullName() : null,
+                            p != null ? p.getMobile() : null);
+                })
+                .filter(n -> needle.isEmpty() || overviewMatches(n.borrowerName(), n.borrowerMobile(),
+                        n.applicationId(), n.customerId(), needle))
+                .toList();
+        List<NotStartedApplication> notStartedPage = notStarted.size() > OVERVIEW_NOT_STARTED_CAP
+                ? List.copyOf(notStarted.subList(0, OVERVIEW_NOT_STARTED_CAP))
+                : notStarted;
+
         return new VerificationOverview(passed, review, failed, pending, neverRun,
-                List.copyOf(rows), safePage, safeSize, rowsByApp.size());
+                List.copyOf(rows), safePage, safeSize, rowsByApp.size(),
+                notStartedPage, notStarted.size());
     }
 
     /**
      * Does this application still need a reviewer's attention? Mirrors the dashboard's own bucket
-     * rule (`frontend/src/app/staff/verifications/page.tsx`): an application is "all checks passed"
+     * rule (`frontend/src/lib/staff/verification-dashboard.ts`): an application is "all checks passed"
      * only when every gating check has a row reading PASS. Anything else — a FAIL, a REVIEW, a
      * PENDING, or a gating check that never ran — is the failures or awaiting bucket, i.e. work.
      *
@@ -3777,16 +3822,22 @@ public class ApplicationVerificationService {
     }
 
     private static boolean overviewMatches(VerificationOverviewRow r, String needle) {
-        if (r.borrowerName() != null && r.borrowerName().toLowerCase().contains(needle)) {
+        return overviewMatches(r.borrowerName(), r.borrowerMobile(), r.applicationId(), r.customerId(), needle);
+    }
+
+    /** The dashboard's free-text search — shared by the rows and the "Not started" list so they agree. */
+    private static boolean overviewMatches(String borrowerName, String borrowerMobile, Long applicationId,
+                                           Long customerId, String needle) {
+        if (borrowerName != null && borrowerName.toLowerCase().contains(needle)) {
             return true;
         }
-        if (r.borrowerMobile() != null && r.borrowerMobile().contains(needle)) {
+        if (borrowerMobile != null && borrowerMobile.contains(needle)) {
             return true;
         }
-        if (r.applicationId() != null && String.valueOf(r.applicationId()).contains(needle)) {
+        if (applicationId != null && String.valueOf(applicationId).contains(needle)) {
             return true;
         }
-        return r.customerId() != null && String.valueOf(r.customerId()).contains(needle);
+        return customerId != null && String.valueOf(customerId).contains(needle);
     }
 
     private static String norm(String s) {
