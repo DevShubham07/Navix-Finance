@@ -88,6 +88,9 @@ public class CollectionsService {
      */
     @Transactional
     public CaseDetailView openCase(Long loanId) {
+        // Opening a case moves the loan to IN_COLLECTIONS and notifies the borrower, so it is the
+        // collections desk's call: the worklist page (Head/Executive) and the assign dialog (Head).
+        requireCollectionsDesk();
         LoanSummary loan = loanDirectory.findLoan(loanId)
                 .orElseThrow(() -> new ResourceNotFoundException("Loan", String.valueOf(loanId)));
         Optional<CollectionCase> existing = caseRepository.findByLoanId(loanId);
@@ -108,6 +111,9 @@ public class CollectionsService {
     /** Full case detail (loan figures + borrower + live DPD + officer name). */
     @Transactional(readOnly = true)
     public CaseDetailView getCaseDetail(UUID caseId) {
+        // The UUID alone is not a secret: the settlements and payments lists hand it to every staff
+        // role. Borrower PII in the detail needs the same DSA firewall as the by-loan lookup.
+        requireStaff();
         return buildDetail(getCase(caseId));
     }
 
@@ -239,6 +245,9 @@ public class CollectionsService {
     /** Loans eligible to open a case against (ACTIVE/OVERDUE, due on or before {@code asOf}). */
     @Transactional(readOnly = true)
     public List<LoanSummary> collectibleLoans(LocalDate asOf) {
+        // Name, PAN, mobile, employer and salary for the whole live book. No screen calls this any
+        // more; the collections desk (and the demo seed, as ADMIN) are the only legitimate readers.
+        requireCollectionsDesk();
         return loanDirectory.listCollectible(asOf);
     }
 
@@ -348,6 +357,8 @@ public class CollectionsService {
 
     @Transactional(readOnly = true)
     public List<InteractionLog> listInteractions(UUID caseId) {
+        // Read from the loan detail dialog by every non-DSA staff role; DSA never.
+        requireCollectionsStaff();
         return interactionRepository.findByCollectionCaseIdOrderByLoggedAtDesc(caseId);
     }
 
@@ -405,6 +416,14 @@ public class CollectionsService {
      * {@code hasRole("STAFF")} at the namespace boundary — the audience is staff — so the role has to
      * be rejected here, exactly as {@code CustomerController.requireStaff} does.
      */
+    /** The collections desk itself — the roles that act on cases, not just read them. */
+    private void requireCollectionsDesk() {
+        String role = ActorContext.get().role();
+        if (!"COLLECTION_HEAD".equals(role) && !"COLLECTION_EXECUTIVE".equals(role) && !"ADMIN".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "This action requires role COLLECTION_HEAD, COLLECTION_EXECUTIVE or ADMIN");
+        }
+    }
+
     private void requireCollectionsStaff() {
         String role = ActorContext.get().role();
         if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {

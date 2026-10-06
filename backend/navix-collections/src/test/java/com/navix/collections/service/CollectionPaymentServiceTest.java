@@ -362,4 +362,18 @@ class CollectionPaymentServiceTest {
     private static long anyLongValue() {
         return org.mockito.ArgumentMatchers.anyLong();
     }
+
+    @Test
+    void paymentListsRejectDsa() {
+        ActorContext.set(new CurrentActor("77", "An Agent", "DSA"));
+        try {
+            assertThatThrownBy(() -> service.listAll()).isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> service.listByStatus(CollectionPaymentStatus.PENDING_ACCOUNTANT))
+                    .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> service.listForCase(java.util.UUID.randomUUID()))
+                    .isInstanceOf(BusinessException.class);
+        } finally {
+            ActorContext.clear();
+        }
+    }
 }

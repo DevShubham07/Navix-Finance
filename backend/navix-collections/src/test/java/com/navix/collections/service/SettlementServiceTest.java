@@ -230,4 +230,14 @@ class SettlementServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("already been");
     }
+
+    @Test
+    void listAllRejectsDsa() {
+        ActorContext.set(new CurrentActor("77", "An Agent", "DSA"));
+        try {
+            assertThatThrownBy(() -> service.listAll()).isInstanceOf(BusinessException.class);
+        } finally {
+            ActorContext.clear();
+        }
+    }
 }

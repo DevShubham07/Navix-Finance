@@ -534,6 +534,25 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
+    void createDraft_isTheBorrowersOwn_orAnAdminsOverride() {
+        actor("7", "BORROWER");
+        assertThatThrownBy(() -> flow.createDraft(8L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+
+        for (String role : new String[] {"DSA", "TELECALLER", "CREDIT_EXECUTIVE"}) {
+            actor("41", role);
+            assertThatThrownBy(() -> flow.createDraft(8L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("code", "FORBIDDEN_ROLE");
+        }
+        verify(applicationRepository, never()).save(any());
+
+        actor("1", "ADMIN");
+        assertThat(flow.createDraft(8L).getCustomerId()).isEqualTo(8L);
+    }
+
+    @Test
     void createDraft_stampsCreatedAt() {
         actor("7", "BORROWER");
         LoanApplication saved = flow.createDraft(7L);

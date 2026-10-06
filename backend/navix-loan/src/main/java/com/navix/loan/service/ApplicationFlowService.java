@@ -166,6 +166,14 @@ public class ApplicationFlowService {
 
     @Transactional
     public LoanApplication createDraft(Long customerId) {
+        // A borrower starts their own application only: the id arrives in the request body, and a
+        // draft opened under someone else's id blocks that customer (ACTIVE_APPLICATION) until it is
+        // cleared. ADMIN passes requireRole and may still open one for any customer.
+        requireRole("BORROWER");
+        if ("BORROWER".equals(ActorContext.get().role())
+                && (customerId == null || !customerId.toString().equals(ActorContext.get().id()))) {
+            throw new BusinessException("FORBIDDEN_ROLE", "You can only start an application for yourself");
+        }
         assertCanStartNewApplication(customerId);
         LoanApplication app = new LoanApplication();
         app.setCustomerId(customerId);

@@ -471,13 +471,18 @@ public class CustomerReviewService {
     @Transactional(readOnly = true)
     public List<ApplicationDocument> listDocuments(Long appId) {
         requireApplication(appId);
-        return documentRepository.findByApplicationIdOrderByIdAsc(appId);
+        List<ApplicationDocument> docs = documentRepository.findByApplicationIdOrderByIdAsc(appId);
+        if (!isBorrower()) {
+            return docs;
+        }
+        return docs.stream().filter(d -> !STAFF_ONLY_DOC_TYPES.contains(d.getDocType())).toList();
     }
 
     @Transactional(readOnly = true)
     public ApplicationDocument getDocument(Long appId, Long docId) {
         requireApplication(appId);
         return documentRepository.findByIdAndApplicationId(docId, appId)
+                .filter(d -> !isBorrower() || !STAFF_ONLY_DOC_TYPES.contains(d.getDocType()))
                 .orElseThrow(() -> new ResourceNotFoundException("ApplicationDocument", String.valueOf(docId)));
     }
 
@@ -509,6 +514,19 @@ public class CustomerReviewService {
     }
 
     // ---- internals -----------------------------------------------------------------
+
+    /**
+     * Documents on an application that are the credit team's work product, not the borrower's: the
+     * credit brief (internal rating and recommendation) and the raw bureau report. The borrower's
+     * profile view already strips the same facts; the document endpoints are owner-readable, so they
+     * are hidden from a BORROWER here — absent from the list, not-found by id. Staff reads unchanged.
+     */
+    static final Set<String> STAFF_ONLY_DOC_TYPES =
+            Set.of(CreditBriefService.DOC_TYPE, ApplicationVerificationService.BUREAU_REPORT);
+
+    private static boolean isBorrower() {
+        return "BORROWER".equals(ActorContext.get().role());
+    }
 
     /**
      * Types a reviewer's browser may render inline. The staff console opens an inline document as a
