@@ -14,6 +14,22 @@
 > that were refuted are listed in Appendix A so nobody re-reports them. The `code-review-graph` MCP server was
 > unavailable in the session (Windows-only executable); the graph was replaced by direct code reading.
 
+> **Reconciled against `main` on 2026-10-06 (`0f14dab`).** The analysis below was written against `953f546`.
+> `main` has since moved 15 commits and touched 22 staff-console files, so **line numbers in §3 drift for 10 of the
+> 15 pages** — treat them as pointers to the right function, not exact offsets. Two substantive reconciliations:
+>
+> - **Superseded:** a shared `SearchBar` (`frontend/src/components/staff/search-bar.tsx`) now serves 12 staff pages.
+>   It searches on Enter rather than per keystroke and carries its own clear button, so every "300 ms debounce"
+>   observation and the "add a ✕ to the search field" proposal below are **already solved**. §2.1's `TableToolbar`
+>   narrows accordingly to the period / refresh / export cluster, and should compose `SearchBar` rather than replace it.
+>   Whether a *non-search* filter change (period, direction) still fires a duplicate request needs re-checking at
+>   current `main`.
+> - **Still open, re-verified at `0f14dab`:** all five Phase-0 bugs (§4) and every shared-foundation gap in §2 —
+>   no toast or `Skeleton` primitive exists, no sticky `thead` rule exists, `ui/Table` still has zero consumers,
+>   `customer-edit-dialog.tsx` still invalidates `["customers"]` while the register reads `["customers-page"]`, and
+>   `manualDecision` still writes no `application_event` (the two `ApplicationEvent` hits in that service are Spring's
+>   `ApplicationEventPublisher`, not the audit repository).
+
 ---
 
 ## 0. Executive summary
@@ -97,7 +113,7 @@ are — note that in the current build all three font families resolve to Inter 
 | `<Toaster/>` + `toast.success/error(msg)` | a tiny queue rendered in the shell with `role="status" aria-live="polite"`, auto-dismiss 4 s, `prefers-reduced-motion` respected; **no new dependency** | inline success strings that never dismiss (customer detail cards, telecalling `results[id]`, settlements) | ~80 lines |
 | `<StatusBadge kind="application\|loan\|payment\|lead\|settlement\|verification" value/>` | **one** map from each backend enum to `ui/Badge` variants (the vocabulary the sidebar already uses: `success`/`warning`/`error`/`info`/`neutral`) | 23 private status→class maps; revive or delete the dead `StageBadge`/`KycStatusBadge` | ~60 lines |
 | `<Money paise align="right"/>` | `paiseToINR` + `font-mono text-right whitespace-nowrap` (tabular digits already come from `globals.css:113`) | every money `<td>` written by hand | ~15 lines |
-| `<TableToolbar>` | one flex row for search / period / segment chips / refresh / export with the existing class strings, so pages stop composing it ad hoc | 15+ ad-hoc toolbars | ~40 lines |
+| `<TableToolbar>` | one flex row for period / segment chips / refresh / export with the existing class strings, **composing the shared `SearchBar` rather than replacing it**, so pages stop composing the cluster ad hoc | 15+ ad-hoc toolbars | ~40 lines |
 | `<ConfirmDialog title body confirmLabel tone/>` | a `ui/Dialog` preset for the one-click destructive actions (settlement approve/reject, bulk reminders) | none today | ~40 lines |
 
 ### 2.2 CSS rules to add (all in `frontend/src/app/globals.css`, scoped to the console — never global, per CLAUDE.md §8)
@@ -250,8 +266,8 @@ section, and an ADMIN's board no longer rebuilds the whole ledger and the whole 
 
 ### 3.2 Live applications — `/staff/applications`
 
-**1. Current-page observations.** `PageHeader` with `QueueDateFilter` (Today / Yesterday / Custom / All), a 300 ms
-debounced search that composes with the date window in every query key, the role badge, `RefreshButton` and a link to
+**1. Current-page observations.** `PageHeader` with `QueueDateFilter` (Today / Yesterday / Custom / All), the shared
+`SearchBar` (searches on Enter) that composes with the date window in every query key, the role badge, `RefreshButton` and a link to
 the ledger; a `ReviewLookup` panel; then the role's panels (`page.tsx:160-234`): the Credit Head's `CreditWorkbench`
 (unallocated + per-executive groups + the executive roster), `StatusQueue`s per lifecycle status, the
 `AwaitingRepaymentPanel` (ACTIVE / OVERDUE split client-side, 60 s), `RepaymentVerifyQueue` (Accountant, 8 s),
@@ -342,7 +358,7 @@ longer re-enriches 300 files every 8 s.
 
 **1. Current-page observations.** `PageHeader` + ADMIN `ExportMenu` (this page / all customers, capped at
 `EXPORT_CAP = 50 000`, `CustomerService.java:284`) + Refresh; 13 segment chips with live counts; a filter row —
-search (300 ms debounce, placeholder "Name, PAN, mobile, customer or application ID"), `QueueDateFilter`, a "My
+the shared `SearchBar` (placeholder "Name, PAN, mobile, customer or application ID"), `QueueDateFilter`, a "My
 customers" badge, and a `BulkActionBar` (Assign / Reject) when rows are ticked; a scoped-listing notice for non-Head
 roles; a **22-column** `staff-data-table` (S.No., ☐, Customer ★sticky, Date, Mobile, PAN, Account, IFSC, Loan, Amount,
 Due (+DPD), Owner, Loans, Outstanding, Bureau ★, Failure, Latest status, Stage date, Credit exec, Disbursed by,
@@ -606,7 +622,7 @@ tallies: **M** (one service method, one repository query, one test). Retry guard
 ### 3.6 Loans register — `/staff/loans`
 
 **1. Current-page observations.** `PageHeader` + ADMIN `ExportMenu` (17 columns) + an inline refresh; segment chips
-(all / active / overdue / closed with live counts, `cal-preset`); search (300 ms debounce, `w-80`) + `QueueDateFilter`
+(all / active / overdue / closed with live counts, `cal-preset`); the shared `SearchBar` (`w-80`, searches on Enter) + `QueueDateFilter`
 (ALL / TODAY / YESTERDAY / CUSTOM) + role badge; a 15-column `staff-data-table` (S.No., Loan ★sticky, Borrower,
 Sanctioned↕, Disbursed↕, Due↕, Cycle "2nd", Principal↕, Net disbursed, Repayable, Outstanding↕, DPD↕, Status badge by
 segment tone, Officer, Open ★sticky) with collapsible date groups when a date column is the sort key; client
@@ -623,15 +639,16 @@ was refuted — line 121 is a comment).
   `outstandingForAll` **discards the breakdown** (`RepaymentService.java:400-403`); an approved settlement is invisible
   in the row (`LoanRegisterRow` has no settlement field).
 - Pagination does not reset on search/segment change; each new search flickers the skeleton and the chip counts.
-- Search has no clear (✕) affordance; DPD shows "—" both for "not yet due" and "due today".
+- DPD shows "—" both for "not yet due" and "due today".
 - The detail dialog re-derives everything from `loanId` in a 2–3 hop waterfall (`loanQ` → `customerQ` → …) although
   the register row already carries `customerId`, `applicationId`, name, cycle and sanction fields; `outstanding` is
   **eager** (`enabled: open`, `loan-detail-dialog.tsx:106-111`), not deferred as the observer thought.
 - The by-loan collections-case call is a swallowed 404 on every healthy loan.
 
 **3. Proposed subtle UI improvements.**
-- `num` on Sanctioned / Principal / Net / Repayable / Outstanding; sticky header; ✕ in the search field; `setPage(1)`
-  inside the search and segment handlers; `keepPreviousData` so counts and rows do not flicker.
+- `num` on Sanctioned / Principal / Net / Repayable / Outstanding; sticky header; `setPage(1)` inside the segment
+  handler; `keepPreviousData` so counts and rows do not flicker. (The search box and its clear button now come from
+  the shared `SearchBar`.)
 - Outstanding cell gets an `InfoTooltip` with the itemised breakdown (principal · interest *n* d · penalty *n* d ·
   paid) and a small "Settled" `Badge` when a settlement caps the balance — data the backend already has (§7).
 - DPD "—" → "due today" when `dueDate === today`, "not due" otherwise.
@@ -677,7 +694,7 @@ search: **M**. Index: **S**.
 
 **1. Current-page observations.** `PageHeader` + ADMIN `ExportMenu` + Refresh; six **bucket cards** (label, count,
 outstanding; the active one navy) that switch the view via `router.push` with no request (`page.tsx:122,303`);
-search (300 ms, case-insensitive) + `QueueDateFilter` + `BulkActionBar` (Assign); a 15-column `staff-data-table`
+the shared `SearchBar` (case-insensitive) + `QueueDateFilter` + `BulkActionBar` (Assign); a 15-column `staff-data-table`
 (S.No., ☐, Borrower ★sticky, PAN, Loan, Principal, **Outstanding**, Due (red when overdue), DPD (red), Employer,
 Salary, Credit exec, Disbursed by, Collections exec = inline officer `Select` for Head/ADMIN, Actions ★sticky:
 ADMIN log-payment, quick-view eye, Open); ten sortable columns (default DPD ↓); client pagination;
@@ -909,7 +926,7 @@ event). Authz guard + index: **S**.
 ### 3.10 Transactions ledger — `/staff/accounting/transactions`
 
 **1. Current-page observations.** `PageHeader` + ADMIN `ExportMenu` + role badge; back-link; six period pills (gold
-when active) and three direction tabs (navy when active); 300 ms-debounced search; refresh (icon swaps, button never
+when active) and three direction tabs (navy when active); the shared `SearchBar`; refresh (icon swaps, button never
 disabled); three stat cards (period totals, not page totals); a 9-column table — S.No., Date, Borrower (+PAN),
 Type badge with arrow icon, Amount (signed, coloured), Reference, Proof (`PaymentProofLink` with paperclip, or "—"),
 Status (raw enum text), Loan — **server-paginated** 25/50/100 with `keepPreviousData` and a 60 s poll that pauses
@@ -971,7 +988,7 @@ Indexes: **S**.
 
 **1. Current-page observations.** `PageHeader` + Refresh; a collapsible **New lead** form (name, mobile, email, city,
 employer, salary, loan interest, source, source detail, notes; Save disabled until name + 10-digit mobile,
-`page.tsx:221,321`); search (300 ms debounce) + Call-status select; a two-column grid — an 8-column table (S.No.,
+`page.tsx:221,321`); the shared `SearchBar` + Call-status select; a two-column grid — an 8-column table (S.No.,
 Name, Mobile, Source, Status chip, Outcome chip, ★, City; click a row to select) beside a 320 px `DispositionPanel`
 with two independent saves (disposition = status / ★ / remarks; outcome = lead outcome / DSA note). **Server-side**
 pagination 25/50/100 with `keepPreviousData` (`:69-80`); filters reset the page in a `useEffect`. Backend: one page
@@ -1255,8 +1272,8 @@ the rows and spins the header icon (the observer's "rows disappear" claim was re
 **2. UI/UX problems (verified).**
 - The query fires for **every role before `/me` resolves**; non-ADMINs get `FORBIDDEN_ROLE`, retried once, then the
   page shows "Admin access only" (`page.tsx:63,68,83-85`).
-- Search recomputes the filter on every render with no `useMemo`/debounce, so `usePagination`'s memo never hits
-  (`:64-81,109`).
+- The client-side filter recomputes on every render with no `useMemo`, so `usePagination`'s memo never hits
+  (`:64-81,109`). (Per-keystroke work is gone now that the page uses the shared `SearchBar`.)
 - The incomplete badge says " · no e-sign" but the flag is `agreementAccepted`, set at the agreement-consent step and
   again on eSign completion (`:174-177`; `ApplicationVerificationService.java:2511,2690`) — a false flag means the
   agreement itself was never accepted, yet staff look at the eSign step.
@@ -1266,7 +1283,7 @@ the rows and spins the header icon (the observer's "rows disappear" claim was re
   read-only register.
 
 **3. Proposed subtle UI improvements.**
-- `enabled: myRole === "ADMIN"` and `retry: false` on 4xx; `useMemo` the filtered rows and debounce the needle 200 ms.
+- `enabled: myRole === "ADMIN"` and `retry: false` on 4xx; `useMemo` the filtered rows.
 - Rename the badge to " · agreement not accepted" (tooltip "Agreement documents not yet accepted").
 - `StatusBadge` for status and completeness; `num` on Amount; sticky header; a "Clear" chip when a filter is active;
   the count inside the `TableToolbar`.
