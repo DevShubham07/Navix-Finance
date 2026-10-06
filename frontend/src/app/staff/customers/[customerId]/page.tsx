@@ -18,6 +18,7 @@ import {
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
+import { LimitBasisBadge } from "@/components/staff/detail-parts";
 import {
   customersApi,
   adminApi,
@@ -28,6 +29,12 @@ import {
   type ApplicationView,
 } from "@/lib/api/applications";
 import { dueDateFromSalary } from "@/lib/calc/loan-math";
+import {
+  SALARY_DUE_MAX_DAYS,
+  istCalendarToday,
+  rupeeInputPreview,
+  salaryDueWindow,
+} from "@/lib/customers/customer-360";
 import { formatDate } from "@/lib/utils";
 
 /** Loan statuses that mean the loan is still live (vs. a past/closed loan). */
@@ -112,7 +119,12 @@ export default function CustomerDetailPage() {
                   </Card>
                 )}
                 {sanctionedApp && (
-                  <SanctionedAmountCard customerId={id} app={sanctionedApp} onSaved={invalidate} />
+                  <SanctionedAmountCard
+                    customerId={id}
+                    app={sanctionedApp}
+                    overridePaise={c.limitOverridePaise ?? null}
+                    onSaved={invalidate}
+                  />
                 )}
                 <LimitOverrideCard
                   customerId={id}
@@ -259,8 +271,26 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
       <Input label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} className="!mb-2" />
       <Input label="Employer" value={employer} onChange={(e) => setEmployer(e.target.value)} className="!mb-2" />
       <Input label="Employment status" value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} className="!mb-2" />
-      <Input label="Monthly salary (₹)" inputMode="numeric" value={salary} onChange={(e) => setSalary(e.target.value.replace(/[^\d]/g, ""))} className="!mb-2" />
-      <Input label="Annual salary (₹)" inputMode="numeric" value={annualSalary} onChange={(e) => setAnnualSalary(e.target.value.replace(/[^\d]/g, ""))} className="!mb-2" />
+      {/* ₹ prefix + a grouped preview under each salary field — display only; the raw digits are
+          what is submitted, exactly as before. */}
+      <Input
+        label="Monthly salary (₹)"
+        inputMode="numeric"
+        value={salary}
+        onChange={(e) => setSalary(e.target.value.replace(/[^\d]/g, ""))}
+        leftIcon={<span aria-hidden="true">₹</span>}
+        helperText={rupeeInputPreview(salary) ?? undefined}
+        className="!mb-2"
+      />
+      <Input
+        label="Annual salary (₹)"
+        inputMode="numeric"
+        value={annualSalary}
+        onChange={(e) => setAnnualSalary(e.target.value.replace(/[^\d]/g, ""))}
+        leftIcon={<span aria-hidden="true">₹</span>}
+        helperText={rupeeInputPreview(annualSalary) ?? undefined}
+        className="!mb-2"
+      />
       <Input label="Salary percentage (%)" inputMode="decimal" value={salaryPct} onChange={(e) => setSalaryPct(e.target.value.replace(/[^\d.]/g, ""))} className="!mb-2" />
       <Input label="Increment percentage (%)" inputMode="decimal" value={incrementPct} onChange={(e) => setIncrementPct(e.target.value.replace(/[^\d.]/g, ""))} className="!mb-2" />
       <Input label="Salary bank" value={salaryBank} onChange={(e) => setSalaryBank(e.target.value)} className="!mb-2" />
@@ -384,14 +414,14 @@ function LimitOverrideCard({
   return (
     <Card title="Maximum loan amount (admin)" icon={<IndianRupee size={16} />}>
       <p className="mb-3 text-xs text-muted">
-        Current limit:{" "}
-        <span className="font-mono text-ink">
-          {paiseToINR(overridePaise ?? currentLimitPaise)}
-        </span>{" "}
-        {overridePaise != null ? "— set by an admin" : "— 25% of monthly salary"}.
+        <span className="mb-1 flex flex-wrap items-center gap-1.5">
+          Current limit:
+          <span className="font-mono text-ink">{paiseToINR(overridePaise ?? currentLimitPaise)}</span>
+          <LimitBasisBadge overridePaise={overridePaise} />
+        </span>
         {overridePaise != null && currentLimitPaise != null && currentLimitPaise !== overridePaise
-          ? ` The salary rule alone would give ${paiseToINR(currentLimitPaise)}.`
-          : ""}{" "}
+          ? `The salary rule alone would give ${paiseToINR(currentLimitPaise)}. `
+          : ""}
         A limit set here sticks — it survives a salary re-check and carries into future re-borrows,
         raising what the borrower can actually draw. They are emailed when it increases.
       </p>
@@ -437,13 +467,17 @@ function LimitOverrideCard({
 function SanctionedAmountCard({
   customerId,
   app,
+  overridePaise,
   onSaved,
 }: {
   customerId: number;
-  app: { id: number; sanctionedAmountPaise?: number | null };
+  app: { id: number; sanctionedAmountPaise?: number | null; eligibleLimitPaise?: number | null };
+  /** The customer's ADMIN limit override, if any — decides which basis badge the limit carries. */
+  overridePaise: number | null;
   onSaved: () => void;
 }) {
   const currentPaise = app.sanctionedAmountPaise ?? null;
+  const eligibleLimitPaise = overridePaise ?? app.eligibleLimitPaise ?? null;
   const [amount, setAmount] = React.useState(currentPaise != null ? String(Math.round(currentPaise / 100)) : "");
   const newAmountPaise = amount ? rupeesToPaise(Number(amount.replace(/[^\d]/g, ""))) : 0;
 
@@ -461,6 +495,16 @@ function SanctionedAmountCard({
         Currently approved: <span className="font-mono text-ink">{currentPaise != null ? `₹${(currentPaise / 100).toLocaleString("en-IN")}` : "—"}</span>.
         Saves immediately and emails the customer the revised approved amount. Only available before disbursement.
       </p>
+      {/* Context for the correction, not a cap: the backend checks only the ₹1,000 floor and the
+          amount the borrower already chose to draw. Left out when no limit is on file, so a basis
+          badge never labels a figure the payload does not carry. */}
+      {eligibleLimitPaise != null && (
+        <p className="-mt-1.5 mb-3 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+          Eligible limit:
+          <span className="font-mono text-ink">{paiseToINR(eligibleLimitPaise)}</span>
+          <LimitBasisBadge overridePaise={overridePaise} />
+        </p>
+      )}
       <Input
         label="New approved amount (₹)"
         inputMode="numeric"
@@ -498,7 +542,10 @@ function SalaryDayCard({
 }) {
   const [day, setDay] = React.useState(String(app.salaryCreditDay ?? 1));
   const hasPendingOffer = app.status === "SANCTIONED" && app.loanId == null;
-  const projectedDue = dueDateFromSalary({ disbursedOn: new Date(), salaryDay: Number(day) });
+  // Projected from today's IST date — the backend recomputes a pending offer from LocalDate.now(IST).
+  const todayIst = istCalendarToday();
+  const projectedDue = dueDateFromSalary({ disbursedOn: todayIst, salaryDay: Number(day) });
+  const dueWindow = salaryDueWindow(todayIst, projectedDue);
 
   const save = useMutation({
     mutationFn: () => customersApi.changeSalaryDay(customerId, Number(day)),
@@ -525,6 +572,19 @@ function SalaryDayCard({
           <option key={d} value={d}>{d}</option>
         ))}
       </Select>
+      {/* The live region stays mounted so a note that appears after a day change is announced —
+          a region inserted together with its text is often missed by screen readers. */}
+      <div role="status">
+        {dueWindow.exceeds && (
+          <p className="mb-2 flex items-start gap-1.5 rounded border border-warning-100 bg-warning-50 px-2 py-1.5 text-xs text-warning-800">
+            <AlertTriangle size={13} className="mt-px flex-shrink-0" aria-hidden="true" />
+            <span>
+              That due date is {dueWindow.days} days after a disbursal today — beyond the {SALARY_DUE_MAX_DAYS}-day
+              limit. Check the salary day before saving.
+            </span>
+          </p>
+        )}
+      </div>
       <p className="mb-3 text-xs text-muted">
         {hasPendingOffer ? "Also moves the pending offer's repayment date. " : null}
         Active loans keep their existing due date.

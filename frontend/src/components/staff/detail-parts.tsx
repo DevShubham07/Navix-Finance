@@ -16,7 +16,8 @@ import { useStaffSession } from "@/lib/auth/staff-session";
 import { hasPermission } from "@/lib/auth/rbac";
 import { formatDateTime } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/tooltip";
-import { EmptyState, Skeleton, toast } from "@/components/ui";
+import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
+import { LIMIT_BASIS_LABEL, limitBasisOf } from "@/lib/customers/customer-360";
 import {
   customersApi,
   staffApi,
@@ -596,6 +597,31 @@ export function KV({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boole
         {v || "—"}
       </dd>
     </div>
+  );
+}
+
+/**
+ * Where an eligible limit comes from — an ADMIN override stored on the customer, or the
+ * 25%-of-monthly-salary rule. Shared by the customer page's limit / approved-amount cards and the
+ * Employment tab so the three never word it differently.
+ */
+export function LimitBasisBadge({
+  overridePaise,
+  className,
+}: {
+  overridePaise: number | null | undefined;
+  className?: string;
+}) {
+  const basis = limitBasisOf(overridePaise);
+  return (
+    <Badge
+      variant={basis === "ADMIN_OVERRIDE" ? "warning" : "neutral"}
+      size="sm"
+      className={className}
+      title={basis === "ADMIN_OVERRIDE" ? "Set by an admin on this customer" : "25% of monthly salary"}
+    >
+      {LIMIT_BASIS_LABEL[basis]}
+    </Badge>
   );
 }
 

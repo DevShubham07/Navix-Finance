@@ -11,10 +11,11 @@
  * `["credit-brief", id]`, `["staff-loan", loanId]`) so opening ⓘ then `Open` on the same row never
  * refetches.
  *
- * Accepts either `applicationId` directly (queue rows already know it) or `customerId` (the
- * Customers page only has a customer row — this resolves to that customer's newest application via
- * the same `["customer-detail", customerId]` cache `CustomerDetailDialog`/`ApplicationDetailDialog`
- * already populate).
+ * Accepts either `applicationId` directly (queue rows, and Customers rows that carry
+ * `latestApplicationId`) or `customerId`, which first resolves to that customer's newest application
+ * via the `["customer-detail", customerId]` roll-up. That resolve is a whole extra round trip before
+ * the parallel fetches below can start, so pass `applicationId` whenever the caller has it; the
+ * Customers page only falls back to `customerId` for a row with no application on file.
  */
 
 import * as React from "react";
@@ -39,7 +40,8 @@ import {
 export interface ApplicationInfoDialogProps {
   /** Open directly against a known application id (queue rows, the applications register). */
   applicationId?: number | null;
-  /** Open against a customer — resolves to that customer's newest application (Customers page). */
+  /** Open against a customer — resolves to that customer's newest application (Customers rows with
+   *  no `latestApplicationId`; prefer `applicationId` whenever the caller has it). */
   customerId?: number | null;
   onClose: () => void;
 }

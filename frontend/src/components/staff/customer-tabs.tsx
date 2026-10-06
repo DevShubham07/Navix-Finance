@@ -17,11 +17,30 @@ import { formatRupees } from "@/components/staff/credit/tradeline-table";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
-import { Bool, CallLogRow, CustomerDocsByType, DocumentsTab, KV, NeedsManualReviewBadge, RemarksTab, Section } from "@/components/staff/detail-parts";
+import {
+  Bool,
+  CallLogRow,
+  CustomerDocsByType,
+  DocumentsTab,
+  KV,
+  LimitBasisBadge,
+  NeedsManualReviewBadge,
+  RemarksTab,
+  Section,
+} from "@/components/staff/detail-parts";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { stageOf, STAGE_LABELS } from "@/lib/domain/journey";
+import {
+  AUDIT_FILTER_ALL,
+  auditTypeChips,
+  auditTypeLabel,
+  customerExposure,
+  filterActivityByType,
+  isoDayToLocalDate,
+  resolveAuditFilter,
+} from "@/lib/customers/customer-360";
 import {
   customersApi,
   staffApi,
@@ -390,11 +409,12 @@ function EmploymentTab({ c, customerId }: { c: CustomerDetail; customerId: numbe
           <KV
             k="Eligible limit"
             v={
-              c.limitOverridePaise != null
-                ? `${paiseToINR(c.limitOverridePaise)} (set by admin)`
-                : latestApp?.eligibleLimitPaise != null
-                  ? paiseToINR(latestApp.eligibleLimitPaise)
-                  : null
+              c.limitOverridePaise != null || latestApp?.eligibleLimitPaise != null ? (
+                <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                  {paiseToINR(c.limitOverridePaise ?? latestApp?.eligibleLimitPaise ?? null)}
+                  <LimitBasisBadge overridePaise={c.limitOverridePaise} className="px-1.5 py-0 text-[9.6px]" />
+                </span>
+              ) : null
             }
           />
         </Section>
@@ -741,6 +761,8 @@ function LoansTab({
   currentApplicationId?: number | null;
 }) {
   const [selectedLoanId, setSelectedLoanId] = React.useState<number | null>(null);
+  const exposure = customerExposure(c);
+  const lastPaidOn = isoDayToLocalDate(exposure.lastVerifiedPaymentOn);
 
   return (
     <div className="space-y-4">
@@ -795,6 +817,25 @@ function LoansTab({
           <EmptyState title="None." className="py-4" />
         ) : (
           <div className="space-y-3">
+            {/* Exposure in one line, from figures already on the customer payload — a figure the
+                payload does not carry is left out rather than fetched. */}
+            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs text-muted">
+              <span>
+                Total principal{" "}
+                <span className="font-mono text-ink">{paiseToINR(exposure.totalPrincipalPaise)}</span>
+              </span>
+              {exposure.totalOutstandingPaise != null && (
+                <span>
+                  · Outstanding{" "}
+                  <span className="font-mono text-ink">{paiseToINR(exposure.totalOutstandingPaise)}</span>
+                </span>
+              )}
+              {lastPaidOn && (
+                <span>
+                  · Last verified payment <span className="text-ink">{formatDate(lastPaidOn)}</span>
+                </span>
+              )}
+            </p>
             {c.loans.map((l) => (
               <LoanCard
                 key={l.id}
@@ -1037,6 +1078,7 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
     queryKey: ["customer-activity", customerId],
     queryFn: () => customersApi.activity(customerId),
   });
+  const [selectedType, setSelectedType] = React.useState<string>(AUDIT_FILTER_ALL);
   if (q.isLoading) {
     return (
       <div className="space-y-2">
@@ -1048,9 +1090,39 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
   }
   const items = q.data ?? [];
   if (items.length === 0) return <EmptyState title="No activity recorded yet." />;
-  const groups = groupActivity(items, apps);
+  // Chips come from the types actually in the loaded feed; filtering is client-side only.
+  const chips = auditTypeChips(items);
+  const activeType = resolveAuditFilter(chips, selectedType);
+  const groups = groupActivity(filterActivityByType(items, activeType), apps);
+  const chipClass = (on: boolean) =>
+    `rounded-full border px-2 py-0.5 text-[9.6px] font-semibold ${
+      on ? "border-navy bg-navy text-white" : "border-line bg-white text-muted hover:bg-grey-100 hover:text-ink"
+    }`;
   return (
     <div className="space-y-4">
+      {chips.length > 1 && (
+        <div role="group" aria-label="Filter activity by type" className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            aria-pressed={activeType === AUDIT_FILTER_ALL}
+            onClick={() => setSelectedType(AUDIT_FILTER_ALL)}
+            className={chipClass(activeType === AUDIT_FILTER_ALL)}
+          >
+            All ({items.length})
+          </button>
+          {chips.map((chip) => (
+            <button
+              key={chip.type}
+              type="button"
+              aria-pressed={activeType === chip.type}
+              onClick={() => setSelectedType(chip.type)}
+              className={chipClass(activeType === chip.type)}
+            >
+              {chip.label} ({chip.count})
+            </button>
+          ))}
+        </div>
+      )}
       {groups.map((group) => (
         <Section
           key={group.app?.id ?? "unattached"}
@@ -1084,7 +1156,14 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
           }
         >
           {group.entries.length === 0 ? (
-            <EmptyState title="No activity recorded for this application yet." className="py-4" />
+            <EmptyState
+              title={
+                activeType === AUDIT_FILTER_ALL
+                  ? "No activity recorded for this application yet."
+                  : `No ${auditTypeLabel(activeType).toLowerCase()} events for this application.`
+              }
+              className="py-4"
+            />
           ) : (
             <ul className="space-y-2">
               {group.entries.map((e: ActivityEntry, i) => (

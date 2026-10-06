@@ -11,6 +11,10 @@
  * A customer with no application at all (a lead that never applied) can't open the application
  * dialog, so they fall back to the customer tabs on their own — the one case where the two
  * surfaces still differ, because there is genuinely no application to show.
+ *
+ * A caller that already knows the application id should open {@link ApplicationDetailDialog}
+ * directly: coming through here fetches the whole customer roll-up just to read that id back. The
+ * Customers register opens on the row's `latestApplicationId` and only routes rows without one here.
  */
 
 import * as React from "react";
