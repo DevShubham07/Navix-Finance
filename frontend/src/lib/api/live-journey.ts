@@ -531,10 +531,12 @@ export function canStartNewLoan(apps: ApplicationView[] | undefined): boolean {
  * to its own handling (a real error message, or a default route):
  *   - `ACTIVE_APPLICATION` → an unfinished application is in flight → track it on `/loan/status`
  *   - `ACTIVE_LOAN`        → a live advance is still outstanding → repay it first on `/repay`
+ *   - `RETURNING_BORROWER` → they have repaid an advance before → borrow again on `/reloan`
  */
 export function routeForBlockedStart(code: string | undefined): string | null {
   if (code === "ACTIVE_APPLICATION") return "/loan/status";
   if (code === "ACTIVE_LOAN") return "/repay";
+  if (code === "RETURNING_BORROWER") return "/reloan";
   return null;
 }
 

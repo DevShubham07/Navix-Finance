@@ -175,6 +175,18 @@ public class ApplicationFlowService {
             throw new BusinessException("FORBIDDEN_ROLE", "You can only start an application for yourself");
         }
         assertCanStartNewApplication(customerId);
+        // A customer who has repaid an advance already has a profile: a blank draft would shadow it
+        // (the Customers list went nameless) and sidestep reborrow's repayment-history gate. Every
+        // entry point — signup included — is sent to reborrow instead.
+        if (hasRepaidLoan(customerId)) {
+            throw new BusinessException("RETURNING_BORROWER",
+                    "You already have an account with us — use Borrow again to start a new advance");
+        }
+        return newDraft(customerId);
+    }
+
+    /** Inserts the DRAFT row; callers have already run the guards. */
+    private LoanApplication newDraft(Long customerId) {
         LoanApplication app = new LoanApplication();
         app.setCustomerId(customerId);
         app.setCreatedAt(Instant.now());
@@ -242,7 +254,7 @@ public class ApplicationFlowService {
         Long eligibleLimit = eligibilityService.overrideOf(customerId)
                 .orElseGet(() -> salaryPaise != null ? loanMath.eligibleLimitPaise(salaryPaise) : null);
 
-        LoanApplication app = createDraft(customerId);
+        LoanApplication app = newDraft(customerId);
         app.setEligibleLimit(eligibleLimit);
         app.setSalaryCreditDay(latestSalaryCreditDay(customerId)); // reuse the borrower's original salary day
 
@@ -1459,11 +1471,17 @@ public class ApplicationFlowService {
 
     /** The customer's most recent saved KYC profile (newest application first), if any. */
     private Optional<CustomerProfile> latestProfileForCustomer(Long customerId) {
-        return applicationRepository.findByCustomerId(customerId).stream()
+        List<CustomerProfile> newestFirst = applicationRepository.findByCustomerId(customerId).stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
                 .filter(Objects::nonNull)
-                .findFirst();
+                .toList();
+        // A nameless profile is an abandoned re-application that saved only the mobile; reborrow must
+        // carry the real KYC forward, not that shell.
+        return newestFirst.stream()
+                .filter(p -> p.getFullName() != null && !p.getFullName().isBlank())
+                .findFirst()
+                .or(() -> newestFirst.stream().findFirst());
     }
 
     /** The salary-credit day from the customer's most recent application that captured one. */

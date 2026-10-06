@@ -1506,14 +1506,26 @@ public class CustomerService {
         return v == null ? null : v.toString();
     }
 
-    /** The customer's most recent saved KYC profile (newest application first), or null. */
+    /**
+     * The customer's most recent saved KYC profile (newest application first), or null. A profile
+     * with no name yet — a re-application abandoned after the first intake slice saved only the
+     * mobile — yields to the newest one that has a name, so a half-filled draft doesn't blank out a
+     * customer staff already know.
+     */
     private CustomerProfile latestProfile(List<LoanApplication> apps) {
-        return apps.stream()
+        return newestNamed(apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> profileRepository.findByApplicationId(a.getId()).orElse(null))
                 .filter(Objects::nonNull)
+                .toList());
+    }
+
+    /** From profiles ordered newest-first: the first with a name, else the newest, else null. */
+    static CustomerProfile newestNamed(List<CustomerProfile> newestFirst) {
+        return newestFirst.stream()
+                .filter(p -> p.getFullName() != null && !p.getFullName().isBlank())
                 .findFirst()
-                .orElse(null);
+                .orElse(newestFirst.isEmpty() ? null : newestFirst.get(0));
     }
 
     /**
@@ -1522,12 +1534,12 @@ public class CustomerService {
      * {@code findByApplicationId} per application.
      */
     private CustomerProfile latestProfile(List<LoanApplication> apps, Map<Long, CustomerProfile> profileByAppId) {
-        return apps.stream()
+        return newestNamed(apps.stream()
                 .map(LoanApplication::getId)
                 .filter(profileByAppId::containsKey)
-                .max(Comparator.naturalOrder())
+                .sorted(Comparator.reverseOrder())
                 .map(profileByAppId::get)
-                .orElse(null);
+                .toList());
     }
 
     /**

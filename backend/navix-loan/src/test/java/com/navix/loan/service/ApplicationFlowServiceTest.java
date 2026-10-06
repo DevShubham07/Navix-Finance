@@ -552,6 +552,20 @@ class ApplicationFlowServiceTest {
         assertThat(flow.createDraft(8L).getCustomerId()).isEqualTo(8L);
     }
 
+    /** A repaid-loan customer coming through signup must not get a blank draft over their profile. */
+    @Test
+    void createDraft_sendsARepaidLoanCustomerToReborrow() {
+        actor("7", "BORROWER");
+        when(applicationRepository.findByCustomerId(7L)).thenReturn(List.of(priorApp())); // CLOSED
+        when(loanRepository.findByCustomerId(7L))
+                .thenReturn(List.of(loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5))));
+
+        assertThatThrownBy(() -> flow.createDraft(7L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "RETURNING_BORROWER");
+        verify(applicationRepository, never()).save(any());
+    }
+
     @Test
     void createDraft_stampsCreatedAt() {
         actor("7", "BORROWER");
