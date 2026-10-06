@@ -432,6 +432,110 @@ table.data td strong { color: var(--navy); }
 .staff-data-table .staff-sticky-identity { box-shadow: 5px 0 8px -8px rgba(12, 37, 64, .7); }
 .staff-data-table .staff-sticky-actions { box-shadow: -5px 0 8px -8px rgba(12, 37, 64, .7); }
 
+/* ---------- Register ergonomics (Phase 1) ---------- */
+
+/* Sticky register header. OPT-IN via `.staff-register-scroll` beside `.staff-table-scroll`, never
+   on `.staff-table-scroll` itself: that class has 31 consumers, including field tables nested
+   inside the Customer 360 tab panel (already a `max-h-[68vh]` scroller — bounding the inner one
+   too yields two nested vertical scrollbars) and short panel tables on the admin/dsa pages that
+   want no scrollport at all.
+
+   Why a height bound is needed at all: `.staff-table-scroll` is `overflow-x: auto`, which computes
+   `overflow-y` to `auto`, so it — not the page — is already the sticky scrollport. With no height
+   bound it simply never scrolls vertically, so `top: 0` would pin the header to a box as tall as
+   its own content and nothing would appear to stick.
+
+   The offset is a variable, not a constant: pages that stack a toolbar, segment strip or stat-card
+   row above the table need a larger one, and a single figure is wrong for all of them. Override
+   `--register-offset` on the wrapper. Below ~700px of viewport height the inner scroller is worse
+   than the page scroll it replaces (a handful of visible rows), so it is switched off there.
+
+   BEFORE ADDING THIS CLASS TO A REGISTER: check whether `PaginationBar` sits inside the same
+   wrapper. On customers, loans, collections, my-decisions, leads and collections/settlements it
+   does, so bounding the wrapper scrolls the pagination away with the rows — the opposite of the
+   intent. Lift the bar out of the scroller (sibling footer inside the bordered panel) first. */
+.staff-register-scroll { max-height: calc(100dvh - var(--register-offset, 20rem)); overflow: auto; }
+@media (max-height: 700px) { .staff-register-scroll { max-height: none; } }
+
+/* The header cells pin to the top of that scrollport. `thead .staff-sticky-*` already carry
+   `z-index: 3` (above the `z-index: 2` body cells), so they move to 4 to stay above the rest of
+   the header row in both axes.
+
+   The separator is an inset shadow, not `border-bottom`: `.navix-crm table` is
+   `border-collapse: collapse`, under which a cell's border is painted by the *table*, not the
+   cell, so it does not travel with a sticky `th` — the header would detach from the rows with no
+   rule beneath it. */
+.staff-data-table thead th { position: sticky; top: 0; z-index: 3; box-shadow: inset 0 -1px 0 var(--line-2); }
+.staff-data-table thead .staff-sticky-identity,
+.staff-data-table thead .staff-sticky-actions { z-index: 4; }
+
+/* Money and counts: right-aligned tabular figures. `.staff-data-table th/td` sets
+   `text-align: left` for every cell, so this needs the same specificity to win. Digits are already
+   tabular via the `font-mono` rule at the top of this file; `font-feature-settings` is repeated
+   here for count cells that are not `font-mono`. */
+.staff-data-table th.num,
+.staff-data-table td.num { text-align: right; font-feature-settings: "tnum" 1; }
+
+/* Row hover and row selection, both of which have to beat the zebra. The stripe is painted on the
+   `td` (`tbody tr:nth-child(even) td`), so a `hover:bg-*` utility on the `<tr>` is invisible on
+   every even row — and so is a selected-row background set the same way, which is a functional
+   state, not decoration (the leads register's `bg-gold/10` selection was unreadable on half its
+   rows). Hence: target the cells, and repeat for the two sticky columns, whose own opaque
+   background would otherwise punch through.
+
+   Every colour here is checked against BOTH row backgrounds — #FFFFFF and the #F7F2E9 zebra —
+   because a tint picked against white alone is the way this bug recurs:
+     hover    --grey-200 #EFE7D6  1.23:1 on white, 1.10:1 on zebra  (the grey ramp's next step)
+     selected --gold-soft #A7E8CE 1.39:1 on white, 1.25:1 on zebra
+   A `*-50` tint is NOT usable for either: --gold-50 #E7F6EF against the zebra is 1.000:1.
+
+   Selected additionally carries a 3px brand bar on the leading cell, which is what distinguishes a
+   persistent selection from the transient flash below (they share the tint deliberately — one
+   decays in 1.2s, the other does not, and the bar is the durable signal).
+
+   `[aria-current="true"]` rather than a class, so the state reaches assistive tech at the same
+   moment it is painted rather than being purely visual. NOT `aria-selected`: that is only valid on
+   a row inside a `grid`/`treegrid`, and these are plain `<table>`s, so it would be ignored (or
+   reported as an error) by a conformance checker. `aria-current` has no role restriction and is
+   exactly "the current item within a set". */
+.staff-data-table tbody tr:hover td,
+.staff-data-table tbody tr:hover .staff-sticky-identity,
+.staff-data-table tbody tr:hover .staff-sticky-actions { background: var(--grey-200); }
+.staff-data-table tbody tr[aria-current="true"] td,
+.staff-data-table tbody tr[aria-current="true"] .staff-sticky-identity,
+.staff-data-table tbody tr[aria-current="true"] .staff-sticky-actions { background: var(--gold-soft); }
+.staff-data-table tbody tr[aria-current="true"] td:first-child { box-shadow: inset 3px 0 0 var(--gold-500); }
+
+/* Row flash, for a row that arrived or changed between polls.
+
+   The colour is `--gold-soft`, NOT a `*-50` tint: --gold-50 #E7F6EF against the #F7F2E9 zebra
+   computes to 1.000:1 — literally invisible on half the rows. `--gold-soft` (#A7E8CE) is 1.39:1 on
+   white and 1.25:1 on the zebra. If this value is ever changed, check it against BOTH row
+   backgrounds.
+
+   Keyframes live here, not in `tailwind.config.ts`: Tailwind emits `theme.keyframes` only as part
+   of a generated `animate-*` utility, and this is a raw CSS rule, so a config-only keyframe would
+   never reach the stylesheet. `fadeUp` below is defined the same way for the same reason.
+
+   Callers must cap this — flashing 30 rows at once is noise, not information — and must not fire
+   it on the first paint after a filter or period change, when every row is legitimately new. */
+.staff-data-table tbody tr[data-changed="true"] td { animation: rowFlash 1.2s ease-out; }
+
+@keyframes rowFlash { from { background: var(--gold-soft); } to { background: transparent; } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* Reduced motion. Deliberately NOT scoped to `.navix-crm`: this file is imported by the root
+   layout, so the `.btn` rule reaches the marketing and borrower surfaces too, and honouring the
+   user's stated preference everywhere is the correct behaviour rather than a scope leak. */
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay.show,
+  .wizard-step.active,
+  .staff-data-table tbody tr[data-changed="true"] td,
+  .skeleton { animation: none; }
+  .btn:hover { transform: none; }
+}
+
 /* Staff-console control density. The marketing/borrower surfaces keep the generous default sizing;
    inside the console a row's action cluster has to fit beside five data columns, so buttons and
    inline inputs shrink to grid scale. Scoped to `.navix-crm` — never change `.btn`/`.field` globally. */

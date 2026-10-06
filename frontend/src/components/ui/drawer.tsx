@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 
@@ -9,9 +10,18 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
  * Journey (and any secondary detail surface) launched from a queue row.
  *
  * Behaviour: Escape and backdrop-click close; body scroll is locked while open;
- * the panel slides in from the right (full-screen sheet below `sm`). Unlike
- * Dialog it enforces a **focus trap** (Tab/Shift+Tab wrap) and **focus restore**
- * to the trigger on close, via {@link useFocusTrap}.
+ * the panel slides in from the right (full-screen sheet below `sm`). It enforces a **focus trap**
+ * (Tab/Shift+Tab wrap) and **focus restore** to the trigger on close, via {@link useFocusTrap} —
+ * as does {@link Dialog}.
+ *
+ * Rendered through a portal to `document.body`, for the same reason Dialog is: the application
+ * Journey mounts its Drawer from inside a queue row's `position: sticky` actions cell
+ * (`pipeline/app-row.tsx`), and a positioned ancestor with a non-`auto` `z-index` establishes a
+ * stacking context — so the panel's `z-index: 200` was being resolved *inside* the cell's
+ * `z-index: 2` and the navy sticky header cells (`z-index: 3`, globals.css) painted straight over
+ * the open drawer. Making the whole `thead` sticky widens that from two corner cells to the entire
+ * header row, so the portal is what makes the sticky header safe. Dialog's own doc comment records
+ * the identical bug and fix; this is the same defect, found later.
  *
  * Provide an accessible name with `aria-label` or `aria-labelledby`.
  */
@@ -63,9 +73,13 @@ export function Drawer({
     return () => cancelAnimationFrame(raf);
   }, [open]);
 
-  if (!open) return null;
+  // Portals need a DOM target, which does not exist during SSR or the first render pass.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
 
-  return (
+  if (!open || !mounted) return null;
+
+  return createPortal(
     <div
       className={cn(
         "fixed inset-0 z-[200] bg-navy/50 transition-opacity duration-300",
@@ -91,7 +105,8 @@ export function Drawer({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

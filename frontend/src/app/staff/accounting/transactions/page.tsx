@@ -10,6 +10,7 @@ import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe, errMessage } fr
 import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
+import { StatusBadge } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
 
@@ -251,7 +252,14 @@ export default function TransactionsPage() {
               No transactions{query ? ` for “${query}”` : ""}.
             </p>
           ) : (
-            <div className="staff-table-scroll">
+            // `staff-register-scroll` bounds the wrapper so the sticky `thead` has something to
+            // stick to (see globals.css). Safe on this page specifically because `PaginationBar`
+            // is a sibling *after* this div — on customers/loans/collections/my-decisions/leads/
+            // settlements it sits inside the scroller and would scroll away with the rows, so
+            // those need the bar lifted out before they can adopt this class.
+            // The offset clears the shell header, PageHeader, the period/direction toolbar, the
+            // search row and the three stat cards.
+            <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "26rem" } as React.CSSProperties}>
               <table className="staff-data-table">
                 <thead>
                   <tr>
@@ -259,7 +267,7 @@ export default function TransactionsPage() {
                     <th>Date</th>
                     <th>Borrower</th>
                     <th>Type</th>
-                    <th>Amount</th>
+                    <th className="num">Amount</th>
                     <th>Reference</th>
                     <th>Proof</th>
                     <th>Status</th>
@@ -309,15 +317,29 @@ function TxnRow({ t, sno }: { t: TransactionView; sno: number }) {
           {t.type === "REPAYMENT" ? "Repayment" : "Disbursal"}
         </span>
       </td>
-      <td className={`font-semibold ${incoming ? "text-success-700" : "text-ink"}`}>
+      {/* `num` right-aligns tabular figures (globals.css). The signed +/− stays, so direction is
+          readable without relying on the colour alone. */}
+      <td className={`num font-mono font-semibold ${incoming ? "text-success-700" : "text-ink"}`}>
         {incoming ? "+" : "−"}{paiseToINR(t.amountPaise)}
       </td>
       <td className="staff-cell text-muted" title={t.txnRef || undefined}>{t.txnRef || "—"}</td>
+      {/* A disbursal row can never carry a payment proof, so printing "—" there made the column
+          read as "missing" on ~half the ledger. Blank for disbursals; "—" only when a repayment
+          genuinely has no proof attached. */}
       <td>
-        <PaymentProofLink url={t.proofUrl} className="text-xs" />
-        {!t.proofUrl && <span className="text-xs text-muted">—</span>}
+        {t.type === "REPAYMENT" ? (
+          <>
+            <PaymentProofLink url={t.proofUrl} className="text-xs" />
+            {!t.proofUrl && <span className="text-xs text-muted">—</span>}
+          </>
+        ) : null}
       </td>
-      <td className="text-muted">{t.status ?? "—"}</td>
+      {/* The two row kinds carry different enums under one header — a disbursal row's status is a
+          LoanStatus, a repayment row's is a PaymentStatus. Keying StatusBadge on `t.type` keeps
+          them visually distinct instead of printing raw enum names side by side. */}
+      <td>
+        <StatusBadge kind={t.type === "REPAYMENT" ? "payment" : "application"} value={t.status} />
+      </td>
       <td className="text-muted">{t.loanId != null ? `#${t.loanId}` : "—"}</td>
     </tr>
   );
