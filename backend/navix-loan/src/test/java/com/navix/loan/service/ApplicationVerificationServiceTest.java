@@ -66,6 +66,7 @@ class ApplicationVerificationServiceTest {
     @Mock private PennyDropGuard pennyDropGuard;
     @Mock private com.navix.common.featureflag.FeatureFlagService featureFlags;
     @Mock private com.navix.loan.repository.CustomerLimitOverrideRepository limitOverrideRepository;
+    @Mock private com.navix.loan.repository.ApplicationEventRepository applicationEventRepo;
 
     private ApplicationVerificationService service;
 
@@ -77,7 +78,8 @@ class ApplicationVerificationServiceTest {
         service = new ApplicationVerificationService(verificationRepo, profileRepo, applicationRepo,
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
                 new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
-                creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags);
+                creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags,
+                applicationEventRepo);
         // The score-floor auto-reject is SUSPENDED in production (see autoRejectEnabled). These tests
         // exercise the rule itself, so switch it on explicitly rather than depending on the default.
         lenient().when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(true);
@@ -434,6 +436,81 @@ class ApplicationVerificationServiceTest {
         assertThat(captor.getValue().getCheckType()).isEqualTo("AADHAAR");
         assertThat(captor.getValue().getStatus()).isEqualTo("REVIEW");
         assertThat(captor.getValue().getProvider()).isEqualTo("MANUAL_PROOF");
+    }
+
+    /**
+     * A human overruling a verification verdict is a maker-checker action, and {@code application_event}
+     * is the append-only source of truth for those (CLAUDE.md §5/§12) — the override used to land only
+     * on the verification row, invisible to the trail. Exactly one row, carrying the acting staff id +
+     * role, the check and the decision.
+     */
+    @Test
+    void manualDecision_appendsExactlyOneVerificationOverrideEvent() {
+        ActorContext.set(new CurrentActor("17", "Credit Reviewer", "CREDIT_HEAD"));
+        LoanApplication app = appWithStatus(APP, ApplicationStatus.CREDIT_EXEC_PENDING);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "PAN"))
+                .thenReturn(Optional.of(row("PAN", "REVIEW")));
+
+        service.manualDecision(APP, "PAN", true, "Card seen in person");
+
+        ArgumentCaptor<com.navix.loan.entity.ApplicationEvent> captor =
+                ArgumentCaptor.forClass(com.navix.loan.entity.ApplicationEvent.class);
+        verify(applicationEventRepo, times(1)).save(captor.capture());
+        com.navix.loan.entity.ApplicationEvent event = captor.getValue();
+        assertThat(event.getAction()).isEqualTo("VERIFICATION_OVERRIDE");
+        assertThat(event.getApplicationId()).isEqualTo(APP);
+        assertThat(event.getActorId()).isEqualTo("17");
+        assertThat(event.getActorRole()).isEqualTo("CREDIT_HEAD");
+        assertThat(event.getNotes()).contains("checkType=PAN").contains("decision=PASS")
+                .contains("Card seen in person");
+        assertThat(event.getAt()).isNotNull();
+        // An override moves a CHECK, never the aggregate — the file stays where it was, so both
+        // status columns carry the current status (to_status is not-null in the schema).
+        assertThat(event.getFromStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
+        assertThat(event.getToStatus()).isEqualTo(ApplicationStatus.CREDIT_EXEC_PENDING);
+    }
+
+    /** A FAIL override is audited the same way — the decision is recorded, not just the pass. */
+    @Test
+    void manualDecision_auditsAFailOverrideWithNoRemark() {
+        ActorContext.set(new CurrentActor("21", "Credit Exec", "CREDIT_EXECUTIVE"));
+        LoanApplication app = appWithStatus(APP, ApplicationStatus.KYC_PENDING);
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(app));
+        when(verificationRepo.findByApplicationIdAndCheckType(APP, "EMAIL"))
+                .thenReturn(Optional.of(row("EMAIL", "PENDING")));
+
+        service.manualDecision(APP, "EMAIL", false, null);
+
+        ArgumentCaptor<com.navix.loan.entity.ApplicationEvent> captor =
+                ArgumentCaptor.forClass(com.navix.loan.entity.ApplicationEvent.class);
+        verify(applicationEventRepo, times(1)).save(captor.capture());
+        assertThat(captor.getValue().getAction()).isEqualTo("VERIFICATION_OVERRIDE");
+        assertThat(captor.getValue().getActorRole()).isEqualTo("CREDIT_EXECUTIVE");
+        assertThat(captor.getValue().getNotes()).isEqualTo("checkType=EMAIL decision=FAIL");
+    }
+
+    /**
+     * {@code VERIFICATION_OVERRIDE} is deliberately NOT a decision: {@code DECISION_ACTIONS} drives
+     * the {@code /staff/performance} and {@code /staff/my-decisions} totals and {@code CustomerService}'s
+     * "applications I decided on" scope, so admitting it would silently restate every staffer's
+     * historical action count. Pinned here so the exclusion is a tested decision, not an oversight.
+     */
+    @Test
+    void verificationOverrideIsNotCountedAsADecision() {
+        assertThat(DecisionHistoryService.DECISION_ACTIONS)
+                .doesNotContain(ApplicationVerificationService.VERIFICATION_OVERRIDE);
+    }
+
+    /** A rejected override never reaches the trail — the guard runs before anything is written. */
+    @Test
+    void manualDecision_byANonCreditRoleAuditsNothing() {
+        ActorContext.set(new CurrentActor("9", "Telecaller", "TELECALLER"));
+
+        assertThatThrownBy(() -> service.manualDecision(APP, "PAN", true, "nope"))
+                .isInstanceOf(BusinessException.class);
+
+        verifyNoInteractions(applicationEventRepo);
     }
 
     @Test

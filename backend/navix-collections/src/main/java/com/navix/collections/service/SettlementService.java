@@ -14,6 +14,7 @@ import com.navix.common.notification.event.SettlementApprovedEvent;
 import com.navix.common.notification.event.SettlementProposedEvent;
 import com.navix.common.notification.event.SettlementRejectedEvent;
 import com.navix.common.security.ActorContext;
+import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +68,35 @@ public class SettlementService {
         }
         throw new BusinessException("FORBIDDEN_ROLE",
                 "This action requires one of: " + String.join(", ", roles));
+    }
+
+    /**
+     * Staff-only guard for the settlement READ paths. Mirrors
+     * {@code CollectionsService.requireCollectionsStaff} exactly — same rejected roles, same
+     * {@code BusinessException("FORBIDDEN_ROLE", ...)} — because it protects the same worklist:
+     * {@code /api/collections/**} is gated on {@code ROLE_STAFF} only, which is audience-level, so a
+     * DSA token satisfies it (CLAUDE.md §7). Settlement rows name every proposer/approver and the
+     * amount the company agreed to write off, so a role firewalled from customer data must not read
+     * them.
+     *
+     * <p>Deliberately a deny-list, not {@link #requireOneOf}: this is a read, and the rest of the
+     * collections console lets every non-DSA staff role (incl. TELECALLER) see the same cases. The
+     * write paths above keep their stricter {@code requireOneOf} allow-list. {@code ActorContext.get()}
+     * falls back to {@code CurrentActor.SYSTEM}, so in-process/scheduled callers still pass — again
+     * matching {@code CollectionsService}.
+     *
+     * <p>Duplicated locally rather than shared cross-module, matching how {@code CollectionsService}
+     * and the loan module each keep their own copy rather than factoring it into navix-common.
+     */
+    private static void requireCollectionsStaff() {
+        CurrentActor actor = ActorContext.get();
+        String role = actor != null ? actor.role() : null;
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+        if ("DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view customer data");
+        }
     }
 
     /** The acting staff id (a real bigint) from the current actor. */
@@ -188,8 +218,10 @@ public class SettlementService {
         }
     }
 
+    /** One settlement by id. Staff-only, same guard as {@link #listAll()}. */
     @Transactional(readOnly = true)
     public Settlement getSettlement(UUID settlementId) {
+        requireCollectionsStaff();
         return settlementRepository.findById(settlementId)
                 .orElseThrow(() -> new ResourceNotFoundException("Settlement", String.valueOf(settlementId)));
     }
@@ -200,9 +232,13 @@ public class SettlementService {
      * <p>One {@link StaffDirectory#namesFor} batches every proposer/approver/rejecter name for the
      * whole page, rather than the up-to-three {@code findStaff} calls per row the single-row
      * {@link #toView(Settlement)} costs.
+     *
+     * <p>Guarded by {@link #requireCollectionsStaff()}: this read carried no authorization at all, so
+     * any staff bearer — a DSA included — could list every settlement ever proposed.
      */
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {
+        requireCollectionsStaff();
         List<Settlement> settlements = settlementRepository.findAll(org.springframework.data.domain.Sort.by(
                 org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
         Set<Long> staffIds = new HashSet<>();

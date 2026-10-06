@@ -19,10 +19,12 @@ import com.navix.common.verification.VerificationPort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.ApplicationDocument;
+import com.navix.loan.entity.ApplicationEvent;
 import com.navix.loan.entity.ApplicationRejection;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.LoanApplication;
 import com.navix.loan.repository.CustomerProfileRepository;
+import com.navix.loan.repository.ApplicationEventRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationVerificationRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
@@ -175,6 +177,14 @@ public class ApplicationVerificationService {
     public static final String PENDING = "PENDING";
 
     /**
+     * {@code application_event.action} for a staff manual override of a check's verdict — see
+     * {@link #logVerificationOverride}. Deliberately absent from
+     * {@link DecisionHistoryService#DECISION_ACTIONS}: an override is audit, not a lifecycle decision,
+     * and counting it would restate every staffer's historical totals.
+     */
+    public static final String VERIFICATION_OVERRIDE = "VERIFICATION_OVERRIDE";
+
+    /**
      * Intake checks — the ones the Phase-1 consent screen fires, and the set every completeness
      * surface reports on. They must have been <b>attempted</b> to submit; a FAIL still goes to the
      * credit team flagged (revamp.md decision 10).
@@ -288,6 +298,10 @@ public class ApplicationVerificationService {
     // see manualDecision. Safe edge: PennyDropGuard depends only on its two repositories.
     private final PennyDropGuard pennyDropGuard;
     private final com.navix.common.featureflag.FeatureFlagService featureFlags;
+    // The append-only application_event trail (CLAUDE.md §5/§12). Injected so a human override of a
+    // verification verdict lands on it — see logVerificationOverride. Read-free edge: this service
+    // only ever appends.
+    private final ApplicationEventRepository eventRepo;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     /**
@@ -3470,7 +3484,7 @@ public class ApplicationVerificationService {
         if (!KNOWN_CHECKS.contains(type)) {
             throw new BusinessException("UNKNOWN_CHECK", "Unknown verification check: " + checkType);
         }
-        requireApplication(appId);
+        LoanApplication app = requireApplication(appId);
         String actor = ActorContext.get().name();
         String trimmed = notes != null ? notes.trim() : "";
         String message = (pass ? "Manually approved" : "Manually rejected") + " by " + actor
@@ -3493,10 +3507,61 @@ public class ApplicationVerificationService {
         }
         StepResult result = view(upsert(appId, type, pass ? PASS : FAIL, "MANUAL",
                 null, null, null, null, null, derived, message));
+        logVerificationOverride(app, type, pass, trimmed);
         if (PENNY_DROP.equals(type) && pass) {
             acceptDisbursalAccountManually(appId, derived);
         }
         return result;
+    }
+
+    /**
+     * Append the override to the append-only {@code application_event} trail, so a human overruling a
+     * verification verdict is visible to the maker-checker audit (CLAUDE.md §5/§12). Before this the
+     * override lived only on the verification row's {@code message}/{@code derived}, which the trail
+     * never shows — the one staff action on this service that moves a check's verdict was invisible
+     * next to every credit and disbursement decision beside it.
+     *
+     * <p><b>{@code from_status} == {@code to_status} == the application's current status.</b> An
+     * override moves a <em>check</em>, never the aggregate: the file stays exactly where it was (that
+     * is the whole point of an override — it unblocks the stage it is already in). The column is
+     * {@code not null}, so leaving {@code to_status} empty is not an option, and writing some other
+     * status would be a lie the SoD replay reads back: {@code ApplicationFlowService.actorOf} resolves
+     * "who drove the transition INTO status X" by matching {@code to_status}, so a fabricated value
+     * here would make this reviewer look like the actor of a transition they never performed. Same
+     * status on both sides is what the other non-transition writers already do — {@code REASSIGN} and
+     * {@code MARK_PENDING} in {@code ApplicationFlowService}, {@code REVERIFY} in
+     * {@code VerificationInvalidationService}, {@code STEP_LINK_SENT} in
+     * {@code VerificationOutreachService}.
+     *
+     * <p><b>{@code VERIFICATION_OVERRIDE} is deliberately NOT in
+     * {@link DecisionHistoryService#DECISION_ACTIONS}.</b> That set drives two live surfaces —
+     * {@code /staff/performance} + {@code /staff/my-decisions} totals, and
+     * {@code CustomerService}'s "applications I decided on" visibility scope — so adding it would
+     * silently restate every staffer's historical action count and widen which customers a credit
+     * executive can see, neither of which this audit fix is entitled to do. An override is also not a
+     * lifecycle decision: it clears one check so the real decision (sanction / reject) can be taken,
+     * and that decision is already counted. This matches the existing audit-only actions
+     * ({@code REVERIFY}, {@code STEP_LINK_SENT}), which are likewise absent from the set.
+     * {@code eventViews} filters nothing, so the row still shows on the application audit trail —
+     * which is exactly the visibility this fix is for.
+     *
+     * <p>Notes use the established {@code key=value … — remark} shape. {@code DecisionNotes} sees no
+     * known key in it and so returns the whole string as the remark verbatim; nothing is lost.
+     */
+    private void logVerificationOverride(LoanApplication app, String checkType, boolean pass,
+                                         String remarks) {
+        CurrentActor actor = ActorContext.get();
+        ApplicationEvent event = new ApplicationEvent();
+        event.setApplicationId(app.getId());
+        event.setFromStatus(app.getStatus());
+        event.setToStatus(app.getStatus());
+        event.setActorId(actor != null ? actor.id() : "system");
+        event.setActorRole(actor != null ? actor.role() : null);
+        event.setAction(VERIFICATION_OVERRIDE);
+        event.setNotes("checkType=" + checkType + " decision=" + (pass ? PASS : FAIL)
+                + (remarks == null || remarks.isEmpty() ? "" : " — " + remarks));
+        event.setAt(Instant.now());
+        eventRepo.save(event);
     }
 
     /**
