@@ -64,18 +64,26 @@ const TABS: TabDef[] = [
 
 /**
  * The product's single, full loan detail modal — read-only. Opened from the customer modal's
- * Loans tab, from loan history, and from the `/staff/loans` register (a pinned contract: that
- * page is written against exactly this `{ loanId, onClose }` prop shape).
+ * Loans tab, from loan history, and from the `/staff/loans` register.
  *
  * `loanId == null` is the closed convention (mirrors `CustomerDetailDialog`). Everything else —
  * the application, the customer, the borrower identity, the collections case — is resolved from
  * the loan id itself, so a caller only ever needs the one id.
+ *
+ * `customerId` / `applicationId` are optional hints for a caller that already holds them (the
+ * register row carries both): with them the customer roll-up starts alongside the loan read
+ * instead of waiting for it. They must describe the same loan as `loanId`; once the loan and the
+ * customer roll-up load, their own ids win, so a hint only ever decides what to fetch first.
  */
 export function LoanDetailDialog({
   loanId,
+  customerId: customerIdHint,
+  applicationId: applicationIdHint,
   onClose,
 }: {
   loanId: number | null;
+  customerId?: number | null;
+  applicationId?: number | null;
   onClose: () => void;
 }) {
   const open = loanId != null;
@@ -88,7 +96,8 @@ export function LoanDetailDialog({
     retry: false,
   });
   const loan = loanQ.data;
-  const customerId = loan?.customerId ?? null;
+  // Without a hint (a `?open=` deep link, loan history) this waits on the loan read, as before.
+  const customerId = loan?.customerId ?? customerIdHint ?? null;
 
   // Resolving the application, the borrower identity and the loan cycle all come off the same
   // customer roll-up, same as both prior call sites did by hand
@@ -101,7 +110,7 @@ export function LoanDetailDialog({
   });
   const customer = customerQ.data;
   const app = customer?.applications.find((a) => a.loanId === loanId) ?? null;
-  const applicationId = app?.id ?? null;
+  const applicationId = app?.id ?? applicationIdHint ?? null;
   const profile = customer?.profile;
 
   const outQ = useQuery({
