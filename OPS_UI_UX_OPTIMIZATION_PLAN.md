@@ -1,8 +1,16 @@
 # Ops console — UI/UX optimisation plan for the 15 most-used pages
 
-> **Status:** proposal, awaiting approval / not yet implemented. Branch `claude/ops-ui-ux-optimization-dokoco`.
+> **Status:** proposal, **reviewed 2026-10-06, awaiting approval** / not yet implemented. Branch
+> `claude/ops-ui-ux-optimization-dokoco`. The review's corrections are folded in below and summarised in the
+> "Review pass" note after the reconciliation block; read §4's two new subsections ("Conflicts with the 2026-09-16
+> measured investigation", "What this plan did not measure") before sequencing any backend work, and the Phase 1.0
+> prerequisite before touching shared CSS or `ui/` primitives.
 > Companion docs: [`CLAUDE.md`](CLAUDE.md) (§7 roles, §8 frontend architecture), [`ADMIN_CONSOLE_REVAMP_PLAN.md`](ADMIN_CONSOLE_REVAMP_PLAN.md)
-> (the earlier "name on every row + unified application dialog" plan, whose Part A/B shipped and whose patterns this plan reuses).
+> (the earlier "name on every row + unified application dialog" plan, whose Part A/B shipped and whose patterns this plan reuses),
+> and **[`docs/perf/UI_PERFORMANCE_INVESTIGATION_2026-09-16.md`](docs/perf/UI_PERFORMANCE_INVESTIGATION_2026-09-16.md)**
+> — the *measured* pass over the same 15 pages (live timings, payload sizes, statement counts, the real `pg_indexes`
+> catalog), whose recommendations shipped in `dc25b93` / `fa7473b` / `V71` / `vercel.json`. Where this plan and that
+> document disagree, that document has evidence and this one has code reading; §4 lists the three conflicts.
 >
 > **How this was produced (2026-09-22).** One read-only observer agent per page inspected the page, its components, the
 > `xxxApi` client, the BFF route, the Spring controller → service → repository chain and the Flyway migrations, and
@@ -24,11 +32,49 @@
 >   narrows accordingly to the period / refresh / export cluster, and should compose `SearchBar` rather than replace it.
 >   Whether a *non-search* filter change (period, direction) still fires a duplicate request needs re-checking at
 >   current `main`.
-> - **Still open, re-verified at `0f14dab`:** all five Phase-0 bugs (§4) and every shared-foundation gap in §2 —
+> - **Still open, re-verified at `0f14dab`:** all **ten** Phase-0 items (§4 — an earlier draft of this note said
+>   "five"; the table has always had ten rows) and every shared-foundation gap in §2 —
 >   no toast or `Skeleton` primitive exists, no sticky `thead` rule exists, `ui/Table` still has zero consumers,
 >   `customer-edit-dialog.tsx` still invalidates `["customers"]` while the register reads `["customers-page"]`, and
 >   `manualDecision` still writes no `application_event` (the two `ApplicationEvent` hits in that service are Spring's
 >   `ApplicationEventPublisher`, not the audit repository).
+
+> **Review pass 2026-10-06 — corrections folded in below.** A second reviewer re-read the cited code rather than the
+> prose and found the diagnosis sound but four load-bearing details wrong. Each is corrected in place and listed here
+> so the corrections are not lost in a 1,500-line document:
+>
+> 1. **`V74` is taken.** The index migration in §4 Phase 3 is now **`V76`** — `V74` is
+>    `application_verification_reopened` and `V75` is `customer_profile_aadhaar_card_intake`. §3.2 §8's claim that
+>    `loan_application(assigned_executive_id, status)` "ships in the V74 batch" was false; it does not exist yet.
+> 2. **The sticky-header rule cannot be written against `.staff-table-scroll`.** That class has **31 consumers**,
+>    several of them small tables nested inside scrollers that already bound their height, and it is a documented
+>    popover-clipping context. §2.2 now scopes the rule to a new `.staff-register-scroll` modifier.
+> 3. **The console body is 11 px, not 10.4 px** (`.navix-crm { font-size: 0.688rem }` against a 16 px root — the
+>    `12.8px` in `globals.css:100` is on `body`, so it never changes what `rem` resolves to). The 9.2 px header
+>    figure is correct. §3.2 now states the consequence the plan had missed: an 11 px floor makes headers the same
+>    size as body text and pushes more registers past the `84rem` floor.
+> 4. **`ui/Dialog` has 41 consumers, 5 of them borrower-facing** (not "three borrower dialogs"), one of which is the
+>    regulated consent screen `components/borrower/terms-modal.tsx`. Phase 1 item 3 is re-sized accordingly.
+>
+> 5. **Four §2.2 proposals do not work as written** — the pagination bar is *inside* the scroller on 4 of the 6
+>    paginated registers (so "the pagination bar stays in view" is false), `border-collapse: collapse` eats a sticky
+>    `th`'s bottom border, a `z-index: 3` header paints over the in-place Journey `Drawer` that renders inside the
+>    `z-index: 2` sticky actions cell, and `.modal-overlay.closing` is inert because `Dialog` unmounts instantly.
+>    Two of the four need **component** changes that §2.1 does not list. Details and fixes in §2.2.
+> 6. **§2.3's three headline mechanisms are each argued wrongly** (right conclusions, wrong reasons): the poll gate is
+>    tab *visibility*, not window focus — so a visible-but-unfocused console still polls at full rate; the session
+>    double-fetch has five call sites and the telecalling worst case is 27 round trips against a cookie-only route, not
+>    "up to 50" backend calls; and "fabricated zeros" is real on `/staff/performance` but **not** on
+>    `/staff/my-decisions`, while an instance on `/staff/loans` was missed. Details in §2.3.
+> 7. **§2.1 budgets writing the primitives (~335 lines) and not adopting them** (51 + 46 + 29 + 170 call sites), and
+>    the `ui/` barrel already exports a `Table` with zero consumers. Several tallies were under-counted. See §2.1.
+> 8. **One new Phase 0 item (0.11):** leads row *selection* — not just hover — is invisible on every even row, on the
+>    page a Telecaller works all day. Phase 0 is now 11 items.
+>
+> Two methodological gaps are recorded as new subsections rather than inline fixes, because they change how the plan
+> should be *read*: §4 "Conflicts with the 2026-09-16 measured investigation" and §4 "What this plan did not measure".
+> **Net assessment of the review:** the diagnosis in §2 and §3 headings 1–5 is sound and worth acting on now; the
+> sequencing, the risk accounting and the backend half's evidence base are what need work.
 
 ---
 
@@ -41,7 +87,7 @@ repeated gaps:
 
 | Gap (verified) | Where it shows | Evidence |
 |---|---|---|
-| **No skeleton / empty / error / toast primitives** — 31 files inline `animate-pulse` blocks with four different fills, 13 files render a bare `Loading…` string, 35 files hand-roll an empty state with 11 wrapper variants, 50 files render `<p class="text-error-700">` with no retry (counted over `frontend/src/components/staff/**` and `frontend/src/app/staff/**`; the exact tallies move with the glob, the pattern does not), and there is **no toast and no live region for success feedback** (the only `role="alert"` instances are form errors) | every page | shared-layer scan; `frontend/src/components/staff/**`, `frontend/src/app/staff/**` |
+| **No skeleton / empty / error / toast primitives** — 31 files inline `animate-pulse` blocks with four different fills (51 occurrences), 21 files render a bare `Loading…` string (46 occurrences), 35 files hand-roll an empty state with 11 wrapper variants, **60 files render `<p class="text-error-700">` with no retry (170 occurrences)** (re-counted 2026-10-06 over `frontend/src/components/staff/**` and `frontend/src/app/staff/**`; the first draft said 13 / 50 files, which understated the error and loading cases — the exact tallies move with the glob, the pattern does not), and there is **no toast and no live region for success feedback** (the whole app contains **4** `role="alert"`/`aria-live` instances, all form errors) | every page | shared-layer scan; `frontend/src/components/staff/**`, `frontend/src/app/staff/**` |
 | **Status colour is hand-rolled** — 23 files keep a private status→class map and 16 files inline `bg-*-100` pills; `ui/Badge` is used by 5 files; `StageBadge`/`KycStatusBadge` have 0 consumers | queues, ledger, telecalling, settlements, verifications | `frontend/src/components/ui/badge.tsx:4-28`, `frontend/src/components/staff/staff-ui.tsx:90-117` |
 | **Table header never sticks; numbers are left-aligned** — `.staff-data-table` pins identity/action *columns* but has no `thead` sticky rule; money cells use `font-mono` (tabular via `tnum`) but `text-align:left` | every register | `frontend/src/app/globals.css:418-433` |
 | **Row hover cannot work on even rows** — 8 files add `hover:bg-grey-50` to `<tr>` but the zebra colour is painted on `<td>` | customers, loans, all-applications… | `frontend/src/app/globals.css:422` |
@@ -107,23 +153,59 @@ are — note that in the current build all three font families resolve to Inter 
 
 | Primitive | What it is | Replaces | Size |
 |---|---|---|---|
-| `<Skeleton variant="line\|stat\|row\|table" rows=n />` | one `animate-pulse` implementation with the console's `bg-grey-100`/`border-line` fill; `table` renders n zebra rows with the same 8px 14px cell rhythm so the skeleton has the shape of the table it replaces | 49 ad-hoc `animate-pulse` blocks (31 files), 30 bare `Loading…` strings (13 files) | ~40 lines |
+| `<Skeleton variant="line\|stat\|row\|table" rows=n />` | one `animate-pulse` implementation with the console's `bg-grey-100`/`border-line` fill; `table` renders n zebra rows with the same 8px 14px cell rhythm so the skeleton has the shape of the table it replaces | 51 ad-hoc `animate-pulse` blocks (31 files), 46 bare `Loading…` strings (21 files) | ~40 lines |
 | `<EmptyState icon title hint action? />` | the `px-5 py-8 text-center text-sm text-muted` line every page already writes, with an optional CTA | 35 files × 11 wrapper variants | ~30 lines |
-| `<ErrorState error onRetry />` | `errMessage(error)` + a `Try again` button that calls `refetch()` | 50 files of `<p class="text-error-700">` with no retry | ~30 lines |
+| `<ErrorState error onRetry />` | `errMessage(error)` + a `Try again` button that calls `refetch()` | 170 occurrences across 60 files of `<p class="text-error-700">` with no retry — the largest single adoption cost in Phase 1, and the reason the migration (not the primitive) is what needs estimating | ~30 lines |
 | `<Toaster/>` + `toast.success/error(msg)` | a tiny queue rendered in the shell with `role="status" aria-live="polite"`, auto-dismiss 4 s, `prefers-reduced-motion` respected; **no new dependency** | inline success strings that never dismiss (customer detail cards, telecalling `results[id]`, settlements) | ~80 lines |
 | `<StatusBadge kind="application\|loan\|payment\|lead\|settlement\|verification" value/>` | **one** map from each backend enum to `ui/Badge` variants (the vocabulary the sidebar already uses: `success`/`warning`/`error`/`info`/`neutral`) | 23 private status→class maps; revive or delete the dead `StageBadge`/`KycStatusBadge` | ~60 lines |
 | `<Money paise align="right"/>` | `paiseToINR` + `font-mono text-right whitespace-nowrap` (tabular digits already come from `globals.css:113`) | every money `<td>` written by hand | ~15 lines |
 | `<TableToolbar>` | one flex row for period / segment chips / refresh / export with the existing class strings, **composing the shared `SearchBar` rather than replacing it**, so pages stop composing the cluster ad hoc | 15+ ad-hoc toolbars | ~40 lines |
 | `<ConfirmDialog title body confirmLabel tone/>` | a `ui/Dialog` preset for the one-click destructive actions (settlement approve/reject, bulk reminders) | none today | ~40 lines |
 
+> **Two things §2.1 does not account for (2026-10-06 review).**
+>
+> - **The sizes quoted are for *writing* the primitives, not for adopting them.** ~40 + ~30 + ~30 + ~80 + ~60 + ~15 +
+>   ~40 + ~40 ≈ 335 lines of new code, against **51** `animate-pulse` sites, **46** `Loading…` sites, ~29 empty states
+>   and **170** error paragraphs to convert — plus every status pill and money cell. The primitives are a day; the
+>   migration is the project. Phase 1's "≈ 1 week" covers the former. Budget the latter explicitly, or scope Phase 1 to
+>   *introducing* the primitives plus converting the 15 pages in §1 only, and let the rest convert opportunistically.
+> - **The barrel already ships dead code.** `components/ui/table.tsx` has **zero** consumers — nothing imports it and
+>   no `<Table`/`<TableRow`/`<TableHead` appears anywhere — yet it is exported from `ui/index.ts`. §2.1 flags the dead
+>   `StageBadge`/`KycStatusBadge` but not this. Adding eight more primitives to a barrel with an unused table component
+>   invites the same outcome, so make adoption part of each primitive's definition of done, and delete `ui/table.tsx`
+>   (or make `Skeleton variant="table"` and the register markup use it) rather than leaving a third dead export.
+>
+> Corrected tallies from the same review, for anyone sizing the migration: **9** files import `ui/Badge` (6 in staff
+> scope), not 5; **29** files hand-roll an empty state across **13** className variants, not 35 across 11; the
+> "23 private status→class maps" is **11 hand-verified maps inside a population of 31 files** carrying ad-hoc colour
+> logic — the pattern is real, the integer is an estimate.
+
 ### 2.2 CSS rules to add (all in `frontend/src/app/globals.css`, scoped to the console — never global, per CLAUDE.md §8)
 
+> **Corrected 2026-10-06.** The first draft bounded `.staff-table-scroll` itself. That is wrong and must not be
+> implemented as written: **the class has 31 consumers**, and only some of them are full-page registers.
+> `customer-tabs.tsx:599,671` puts field tables inside it *while the tab panel above it is already a
+> `max-h-[68vh]` scroller* (a `calc(100vh - 14rem)` child yields two nested vertical scrollbars on the Customer 360
+> page); `salary-days-panel.tsx:57`, the four `admin/dsa` tables, `admin/rejections`, `admin/expenses` and the two
+> `dsa/*` pages are short panel tables that would gain a scrollport they do not want. The class is also a **known
+> popover-clipping context** — `overflow-x: auto` computes `overflow-y` to `auto`, which is precisely why
+> `components/ui/tooltip.tsx:29`, `components/staff/column-filter.tsx:350`,
+> `components/staff/collections-assign.tsx:288` and `components/staff/case-failure-dialog.tsx:25` each carry a comment
+> explaining that their popover/live-region had to be portalled out of it. Turning it into a real vertical scroller
+> makes that clip taller as well as wider, so any *new* in-cell overlay must be portalled too.
+>
+> The rule therefore goes on a **new opt-in modifier**, `.staff-register-scroll`, added alongside
+> `.staff-table-scroll` on the ~15 register wrappers in §1 and nowhere else. Same visual outcome, no blast radius.
+
 ```css
-/* Sticky header for every register. Every register sits inside .staff-table-scroll, whose
-   overflow-x:auto makes IT (not the page) the sticky scrollport, so the wrapper must also be the
-   vertical scroller, bounded to the viewport. Deliberate behaviour change: a long register scrolls
-   inside its panel and the pagination bar stays in view. The navy background is already on thead th. */
-.staff-table-scroll { max-height: calc(100vh - 14rem); overflow: auto; }
+/* Sticky header, opt-in per register. `.staff-table-scroll`'s overflow-x:auto already makes IT (not the
+   page) the sticky scrollport, but with no height bound it never scrolls vertically, so `top: 0` would
+   pin the header to a box as tall as its own content and nothing would appear to stick. The modifier
+   adds the missing vertical bound. Deliberate behaviour change: a long register scrolls inside its panel
+   and the pagination bar stays in view. The navy background is already on thead th.
+   Applied ONLY to the 15 register wrappers — never to `.staff-table-scroll` itself (see the note above).
+   `dvh` over `vh` so mobile browser chrome does not clip the last row. */
+.staff-register-scroll { max-height: calc(100dvh - 14rem); overflow: auto; }
 .staff-data-table thead th { position: sticky; top: 0; z-index: 3; }
 .staff-data-table thead .staff-sticky-identity,
 .staff-data-table thead .staff-sticky-actions { z-index: 4; }
@@ -150,6 +232,59 @@ Plus two keyframes in `tailwind.config.ts` next to `fadeUp`: `fadeOut` (opacity 
 (`background: var(--gold-50)` → transparent, with the new `--gold-50` variable above). Nothing else in the motion
 vocabulary changes.
 
+**Six defects in the §2.2 block itself, found by the 2026-10-06 review. Four of them mean the rule does not do what
+the section claims until other work is done — read these before estimating Phase 1:**
+
+1. **The pagination bar is *inside* the scroller on four of the six paginated registers**, so capping the wrapper
+   scrolls the pagination bar away with the rows — the exact opposite of the stated benefit ("the pagination bar stays
+   in view"). Verified: `customers/page.tsx` (scroller `:388` → `:652`, `PaginationBar` `:644`), `loans/page.tsx`
+   (`:254` → `:361`, PB `:360`), `collections/page.tsx` (`:342` → `:509`, PB `:500`), `my-decisions/page.tsx`
+   (`:171` → `:251`, PB `:241`). It is already outside on `accounting/transactions/page.tsx` (`:254-275`, PB `:278`).
+   **So the sticky header requires a markup change on four pages — lift `PaginationBar` out of the scroller and make it
+   a sibling footer inside the bordered panel.** That is unscoped work the plan does not list; it is small but it is
+   not zero, and the benefit is false without it.
+2. **`border-collapse: collapse` eats the sticky header's bottom border.** `globals.css:406` sets
+   `border-collapse: collapse` on `.navix-crm table`, and `:420` puts `border-bottom` on `th`. Under collapsed borders
+   the border is painted by the *table*, not the cell, so it does not travel with a sticky `th` — the header will
+   detach from the rows with no rule under it as soon as it sticks. Standard fix: keep `border-collapse: collapse` and
+   give the sticky header its separation with a shadow instead of a border —
+   `.staff-data-table thead th { box-shadow: inset 0 -1px 0 var(--line); }`.
+3. **A `z-index: 3` sticky header will paint over the Journey drawer.** `ui/Drawer` has **no portal** — it renders in
+   place as `fixed inset-0 z-[200]` (`drawer.tsx:71`) — and `ApplicationJourney` (which *is* a `Drawer`,
+   `application-journey.tsx:94`) is rendered at `app-row.tsx:159`, **inside the `<td className="staff-sticky-actions">`
+   that opens at `:125`**. That cell is `position: sticky; z-index: 2` (`globals.css:425`), and a positioned element
+   with a non-`auto` z-index **establishes a stacking context**, so the drawer's `z-[200]` is resolved *inside* it and
+   cannot out-paint a sibling at `z-index: 3`. Today nothing in the table exceeds 2, so the drawer is fine; add
+   `thead th { z-index: 3 }` and the navy header draws on top of the open drawer. Fix by portalling `ui/Drawer` to
+   `document.body` (as `ui/Dialog` already does, `dialog.tsx:48,62`) — note that makes it a **Phase 1 component
+   change**, not a CSS one.
+4. **`.modal-overlay.closing { animation: fadeOut }` is inert as written.** CSS cannot animate an unmount, and
+   `dialog.tsx:47` returns `null` the instant `open` flips, so no node is ever present to carry the `closing` class.
+   The exit fade needs an `exiting` state in `Dialog` (and `Drawer`) that keeps the node mounted for the animation
+   duration and then unmounts — again a component change, which §2.1 does not list and §2.2 sizes as a CSS rule.
+   Either scope that component work or drop the exit animation; do not ship the rule believing it does something.
+5. **The row-hover fix does not cover the whole zebra defect.** `tbody tr:nth-child(even) td` also counts the
+   **collapsible date-group header rows** that `loans/page.tsx:296-310` emits into the same `<tbody>` via a Fragment,
+   so the stripe pattern is already scrambled on every grouped register independently of hover. Either move group
+   headers into their own `<tbody>` per group (which also makes the collapse semantics cleaner) or drive the stripe
+   from a data attribute the row renderer sets, rather than `nth-child`.
+6. **The same zebra bug hides a functional state, not just hover** — see the new Phase 0 item 0.11: selected rows on
+   the leads table are invisible on every even row.
+
+**Two further caveats on the sticky rule, to settle before implementing it (added 2026-10-06):**
+
+- **`14rem` is a guess, and it is per-page.** The offset has to clear the shell header, the `PageHeader`, the toolbar
+  row and — on the dashboard, verifications, performance, my-decisions and transactions — a row of stat cards above
+  the table. A single constant will leave dead space on the lean pages and clip the last row on the tall ones. Measure
+  the four tallest layouts first and either pick the worst case or set the bound per page with a CSS variable
+  (`--register-offset`, defaulted in the modifier and overridden on the five stat-card pages). Check a 768 px-tall
+  laptop and a 150 % browser zoom before shipping: below roughly 560 px of usable height the inner scroller is worse
+  than the page scroll it replaces, so pair it with
+  `@media (max-height: 700px) { .staff-register-scroll { max-height: none; } }`.
+- **`rowFlash` on an 8 s poll needs a cap.** On the queues and the collections worklist a poll can change many rows at
+  once; flashing 30 rows in gold is noise, not information. Flash only when the changed-row count is ≤ 5, and never on
+  the first paint after a filter or period change (every row is "new" then).
+
 ### 2.3 Data-fetching hygiene (frontend, no backend change)
 
 | Change | Why (verified) | Where |
@@ -161,6 +296,57 @@ vocabulary changes.
 | **A polling policy.** Keep the intervals (they are product decisions) but (a) never poll hidden tabs — React Query already pauses interval refetches when the window is unfocused, so the "background tab hammers the server" fear is unfounded; (b) invalidate narrowly: logging a collections interaction currently invalidates `['collections-worklist']`, which the **sidebar badge on every page** observes | `staff-shell.tsx:120-131`, `collections/[loanId]/page.tsx:53-57` |
 | **Route-level `loading.tsx` under `src/app/staff/`** rendering `<Skeleton variant="table"/>` inside the shell | there is none; the only navigation feedback is the 3 px `RouteProgress` bar and five different page-local `Suspense` fallbacks | `frontend/src/components/app/route-progress.tsx`, shared-layer scan |
 
+> **§2.3 corrections from the 2026-10-06 review.** The five items above are all worth doing; three of them are
+> argued from a wrong mechanism or a wrong number, which matters because the wrong parts are what a reviewer would
+> check:
+>
+> - **"Never poll hidden tabs — React Query already pauses when the window is unfocused."** The conclusion is right and
+>   the load-bearing word is wrong. At the pinned `@tanstack/react-query` **5.62.0**, `refetchIntervalInBackground` has
+>   no default (falsy), and the interval callback gates on `this.options.refetchIntervalInBackground ||
+>   focusManager.isFocused()` — where `isFocused()` resolves to **`document.visibilityState === "visible"`**, i.e.
+>   **tab visibility, not window focus**. A background *tab* is hidden, so intervals do pause and the
+>   "background tab hammers the server" fear is indeed unfounded. But a **visible yet unfocused window** — second
+>   monitor, split screen, devtools focused, another app in front: the normal state of an ops console left open beside a
+>   dialer — is `visible` and **keeps polling at full rate**. So the §2.3 row understates the standing cost, and Phase 4's
+>   "add `refetchIntervalInBackground: false` explicitly (already the default)" is a no-op. If the ambient poll load is
+>   the concern, the lever is a **visibility-*and*-idle backoff** (pause or lengthen after N minutes without
+>   interaction), not a flag that is already set the way the plan wants.
+> - **Relatedly, `staff-shell.tsx:122-125` carries a comment asserting that "React Query takes the shortest interval
+>   across observers".** It does not — `QueryObserver#updateRefetchInterval` sets the interval per observer. Fix the
+>   comment while touching the shell, and do not design the polling policy around the behaviour it claims.
+> - **The session double-fetch: right outcome, wrong mechanism and wrong magnitude.** `useStaffSession` has **five**
+>   call sites, not one (`staff-shell.tsx:277`, `customer-owner-picker.tsx:30`, `detail-parts.tsx:101,214`,
+>   `admin/api-dashboard/page.tsx:51`, `dashboard/page.tsx:281`), and on **`/staff/dashboard` and
+>   `/staff/admin/api-dashboard` both `/me` reads are raw** — neither page mounts a `['staff-me']` consumer at all — so
+>   "the shell's raw fetch cannot dedupe with the RQ hook" is not the mechanism on the first two pages it would apply
+>   to. The telecalling worst case is **27** round trips at the default page size (1 shell + 1 shared `['staff-me']` +
+>   25 pickers), not "up to 50"; it is 102 at page size 100, and because the rows are keyed `<tr key={r.id}>` a page
+>   turn remounts all 25 pickers for **25 more** — a cost the "per page load" framing misses entirely. Finally,
+>   `app/api/auth/staff/me/route.ts` is a nine-line **cookie read** with no hop to `BACKEND_BASE_URL` and no JWT
+>   verification, so these are Next function invocations and serial RTTs, **not** Spring or database load. The fix
+>   stays correct and cheap; the item should be ranked as a latency/waterfall fix, not a backend-load fix.
+>   Two bonus findings on the same component: the picker's `useStaffSession()` at `:30` is **dead on the telecalling
+>   page** (`telecalling/page.tsx:281` passes `allowedRoles={TELECALLER_ONLY}`, so `actorRole` is never consulted), and
+>   it sits **above** its own `<PermissionGate permission="customer:assign">` at `:69`, so roles that will never see the
+>   control still pay for the fetch. Deleting the call is smaller than rerouting it.
+> - **"Fabricated zeros" is right on `/staff/performance` and wrong on `/staff/my-decisions`.** Performance really does
+>   render literal `0`s (`:73` `rows ?? []` → `:97` `reduce` from a zeroed accumulator → `:176-191` `StatCard`, with the
+>   tiles mounted *above* the `isLoading` branch at `:215`). My-decisions already guards with
+>   `stats ? … : …` (`:148-163`), so it shows no fake zero — strike it from §2.3's list. The review found **one instance
+>   the plan misses**: `loans/page.tsx:122-123` derives `counts = segmentCounts(q.data ?? [])` and renders
+>   `({counts[s]})` in the segment chips at `:235`, so every submitted search or date change flashes **"(0)"** across
+>   all four chips. Same bug class, different widget; add it to §3.6.
+> - **One more over-fetch on the customers register, unmentioned in §3.3:** the chip-count query
+>   `["customers-summary", query, from, to, mine]` (`customers/page.tsx:181-185`) **keys on the search term**, so every
+>   submitted search fires a second whole-book aggregate beside the page query. The in-file comment ("it stops every
+>   keystroke re-counting the whole book") is stale now that `SearchBar` submits on Enter — true, but it still
+>   re-counts once per search. Drop `query` from that key unless the chips are meant to reflect the filtered set.
+> - **No request is ever cancelled.** The single fetch helper `bff()` (`lib/api/applications.ts:1036-1046`) passes no
+>   `signal`, so React Query cannot abort a superseded request. With `keepPreviousData` arriving in Phase 1 and keys
+>   that change on every filter, period and page, a fast operator leaves a trail of in-flight requests whose responses
+>   are parsed and discarded. Threading `signal` through `bff()` is a ~5-line change and belongs in Phase 1 item 5
+>   alongside `keepPreviousData`, not after it.
+
 ### 2.4 Table conventions (apply once in `AppRow`/`QueueTable`, then per register)
 
 1. Column order stays `S.No. · identity · facts · actions`; **identity and actions stay sticky**.
@@ -171,6 +357,13 @@ vocabulary changes.
    most pages; the plan just makes it uniform).
 5. The two date controls converge: `QueueDateFilter` keeps its behaviour but adopts the `PeriodPicker` pill styling
    (or vice versa — pick one; recommendation: the square navy pills, because they sit inside toolbars on 9 pages).
+6. **Added 2026-10-06 — table semantics, which this section omitted.** Across the **33** `<table>` elements in staff
+   scope there are **2** total `scope="col"`/`<caption>` occurrences and **0** `<table aria-label>`. §2.4 codifies
+   column order, alignment, badges, skeletons and hover but says nothing about whether a screen reader can navigate
+   these grids, and §3.2 asks for a caption on `QueueTable` alone. Make it a convention here instead: `scope="col"` on
+   every `th`, a visually-hidden `<caption>` naming the register and its filter state, and `aria-sort` on the sortable
+   headers that already exist (`SortableTh`, `FilterableTh`). It is a one-pass change in the shared row/header helpers,
+   and it is the difference between "dense" and "unusable with assistive tech".
 
 ---
 
@@ -283,7 +476,10 @@ while open.
 
 **2. UI/UX problems (verified).**
 - **Sub-10 px type:** table headers are 0.576 rem = **9.2 px** (`globals.css:421`), the dialog uses `text-[8.8px]` in
-  three places (`application-detail-dialog.tsx:876,1139,1174`) under a 10.4 px body, and the dialog is portaled
+  three places (`application-detail-dialog.tsx:876,1139,1174`) under an **11 px** console body
+  (`.navix-crm { font-size: 0.688rem }`, `globals.css:116`, against the 16 px root — the `12.8px` at `globals.css:100`
+  is set on `body`, so it never changes what `rem` resolves to; an earlier draft of this line said 10.4 px),
+  and the dialog is portaled
   **outside `.navix-crm`** so the console density rules do not even apply inside it.
 - No sticky header on queues that are routinely 25–100 rows tall; no `<caption>`/`aria-label` on `QueueTable`.
 - Account, IFSC, PAN and mobile are shown in full on every row (`app-row.tsx:49-53,86-89`) — an explicit product decision for
@@ -300,6 +496,14 @@ while open.
 **3. Proposed subtle UI improvements.**
 - Floor table headers and dialog captions at **11 px**; add `.navix-crm` to the dialog portal root so dialogs match the
   grid; `size="xl"` from the shared Dialog instead of `!max-w-[80vw]`.
+  **Two consequences the first draft did not state.** (a) 11 px *is* the console body size, so floored headers stop
+  being visually subordinate to their cells — keep them distinct with the uppercase + `letter-spacing: .04em` +
+  navy-fill treatment they already have, not with size. (b) 9.2 → 11 px is a **19 % widening of every header cell** on
+  tables of 17–22 columns, so registers that fit inside `84rem` today will cross it and start scrolling horizontally
+  — the very symptom §3.11 treats as a bug on the leads table. Measure the widest three registers
+  (customers 22 cols, applications 17–19, collections 15) at 1366 px and 1440 px before committing to 11 px; if they
+  cross, the honest trade is **10 px headers plus the `84rem` floor re-scoped per table** (§2.4 item 5), not 11 px and
+  a wider scroll. Do not raise the floor and leave the width unmeasured.
 - Sticky header; visually-hidden caption per queue; a visible "Select" header label and a one-line hint
   ("Tick rows to assign or reject in bulk") in the panel header when bulk is enabled.
 - Amount cell: two-tone — requested amounts in `text-ink`, eligible limits in `text-muted` with the tag first
@@ -342,7 +546,9 @@ row once; move PDF regeneration to an explicit POST or a job.
 
 **8. Database optimisation opportunities.** All relevant indexes exist (`status` V5, `created_at` + `(status,
 created_at)` V53, `loan_id` V71, `customer_id`, `application_event(application_id)`, unique
-`customer_profile(application_id)`). `loan_application(assigned_executive_id, status)` ships in the V74 batch — it also serves
+`customer_profile(application_id)`). `loan_application(assigned_executive_id, status)` **does not exist yet** — an
+earlier draft said it "ships in the V74 batch", but `V74` is `application_verification_reopened` and the highest
+migration on `main` is `V75`; it is proposed here for the new **`V76`** index migration in §4 — it also serves
 `scope()` on every book-stats / by-ids call (§3.1).
 
 **9. Expected user impact.** Reviewers stop squinting at 9 px headers and 8.8 px captions, see which file just
@@ -489,8 +695,11 @@ correction; keep the gauge's mount animation but disable it under reduced motion
 
 **6. Performance observations (verified).** `CustomerService.detail` is **≈17 queries** for one application / one loan
 (`:689-769`): applications, loans, profiles `IN`, `latestProfile` **per application** (`:704`; a batched overload at
-`:1519` is unused), staff names **per distinct id, uncached** (`findStaffByIds` unused; `StaffDirectory` has no
-cache anywhere), every `application_event` row for the customer (`:716`), three breakdown queries, payments **per
+`:1519` is unused), staff names **per distinct id, uncached** (`:681,712,757` each call `findStaff(id)`;
+`StaffDirectory` has no cache anywhere — note the batched path is *not* missing from the codebase, as an earlier draft
+implied: `findStaffByIds` is live behind `StaffDirectory.namesFor`, which `SettlementService`,
+`CollectionPaymentService`, `CollectionsService` and `ApplicationController` already use, so this is a call-site fix
+with an in-repo precedent rather than new machinery), every `application_event` row for the customer (`:716`), three breakdown queries, payments **per
 loan** (N+1, `:747-751`), owner (+1 name), credit brief (4 queries, `CreditBriefService.view:179-217`), limit
 override; scoped roles add 3–6 (`TELECALLER`: `ownerRepository.findAll()`). The response embeds the **full raw bureau
 `providerResponse` JSON** on every customer read (`CreditBriefDtos.java:29-30`) while the page uses four fields and
@@ -635,6 +844,10 @@ was refuted — line 121 is a comment).
 **2. UI/UX problems (verified).**
 - Money columns are `font-mono` but left-aligned (`:338-341`; `globals.css:420` forces `text-align:left`); no sticky
   header on a register that routinely spans pages.
+- **Added 2026-10-06:** the segment chips flash **"(0)"** on every submitted search or date change — `:122-123` derives
+  `counts = segmentCounts(q.data ?? [])` and `:235` renders `({counts[s]})`, and the query (`:118`) keys on `query`
+  with no `placeholderData`, so all four chip counts read zero while the refetch is in flight. Same defect class as the
+  performance page's fabricated zeros (§2.3); fixed by the same `keepPreviousData`.
 - Outstanding is a single number; the backend computes interest / penalty / paid / settlement cap for every row and
   `outstandingForAll` **discards the breakdown** (`RepaymentService.java:400-403`); an approved settlement is invisible
   in the row (`LoanRegisterRow` has no settlement field).
@@ -846,7 +1059,7 @@ fade; the officer select shows its 14 px spinner slot already — keep it.
   can create two cases (`CollectionCaseRepository.java:16-35`). Add `uq_collection_case_loan_id` as a **separate, guarded step** —
   count duplicates, re-point `settlement` / `interaction_log` / `collection_payment` rows to the newest case (there
   are no FKs to protect them, CLAUDE.md §10), delete the rest, then create the unique index — not part of the
-  index-only V74.
+  index-only `V76` batch.
 - `interaction_log` is read `ORDER BY logged_at DESC` on an index covering `collection_case_id` only; cosmetic today,
   add `(collection_case_id, logged_at desc)` when volume grows. Interactions, call logs and remarks are unbounded
   lists — bound with `?limit=` when a case exceeds a few dozen entries.
@@ -1105,7 +1318,10 @@ in the destination section; reminder success shows a 2 s inline tick before the 
   **High.** (The staff list itself is a shared RQ key — one request.)
 - `listForTelecalling` is batched (five queries, no N+1) but loads **every `application_event` row** for every queued
   application (notes up to 2000 chars) to keep one timestamp each — `findLatestEventAt` (max(at) group by) exists
-  and is unused (`AdminApplicationService.java:149-151`); it also hydrates full `LoanApplication` (26 cols) and
+  **and is already used by `ApplicationController:592`**, just not here (`AdminApplicationService.java:149-151` still
+  calls `findByApplicationIdInOrderByAtDesc`; an earlier draft called the repository method "unused", which overstated
+  it — and understated how cheap the fix is: the pattern is proven one module away);
+  it also hydrates full `LoanApplication` (26 cols) and
   `CustomerProfile` (45 cols) entities for an 11-field DTO. `findByStatusNotIn` over 10 statuses returning most of the
   table will not use `idx_loan_application_status`.
 - `assignOwner` runs `CustomerService.detail()` **twice** per click (~10+ queries each, incl. the per-loan payments
@@ -1298,8 +1514,8 @@ whose status changed; dialog exit fade.
 
 **6. Performance observations (verified).** `listAll` = `findAll()` unpaged and unordered (sorted in Java), full
 `CustomerProfile` entities (~50 columns incl. `credit_brief_facts` JSONB) for **every** application, bureau states and
-required-passed counts chunked by 1000 (+ re-apply hops), `findStaff` per distinct assignee (the batched `namesFor`
-exists), and `findByApplicationIdInOrderByAtDesc(all ids)` = **the whole `application_event` table read and sorted**
+required-passed counts chunked by 1000 (+ re-apply hops), `findStaff` per distinct assignee at `:84` (the batched
+`namesFor` exists **and is used by `ApplicationController:577`** — this service simply never adopted it), and `findByApplicationIdInOrderByAtDesc(all ids)` = **the whole `application_event` table read and sorted**
 to keep one timestamp per application (`AdminApplicationService.java:65-104`). The DTO carries 34 fields, the table
 renders 18 of them across its 13 columns; 464 KB at 550 rows (`docs/perf`). Indexes on `loan_application` do not help a filterless `findAll`; there
 is no `application_event (application_id, at)` index.
@@ -1324,7 +1540,28 @@ misdirecting staff to the eSign step.
 Ordered by **impact ÷ disruption**. Each phase is independently shippable and leaves every workflow, route and role
 exactly where it is. Sizes: XS < ½ day · S ≈ 1 day · M ≈ 2–4 days · L ≈ 1–2 weeks (one engineer).
 
-### Phase 0 — correctness fixes that fell out of verification (ship first, ≈ 3–4 days total)
+### Phase 0 — correctness fixes that fell out of verification (ship first, ≈ 3–4 days total; **11 items** since the 2026-10-06 review added 0.11)
+
+> **Split this phase in two and ship the first half independently of this plan (added 2026-10-06).** Four of the ten
+> items are not UI work and should not wait on a UI proposal's approval, its review, or its branch:
+>
+> | # | Why it is not a UI item |
+> |---|---|
+> | **0.4** | An **authorization hole**. `SettlementService.listAll` carries no `requireOneOf` and no DSA rejection at all, while `CollectionsService` gates the same data at `:168,195` — so any staff bearer, DSA and TELECALLER included, can list every settlement ever proposed. This is exactly the open-by-default trap `CLAUDE.md` §7 warns about for `requireStaff()`-shaped surfaces |
+> | **0.5** | A **permission-model disagreement** between `rbac.ts` and the service. Whichever way it is resolved, it is a policy decision about who may re-run a billable identity check |
+> | **0.7** | **Real money.** No in-flight guard on retry means a second click re-bills the provider; no reminder cooldown means a borrower can be SMS-blasted. `CLAUDE.md` §14 flags provider calls as billable with no sandbox |
+> | **0.8** | An **audit gap**. `manualDecision` writes no `application_event`, so a human override of a verification verdict is invisible to the maker-checker trail that `CLAUDE.md` §5/§12 make the source of truth for SoD |
+>
+> The remaining seven (0.1, 0.2, 0.3, 0.6, 0.9, 0.10, 0.11) are genuine front-end correctness and belong in this plan.
+>
+> Verified independently at `0f14dab`: 0.4 (no guard present), 0.1 (`rosterFor(null)` → whole roster at
+> `DecisionHistoryService:404-430`, page reads `rows[0]` at `my-decisions/page.tsx:99`), 0.2 (`["customers"]` cannot
+> prefix-match `["customers-page"]`), and the §3.5 "Not started" defect (`byApp` is built from `data.rows`, i.e. the
+> current page only, so a cleared file on another page renders as a `total: 0` "never verified" card).
+>
+> **Recommended:** 0.4 / 0.5 / 0.7 / 0.8 go out as a small security-and-audit release on their own, with backend tests,
+> reviewed by whoever owns authz — not bundled into a UI changelog where they will be read as polish. Splitting also
+> unblocks the security half if the rest of this plan is deferred or rejected.
 
 | # | Fix | Page | Size |
 |---|---|---|---|
@@ -1338,6 +1575,7 @@ exactly where it is. Sizes: XS < ½ day · S ≈ 1 day · M ≈ 2–4 days · L 
 | 0.8 | `manualDecision` appends a `VERIFICATION_OVERRIDE` `application_event` so overrides are auditable | §3.5 | S |
 | 0.9 | Dashboard: a per-source `failed` flag so a backend outage renders an error notice instead of "You're all caught up" | §3.1 | S |
 | 0.10 | Dashboard Refresh uses `invalidateQueries` (active only) instead of `.refetch()` on disabled queries | §3.1 | XS |
+| 0.11 | **Added 2026-10-06 — leads row selection is invisible on every even row.** `leads/page.tsx:169` paints the selected state on the `<tr>` (`selectedId === row.id ? "bg-gold/10" : ""`), but the zebra is an **opaque** `tbody tr:nth-child(even) td` (`globals.css:422`), so on even rows the only feedback that a lead is selected is the `DispositionPanel` changing beside the table. Same root cause as the row-hover defect in §0, but this one hides a **functional** state on the page a Telecaller works all day — hence Phase 0, not Phase 2. Fix with the §2.2 hover/selection rules (`tr[aria-selected="true"] td`), and set `aria-selected` while you are there | §3.11 | XS |
 
 ### Phase 1 — shared foundation (≈ 1 week; every page benefits, zero workflow change)
 
@@ -1347,8 +1585,16 @@ exactly where it is. Sizes: XS < ½ day · S ≈ 1 day · M ≈ 2–4 days · L 
    the `84rem` min-width to the pipeline table via a modifier class so 8-column tables stop scrolling sideways.
 3. `ui/Dialog` gains the focus trap / focus restore / scroll lock `ui/Drawer` already has, an exit animation and a
    `size` prop (`md` 460 px · `lg` 56 rem · `xl` 80 vw) replacing the 13 `!max-w-*` overrides (10 staff, 3 borrower).
-   Because `ui/Dialog` is shared, the trap / exit / size changes reach the three borrower dialogs too — behaviour-neutral,
-   but smoke-test them (`components/borrower/terms-modal.tsx`, `components/borrower/loan-details-dialog.tsx`).
+   The trap itself is **not new code**: `hooks/use-focus-trap.ts` already exists and `ui/drawer.tsx:5` imports it, so
+   this is an import plus the `body.style.overflow` lock Drawer already does at `drawer.tsx:49-52`. **XS, not S.**
+   **Blast radius, corrected 2026-10-06:** `ui/Dialog` has **41 consumers**, of which **5 are borrower-facing** —
+   `app/(borrower)/dashboard`, `app/(borrower)/loans`, `app/(borrower)/transactions`,
+   `components/borrower/loan-details-dialog.tsx` and `components/borrower/terms-modal.tsx`. An earlier draft said
+   "three borrower dialogs" and named two files. `terms-modal.tsx` is the **agreement-consent screen of the regulated
+   Phase-1 intake** (§6 step 2, `agreementAccepted`), so a scroll-lock or focus-trap change there is not cosmetic:
+   if the trap keeps the borrower from reaching the scrollable terms body or the Accept control on a phone, consent
+   cannot be given and intake stalls at the gate. Smoke-test all five on a real handset viewport, and treat the
+   borrower five as a separate review item from the 36 staff consumers — not as a footnote to a console change.
 4. One session query (`useStaffSession` → `['staff-me']`); shared query keys for performance and settlements; the
    `CustomerOwnerPicker` reads the role from React Query (removes up to 50 `/me` fetches on the telecalling page).
 5. `keepPreviousData` on every keyed list query; page resets move into filter handlers.
@@ -1358,6 +1604,38 @@ exactly where it is. Sizes: XS < ½ day · S ≈ 1 day · M ≈ 2–4 days · L 
 **Acceptance:** `npx tsc --noEmit` and ESLint clean; Playwright smoke on the 15 routes; a visual diff shows only
 header stickiness (registers now scroll inside their panel), number alignment, hover, loading-state changes and
 the one period-pill restyle.
+
+> **⚠ That acceptance bar does not exist yet, and as written it cannot catch what Phase 1 risks (added 2026-10-06).**
+> Phase 1 is the most dangerous phase in this plan — it edits shared CSS that 15 registers depend on, a `ui/Dialog`
+> with 41 consumers (5 of them in the regulated borrower flow), and adopts four new primitives across 31–60 files —
+> and it is the phase with the least coverage behind it:
+>
+> - **There are no component tests.** `frontend` has 14 Vitest files and every one targets a pure function under
+>   `src/lib/**` (`loans/segments`, `customers/customer-page`, `staff/my-stats`, `utils`, …). Nothing renders a
+>   component, so no test in the repo can fail when a register's header stops sticking, a skeleton replaces a table
+>   with the wrong shape, `keepPreviousData` leaves one staffer's rows under another's heading, or a focus trap swallows
+>   a borrower's Accept button.
+> - **CI does not run Playwright, and does not run the build.** `.github/workflows/ci.yml` gates on `npx tsc --noEmit`
+>   and `npx eslint .` only; the comment at `:62-63` records that `npm run build` is deliberately skipped (the known
+>   Next 15.1 prerender failure at `/staff/admin/staff`), and the e2e job at `:270` needs AWS credentials and the
+>   Fintrix sandbox and is run by hand against `npm run dev`. The nine specs in `frontend/e2e/` are real but are not a
+>   merge gate.
+> - **"A visual diff" names no tool.** There is no Chromatic / Percy / Playwright-screenshot baseline in the repo, so
+>   today that line means one engineer clicking fifteen pages and remembering what they looked like.
+>
+> **So Phase 1 acquires a prerequisite, Phase 1.0, and it is not optional:** before the first shared-CSS or
+> shared-primitive edit, land (a) Playwright **screenshot baselines** for the 15 routes per the roles in §1, run
+> locally against the seeded demo stack (`scripts/run-demo.ps1` + `scripts/seed-demo-data.ps1`, §4.6 of `CLAUDE.md`) so
+> the diff is mechanical rather than remembered; (b) render tests for the four primitives that carry logic —
+> `StatusBadge` (every backend enum maps to a variant, and an unknown value falls back rather than throwing),
+> `Skeleton variant="table"` (column count matches), `ErrorState` (retry invokes `refetch`), `Money` (paise → `₹`
+> formatting and right alignment); and (c) one render test per *shape* of consumer, not per file — a register with
+> sticky columns, a dialog, a two-column detail page. That is ≈ 2–3 days and it converts the rest of Phase 1 from an
+> unguarded 60-file refactor into a reviewable one. **Add it to the Phase 1 estimate: ~1 week becomes ~1.5–2 weeks.**
+>
+> If Phase 1.0 is rejected, then Phase 1 must be split so that each shared change ships alone and is reverted
+> independently — sticky header, then `.num`, then hover, then the primitives one at a time — because with
+> `tsc` + ESLint as the only gate, a bundled Phase 1 has no safe rollback granularity.
 
 ### Phase 2 — per-page polish (small, page-local; ≈ 1–1.5 weeks in parallel with Phase 3)
 
@@ -1404,13 +1682,35 @@ single consumer named in its §3 section.
 | 3.14 | **Live applications queues**: optional `page/size` on `GET /applications?status=` and `credit-queue`, `creditHeadQueue` date window in SQL, slim `QueueRowView` (see §3.2) | `ApplicationController.java:104-133`, `ApplicationFlowService.java:938-949` | M |
 | 3.15 | **Dashboard aggregates**: `bookStats` as SQL aggregates over the scoped customer CTE, `scope()` once per request, `trends` as three `GROUP BY date` projections, count endpoints for hero/badges (payouts, pending repayments, worklist buckets), `listCases` scoped in SQL | `CustomerService.java:324-427`, `DashboardService.java:39-66`, `CollectionsService.java:169` | M |
 
-**Indexes (one migration, `V74`):**
+**Indexes (one migration, `V76` — corrected 2026-10-06; `V74` is `application_verification_reopened` and `V75` is
+`customer_profile_aadhaar_card_intake`, so the number this section originally claimed is taken. Re-check the highest
+migration at implementation time, since `main` moves):**
 `idx_application_event_application_at (application_id, at desc)` · `idx_loan_disbursed_on (disbursed_on)` ·
 `idx_payment_paid_on (paid_on)` · `idx_settlement_status_created_at (status, created_at desc)` ·
 `idx_lead_outcome (lead_outcome)` · `idx_loan_application_assigned_exec (assigned_executive_id, status)` · optional `pg_trgm` GIN indexes on
 `customer_profile(lower(full_name))`, `(pan)`, `(mobile)` and `lead(lower(name))`, `(mobile)` for the contains-searches.
 All are additive; historical migrations stay immutable. The `uq_collection_case_loan_id` unique index is a separate,
-guarded step after de-duplication (§3.8 §8), not part of V74.
+guarded step after de-duplication (§3.8 §8), not part of `V76`.
+
+> **This list is not yet justified to the standard the previous investigation set, and should not ship first.**
+> `docs/perf/UI_PERFORMANCE_INVESTIGATION_2026-09-16.md` §2.7 dumped the real `pg_indexes` catalog (**152 indexes**),
+> corrected several static-analysis "missing index" claims that were wrong, found only four genuinely absent — all four
+> shipped as `V71` — and closed with *"no speculative composite indexes beyond the four listed"* and *"no b-tree
+> indexes on `LIKE '%q%'` columns"*. The six indexes above were derived by reading code, not by dumping the catalog or
+> running `EXPLAIN`, so each needs one of two warrants before it goes in:
+>
+> - **Newly justified by code that changed since September** — `idx_payment_paid_on` and `idx_loan_disbursed_on` have a
+>   real argument of this kind: `dc25b93` pushed the ledger's date window into SQL *after* §2.7 was written, and the
+>   ledger applies no status predicate, so the trailing-column `idx_payment_status_paid_on` (`V71`) cannot serve it.
+>   State that argument in the migration header.
+> - **Confirmed absent against the catalog and shown to matter by `EXPLAIN`** on seeded data for the other four.
+>
+> And say the quiet part the previous doc said out loud: at today's volumes (**113 live loans**, low-hundreds payment
+> rows, ~10 k customers) none of these will produce a measurable change. They are *insurance*, like `V71` was — which
+> is a fine reason to add them and a bad reason to put them in a phase whose other items are measured wins. **Move the
+> index migration to the end of Phase 3, not the front, and label it "no measurable effect today".** The `pg_trgm` GINs
+> stay explicitly deferred: §3.3 §8 already rates them low priority at the current book, and §2.7 found search is not
+> among the measured hot paths.
 
 ### Phase 4 — polling policy (½ week, after Phase 3.1)
 
@@ -1418,20 +1718,80 @@ Keep the product intervals but make them cheap: the sidebar badge and dashboard 
 add `refetchIntervalInBackground: false` explicitly (already the default) and a visible "Updated n s ago"; a single `/me/badges` (unread count + bucket counts; rejects DSA like every staff-open endpoint) can later replace
 the 20 s bell + 30 s badge polls with one request.
 
+### Conflicts with the 2026-09-16 measured investigation (added 2026-10-06)
+
+`docs/perf/UI_PERFORMANCE_INVESTIGATION_2026-09-16.md` covered substantially the same 15 pages with **live production
+timings, decoded payload sizes, SQL statement counts on a seeded instance and the real `pg_indexes` catalog**, and its
+§5 E is an explicit *"changes that should NOT be made"* list. Its recommendations shipped in `dc25b93` / `fa7473b` /
+`V71` / `vercel.json`. This plan was written without reconciling against that list, and conflicts with it in three
+places. None is necessarily fatal, but each needs an owner's decision rather than a silent override:
+
+| This plan proposes | The measured investigation said | Resolution needed |
+|---|---|---|
+| **§3.14 / Phase 3.14** — optional `page/size` on `GET /applications?status=` and `credit-queue`, and §3.2 §9 argues for it ("a busy disbursement day no longer re-enriches 300 files every 8 s") | *"**No default pagination** or longer polling **on the maker-checker queues** (`KYC_PENDING`, `CREDIT_EXEC_PENDING`, `SANCTIONED`, `DISBURSEMENT_*`, repayment verification): they are small by throughput, and **completeness plus promptness are the point**."* | The word "optional" is doing a lot of work. Keep the parameter **opt-in and unused by the console's queue panels** — a reviewer must never page past a file waiting on them. If the real problem is re-enrichment cost, fix it with the slim `QueueRowView` projection (same section) and leave the row count alone. Paging a maker-checker queue is a product decision for the Credit Head, not a performance change |
+| **Phase 3 index batch** — six new indexes plus `pg_trgm` GINs | *"no speculative composite indexes beyond the four listed"*; *"no b-tree indexes on `LIKE '%q%'` columns"*; 152 indexes already exist and several "missing index" claims were wrong | Handled in the note under the index list above: two have a genuine post-September warrant, the other four need `EXPLAIN`, the GINs stay deferred |
+| **Nothing in this plan** addresses request latency or the BFF hop | Its **#2 finding overall**: every BFF call ran in `iad1` while the backend is in `ap-south-1`, ≈ **0.45–0.5 s of pure network per call** on pages making 10–16 calls on mount — the single largest measured win, fixed by `frontend/vercel.json` | Already fixed, so not a gap in the product — but it *is* a gap in this plan's model of "slow". Several §3 waterfalls (customers "Open" = 5 requests, the loans dialog's 2–3 hop chain, the Customer 360 first paint) cost **round trips**, and round trips are what users feel. Rank the waterfall-collapsing items (§3.3, §3.6, §3.4) above the statement-count items, which is the opposite of the current Phase 3 ordering |
+
+### What this plan did not measure (added 2026-10-06)
+
+Stated plainly, because the plan's own bar at the end of this section is *"never claim a page is faster without the
+statement count and the payload size before/after"* — a bar it sets for the implementer and did not meet itself:
+
+- **Every number in §3 heading 6 is derived from reading code**, not from running it. Query counts are counted by eye
+  from call sites; no endpoint was timed; no payload was measured; `pg_indexes` was not dumped; `EXPLAIN` was not run.
+  The one exception is where §3 cites `docs/perf`, which measured.
+- **`code-review-graph` was unavailable** for the session (noted in the header), so even the static pass was manual.
+- **No UI-side measurement at all** — no Core Web Vitals, no profile of the 100-row × 22-column render, no bundle
+  analysis. Note that `recharts` is imported **statically** by `app/staff/performance/page.tsx` and
+  `components/staff/leads-tracker.tsx`; whether that matters is unknown because nobody looked.
+- **Consequence for how to read §3:** the severity labels rank items by *how bad the code looks*, which is not the same
+  ordering as *what costs the operator time*. Treat Phase 3's order as a hypothesis. Before starting it, re-run the
+  Appendix A/B harness from `docs/perf` against current `main` and re-order by what that shows; expect some items to
+  have been absorbed by `dc25b93` already and others to be larger than estimated.
+- **The UI/UX half (§2, §3 headings 1–5) does not depend on any of this.** Those findings are structural facts about
+  the code — no sticky `thead` exists, money is `text-align: left`, there is no toast primitive, `ui/Dialog` has no
+  focus trap, the "Not started" bucket is built from one page of rows — and they were re-verified at `0f14dab`. They
+  are safe to act on now. It is specifically the **backend/DB half** that needs measurement before it is sequenced.
+
 ### Priority matrix
+
+> **Re-ordered 2026-10-06:** the matrix below ranks by the plan's own impact estimates, which are unmeasured for every
+> backend row (see above). Two concrete changes: the index batch drops to "lower impact" where `V71`'s precedent puts
+> it, and the **waterfall** items (customers "Open" 5 → 1 request, the loans row-seeded dialog, Customer 360's first
+> paint) rise to "high impact, low disruption" because round trips are what the operator feels and the fixes are
+> page-local. Phase 0 stays first regardless — those are bugs, not optimisations.
 
 | | Low disruption | Medium disruption |
 |---|---|---|
-| **High impact** | Phase 0 fixes · sticky header + `num` + row hover · Skeleton/Empty/Error/Toast · session dedupe · counts endpoint for the badge (3.1) · verification projections (3.2) · customer 360 batching (3.3) | telecalling / all-applications / loans / collections server pagination (3.4, 3.5, 3.7, 3.8) · ledger SQL (3.6) |
+| **High impact** | Phase 0 fixes · sticky header + `num` + row hover · Skeleton/Empty/Error/Toast · session dedupe · **waterfall collapses (§3.3 "Open", §3.6 row-seeded dialog, §3.4 first paint)** · counts endpoint for the badge (3.1) · verification projections (3.2) · customer 360 batching (3.3) | telecalling / all-applications / loans / collections server pagination (3.4, 3.5, 3.7, 3.8) · ledger SQL (3.6) |
 | **Medium impact** | `StatusBadge` everywhere · confirm dialogs · Columns menu · one period control · `keepPreviousData` | bulk-assign / batch reject endpoints · settlement enrichment (3.11) |
-| **Lower impact** | reduced-motion coverage · URL write-back · export timestamp formatting | trigram indexes · `/me/badges` |
+| **Lower impact** | reduced-motion coverage · URL write-back · export timestamp formatting · **the `V76` index batch (no measurable effect at today's volumes — insurance, like `V71`)** | trigram indexes (deferred) · `/me/badges` |
 
 ### What deliberately does **not** change
 
 Navigation and the sidebar; the one-console composition of queues; every action cluster and its SoD/role gates; the
 BFF layout and JWT model; the design tokens by name; the 8 s / 60 s product polling decisions; the borrower-facing
-app (apart from the shared `ui/Dialog` primitive's focus trap and exit fade, smoke-tested on its three borrower
-dialogs).
+app (apart from the shared `ui/Dialog` primitive's focus trap, scroll lock and exit fade, which reach **five**
+borrower surfaces including the regulated consent screen `terms-modal.tsx` — see Phase 1 item 3).
+
+**Five things in this plan *do* change behaviour, despite the heading (added 2026-10-06).** Each is defensible; none
+should be discovered by an operator rather than agreed in advance:
+
+1. **Registers scroll inside their panel** (§2.2 sticky header). The plan calls this out as deliberate, but it changes
+   how every register is navigated — mouse wheel over the table no longer scrolls the page. Demo it to one Credit Head
+   and one Collection Head before rolling it out.
+2. **"Not started" stops containing files it contains today** (§3.5). Correct — they were mislabelled — but the bucket
+   will visibly shrink, and a reviewer who has learned to watch that number will notice. Say so in the release note.
+3. **Retry API disappears for `CREDIT_EXECUTIVE` / `CREDIT_HEAD`** (Phase 0.5). Those roles can click it today; it
+   always fails, so nothing is lost functionally, but a visible control is being removed from two roles — confirm the
+   direction (hide the button vs. relax the backend to the credit team) with the Credit Head rather than picking the
+   "safer" one by default, because the credit team may well be the right holder of that permission.
+4. **"Select all" stops meaning all pages** on telecalling (§3.12) and settlements defaults to a status view (§3.9).
+   Both are improvements; both change a muscle-memory action on a page whose users send real SMS.
+5. **Confirm dialogs on settlement approve/reject, verification reminders and bulk sends** add a click to actions a
+   Collection Head and a Telecaller perform many times a day. Worth it for the bulk borrower-facing sends (an
+   accidental 25-reminder blast is unrecoverable); re-examine it for single settlement approve/reject, where the
+   SoD pre-check and an undo-by-reject already exist and the dialog may just be friction.
 
 ### Verification of the plan itself
 
@@ -1440,6 +1800,15 @@ dialogs).
 - Backend: `./mvnw test`; for each Phase-3 item a repository test asserting the query count with the existing
   `docs/perf` harness (the customers page already has a statement-count baseline: 51 → target ≤ 20).
 - Never claim a page is faster without the statement count and the payload size before/after.
+- **Per `CLAUDE.md` "Verification Rules": check the exit code, never grepped output.** `npx tsc --noEmit` and
+  `npx eslint .` are the only CI gates (`.github/workflows/ci.yml:58,61`); `npm run build` is deliberately not run and
+  the Playwright job needs AWS credentials, so "Playwright smoke" above is a **manual** step someone has to own.
+- **Honest caveat on the two frontend bullets:** as written they describe tests that do not exist. There are no
+  component tests in the repo (14 Vitest files, all on `src/lib/**` pure functions) and no screenshot baseline. See the
+  Phase 1.0 prerequisite under Phase 1 — without it, "Vitest for `StatusBadge`" is the *first* component test anyone
+  will have written here, and the sticky-header / hover / skeleton changes have no automated check at all.
+- **And the bar this section sets applies to this document too.** Nothing in §3 heading 6–8 was measured; see "What
+  this plan did not measure" above. Re-run the `docs/perf` harness against current `main` before sequencing Phase 3.
 
 ---
 
