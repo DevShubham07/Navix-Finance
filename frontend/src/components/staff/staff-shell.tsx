@@ -8,6 +8,7 @@ import { LogOut, ChevronRight } from "lucide-react";
 import { Brand } from "@/components/site/brand";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { GlobalSearch } from "@/components/staff/global-search";
+import { Toaster } from "@/components/ui/toast";
 import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import { collectionsApi, featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
@@ -372,6 +373,10 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
         <main className="navix-crm flex-1 p-3 lg:p-6">{children}</main>
       </div>
+      {/* The one mount point for `toast.*` across the console. Without it every toast call is a
+          silent no-op — the store queues the message and nothing renders it. It portals to
+          document.body itself, so its position in this tree does not matter. */}
+      <Toaster />
     </div>
   );
 }

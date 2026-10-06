@@ -6,11 +6,11 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowDownLeft, ArrowUpRight, ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe, errMessage } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice, ROLE_LABEL, useStaffMe } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { staffApi, paiseToINR, type TransactionDirection, type TransactionView } from "@/lib/api/applications";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
-import { StatusBadge } from "@/components/ui";
+import { EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
 
@@ -244,13 +244,14 @@ export default function TransactionsPage() {
 
         <div className="rounded border border-line bg-white shadow-sm">
           {q.isLoading ? (
-            <div className="h-40 animate-pulse rounded bg-grey-100" />
+            <Skeleton variant="table" rows={8} cols={9} />
           ) : q.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
+            <ErrorState error={q.error} onRetry={() => void q.refetch()} />
           ) : rows.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-muted">
-              No transactions{query ? ` for “${query}”` : ""}.
-            </p>
+            <EmptyState
+              title={query ? `No transactions for “${query}”.` : "No transactions."}
+              hint={query ? "Try a different name, PAN or reference, or widen the period." : undefined}
+            />
           ) : (
             // `staff-register-scroll` bounds the wrapper so the sticky `thead` has something to
             // stick to (see globals.css). Safe on this page specifically because `PaginationBar`
