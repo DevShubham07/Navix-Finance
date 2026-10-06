@@ -454,7 +454,11 @@ table.data td strong { color: var(--navy); }
    wrapper. On customers, loans, collections, my-decisions, leads and collections/settlements it
    does, so bounding the wrapper scrolls the pagination away with the rows — the opposite of the
    intent. Lift the bar out of the scroller (sibling footer inside the bordered panel) first. */
-.staff-register-scroll { max-height: calc(100dvh - var(--register-offset, 20rem)); overflow: auto; }
+/* The 16rem floor is load-bearing: `100dvh - offset` goes to zero or negative on any viewport only a
+   little taller than the offset, and the 700px media escape below does not cover that band — with
+   performance's ~46rem offset the table collapsed to nothing between ~700px and ~740px of height.
+   `max()` guarantees a usable register however generous a page's offset estimate is. */
+.staff-register-scroll { max-height: max(16rem, calc(100dvh - var(--register-offset, 20rem))); overflow: auto; }
 @media (max-height: 700px) { .staff-register-scroll { max-height: none; } }
 
 /* The header cells pin to the top of that scrollport. `thead .staff-sticky-*` already carry
