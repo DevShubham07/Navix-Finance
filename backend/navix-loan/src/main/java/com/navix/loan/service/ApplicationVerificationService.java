@@ -681,6 +681,7 @@ public class ApplicationVerificationService {
         if (objectKeys == null || objectKeys.isEmpty()) {
             throw new BusinessException("INVALID_INPUT", "At least one uploaded file is required");
         }
+        requireOwnApplicationKeys(appId, objectKeys);
         String password = normalizeFilePassword(filePassword);
         int seq = 0;
         for (String key : objectKeys) {
@@ -692,6 +693,24 @@ public class ApplicationVerificationService {
             doc.setS3ObjectKey(key);
             doc.setFilePassword(password);
             documentRepo.save(doc);
+        }
+    }
+
+    /**
+     * Every client-supplied object key must sit in this application's own folder — the one
+     * {@code buildApplicationKey} mints under for {@link #presignUpload}. Each stored key is later
+     * presigned back to the owner through the document {@code /url} endpoint, so an unchecked key
+     * naming another applicant's file would hand the caller a download link for it. Same rule as
+     * {@link #verifySelfie}; the prefix is spelled out rather than derived from the storage port so
+     * it does not depend on the adapter.
+     */
+    static void requireOwnApplicationKeys(Long appId, List<String> objectKeys) {
+        String ownFolder = "applications/" + appId + "/";
+        for (String key : objectKeys) {
+            if (key == null || key.isBlank()) continue;
+            if (!key.startsWith(ownFolder) || key.contains("..")) {
+                throw new BusinessException("INVALID_DOCUMENT_KEY", "That upload does not belong to this application");
+            }
         }
     }
 
@@ -2031,6 +2050,9 @@ public class ApplicationVerificationService {
                                    Integer salaryCreditDay, String filePassword) {
         if (monthlySalaryPaise <= 0) {
             throw new BusinessException("INVALID_SALARY", "Monthly salary must be positive");
+        }
+        if (slipObjectKeys != null) {
+            requireOwnApplicationKeys(appId, slipObjectKeys);
         }
         CustomerProfile profile = profile(appId);
         Long oldSalary = profile.getMonthlySalaryPaise();

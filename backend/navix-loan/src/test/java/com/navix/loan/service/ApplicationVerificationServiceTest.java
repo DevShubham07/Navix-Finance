@@ -2376,6 +2376,29 @@ class ApplicationVerificationServiceTest {
     }
 
     @Test
+    void saveUploadedDocuments_refusesAKeyFromAnotherApplication() {
+        when(applicationRepo.findById(APP)).thenReturn(Optional.of(draftApp()));
+
+        for (String key : List.of("applications/7/aadhaar_card_front/1.jpg", "applications/420/bank_proof/1.jpg",
+                "applications/42/../7/pan_card_front/1.jpg", "kyc/document/x.jpg")) {
+            assertThatThrownBy(() -> service.saveUploadedDocuments(APP, "BANK_PROOF", List.of(key), null))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("code", "INVALID_DOCUMENT_KEY");
+        }
+        verify(documentRepo, never()).save(any());
+    }
+
+    @Test
+    void verifySalary_refusesASlipKeyFromAnotherApplication() {
+        assertThatThrownBy(() -> service.verifySalary(APP, 4_000_000L,
+                List.of("applications/7/salary_slip/1.pdf"), null, null))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "INVALID_DOCUMENT_KEY");
+        verify(profileRepo, never()).save(any());
+        verify(documentRepo, never()).save(any());
+    }
+
+    @Test
     void summary_hidesTheDuplicateAadhaarFlagFromTheBorrower_butNotFromStaff() {
         when(verificationRepo.findByApplicationIdOrderByIdAsc(APP)).thenReturn(List.of(
                 row("PAN", "PASS"), row("AADHAAR_DUPLICATE", "REVIEW")));

@@ -209,17 +209,20 @@ public class CollectionPaymentService {
 
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listForCase(UUID caseId) {
+        requireNonDsaStaff();
         return toViews(paymentRepository.findByCollectionCaseIdOrderByRaisedAtDesc(caseId));
     }
 
     /** The Accountant's validation queue, or the Collection Head's approval queue. */
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listByStatus(CollectionPaymentStatus status) {
+        requireNonDsaStaff();
         return toViews(paymentRepository.findByStatusOrderByRaisedAtAsc(status));
     }
 
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listAll() {
+        requireNonDsaStaff();
         return toViews(paymentRepository.findAllByOrderByRaisedAtDesc());
     }
 
@@ -321,6 +324,17 @@ public class CollectionPaymentService {
 
     private static String blankToNull(String s) {
         return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    /**
+     * Readers of the payment queues: any staff role but DSA (the Accountant's and the Head's queues
+     * both read through here). Each row carries a collection case id, which opens the borrower's case.
+     */
+    private static void requireNonDsaStaff() {
+        String role = ActorContext.get().role();
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role) || "DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
     }
 
     /** Authorise the current actor against one of {@code roles} (ADMIN always passes). */

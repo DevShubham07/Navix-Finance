@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.auth.AuthDtos.BorrowerLoginRequest;
+import com.navix.auth.AuthDtos.BorrowerPasswordLoginRequest;
 import com.navix.auth.AuthDtos.ForgotPasswordRequest;
 import com.navix.auth.AuthDtos.StaffLoginRequest;
 import com.navix.common.exception.BusinessException;
@@ -236,6 +237,42 @@ class AuthControllerTest {
                 controller.borrowerLogin(new BorrowerLoginRequest("9919000001", "123456", null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("contact support");
+    }
+
+    /**
+     * Password login used to write the mobile→customerId claim before checking anything, so an
+     * unauthenticated caller could squat a number's id. The claim is now written only after the
+     * password matches.
+     */
+    @Test
+    void borrowerPasswordLogin_writesNoClaimUntilThePasswordMatches() {
+        BorrowerCredential cred = new BorrowerCredential();
+        cred.setCustomerId(9000001L);
+        cred.setPasswordHash(new BCryptPasswordEncoder().encode("right-password"));
+        when(mobileRepository.findById(9000001L)).thenReturn(Optional.empty());
+        when(credentialRepository.findById(9000001L)).thenReturn(Optional.of(cred));
+
+        assertThatThrownBy(() -> controller.borrowerPasswordLogin(
+                new BorrowerPasswordLoginRequest("9819000001", "wrong-password", null)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "INVALID_CREDENTIALS");
+        verify(mobileRepository, never()).save(any());
+
+        var resp = controller.borrowerPasswordLogin(
+                new BorrowerPasswordLoginRequest("9819000001", "right-password", null));
+        assertThat(resp.getData().customerId()).isEqualTo(9000001L);
+        verify(mobileRepository).save(any());
+    }
+
+    @Test
+    void borrowerPasswordLogin_refusesACollidingNumberBeforeCheckingThePassword() {
+        when(mobileRepository.findById(9000001L)).thenReturn(Optional.of(claim(9000001L, "9819000001")));
+
+        assertThatThrownBy(() -> controller.borrowerPasswordLogin(
+                new BorrowerPasswordLoginRequest("9919000001", "anything", null)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "CUSTOMER_ID_COLLISION");
+        verify(credentialRepository, never()).findById(any());
     }
 
     @Test

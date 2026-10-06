@@ -52,6 +52,10 @@ public class LoanController {
      */
     @GetMapping("/pending-repayments")
     public ApiResponse<List<PaymentView>> pendingRepayments() {
+        // Every borrower's pending payment, with names and proof links — the same audience as the
+        // ledger below. /api/loan is not behind the staff audience gate, so without this any token
+        // (a borrower's included) read the whole queue.
+        requireRole("ACCOUNTANT", "ADMIN");
         // Reuse the staff-only ledger's loan → customer enrichment so the verifier can identify the
         // borrower before accepting a transfer, without rebuilding the whole ledger for a handful of
         // rows. Borrower repayment endpoints still use PaymentView.of(payment).

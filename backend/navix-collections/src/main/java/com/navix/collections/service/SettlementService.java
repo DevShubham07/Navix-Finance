@@ -71,31 +71,13 @@ public class SettlementService {
     }
 
     /**
-     * Staff-only guard for the settlement READ paths. Mirrors
-     * {@code CollectionsService.requireCollectionsStaff} exactly — same rejected roles, same
-     * {@code BusinessException("FORBIDDEN_ROLE", ...)} — because it protects the same worklist:
-     * {@code /api/collections/**} is gated on {@code ROLE_STAFF} only, which is audience-level, so a
-     * DSA token satisfies it (CLAUDE.md §7). Settlement rows name every proposer/approver and the
-     * amount the company agreed to write off, so a role firewalled from customer data must not read
-     * them.
-     *
-     * <p>Deliberately a deny-list, not {@link #requireOneOf}: this is a read, and the rest of the
-     * collections console lets every non-DSA staff role (incl. TELECALLER) see the same cases. The
-     * write paths above keep their stricter {@code requireOneOf} allow-list. {@code ActorContext.get()}
-     * falls back to {@code CurrentActor.SYSTEM}, so in-process/scheduled callers still pass — again
-     * matching {@code CollectionsService}.
-     *
-     * <p>Duplicated locally rather than shared cross-module, matching how {@code CollectionsService}
-     * and the loan module each keep their own copy rather than factoring it into navix-common.
+     * Readers of the settlement list: any staff role but DSA. The list carries collection case ids,
+     * which open the borrower's case detail, so the DSA firewall applies here as well.
      */
-    private static void requireCollectionsStaff() {
-        CurrentActor actor = ActorContext.get();
-        String role = actor != null ? actor.role() : null;
-        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role)) {
+    private static void requireNonDsaStaff() {
+        String role = ActorContext.get().role();
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role) || "DSA".equals(role)) {
             throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
-        }
-        if ("DSA".equals(role)) {
-            throw new BusinessException("FORBIDDEN_ROLE", "DSAs cannot view customer data");
         }
     }
 
@@ -221,7 +203,7 @@ public class SettlementService {
     /** One settlement by id. Staff-only, same guard as {@link #listAll()}. */
     @Transactional(readOnly = true)
     public Settlement getSettlement(UUID settlementId) {
-        requireCollectionsStaff();
+        requireNonDsaStaff();
         return settlementRepository.findById(settlementId)
                 .orElseThrow(() -> new ResourceNotFoundException("Settlement", String.valueOf(settlementId)));
     }
@@ -233,12 +215,12 @@ public class SettlementService {
      * whole page, rather than the up-to-three {@code findStaff} calls per row the single-row
      * {@link #toView(Settlement)} costs.
      *
-     * <p>Guarded by {@link #requireCollectionsStaff()}: this read carried no authorization at all, so
+     * <p>Guarded by {@link #requireNonDsaStaff()}: this read carried no authorization at all, so
      * any staff bearer — a DSA included — could list every settlement ever proposed.
      */
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {
-        requireCollectionsStaff();
+        requireNonDsaStaff();
         List<Settlement> settlements = settlementRepository.findAll(org.springframework.data.domain.Sort.by(
                 org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
         Set<Long> staffIds = new HashSet<>();

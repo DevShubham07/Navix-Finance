@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.storage.DocumentStoragePort;
@@ -23,6 +24,7 @@ import com.navix.loan.repository.CustomerProfileRepository;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.LoanApplicationRepository;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -295,5 +297,42 @@ class CustomerReviewServiceTest {
         assertThatThrownBy(() -> service.deleteDocument(APP_ID, 9L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("ADMIN");
+    }
+
+    @Test
+    void uploadedContentType_keepsRenderableTypes_andDowngradesScriptableOnes() {
+        assertThat(CustomerReviewService.safeContentType("application/pdf")).isEqualTo("application/pdf");
+        assertThat(CustomerReviewService.safeContentType("IMAGE/PNG")).isEqualTo("image/png");
+        assertThat(CustomerReviewService.safeContentType("text/html")).isEqualTo("application/octet-stream");
+        assertThat(CustomerReviewService.safeContentType("image/svg+xml")).isEqualTo("application/octet-stream");
+        assertThat(CustomerReviewService.safeContentType(null)).isEqualTo("application/octet-stream");
+    }
+
+    @Test
+    void borrowerCannotSeeTheCreditBriefOrBureauReport_staffStillCan() {
+        when(applicationRepository.existsById(APP_ID)).thenReturn(true);
+        ApplicationDocument card = doc(1L, "AADHAAR_CARD_FRONT");
+        ApplicationDocument brief = doc(2L, CreditBriefService.DOC_TYPE);
+        ApplicationDocument bureau = doc(3L, ApplicationVerificationService.BUREAU_REPORT);
+        when(documentRepository.findByApplicationIdOrderByIdAsc(APP_ID)).thenReturn(List.of(card, brief, bureau));
+        when(documentRepository.findByIdAndApplicationId(2L, APP_ID)).thenReturn(Optional.of(brief));
+
+        ActorContext.set(BORROWER);
+        assertThat(service.listDocuments(APP_ID)).containsExactly(card);
+        assertThatThrownBy(() -> service.getDocument(APP_ID, 2L)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.presignedUrl(APP_ID, 2L)).isInstanceOf(ResourceNotFoundException.class);
+
+        ActorContext.set(CREDIT_EXECUTIVE);
+        assertThat(service.listDocuments(APP_ID)).containsExactly(card, brief, bureau);
+        assertThat(service.getDocument(APP_ID, 2L)).isSameAs(brief);
+    }
+
+    private static ApplicationDocument doc(Long id, String type) {
+        ApplicationDocument d = new ApplicationDocument();
+        d.setId(id);
+        d.setApplicationId(APP_ID);
+        d.setDocType(type);
+        d.setS3ObjectKey("applications/" + APP_ID + "/" + type.toLowerCase() + "/1.pdf");
+        return d;
     }
 }

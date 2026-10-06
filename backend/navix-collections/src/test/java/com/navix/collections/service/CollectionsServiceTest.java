@@ -481,4 +481,36 @@ class CollectionsServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("DSAs cannot view collections cases");
     }
+
+    @Test
+    void openCaseIsTheCollectionsDesksCall() {
+        // Opening a case flips the loan to IN_COLLECTIONS and notifies the borrower.
+        for (String role : new String[] {"DSA", "TELECALLER", "ACCOUNTANT", "CREDIT_EXECUTIVE"}) {
+            ActorContext.set(new CurrentActor("77", "Someone", role));
+            assertThatThrownBy(() -> service.openCase(2L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("COLLECTION_HEAD");
+        }
+        verify(loanDirectory, never()).markInCollections(any());
+    }
+
+    @Test
+    void collectibleLoansIsClosedToEveryoneButTheCollectionsDesk() {
+        for (String role : new String[] {"DSA", "TELECALLER"}) {
+            ActorContext.set(new CurrentActor("77", "Someone", role));
+            assertThatThrownBy(() -> service.collectibleLoans(LocalDate.now()))
+                    .isInstanceOf(BusinessException.class);
+        }
+        verify(loanDirectory, never()).listCollectible(any());
+    }
+
+    @Test
+    void caseDetailAndInteractionsRejectDsa() {
+        // The case UUID is handed to every staff role by the settlements/payments lists, so it is no
+        // barrier on its own.
+        ActorContext.set(new CurrentActor("77", "An Agent", "DSA"));
+
+        assertThatThrownBy(() -> service.getCaseDetail(caseId)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.listInteractions(caseId)).isInstanceOf(BusinessException.class);
+    }
 }

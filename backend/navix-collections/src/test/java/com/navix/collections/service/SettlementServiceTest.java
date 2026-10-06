@@ -231,7 +231,7 @@ class SettlementServiceTest {
 
         assertThatThrownBy(() -> service.listAll())
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("DSA");
+                .hasMessageContaining("Staff role required");
 
         verify(settlementRepository, never()).findAll(any(org.springframework.data.domain.Sort.class));
         verifyNoInteractions(staffDirectory);
@@ -255,7 +255,7 @@ class SettlementServiceTest {
 
         assertThatThrownBy(() -> service.getSettlement(settlementId))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("DSA");
+                .hasMessageContaining("Staff role required");
 
         verifyNoInteractions(settlementRepository);
     }
@@ -281,5 +281,15 @@ class SettlementServiceTest {
         assertThatThrownBy(() -> service.reject(settlementId))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("already been");
+    }
+
+    @Test
+    void listAllRejectsDsa() {
+        ActorContext.set(new CurrentActor("77", "An Agent", "DSA"));
+        try {
+            assertThatThrownBy(() -> service.listAll()).isInstanceOf(BusinessException.class);
+        } finally {
+            ActorContext.clear();
+        }
     }
 }

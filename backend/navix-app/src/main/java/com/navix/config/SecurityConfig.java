@@ -29,8 +29,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * reached any staff route whose service lacked its own check.
  *
  * <p>Open (no token): {@code /api/auth/**} (login), the public marketing contact form
- * ({@code /api/contact}), the generic storage presign routes ({@code /api/storage/**} — kept open per
- * plan decision 6), actuator and the API docs.
+ * ({@code /api/contact}), actuator and the API docs. The generic storage presign routes
+ * ({@code /api/storage/**}) used to be open too (plan decision 6); that handed any anonymous caller a
+ * download URL for any document key, so they now need a token like every other business route, and
+ * {@code StorageController} narrows each one to its real callers.
  */
 @Configuration
 @EnableWebSecurity
@@ -52,7 +54,6 @@ public class SecurityConfig {
                     .requestMatchers(
                             "/api/auth/**",
                             "/api/contact",
-                            "/api/storage/**",
                             // Provider callbacks carry no user session; each one authenticates itself
                             // against its own shared secret inside the handler.
                             "/api/webhooks/**",

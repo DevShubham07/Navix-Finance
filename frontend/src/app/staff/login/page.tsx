@@ -9,11 +9,14 @@ import { Brand } from "@/components/site/brand";
 import { Input, Dialog, DialogHeader, DialogTitle, DialogFooter, Turnstile } from "@/components/ui";
 import { loginStaff, StaffLoginError } from "@/lib/auth/staff-session";
 import { config } from "@/lib/config";
+import { safeNextPath } from "@/lib/safe-redirect";
 
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const redirect = params.get("redirect") || "/staff/dashboard";
+  // Set by middleware to the staff page that bounced here; anyone can craft one, so only a path
+  // inside /staff is followed.
+  const redirect = safeNextPath(params.get("redirect"), "/staff/dashboard", "/staff/");
   const superseded = params.get("reason") === "superseded";
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");

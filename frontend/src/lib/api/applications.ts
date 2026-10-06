@@ -3523,12 +3523,23 @@ export function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/**
+ * Types safe to render in a tab. A blob: URL inherits this app's origin, so opening an uploader-declared
+ * `text/html` or `image/svg+xml` document would run its script as the signed-in reviewer. Anything
+ * outside this set is downloaded instead of rendered. Mirrors the backend's RENDERABLE_CONTENT_TYPES.
+ */
+const RENDERABLE_DOCUMENT_TYPES = new Set([
+  "application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif",
+]);
+
 /** Turn a base64 document into a Blob URL and either open it in a new tab or download it. */
 export function openDocument(doc: DocumentContent, download = false): void {
   const bytes = Uint8Array.from(atob(doc.dataBase64), (c) => c.charCodeAt(0));
-  const blob = new Blob([bytes], { type: doc.contentType || "application/octet-stream" });
+  const declared = (doc.contentType ?? "").trim().toLowerCase();
+  const renderable = RENDERABLE_DOCUMENT_TYPES.has(declared);
+  const blob = new Blob([bytes], { type: renderable ? declared : "application/octet-stream" });
   const url = URL.createObjectURL(blob);
-  if (download) {
+  if (download || !renderable) {
     const a = document.createElement("a");
     a.href = url;
     a.download = doc.fileName;

@@ -268,7 +268,11 @@ public class AuthController {
         captcha.verify(req.captchaToken(), ACTION_BORROWER_LOGIN); // ahead of the limiter — see staffLogin
         String limitKey = "pw:" + req.mobile().replaceAll("\\D", "");
         limiter.hit(limitKey, MAX_LOGIN_ATTEMPTS, LOGIN_WINDOW, LOGIN_COOLOFF, TOO_MANY_LOGINS);
-        long customerId = claimCustomerId(req.mobile());
+        // Read-only until the password matches: writing the mobile→id claim here, before any
+        // credential check, let an unauthenticated caller squat the id of a number they don't hold and
+        // lock its real owner out with CUSTOMER_ID_COLLISION. A collision with an existing claim is
+        // still refused up front, so a colliding number never gets to test this id's password.
+        long customerId = checkCustomerIdClaim(req.mobile());
         BorrowerCredential cred = credentialRepository.findById(customerId).orElse(null);
         if (cred == null) {
             log.warn("borrower password login failed reason=NO_PASSWORD_SET customerId={}", customerId);
@@ -280,6 +284,7 @@ public class AuthController {
             throw new BusinessException("INVALID_CREDENTIALS", "Invalid mobile or password");
         }
         limiter.clear(limitKey); // as on staff login: only wrong passwords count toward the three
+        claimCustomerId(req.mobile()); // first successful sign-in records the claim, as before
         String name = resolveBorrowerName(null, req.mobile());
         String id = String.valueOf(customerId);
         String token = jwtService.issue(id, name, "BORROWER", JwtService.AUDIENCE_BORROWER);
@@ -379,16 +384,26 @@ public class AuthController {
      * for a case that should not exist. The real fix is a surrogate customer id, not tighter locking.
      */
     private long claimCustomerId(String mobile) {
-        long id = deriveCustomerId(mobile);
-        String digits = mobile.replaceAll("\\D", "");
-        String number = digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
-        BorrowerMobile claim = mobileRepository.findById(id).orElse(null);
-        if (claim == null) {
+        long id = checkCustomerIdClaim(mobile);
+        if (mobileRepository.findById(id).isEmpty()) {
             BorrowerMobile row = new BorrowerMobile();
             row.setCustomerId(id);
-            row.setMobile(number);
+            row.setMobile(tenDigits(mobile));
             mobileRepository.save(row);
-        } else if (!claim.getMobile().equals(number)) {
+        }
+        return id;
+    }
+
+    /**
+     * The derived id for {@code mobile}, refused with {@code CUSTOMER_ID_COLLISION} when another number
+     * already holds it. Writes nothing: callers that have not yet authenticated the caller use this,
+     * and {@link #claimCustomerId} adds the insert once they have.
+     */
+    private long checkCustomerIdClaim(String mobile) {
+        long id = deriveCustomerId(mobile);
+        String number = tenDigits(mobile);
+        BorrowerMobile claim = mobileRepository.findById(id).orElse(null);
+        if (claim != null && !claim.getMobile().equals(number)) {
             // Only the id is logged: colliding numbers share their last 7 digits, so both masked
             // forms are identical and printing them just looks like a bug. The id is the key ops
             // needs — `select * from borrower_mobile where customer_id = <id>` has the claimant.
@@ -398,6 +413,11 @@ public class AuthController {
                     "This number can't be used for sign-in right now. Please contact support.");
         }
         return id;
+    }
+
+    private static String tenDigits(String mobile) {
+        String digits = mobile.replaceAll("\\D", "");
+        return digits.length() > 10 ? digits.substring(digits.length() - 10) : digits;
     }
 
     /** Stable demo customer id from a mobile: last 7 digits (mirrors the BFF's derivation). */

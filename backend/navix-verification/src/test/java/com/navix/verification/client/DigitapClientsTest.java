@@ -249,7 +249,7 @@ class DigitapClientsTest {
                 "provider=DIGITAP",
                 "operation=BUREAU",
                 "responsePayload={\"http_response_code\":200",
-                "\"CAIS_Account_DETAILS\":[{\"Account_Number\":\"XXXX4321\"}]");
+                "\"CAIS_Account_DETAILS\":[{\"Account_Number\":\"[REDACTED]\"}]");
         b.server().verify();
     }
 
@@ -322,15 +322,17 @@ class DigitapClientsTest {
                 "operation=BUREAU",
                 "endpoint=/credit_analytics/request",
                 "requestPayload={\"client_ref_num\":\"credit-ref\"",
-                "\"mobile_no\":\"9876543210\"",
-                "\"first_name\":\"Jane\"",
-                "\"last_name\":\"Doe\"",
-                "\"pan\":\"ABCPE1234Z\"",
-                "\"date_of_birth\":\"1990-01-01\"",
-                "\"otp\":\"654321\"",
+                "\"mobile_no\":\"[REDACTED]\"",
+                "\"first_name\":\"[REDACTED]\"",
+                "\"last_name\":\"[REDACTED]\"",
+                "\"pan\":\"[REDACTED]\"",
+                "\"date_of_birth\":\"[REDACTED]\"",
+                "\"otp\":\"[REDACTED]\"",
                 "\"device_ip\":\"3.109.169.131\"",
                 "responsePayload={\"http_response_code\":400,\"result_code\":400,"
-                        + "\"message\":\"PAN ABCPE1234Z and mobile 9876543210 rejected\"}");
+                        + "\"message\":\"PAN [REDACTED] and mobile [REDACTED] rejected\"}");
+        // The log keeps the payload's shape for diagnosis but none of the borrower's identifiers.
+        assertThat(output).doesNotContain("ABCPE1234Z", "9876543210", "654321", "1990-01-01");
         b.server().verify();
     }
 
@@ -396,8 +398,8 @@ class DigitapClientsTest {
                 "PROVIDER_CALL",
                 "provider=DIGITAP",
                 "operation=PAN",
-                "requestPayload={\"client_ref_num\":\"ref-1\",\"pan\":\"ABCPE1234Z\"}",
-                "responsePayload={\"result_code\":400,\"message\":\"PAN ABCPE1234Z rejected for ref-1\"}");
+                "requestPayload={\"client_ref_num\":\"ref-1\",\"pan\":\"[REDACTED]\"}",
+                "responsePayload={\"result_code\":400,\"message\":\"PAN [REDACTED] rejected for ref-1\"}");
         b.server().verify();
     }
 }

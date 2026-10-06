@@ -32,14 +32,20 @@ public class RepaymentController {
 
     /**
      * Record a repayment (full, partial or prepayment) against the loan. Borrower (own loan only —
-     * the service checks ownership), Accountant (two-step record→verify) or Admin. Collections roles
-     * are excluded on purpose: their payments go through the maker-checker
-     * {@code CollectionPaymentService} path instead.
+     * the service checks ownership) or Admin. Collections roles are excluded on purpose: their
+     * payments go through the maker-checker {@code CollectionPaymentService} path instead.
+     *
+     * <p>The Accountant is excluded too. The Accountant is the checker who verifies a recorded
+     * payment, and a payment row does not store who recorded it, so an Accountant who could also
+     * record would make and check the same payment alone — a loan closed on an invented
+     * transaction reference with no second person involved. No screen records as an Accountant;
+     * the payments they verify come from the borrower, from ADMIN, or from collections.
      */
     @PostMapping
     public ApiResponse<PaymentView> record(@PathVariable Long loanId,
                                            @Valid @RequestBody RepaymentRequest request) {
-        requireRole("BORROWER", "ACCOUNTANT", "ADMIN");
+        requireRole("BORROWER", "ADMIN");
+        requireOwnProofKey(request.proofUrl());
         return ApiResponse.ok(repaymentService.view(repaymentService.recordPayment(
                 loanId, request.amountPaise(), request.method(), request.txnRef(),
                 request.proofUrl(), request.paidOn())));
@@ -51,8 +57,8 @@ public class RepaymentController {
      *
      * <p>Deliberately not open to the ACCOUNTANT. This path collapses the record→verify maker-checker
      * into one actor, which only ADMIN (who bypasses role checks anyway, and whose corrections are
-     * already an accepted oversight power) may do. An Accountant wanting the same outcome still
-     * records and verifies as two steps, leaving the two-actor trail intact.
+     * already an accepted oversight power) may do. An Accountant cannot record at all (see
+     * {@link #record}), so verification always follows someone else's entry.
      *
      * <p>The closure that follows — and the borrower's LOAN_CLOSED notification — is the ordinary
      * verify path; nothing here is special-cased.
@@ -102,6 +108,24 @@ public class RepaymentController {
         return ApiResponse.ok(repaymentService.view(
                 repaymentService.rejectPayment(paymentId, request.reason(), request.note())));
     }
+
+    /**
+     * A borrower's proof must be one of their own repayment-proof uploads. Every read of the payment
+     * presigns {@code proofUrl}, so an arbitrary key here — another applicant's Aadhaar scan — would
+     * come back to the borrower as a working download link. Staff paths are left alone: collections
+     * credits a payment with a free-text reference through the service, not this endpoint.
+     */
+    private static void requireOwnProofKey(String proofUrl) {
+        if (!"BORROWER".equals(ActorContext.get().role()) || proofUrl == null || proofUrl.isBlank()) {
+            return;
+        }
+        if (!proofUrl.startsWith(REPAYMENT_PROOF_PREFIX) || proofUrl.contains("..")) {
+            throw new BusinessException("INVALID_PROOF_KEY", "That proof upload is not a repayment proof");
+        }
+    }
+
+    /** Key prefix {@code StorageCategory.REPAYMENT_PROOF} mints (navix-storage is not a dependency here). */
+    static final String REPAYMENT_PROOF_PREFIX = "loan/repayment-proof/";
 
     private void requireRole(String... allowed) {
         String role = ActorContext.get().role();
