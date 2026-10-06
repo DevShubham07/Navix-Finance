@@ -3,12 +3,13 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Bell, UserPlus, Send } from "lucide-react";
+import { ConfirmDialog, EmptyState, ErrorState, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { hasPermission } from "@/lib/auth/rbac";
-import { customersApi, staffApi, statusLabel, type TelecallingView } from "@/lib/api/applications";
+import { customersApi, staffApi, type TelecallingView } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
 const TELECALLER_ONLY = ["TELECALLER"] as const;
@@ -41,13 +42,28 @@ export default function TelecallingPage() {
 
   const assign = useMutation({
     mutationFn: (customerId: number) => customersApi.assignOwner(customerId, myId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-telecalling"] }),
+    onSuccess: () => {
+      toast.success("Customer assigned to you");
+      // Returned, as before, so the button keeps spinning until the queue has refetched.
+      return qc.invalidateQueries({ queryKey: ["staff-telecalling"] });
+    },
   });
 
   const remind = useMutation({
     mutationFn: (id: number) => staffApi.sendReminder(id),
-    onSuccess: (res, id) =>
-      setResults((r) => ({ ...r, [id]: res.sent ? "Reminder sent" : "Nothing pending" })),
+    onSuccess: (res, id) => {
+      // The outcome used to be an inline line that never cleared; it is a toast now, and only a
+      // failure stays on the row. The endpoint publishes the notification event rather than
+      // delivering it, so a success is "queued", not "sent".
+      setResults((r) => {
+        if (!(id in r)) return r;
+        const next = { ...r };
+        delete next[id];
+        return next;
+      });
+      if (res.sent) toast.success(`Reminder queued for #${id}`);
+      else toast.info(`Nothing pending for #${id}`);
+    },
     onError: (err, id) => setResults((r) => ({ ...r, [id]: errMessage(err) })),
   });
 
@@ -78,9 +94,11 @@ export default function TelecallingPage() {
       </PageHeader>
 
       {q.isLoading ? (
-        <div className="h-40 animate-pulse rounded border border-line bg-white" />
+        <div className="rounded border border-line bg-white shadow-sm">
+          <Skeleton variant="table" rows={8} cols={12} />
+        </div>
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <div className="space-y-6">
           <TelecallingSection
@@ -135,6 +153,9 @@ function TelecallingSection({
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [bulkBusy, setBulkBusy] = React.useState(false);
   const [bulkDone, setBulkDone] = React.useState(0);
+  // The ids the confirm dialog is asking about, snapshotted when it opens — so the run sends exactly
+  // the count the dialog stated, even if a poll resets the live selection while it is open.
+  const [confirmIds, setConfirmIds] = React.useState<number[] | null>(null);
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
   React.useEffect(() => setSelected(new Set()), [rows.length]);
@@ -151,20 +172,40 @@ function TelecallingSection({
     setSelected((s) => (s.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
   };
 
-  const sendToSelected = async () => {
+  const sendToSelected = async (ids: number[]) => {
     setBulkBusy(true);
     setBulkDone(0);
-    for (const id of selected) {
+    let queued = 0;
+    let nothingPending = 0;
+    let failed = 0;
+    for (const id of ids) {
       try {
-        await staffApi.sendReminder(id);
+        const res = await staffApi.sendReminder(id);
+        if (res.sent) queued += 1;
+        else nothingPending += 1;
       } catch {
         /* per-row failure is fine — keep going, no batch abort */
+        failed += 1;
       }
       setBulkDone((n) => n + 1);
     }
     setBulkBusy(false);
     setSelected(new Set());
+    setConfirmIds(null);
+    // Only what the loop observed: a resolved call that published the event is "queued" (never
+    // "sent" — delivery is async), `sent: false` means no verification step was pending.
+    const parts = [`Reminders queued for ${queued} of ${ids.length}`];
+    if (nothingPending > 0) parts.push(`${nothingPending} had nothing pending`);
+    if (failed > 0) parts.push(`${failed} failed`);
+    const summary = parts.join(" — ");
+    if (failed > 0) toast.error(summary);
+    else toast.success(summary);
   };
+  const confirmCount = confirmIds?.length ?? 0;
+  // The header checkbox selects across every page, so say how many of the run are out of view.
+  const confirmOffPage = confirmIds
+    ? confirmIds.filter((id) => !pageRows.some((r) => r.id === id)).length
+    : 0;
 
   return (
     <section className="rounded border border-line bg-white shadow-sm">
@@ -179,7 +220,7 @@ function TelecallingSection({
         {selected.size > 0 && (
           <button
             type="button"
-            onClick={sendToSelected}
+            onClick={() => setConfirmIds([...selected])}
             disabled={bulkBusy}
             className="btn btn-sm btn-navy disabled:opacity-50"
           >
@@ -190,7 +231,7 @@ function TelecallingSection({
       </header>
 
       {rows.length === 0 ? (
-        <p className="px-5 py-6 text-center text-sm text-muted">Nothing here.</p>
+        <EmptyState title="Nothing here." />
       ) : (
         <div>
           <div className="staff-table-scroll">
@@ -213,8 +254,8 @@ function TelecallingSection({
                 <th>Email</th>
                 <th>PAN</th>
                 <th>Status</th>
-                <th>Completeness</th>
-                <th>Stale (days)</th>
+                <th className="num">Completeness</th>
+                <th className="num">Stale (days)</th>
                 <th className="staff-sticky-actions">Actions</th>
               </tr>
             </thead>
@@ -247,12 +288,10 @@ function TelecallingSection({
                   </td>
                   <td className="font-mono text-ink">{r.pan || "—"}</td>
                   <td>
-                    <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">
-                      {statusLabel(r.status)}
-                    </span>
+                    <StatusBadge kind="application" value={r.status} />
                   </td>
-                  <td className="whitespace-nowrap text-ink">{r.stepsCompleted}/{r.stepsRequired}</td>
-                  <td>
+                  <td className="num whitespace-nowrap text-ink">{r.stepsCompleted}/{r.stepsRequired}</td>
+                  <td className="num">
                     <span className={r.staleDays >= 3 ? "font-semibold text-error-700" : "text-ink"}>
                       {r.staleDays}
                     </span>
@@ -302,6 +341,37 @@ function TelecallingSection({
           <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmIds != null}
+        onClose={() => setConfirmIds(null)}
+        onConfirm={() => {
+          if (confirmIds) void sendToSelected(confirmIds);
+        }}
+        busy={bulkBusy}
+        title={`Send ${confirmCount} reminder${confirmCount === 1 ? "" : "s"}?`}
+        body={
+          <>
+            <p className="m-0">
+              Each of the {confirmCount} selected application{confirmCount === 1 ? "" : "s"} gets a real
+              reminder to the borrower on four channels — in-app, SMS, email and WhatsApp. There is no
+              cooldown: a borrower reminded a minute ago is messaged again. Applications with no
+              pending verification steps are skipped.
+            </p>
+            {confirmOffPage > 0 && (
+              <p className="m-0 mt-2">
+                {confirmOffPage} of them {confirmOffPage === 1 ? "is" : "are"} on another page of this list.
+              </p>
+            )}
+            {bulkBusy && (
+              <p className="m-0 mt-2 text-muted">
+                Processed {bulkDone} of {confirmCount}…
+              </p>
+            )}
+          </>
+        }
+        confirmLabel={`Send ${confirmCount} reminder${confirmCount === 1 ? "" : "s"}`}
+      />
     </section>
   );
 }

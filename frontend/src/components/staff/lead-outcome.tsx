@@ -1,6 +1,7 @@
 "use client";
 
 import type { LeadOutcome } from "@/lib/api/applications";
+import { StatusBadge } from "@/components/ui";
 
 /**
  * How a lead's outreach outcome renders, everywhere it renders.
@@ -12,14 +13,9 @@ import type { LeadOutcome } from "@/lib/api/applications";
  * <p>`CONFIRMED` is styled apart from the others on purpose: it is the one value a human never sets.
  * It is derived server-side from the attributed application, so it reads as a fact about the lead
  * rather than a judgement someone recorded.
+ *
+ * <p>The tone comes from the console-wide `StatusBadge` map (`kind="lead"`); only the labels live here.
  */
-const OUTCOME_PILL: Record<LeadOutcome, string> = {
-  NEW: "bg-grey-100 text-muted",
-  OUTREACHED: "bg-navy-tint text-navy",
-  REJECTED: "bg-error-100 text-error-700",
-  CONFIRMED: "bg-success-100 text-success-700",
-};
-
 export const OUTCOME_LABEL: Record<LeadOutcome, string> = {
   NEW: "Not yet worked",
   OUTREACHED: "Outreached",
@@ -30,11 +26,11 @@ export const OUTCOME_LABEL: Record<LeadOutcome, string> = {
 export function OutcomeChip({ outcome }: { outcome: LeadOutcome | null | undefined }) {
   if (!outcome) return <span className="text-muted">—</span>;
   return (
-    <span
-      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${OUTCOME_PILL[outcome]}`}
-      title={outcome === "CONFIRMED" ? "Derived from this lead's application — not set by staff" : undefined}
-    >
-      {OUTCOME_LABEL[outcome]}
-    </span>
+    <StatusBadge kind="lead" value={outcome}>
+      {/* StatusBadge forwards no `title`, so the CONFIRMED provenance note rides on the label. */}
+      <span title={outcome === "CONFIRMED" ? "Derived from this lead's application — not set by staff" : undefined}>
+        {OUTCOME_LABEL[outcome]}
+      </span>
+    </StatusBadge>
   );
 }

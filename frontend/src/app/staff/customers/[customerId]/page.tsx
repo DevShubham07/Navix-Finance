@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send, Phone, IndianRupee, Calendar } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
 import {
@@ -70,9 +70,13 @@ export default function CustomerDetailPage() {
 
       <PermissionGate permission="customer:view" fallback={<NoAccessNotice />}>
         {q.isLoading ? (
-          <div className="h-48 animate-pulse rounded border border-line bg-white" />
-        ) : q.error || !c ? (
-          <p className="text-sm text-error-700">{q.error ? errMessage(q.error) : "Customer not found."}</p>
+          <div className="rounded border border-line bg-white p-4 shadow-sm">
+            <Skeleton variant="line" rows={8} />
+          </div>
+        ) : q.error ? (
+          <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+        ) : !c ? (
+          <p className="text-sm text-error-700">Customer not found.</p>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
             <div className="min-w-0 rounded border border-line bg-white p-4 shadow-sm">
@@ -160,7 +164,10 @@ function DeleteCustomerCard({ customerId, name, hasLiveLoan }: { customerId: num
   const [typed, setTyped] = React.useState("");
   const m = useMutation({
     mutationFn: () => customersApi.remove(customerId),
-    onSuccess: () => router.push("/staff/customers"),
+    onSuccess: () => {
+      toast.success("Customer deleted");
+      router.push("/staff/customers");
+    },
   });
   const confirmed = typed.trim() === name.trim();
 
@@ -240,7 +247,10 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
         salaryBank: salaryBank.trim() || null,
         address: address.trim() || null,
       }),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      onSaved();
+      toast.success("Customer details saved");
+    },
   });
 
   return (
@@ -256,7 +266,6 @@ function AdminEditCard({ detail, onSaved }: { detail: CustomerDetail; onSaved: (
       <Input label="Salary bank" value={salaryBank} onChange={(e) => setSalaryBank(e.target.value)} className="!mb-2" />
       <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} className="!mb-3" />
       {m.error && <p className="mb-2 text-sm text-error-700">{errMessage(m.error)}</p>}
-      {m.isSuccess && <p className="mb-2 text-sm text-success-700">Saved.</p>}
       <button onClick={() => m.mutate()} disabled={m.isPending} className="btn btn-sm btn-navy btn-block disabled:opacity-50">
         {m.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save changes
       </button>
@@ -282,7 +291,7 @@ function MobileChangeCard({ detail, onSaved }: { detail: CustomerDetail; onSaved
   });
   const confirm = useMutation({
     mutationFn: () => customersApi.confirmMobileChange(detail.customerId, newMobile.trim(), otp.trim()),
-    onSuccess: () => { setSent(false); setNewMobile(""); setOtp(""); onSaved(); },
+    onSuccess: () => { setSent(false); setNewMobile(""); setOtp(""); onSaved(); toast.success("Mobile number updated"); },
   });
 
   return (
@@ -366,7 +375,10 @@ function LimitOverrideCard({
 
   const save = useMutation({
     mutationFn: (limitPaise: number | null) => customersApi.setLimitOverride(customerId, limitPaise),
-    onSuccess: () => onSaved(),
+    onSuccess: (_data, limitPaise) => {
+      onSaved();
+      toast.success(limitPaise == null ? "Limit reset to 25% of salary" : "Maximum loan amount saved");
+    },
   });
 
   return (
@@ -437,7 +449,10 @@ function SanctionedAmountCard({
 
   const save = useMutation({
     mutationFn: () => customersApi.changeSanctionedAmount(customerId, app.id, newAmountPaise),
-    onSuccess: () => onSaved(),
+    onSuccess: () => {
+      onSaved();
+      toast.success("Approved amount updated");
+    },
   });
 
   return (
@@ -487,7 +502,10 @@ function SalaryDayCard({
 
   const save = useMutation({
     mutationFn: () => customersApi.changeSalaryDay(customerId, Number(day)),
-    onSuccess: () => onSaved(),
+    onSuccess: () => {
+      onSaved();
+      toast.success("Salary credit day updated");
+    },
   });
 
   return (
@@ -531,7 +549,7 @@ function BlocklistCard({ customerId }: { customerId: number }) {
   const [reason, setReason] = React.useState("");
   const m = useMutation({
     mutationFn: () => adminApi.addBlocklist({ type, value: value.trim(), reason: reason.trim() || `Flagged from customer #${customerId}` }),
-    onSuccess: () => { setValue(""); setReason(""); },
+    onSuccess: () => { setValue(""); setReason(""); toast.success("Added to blocklist"); },
   });
   return (
     <Card title="Add to blocklist (admin)" icon={<Ban size={16} />}>
@@ -540,7 +558,6 @@ function BlocklistCard({ customerId }: { customerId: number }) {
       <Input label="Value" value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. ABCDE1234F" className="!mb-2" />
       <Input label="Reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional" className="!mb-3" />
       {m.error && <p className="mb-2 text-sm text-error-700">{errMessage(m.error)}</p>}
-      {m.isSuccess && <p className="mb-2 text-sm text-success-700">Added to blocklist.</p>}
       <button onClick={() => m.mutate()} disabled={m.isPending || !value.trim()} className="btn btn-sm bg-error-600 border-error-600 text-white hover:bg-error-700 btn-block disabled:opacity-50">
         {m.isPending ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />} Add to blocklist
       </button>

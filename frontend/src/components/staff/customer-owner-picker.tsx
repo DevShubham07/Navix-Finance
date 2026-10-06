@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2 } from "lucide-react";
-import { Select } from "@/components/ui";
+import { Select, toast } from "@/components/ui";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import { Section, KV } from "@/components/staff/detail-parts";
 import { useStaffSession } from "@/lib/auth/staff-session";
@@ -65,6 +65,7 @@ export function CustomerOwnerPicker({
       qc.invalidateQueries({ queryKey: ["customer-activity", customerId] });
       qc.invalidateQueries({ queryKey: ["staff-telecalling"] });
       onChanged?.();
+      toast.success("Owner updated");
     },
   });
 

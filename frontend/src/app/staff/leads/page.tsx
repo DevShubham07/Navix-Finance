@@ -4,7 +4,7 @@ import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Phone, Star } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { EmptyState, ErrorState, Input, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
@@ -136,11 +136,19 @@ function StaffLeadsPageInner() {
       </div>
 
       {list.isError && (
-        <p className="mt-3 text-sm text-red-700">{errMessage(list.error)}</p>
+        <ErrorState error={list.error} onRetry={() => void list.refetch()} className="mt-3 py-4" />
       )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="staff-table-scroll rounded-lg border border-navy/10 bg-white">
+        {/* `min-w-0`: the grid item used to be the scroller itself, which a grid lets shrink below
+            its content; the panel wrapping it now is not a scroll container, so without this the
+            `1fr` track would grow to the table's full width instead of scrolling. */}
+        <div className="min-w-0 rounded-lg border border-navy/10 bg-white">
+          {/* `staff-register-scroll` bounds the scroller so the sticky `thead` has something to
+              stick to; PaginationBar sits after it so it no longer scrolls away with the rows.
+              Offset clears the shell header, PageHeader, the collapsed New-lead card and the
+              search/call-status filter row. */}
+          <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "28rem" } as React.CSSProperties}>
           <table className="staff-data-table">
             <thead>
               <tr>
@@ -155,13 +163,16 @@ function StaffLeadsPageInner() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-navy/40">
-                    {list.isLoading ? "Loading…" : "No leads yet — add one above."}
-                  </td>
-                </tr>
-              )}
+              {rows.length === 0 &&
+                (list.isLoading ? (
+                  <tr>
+                    <td colSpan={8}>
+                      <Skeleton variant="table" rows={8} cols={8} />
+                    </td>
+                  </tr>
+                ) : (
+                  <EmptyState title="No leads yet — add one above." inTable={8} />
+                ))}
               {rows.map((row, i) => (
                 // `aria-current` drives BOTH the paint and the announcement (not `aria-selected`,
                 // which is only valid on a row inside a grid/treegrid — this is a plain table).
@@ -184,7 +195,7 @@ function StaffLeadsPageInner() {
                     {row.sourceDetail ? ` · ${row.sourceDetail}` : ""}
                   </td>
                   <td>
-                    <StatusChip status={row.callStatus} />
+                    <StatusBadge kind="leadCall" value={row.callStatus} />
                   </td>
                   <td><OutcomeChip outcome={row.leadOutcome} /></td>
                   <td>{row.qualityRating ? `${row.qualityRating}★` : "—"}</td>
@@ -193,6 +204,7 @@ function StaffLeadsPageInner() {
               ))}
             </tbody>
           </table>
+          </div>
           <PaginationBar
             page={page}
             pageCount={pageCount}
@@ -258,6 +270,7 @@ function NewLeadForm({ onCreated }: { onCreated: () => void }) {
       setNotes("");
       setOpen(false);
       onCreated();
+      toast.success("Lead saved");
     },
   });
 
@@ -371,7 +384,11 @@ function DispositionPanel({
         qualityRating: rating === "" ? null : Number(rating),
         remarks: remarks.trim() || undefined,
       }),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      toast.success("Disposition saved");
+      // Returned, as before, so the mutation stays pending until the list has been invalidated.
+      return onSaved();
+    },
   });
 
   // A SEPARATE mutation from the disposition save on purpose: `disposition` is replace-semantics and
@@ -379,7 +396,10 @@ function DispositionPanel({
   const saveOutcome = useMutation({
     mutationFn: () =>
       leadsApi.setOutcome(lead!.id, { leadOutcome: outcome, dsaNote: dsaNote.trim() }),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      toast.success("Outcome & note saved");
+      return onSaved();
+    },
   });
 
   if (!lead) {
@@ -510,21 +530,5 @@ function DispositionPanel({
         </p>
       )}
     </div>
-  );
-}
-
-function StatusChip({ status }: { status: LeadCallStatus }) {
-  const tone =
-    status === "NOT_CALLED"
-      ? "bg-navy/10 text-navy"
-      : status === "NOT_INTERESTED" || status === "WRONG_NUMBER"
-        ? "bg-red-50 text-red-800"
-        : status === "CALLBACK" || status === "NO_ANSWER"
-          ? "bg-amber-50 text-amber-900"
-          : "bg-emerald-50 text-emerald-800";
-  return (
-    <span className={`inline-block rounded px-2 py-0.5 text-[8px] font-semibold uppercase ${tone}`}>
-      {status.replace(/_/g, " ")}
-    </span>
   );
 }

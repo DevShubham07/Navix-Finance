@@ -6,13 +6,12 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
-import { Badge } from "@/components/ui";
+import { Badge, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import {
   PermissionGate,
   NoAccessNotice,
-  errMessage,
   useStaffMe,
   useQueueSelection,
   useBulkRoleFlags,
@@ -385,17 +384,22 @@ function CustomersPageInner() {
           </p>
         )}
 
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+        <div className="rounded border border-line bg-white shadow-sm">
           {listQ.isLoading ? (
-            <div className="h-40 animate-pulse rounded bg-grey-100" />
+            <Skeleton variant="table" rows={8} cols={colCount} />
           ) : listQ.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(listQ.error)}</p>
+            <ErrorState error={listQ.error} onRetry={() => void listQ.refetch()} />
           ) : pageRows.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-muted">
-              No customers{query ? ` for “${query}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
-              {period !== "ALL" ? " in the selected date range" : ""}.
-            </p>
+            <EmptyState
+              title={`No customers${query ? ` for “${query}”` : ""}${seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}${
+                period !== "ALL" ? " in the selected date range" : ""
+              }.`}
+            />
           ) : (
+            // `staff-register-scroll` bounds the scroller so the sticky `thead` has something to stick
+            // to; PaginationBar now sits after it, inside the panel, so it no longer scrolls away.
+            // Offset clears the shell header, PageHeader, the segment-chip strip and the search/date row.
+            <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "28rem" } as React.CSSProperties}>
             <table className="staff-data-table">
               <thead>
                 {/* Column set deliberately mirrors the live-applications queue (identity, date,
@@ -421,11 +425,11 @@ function CustomersPageInner() {
                   <th>Account</th>
                   <th>IFSC</th>
                   <th>Loan</th>
-                  <th>Amount</th>
+                  <th className="num">Amount</th>
                   <th>Due</th>
                   <th>Owner</th>
-                  <th>Loans</th>
-                  <th>Outstanding</th>
+                  <th className="num">Loans</th>
+                  <th className="num">Outstanding</th>
                   <th>Bureau</th>
                   <th title="Why this file has no usable credit decision yet">Failure</th>
                   <th>Latest status</th>
@@ -514,7 +518,7 @@ function CustomersPageInner() {
                     <td className="font-mono text-ink">{c.accountNumber || "—"}</td>
                     <td className="font-mono text-ink">{c.ifsc || "—"}</td>
                     <td className="font-mono text-muted">{c.latestLoanId != null ? `#${c.latestLoanId}` : "—"}</td>
-                    <td>
+                    <td className="num">
                       <span className="font-semibold text-ink">
                         <AmountCell amountPaise={c.amountPaise} isRequested={c.amountIsRequested === true} />
                       </span>
@@ -523,8 +527,8 @@ function CustomersPageInner() {
                       <DueCell dueDate={c.loanDueDate} markedPendingAt={c.markedPendingAt} />
                     </td>
                     <td className="staff-cell text-ink">{c.ownerName ?? <span className="text-muted">Unallocated</span>}</td>
-                    <td className="text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
-                    <td className="font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
+                    <td className="num text-ink">{c.loanCount} <span className="text-xs text-muted">/ {c.applicationCount} apps</span></td>
+                    <td className="num font-semibold text-ink">{paiseToINR(c.totalOutstandingPaise)}</td>
                     <td>
                       {c.starRating != null || c.creditScore != null ? (
                         <CreditBadge starRating={c.starRating} creditScore={c.creditScore} bureauSource={c.bureauSource} />
@@ -564,11 +568,7 @@ function CustomersPageInner() {
                       )}
                     </td>
                     <td>
-                      {c.latestStatus ? (
-                        <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-ink">
-                          {statusLabel(c.latestStatus as ApplicationStatus)}
-                        </span>
-                      ) : "—"}
+                      {c.latestStatus ? <StatusBadge kind="application" value={c.latestStatus} /> : "—"}
                     </td>
                     <td className="whitespace-nowrap text-muted">
                       {c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "—"}
@@ -640,6 +640,7 @@ function CustomersPageInner() {
                 })()}
               </tbody>
             </table>
+            </div>
           )}
           <PaginationBar
             page={page}

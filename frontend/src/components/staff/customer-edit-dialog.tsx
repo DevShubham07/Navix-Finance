@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { Input } from "@/components/ui";
+import { ErrorState, Input, Skeleton, toast } from "@/components/ui";
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { errMessage } from "@/components/staff/live-pipeline";
 import { customersApi, rupeesToPaise } from "@/lib/api/applications";
@@ -107,6 +107,7 @@ export function CustomerEditDialog({
       qc.invalidateQueries({ queryKey: ["customer", customerId] });
       qc.invalidateQueries({ queryKey: ["customer-detail", customerId] });
       qc.invalidateQueries({ queryKey: ["customer-failure", customerId] });
+      toast.success("Customer details saved");
       onClose();
     },
   });
@@ -117,10 +118,14 @@ export function CustomerEditDialog({
         <DialogTitle>Edit customer details</DialogTitle>
       </DialogHeader>
 
-      {q.isLoading || !form ? (
-        <div className="h-48 animate-pulse rounded bg-grey-100" />
+      {q.error && !form ? (
+        // A failed first load never hydrates the form, so it must be caught before the skeleton
+        // branch below — otherwise that branch holds forever and the retry is unreachable.
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
+      ) : q.isLoading || !form ? (
+        <Skeleton variant="line" rows={10} className="py-2" />
       ) : q.error ? (
-        <p className="text-sm text-error-700">{errMessage(q.error)}</p>
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} className="py-4" />
       ) : (
         <>
           <p className="mb-3 text-xs text-muted">

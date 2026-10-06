@@ -8,7 +8,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Check, XCircle } from "lucide-react";
-import { Select } from "@/components/ui";
+import { EmptyState, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { type TabDef } from "@/components/ui/tabs";
 import { displayAnnualSalaryPaise, formatDate, formatDateTime } from "@/lib/utils";
 import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
@@ -118,7 +118,7 @@ export function CustomerTabBody({
         return latestAppId != null ? (
           <VerificationChecksPanel applicationId={latestAppId} />
         ) : (
-          <p className="text-sm text-muted">No application to show verifications for.</p>
+          <EmptyState title="No application to show verifications for." />
         );
       case "credit":
         return <CreditTab c={detail} latestAppId={latestAppId} />;
@@ -572,7 +572,7 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
       </Section>
       <Section title="Penny-drop derived">
         {pennyQ.isLoading ? (
-          <p className="text-sm text-muted">Loading…</p>
+          <Skeleton variant="table" rows={9} cols={4} />
         ) : emptyPennyCopy ? (
           <p className="text-sm text-muted">{emptyPennyCopy}</p>
         ) : (
@@ -594,7 +594,7 @@ function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | 
       </Section>
       <Section title="Disbursal txn refs">
         {c.loans.length === 0 ? (
-          <p className="text-sm text-muted">No loans.</p>
+          <EmptyState title="No loans." className="py-4" />
         ) : (
           <div className="staff-table-scroll">
             <table className="staff-data-table">
@@ -746,7 +746,7 @@ function LoansTab({
     <div className="space-y-4">
       <Section title={`Applications (${c.applications.length})`}>
         {c.applications.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <ul className="divide-y divide-line">
             {c.applications.map((a: ApplicationView) => (
@@ -792,7 +792,7 @@ function LoansTab({
 
       <Section title={`Loans (${c.loans.length})`}>
         {c.loans.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <div className="space-y-3">
             {c.loans.map((l) => (
@@ -809,7 +809,7 @@ function LoansTab({
 
       <Section title={`Payments (${c.payments.length})`}>
         {c.payments.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <ul className="divide-y divide-line">
             {c.payments.map((pm) => (
@@ -820,9 +820,7 @@ function LoansTab({
                   {pm.partial ? <span className="text-muted"> · partial</span> : null}{" "}
                   <PaymentProofLink url={pm.proofUrl} className="text-xs" />
                 </span>
-                <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">
-                  {pm.status}
-                </span>
+                <StatusBadge kind="payment" value={pm.status} />
                 {/* A REJECTED pill with no reason is a dead end — the reason is already on the row. */}
                 {pm.status === "REJECTED" && (
                   <p className="w-full text-xs text-error-700">
@@ -871,7 +869,10 @@ function LoanCard({
 function CancelButton({ appId, onDone }: { appId: number; onDone?: () => void }) {
   const m = useMutation({
     mutationFn: () => staffApi.cancel(appId, "Cancelled by admin from customer page"),
-    onSuccess: () => onDone?.(),
+    onSuccess: () => {
+      onDone?.();
+      toast.success("Application cancelled");
+    },
   });
   return (
     <button
@@ -918,6 +919,7 @@ function CallLogsTab({ customerId, loans }: { customerId: number; loans: LoanVie
       setCallbackOn("");
       qc.invalidateQueries({ queryKey: ["customer-call-logs", customerId] });
       qc.invalidateQueries({ queryKey: ["customer-activity", customerId] });
+      toast.success("Call logged");
     },
   });
 
@@ -985,9 +987,13 @@ function CallLogsTab({ customerId, loans }: { customerId: number; loans: LoanVie
       {add.error && <p className="text-xs text-error-700">{errMessage(add.error)}</p>}
 
       {q.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <div className="space-y-2">
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+        </div>
       ) : logs.length === 0 ? (
-        <p className="text-sm text-muted">No call logs yet.</p>
+        <EmptyState title="No call logs yet." />
       ) : (
         <ul className="space-y-2">
           {logs.map((r) => (
@@ -1031,9 +1037,17 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
     queryKey: ["customer-activity", customerId],
     queryFn: () => customersApi.activity(customerId),
   });
-  if (q.isLoading) return <p className="text-sm text-muted">Loading…</p>;
+  if (q.isLoading) {
+    return (
+      <div className="space-y-2">
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+      </div>
+    );
+  }
   const items = q.data ?? [];
-  if (items.length === 0) return <p className="text-sm text-muted">No activity recorded yet.</p>;
+  if (items.length === 0) return <EmptyState title="No activity recorded yet." />;
   const groups = groupActivity(items, apps);
   return (
     <div className="space-y-4">
@@ -1049,9 +1063,9 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
                     ? ` · ${paiseToINR(group.app.amountRequestedPaise)}`
                     : ""}
                 </span>
-                <span className="rounded-full bg-grey-100 px-2 py-0.5 text-[10px] font-semibold text-muted">
+                <StatusBadge kind="application" value={group.app.status}>
                   {statusLabel(group.app.status)}
-                </span>
+                </StatusBadge>
                 {group.app.status !== "REJECTED" && group.app.status !== "CANCELLED" ? (
                   <span className="rounded-full bg-navy-tint px-2 py-0.5 text-[10px] font-semibold text-navy">
                     {STAGE_LABELS[stageOf(group.app.status).stage]}
@@ -1070,7 +1084,7 @@ function AuditLogsTab({ customerId, apps }: { customerId: number; apps: Applicat
           }
         >
           {group.entries.length === 0 ? (
-            <p className="text-sm text-muted">No activity recorded for this application yet.</p>
+            <EmptyState title="No activity recorded for this application yet." className="py-4" />
           ) : (
             <ul className="space-y-2">
               {group.entries.map((e: ActivityEntry, i) => (
