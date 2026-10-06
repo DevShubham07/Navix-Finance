@@ -159,7 +159,7 @@ public class LeadService {
     @Transactional(readOnly = true)
     public LeadView get(Long id) {
         requireLeadWriter();
-        return toView(requireLead(id));
+        return toView(requireTelecallerLead(id));
     }
 
     /**
@@ -179,7 +179,7 @@ public class LeadService {
     @Transactional
     public LeadView update(Long id, UpdateLeadRequest req) {
         requireLeadWriter();
-        Lead l = requireLead(id);
+        Lead l = requireTelecallerLead(id);
         if (req.name() != null && !req.name().isBlank()) {
             l.setName(req.name().trim());
         }
@@ -210,7 +210,7 @@ public class LeadService {
         if (req.qualityRating() != null && (req.qualityRating() < 1 || req.qualityRating() > 5)) {
             throw new BusinessException("INVALID_QUALITY_RATING", "qualityRating must be 1–5");
         }
-        Lead l = requireLead(id);
+        Lead l = requireTelecallerLead(id);
         l.setCallStatus(status);
         l.setQualityRating(req.qualityRating());
         l.setRemarks(req.remarks() == null || req.remarks().isBlank() ? null : req.remarks().trim());
@@ -435,8 +435,8 @@ public class LeadService {
      *
      * <p>{@link #requireLead} is a bare {@code findById} with no ownership predicate, while
      * {@link #list} filters {@code ownerDsaId IS NULL}. A telecaller therefore cannot FIND a
-     * DSA-owned lead but could still write to one by id. The existing methods inherit that gap;
-     * this one does not.
+     * DSA-owned lead and, through this, cannot read or write one by id either — every by-id
+     * method on this service goes through here. ADMIN reaches DSA leads via {@code DsaAdminService}.
      */
     private Lead requireTelecallerLead(Long id) {
         Lead l = requireLead(id);

@@ -14,6 +14,7 @@ import { borrowerApi, type ApplicationStatus } from "@/lib/api/applications";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 import { normalizeMobile } from "@/lib/utils";
 import { config } from "@/lib/config";
+import { safeNextPath } from "@/lib/safe-redirect";
 
 /** An application is past KYC (verified by an approver) once it's in any of these states. */
 const KYC_DONE = new Set<ApplicationStatus>([
@@ -49,12 +50,10 @@ function LoginInner() {
   // Where to land after a successful sign-in. Notification deep links (e.g. the bureau question
   // screen) arrive as /login?next=/credit-question%3FappId%3D123; without this they would all be
   // swallowed by the hardcoded /dashboard below and the campaign would fail silently.
-  // Only same-site paths are honoured — an absolute URL or protocol-relative "//evil.com" would turn
-  // this into an open redirect.
+  // Only same-site paths are honoured (safeNextPath) — an absolute URL, "//evil.com" or the "/\evil.com"
+  // backslash form would turn this into an open redirect.
   const searchParams = useSearchParams();
-  const nextParam = searchParams.get("next");
-  const destination =
-    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/dashboard";
+  const destination = safeNextPath(searchParams.get("next"), "/dashboard");
 
   const mobileOk = mobile.length === 10;
   const MAX_RESENDS = 3;

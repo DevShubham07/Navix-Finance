@@ -461,7 +461,7 @@ public class CustomerReviewService {
         d.setApplicationId(appId);
         d.setDocType(req.docType());
         d.setFileName(req.fileName());
-        d.setContentType(req.contentType());
+        d.setContentType(safeContentType(req.contentType()));
         d.setSizeBytes((long) bytes.length);
         d.setData(bytes);
         d.setFilePassword(ApplicationVerificationService.normalizeFilePassword(req.filePassword()));
@@ -471,13 +471,18 @@ public class CustomerReviewService {
     @Transactional(readOnly = true)
     public List<ApplicationDocument> listDocuments(Long appId) {
         requireApplication(appId);
-        return documentRepository.findByApplicationIdOrderByIdAsc(appId);
+        List<ApplicationDocument> docs = documentRepository.findByApplicationIdOrderByIdAsc(appId);
+        if (!isBorrower()) {
+            return docs;
+        }
+        return docs.stream().filter(d -> !STAFF_ONLY_DOC_TYPES.contains(d.getDocType())).toList();
     }
 
     @Transactional(readOnly = true)
     public ApplicationDocument getDocument(Long appId, Long docId) {
         requireApplication(appId);
         return documentRepository.findByIdAndApplicationId(docId, appId)
+                .filter(d -> !isBorrower() || !STAFF_ONLY_DOC_TYPES.contains(d.getDocType()))
                 .orElseThrow(() -> new ResourceNotFoundException("ApplicationDocument", String.valueOf(docId)));
     }
 
@@ -509,6 +514,34 @@ public class CustomerReviewService {
     }
 
     // ---- internals -----------------------------------------------------------------
+
+    /**
+     * Documents on an application that are the credit team's work product, not the borrower's: the
+     * credit brief (internal rating and recommendation) and the raw bureau report. The borrower's
+     * profile view already strips the same facts; the document endpoints are owner-readable, so they
+     * are hidden from a BORROWER here — absent from the list, not-found by id. Staff reads unchanged.
+     */
+    static final Set<String> STAFF_ONLY_DOC_TYPES =
+            Set.of(CreditBriefService.DOC_TYPE, ApplicationVerificationService.BUREAU_REPORT);
+
+    private static boolean isBorrower() {
+        return "BORROWER".equals(ActorContext.get().role());
+    }
+
+    /**
+     * Types a reviewer's browser may render inline. The staff console opens an inline document as a
+     * same-origin {@code blob:} URL typed with this value, so a borrower-declared {@code text/html} or
+     * {@code image/svg+xml} would run script as the reviewer. Anything else is still stored — never
+     * refused — but as an opaque download.
+     */
+    static final Set<String> RENDERABLE_CONTENT_TYPES = Set.of(
+            "application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif",
+            "image/heic", "image/heif");
+
+    static String safeContentType(String declared) {
+        String type = declared == null ? "" : declared.trim().toLowerCase(java.util.Locale.ROOT);
+        return RENDERABLE_CONTENT_TYPES.contains(type) ? type : "application/octet-stream";
+    }
 
     private void requireApplication(Long appId) {
         if (!applicationRepository.existsById(appId)) {

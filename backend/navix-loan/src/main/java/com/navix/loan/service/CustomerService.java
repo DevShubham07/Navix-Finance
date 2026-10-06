@@ -1203,9 +1203,14 @@ public class CustomerService {
         return new DeletionResult(customerId, apps, loans, total);
     }
 
-    /** One customer's audited profile/salary change history (newest first). Staff-readable. */
+    /**
+     * One customer's audited profile/salary change history (newest first). Same scope as the other
+     * per-customer reads: no DSA, and a scoped staffer only for customers in their own book.
+     */
     @Transactional(readOnly = true)
     public List<ProfileChangeView> changeHistory(Long customerId) {
+        rejectDsa();
+        requireVisible(customerId);
         return changeLogRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
                 .map(ProfileChangeView::of)
                 .toList();

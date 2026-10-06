@@ -69,6 +69,17 @@ public class SettlementService {
                 "This action requires one of: " + String.join(", ", roles));
     }
 
+    /**
+     * Readers of the settlement list: any staff role but DSA. The list carries collection case ids,
+     * which open the borrower's case detail, so the DSA firewall applies here as well.
+     */
+    private static void requireNonDsaStaff() {
+        String role = ActorContext.get().role();
+        if (role == null || "BORROWER".equals(role) || "ANONYMOUS".equals(role) || "DSA".equals(role)) {
+            throw new BusinessException("FORBIDDEN_ROLE", "Staff role required");
+        }
+    }
+
     /** The acting staff id (a real bigint) from the current actor. */
     private static long actorStaffId() {
         try {
@@ -203,6 +214,7 @@ public class SettlementService {
      */
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {
+        requireNonDsaStaff();
         List<Settlement> settlements = settlementRepository.findAll(org.springframework.data.domain.Sort.by(
                 org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
         Set<Long> staffIds = new HashSet<>();

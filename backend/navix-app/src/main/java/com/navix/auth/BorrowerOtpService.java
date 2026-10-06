@@ -107,20 +107,25 @@ public class BorrowerOtpService implements OtpVerifierPort {
             store.remove(storeKey);
             return true;
         }
-        Otp otp = store.get(storeKey);
-        if (otp == null || code == null) {
+        if (code == null) {
             return false;
         }
-        if (Instant.now().isAfter(otp.expiresAt()) || otp.attempts() >= MAX_ATTEMPTS) {
-            store.remove(storeKey);
-            return false;
-        }
-        if (!otp.code().equals(code.trim())) {
-            store.put(storeKey, new Otp(otp.code(), otp.expiresAt(), otp.attempts() + 1));
-            return false;
-        }
-        store.remove(storeKey); // single-use
-        return true;
+        String submitted = code.trim();
+        // One atomic read-modify-write per key. A separate get() then put() let concurrent wrong
+        // guesses all read the same attempt count, so a burst of parallel requests could try far
+        // more than MAX_ATTEMPTS codes before the counter caught up.
+        boolean[] matched = {false};
+        store.computeIfPresent(storeKey, (k, otp) -> {
+            if (Instant.now().isAfter(otp.expiresAt()) || otp.attempts() >= MAX_ATTEMPTS) {
+                return null; // expired or locked out: drop it
+            }
+            if (!otp.code().equals(submitted)) {
+                return new Otp(otp.code(), otp.expiresAt(), otp.attempts() + 1);
+            }
+            matched[0] = true;
+            return null; // single-use
+        });
+        return matched[0];
     }
 
     /** Build the SMS body from the (DLT-registered) template: {@code {otp}} → code, {@code {ttl}} → minutes. */

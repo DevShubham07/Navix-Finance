@@ -1187,6 +1187,15 @@ class CustomerServiceTest {
     }
 
     @Test
+    void changeHistoryRejectsDsa() {
+        ActorContext.set(new CurrentActor("77", "Agent", "DSA"));
+        assertThatThrownBy(() -> service.changeHistory(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSA");
+        verify(changeLogRepository, org.mockito.Mockito.never()).findByCustomerIdOrderByIdDesc(any());
+    }
+
+    @Test
     void bookStatsRejectsDsa() {
         ActorContext.set(new CurrentActor("77", "Agent", "DSA"));
         assertThatThrownBy(() -> service.bookStats())

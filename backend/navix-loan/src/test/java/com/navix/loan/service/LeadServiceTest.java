@@ -172,6 +172,26 @@ class LeadServiceTest {
     }
 
     @Test
+    void getAndDisposition_refuseADsaOwnedLead_likeOutcomeDoes() {
+        ActorContext.set(new CurrentActor("5", "Tara", "TELECALLER"));
+        Lead dsaOwned = new Lead();
+        dsaOwned.setId(9L);
+        dsaOwned.setOwnerDsaId(42L);
+        dsaOwned.setCreatedByStaffId(42L);
+        when(leadRepository.findById(9L)).thenReturn(Optional.of(dsaOwned));
+
+        assertThatThrownBy(() -> service.get(9L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("LEAD_NOT_FOUND");
+        assertThatThrownBy(() -> service.disposition(9L, new DispositionRequest("CONNECTED", null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getCode())
+                .isEqualTo("LEAD_NOT_FOUND");
+        org.mockito.Mockito.verify(leadRepository, org.mockito.Mockito.never()).save(any(Lead.class));
+    }
+
+    @Test
     void outcome_forbiddenForNonTelecaller() {
         ActorContext.set(new CurrentActor("1", "Agent", "DSA"));
 

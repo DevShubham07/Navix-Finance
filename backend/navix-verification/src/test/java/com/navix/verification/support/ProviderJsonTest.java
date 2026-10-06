@@ -36,7 +36,8 @@ class ProviderJsonTest {
 
         assertThat(output).contains(
                 "PROVIDER_CALL",
-                "responsePayload={\"result_code\":102,\"message\":\"PAN ABCDE1234F could not be verified\"}");
+                "responsePayload={\"result_code\":102,\"message\":\"PAN [REDACTED] could not be verified\"}");
+        assertThat(output).doesNotContain("ABCDE1234F");
         server.verify();
     }
 

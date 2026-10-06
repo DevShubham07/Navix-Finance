@@ -7,12 +7,13 @@ import org.slf4j.LoggerFactory;
 /**
  * The single place every outbound provider call is observed: it writes the call to the
  * {@code provider_api_execution} audit table (via the injected {@link ProviderCallRecorder}) AND
- * emits a {@code PROVIDER_CALL} log line carrying the raw request/response.
+ * emits a {@code PROVIDER_CALL} log line carrying the request/response.
  *
- * <p><b>These log lines contain PII</b> (PAN, date of birth, mobile, name, bureau consent OTP) — a
- * deliberate product decision so a failing integration can be diagnosed straight from CloudWatch.
- * This replaces the old {@code TEMP_PII_DEBUG} lines, which only 4 of the 15 clients opted into; it
- * is now every call, and it is permanent rather than pre-go-live scaffolding.
+ * <p>The log line carries the payload with borrower identifiers masked ({@link ProviderLogRedactor}):
+ * PAN, Aadhaar, date of birth, mobile, email, name, address, account number and the bureau consent OTP
+ * become {@code [REDACTED]}, while every key, status and error code stays, so a failing integration
+ * can still be diagnosed from CloudWatch. Anyone with log access used to read live PII and OTPs here.
+ * The raw payload is unchanged in the audit row, which the line names by {@code executionId}.
  *
  * <p>The request is logged BEFORE the call and the response after, so a call that hangs or dies
  * mid-flight still leaves evidence of what we sent.
@@ -50,7 +51,7 @@ public final class ProviderCallLog {
     public static void logRequest(String endpoint, String requestJson) {
         log.info("PROVIDER_CALL start provider={} operation={} endpoint={} applicationId={} requestPayload={}",
                 ProviderCallCatalog.providerFor(endpoint), ProviderCallCatalog.operationFor(endpoint),
-                endpoint, ProviderCallContext.applicationId(), clamp(requestJson));
+                endpoint, ProviderCallContext.applicationId(), clamp(ProviderLogRedactor.redact(requestJson)));
     }
 
     /** Persist the completed call and log its outcome. Never throws. */
@@ -69,13 +70,14 @@ public final class ProviderCallLog {
                             + "durationMs={} applicationId={} executionId={} error={} responsePayload={}",
                     call.provider(), call.operation(), call.endpoint(), call.httpStatus(),
                     call.durationMs(), ProviderCallContext.applicationId(), executionId,
-                    call.errorMessage(), clamp(call.responseJson()));
+                    ProviderLogRedactor.redactText(String.valueOf(call.errorMessage())),
+                    clamp(ProviderLogRedactor.redact(call.responseJson())));
         } else {
             log.info("PROVIDER_CALL ok provider={} operation={} endpoint={} httpStatus={} "
                             + "durationMs={} applicationId={} executionId={} responsePayload={}",
                     call.provider(), call.operation(), call.endpoint(), call.httpStatus(),
                     call.durationMs(), ProviderCallContext.applicationId(), executionId,
-                    clamp(call.responseJson()));
+                    clamp(ProviderLogRedactor.redact(call.responseJson())));
         }
     }
 
