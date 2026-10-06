@@ -173,8 +173,12 @@ export default function AdminAllApplicationsPage() {
                         <span className="rounded-full bg-success-50 px-2.5 py-0.5 text-xs font-semibold text-success-700">Complete</span>
                       ) : (
                         <span className="rounded-full bg-warning-50 px-2.5 py-0.5 text-xs font-semibold text-warning-700"
-                          title={a.agreementAccepted ? "" : "Agreement not accepted"}>
-                          {a.stepsCompleted}/{a.stepsRequired}{a.agreementAccepted ? "" : " · no e-sign"}
+                          title={a.agreementAccepted ? "" : "Borrower has not accepted the signup terms"}>
+                          {a.stepsCompleted}/{a.stepsRequired}
+                          {/* `agreementAccepted` is CustomerProfile.termsAcceptedAt — the signup
+                              screen-1 T&C tick (AdminApplicationService#listAll), NOT the
+                              agreement-documents step and NOT the Aadhaar eSign. */}
+                          {a.agreementAccepted ? "" : " · terms & conditions not accepted"}
                         </span>
                       )}
                     </td>

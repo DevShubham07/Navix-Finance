@@ -44,7 +44,10 @@ export default function CustomerDetailPage() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["customer", id] });
     qc.invalidateQueries({ queryKey: ["customer-detail", id] });
-    qc.invalidateQueries({ queryKey: ["customers"] });
+    // The customers register reads ["customers-page", …] / ["customers-summary", …];
+    // React Query prefix-matches element-by-element, so a bare ["customers"] matches neither.
+    qc.invalidateQueries({ queryKey: ["customers-page"] });
+    qc.invalidateQueries({ queryKey: ["customers-summary"] });
   };
 
   const c = q.data;

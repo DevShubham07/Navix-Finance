@@ -163,10 +163,18 @@ function StaffLeadsPageInner() {
                 </tr>
               )}
               {rows.map((row, i) => (
+                // `aria-current` drives BOTH the paint and the announcement (not `aria-selected`,
+                // which is only valid on a row inside a grid/treegrid — this is a plain table).
+                // The previous
+                // `bg-gold/10` on the `<tr>` was invisible on every even row, because the zebra is
+                // painted on the `td` (globals.css) — so on half the rows the only feedback that a
+                // lead was selected was the DispositionPanel changing beside the table. Hover is
+                // dropped for the same reason: the shared rule now paints it on the cells.
                 <tr
                   key={row.id}
                   onClick={() => setSelectedId(row.id)}
-                  className={`cursor-pointer hover:bg-ivory/80 ${selectedId === row.id ? "bg-gold/10" : ""}`}
+                  aria-current={selectedId === row.id ? true : undefined}
+                  className="cursor-pointer"
                 >
                   <td className="text-navy/60">{(page - 1) * pageSize + i + 1}</td>
                   <td className="staff-cell font-medium text-navy">{row.name}</td>

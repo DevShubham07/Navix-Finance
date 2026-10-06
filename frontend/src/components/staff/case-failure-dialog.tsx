@@ -53,7 +53,10 @@ export function CaseFailureDialog({
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["customer-failure", customerId] });
-    qc.invalidateQueries({ queryKey: ["customers"] });
+    // The customers register reads ["customers-page", …] / ["customers-summary", …];
+    // React Query prefix-matches element-by-element, so a bare ["customers"] matches neither.
+    qc.invalidateQueries({ queryKey: ["customers-page"] });
+    qc.invalidateQueries({ queryKey: ["customers-summary"] });
     qc.invalidateQueries({ queryKey: ["customer", customerId] });
     qc.invalidateQueries({ queryKey: ["customer-detail", customerId] });
   };

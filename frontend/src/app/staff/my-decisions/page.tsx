@@ -88,15 +88,31 @@ export default function MyDecisionsPage() {
     queryFn: () => staffApi.decisions(staffId ? Number(staffId) : undefined, range.from, range.to),
   });
 
+  // Whose totals the cards show: the picker's choice, or — with nothing picked — the caller's own
+  // id. Sending NO staffId makes the backend aggregate the caller's whole visible roster
+  // (DecisionHistoryService.rosterFor(null) → listEveryone() for ADMIN, the team for a Head), so
+  // the cards would carry an arbitrary colleague's numbers under "your decisions" while the table
+  // below stayed scoped to the caller. That whole-roster default is what /staff/performance is
+  // built on, so the narrowing belongs here, on the page, not in the service.
+  const summaryStaffId = staffId || me.data?.id || "";
+
   // The same aggregate the performance dashboard renders, narrowed to this one person, so the two
   // pages can never disagree about what someone did.
   const summaryQ = useQuery({
-    queryKey: ["decisions-summary", staffId, range.from ?? "", range.to ?? ""],
-    queryFn: () =>
-      staffApi.performance(range.from, range.to, staffId ? Number(staffId) : undefined),
+    // The resolved id is part of the key, so the cards refetch against the right person once
+    // `me` lands rather than keeping whatever the first run produced.
+    queryKey: ["decisions-summary", summaryStaffId, range.from ?? "", range.to ?? ""],
+    queryFn: () => staffApi.performance(range.from, range.to, Number(summaryStaffId)),
+    // `me` is itself a query: until it resolves there is no own-id to send, and firing without
+    // one is precisely the roster-wide request this page must never make.
+    enabled: !!summaryStaffId,
     retry: false,
   });
-  const stats = summaryQ.data?.rows?.[0];
+  // A named staffId narrows the roster server-side to that one person, so a successful response
+  // holds exactly one row. Anything else is not the person on screen — render the cards as
+  // unavailable rather than someone else's totals.
+  const summaryRows = summaryQ.data?.rows;
+  const stats = summaryRows?.length === 1 ? summaryRows[0] : undefined;
   const callTrackingSince = summaryQ.data?.callTrackingSince;
   const callsUntracked = !!callTrackingSince && !!range.to && range.to < callTrackingSince;
   const callsNote = callTrackingSince
@@ -164,9 +180,13 @@ export default function MyDecisionsPage() {
           info={callsNote}
         />
       </div>
-      {summaryQ.isError && (
+      {summaryQ.isError ? (
         <p className="text-sm text-error-700">{errMessage(summaryQ.error)}</p>
-      )}
+      ) : summaryQ.data && !stats ? (
+        <p className="text-sm text-muted">
+          Totals aren&apos;t available for the selected person.
+        </p>
+      ) : null}
 
       <section className="staff-table-scroll rounded border border-line bg-white shadow-sm">
         {q.error ? (

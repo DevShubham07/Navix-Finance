@@ -130,7 +130,16 @@ function AdminLogPaymentDialog({ loanId, onClose }: { loanId: number; onClose: (
         ["staff-dashboard-queue"],
         ["collections-worklist"],
         ["collections-cases"],
-        ["customers"],
+        // The collection-case workspace this dialog is opened from keys by the LOAN id as a
+        // *string* (it comes straight from the route param), so the number has to be coerced or
+        // the prefix match misses and the LoanCard keeps the pre-payment outstanding on screen.
+        ["collections-case-by-loan", String(loanId)],
+        // Same workspace: the payments list (CasePaymentsCard / RecordPaymentCard).
+        ["collection-payments"],
+        // The customers register reads ["customers-page", …] / ["customers-summary", …];
+        // React Query prefix-matches element-by-element, so a bare ["customers"] matched neither.
+        ["customers-page"],
+        ["customers-summary"],
         // The customer roll-up now carries the per-loan outstanding breakdown the Loans tab renders
         // (`outstandingByLoanId`), so without this the tab keeps showing the pre-payment figures.
         ["customer-detail"],

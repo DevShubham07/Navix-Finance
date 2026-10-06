@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   Receipt,
@@ -57,6 +57,26 @@ const SLOW_MS = 60_000;      // whole-book lists and rollups
 // disbursement or a repayment, not of a queue, so polling them at queue speed only costs the
 // database — a minute-old book count is indistinguishable from a live one.
 const BOOK_MS = 5 * 60_000;
+
+/**
+ * Every query key this page owns — the scope of its Refresh button. Listed rather than
+ * prefix-matched because the transactions query predates the `staff-dashboard-` naming, and
+ * listing them also keeps Refresh from reaching into another page's cache.
+ */
+const DASHBOARD_QUERY_KEYS = new Set([
+  "staff-dashboard-queue",
+  "staff-dashboard-performance",
+  "staff-dashboard-decisions-windowed",
+  "staff-dashboard-book-stats",
+  "staff-dashboard-segment-summary",
+  "staff-dashboard-decided-customers",
+  "staff-dashboard-cases",
+  "staff-dashboard-settlements",
+  "staff-dashboard-collection-payments",
+  "staff-dashboard-stats",
+  "staff-dashboard-trends",
+  "admin-dashboard-txns",
+]);
 
 /** Zero-filled segment counts — what the admin strip renders until the summary lands. Written out
  *  rather than derived so the compiler checks it against every `CustomerSegment`. */
@@ -165,11 +185,24 @@ const ROLE_HREF: Partial<Record<StaffRole, string>> = {
 
 /** A non-application actionable source (repayments, referral payouts, settlements, cases). */
 type QueueExtra = { key: string; label: string; count: number; href: string };
-/** A role's full action queue: applications the role acts on + non-application actionable sources. */
-type RoleQueue = { apps: ApplicationView[]; extras: QueueExtra[] };
+/**
+ * A role's full action queue: applications the role acts on + non-application actionable sources,
+ * plus whether any source it read FAILED. The per-source `.catch`es below are deliberate — one
+ * dead call must never zero the whole count — but swallowing them silently made a dead backend
+ * render as "you're all caught up", the one wrong answer this page must not give. The flag is how
+ * the page tells "genuinely empty" from "could not load".
+ */
+type RoleQueue = { apps: ApplicationView[]; extras: QueueExtra[]; failed: boolean };
 
-const safe = (p: Promise<ApplicationView[]>) => p.catch(() => [] as ApplicationView[]);
-const countOf = <T,>(p: Promise<T[]>): Promise<number> => p.then((r) => r.length).catch(() => 0);
+/** One fetched source: what it returned, and whether the call failed (vs. came back empty). */
+type Source<T> = { value: T; failed: boolean };
+
+const safe = (p: Promise<ApplicationView[]>): Promise<Source<ApplicationView[]>> =>
+  p
+    .then((value) => ({ value, failed: false }))
+    .catch(() => ({ value: [] as ApplicationView[], failed: true }));
+const countOf = <T,>(p: Promise<T[]>): Promise<Source<number>> =>
+  p.then((r) => ({ value: r.length, failed: false })).catch(() => ({ value: 0, failed: true }));
 
 /** Mirrors the accountant's repayment-verify queue on /staff/applications. */
 const pendingRepaymentCount = () => countOf(staffApi.pendingRepayments());
@@ -198,9 +231,11 @@ const settlementsExtra = (count: number): QueueExtra =>
 async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
   let base: RoleQueue;
   switch (role) {
-    case "CREDIT_EXECUTIVE":
-      base = { apps: await safe(staffApi.listByStatus("CREDIT_EXEC_PENDING")), extras: [] };
+    case "CREDIT_EXECUTIVE": {
+      const own = await safe(staffApi.listByStatus("CREDIT_EXEC_PENDING"));
+      base = { apps: own.value, extras: [], failed: own.failed };
       break;
+    }
     case "CREDIT_HEAD": {
       // Everything the Head can act on: intakes to assign, plus files already out with an
       // executive (the Head may decide those too).
@@ -208,23 +243,29 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
         safe(staffApi.creditQueue()),
         safe(staffApi.listByStatus("CREDIT_EXEC_PENDING")),
       ]);
-      base = { apps: [...queue, ...withExec], extras: [] };
+      base = {
+        apps: [...queue.value, ...withExec.value],
+        extras: [],
+        failed: queue.failed || withExec.failed,
+      };
       break;
     }
     case "DISBURSEMENT_HEAD": {
-      const [pending, failed, flags] = await Promise.all([
+      const [pending, failedTransfers, flags] = await Promise.all([
         safe(staffApi.listByStatus("DISBURSEMENT_PENDING")),
         safe(staffApi.listByStatus("DISBURSEMENT_FAILED")),
         featureFlagsApi.get().catch(() => ({} as Record<string, boolean>)),
       ]);
       const extras: QueueExtra[] = [];
+      let failed = pending.failed || failedTransfers.failed;
       if (flags.referral !== false) {
         const payouts = await countOf(staffReferralApi.payouts("PENDING"));
-        if (payouts > 0) {
-          extras.push({ key: "referral-payouts", label: "Referral payouts to settle", count: payouts, href: "/staff/disbursement/referrals" });
+        failed = failed || payouts.failed;
+        if (payouts.value > 0) {
+          extras.push({ key: "referral-payouts", label: "Referral payouts to settle", count: payouts.value, href: "/staff/disbursement/referrals" });
         }
       }
-      base = { apps: [...pending, ...failed], extras };
+      base = { apps: [...pending.value, ...failedTransfers.value], extras, failed };
       break;
     }
     case "ACCOUNTANT": {
@@ -235,18 +276,20 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
         pendingCollectionPaymentCount(),
       ]);
       const extras: QueueExtra[] = [];
-      if (repayments > 0) extras.push(repaymentsExtra(repayments));
-      if (collected > 0) extras.push(collectionPaymentsExtra(collected));
-      base = { apps: [], extras };
+      if (repayments.value > 0) extras.push(repaymentsExtra(repayments.value));
+      if (collected.value > 0) extras.push(collectionPaymentsExtra(collected.value));
+      base = { apps: [], extras, failed: repayments.failed || collected.failed };
       break;
     }
     case "COLLECTION_HEAD":
-      // Settlements count now comes from settlementsQuery alone (Step 1.2) — no separate fetch.
-      base = { apps: [], extras: [] };
+      // Settlements count now comes from settlementsQuery alone (Step 1.2) — no separate fetch,
+      // so this branch reads nothing and cannot fail; settlementsQuery reports its own failure.
+      base = { apps: [], extras: [], failed: false };
       break;
     case "COLLECTION_EXECUTIVE":
-      // "Your open collection cases" now derives from casesQuery alone (Step 1.3) — no separate fetch.
-      base = { apps: [], extras: [] };
+      // "Your open collection cases" now derives from casesQuery alone (Step 1.3) — no separate
+      // fetch, so casesQuery reports its own failure.
+      base = { apps: [], extras: [], failed: false };
       break;
     case "ADMIN": {
       const [lists, repayments] = await Promise.all([
@@ -261,15 +304,19 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
         pendingRepaymentCount(),
       ]);
       const extras: QueueExtra[] = [];
-      if (repayments > 0) extras.push(repaymentsExtra(repayments));
+      if (repayments.value > 0) extras.push(repaymentsExtra(repayments.value));
       // Settlements count now comes from settlementsQuery alone (Step 1.2) — no separate fetch.
-      base = { apps: lists.flat(), extras };
+      base = {
+        apps: lists.flatMap((l) => l.value),
+        extras,
+        failed: lists.some((l) => l.failed) || repayments.failed,
+      };
       break;
     }
     case "TELECALLER":
     case "DSA":
     default:
-      base = { apps: [], extras: [] };
+      base = { apps: [], extras: [], failed: false };
       break;
   }
 
@@ -278,6 +325,7 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
 
 export default function StaffDashboardPage() {
   const mounted = useMounted();
+  const queryClient = useQueryClient();
   const { session } = useStaffSession();
   const role = session?.role as StaffRole | undefined;
   const sid = session?.id != null ? Number(session.id) : undefined;
@@ -439,7 +487,7 @@ export default function StaffDashboardPage() {
   }
 
   const queue = QUEUE[role];
-  const queueData = queueQuery.data ?? { apps: [], extras: [] };
+  const queueData: RoleQueue = queueQuery.data ?? { apps: [], extras: [], failed: false };
   const myApps = queueData.apps;
   // Extras order MUST match fetchRoleQueue's old push order: queue's own extras (repayments /
   // referral payouts), then settlements, then cases, then my-customers/my-overdue.
@@ -455,6 +503,16 @@ export default function StaffDashboardPage() {
     queueQuery.isLoading ||
     ((role === "COLLECTION_HEAD" || isAdmin) && settlementsQuery.isLoading) ||
     (role === "COLLECTION_EXECUTIVE" && casesQuery.isLoading);
+  // "Could not load" vs. "genuinely empty". fetchRoleQueue carries the flag for the sources it
+  // deliberately swallows; the queries that feed the extras (book stats, settlements, cases) report
+  // their own failure the same way. The headline count is only trustworthy when none of them failed
+  // — and a role whose dashboard disables one of these queries never sees its isError.
+  const queueFailed =
+    queueQuery.isError ||
+    queueData.failed ||
+    bookStatsQuery.isError ||
+    ((role === "COLLECTION_HEAD" || isAdmin) && settlementsQuery.isError) ||
+    (role === "COLLECTION_EXECUTIVE" && casesQuery.isError);
 
   const decisions = performanceQuery.data ? decisionStats(performanceQuery.data, range.from) : null;
   const outcomes = has("outcomes") && windowedDecisionsQuery.data
@@ -481,21 +539,16 @@ export default function StaffDashboardPage() {
     collectionPaymentsQuery.isFetching ||
     (isAdmin && (stats.isFetching || trends.isFetching || txns.isFetching));
 
+  // Scoped to this page's own keys, and to ACTIVE queries only. `.refetch()` is honoured
+  // regardless of a query's `enabled` (RQ v5), so the per-query version this replaces also fired
+  // the whole-book segment summary and three unscoped collections lists on every role whose
+  // dashboard deliberately disables them. `invalidateQueries` defaults to refetchType "active",
+  // and a query whose every observer is disabled is not active — it is only marked stale, and
+  // fetches if it ever enables. The spinner above still keys off each query's isFetching.
   const refreshAll = () => {
-    queueQuery.refetch();
-    performanceQuery.refetch();
-    windowedDecisionsQuery.refetch();
-    bookStatsQuery.refetch();
-    segmentSummaryQuery.refetch();
-    decidedCustomersQuery.refetch();
-    casesQuery.refetch();
-    settlementsQuery.refetch();
-    collectionPaymentsQuery.refetch();
-    if (isAdmin) {
-      stats.refetch();
-      trends.refetch();
-      txns.refetch();
-    }
+    void queryClient.invalidateQueries({
+      predicate: (query) => DASHBOARD_QUERY_KEYS.has(String(query.queryKey[0])),
+    });
   };
 
   return (
@@ -520,6 +573,8 @@ export default function StaffDashboardPage() {
           items={myApps}
           extras={activeExtras}
           loading={queueLoading}
+          failed={queueFailed}
+          onRefresh={refreshAll}
           actingHref={actingHref}
         />
       )}
@@ -548,6 +603,11 @@ export default function StaffDashboardPage() {
                   {activeExtras.map((extra) => <ExtraActionRow key={extra.key} extra={extra} />)}
                 </ul>
               )}
+            </div>
+          ) : queueFailed ? (
+            // Not an empty queue — nothing could be read. The hero above carries the Refresh.
+            <div className="rounded border border-error-200 bg-error-50 p-8 text-center text-sm text-error-700">
+              Couldn&apos;t load your queue — Refresh to try again.
             </div>
           ) : (
             <div className="rounded border border-line bg-white p-8 text-center text-sm text-muted">
@@ -646,6 +706,29 @@ export default function StaffDashboardPage() {
   );
 }
 
+/**
+ * The "couldn't load" notice shared by the hero and the queue section.
+ *
+ * Every queue source is individually fault-tolerant on purpose (see {@link RoleQueue}), so an
+ * outage otherwise reads as an empty queue. This says what actually happened and offers the same
+ * Refresh the header does.
+ */
+function QueueLoadError({ onRefresh }: { onRefresh: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded border border-error-200 bg-error-50 p-4">
+      <span className="min-w-0 text-sm text-error-700">
+        Couldn&apos;t load part of your queue — what you see here may be incomplete.
+      </span>
+      <button
+        onClick={onRefresh}
+        className="ml-auto flex items-center gap-1.5 rounded border border-error-200 bg-white px-3 py-1.5 text-xs font-semibold text-error-700 hover:bg-error-50"
+      >
+        <RefreshCw size={13} /> Refresh
+      </button>
+    </div>
+  );
+}
+
 /** Layer 1 — the signed-in role's actionable count + the oldest-waiting item + queue aging. */
 function WorkHero({
   queue,
@@ -653,6 +736,8 @@ function WorkHero({
   items,
   extras,
   loading,
+  failed,
+  onRefresh,
   actingHref,
 }: {
   queue: { label: string; info: string };
@@ -660,6 +745,9 @@ function WorkHero({
   items: ApplicationView[];
   extras: QueueExtra[];
   loading: boolean;
+  /** A queue source failed rather than came back empty — the count may be short. */
+  failed: boolean;
+  onRefresh: () => void;
   actingHref?: string;
 }) {
   // Oldest-waiting: the application with the earliest created_at (V53) — falls back to id when
@@ -743,10 +831,17 @@ function WorkHero({
             </Link>
           )}
         </div>
-      ) : (
+      ) : failed ? null : (
         <p className="mt-4 rounded border border-line bg-grey-50 p-4 text-sm text-muted">
           You&apos;re all caught up — nothing waiting on you right now.
         </p>
+      )}
+
+      {/* Shown in place of the empty hero, and alongside a count that loaded only in part. */}
+      {!loading && failed && (
+        <div className="mt-4">
+          <QueueLoadError onRefresh={onRefresh} />
+        </div>
       )}
     </section>
   );
