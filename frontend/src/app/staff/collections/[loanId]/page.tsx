@@ -14,6 +14,7 @@ import { CallLogRow, RemarksTab } from "@/components/staff/detail-parts";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { collectionsApi, customersApi, paiseToINR, rupeesToPaise, type InteractionView, type LoanSummary } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
+import { parsePositiveRupees, sanitizeRupeeInput } from "@/lib/collections/rupee-amount-input";
 
 const TYPES = ["CALL", "SMS", "EMAIL", "VISIT"];
 const OUTCOMES = ["CONNECTED", "NO_ANSWER", "PROMISE_TO_PAY", "PAID", "DISPUTED"];
@@ -56,6 +57,20 @@ export default function CollectionsCasePage() {
     qc.invalidateQueries({ queryKey: ["collections-interactions", caseId] });
   };
 
+  // Refresh means everything on screen — the case, interactions, payments, the borrower's credit
+  // headline, call history, remarks and the officer list — not just the first two. Every card
+  // owns its own query, so refetch whatever is currently mounted rather than a hand-kept key list
+  // that would go stale the next time a card is added.
+  const [refreshing, setRefreshing] = React.useState(false);
+  const refreshAll = async () => {
+    setRefreshing(true);
+    try {
+      await qc.refetchQueries({ type: "active" });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const c = caseQ.data;
 
   return (
@@ -64,9 +79,9 @@ export default function CollectionsCasePage() {
         <ArrowLeft size={15} /> Back to live applications
       </Link>
       <PageHeader title="Collection case" subtitle="Log interactions, assign an officer, and propose a settlement.">
-        <button onClick={() => { caseQ.refetch(); interQ.refetch(); }}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink">
-          <RefreshCw size={13} /> Refresh
+        <button onClick={() => void refreshAll()} disabled={refreshing}
+          className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink disabled:opacity-50">
+          {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
@@ -157,7 +172,17 @@ function LoanCard({ loan }: { loan: LoanSummary | null }) {
           <Row label="Principal" value={paiseToINR(loan.principalPaise)} />
           <Row label="Net disbursed" value={paiseToINR(loan.netDisbursedPaise)} />
           <Row label="Total repayable" value={paiseToINR(loan.totalRepayablePaise)} />
-          <Row label="Outstanding" value={<span className="font-semibold">{paiseToINR(loan.outstandingPaise)}</span>} />
+          {/* Computed on read (principal + interest + late penalty − verified payments), so it is
+              only true as of the moment this page loaded. */}
+          <Row
+            label="Outstanding"
+            value={
+              <>
+                <span className="font-semibold">{paiseToINR(loan.outstandingPaise)}</span>
+                <span className="block text-xs text-muted">as of now</span>
+              </>
+            }
+          />
           <Row label="Disbursed on" value={loan.disbursedOn} />
           <Row label="Due date" value={loan.dueDate} />
           <Row label="Status" value={loan.status} />
@@ -278,11 +303,16 @@ function InteractionsCard({
   const [ptp, setPtp] = React.useState("");
   const [proof, setProof] = React.useState("");
 
+  const isPromise = outcome === "PROMISE_TO_PAY";
+  const isPaid = outcome === "PAID";
+
   const log = useMutation({
+    // Only the fields on screen for this outcome are sent — a date typed under PROMISE_TO_PAY and
+    // left behind when the outcome changed must not ride along on a NO_ANSWER.
     mutationFn: () => collectionsApi.logInteraction(caseId, {
       type, outcome,
-      promiseToPayDate: ptp || undefined,
-      proofRef: proof.trim() || undefined,
+      promiseToPayDate: isPromise && ptp ? ptp : undefined,
+      proofRef: isPaid ? proof.trim() || undefined : undefined,
     }),
     onSuccess: () => { setProof(""); setPtp(""); onLogged(); toast.success("Interaction logged"); },
   });
@@ -294,14 +324,22 @@ function InteractionsCard({
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <Select label="Type" value={type} onChange={(e) => setType(e.target.value)} options={TYPES.map((t) => ({ value: t, label: t }))} className="!mb-0" />
         <Select label="Outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} options={OUTCOMES.map((o) => ({ value: o, label: o }))} className="!mb-0" />
-        <Input label="Promise-to-pay" type="date" value={ptp} onChange={(e) => setPtp(e.target.value)} className="!mb-0" />
-        {outcome === "PAID" && (
+        {isPromise && (
+          <Input label="Promise-to-pay" type="date" value={ptp} onChange={(e) => setPtp(e.target.value)} className="!mb-0" />
+        )}
+        {isPaid && (
           <Input label="Proof ref" value={proof} onChange={(e) => setProof(e.target.value)} placeholder="UTR / receipt" className="!mb-0" />
         )}
         <button onClick={() => log.mutate()} disabled={log.isPending} className="btn btn-sm btn-navy disabled:opacity-50">
           {log.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Log
         </button>
       </div>
+      {/* A warning, not a block: the server accepts a promise without a date. */}
+      {isPromise && !ptp && (
+        <p className="-mt-2 mb-3 text-xs text-warning-700">
+          No promise-to-pay date — it will be logged without one.
+        </p>
+      )}
       {log.error && <p className="mb-2 text-sm text-error-700">{errMessage(log.error)}</p>}
 
       {loading ? (
@@ -375,18 +413,20 @@ function AssignCard({ caseId, currentOfficerName, onAssigned }: { caseId: string
 function SettlementCard({ caseId }: { caseId: string }) {
   const qc = useQueryClient();
   const [amount, setAmount] = React.useState("");
+  // Null while the box is empty, a lone ".", or zero — submit stays disabled until it is an amount.
+  const rupees = parsePositiveRupees(amount);
   const propose = useMutation({
-    mutationFn: () => collectionsApi.proposeSettlement(caseId, rupeesToPaise(Number.parseFloat(amount))),
+    mutationFn: (value: number) => collectionsApi.proposeSettlement(caseId, rupeesToPaise(value)),
     onSuccess: () => { setAmount(""); qc.invalidateQueries({ queryKey: ["collections-settlements"] }); },
   });
   return (
     <div className="rounded border border-line bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-navy"><HandCoins size={16} /> Propose settlement</div>
-      <Input label="Settlement amount (₹)" inputMode="numeric" value={amount}
-        onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))} placeholder="25000" />
+      <Input label="Settlement amount (₹)" inputMode="decimal" value={amount}
+        onChange={(e) => setAmount(sanitizeRupeeInput(e.target.value))} placeholder="25000" />
       {propose.error && <p className="mb-2 text-sm text-error-700">{errMessage(propose.error)}</p>}
       {propose.data && <p className="mb-2 text-sm text-success-700">Proposed {paiseToINR(propose.data.settlementAmountPaise)} — pending approval.</p>}
-      <button onClick={() => propose.mutate()} disabled={propose.isPending || !amount} className="btn btn-sm btn-gold btn-block disabled:opacity-50">
+      <button onClick={() => rupees != null && propose.mutate(rupees)} disabled={propose.isPending || rupees == null} className="btn btn-sm btn-gold btn-block disabled:opacity-50">
         {propose.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Propose
       </button>
       <p className="mt-2 text-xs text-muted">A Collection Head approves it on the Settlements page (separation of duties).</p>

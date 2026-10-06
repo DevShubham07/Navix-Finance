@@ -18,7 +18,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Eye } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
@@ -31,7 +31,7 @@ import {
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { BulkActionBar, useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
+import { useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
 import { useStaffMe } from "@/components/staff/pipeline/hooks";
 import { hasPermission } from "@/lib/auth/rbac";
 import { BulkAssignOfficerDialog, InlineOfficerSelect } from "@/components/staff/collections-assign";
@@ -39,6 +39,7 @@ import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { collectionsApi, customersApi, paiseToINR, type CustomerSummary, type WorklistRow } from "@/lib/api/applications";
 import { COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
+import { worklistDueCue, worklistDueLabel, type WorklistDueCue } from "@/lib/collections/worklist-due";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
@@ -99,8 +100,26 @@ function toRow(w: WorklistRow): Row {
 
 const dash = (v: string | null | undefined) => (v && v.trim() ? v : "—");
 
+/** The export-only customer enrichment changes when a profile is edited, not between menu opens. */
+const EXPORT_ENRICHMENT_STALE_MS = 5 * 60_000;
+
+/** DPD-cell tone per due state: red once late, navy on the day, muted while still ahead. */
+const DUE_CUE_CLASS: Record<WorklistDueCue["kind"], string> = {
+  overdue: "num font-semibold text-error-700",
+  "due-today": "num whitespace-nowrap font-semibold text-navy",
+  "due-in": "num whitespace-nowrap text-muted",
+  none: "num",
+};
+
+/** The DPD cell: the server's count once late, otherwise how far off the due date is (IST). */
+function DpdCell({ row, now }: { row: Row; now: Date }) {
+  const cue = worklistDueCue(row, now);
+  return <td className={DUE_CUE_CLASS[cue.kind]}>{worklistDueLabel(cue)}</td>;
+}
+
 export default function CollectionsBucketPage() {
   const router = useRouter();
+  const qc = useQueryClient();
   const search = useSearchParams();
   const raw = search.get("bucket");
   const bucket = isDpdBucket(raw) ? raw : "UPCOMING";
@@ -137,11 +156,16 @@ export default function CollectionsBucketPage() {
   // the <ExportMenu> column definitions, and ExportMenu renders nothing for a non-ADMIN — so
   // fetching it on mount made every collections visitor pay for data almost none of them ever see.
   // It now loads when the menu is opened (`onOpen`), for exactly the customers on the worklist.
-  const customersQ = useQuery({
+  //
+  // `onOpen` prefetches through the client rather than calling `refetch()`: `refetch()` ignores
+  // `staleTime`, so every open re-downloaded the same customers. `prefetchQuery` only fetches when
+  // this id set has no data yet or it is older than the staleTime.
+  const exportCustomersQuery = {
     queryKey: ["collections-export-customers", worklistCustomerIds],
     queryFn: () => customersApi.byIdsAll(worklistCustomerIds),
-    enabled: false,
-  });
+    staleTime: EXPORT_ENRICHMENT_STALE_MS,
+  };
+  const customersQ = useQuery({ ...exportCustomersQuery, enabled: false });
   const customersById = React.useMemo(() => {
     const m = new Map<number, CustomerSummary>();
     for (const c of customersQ.data ?? []) m.set(c.customerId, c);
@@ -191,6 +215,10 @@ export default function CollectionsBucketPage() {
     });
   }, [q.data, bucket, query, range.from, range.to]);
 
+  // One reading of "now" per render for the DPD cell's days-to-due; the 8s poll re-renders, so it
+  // never drifts more than a poll behind. The helper measures it in IST.
+  const now = new Date();
+
   // Most overdue first: the top of a collections list should be the loan that has run longest.
   const { sorted, sortKey, dir, toggle } = useTableSort<Row>(filtered, "dpd", "desc");
   const { page, setPage, pageSize, setPageSize, pageCount, pageRows, total } = usePagination(sorted);
@@ -228,7 +256,7 @@ export default function CollectionsBucketPage() {
           fileBase={`collections-${bucket.toLowerCase()}`}
           rows={sorted}
           onOpen={() => {
-            void customersQ.refetch();
+            void qc.prefetchQuery(exportCustomersQuery);
           }}
           disabled={customersQ.isFetching}
           columns={[
@@ -332,9 +360,15 @@ export default function CollectionsBucketPage() {
           inputClassName="max-w-xs"
         />
         <QueueDateFilter period={period} setPeriod={setPeriod} custom={custom} setCustom={setCustom} />
-        {canBulkAssign && (
-          <div className="pb-1">
-            <BulkActionBar count={selectedLoanIds.length} onAssign={() => setBulkOpen(true)} />
+        {/* Selection is page-scoped on purpose (see `selectedLoanIds`), so the bar says so. */}
+        {canBulkAssign && selectedLoanIds.length > 0 && (
+          <div className="flex items-center gap-2 pb-1">
+            <span className="text-xs font-semibold text-navy">
+              {selectedLoanIds.length} selected on this page
+            </span>
+            <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-sm btn-navy">
+              Assign selected
+            </button>
           </div>
         )}
       </div>
@@ -361,13 +395,14 @@ export default function CollectionsBucketPage() {
             style={{ "--register-offset": "30rem" } as React.CSSProperties}
           >
             <table className="staff-data-table">
+              <caption className="sr-only">Collections worklist · {meta.label}</caption>
               <thead>
                 <tr>
-                  <th>S.No.</th>
+                  <th scope="col">S.No.</th>
                   {canBulkAssign && (
                     // Takes over the sticky-left slot while it renders — two cells pinned at `left: 0`
                     // would sit on top of each other.
-                    <th className="staff-sticky-identity">
+                    <th scope="col" className="staff-sticky-identity">
                       <input
                         type="checkbox"
                         checked={allPageSelected}
@@ -385,8 +420,8 @@ export default function CollectionsBucketPage() {
                     dir={dir}
                     onToggle={toggle}
                   />
-                  <th>Mobile</th>
-                  <th>PAN</th>
+                  <th scope="col">Mobile</th>
+                  <th scope="col">PAN</th>
                   <SortableTh label="Loan" sortKey="loanId" active={sortKey} dir={dir} onToggle={toggle} />
                   <SortableTh
                     className="num"
@@ -406,7 +441,7 @@ export default function CollectionsBucketPage() {
                   />
                   <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
                   <SortableTh className="num" label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} />
-                  <th>Employer</th>
+                  <th scope="col">Employer</th>
                   <SortableTh
                     className="num"
                     label="Salary"
@@ -436,13 +471,17 @@ export default function CollectionsBucketPage() {
                     dir={dir}
                     onToggle={toggle}
                   />
-                  <th className="staff-sticky-actions text-right">Actions</th>
+                  <th scope="col" className="staff-sticky-actions text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((r, i) => (
                   <tr key={r.loanId}>
-                    <td>{(page - 1) * pageSize + i + 1}</td>
+                    {/* Row-level overdue cue: an inset bar on the leading cell. A box-shadow, not a
+                        fill, so it stays visible over the zebra stripe and the hover background. */}
+                    <td className={r.dpd > 0 ? "shadow-[inset_3px_0_0_0_theme(colors.error.600)]" : undefined}>
+                      {(page - 1) * pageSize + i + 1}
+                    </td>
                     {canBulkAssign && (
                       <td className="staff-sticky-identity">
                         <input
@@ -473,7 +512,7 @@ export default function CollectionsBucketPage() {
                     <td className={r.dpd > 0 ? "font-semibold text-error-700" : undefined}>
                       {r.dueDate ? formatDate(r.dueDate) : "—"}
                     </td>
-                    <td className={r.dpd > 0 ? "num font-semibold text-error-700" : "num"}>{r.dpd}</td>
+                    <DpdCell row={r} now={now} />
                     <td>{dash(r.employer)}</td>
                     <td className="num font-mono">{r.salaryPaise != null ? paiseToINR(r.salaryPaise) : "—"}</td>
                     <td>{dash(r.creditDecidedByName)}</td>

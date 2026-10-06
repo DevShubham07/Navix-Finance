@@ -14,6 +14,7 @@ import {
   type CollectionPaymentView,
 } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
+import { parsePositiveRupees, sanitizeRupeeInput } from "@/lib/collections/rupee-amount-input";
 
 /**
  * The collections payment chain (V47; revamp.md decisions 43, 44) on the staff side.
@@ -55,12 +56,14 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
   const [paidOn, setPaidOn] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [txnRef, setTxnRef] = React.useState("");
   const [proofRef, setProofRef] = React.useState("");
+  // Null while the box is empty, a lone ".", or zero — submit stays disabled until it is an amount.
+  const rupees = parsePositiveRupees(amount);
 
   const raise = useMutation({
-    mutationFn: () =>
+    mutationFn: (value: number) =>
       collectionsApi.raisePayment(caseId, {
         kind,
-        amountPaise: rupeesToPaise(Number.parseFloat(amount)),
+        amountPaise: rupeesToPaise(value),
         paidOn: paidOn || undefined,
         txnRef: txnRef.trim() || undefined,
         proofRef: proofRef.trim() || undefined,
@@ -98,9 +101,9 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
         {hint && <p className="-mt-1 mb-3 text-xs text-muted">{hint}</p>}
         <Input
           label="Amount (₹)"
-          inputMode="numeric"
+          inputMode="decimal"
           value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+          onChange={(e) => setAmount(sanitizeRupeeInput(e.target.value))}
           placeholder="5000"
         />
         <Input label="Paid on" type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
@@ -118,8 +121,8 @@ export function RecordPaymentCard({ caseId, onRaised }: { caseId: string; onRais
         />
         {raise.error && <p className="mb-2 text-sm text-error-700">{errMessage(raise.error)}</p>}
         <button
-          onClick={() => raise.mutate()}
-          disabled={raise.isPending || !amount}
+          onClick={() => rupees != null && raise.mutate(rupees)}
+          disabled={raise.isPending || rupees == null}
           className="btn btn-sm btn-gold btn-block disabled:opacity-50"
         >
           {raise.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Record payment
