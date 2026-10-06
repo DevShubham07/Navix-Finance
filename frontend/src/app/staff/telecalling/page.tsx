@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Bell, UserPlus, Send } from "lucide-react";
+import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, RefreshCw, Bell, UserPlus, Send, AlertTriangle } from "lucide-react";
 import { ConfirmDialog, EmptyState, ErrorState, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
@@ -11,8 +11,31 @@ import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { hasPermission } from "@/lib/auth/rbac";
 import { customersApi, staffApi, type TelecallingView } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import {
+  assignedToOthersLabel,
+  completenessPercent,
+  countAssignedToOthers,
+  isPageFullySelected,
+  togglePageSelection,
+} from "@/lib/telecalling/telecalling-queue";
 
 const TELECALLER_ONLY = ["TELECALLER"] as const;
+
+// Keys so every in-flight call can be read back (useMutationState), not just the latest one.
+const ASSIGN_MUTATION_KEY = ["telecalling-assign-to-me"] as const;
+const REMIND_MUTATION_KEY = ["telecalling-send-reminder"] as const;
+
+/**
+ * The ids with a call of this kind still in flight. `useMutation`'s own `variables` only tracks the
+ * latest call, so a second click on another row re-enabled the first row's button mid-request.
+ */
+function usePendingIds(mutationKey: readonly string[]): ReadonlySet<number> {
+  const ids = useMutationState({
+    filters: { mutationKey: [...mutationKey], status: "pending" },
+    select: (m) => m.state.variables as number,
+  });
+  return React.useMemo(() => new Set(ids), [ids]);
+}
 
 /**
  * Telecaller queue — every pre-`SANCTIONED` application, split into Unallocated (no
@@ -37,19 +60,34 @@ export default function TelecallingPage() {
 
   const [infoId, setInfoId] = React.useState<number | null>(null);
   const [results, setResults] = React.useState<Record<number, string>>({});
+  // A failed "Assign to me", by customer id, shown beside that row's button. It used to fail
+  // silently: no onError, and the mutation's error was never rendered.
+  const [assignErrors, setAssignErrors] = React.useState<Record<number, string>>({});
 
   const myId = me?.id != null ? Number(me.id) : null;
 
   const assign = useMutation({
+    mutationKey: ASSIGN_MUTATION_KEY,
     mutationFn: (customerId: number) => customersApi.assignOwner(customerId, myId),
+    onMutate: (customerId) => {
+      setAssignErrors((r) => {
+        if (!(customerId in r)) return r;
+        const next = { ...r };
+        delete next[customerId];
+        return next;
+      });
+    },
     onSuccess: () => {
       toast.success("Customer assigned to you");
       // Returned, as before, so the button keeps spinning until the queue has refetched.
       return qc.invalidateQueries({ queryKey: ["staff-telecalling"] });
     },
+    onError: (err, customerId) => setAssignErrors((r) => ({ ...r, [customerId]: errMessage(err) })),
   });
+  const assigning = usePendingIds(ASSIGN_MUTATION_KEY);
 
   const remind = useMutation({
+    mutationKey: REMIND_MUTATION_KEY,
     mutationFn: (id: number) => staffApi.sendReminder(id),
     onSuccess: (res, id) => {
       // The outcome used to be an inline line that never cleared; it is a toast now, and only a
@@ -66,6 +104,7 @@ export default function TelecallingPage() {
     },
     onError: (err, id) => setResults((r) => ({ ...r, [id]: errMessage(err) })),
   });
+  const reminding = usePendingIds(REMIND_MUTATION_KEY);
 
   if (me && !hasPermission(me.role, "leads:manage")) {
     return <NoAccessNotice message="Telecalling access only (TELECALLER / ADMIN)." />;
@@ -78,6 +117,8 @@ export default function TelecallingPage() {
   const mine = rows
     .filter((r) => myId != null && r.ownerStaffId === myId)
     .sort((a, b) => b.staleDays - a.staleDays);
+  // Neither section lists rows another staffer owns; the operator should still know they exist.
+  const assignedToOthers = countAssignedToOthers(rows, myId);
 
   return (
     <div>
@@ -105,20 +146,23 @@ export default function TelecallingPage() {
             title="Unallocated"
             info="Pre-sanction applications with no assigned telecaller. Assign to yourself to start chasing them."
             rows={unallocated}
+            assignedToOthers={assignedToOthers}
             onOpen={setInfoId}
             onAssignToMe={myId != null ? (customerId) => assign.mutate(customerId) : undefined}
-            assigning={assign.isPending ? assign.variables : null}
+            assigning={assigning}
+            assignErrors={assignErrors}
             onRemind={(id) => remind.mutate(id)}
-            reminding={remind.isPending ? remind.variables : null}
+            reminding={reminding}
             results={results}
           />
           <TelecallingSection
             title="My customers"
             info="Applications currently assigned to you."
             rows={mine}
+            assignedToOthers={assignedToOthers}
             onOpen={setInfoId}
             onRemind={(id) => remind.mutate(id)}
-            reminding={remind.isPending ? remind.variables : null}
+            reminding={reminding}
             results={results}
           />
         </div>
@@ -129,13 +173,18 @@ export default function TelecallingPage() {
   );
 }
 
+const NO_IDS: ReadonlySet<number> = new Set();
+const NO_ERRORS: Record<number, string> = {};
+
 function TelecallingSection({
   title,
   info,
   rows,
+  assignedToOthers,
   onOpen,
   onAssignToMe,
-  assigning,
+  assigning = NO_IDS,
+  assignErrors = NO_ERRORS,
   onRemind,
   reminding,
   results,
@@ -143,11 +192,17 @@ function TelecallingSection({
   title: string;
   info: string;
   rows: TelecallingView[];
+  /** Rows owned by other staff, hidden from both sections; `null` while the staffer is unknown. */
+  assignedToOthers: number | null;
   onOpen: (id: number) => void;
   onAssignToMe?: (customerId: number) => void;
-  assigning?: number | null;
+  /** Customer ids with an "Assign to me" in flight. */
+  assigning?: ReadonlySet<number>;
+  /** A failed "Assign to me", by customer id. */
+  assignErrors?: Record<number, string>;
   onRemind: (id: number) => void;
-  reminding?: number | null;
+  /** Application ids with a reminder in flight. */
+  reminding: ReadonlySet<number>;
   results: Record<number, string>;
 }) {
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
@@ -168,9 +223,11 @@ function TelecallingSection({
       return next;
     });
   };
-  const toggleAll = () => {
-    setSelected((s) => (s.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
-  };
+  // The visible page only. It used to tick every row in the section across all pages, so a
+  // reminder run could reach borrowers the operator had never seen on screen.
+  const pageIds = pageRows.map((r) => r.id);
+  const pageAllSelected = isPageFullySelected(selected, pageIds);
+  const togglePage = () => setSelected((s) => togglePageSelection(s, pageIds));
 
   const sendToSelected = async (ids: number[]) => {
     setBulkBusy(true);
@@ -202,7 +259,7 @@ function TelecallingSection({
     else toast.success(summary);
   };
   const confirmCount = confirmIds?.length ?? 0;
-  // The header checkbox selects across every page, so say how many of the run are out of view.
+  // Rows ticked one by one stay ticked across paging, so say how many of the run are out of view.
   const confirmOffPage = confirmIds
     ? confirmIds.filter((id) => !pageRows.some((r) => r.id === id)).length
     : 0;
@@ -210,12 +267,17 @@ function TelecallingSection({
   return (
     <section className="rounded border border-line bg-white shadow-sm">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
-        <div className="flex items-center gap-2">
-          <h2 className="font-serif text-lg font-semibold text-navy">{title}</h2>
-          <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{rows.length}</span>
-          <span className="hidden text-xs text-muted sm:inline" title={info}>
-            {info}
-          </span>
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="font-serif text-lg font-semibold text-navy">{title}</h2>
+            <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{rows.length}</span>
+            <span className="hidden text-xs text-muted sm:inline" title={info}>
+              {info}
+            </span>
+          </div>
+          {assignedToOthers != null && assignedToOthers > 0 && (
+            <p className="m-0 mt-0.5 text-xs text-muted">{assignedToOthersLabel(assignedToOthers)}</p>
+          )}
         </div>
         {selected.size > 0 && (
           <button
@@ -236,27 +298,28 @@ function TelecallingSection({
         <div>
           <div className="staff-table-scroll">
           <table className="staff-data-table">
+            <caption className="sr-only">{title}</caption>
             <thead>
               <tr>
-                <th>S.No.</th>
-                <th className="staff-sticky-identity">
+                <th scope="col">S.No.</th>
+                <th scope="col" className="staff-sticky-identity">
                   <input
                     type="checkbox"
-                    checked={selected.size === rows.length}
-                    onChange={toggleAll}
-                    aria-label="Select all"
+                    checked={pageAllSelected}
+                    onChange={togglePage}
+                    aria-label="Select all on this page"
                   />
                 </th>
-                <th>Application</th>
-                <th>Customer ID</th>
-                <th>Customer</th>
-                <th>Mobile</th>
-                <th>Email</th>
-                <th>PAN</th>
-                <th>Status</th>
-                <th className="num">Completeness</th>
-                <th className="num">Stale (days)</th>
-                <th className="staff-sticky-actions">Actions</th>
+                <th scope="col">Application</th>
+                <th scope="col">Customer ID</th>
+                <th scope="col">Customer</th>
+                <th scope="col">Mobile</th>
+                <th scope="col">Email</th>
+                <th scope="col">PAN</th>
+                <th scope="col">Status</th>
+                <th scope="col" className="num">Completeness</th>
+                <th scope="col" className="num">Stale (days)</th>
+                <th scope="col" className="staff-sticky-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -284,13 +347,31 @@ function TelecallingSection({
                   </td>
                   <td className="font-mono text-muted">{r.mobile || "—"}</td>
                   <td className="text-muted">
-                    {r.email || <span className="italic text-warning-700">no email</span>}
+                    {r.email || (
+                      <span className="inline-flex items-center gap-1" title="No email on file">
+                        <span aria-hidden="true">—</span>
+                        <AlertTriangle size={12} className="text-warning-700" aria-hidden="true" />
+                        <span className="sr-only">No email on file</span>
+                      </span>
+                    )}
                   </td>
                   <td className="font-mono text-ink">{r.pan || "—"}</td>
                   <td>
                     <StatusBadge kind="application" value={r.status} />
                   </td>
-                  <td className="num whitespace-nowrap text-ink">{r.stepsCompleted}/{r.stepsRequired}</td>
+                  <td className="num whitespace-nowrap text-ink">
+                    <span className="inline-flex items-center gap-2">
+                      <span aria-hidden="true" className="relative h-1.5 w-[60px] overflow-hidden rounded-full bg-navy/10">
+                        <span
+                          className="absolute inset-y-0 left-0 rounded-full bg-navy"
+                          style={{ width: `${completenessPercent(r.stepsCompleted, r.stepsRequired)}%` }}
+                        />
+                      </span>
+                      <span>
+                        {r.stepsCompleted}/{r.stepsRequired}
+                      </span>
+                    </span>
+                  </td>
                   <td className="num">
                     <span className={r.staleDays >= 3 ? "font-semibold text-error-700" : "text-ink"}>
                       {r.staleDays}
@@ -302,17 +383,22 @@ function TelecallingSection({
                         <button
                           type="button"
                           onClick={() => onAssignToMe(r.customerId)}
-                          disabled={assigning === r.customerId}
+                          disabled={assigning.has(r.customerId)}
                           className="btn btn-sm btn-outline"
                           title="Assign this customer to me"
                         >
-                          {assigning === r.customerId ? (
+                          {assigning.has(r.customerId) ? (
                             <Loader2 size={13} className="animate-spin" />
                           ) : (
                             <UserPlus size={13} />
                           )}
                           Assign to me
                         </button>
+                      )}
+                      {onAssignToMe && assignErrors[r.customerId] && (
+                        <span role="alert" className="text-xs text-error-700">
+                          {assignErrors[r.customerId]}
+                        </span>
                       )}
                       <CustomerOwnerPicker
                         customerId={r.customerId}
@@ -323,11 +409,11 @@ function TelecallingSection({
                       <button
                         type="button"
                         onClick={() => onRemind(r.id)}
-                        disabled={reminding === r.id}
+                        disabled={reminding.has(r.id)}
                         className="btn btn-sm btn-outline"
                         title="Send a reminder for outstanding steps"
                       >
-                        {reminding === r.id ? <Loader2 size={13} className="animate-spin" /> : <Bell size={13} />}
+                        {reminding.has(r.id) ? <Loader2 size={13} className="animate-spin" /> : <Bell size={13} />}
                         Send reminder
                       </button>
                       {results[r.id] && <span className="text-xs text-muted">{results[r.id]}</span>}
