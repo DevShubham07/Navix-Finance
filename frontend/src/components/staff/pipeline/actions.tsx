@@ -13,7 +13,7 @@
 import * as React from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Check, X, Loader2, Zap, UserPlus, UserCheck } from "lucide-react";
-import { Input, Select } from "@/components/ui";
+import { ErrorState, Input, Select, toast } from "@/components/ui";
 import { hasPermission, type Permission } from "@/lib/auth/rbac";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
 import { SanctionDialog } from "@/components/staff/sanction-dialog";
@@ -206,7 +206,10 @@ export function KycActions({ app, compact }: { app: ApplicationView; compact?: b
   const refresh = useRefreshAfterAction();
   const m = useMutation({
     mutationFn: (decision: boolean) => staffApi.kycDecision(app.id, decision),
-    onSuccess: () => refresh(app.id),
+    onSuccess: (_data, decision) => {
+      refresh(app.id);
+      toast.success(decision ? "KYC approved" : "KYC rejected");
+    },
   });
   return (
     <ActionGate permission="kyc:approve">
@@ -256,13 +259,19 @@ export function AssignActions({ app, compact }: { app: ApplicationView; compact?
   const execs = execQ.data ?? [];
   const m = useMutation({
     mutationFn: () => staffApi.assign(app.id, Number.parseInt(execId, 10)),
-    onSuccess: () => refresh(app.id),
+    onSuccess: () => {
+      refresh(app.id);
+      toast.success("Credit executive assigned");
+    },
   });
   // ADMIN oversight: self-assign and drive the credit step solo (the backend lifts the
   // active-Credit-Executive requirement for ADMIN).
   const mSelf = useMutation({
     mutationFn: () => staffApi.assign(app.id, Number(me.data!.id)),
-    onSuccess: () => refresh(app.id),
+    onSuccess: () => {
+      refresh(app.id);
+      toast.success("Assigned to you");
+    },
   });
   if (compact) return null;
   return (
@@ -274,9 +283,12 @@ export function AssignActions({ app, compact }: { app: ApplicationView; compact?
         ) : execQ.error ? (
           // Distinguish "couldn't load the list" from "the list is genuinely empty" — conflating
           // the two is what hid the ADMIN-only-endpoint bug behind a plausible-looking message.
-          <span className="text-xs text-error-700">
-            Couldn&apos;t load executives — {errMessage(execQ.error)}
-          </span>
+          <ErrorState
+            error={execQ.error}
+            title={`Couldn't load executives — ${errMessage(execQ.error)}`}
+            onRetry={() => void execQ.refetch()}
+            className="py-2"
+          />
         ) : execs.length === 0 ? (
           <span className="text-xs text-muted">No active credit executives</span>
         ) : (
@@ -369,6 +381,7 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
     onSuccess: () => {
       refresh(app.id);
       setPrompt(null);
+      toast.success("Lead rejected");
     },
   });
   const pending = useMutation({
@@ -377,6 +390,7 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
       refresh(app.id);
       setPrompt(null);
       setReason("");
+      toast.success("Lead marked pending");
     },
   });
 
@@ -471,7 +485,10 @@ export function DisbursementActions({ app, compact }: { app: ApplicationView; co
   const m = useMutation({
     mutationFn: (vars: { decision: boolean; txnRef?: string; notes?: string }) =>
       staffApi.disbursementDecision(app.id, vars.decision, vars.txnRef, vars.notes),
-    onSuccess: () => refresh(app.id),
+    onSuccess: (_data, vars) => {
+      refresh(app.id);
+      toast.success(vars.decision ? `Application #${app.id} released` : `Application #${app.id} release rejected`);
+    },
   });
   return (
     <ProofDecisionActions
@@ -547,6 +564,7 @@ export function AdminForceDisbursementAction({ app }: { app: ApplicationView }) 
       refresh(app.id);
       setOpen(false);
       setNotes("");
+      toast.success("Moved to disbursement pending");
     },
   });
 

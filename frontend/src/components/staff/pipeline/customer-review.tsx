@@ -26,6 +26,7 @@ import {
 import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import { NoAccessNotice } from "@/components/staff/pipeline/actions";
 import { DocPassword, docTypeLabel } from "@/components/staff/detail-parts";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 
 export function CustomerReview({ applicationId }: { applicationId: number }) {
   const role = useStaffMe().data?.role;
@@ -71,7 +72,7 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
       </div>
 
       {profileQ.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <Skeleton variant="line" rows={6} />
       ) : !p ? (
         <p className="text-sm text-muted">No KYC details were submitted for this application.</p>
       ) : (
@@ -109,11 +110,15 @@ export function CustomerReview({ applicationId }: { applicationId: number }) {
 
       <div className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-muted">Documents</div>
       {docsQ.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <div className="space-y-1.5">
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+          <Skeleton variant="row" />
+        </div>
       ) : docsQ.error ? (
-        <p className="text-sm text-error-700">{errMessage(docsQ.error)}</p>
+        <ErrorState error={docsQ.error} onRetry={() => void docsQ.refetch()} className="py-4" />
       ) : (docsQ.data ?? []).length === 0 ? (
-        <p className="text-sm text-muted">No documents uploaded.</p>
+        <EmptyState title="No documents uploaded." className="py-4" />
       ) : (
         <ul className="space-y-1.5">
           {docsQ.data!.map((d) => (

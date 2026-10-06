@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, X } from "lucide-react";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
+import { EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { LoanBreakdown } from "@/components/staff/loan-breakdown";
 import { EventTimeline } from "@/components/staff/event-timeline";
@@ -177,11 +178,13 @@ export function LoanDetailDialog({
 
       <div className="mt-3 max-h-[70vh] space-y-6 overflow-y-auto pr-1 text-sm">
         {loanQ.isLoading ? (
-          <p className="flex items-center gap-2 py-8 text-sm text-muted">
-            <Loader2 size={15} className="animate-spin" /> Loading…
-          </p>
+          <Skeleton variant="line" rows={6} className="py-6" />
         ) : loanQ.error || !loan ? (
-          <p className="py-8 text-sm text-error-700">Could not load this loan.</p>
+          <ErrorState
+            error={loanQ.error}
+            title="Could not load this loan."
+            onRetry={() => void loanQ.refetch()}
+          />
         ) : (
           <>
             {tab === "overview" && (
@@ -204,9 +207,13 @@ export function LoanDetailDialog({
                   {payQ.isLoading && <Loader2 size={12} className="animate-spin text-muted" />}
                 </h4>
                 {payQ.isLoading && payments.length === 0 ? (
-                  <p className="text-muted">Loading…</p>
+                  <div className="space-y-2">
+                    <Skeleton variant="row" />
+                    <Skeleton variant="row" />
+                    <Skeleton variant="row" />
+                  </div>
                 ) : payments.length === 0 ? (
-                  <p className="text-muted">No repayments recorded yet.</p>
+                  <EmptyState title="No repayments recorded yet." className="py-4" />
                 ) : (
                   <ul className="divide-y divide-line rounded border border-line">
                     {payments.map((p) => (
@@ -237,7 +244,11 @@ export function LoanDetailDialog({
             {tab === "timeline" &&
               (applicationId != null ? (
                 events.length === 0 ? (
-                  <p className="text-muted">{evQ.isLoading ? "Loading…" : "No events recorded."}</p>
+                  evQ.isLoading ? (
+                    <Skeleton variant="line" rows={5} />
+                  ) : (
+                    <EmptyState title="No events recorded." />
+                  )
                 ) : (
                   <EventTimeline events={events} />
                 )
@@ -326,12 +337,6 @@ function OverviewTab({
 }
 
 function PaymentLi({ p }: { p: PaymentView }) {
-  const tone =
-    p.status === "VERIFIED"
-      ? "bg-success-50 text-success-700"
-      : p.status === "REJECTED"
-        ? "bg-error-50 text-error-700"
-        : "bg-gold-50 text-gold-dark";
   return (
     <li className="flex items-center justify-between gap-2 px-3 py-2">
       <span>
@@ -344,9 +349,7 @@ function PaymentLi({ p }: { p: PaymentView }) {
         </span>{" "}
         <PaymentProofLink url={p.proofUrl} className="text-xs" />
       </span>
-      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${tone}`}>
-        {p.status.replace(/_/g, " ").toLowerCase()}
-      </span>
+      <StatusBadge kind="payment" value={p.status} />
     </li>
   );
 }
@@ -408,9 +411,9 @@ function CallsTab({
     <div className="space-y-4">
       <Section title="References">
         {refQ.isLoading ? (
-          <p className="text-muted">Loading…</p>
+          <Skeleton variant="line" rows={2} />
         ) : references.length === 0 ? (
-          <p className="text-muted">No references on file.</p>
+          <EmptyState title="No references on file." className="py-4" />
         ) : (
           <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
             {references.map((r) => (
@@ -427,9 +430,12 @@ function CallsTab({
 
       <Section title={`Calls about this loan (${taggedCalls.length})`}>
         {allCallsQ.isLoading ? (
-          <p className="text-muted">Loading…</p>
+          <div className="space-y-2">
+            <Skeleton variant="row" />
+            <Skeleton variant="row" />
+          </div>
         ) : taggedCalls.length === 0 ? (
-          <p className="text-muted">No calls tagged to this loan yet.</p>
+          <EmptyState title="No calls tagged to this loan yet." className="py-4" />
         ) : (
           <ul className="space-y-2">
             {taggedCalls.map((c) => (
@@ -444,9 +450,12 @@ function CallsTab({
           Not tagged to a specific loan — mostly calls logged before loan tagging existed.
         </p>
         {allCallsQ.isLoading ? (
-          <p className="text-muted">Loading…</p>
+          <div className="space-y-2">
+            <Skeleton variant="row" />
+            <Skeleton variant="row" />
+          </div>
         ) : untaggedCalls.length === 0 ? (
-          <p className="text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <ul className="space-y-2">
             {untaggedCalls.map((c) => (
@@ -458,13 +467,19 @@ function CallsTab({
 
       <Section title="Collection interactions">
         {caseLoading ? (
-          <p className="text-muted">Loading…</p>
+          <div className="space-y-2">
+            <Skeleton variant="row" />
+            <Skeleton variant="row" />
+          </div>
         ) : caseId == null ? (
           <p className="text-muted">No collections case has been opened for this loan.</p>
         ) : interactionsQ.isLoading ? (
-          <p className="text-muted">Loading…</p>
+          <div className="space-y-2">
+            <Skeleton variant="row" />
+            <Skeleton variant="row" />
+          </div>
         ) : (interactionsQ.data ?? []).length === 0 ? (
-          <p className="text-muted">No interactions logged on this case yet.</p>
+          <EmptyState title="No interactions logged on this case yet." className="py-4" />
         ) : (
           <ul className="space-y-2">
             {(interactionsQ.data as InteractionView[]).map((i) => (

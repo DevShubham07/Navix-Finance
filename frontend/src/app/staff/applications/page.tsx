@@ -37,7 +37,7 @@ import {
   type QueuePeriod,
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
-import { InfoTooltip } from "@/components/ui";
+import { EmptyState, ErrorState, InfoTooltip, Skeleton } from "@/components/ui";
 
 /** Roles that don't drive the credit/disbursement pipeline but do need the repayment/closed
  * back-office panels (see `RoleQueues`) — previously left with "no application-pipeline queue". */
@@ -304,6 +304,7 @@ function AwaitingRepaymentPanel() {
           tone="error"
           note="Past the due date — the 2%/day late penalty is accruing (after a 1-day salary grace, capped at 30 days). Put a collections executive on these."
           apps={overdueApps}
+          isLoading={isLoading}
           emptyText="Nothing overdue."
         />
         <RepaymentColumn
@@ -311,6 +312,7 @@ function AwaitingRepaymentPanel() {
           tone="navy"
           note="Disbursed and still inside the due date. Interest is accruing at 1%/day; no penalty yet."
           apps={activeApps}
+          isLoading={isLoading}
           emptyText="No active loans."
         />
       </div>
@@ -324,12 +326,15 @@ function RepaymentColumn({
   tone,
   note,
   apps,
+  isLoading,
   emptyText,
 }: {
   title: string;
   tone: "error" | "navy";
   note: string;
   apps: ApplicationView[];
+  /** First load of either source query — both columns draw from both, so both wait on both. */
+  isLoading: boolean;
   emptyText: string;
 }) {
   return (
@@ -350,8 +355,10 @@ function RepaymentColumn({
         </span>
         <InfoTooltip content={note} />
       </div>
-      {apps.length === 0 ? (
-        <p className="px-5 py-6 text-center text-sm text-muted">{emptyText}</p>
+      {isLoading ? (
+        <Skeleton variant="table" rows={5} cols={17} />
+      ) : apps.length === 0 ? (
+        <EmptyState title={emptyText} />
       ) : (
         <QueueTable
           apps={apps}
@@ -406,12 +413,12 @@ function ClosedPanel() {
 
       {open && (
         <div className="border-t border-line">
-          {q.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
+          {q.isLoading ? (
+            <Skeleton variant="table" rows={5} cols={17} />
+          ) : q.error ? (
+            <ErrorState error={q.error} onRetry={() => void q.refetch()} />
           ) : apps.length === 0 ? (
-            <p className="px-5 py-6 text-center text-sm text-muted">
-              Nothing in the <code className="text-xs">CLOSED</code> queue.
-            </p>
+            <EmptyState title="Nothing in the CLOSED queue." />
           ) : (
             <QueueTable apps={apps} actions={() => null} />
           )}

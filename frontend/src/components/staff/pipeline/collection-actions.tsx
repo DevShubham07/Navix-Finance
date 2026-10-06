@@ -18,7 +18,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { Loader2, ArrowRight, UserPlus } from "lucide-react";
-import { Select } from "@/components/ui";
+import { ErrorState, Select, toast } from "@/components/ui";
 import { hasPermission } from "@/lib/auth/rbac";
 import { collectionsApi, type ApplicationView, type CaseView } from "@/lib/api/applications";
 import { useStaffMe, errMessage } from "@/components/staff/pipeline/hooks";
@@ -60,6 +60,7 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["collections-cases"] });
       qc.invalidateQueries({ queryKey: ["staff-queue"] });
+      toast.success("Collection case opened");
     },
   });
 
@@ -74,6 +75,7 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
       qc.invalidateQueries({ queryKey: ["staff-queue"] });
       qc.invalidateQueries({ queryKey: ["staff-dashboard-queue"] });
       setOfficerId("");
+      toast.success("Officer assigned");
     },
   });
 
@@ -137,9 +139,12 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
           {officersQ.isLoading ? (
             <span className="text-xs text-muted">Loading officers…</span>
           ) : officersQ.error ? (
-            <span className="text-xs text-error-700">
-              Couldn&apos;t load officers — {errMessage(officersQ.error)}
-            </span>
+            <ErrorState
+              error={officersQ.error}
+              title={`Couldn't load officers — ${errMessage(officersQ.error)}`}
+              onRetry={() => void officersQ.refetch()}
+              className="py-2"
+            />
           ) : officers.length === 0 ? (
             <span className="text-xs text-muted">No active collections executives</span>
           ) : (

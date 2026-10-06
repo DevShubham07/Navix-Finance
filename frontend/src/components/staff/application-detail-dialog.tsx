@@ -50,6 +50,7 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 import { providerLine } from "@/components/staff/verification-checks";
 import { customerPageHref } from "@/lib/customers/customer-page";
 import { PaymentProofLink } from "@/components/ui/payment-proof-link";
+import { EmptyState, ErrorState, Skeleton, StatusBadge, toast } from "@/components/ui";
 import {
   staffApi,
   customersApi,
@@ -264,11 +265,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                 {displayMobile && <span>· {displayMobile}</span>}
                 {p?.pan && <span>· PAN {p.pan}</span>}
                 {p?.riskCategory && <span>· risk {p.riskCategory}</span>}
-                {app && (
-                  <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">
-                    {statusLabel(app.status)}
-                  </span>
-                )}
+                {app && <StatusBadge kind="application" value={app.status} />}
                 {briefQ.data?.available && (
                   <CreditBadge
                     starRating={briefQ.data.starRating}
@@ -308,11 +305,9 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
 
         <div className="mt-3 max-h-[80vh] overflow-y-auto pr-1 text-[10.4px]">
           {appQ.isLoading ? (
-            <p className="flex items-center gap-2 py-8 text-sm text-muted">
-              <Loader2 size={15} className="animate-spin" /> Loading…
-            </p>
+            <Skeleton variant="line" rows={6} className="py-6" />
           ) : appQ.error ? (
-            <p className="py-8 text-sm text-error-700">{errMessage(appQ.error)}</p>
+            <ErrorState error={appQ.error} onRetry={() => void appQ.refetch()} />
           ) : !app ? (
             <p className="py-8 text-sm text-muted">Application #{id} not found.</p>
           ) : (
@@ -355,7 +350,7 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
 
               {tab === "audit" && (
                 events.length === 0 ? (
-                  <p className="py-6 text-sm text-muted">No events recorded yet.</p>
+                  <EmptyState title="No events recorded yet." />
                 ) : (
                   <EventTimeline events={events} />
                 )
@@ -365,11 +360,9 @@ export function ApplicationDetailDialog({ applicationId, onClose }: ApplicationD
                 (!canReview ? (
                   <NoAccessNotice message="Customer details (incl. PII) aren't available to your role." />
                 ) : customerQ.isLoading ? (
-                  <p className="flex items-center gap-2 py-8 text-sm text-muted">
-                    <Loader2 size={15} className="animate-spin" /> Loading…
-                  </p>
+                  <Skeleton variant="line" rows={6} className="py-6" />
                 ) : customerQ.error ? (
-                  <p className="py-8 text-sm text-error-700">{errMessage(customerQ.error)}</p>
+                  <ErrorState error={customerQ.error} onRetry={() => void customerQ.refetch()} />
                 ) : customerQ.data ? (
                   <CustomerTabBody
                     tab={tab.slice(2)}
@@ -434,7 +427,14 @@ function OverviewTab({
   creditDetail: CreditBriefDetail | null;
 }) {
   if (loading && !p) {
-    return <p className="py-6 text-sm text-muted">Loading…</p>;
+    // Same stack as the loaded tab: borrower strip, wait time, then the role's focus card.
+    return (
+      <div className="space-y-4">
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+      </div>
+    );
   }
   // Unknown/loading role: fall back to the credit headline rather than an empty tab.
   const focus = (role && ROLE_FOCUS[role]) ?? ["credit"];
@@ -584,6 +584,7 @@ function ReferencesFocus({ applicationId }: { applicationId: number }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff-references", applicationId] });
       setEditing(false);
+      toast.success("References saved");
     },
   });
 
@@ -838,14 +839,14 @@ function CollectionsFocus({ app }: { app: ApplicationView }) {
   if (loanQ.isLoading || outQ.isLoading) {
     return (
       <FocusCard icon={PhoneCall} title="Amount due">
-        <p className="text-sm text-muted">Loading…</p>
+        <Skeleton variant="line" rows={4} />
       </FocusCard>
     );
   }
   if (loanQ.error) {
     return (
       <FocusCard icon={PhoneCall} title="Amount due">
-        <p className="text-sm text-error-700">{errMessage(loanQ.error)}</p>
+        <ErrorState error={loanQ.error} onRetry={() => void loanQ.refetch()} className="py-4" />
       </FocusCard>
     );
   }
@@ -1203,7 +1204,7 @@ function JourneyTab({
         {journey ? (
           <JourneyStepper stages={journey.stages} activeIndex={activeIndex} onStageClick={onStageClick} />
         ) : (
-          <p className="text-sm text-muted">Loading journey…</p>
+          <Skeleton variant="line" rows={2} />
         )}
       </div>
       <CostCard app={app} />
@@ -1245,9 +1246,9 @@ function CostCard({ app }: { app: ApplicationView }) {
             <LoanBreakdown loan={loan} outstanding={outQ.data} />
           </>
         ) : loanQ.error ? (
-          <p className="text-sm text-error-700">{errMessage(loanQ.error)}</p>
+          <ErrorState error={loanQ.error} onRetry={() => void loanQ.refetch()} className="py-4" />
         ) : (
-          <p className="text-sm text-muted">Loading…</p>
+          <Skeleton variant="line" rows={4} />
         )
       ) : (
         <ProjectedCostBreakdown app={app} />
@@ -1281,9 +1282,9 @@ function PastDetailsTab({
 
       <Section title={`Other applications (${otherApps.length})`}>
         {q.isLoading ? (
-          <p className="text-sm text-muted">Loading…</p>
+          <Skeleton variant="line" rows={3} />
         ) : otherApps.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <ul className="divide-y divide-line">
             {otherApps.map((a) => (
@@ -1312,9 +1313,9 @@ function PastDetailsTab({
 
       <Section title={`Payments (${c?.payments.length ?? 0})`}>
         {q.isLoading ? (
-          <p className="text-sm text-muted">Loading…</p>
+          <Skeleton variant="line" rows={3} />
         ) : !c || c.payments.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
+          <EmptyState title="None." className="py-4" />
         ) : (
           <ul className="divide-y divide-line">
             {c.payments.map((pm) => (
@@ -1325,7 +1326,7 @@ function PastDetailsTab({
                   {pm.partial ? <span className="text-muted"> · partial</span> : null}{" "}
                   <PaymentProofLink url={pm.proofUrl} className="text-xs" />
                 </span>
-                <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">{pm.status}</span>
+                <StatusBadge kind="payment" value={pm.status} />
                 {/* A REJECTED pill with no reason is a dead end — the reason is already on the row. */}
                 {pm.status === "REJECTED" && (
                   <p className="w-full text-xs text-error-700">

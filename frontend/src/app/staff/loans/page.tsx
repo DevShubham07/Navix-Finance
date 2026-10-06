@@ -8,7 +8,8 @@ import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagina
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { PermissionGate, NoAccessNotice, errMessage, useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
+import { PermissionGate, NoAccessNotice, useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
@@ -251,111 +252,120 @@ function LoansPageInner() {
           {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
         </div>
 
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
+        <div className="rounded border border-line bg-white shadow-sm">
           {q.isLoading ? (
-            <div className="h-40 animate-pulse rounded bg-grey-100" />
+            <Skeleton variant="table" rows={8} cols={15} />
           ) : q.error ? (
-            <p className="px-5 py-4 text-sm text-error-700">{errMessage(q.error)}</p>
+            <ErrorState error={q.error} onRetry={() => void q.refetch()} />
           ) : filtered.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-muted">
-              No loans{query ? ` for “${query}”` : ""}{seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}
-              {period !== "ALL" ? " in the selected date range" : ""}.
-            </p>
+            <EmptyState
+              title={`No loans${query ? ` for “${query}”` : ""}${seg !== "all" ? ` in ${SEGMENT_LABEL[seg]}` : ""}${
+                period !== "ALL" ? " in the selected date range" : ""
+              }.`}
+            />
           ) : (
-            <table className="staff-data-table">
-              <thead>
-                <tr>
-                  <th>S.No.</th>
-                  <th className="staff-sticky-identity">Loan</th>
-                  <th>Borrower</th>
-                  <SortableTh label="Sanctioned" sortKey="sanctionedAt" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh label="Disbursed" sortKey="disbursedOn" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
-                  <th>Cycle</th>
-                  <SortableTh label="Principal" sortKey="principalPaise" active={sortKey} dir={dir} onToggle={toggle} />
-                  <th>Net disbursed</th>
-                  <th>Repayable</th>
-                  <SortableTh label="Outstanding" sortKey="outstandingPaise" active={sortKey} dir={dir} onToggle={toggle} />
-                  <SortableTh label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} />
-                  <th>Status</th>
-                  <th>Officer</th>
-                  <th className="staff-sticky-actions text-right">Open</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  let running = (page - 1) * pageSize;
-                  return dateGroups.map((group) => {
-                    const isCollapsed = groupField ? collapsedDates.has(group.key) : false;
-                    const groupRows = group.rows.map((l) => {
-                      running += 1;
-                      return { l, sno: running };
-                    });
-                    return (
-                      <React.Fragment key={group.key}>
-                        {groupField && (
-                          <tr>
-                            <td colSpan={15} className="bg-grey-50 px-3 py-2">
-                              <button
-                                type="button"
-                                onClick={() => toggleDate(group.key)}
-                                className="flex items-center gap-1.5 font-semibold text-ink"
-                              >
-                                {isCollapsed ? <ChevronRightIcon size={14} /> : <ChevronDown size={14} />}
-                                {group.key === "unknown" ? "Date unknown" : formatDate(group.key)} · {group.rows.length} loan
-                                {group.rows.length === 1 ? "" : "s"}
-                              </button>
-                            </td>
-                          </tr>
-                        )}
-                        {!isCollapsed &&
-                          groupRows.map(({ l, sno }) => (
-                            <tr key={l.loanId} className="hover:bg-grey-50">
-                              <td className="text-muted">{sno}</td>
-                              <td className="staff-cell staff-sticky-identity">
-                                <button onClick={() => setOpenLoanId(l.loanId)} className="font-semibold text-navy hover:underline">
-                                  #{l.loanId}
+            // `staff-register-scroll` pins the header; PaginationBar sits after the scroller so it
+            // does not scroll away with the rows. The offset clears the shell header, PageHeader, the
+            // segment-chip row and the search/date toolbar.
+            <div
+              className="staff-table-scroll staff-register-scroll"
+              style={{ "--register-offset": "24rem" } as React.CSSProperties}
+            >
+              <table className="staff-data-table">
+                <thead>
+                  <tr>
+                    <th>S.No.</th>
+                    <th className="staff-sticky-identity">Loan</th>
+                    <th>Borrower</th>
+                    <SortableTh label="Sanctioned" sortKey="sanctionedAt" active={sortKey} dir={dir} onToggle={toggle} />
+                    <SortableTh label="Disbursed" sortKey="disbursedOn" active={sortKey} dir={dir} onToggle={toggle} />
+                    <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
+                    <th>Cycle</th>
+                    <SortableTh label="Principal" sortKey="principalPaise" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                    <th className="num">Net disbursed</th>
+                    <th className="num">Repayable</th>
+                    <SortableTh label="Outstanding" sortKey="outstandingPaise" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                    <SortableTh label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} className="num" />
+                    <th>Status</th>
+                    <th>Officer</th>
+                    <th className="staff-sticky-actions text-right">Open</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    let running = (page - 1) * pageSize;
+                    return dateGroups.map((group) => {
+                      const isCollapsed = groupField ? collapsedDates.has(group.key) : false;
+                      const groupRows = group.rows.map((l) => {
+                        running += 1;
+                        return { l, sno: running };
+                      });
+                      return (
+                        <React.Fragment key={group.key}>
+                          {groupField && (
+                            <tr>
+                              <td colSpan={15} className="bg-grey-50 px-3 py-2">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleDate(group.key)}
+                                  className="flex items-center gap-1.5 font-semibold text-ink"
+                                >
+                                  {isCollapsed ? <ChevronRightIcon size={14} /> : <ChevronDown size={14} />}
+                                  {group.key === "unknown" ? "Date unknown" : formatDate(group.key)} · {group.rows.length} loan
+                                  {group.rows.length === 1 ? "" : "s"}
                                 </button>
                               </td>
-                              <td className="staff-cell" title={l.borrowerName}>
-                                <span className="block truncate font-medium text-ink">{l.borrowerName}</span>
-                                <span className="block truncate text-xs text-muted">{l.mobile} · {l.panMasked}</span>
-                              </td>
-                              <td className="whitespace-nowrap text-muted">{l.sanctionedAt ? formatDate(l.sanctionedAt) : "—"}</td>
-                              <td className="whitespace-nowrap text-muted">{l.disbursedOn ? formatDate(l.disbursedOn) : "—"}</td>
-                              <td className="whitespace-nowrap">
-                                <span className={l.dpd > 0 ? "font-semibold text-error-700" : "text-ink"}>
-                                  {l.dueDate ? formatDate(l.dueDate) : "—"}
-                                </span>
-                              </td>
-                              <td className="text-muted">{ordinal(l.loanCycle)}</td>
-                              <td className="font-mono text-ink">{paiseToINR(l.principalPaise)}</td>
-                              <td className="font-mono text-ink">{paiseToINR(l.netDisbursedPaise)}</td>
-                              <td className="font-mono text-ink">{paiseToINR(l.totalRepayablePaise)}</td>
-                              <td className="font-mono font-semibold text-ink">{paiseToINR(l.outstandingPaise)}</td>
-                              <td className={l.dpd > 0 ? "font-semibold text-error-700" : "text-muted"}>{l.dpd > 0 ? `${l.dpd}d` : "—"}</td>
-                              <td>
-                                <Badge variant={SEGMENT_TONE[segmentOf(l)]} size="sm">
-                                  {loanStatusLabel(l.status)}
-                                </Badge>
-                              </td>
-                              <td className="staff-cell text-ink">{l.assignedOfficerName ?? <span className="text-muted">Unallocated</span>}</td>
-                              <td className="staff-sticky-actions text-right">
-                                <span className="inline-flex items-center gap-2">
-                                  <AdminLogPaymentButton loanId={l.loanId} loanStatus={l.status} compact />
-                                  <button onClick={() => setOpenLoanId(l.loanId)} className="inline-flex items-center gap-1 text-navy hover:underline">
-                                    Open <ArrowRight size={14} />
-                                  </button>
-                                </span>
-                              </td>
                             </tr>
-                          ))}
-                      </React.Fragment>
-                    );
-                  });
-                })()}
-              </tbody>
-            </table>
+                          )}
+                          {!isCollapsed &&
+                            groupRows.map(({ l, sno }) => (
+                              <tr key={l.loanId} className="hover:bg-grey-50">
+                                <td className="text-muted">{sno}</td>
+                                <td className="staff-cell staff-sticky-identity">
+                                  <button onClick={() => setOpenLoanId(l.loanId)} className="font-semibold text-navy hover:underline">
+                                    #{l.loanId}
+                                  </button>
+                                </td>
+                                <td className="staff-cell" title={l.borrowerName}>
+                                  <span className="block truncate font-medium text-ink">{l.borrowerName}</span>
+                                  <span className="block truncate text-xs text-muted">{l.mobile} · {l.panMasked}</span>
+                                </td>
+                                <td className="whitespace-nowrap text-muted">{l.sanctionedAt ? formatDate(l.sanctionedAt) : "—"}</td>
+                                <td className="whitespace-nowrap text-muted">{l.disbursedOn ? formatDate(l.disbursedOn) : "—"}</td>
+                                <td className="whitespace-nowrap">
+                                  <span className={l.dpd > 0 ? "font-semibold text-error-700" : "text-ink"}>
+                                    {l.dueDate ? formatDate(l.dueDate) : "—"}
+                                  </span>
+                                </td>
+                                <td className="text-muted">{ordinal(l.loanCycle)}</td>
+                                <td className="num font-mono text-ink">{paiseToINR(l.principalPaise)}</td>
+                                <td className="num font-mono text-ink">{paiseToINR(l.netDisbursedPaise)}</td>
+                                <td className="num font-mono text-ink">{paiseToINR(l.totalRepayablePaise)}</td>
+                                <td className="num font-mono font-semibold text-ink">{paiseToINR(l.outstandingPaise)}</td>
+                                <td className={l.dpd > 0 ? "num font-semibold text-error-700" : "num text-muted"}>{l.dpd > 0 ? `${l.dpd}d` : "—"}</td>
+                                <td>
+                                  <Badge variant={SEGMENT_TONE[segmentOf(l)]} size="sm">
+                                    {loanStatusLabel(l.status)}
+                                  </Badge>
+                                </td>
+                                <td className="staff-cell text-ink">{l.assignedOfficerName ?? <span className="text-muted">Unallocated</span>}</td>
+                                <td className="staff-sticky-actions text-right">
+                                  <span className="inline-flex items-center gap-2">
+                                    <AdminLogPaymentButton loanId={l.loanId} loanStatus={l.status} compact />
+                                    <button onClick={() => setOpenLoanId(l.loanId)} className="inline-flex items-center gap-1 text-navy hover:underline">
+                                      Open <ArrowRight size={14} />
+                                    </button>
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
           )}
           <PaginationBar page={page} pageCount={pageCount} setPage={setPage} total={total} pageSize={pageSize} setPageSize={setPageSize} />
         </div>

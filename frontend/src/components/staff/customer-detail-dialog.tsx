@@ -15,8 +15,9 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, X, ExternalLink } from "lucide-react";
+import { X, ExternalLink } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
+import { ErrorState, Skeleton } from "@/components/ui";
 import { Tabs } from "@/components/ui/tabs";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -72,11 +73,13 @@ export function CustomerDetailDialog({
 
       <div className="mt-3 max-h-[68vh] overflow-y-auto pr-1 text-[10.4px]">
         {detailQ.isLoading ? (
-          <p className="flex items-center gap-2 py-8 text-sm text-muted">
-            <Loader2 size={15} className="animate-spin" /> Loading…
-          </p>
+          <Skeleton variant="line" rows={6} className="py-6" />
         ) : detailQ.error ? (
-          <p className="py-8 text-sm text-error-700">Could not load this customer.</p>
+          <ErrorState
+            error={detailQ.error}
+            title="Could not load this customer."
+            onRetry={() => void detailQ.refetch()}
+          />
         ) : !c || customerId == null ? null : (
           <>
             <CustomerTabBody

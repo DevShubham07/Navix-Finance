@@ -12,9 +12,8 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
-import { InfoTooltip } from "@/components/ui";
+import { EmptyState, ErrorState, InfoTooltip, Skeleton } from "@/components/ui";
 import { staffApi, type ApplicationStatus, type ApplicationView } from "@/lib/api/applications";
-import { errMessage } from "@/components/staff/pipeline/hooks";
 import { AppRow } from "@/components/staff/pipeline/app-row";
 import { AssignActions, CreditDecisionActions } from "@/components/staff/pipeline/actions";
 import { useStaffMe } from "@/components/staff/pipeline/hooks";
@@ -264,12 +263,16 @@ export function QueuePanel({
         </div>
       </header>
 
-      {error ? (
-        <p className="px-5 py-4 text-sm text-error-700">{errMessage(error)}</p>
+      {/* First load only (`isLoading`, never a background poll), so the 8s refetch leaves the rows
+          in place. Five rows, not a full page: several of these panels stack on one console and
+          most queues are short, so a taller placeholder would only collapse on arrival. Before
+          this, the panel claimed "Nothing in the … queue" while it was still loading. */}
+      {isLoading ? (
+        <Skeleton variant="table" rows={5} cols={selection ? 18 : 17} />
+      ) : error ? (
+        <ErrorState error={error} onRetry={onRefresh} />
       ) : apps.length === 0 ? (
-        <p className="px-5 py-6 text-center text-sm text-muted">
-          Nothing in the <code className="text-xs">{countBadge}</code> queue.
-        </p>
+        <EmptyState title={`Nothing in the ${countBadge} queue.`} />
       ) : (
         <QueueTable apps={apps} actions={actions} withLoanHistory={withLoanHistory} selection={selection} />
       )}
@@ -327,7 +330,7 @@ export function QueueTable({
               <th>Account</th>
               <th>IFSC</th>
               <th>Loan</th>
-              <th>Amount</th>
+              <th className="num">Amount</th>
               <th>Due</th>
               <th>Credit</th>
               {/* Who worked the file. "Credit exec" is who DECIDED it — on a reassigned or

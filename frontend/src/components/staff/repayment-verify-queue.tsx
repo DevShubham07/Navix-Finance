@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, AlertTriangle, Clock, UserRound, X } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
-import { Select } from "@/components/ui";
+import { EmptyState, Select, Skeleton } from "@/components/ui";
 import {
   staffApi,
   paiseToINR,
@@ -86,11 +86,13 @@ export function RepaymentVerifyQueue() {
       )}
 
       {q.isLoading ? (
-        <div className="h-20 animate-pulse rounded bg-grey-100" />
+        <Skeleton variant="table" rows={5} cols={9} />
       ) : rows.length === 0 ? (
-        <p className="flex items-center gap-2 py-4 text-sm text-muted">
-          <CheckCircle2 size={16} className="text-success-600" /> No repayments awaiting verification.
-        </p>
+        <EmptyState
+          title="No repayments awaiting verification."
+          icon={<CheckCircle2 size={16} className="text-success-600" />}
+          className="py-4"
+        />
       ) : (
         <div className="staff-table-scroll">
           <table className="staff-data-table">
@@ -99,7 +101,7 @@ export function RepaymentVerifyQueue() {
                 <th className="py-2 pr-3 font-semibold">S.No.</th>
                 <th className="py-2 pr-3 font-semibold">Customer</th>
                 <th className="py-2 pr-3 font-semibold">Loan</th>
-                <th className="py-2 pr-3 font-semibold">Amount</th>
+                <th className="num py-2 pr-3 font-semibold">Amount</th>
                 <th className="py-2 pr-3 font-semibold">Method</th>
                 <th className="py-2 pr-3 font-semibold">Reference</th>
                 <th className="py-2 pr-3 font-semibold">Proof</th>
@@ -120,7 +122,7 @@ export function RepaymentVerifyQueue() {
                     ) : <span className="text-muted">Customer details unavailable</span>}
                   </td>
                   <td className="py-2.5 pr-3 font-semibold text-ink">#{p.loanId}</td>
-                  <td className="py-2.5 pr-3">
+                  <td className="num py-2.5 pr-3">
                     {paiseToINR(p.amountPaise)}
                     {p.partial && (
                       <span className="ml-1 rounded-full bg-gold-50 px-1.5 py-0.5 text-xs text-gold-dark">partial</span>

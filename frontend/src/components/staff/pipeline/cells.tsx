@@ -20,6 +20,9 @@ export function dpdFor(dueDate: string | null | undefined): number {
 /**
  * Amount plus the tag that says what it IS — a drawn request or the eligible limit. The tag is not
  * decoration: without it a limit reads as a request, which changes how a file is triaged.
+ *
+ * Renders a fragment, so the alignment belongs to the caller: put it in a `<td className="num">`
+ * (with `num` on the column's `<th>` too) so the amounts right-align as one tabular column.
  */
 export function AmountCell({
   amountPaise,

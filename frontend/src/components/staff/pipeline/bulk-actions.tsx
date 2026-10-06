@@ -19,7 +19,7 @@ import * as React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select } from "@/components/ui";
+import { ErrorState, Select } from "@/components/ui";
 import { staffApi } from "@/lib/api/applications";
 import { useRefreshAfterAction, errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
 
@@ -268,7 +268,12 @@ export function AssignDialog({
           {execQ.isLoading ? (
             <span className="text-xs text-muted">Loading executives…</span>
           ) : execQ.error ? (
-            <span className="text-xs text-error-700">Couldn&apos;t load executives — {errMessage(execQ.error)}</span>
+            <ErrorState
+              error={execQ.error}
+              title={`Couldn't load executives — ${errMessage(execQ.error)}`}
+              onRetry={() => void execQ.refetch()}
+              className="py-4"
+            />
           ) : execs.length === 0 ? (
             <span className="text-xs text-muted">No active credit executives</span>
           ) : (
