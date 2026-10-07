@@ -12,11 +12,13 @@ import com.navix.loan.dto.ReviewDtos.ProfileView;
 import com.navix.loan.service.CustomerService;
 import com.navix.verification.client.DigitapSkipTraceClient;
 import com.navix.verification.dto.DigitapDtos.SkipTraceResponse;
+import com.navix.verification.exception.VerificationException;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +46,15 @@ public class SkipTraceService {
     private static final Logger log = LoggerFactory.getLogger(SkipTraceService.class);
     private static final String MANAGER_ROLE = "COLLECTION_HEAD";
     private static final String CHECK_TYPE = "SKIP_TRACE";
+
+    /**
+     * A Google plus code ("VVPM+42P") at the front of a reverse-geocoded address. Digitap rejects the
+     * whole request with 400 "Invalid address parameter" when one is present (seen on the very first
+     * production run, 2026-10-07), so it is stripped before sending — the rest of the line is what
+     * the address match is scored on anyway.
+     */
+    private static final Pattern PLUS_CODE =
+            Pattern.compile("\\b[23456789CFGHJMPQRVWX]{4,8}\\+[23456789CFGHJMPQRVWX]{2,3}\\b");
 
     private final SkipTraceRepository repository;
     private final CustomerService customerService;
@@ -73,7 +84,7 @@ public class SkipTraceService {
                     "This customer has neither a PAN nor a mobile number on file to trace");
         }
         String name = p == null ? null : blankToNull(p.fullName());
-        String address = p == null ? null : blankToNull(p.address());
+        String address = p == null ? null : cleanAddress(p.address());
         Long applicationId = detail.applications().stream().map(ApplicationView::id).max(Comparator.naturalOrder()).orElse(null);
         Long loanId = detail.loans().stream().map(LoanView::id).max(Comparator.naturalOrder()).orElse(null);
 
@@ -100,8 +111,24 @@ public class SkipTraceService {
         ProviderCallContext.setCheckType(CHECK_TYPE);
         long started = System.currentTimeMillis();
         try {
-            SkipTraceResponse r = client.trace(pan, mobile, name, address == null ? null : List.of(address),
-                    "navix-" + applicationId + "-" + CHECK_TYPE);
+            String clientRef = "navix-" + applicationId + "-" + CHECK_TYPE;
+            SkipTraceResponse r;
+            try {
+                r = client.trace(pan, mobile, name, address == null ? null : List.of(address), clientRef);
+            } catch (VerificationException e) {
+                // The address is optional and only sharpens the match scores. If Digitap rejects OUR
+                // address string, the lookup must still happen — retry once without it rather than
+                // fail a paid-for feature on a formatting quirk we have not met yet.
+                if (address == null || !rejectsAddress(e)) {
+                    throw e;
+                }
+                log.warn("skip trace customer={}: Digitap rejected the on-file address, retrying without it ({})",
+                        customerId, e.safeDetail());
+                request.put("address", List.of());
+                request.put("addressDropped", "Digitap rejected the on-file address format");
+                row.setRequestJson(json(request));
+                r = client.trace(pan, mobile, name, null, clientRef);
+            }
             row.setDurationMs(System.currentTimeMillis() - started);
             row.setProviderRequestId(r.txnId());
             row.setResultCode(r.resultCode());
@@ -113,12 +140,12 @@ public class SkipTraceService {
         } catch (RuntimeException providerFailure) {
             row.setDurationMs(System.currentTimeMillis() - started);
             row.setStatus(SkipTrace.FAILED);
-            row.setMessage(trimTo(providerFailure.getMessage(), 500));
+            row.setMessage(trimTo(failureMessage(providerFailure), 500));
             repository.save(row);
             log.warn("skip trace failed customer={} application={}: {}", customerId, applicationId,
                     providerFailure.toString());
             throw new BusinessException("SKIP_TRACE_FAILED",
-                    "Digitap could not complete the skip trace: " + providerFailure.getMessage());
+                    "Digitap could not complete the skip trace: " + failureMessage(providerFailure));
         } finally {
             ProviderCallContext.clear();
         }
@@ -171,6 +198,32 @@ public class SkipTraceService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Digitap's own wording for a bad {@code address} element — the one 400 worth retrying around. */
+    private static boolean rejectsAddress(VerificationException e) {
+        String detail = (e.safeDetail() == null ? "" : e.safeDetail()) + " "
+                + (e.getMessage() == null ? "" : e.getMessage());
+        return Integer.valueOf(400).equals(e.httpStatus()) && detail.toLowerCase().contains("address");
+    }
+
+    /** The provider's safe detail when there is one — "HTTP 400 from /x" alone tells staff nothing. */
+    private static String failureMessage(RuntimeException e) {
+        if (e instanceof VerificationException ve && ve.safeDetail() != null && !ve.safeDetail().isBlank()) {
+            return e.getMessage() + " — " + ve.safeDetail();
+        }
+        return e.getMessage();
+    }
+
+    static String cleanAddress(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String s = PLUS_CODE.matcher(raw).replaceAll(" ");
+        s = s.replaceAll("\\s*,\\s*(,\\s*)+", ", ")      // ", ," left by the removal
+             .replaceAll("^[\\s,]+|[\\s,]+$", "")         // leading/trailing commas and spaces
+             .replaceAll("\\s{2,}", " ");
+        return blankToNull(s);
     }
 
     private static String blankToNull(String s) {

@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -203,6 +204,47 @@ class SkipTraceServiceTest {
 
         assertThatThrownBy(() -> service.history(CUSTOMER)).hasMessageContaining("DSA");
         verify(repository, never()).findByCustomerIdOrderByCreatedAtDesc(any());
+    }
+
+    /** Seen on the first production run: a reverse-geocoded address led with a Google plus code and Digitap refused it. */
+    @Test
+    void plusCodeIsStrippedFromTheAddressBeforeSending() {
+        assertThat(SkipTraceService.cleanAddress("VVPM+42P, KULASHEKARA, MANGALURU, KARNATAKA 575005, INDIA"))
+                .isEqualTo("KULASHEKARA, MANGALURU, KARNATAKA 575005, INDIA");
+        assertThat(SkipTraceService.cleanAddress("2nd Floor, E-40, Suncity, Sector 54, Gurugram 122002"))
+                .isEqualTo("2nd Floor, E-40, Suncity, Sector 54, Gurugram 122002");
+        assertThat(SkipTraceService.cleanAddress("VVPM+42P")).isNull();
+        assertThat(SkipTraceService.cleanAddress(null)).isNull();
+    }
+
+    /** The address only sharpens match scores; if Digitap rejects ours the lookup still has to happen. */
+    @Test
+    void anAddressRejectedByDigitapIsDroppedAndTheLookupRetriedOnce() {
+        actingAs("ADMIN");
+        when(client.trace(anyString(), anyString(), anyString(), eq(List.of("A-36, Najafgarh Rd, New Delhi 110059")), anyString()))
+                .thenThrow(new VerificationException("HTTP 400 from /enrichment/misc/v1/skip-tracing-lite", null, 400,
+                        "/enrichment/misc/v1/skip-tracing-lite", null,
+                        "One or more parameters is wrong or missing, Invalid address parameter"));
+        when(client.trace(anyString(), anyString(), anyString(), isNull(), anyString())).thenReturn(found());
+
+        SkipTraceService.SkipTraceView v = service.run(CUSTOMER);
+
+        assertThat(v.status()).isEqualTo(SkipTrace.SUCCESS);
+        assertThat(v.request()).containsEntry("addressDropped", "Digitap rejected the on-file address format");
+        verify(client).trace(anyString(), anyString(), anyString(), isNull(), anyString());
+    }
+
+    /** Any other 400 (a bad PAN, say) is not retried: a second call would fail the same way. */
+    @Test
+    void otherProviderErrorsAreNotRetried() {
+        actingAs("ADMIN");
+        when(client.trace(anyString(), anyString(), anyString(), any(), anyString()))
+                .thenThrow(new VerificationException("HTTP 400 from /enrichment/misc/v1/skip-tracing-lite", null, 400,
+                        "/enrichment/misc/v1/skip-tracing-lite", null, "PAN (Permanent Account Number) is not in valid format"));
+
+        assertThatThrownBy(() -> service.run(CUSTOMER)).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("not in valid format");
+        verify(client, times(1)).trace(anyString(), anyString(), anyString(), any(), anyString());
     }
 
     @Test
