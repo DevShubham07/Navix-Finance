@@ -546,13 +546,13 @@ export function canStartNewLoan(apps: ApplicationView[] | undefined): boolean {
  *   - `ACTIVE_APPLICATION` → an unfinished application is in flight → track it on `/loan/status`
  *   - `ACTIVE_LOAN`        → a live advance is still outstanding → repay it first on `/repay`
  *   - `RETURNING_BORROWER` → they have repaid an advance before → borrow again on `/reloan`
- *   - `ONBOARDING_PAUSED`   → new onboarding is switched off → the waitlist form on `/waitlist`
+ *   - `ONBOARDING_PAUSED`   → new onboarding is switched off → the waitlist form on `/apply`
  */
 export function routeForBlockedStart(code: string | undefined): string | null {
   if (code === "ACTIVE_APPLICATION") return "/loan/status";
   if (code === "ACTIVE_LOAN") return "/repay";
   if (code === "RETURNING_BORROWER") return "/reloan";
-  if (code === "ONBOARDING_PAUSED") return "/waitlist";
+  if (code === "ONBOARDING_PAUSED") return "/apply";
   return null;
 }
 
