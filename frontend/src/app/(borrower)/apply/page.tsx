@@ -144,7 +144,8 @@ export default function WaitlistPage() {
             autoComplete="tel" error={touched && !mobileOk ? "Enter a valid 10-digit mobile number" : undefined} />
           <Input label="PAN" required value={pan} onChange={(e) => setPan(e.target.value.toUpperCase().slice(0, 10))}
             placeholder="ABCDE1234F" autoCapitalize="characters" error={touched && !panOk ? "Enter a valid 10-character PAN" : undefined} />
-          <Input label="Aadhaar number" required inputMode="numeric" value={aadhaar}
+          <Input label="Aadhaar number" required inputMode="numeric" placeholder="1234 5678 9012"
+            value={aadhaar.replace(/(\d{4})(?=\d)/g, "$1 ")}
             onChange={(e) => setAadhaar(e.target.value.replace(/\D/g, "").slice(0, 12))}
             error={touched && !aadhaarOk ? "Enter a valid 12-digit Aadhaar number" : undefined} />
           {error ? <p className="mt-3 text-sm text-error-600">{error}</p> : null}
