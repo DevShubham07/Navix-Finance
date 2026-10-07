@@ -161,6 +161,8 @@ not headers): settlement approve/reject enforces **SoD** (proposer ≠ approver)
 | `GET/POST /api/staff/invites` · `POST /accept` | ADMIN — list/create invites (one-time token) · activate |
 | `GET/POST/DELETE /api/admin/blocklist` (+`/{id}`) | ADMIN — fraud blocklist: list · add · remove |
 | `GET /api/staff/search?q=&limit=` | staff, **never DSA** — the Cmd/Ctrl+K palette. Grouped hits (customer · application · loan · collections · lead · staff · blocklist) chosen **by role** and delegated to the same scoped service each list page calls, so a hit is always a row the caller could already open. Mobile/PAN masked, money in paise, a group the role can't see is **absent** (never empty). Flag `global-search` |
+| `GET /api/staff/skip-trace/customers/{customerId}` | staff, **never DSA** (the customer page's own visibility, via `CustomerService.detail`) — every Skip Tracer run for this customer, newest first: status `SUCCESS` / `NO_RECORD` / `FAILED`, who ran it, what was sent (PAN/mobile/name/address) and Digitap's `response` verbatim. Free to read; no provider call |
+| `POST /api/staff/skip-trace/customers/{customerId}` | **COLLECTION_HEAD / ADMIN** — one **billable** Digitap Skip Tracing Lite lookup (any HTTP 200 is billed, incl. 103 "no record"). Sends PAN + mobile + name + on-file address; `SKIP_TRACE_NO_IDENTIFIER` (422) when neither PAN nor mobile is on file; a vendor failure is still recorded as a `FAILED` run and surfaces as `SKIP_TRACE_FAILED` (422). Never run by the lifecycle |
 
 ### Notifications (`/api/notifications`) — the caller's in-app inbox
 

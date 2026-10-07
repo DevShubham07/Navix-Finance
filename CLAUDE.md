@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V75 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V77 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -568,7 +568,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V75** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V77** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -735,7 +735,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V75 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V77 Flyway catalog.
 - **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
   (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 

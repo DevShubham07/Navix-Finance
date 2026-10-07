@@ -3,6 +3,7 @@ package com.navix.verification.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.navix.common.verification.BureauReportFacts;
+import java.util.List;
 
 /**
  * Request/response records for the Digitap verification APIs used by DhanBoost (the FALLBACK provider):
@@ -135,6 +136,27 @@ public final class DigitapDtos {
             Double confidence,
             Boolean multipleFaces,
             Boolean personImageBlurry
+    ) {
+    }
+
+    // ---- Skip Tracing Lite : /enrichment/misc/v1/skip-tracing-lite (svc host) ----
+
+    /** Unset identifiers must be OMITTED, not sent as nulls/blanks — hence {@link JsonInclude}. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record SkipTraceRequest(
+            @JsonProperty("client_ref_num") String clientRefNum,
+            @JsonProperty("mobile") String mobile,
+            @JsonProperty("pan") String pan,
+            @JsonProperty("name") String name,
+            @JsonProperty("address") List<String> address) {
+    }
+
+    /** {@code rawJson} is the whole envelope verbatim — the console renders the vendor's structure. */
+    public record SkipTraceResponse(
+            String txnId,
+            Integer resultCode,
+            String message,
+            String rawJson
     ) {
     }
 

@@ -45,6 +45,8 @@ public final class ProviderCallCatalog {
         // the dashboard shows the two selfie providers side by side.
         ROUTES.put("/fmfl/v4/face-liveness", new Route("LIVENESS", "DIGITAP"));
         ROUTES.put("/cv/v3/uan_basic/sync", new Route("UAN", "DIGITAP"));
+        // On-demand collections lookup (Skip Tracer tab) — never fired by the lifecycle.
+        ROUTES.put("/enrichment/misc/v1/skip-tracing-lite", new Route("SKIP_TRACE", "DIGITAP"));
         // Signzy — the two bureaux stay distinguishable because the router tries Experian then CRIF.
         ROUTES.put("/api/v3/bureau/experian-lite", new Route("BUREAU", "SIGNZY_EXPERIAN"));
         ROUTES.put("/api/v3/bureau/crif", new Route("BUREAU", "SIGNZY_CRIF"));

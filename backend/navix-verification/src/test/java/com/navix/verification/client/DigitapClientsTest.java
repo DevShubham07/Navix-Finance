@@ -18,6 +18,7 @@ import com.navix.verification.dto.DigitapDtos.EmailResponse;
 import com.navix.verification.dto.DigitapDtos.FaceLivenessResponse;
 import com.navix.verification.dto.DigitapDtos.FaceMatchResponse;
 import com.navix.verification.dto.DigitapDtos.PanResponse;
+import com.navix.verification.dto.DigitapDtos.SkipTraceResponse;
 import com.navix.verification.exception.VerificationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -155,6 +156,55 @@ class DigitapClientsTest {
         assertThat(r.confidence()).isEqualTo(1.0);
         assertThat(r.multipleFaces()).isFalse();
         assertThat(r.personImageBlurry()).isFalse();
+        b.server().verify();
+    }
+
+    /** Envelope as returned by production on 2026-10-07; blank identifiers must be omitted, not sent. */
+    @Test
+    void skipTraceMapsEnvelopeAndOmitsBlankIdentifiers() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/enrichment/misc/v1/skip-tracing-lite"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.pan").value("BXFPJ0767C"))
+                .andExpect(jsonPath("$.mobile").value("7417682036"))
+                .andExpect(jsonPath("$.name").value("KARTIK JINDAL"))
+                .andExpect(jsonPath("$.address[0]").value("E-40 Suncity, Gurugram"))
+                .andExpect(jsonPath("$.client_ref_num").value("navix-42-SKIP_TRACE"))
+                .andRespond(withSuccess("""
+                        {"http_response_code":200,"client_ref_num":"navix-42-SKIP_TRACE",
+                        "request_id":"d98f35ba-c50a-4f17-b997-1eada7f43f57","result_code":101,
+                        "message":"Skip tracing successful","result":{"profile":{"full_name":"KARTIK JINDAL"},
+                        "addresses":[{"address_rank":1,"address_details":{"pincode":"122002"}}]}}
+                        """, MediaType.APPLICATION_JSON));
+
+        SkipTraceResponse r = new DigitapSkipTraceClient(b.restClient())
+                .trace("BXFPJ0767C", "7417682036", "KARTIK JINDAL", java.util.List.of("E-40 Suncity, Gurugram"),
+                        "navix-42-SKIP_TRACE");
+
+        assertThat(r.txnId()).isEqualTo("d98f35ba-c50a-4f17-b997-1eada7f43f57");
+        assertThat(r.resultCode()).isEqualTo(101);
+        assertThat(r.message()).isEqualTo("Skip tracing successful");
+        assertThat(r.rawJson()).contains("\"address_rank\":1");
+        b.server().verify();
+    }
+
+    @Test
+    void skipTraceNoRecordIsStillAMappedResponse() {
+        Bound b = bind();
+        b.server().expect(requestTo(BASE + "/enrichment/misc/v1/skip-tracing-lite"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.pan").doesNotExist())
+                .andExpect(jsonPath("$.name").doesNotExist())
+                .andExpect(jsonPath("$.address").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"http_response_code":200,"client_ref_num":"x","request_id":"ed74d00c","result_code":103,
+                        "message":"No record(s) found"}
+                        """, MediaType.APPLICATION_JSON));
+
+        SkipTraceResponse r = new DigitapSkipTraceClient(b.restClient()).trace("", "9000000000", " ", null, "x");
+
+        assertThat(r.resultCode()).isEqualTo(103);
+        assertThat(r.message()).isEqualTo("No record(s) found");
         b.server().verify();
     }
 

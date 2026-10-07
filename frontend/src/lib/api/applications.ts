@@ -3648,3 +3648,56 @@ export function openDocument(doc: DocumentContent, download = false): void {
   // Give the browser time to consume the URL before revoking.
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+// ---------------------------------------------------------------------------
+// Skip Tracer — on-demand Digitap Skip Tracing Lite (collections). Every run is billable, so it is
+// only ever triggered by a COLLECTION_HEAD / ADMIN from the Skip Tracer tab; results are kept per
+// customer and are free to read for any staff but DSA. `response.result` is Digitap's own shape.
+// ---------------------------------------------------------------------------
+export type SkipTraceAddress = {
+  address_rank: number;
+  address_details: { address?: string; locality?: string; city?: string; district?: string; state?: string; country?: string; pincode?: string };
+  address_insights: {
+    reported_date?: string;
+    last_activity_date?: string;
+    address_quality?: { level?: string; missing?: string[] };
+    address_match_score?: number | null;
+    address_match_index?: number | null;
+    address_visit_conversion?: number | null;
+  };
+};
+export type SkipTraceResult = {
+  profile?: { full_name?: string; father_name?: string; date_of_birth?: string; gender?: string; profile_image_url?: string };
+  official_documents?: { document?: string; document_id?: string }[];
+  contactability?: {
+    mobile_number?: string;
+    alternate_mobiles?: { mobile_number?: string; reported_date?: string }[];
+    emails?: { email_id?: string; reported_date?: string }[];
+  };
+  addresses?: SkipTraceAddress[];
+  insights?: { total_addresses?: number; total_unique_addresses?: number; name_match?: boolean | null; name_match_score?: number | null };
+  metadata?: Record<string, { status?: string; description?: string }>;
+  report?: string;
+};
+export type SkipTraceRun = {
+  id: number;
+  customerId: number;
+  applicationId?: number | null;
+  loanId?: number | null;
+  status: "SUCCESS" | "NO_RECORD" | "FAILED";
+  resultCode?: number | null;
+  message?: string | null;
+  providerRequestId?: string | null;
+  runByStaffId: number;
+  runByName?: string | null;
+  runByRole?: string | null;
+  createdAt: string;
+  durationMs?: number | null;
+  request: { pan?: string | null; mobile?: string | null; name?: string | null; address?: string[] };
+  response?: { result_code?: number; message?: string; result?: SkipTraceResult } | null;
+};
+const SKIP_TRACE_BASE = "/api/staff/skip-trace";
+export const skipTraceApi = {
+  history: (customerId: number) => bff<SkipTraceRun[]>(`${SKIP_TRACE_BASE}/customers/${customerId}`, "GET"),
+  run: (customerId: number) => bff<SkipTraceRun>(`${SKIP_TRACE_BASE}/customers/${customerId}`, "POST"),
+};

@@ -159,6 +159,7 @@ const CUSTOMER_TAB_DEFS: TabDef[] = [
   { key: "c:credit", label: "Credit report" },
   { key: "c:loans", label: "Loan applications" },
   { key: "c:calls", label: "Calls & remarks" },
+  { key: "c:skiptrace", label: "Skip Tracer" },
   { key: "c:audit", label: "Customer activity" },
 ];
 

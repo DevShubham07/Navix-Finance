@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { LoanBreakdown } from "@/components/staff/loan-breakdown";
 import { EventTimeline } from "@/components/staff/event-timeline";
+import { SkipTracePanel } from "@/components/staff/skip-trace-panel";
 import { CallLogRow, DocumentsTab, KV, Section } from "@/components/staff/detail-parts";
 import { daysBetween } from "@/lib/calc/loan-math";
 import {
@@ -59,6 +60,7 @@ const TABS: TabDef[] = [
   { key: "repayments", label: "Repayments" },
   { key: "documents", label: "Documents" },
   { key: "calls", label: "Calls & references" },
+  { key: "skiptrace", label: "Skip Tracer" },
   { key: "timeline", label: "Timeline" },
 ];
 
@@ -263,6 +265,13 @@ export function LoanDetailDialog({
                 )
               ) : (
                 <p className="text-muted">No application on record for this loan.</p>
+              ))}
+
+            {tab === "skiptrace" &&
+              (customerId != null ? (
+                <SkipTracePanel customerId={customerId} />
+              ) : (
+                <p className="text-muted">No customer on record for this loan.</p>
               ))}
           </>
         )}

@@ -16,6 +16,7 @@ import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { formatRupees } from "@/components/staff/credit/tradeline-table";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
+import { SkipTracePanel } from "@/components/staff/skip-trace-panel";
 import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
 import {
   Bool,
@@ -64,6 +65,7 @@ export const CUSTOMER_TABS: TabDef[] = [
   { key: "documents", label: "Documents" },
   { key: "loans", label: "Loan Applications" },
   { key: "calls", label: "Customer Call Logs" },
+  { key: "skiptrace", label: "Skip Tracer" },
   { key: "audit", label: "Audit Logs" },
 ];
 
@@ -167,6 +169,8 @@ export function CustomerTabBody({
             </Section>
           </div>
         );
+      case "skiptrace":
+        return <SkipTracePanel customerId={customerId} />;
       case "audit":
         return <AuditLogsTab customerId={customerId} apps={detail.applications} />;
       default:
