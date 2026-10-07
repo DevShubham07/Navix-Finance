@@ -42,19 +42,6 @@ function ordinal(n: number): string {
   }
 }
 
-/**
- * Mask a PAN the way the backend masks `LoanRegisterRow.panMasked`/`LoanSummary.panMasked`
- * (`ABCDE1234F` -> `ABCXX1234X`): keep the first 3 chars and the middle 4 digits, blank the
- * two chars before them and the final char. `customersApi.get` returns the borrower's PAN
- * unmasked (staff are trusted with the full profile elsewhere), but this modal's header must
- * never render it raw.
- */
-function maskPan(pan: string | null | undefined): string | null {
-  if (!pan) return null;
-  if (pan.length !== 10) return pan.length <= 4 ? pan : `${pan.slice(0, 2)}${"X".repeat(pan.length - 2)}`;
-  return `${pan.slice(0, 3)}XX${pan.slice(5, 9)}X`;
-}
-
 const TABS: TabDef[] = [
   { key: "overview", label: "Overview" },
   { key: "repayments", label: "Repayments" },
@@ -171,7 +158,7 @@ export function LoanDetailDialog({
             </DialogTitle>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
               {profile?.mobile && <span className="font-mono">{profile.mobile}</span>}
-              {profile?.pan && <span>· PAN {maskPan(profile.pan)}</span>}
+              {profile?.pan && <span>· PAN <span className="font-mono">{profile.pan}</span></span>}
               {loan && (
                 <span className="rounded-full bg-navy-tint px-2 py-0.5 font-semibold text-navy">
                   {loan.status}

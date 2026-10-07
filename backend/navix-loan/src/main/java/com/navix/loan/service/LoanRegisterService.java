@@ -6,7 +6,6 @@ import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
 import com.navix.common.staff.StaffSummary;
-import com.navix.common.util.Masking;
 import com.navix.loan.domain.LoanStatus;
 import com.navix.loan.dto.LoanRegisterDtos.LoanRegisterRow;
 import com.navix.loan.entity.CustomerProfile;
@@ -126,7 +125,7 @@ public class LoanRegisterService {
                     app != null ? app.getId() : null,
                     profile != null ? profile.getFullName() : null,
                     profile != null ? profile.getMobile() : null,
-                    Masking.maskPan(profile != null ? profile.getPan() : null),
+                    profile != null ? profile.getPan() : null,
                     cycleByLoanId.getOrDefault(loan.getId(), 1),
                     loan.getPrincipal(),
                     loan.getNetDisbursed(),
@@ -181,7 +180,7 @@ public class LoanRegisterService {
         if (r.borrowerName() != null && r.borrowerName().toLowerCase().contains(needle)) {
             return true;
         }
-        if (r.panMasked() != null && r.panMasked().toLowerCase().contains(needle)) {
+        if (r.pan() != null && r.pan().toLowerCase().contains(needle)) {
             return true;
         }
         if (r.mobile() != null && r.mobile().contains(needle)) {

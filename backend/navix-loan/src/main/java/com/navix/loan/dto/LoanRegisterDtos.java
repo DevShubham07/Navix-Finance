@@ -23,8 +23,8 @@ public final class LoanRegisterDtos {
      * @param applicationId         the {@code loan_application} that minted this loan, if resolvable
      * @param borrowerName          from the customer's KYC profile; null if unresolved
      * @param mobile                from the customer's KYC profile; null if unresolved
-     * @param panMasked             the customer's PAN, masked (never the raw value — see {@link
-     *                              com.navix.common.util.Masking#maskPan})
+     * @param pan                   the customer's PAN, unmasked — the register is a COLLECTION_HEAD / ADMIN
+     *                              surface and collections works off the real identifier (decision 2026-10-08)
      * @param loanCycle             1-based index of this loan among the customer's loans, ordered by
      *                              {@code disbursedOn} (tie-break loan id) — "this is their 3rd advance"
      * @param principalPaise        sanctioned principal
@@ -58,7 +58,7 @@ public final class LoanRegisterDtos {
             Long applicationId,
             String borrowerName,
             String mobile,
-            String panMasked,
+            String pan,
             int loanCycle,
             Long principalPaise,
             Long netDisbursedPaise,

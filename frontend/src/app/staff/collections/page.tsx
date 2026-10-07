@@ -90,7 +90,7 @@ function toRow(w: WorklistRow): Row {
     caseId: w.caseId,
     borrowerName: w.loan?.borrowerName ?? null,
     mobile: w.loan?.mobile ?? null,
-    pan: w.loan?.panMasked ?? null,
+    pan: w.loan?.pan ?? null,
     employer: w.loan?.employer ?? null,
     salaryPaise: w.loan?.monthlySalaryPaise ?? null,
     principalPaise: w.loan?.principalPaise ?? null,

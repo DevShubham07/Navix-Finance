@@ -103,7 +103,7 @@ class LoanDirectoryAdapterTest {
         assertThat(s.netDisbursedPaise()).isEqualTo(705_600L);
         assertThat(s.outstandingPaise()).isEqualTo(1_040_000L);
         assertThat(s.borrowerName()).isEqualTo("Asha Verma");
-        assertThat(s.panMasked()).isEqualTo("ABCDE1234F"); // collections now sees the full PAN
+        assertThat(s.pan()).isEqualTo("ABCDE1234F"); // collections sees the full PAN
         assertThat(s.employer()).isEqualTo("Acme Corp");
     }
 
@@ -115,7 +115,7 @@ class LoanDirectoryAdapterTest {
         LoanSummary s = adapter.findLoan(2L).orElseThrow();
 
         assertThat(s.borrowerName()).isNull();
-        assertThat(s.panMasked()).isNull();
+        assertThat(s.pan()).isNull();
         assertThat(s.applicationId()).isNull();
         assertThat(s.principalPaise()).isEqualTo(800_000L);
         assertThat(s.status()).isEqualTo("OVERDUE");

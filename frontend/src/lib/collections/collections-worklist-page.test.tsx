@@ -33,7 +33,7 @@ function loan(loanId: number, dueDate: string, preDue: boolean): LoanSummary {
     disbursedOn: "2026-09-10",
     dueDate,
     borrowerName: `Borrower ${loanId}`,
-    panMasked: null,
+    pan: null,
     mobile: null,
     employer: null,
     employmentStatus: null,

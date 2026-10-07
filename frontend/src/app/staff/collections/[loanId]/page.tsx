@@ -220,7 +220,7 @@ function BorrowerCard({ loan }: { loan: LoanSummary | null }) {
       ) : (
         <dl className="grid grid-cols-2 gap-y-1.5">
           <Row label="Name" value={loan.borrowerName} />
-          <Row label="PAN" value={loan.panMasked ? <span className="font-mono text-xs">{loan.panMasked}</span> : null} />
+          <Row label="PAN" value={loan.pan ? <span className="font-mono text-xs">{loan.pan}</span> : null} />
           <Row label="Employment" value={loan.employmentStatus} />
           {/* Employer / salary / salary-bank are credit-assessment data — need-to-know for the
               Collection Head (collections:manage), not the executive chasing the payment. */}

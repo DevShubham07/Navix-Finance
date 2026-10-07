@@ -51,7 +51,7 @@ function row(overrides: Partial<LoanRegisterRow> = {}): LoanRegisterRow {
     applicationId: 201,
     borrowerName: "Asha Verma",
     mobile: "9876543210",
-    panMasked: "ABCXX1234X",
+    pan: "ABCDE1234F",
     loanCycle: 1,
     principalPaise: 1_000_000,
     netDisbursedPaise: 882_000,

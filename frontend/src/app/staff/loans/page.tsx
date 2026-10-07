@@ -233,7 +233,7 @@ function LoansPageInner() {
             { header: "Loan #", value: (l: LoanRegisterRow) => l.loanId },
             { header: "Borrower", value: (l) => l.borrowerName },
             { header: "Mobile", value: (l) => l.mobile },
-            { header: "PAN", value: (l) => l.panMasked },
+            { header: "PAN", value: (l) => l.pan },
             { header: "Cycle", value: (l) => ordinal(l.loanCycle) },
             { header: "Sanctioned", value: (l) => (l.sanctionedAt ? formatDate(l.sanctionedAt) : "") },
             { header: "Disbursed", value: (l) => (l.disbursedOn ? formatDate(l.disbursedOn) : "") },
@@ -372,7 +372,7 @@ function LoansPageInner() {
                                 </td>
                                 <td className="staff-cell" title={l.borrowerName}>
                                   <span className="block truncate font-medium text-ink">{l.borrowerName}</span>
-                                  <span className="block truncate text-xs text-muted">{l.mobile} · {l.panMasked}</span>
+                                  <span className="block truncate text-xs text-muted">{l.mobile} · {l.pan}</span>
                                 </td>
                                 <td className="whitespace-nowrap text-muted">{l.sanctionedAt ? formatDate(l.sanctionedAt) : "—"}</td>
                                 <td className="whitespace-nowrap text-muted">{l.disbursedOn ? formatDate(l.disbursedOn) : "—"}</td>

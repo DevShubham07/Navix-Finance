@@ -236,7 +236,7 @@ public class GlobalSearchService {
                 String.valueOf(row.loanId()),
                 "#" + row.loanId() + " · "
                         + (row.borrowerName() != null ? row.borrowerName() : "Loan"),
-                joinDetail(Masking.maskPhone(row.mobile()), row.panMasked(),
+                joinDetail(Masking.maskPhone(row.mobile()), Masking.maskPan(row.pan()),
                         row.dueDate() == null ? null : "due " + row.dueDate()),
                 meta("outstandingPaise", row.outstandingPaise()),
                 "/staff/loans?q=" + encode(String.valueOf(row.loanId()))

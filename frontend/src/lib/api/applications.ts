@@ -2243,7 +2243,7 @@ export interface LoanRegisterRow {
   borrowerName: string;
   mobile: string;
   /** Already masked server-side (e.g. `ABCDE1234F` → `ABCXX1234X`-style masking) — safe to render as-is. */
-  panMasked: string;
+  pan: string;
 
   /** 1-based: this is the customer's Nth advance (1 = their first loan ever). */
   loanCycle: number;
@@ -3233,7 +3233,7 @@ export interface LoanSummary {
   disbursedOn: string | null;
   dueDate: string | null;
   borrowerName: string | null;
-  panMasked: string | null;
+  pan: string | null;
   mobile: string | null;
   employer: string | null;
   employmentStatus: string | null;
