@@ -2,6 +2,7 @@ package com.navix.verification.config;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import org.springframework.beans.factory.annotation.Value;
 import java.util.Base64;
 import java.util.List;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -51,6 +52,13 @@ public class VerificationClientConfig {
     public static final String DIGITAP_CRIF_CLIENT = "digitapCrifRestClient";
     /** Signzy Experian + CRIF — same host and auth as {@link #SIGNZY_CLIENT}, shorter read. */
     public static final String SIGNZY_BUREAU_CLIENT = "signzyBureauRestClient";
+    /**
+     * Digitap Skip Tracing Lite — SVC host and auth as {@link #DIGITAP_SVC_CLIENT}, much longer read.
+     * The lookup fans out to several data sources on Digitap's side: the first production runs took
+     * 10–20 s and two timed out at the shared 30 s read limit (2026-10-07). It is on-demand and never
+     * part of a borrower chain, so it has its own budget, kept under the 120 s ALB idle timeout.
+     */
+    public static final String DIGITAP_SKIP_TRACE_CLIENT = "digitapSkipTraceRestClient";
     /** Fintrix {@code /crif_combine} — the bureau FALLBACK behind Digitap. HTTP Basic, like Digitap. */
     public static final String FINTRIX_CLIENT = "fintrixRestClient";
 
@@ -191,6 +199,19 @@ public class VerificationClientConfig {
                 .baseUrl(props.svcBaseUrl())
                 .requestFactory(timeoutRequestFactory(
                         timeouts.connectTimeout(), timeouts.digitapCrifReadTimeout()))
+                .messageConverters(VerificationClientConfig::lenientJson)
+                .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
+                .build();
+    }
+
+    @Bean(DIGITAP_SKIP_TRACE_CLIENT)
+    public RestClient digitapSkipTraceRestClient(
+            DigitapProperties props, VerificationChainProperties timeouts,
+            @Value("${navix.verification.skip-trace-read-timeout-seconds:90}") int skipTraceReadSeconds) {
+        return RestClient.builder()
+                .baseUrl(props.svcBaseUrl())
+                .requestFactory(timeoutRequestFactory(
+                        timeouts.connectTimeout(), Duration.ofSeconds(skipTraceReadSeconds <= 0 ? 90 : skipTraceReadSeconds)))
                 .messageConverters(VerificationClientConfig::lenientJson)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, basic(props.clientId(), props.clientSecret()))
                 .build();

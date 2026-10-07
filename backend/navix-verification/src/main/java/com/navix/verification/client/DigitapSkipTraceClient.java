@@ -42,7 +42,9 @@ public class DigitapSkipTraceClient {
     private final RestClient digitapSvc;
 
     public DigitapSkipTraceClient(
-            @Qualifier(VerificationClientConfig.DIGITAP_SVC_CLIENT) RestClient digitapSvc) {
+            @Qualifier(VerificationClientConfig.DIGITAP_SKIP_TRACE_CLIENT) RestClient digitapSvc) {
+        // Its own RestClient: same host and auth as the SVC client, but a 90 s read — the lookup runs
+        // 10–20 s normally and overran the shared 30 s limit on two of the first production runs.
         this.digitapSvc = digitapSvc;
     }
 

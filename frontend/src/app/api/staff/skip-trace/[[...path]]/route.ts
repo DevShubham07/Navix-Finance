@@ -17,5 +17,5 @@ async function handle(req: NextRequest, ctx: Ctx) {
 export const GET = handle;
 export const POST = handle;
 
-/** One Digitap call bounded by the backend's 30s read timeout; this is a ceiling, not a delay. */
-export const maxDuration = 60;
+/** One Digitap call bounded by the backend's 90s skip-trace read timeout; this is a ceiling, not a delay. */
+export const maxDuration = 120;

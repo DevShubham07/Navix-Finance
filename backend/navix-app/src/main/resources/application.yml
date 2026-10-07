@@ -138,6 +138,10 @@ navix:
     bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_BUREAU_READ_TIMEOUT:45}
     digitap-crif-read-timeout-seconds: ${NAVIX_VERIFICATION_DIGITAP_CRIF_READ_TIMEOUT:20}
     signzy-bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_SIGNZY_BUREAU_READ_TIMEOUT:12}
+    # Digitap Skip Tracing Lite (on-demand, Skip Tracer tab) fans out to several sources: 10–20s
+    # normally, >30s seen twice on day one. Never part of a borrower chain, so its own budget —
+    # under the 120s ALB idle timeout on its own.
+    skip-trace-read-timeout-seconds: ${NAVIX_VERIFICATION_SKIP_TRACE_READ_TIMEOUT:90}
     fintrix-bureau-read-timeout-seconds: ${NAVIX_VERIFICATION_FINTRIX_BUREAU_READ_TIMEOUT:45}
   storage:
     # S3 bucket for documents/images (KYC, loan docs, payment & collections proofs).
