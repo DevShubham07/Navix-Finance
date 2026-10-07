@@ -58,6 +58,8 @@ class ApplicationFlowIntegrationTest {
     private LoanMath loanMath;
     @Autowired
     private ApplicationVerificationRepository verificationRepository;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     /** The onboarding completeness gate is exercised by unit tests; here it is PASS so the
      *  lifecycle test reaches KYC_PENDING without seeding every external verification. */
@@ -68,6 +70,9 @@ class ApplicationFlowIntegrationTest {
     void allowSubmitKyc() {
         when(verificationService.allRequiredPassed(anyLong())).thenReturn(true);
         when(verificationService.intakeCardsComplete(anyLong())).thenReturn(true);
+        // V76 seeds onboarding-paused ON (the business decision for prod); this test walks the full
+        // intake lifecycle, which that flag deliberately refuses. Dev-only flags are SQL-only.
+        jdbc.update("update feature_flag set enabled = false where flag_key = 'onboarding-paused'");
     }
 
     @Test
