@@ -1,6 +1,7 @@
 package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.exception.ResourceNotFoundException;
 import com.navix.common.notification.event.ApplicationTransitionedEvent;
 import com.navix.common.security.ActorContext;
@@ -91,6 +92,7 @@ public class ApplicationFlowService {
     // (in-band, atomic with the loan mint). A no-op when the program is off or there's no referral.
     private final ReferralService referralService;
     private final DsaCommissionService dsaCommissionService;
+    private final FeatureFlagService featureFlags;
 
     /** Loan statuses that mean money is still owed past the due date — never fully repaid. */
     private static final Set<LoanStatus> DELINQUENT_LOAN_STATUSES =
@@ -182,7 +184,20 @@ public class ApplicationFlowService {
             throw new BusinessException("RETURNING_BORROWER",
                     "You already have an account with us — use Borrow again to start a new advance");
         }
+        assertOnboardingOpen();
         return newDraft(customerId);
+    }
+
+    /**
+     * Waitlist mode (V76): while {@code onboarding-paused} is on, nobody without a loan gets a new
+     * DRAFT or pushes one into the vendor-calling pipeline. Reborrow goes through {@link #newDraft}
+     * directly and stays open. The borrower UI turns this code into the waitlist form.
+     */
+    private void assertOnboardingOpen() {
+        if (featureFlags.isEnabled(OnboardingWaitlistService.FLAG, false)) {
+            throw new BusinessException("ONBOARDING_PAUSED",
+                    "We are not taking new applications right now");
+        }
     }
 
     /** Inserts the DRAFT row; callers have already run the guards. */
@@ -430,6 +445,7 @@ public class ApplicationFlowService {
     @Transactional
     public LoanApplication submitKyc(Long appId) {
         requireRole("BORROWER");
+        assertOnboardingOpen();
         LoanApplication app = require(appId);
         transition(app, ApplicationStatus.KYC_PENDING, "SUBMIT_KYC", null);
         return applicationRepository.save(app);

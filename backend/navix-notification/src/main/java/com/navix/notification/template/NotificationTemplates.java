@@ -89,6 +89,12 @@ public class NotificationTemplates {
                         + "#{applicationId}: {pendingSteps}.\n\nPlease log in to complete them so we can "
                         + "proceed.\n\n— DhanBoost");
 
+        inApp(NotificationType.WAITLIST_RECEIVED, "We have your details",
+                "Your application is under review. We'll get back to you soon.");
+        email(NotificationType.WAITLIST_RECEIVED, "We've received your DhanBoost application",
+                "Hi {name},\n\nThanks — we have your details and your application is under review. "
+                        + "We'll get back to you soon.\n\n— DhanBoost");
+
         inApp(NotificationType.KYC_REOPENED_RESCORE, "Good news — your application is back in review",
                 "Your application #{applicationId} is back in review. Log in to finish submitting your KYC.");
         email(NotificationType.KYC_REOPENED_RESCORE, "Your DhanBoost application is back in review",

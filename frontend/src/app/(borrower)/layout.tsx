@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Linkedin } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
+import { OnboardingGate } from "@/components/app/onboarding-gate";
 import { BRAND } from "@/lib/brand";
 
 // The borrower app + its public auth-entry pages (login/signup/forgot/reset) are not search
@@ -13,6 +14,7 @@ export default function BorrowerLayout({ children }: { children: React.ReactNode
   return (
     <div className="flex min-h-screen flex-col bg-ivory">
       <AppHeader />
+      <OnboardingGate />
       <main className="flex-1">{children}</main>
       <footer className="shrink-0 border-t border-line bg-white py-5">
         <div className="container flex flex-wrap items-center justify-between gap-3 text-sm text-muted">

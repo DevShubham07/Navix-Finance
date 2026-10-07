@@ -52,6 +52,9 @@ public enum NotificationType {
     // re-pull cleared the floor. No SMS: the DLT templates are still pending approval, same rationale
     // as SANCTIONED_AMOUNT_REVISED/SANCTION_LETTER_SIGNED.
     KYC_REOPENED_RESCORE(KYC, Set.of(IN_APP, EMAIL, WHATSAPP), Set.of(TO_BORROWER)),
+    // Waitlist mode (V76): the acknowledgement for a borrower parked while onboarding is paused. EMAIL
+    // only — there is no approved DLT/WhatsApp template for it, and the address is the one they typed.
+    WAITLIST_RECEIVED(KYC, Set.of(IN_APP, EMAIL), Set.of(TO_BORROWER)),
 
     /**
      * The bureau withheld the report behind a KBA question only the borrower can answer.

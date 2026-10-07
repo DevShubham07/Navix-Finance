@@ -174,6 +174,20 @@ export function useBorrowerSession() {
 }
 
 /**
+ * Onboarding-paused gate for the signed-in borrower (`OPEN` = normal app). Disabled without a session
+ * so anonymous pages never fire it.
+ */
+export function useOnboardingGate() {
+  const { data: session } = useBorrowerSession();
+  return useQuery({
+    queryKey: ["onboarding-gate"],
+    queryFn: borrowerApi.onboardingGate,
+    enabled: !!session,
+    staleTime: 30_000,
+  });
+}
+
+/**
  * Wipe every borrower-scoped artifact this browser holds, so no identity or PII
  * survives a sign-out and bleeds into the next user on the same device:
  *  - the in-flight application-id pointer,
@@ -532,11 +546,13 @@ export function canStartNewLoan(apps: ApplicationView[] | undefined): boolean {
  *   - `ACTIVE_APPLICATION` → an unfinished application is in flight → track it on `/loan/status`
  *   - `ACTIVE_LOAN`        → a live advance is still outstanding → repay it first on `/repay`
  *   - `RETURNING_BORROWER` → they have repaid an advance before → borrow again on `/reloan`
+ *   - `ONBOARDING_PAUSED`   → new onboarding is switched off → the waitlist form on `/waitlist`
  */
 export function routeForBlockedStart(code: string | undefined): string | null {
   if (code === "ACTIVE_APPLICATION") return "/loan/status";
   if (code === "ACTIVE_LOAN") return "/repay";
   if (code === "RETURNING_BORROWER") return "/reloan";
+  if (code === "ONBOARDING_PAUSED") return "/waitlist";
   return null;
 }
 

@@ -9,6 +9,7 @@ import com.navix.common.notification.event.CollectionPaymentRaisedEvent;
 import com.navix.common.notification.event.BureauQuestionPendingEvent;
 import com.navix.common.notification.event.VerificationStepLinkEvent;
 import com.navix.common.notification.event.KycReminderEvent;
+import com.navix.common.notification.event.WaitlistSubmittedEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ProviderHealthEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
@@ -104,6 +105,15 @@ public class NotificationEventListener {
         }
         return " You can apply again on or after "
                 + NotificationFormat.date(e.retryFrom().atZone(IST).toLocalDate()) + ".";
+    }
+
+    /** Waitlist mode (V76): acknowledge the form a paused borrower just submitted. */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onWaitlistSubmitted(WaitlistSubmittedEvent e) {
+        dispatcher.dispatch(NotificationType.WAITLIST_RECEIVED, NotificationContext.builder()
+                .customerId(e.customerId())
+                .build());
     }
 
     /** Staff-triggered nudge to a borrower with outstanding verification steps (Phase 3.4). */

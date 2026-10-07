@@ -94,6 +94,8 @@ export type Permission =
   // ADMIN administration of the DSA program (roster, company-wide lead register, commission ledger
   // pay/void/reassign, outreach audit).
   | "dsa:manage"
+  // The onboarding-paused waitlist (full PAN/Aadhaar) — ADMIN only.
+  | "waitlist:view"
   // The company-wide Loans register (every disbursed loan, sortable/filterable, read-only). ADMIN
   // for oversight; COLLECTION_HEAD because DPD/overdue triage is their job and the register is
   // where they'd start a case. This token is display-only wording — the backend enforces the real
@@ -151,6 +153,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   // only. Deliberately NOT customer:view, NOT leads:manage, NOT loan:pipeline.
   DSA: ["dsa:portal", "leads:import"],
   ADMIN: [
+    "waitlist:view",
     "kyc:approve",
     "loan:review",
     "loan:approve",

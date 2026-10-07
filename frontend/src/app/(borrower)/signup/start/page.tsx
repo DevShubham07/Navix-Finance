@@ -15,7 +15,7 @@ import {
   routeForBlockedStart,
 } from "@/lib/api/live-journey";
 import { formatApiError } from "@/lib/api/errors";
-import { ApplicationApiError, journeyApi } from "@/lib/api/applications";
+import { ApplicationApiError, journeyApi, publicApi } from "@/lib/api/applications";
 import { normalizeMobile } from "@/lib/utils";
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
@@ -50,7 +50,16 @@ export default function SignupStartPage() {
   // and had to re-walk screens they had already completed (revamp.md C1).
   React.useEffect(() => {
     let live = true;
-    fetchBorrowerSession()
+    // Onboarding paused: never create a draft — signed-in borrowers hit the waitlist gate from /login.
+    publicApi
+      .onboardingPaused()
+      .then(async (paused) => {
+        if (paused) {
+          if (live) router.replace("/login");
+          return null;
+        }
+        return fetchBorrowerSession();
+      })
       .then(async (session) => {
         if (!session || !live) return;
         const app = await createOrResumeDraft(session);

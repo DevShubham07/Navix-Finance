@@ -1155,7 +1155,57 @@ async function putToPresignedUrl(url: string, body: Blob, contentType: string): 
 const BORROWER_BASE = "/api/borrower/applications";
 const BORROWER_LOAN_BASE = "/api/borrower/loan";
 
+// --- Onboarding-paused waitlist (`/api/onboarding-waitlist`) ---------------------------------
+
+export type OnboardingGateState = "OPEN" | "FORM" | "SUBMITTED";
+
+/** What the borrower typed. Aadhaar is echoed back only as its last four digits. */
+export interface WaitlistSubmission {
+  fullName: string;
+  email: string;
+  mobile: string;
+  pan: string;
+  aadhaarLast4: string;
+  createdAt: string;
+}
+
+export interface OnboardingGate {
+  paused: boolean;
+  gate: OnboardingGateState;
+  submission: WaitlistSubmission | null;
+}
+
+/** Staff (ADMIN) view of one submission — PAN and Aadhaar in full. */
+export interface WaitlistEntry {
+  id: number;
+  customerId: number;
+  fullName: string;
+  email: string;
+  mobile: string;
+  pan: string;
+  aadhaar: string;
+  createdAt: string;
+}
+
+export const publicApi = {
+  /** Anonymous: is new onboarding paused? Fails open (false) so a hiccup never blocks sign-in. */
+  onboardingPaused: async (): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/auth/borrower/onboarding", { cache: "no-store" });
+      if (!res.ok) return false;
+      return !!((await res.json()) as { paused?: boolean }).paused;
+    } catch {
+      return false;
+    }
+  },
+};
+
 export const borrowerApi = {
+  /** Onboarding-paused gate for the signed-in borrower. */
+  onboardingGate: () => bff<OnboardingGate>("/api/borrower/onboarding-waitlist", "GET"),
+  submitWaitlist: (body: { fullName: string; email: string; mobile: string; pan: string; aadhaar: string }) =>
+    bff<WaitlistSubmission>("/api/borrower/onboarding-waitlist", "POST", body),
+
   /** Create a DRAFT application for the given customer. */
   create: (customerId: number) =>
     bff<ApplicationView>(`${BORROWER_BASE}`, "POST", { customerId }),
@@ -2859,6 +2909,9 @@ const ADMIN_BLOCKLIST_BASE = "/api/admin/blocklist";
 const ADMIN_EXPENSES_BASE = "/api/admin/expenses";
 
 export const adminApi = {
+  /** Onboarding-paused waitlist submissions, newest first (ADMIN only). */
+  waitlist: (q?: string) =>
+    bff<WaitlistEntry[]>(`/api/staff/onboarding-waitlist${q ? `?q=${encodeURIComponent(q)}` : ""}`, "GET"),
   // --- staff users ---
   listStaff: () => bff<StaffResponse[]>(ADMIN_STAFF_BASE, "GET"),
   getStaff: (id: number) => bff<StaffResponse>(`${ADMIN_STAFF_BASE}/${id}`, "GET"),
