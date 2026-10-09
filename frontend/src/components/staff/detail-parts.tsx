@@ -13,7 +13,6 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Check, Upload, Trash2, FileText, ExternalLink, ChevronDown, ChevronRight, CalendarClock, type LucideIcon } from "lucide-react";
 import { useStaffSession } from "@/lib/auth/staff-session";
-import { hasPermission } from "@/lib/auth/rbac";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/tooltip";
 import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
@@ -28,6 +27,7 @@ import {
   type ApplicationDocumentGroup,
   type CallLogView,
 } from "@/lib/api/applications";
+import { can as rbacCan, type Permission } from "@/lib/auth/rbac";
 
 export const CUSTOMER_LEVEL_DOC_TYPES = new Set([
   "AADHAAR",
@@ -114,8 +114,10 @@ export function DocumentsTab({
  */
 export function useCustomerDocumentGroups(customerId: number) {
   const qc = useQueryClient();
-  const role = useStaffSession().session?.role;
-  const isAdmin = role != null && hasPermission(role, "customer:manage");
+  const sess = useStaffSession().session;
+  const role = sess?.role;
+  const can = (p: Permission) => rbacCan(sess?.realRole, role, p);
+  const isAdmin = role != null && can("customer:manage");
   const groupsQ = useQuery({
     queryKey: ["customer-documents", customerId],
     queryFn: () => customersApi.documents(customerId),
@@ -237,12 +239,14 @@ function SingleApplicationDocuments({
   existingCategories?: string[];
 }) {
   const qc = useQueryClient();
-  const role = useStaffSession().session?.role;
-  const isAdmin = role != null && hasPermission(role, "customer:manage");
+  const sess = useStaffSession().session;
+  const role = sess?.role;
+  const can = (p: Permission) => rbacCan(sess?.realRole, role, p);
+  const isAdmin = role != null && can("customer:manage");
   // Uploading is wider than deleting: ADMIN plus the two credit roles may attach a document
   // (a payslip or statement the borrower sent in out-of-band), but replacing borrower-submitted
   // evidence still means deleting it first, which stays ADMIN-only.
-  const canUpload = role != null && hasPermission(role, "document:upload");
+  const canUpload = role != null && can("document:upload");
   const docsQ = useQuery({
     queryKey: ["staff-docs", applicationId],
     queryFn: () => staffApi.documents(applicationId),
@@ -624,7 +628,7 @@ export function Section({
 export function KV({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1">
-      <dt className="flex-shrink-0 text-muted">{k}</dt>
+      <dt className="flex-shrink-0 text-black">{k}</dt>
       <dd className={mono ? "min-w-0 flex-1 break-all text-right font-mono text-ink" : "min-w-0 flex-1 break-all text-right text-ink"}>
         {v || "—"}
       </dd>

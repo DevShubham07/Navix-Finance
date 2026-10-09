@@ -23,7 +23,7 @@ export function FieldGrid({
 
 /** The only place money/outcome colours are encoded (design §1b). */
 export const TONE_CLASS = {
-  ink: "text-ink",
+  ink: "text-black",
   navy: "text-navy font-bold",
   warning: "text-warning-800",
   error: "text-error-700 font-bold",
@@ -49,11 +49,11 @@ export function Field({
   const empty = children == null || children === "";
   return (
     <div className={cn("min-w-0", className)}>
-      <div className="text-[8.8px] font-semibold uppercase tracking-wide text-muted">{label}</div>
+      <div className="text-[8.8px] font-semibold uppercase tracking-wide text-black">{label}</div>
       <div className={cn("break-words text-[10.4px]", TONE_CLASS[tone], mono && "font-mono tabular-nums")}>
         {empty ? "—" : children}
       </div>
-      {caption && <div className="text-[8.8px] text-muted">{caption}</div>}
+      {caption && <div className="text-[8.8px] text-black">{caption}</div>}
     </div>
   );
 }
