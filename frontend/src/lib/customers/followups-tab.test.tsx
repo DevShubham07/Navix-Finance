@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { customersApi, leadsApi, type CallLogView, type CustomerDetail } from "@/lib/api/applications";
 import { CustomerTabBody } from "@/components/staff/customer-tabs";
 
-const roleRef = vi.hoisted(() => ({ role: "ADMIN" }));
+const roleRef = vi.hoisted(() => ({ role: "TELECALLER" }));
 vi.mock("@/lib/auth/staff-session", () => ({
   useStaffSession: () => ({ session: { role: roleRef.role, realRole: roleRef.role }, loading: false }),
 }));
@@ -50,7 +50,7 @@ function renderTab(logs: CallLogView[], leadMobile: string | null) {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  roleRef.role = "ADMIN";
+  roleRef.role = "TELECALLER";
 });
 
 describe("Follow-ups tab", () => {

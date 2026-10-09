@@ -47,7 +47,7 @@ export function AdminLogPaymentButton({
   loanStatus?: string | null;
   compact?: boolean;
 }) {
-  const role = useStaffMe().data?.realRole;
+  const role = useStaffMe().data?.role;
   const [open, setOpen] = React.useState(false);
 
   // Not an oversight that this is ADMIN-only: recording and verifying in one step collapses the

@@ -256,7 +256,7 @@ function CustomersPageInner() {
   // The backend allows PRE_APPROVED → REJECTED for ADMIN alone (ApplicationFlowService.rejectLead).
   const rowRejectMode = (c: CustomerSummary): RejectMode | null =>
     rejectModeFor(c.latestStatus) ??
-    (me?.realRole === "ADMIN" && c.latestStatus === "PRE_APPROVED" ? "credit" : null);
+    (me?.role === "ADMIN" && c.latestStatus === "PRE_APPROVED" ? "credit" : null);
   const actionableRows = React.useMemo(
     () => pageRows.filter((c) => c.latestApplicationId != null && notActionableReason(c) == null),
     [pageRows],

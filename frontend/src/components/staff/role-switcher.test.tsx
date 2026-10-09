@@ -18,14 +18,16 @@ describe("RoleSwitcher", () => {
     success.mockClear();
   });
 
-  it("ADMIN: pill lists the 7 working roles, checks the current, switches and persists", () => {
+  it("ADMIN: pill lists the 8 working roles, checks the current, switches and persists", () => {
     wrap(<RoleSwitcher staffId="9" realRole="ADMIN" role="CREDIT_HEAD" />);
     const pill = screen.getByRole("button", { name: "Switch role, currently Credit Head" });
     expect(pill).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(pill);
 
     const items = screen.getAllByRole("menuitemradio");
-    expect(items).toHaveLength(7);
+    expect(items).toHaveLength(8);
+    expect(items[7]).toHaveTextContent("Admin");
+    expect(screen.getByText("Staff, settings and company-wide oversight")).toBeInTheDocument();
     expect(screen.getByText("Assign leads and monitor your team")).toBeInTheDocument();
     expect(items.filter((i) => i.getAttribute("aria-checked") === "true")).toHaveLength(1);
     expect(screen.getByRole("menuitemradio", { name: /Credit Head/ })).toHaveAttribute("aria-checked", "true");

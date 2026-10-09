@@ -71,7 +71,7 @@ export default function AdminAllApplicationsPage() {
   // `/api/applications/all` is ADMIN-only server-side. The register used to fire before `/me` had
   // answered — so every other role sent a request it could only ever have refused (FORBIDDEN_ROLE),
   // retried it once, and only then reached "Admin access only". It now waits for the role.
-  const isAdmin = me.data?.realRole === "ADMIN";
+  const isAdmin = me.data?.role === "ADMIN";
   const [query, setQuery] = React.useState("");
   // Bumped to remount the SearchBar, whose draft text is its own state, when "Clear" resets the
   // search from outside it.

@@ -19,7 +19,7 @@ describe("working role", () => {
   });
 
   it("falls back when the stored value is stale or illegal", () => {
-    localStorage.setItem(workingRoleKey("7"), "ADMIN");
+    localStorage.setItem(workingRoleKey("7"), "DSA");
     expect(readWorkingRole("7", "ADMIN")).toBe("CREDIT_HEAD");
     localStorage.setItem(workingRoleKey("7"), "TELECALLER");
     expect(readWorkingRole("7", "CREDIT_HEAD")).toBe("CREDIT_HEAD");

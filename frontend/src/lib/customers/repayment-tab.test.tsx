@@ -50,9 +50,10 @@ describe("Repayment tab", () => {
     expect(screen.getByText(/Pay early/)).toBeInTheDocument();
   });
 
-  it("Verify shows for ADMIN on a pending payment", async () => {
+  it("Verify is hidden in the Admin role (it is the Accountant's step)", async () => {
     renderRepay("ACTIVE", [pending]);
-    expect(await screen.findByRole("button", { name: /Verify/ })).toBeInTheDocument();
+    await screen.findByText("Grand total");
+    expect(screen.queryByRole("button", { name: /Verify/ })).not.toBeInTheDocument();
   });
 
   it("Verify shows for an ACCOUNTANT", async () => {

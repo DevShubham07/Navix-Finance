@@ -123,6 +123,7 @@ describe("CollectionsBucketPage", () => {
 
   it("does not refetch the export enrichment when the menu is reopened", async () => {
     const byIdsAll = vi.spyOn(customersApi, "byIdsAll").mockResolvedValue([]);
+    localStorage.setItem("navix-staff-working-role:1", "ADMIN"); // Export is an Admin-role button
     renderPage();
     const exportButton = await screen.findByRole("button", { name: /Export/ });
     await waitFor(() => expect(exportButton).toBeEnabled());

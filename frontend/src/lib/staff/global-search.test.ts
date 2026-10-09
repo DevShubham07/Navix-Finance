@@ -30,10 +30,12 @@ describe("buildFeatureIndex — RBAC", () => {
     expect(titles("COLLECTION_HEAD")).toContain("Loans");
   });
 
-  it("applies working role plus admin powers", () => {
-    const adminAsExec = titles("ADMIN", "CREDIT_EXECUTIVE");
-    expect(adminAsExec).toContain("Verification Dashboard");
-    expect(adminAsExec).toContain("Staff");
+  it("applies the working role only — admin pages live in the Admin role", () => {
+    const adminAsHead = titles("ADMIN", "CREDIT_HEAD");
+    for (const t of ["Staff", "Blocklist", "Verification Dashboard", "Loans"]) expect(adminAsHead).not.toContain(t);
+    const adminAsAdmin = titles("ADMIN", "ADMIN");
+    for (const t of ["Staff", "Verification Dashboard", "Transactions", "Loans"]) expect(adminAsAdmin).toContain(t);
+    expect(adminAsAdmin).not.toContain("Live applications");
     expect(titles("CREDIT_HEAD", "CREDIT_HEAD")).not.toContain("Verification Dashboard");
     const ch = titles("COLLECTION_HEAD");
     expect(ch).toContain("DPD buckets");
@@ -54,14 +56,14 @@ describe("buildFeatureIndex — RBAC", () => {
   });
 
   it("expands segment children so a segment name is findable", () => {
-    const admin = buildFeatureIndex("ADMIN", "CREDIT_HEAD");
+    const admin = buildFeatureIndex("ADMIN", "ADMIN");
     const overdue = admin.find((h) => h.href === "/staff/loans?seg=overdue");
     expect(overdue?.title).toMatch(/^Loans · /);
   });
 });
 
 describe("matchFeatures", () => {
-  const index = buildFeatureIndex("ADMIN", "CREDIT_HEAD");
+  const index = buildFeatureIndex("ADMIN", "ADMIN");
 
   it("ranks a token-prefix hit above a mid-word one", () => {
     const hits = matchFeatures(index, "cust", 5).map((h) => h.title);

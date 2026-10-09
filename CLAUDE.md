@@ -475,12 +475,12 @@ A staffer picks a **working role** from a pill in the header (initials avatar on
 
 | Real role | Working roles (first = default) |
 |---|---|
-| `ADMIN` | Credit Head, Credit Executive, Disbursement Head, Accountant, Collection Head, Collection Executive, Telecaller (no "Administrator" role, no DSA) |
+| `ADMIN` | Credit Head, Credit Executive, Disbursement Head, Accountant, Collection Head, Collection Executive, Telecaller, Admin (no DSA) |
 | `CREDIT_HEAD` | Credit Head, Credit Executive |
 | `COLLECTION_HEAD` | Collection Head, Collection Executive |
 | others | their own role only (static pill) |
 
-- **Admin powers are not a role:** a real ADMIN keeps the ADMINISTRATION nav, admin pages, Edit customer, Cancel, Force to disbursement, Export, Log payment, document delete, reference edit, Verification Retry and the dashboard "Admin overview" block in every working role.
+- **Each working role shows only its own tabs and buttons.** Admin pages and admin-only buttons (edit customer, force to disbursement, export, log payment, document delete, reference edit, verification retry, the Admin overview dashboard) live in the **Admin** working role.
 - **Head roles assign/approve; executive roles do the work:** Credit Head = assign/reassign/Assign to me/Reject (no Sanction/Mark pending); Credit Executive = only files assigned to me, Sanction/Reject/Mark pending, Verification Dashboard. Collection Head = assign cases, approve settlements/payments, Loans register, skip trace; Collection Executive = only my cases, log interactions, record payments, propose settlements.
 - **Transport:** frontend keeps the choice in localStorage `navix-staff-working-role:<staffId>` (cleared on sign-out) and sends `X-Acting-Role` on staff API calls when it differs from the real role; the BFF forwards it; `ActingRole.normalize` validates it against the hierarchy (illegal values ignored, never 400) into `CurrentActor.actingRole`.
 - **Authorization stays on the real JWT role.** `CurrentActor.effectiveRole()` is used only for **list scoping** (credit queues, customer book, decision history, collections cases/settlements/payments).

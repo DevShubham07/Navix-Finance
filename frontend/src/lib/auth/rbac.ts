@@ -198,6 +198,7 @@ export const WORKING_ROLES: Partial<Record<StaffRole, readonly StaffRole[]>> = {
     "COLLECTION_HEAD",
     "COLLECTION_EXECUTIVE",
     "TELECALLER",
+    "ADMIN",
   ],
   CREDIT_HEAD: ["CREDIT_HEAD", "CREDIT_EXECUTIVE"],
   COLLECTION_HEAD: ["COLLECTION_HEAD", "COLLECTION_EXECUTIVE"],
@@ -211,24 +212,31 @@ export function canWorkAs(real: StaffRole, r: StaffRole): boolean {
   return workingRolesFor(real).includes(r);
 }
 
-/** Admin powers are not a role: a real ADMIN keeps these in every working role. */
-const ADMIN_POWERS: Permission[] = [
+/**
+ * What a real ADMIN gets while working AS Admin: the administration pages and admin-only buttons,
+ * and none of the stage-work permissions (no credit/disbursement/collections queues). Deliberately
+ * narrower than ROLE_PERMISSIONS.ADMIN, which mirrors the backend and still backs `hasPermission`.
+ */
+const ADMIN_ROLE_PERMISSIONS: Permission[] = [
   "staff:manage",
-  "customer:manage",
+  "customer:view",
   "customer:view:all",
+  "customer:manage",
   "customer:assign",
   "verification:retry",
   "dsa:manage",
   "waitlist:view",
   "loan:register",
   "document:upload",
+  "leads:import",
 ];
 
-export function effectivePermissions(real: StaffRole, working: StaffRole): Permission[] {
-  return [...new Set([...ROLE_PERMISSIONS[working], ...(real === "ADMIN" ? ADMIN_POWERS : [])])];
+/** Each working role carries only its own permissions; `real` is kept for call-site symmetry. */
+export function effectivePermissions(_real: StaffRole, working: StaffRole): Permission[] {
+  return working === "ADMIN" ? ADMIN_ROLE_PERMISSIONS : ROLE_PERMISSIONS[working];
 }
 
-/** Permission check for the signed-in staffer: working role + admin powers of the real role. */
+/** Permission check for the signed-in staffer, by working role. */
 export function can(
   real: StaffRole | undefined,
   working: StaffRole | undefined,
@@ -247,7 +255,7 @@ export const ROLE_META: Record<StaffRole, { purpose: string }> = {
   COLLECTION_EXECUTIVE: { purpose: "Work your collection cases" },
   TELECALLER: { purpose: "Call leads and log outcomes" },
   DSA: { purpose: "Your leads and earnings" },
-  ADMIN: { purpose: "Full administration" },
+  ADMIN: { purpose: "Staff, settings and company-wide oversight" },
 };
 
 /** A maker-checker step in the loan lifecycle. */

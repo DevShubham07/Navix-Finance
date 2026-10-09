@@ -187,13 +187,12 @@ test.describe("RBAC", () => {
     await expect(page.getByRole("button", { name: /^Accept/ }).first()).toBeVisible();
   });
 
-  test("ADMIN sees the Administration nav group in every working role", async ({ page }) => {
+  test("Administration appears only in the Admin role", async ({ page }) => {
     await loginStaff(page, "ADMIN");
     await page.goto("/staff/dashboard");
-    for (const label of ["Credit Head", "Credit Executive", "Disbursement Head", "Accountant", "Collection Head", "Collection Executive", "Telecaller"]) {
-      await switchRole(page, label);
-      await expect(page.getByRole("link", { name: "Blocklist" })).toBeVisible();
-    }
+    await expect(page.getByRole("link", { name: "Blocklist" })).toHaveCount(0);
+    await switchRole(page, "Admin");
+    await expect(page.getByRole("link", { name: "Blocklist" })).toBeVisible();
   });
 
   test("Working role survives a reload and resets after sign-out + sign-in", async ({ page }) => {

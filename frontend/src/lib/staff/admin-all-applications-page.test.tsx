@@ -56,6 +56,8 @@ const ROWS = [
 
 /** Answer the BFF's `/me` with `session` (null = signed out); nothing else should reach fetch. */
 function mockSession(session: { id: string; name: string; role: string } | null) {
+  // Admin pages are the Admin WORKING role's (the default is Credit Head).
+  if (session?.role === "ADMIN") localStorage.setItem(`navix-staff-working-role:${session.id}`, "ADMIN");
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ session })));
 }
 
@@ -69,6 +71,7 @@ function renderPage() {
 }
 
 afterEach(() => {
+  localStorage.clear();
   vi.restoreAllMocks();
 });
 

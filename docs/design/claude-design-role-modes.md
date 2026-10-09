@@ -10,7 +10,7 @@ A staffer has one **real role** (from login, used for all permissions) and works
 
 | Real role | Working roles (first = default after login) |
 | --- | --- |
-| ADMIN | **Credit Head** · Credit Executive · Disbursement Head · Accountant · Collection Head · Collection Executive · Telecaller (there is **no** "Administrator" working role and **no** DSA) |
+| ADMIN | **Credit Head** · Credit Executive · Disbursement Head · Accountant · Collection Head · Collection Executive · Telecaller · **Admin** (last; no DSA) |
 | CREDIT_HEAD | **Credit Head** · Credit Executive |
 | COLLECTION_HEAD | **Collection Head** · Collection Executive |
 | everyone else (Credit Executive, Disbursement Head, Accountant, Collection Executive, Telecaller, DSA) | their own role only — the same pill, **static, no chevron, no menu** |
@@ -19,7 +19,7 @@ Rules the wireframes must express:
 
 - **Head roles = assign + monitor + approvals.** In Credit Head / Collection Head the Sanction / Mark pending and Log interaction / Record payment / Propose settlement buttons do not exist.
 - **Executive roles = "my work only".** Credit Executive and Collection Executive show only files/cases assigned to the signed-in person (scoped by the server). For an admin or head this is empty until they assign something to themselves in the Head role.
-- **Admin powers are not a role.** A real ADMIN keeps these in **every** working role: the ADMINISTRATION nav group and all admin pages, Edit customer, Cancel, Force to disbursement, Export, Log payment, deleting documents, editing references, Verification Retry, and an **Admin overview** block at the bottom of the dashboard (§3.1).
+- **Each working role shows only its own tabs and buttons.** The ADMINISTRATION nav group and admin pages, Edit customer, Cancel, Force to disbursement, Export, Log payment, deleting documents, editing references, Verification Retry and the **Admin overview** dashboard (§3.1) exist only in the **Admin** working role.
 - The choice is remembered per person on that device and resets to the default on sign-out.
 - Actions are recorded with the working role used (audit line "(as …)", §7).
 
@@ -42,7 +42,7 @@ Header right cluster, left to right: Search pill · **role pill** · avatar · b
 - **Label** = the current working role, e.g. "Credit Head". Default = first in the §0 table.
 - **Single-role users**: the identical pill, but static — no chevron, no hover state, not clickable.
 - **Sign out** is an icon-only button (36px, `LogOut` icon, tooltip "Sign out"), ghost style.
-- Role icons (lucide): Credit Head `ShieldCheck` · Credit Executive `ClipboardCheck` · Disbursement Head `Banknote` · Accountant `Calculator` · Collection Head `UsersRound` · Collection Executive `PhoneCall` · Telecaller `Headset` · DSA `Briefcase`.
+- Role icons (lucide): Credit Head `ShieldCheck` · Credit Executive `ClipboardCheck` · Disbursement Head `Banknote` · Accountant `Calculator` · Collection Head `UsersRound` · Collection Executive `PhoneCall` · Telecaller `Headset` · Admin `Shield` · DSA `Briefcase`.
 - Below `sm` width the pill is hidden from the header; the mobile nav strip gets a one-line select above the links with the same options.
 
 ### 1.2 Open state (draw on the Admin dashboard frame)
@@ -56,7 +56,7 @@ Clicking the pill opens a white card anchored under it, right-aligned to the pil
   - Right: 14px navy `Check` on the **current** role only.
 - **Footer** (top border `line`, padding 8px 10px, 8.8px muted): *"Actions are recorded with the role you worked as."*
 
-ADMIN menu (7 rows; Credit Head current):
+ADMIN menu (8 rows, Admin last; Credit Head current):
 
 | Role | Purpose line |
 | --- | --- |
@@ -67,6 +67,7 @@ ADMIN menu (7 rows; Credit Head current):
 | Collection Head | Assign cases and approve settlements |
 | Collection Executive | Work your collection cases |
 | Telecaller | Call leads and log outcomes |
+| Admin | Staff, settings and company-wide oversight |
 
 CREDIT_HEAD menu: Credit Head ✓ · Credit Executive. COLLECTION_HEAD menu: Collection Head ✓ · Collection Executive. (Same rows and purpose lines as above.)
 
@@ -80,7 +81,7 @@ CREDIT_HEAD menu: Credit Head ✓ · Credit Executive. COLLECTION_HEAD menu: Col
 
 ## 2. Sidebar per working role
 
-Group headings (OPERATIONS / COLLECTIONS / ADMINISTRATION), icons and active styling are unchanged. Groups with no items are omitted. Draw eight columns side by side on one frame ("Frame 18 — sidebar per working role"): the seven working roles below plus a final column **"Real ADMIN, in any role"** showing the extra block. Active item "Dashboard" in each.
+Group headings (OPERATIONS / COLLECTIONS / ADMINISTRATION), icons and active styling are unchanged. Groups with no items are omitted. Draw eight columns side by side on one frame ("Frame 18 — sidebar per working role"): the seven operational roles below plus a final **Admin** column. Other roles show no admin extras. Active item "Dashboard" in each.
 
 **Credit Head** — OPERATIONS Dashboard · Live applications · Customers ▸ (11 segments) · Unallocated customers · My decisions · Staff performance · Import leads. (No Verification Dashboard — overrides are executive work.)
 
@@ -96,7 +97,7 @@ Group headings (OPERATIONS / COLLECTIONS / ADMINISTRATION), icons and active sty
 
 **Telecaller** — OPERATIONS Dashboard · Customers ▸ · Unallocated customers · My decisions · Staff performance · Leads · Import leads · Telecalling.
 
-**Real ADMIN, additionally, in every working role** — appended below that role's own groups: ADMINISTRATION Staff · DSA · Invites · Blocklist · Payment settings · Company expenses · Leads dashboard · All applications · Rejections · Provider API dashboard · Transactions; plus OPERATIONS Leads · Telecalling; plus COLLECTIONS Loans ▸ when the role has no Loans item. Draw this as a dashed-outline block labelled "Admin powers — shown in all roles".
+**Admin** — OPERATIONS Dashboard · Customers ▸ (11 segments) · Unallocated customers · Verification Dashboard · My decisions · Staff performance · Import leads · Loans ▸ (Active · Overdue · Closed) · ADMINISTRATION Staff · DSA · Invites · Blocklist · Payment settings · Company expenses · Leads dashboard · All applications · Rejections · Provider API dashboard · Transactions. No Live applications, DPD buckets, Settlements, Leads, Telecalling or Referral payouts.
 
 ---
 
@@ -104,9 +105,9 @@ Group headings (OPERATIONS / COLLECTIONS / ADMINISTRATION), icons and active sty
 
 Title **"Welcome, Meera"**, subtitle per §1.3. Sections use the base spec's components; only composition and copy change.
 
-### 3.1 Admin overview block (real ADMIN, every working role)
+### 3.1 Admin role dashboard (Admin overview)
 
-At the **bottom** of the dashboard, under the role's own sections, a section heading **"Admin overview"** (small `ShieldCheck` icon, muted caption "Visible to administrators in every role") followed by the base spec's admin sections in order: **Trends** · **Pipeline at a glance** · **Customers by segment** · **Salary dates** · **Transactions**. Non-admins (e.g. a real Credit Head) never see this block. The role's own hero and sections above it are exactly as in the subsections below.
+In the **Admin** working role only, the dashboard has no "Your work" hero; its main content is a section heading **"Admin overview"** (small `ShieldCheck` icon, muted caption "Visible in the Admin role") followed by the base spec's admin sections in order: **Trends** · **Pipeline at a glance** · **Customers by segment** · **Salary dates** · **Transactions**. No other working role (and no non-admin) shows this block.
 
 ### 3.2 Credit Head
 
@@ -138,7 +139,7 @@ Exactly the base-spec dashboard for that role (hero "Approved loans to release" 
 
 ## 4. Live applications per working role (`/staff/applications`)
 
-Page header **"Live applications"** with the working-role badge pill (navy-tint) beside the title. The search box + date filter row stays for every pipeline role; Telecaller sees the lock notice *"Your role has no step in the loan pipeline."* Panels are the base-spec QueueTable panels (navy header, zebra rows, ⓘ + "Open →"). A real ADMIN keeps the admin **"Log payment"** button on "Awaiting repayment" rows in every role.
+Page header **"Live applications"** with the working-role badge pill (navy-tint) beside the title. The search box + date filter row stays for every pipeline role; Telecaller sees the lock notice *"Your role has no step in the loan pipeline."* Panels are the base-spec QueueTable panels (navy header, zebra rows, ⓘ + "Open →"). The admin **"Log payment"** button appears on "Awaiting repayment" rows only in the Admin role.
 
 ### 4.1 Credit Head — assign only
 
@@ -193,17 +194,17 @@ Same 14-tab dialog as base spec §3 on Vijay Rajpal Pohaal (#11489). Everything 
 | Disbursement Pending / Failed | "Not your step" | "Not your step" | input *"Transaction id"* `[ Release ]` `[ Fail ]` / `[ ↻ Retry ]` | "Not your step" |
 | Active / Overdue / Closed | empty | empty | empty | empty |
 
-**Admin additions (real ADMIN, in any role):** the row also carries `[ ⚡ Force to disbursement ]` (gold) on a Sanctioned file, `[ Edit customer ]`, `[ Cancel ]` (danger outline) and `[ Export ]`, to the right of the role's own buttons and separated by a 1px divider. When an admin has no role button at that status, the row shows "Not your step" followed by these.
+**Admin additions (Admin working role only):** the row also carries `[ ⚡ Force to disbursement ]` (gold) on a Sanctioned file, `[ Edit customer ]`, `[ Cancel ]` (danger outline) and `[ Export ]`, to the right of the role's own buttons and separated by a 1px divider. When an admin has no role button at that status, the row shows "Not your step" followed by these.
 
 "Not your step" = 9.6px muted text in the action row.
 
 ### 5.2 Tab-level deltas
 
-- **Overview**: the focus cards follow the working role — Credit Head/Executive show KYC + Credit; Disbursement Head shows Disbursement; Accountant shows Disbursement + Amount due; Collection roles show Amount due; Telecaller shows none. References card: pencil (edit) for admins only.
-- **Verifications**: check cards always visible. `[ ↻ Retry ]` for admins in every role; `[ Override ]` `[ Remind borrower ]` `[ Send link ]` only in **Credit Executive**. Credit Head and the rest: read-only cards.
-- **Documents**: Upload area in Credit Head and Credit Executive (and for admins in every role); red "Delete" for admins only.
+- **Overview**: the focus cards follow the working role — Credit Head/Executive show KYC + Credit; Disbursement Head shows Disbursement; Accountant shows Disbursement + Amount due; Collection roles show Amount due; Telecaller shows none. References card: pencil (edit) in the Admin role only.
+- **Verifications**: check cards always visible. `[ ↻ Retry ]` in the Admin role only; `[ Override ]` `[ Remind borrower ]` `[ Send link ]` only in **Credit Executive**. Credit Head and the rest: read-only cards.
+- **Documents**: Upload area in Credit Head and Credit Executive and Admin; red "Delete" in the Admin role only.
 - **Personal**: Owner picker (Assign to …) in Credit Head, Collection Head and Telecaller roles; hidden in executive roles.
-- **Loan applications**: "Cancel" for admins only.
+- **Loan applications**: "Cancel" in the Admin role only.
 - **Calls & remarks**: the "Log call" form is visible in Credit Executive, Collection Executive and Telecaller; Heads see the list only. Remarks form everywhere.
 - **Skip Tracer**: "Find contacts" in Collection Head; others see the plain notice *"Skip tracing is run by the Collection Head."*
 - **Audit log / Customer activity**: see §7.
@@ -233,7 +234,7 @@ Left: loan summary + amount-due calculation. Right rail:
 - **Collection Head**: **Assign card** (select incl. "Assign to me" + Save); interaction list (read-only); payments list with `[ Approve ]` on PENDING_HEAD rows; settlement card with Approve/Reject. No log/record/propose forms.
 - **Collection Executive** (own case): read-only line **"Officer: you"**; **Log interaction** form (Type: Outbound/Inbound/Visit · Outcome: Promise to pay/No answer/Refused/… · Promise date · Notes · `[ Log ]`); **Record payment** card (amount, method, reference, proof upload, `[ Record ]`); `[ Propose settlement ]`.
 - **Collection Executive on another officer's case** (opened by link): the page body is replaced by a muted white card with a lock icon, **"This case is assigned to another officer."** (server error `CASE_NOT_ASSIGNED`), and a "Back to my cases" link.
-- A real ADMIN in any role additionally sees the `[ Log payment ]` correction button.
+- The `[ Log payment ]` correction button appears in the Admin role only.
 
 ---
 
@@ -261,10 +262,10 @@ Style: same 9.6px/8.8px muted line; the bracket text is not emphasised. In the *
 ## 9. Frames to add to the deliverable
 
 17. **Admin dashboard, role menu open** (§1.2) over the base Frame 16, with the closed-pill detail inset (§1.1) incl. the avatar tooltip.
-18. **Sidebar per working role** — eight 240px columns side by side (§2), the last showing the admin extras.
+18. **Sidebar per working role** — eight 240px columns side by side (§2), the last being Admin.
 19. **Live applications — Credit Head** (§4.1) incl. the bulk bar with 2 selected.
 20. **Live applications — Credit Executive** (§4.2), one-file state plus the empty state.
-21. **Dashboard — Credit Head with the Admin overview block** at the bottom (§3.1/§3.2).
+21. **Dashboard — Admin role** with the Admin overview as main content (§3.1).
 22. **Pop-up header action rows** — the §5.1 matrix as strips, plus the admin additions.
 23. **Pop-up Verifications tab** — Credit Executive (Override/Remind/Send link) beside Credit Head (read-only; admin Retry only).
 24. **DPD buckets** — Collection Executive beside Collection Head (§6.1).

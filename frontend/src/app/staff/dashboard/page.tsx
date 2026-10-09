@@ -117,7 +117,7 @@ const SECTIONS: Record<StaffRole, SectionKey[]> = {
   COLLECTION_HEAD: ["work", "decisions", "collections", "borrowers", "team"],
   TELECALLER: ["work", "decisions", "borrowers"],
   DSA: [],
-  ADMIN: [], // never a working role (the switcher offers none); oversight renders via `isAdmin`
+  ADMIN: [], // no stage work; the Admin overview renders via `isAdmin`
 };
 
 /** Per-role "your queue" label (+ an ⓘ explanation) and the live statuses that feed it. */
@@ -281,7 +281,7 @@ export default function StaffDashboardPage() {
   const sid = session?.id != null ? Number(session.id) : undefined;
   const sections = role ? SECTIONS[role] : [];
   const has = (k: SectionKey) => sections.includes(k);
-  const isAdmin = session?.realRole === "ADMIN";
+  const isAdmin = role === "ADMIN";
 
   // Reporting period for the decisions/outcomes sections — shared with /staff/my-decisions and
   // /staff/performance so the same "this month" means the same thing everywhere.
@@ -650,12 +650,12 @@ export default function StaffDashboardPage() {
         <TeamSection rows={performanceQuery.data?.rows ?? []} loading={performanceQuery.isLoading} range={range} />
       )}
 
-      {/* Section 7 — Admin oversight: a real ADMIN sees this in every working role, after the role's own work. */}
+      {/* Section 7 — Admin oversight: only in the Admin working role. */}
       {isAdmin && (
         <>
           <div className="mb-3 mt-10 flex items-center gap-2">
             <h2 className="mb-0 text-xl">Admin overview</h2>
-            <InfoTooltip content="Company-wide oversight — visible to administrators in every role." />
+            <InfoTooltip content="Company-wide oversight — visible in the Admin role." />
           </div>
           <TrendsSection data={trends.data} loading={trends.isLoading} />
 
