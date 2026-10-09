@@ -1,5 +1,13 @@
 import { test, expect } from "@playwright/test";
+import { type Page } from "@playwright/test";
 import { loginStaff } from "./_fixtures";
+
+/** Switch the working role through the header pill (the only way to change it). */
+async function switchRole(page: Page, label: string) {
+  await page.getByRole("button", { name: /^Switch role, currently/ }).click();
+  await page.getByRole("menuitemradio", { name: new RegExp(label) }).click();
+  await expect(page.getByRole("button", { name: `Switch role, currently ${label}` })).toBeVisible();
+}
 
 // Every pipeline queue lives on /staff/applications, gated per role by RoleQueues.
 //
@@ -22,11 +30,15 @@ test.describe("RBAC", () => {
     await expect(page.getByText("Credit queue — assign an executive")).toBeVisible();
   });
 
-  test("ADMIN sees the credit queues", async ({ page }) => {
+  test("ADMIN works as Credit Head by default and sees the review queue after switching", async ({ page }) => {
     await loginStaff(page, "ADMIN");
     await page.goto("/staff/applications");
     await expect(page.getByText("Credit queue — assign an executive")).toBeVisible();
+    await expect(page.getByText("Credit review — accept, reject or park")).toHaveCount(0);
+    await switchRole(page, "Credit Executive");
+    await page.goto("/staff/applications");
     await expect(page.getByText("Credit review — accept, reject or park")).toBeVisible();
+    await expect(page.getByText("Credit queue — assign an executive")).toHaveCount(0);
   });
 
   test("Disbursement head gets the three release panels", async ({ page }) => {
@@ -150,5 +162,51 @@ test.describe("RBAC", () => {
     await expect(page.getByRole("link", { name: "My decisions" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Live applications" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Customers", exact: true })).toHaveCount(0);
+  });
+  test("Header shows the role pill and no staff name text", async ({ page }) => {
+    await loginStaff(page, "CREDIT_HEAD");
+    await page.goto("/staff/dashboard");
+    await expect(page.getByRole("button", { name: "Switch role, currently Credit Head" })).toBeVisible();
+    // The avatar is initials-only; the name lives in its title/aria-label, never as visible text.
+    const header = page.locator("header").first();
+    await expect(header.getByText("Priya Nair")).toHaveCount(0);
+    await expect(header.getByRole("link", { name: /Priya Nair · Credit Head/ })).toBeVisible();
+  });
+
+  test("Credit head sees Assign + Reject but no Accept; switching to Credit Executive shows Accept", async ({ page }) => {
+    await loginStaff(page, "CREDIT_HEAD");
+    await page.goto("/staff/applications");
+    await expect(page.getByText("Credit queue — assign an executive")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Accept/ })).toHaveCount(0);
+    // Needs at least one lead in the queue to assert the row actions.
+    await expect(page.getByRole("button", { name: /Assign|Reassign/ }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Reject/ }).first()).toBeVisible();
+
+    await switchRole(page, "Credit Executive");
+    await page.goto("/staff/applications");
+    await expect(page.getByRole("button", { name: /^Accept/ }).first()).toBeVisible();
+  });
+
+  test("ADMIN sees the Administration nav group in every working role", async ({ page }) => {
+    await loginStaff(page, "ADMIN");
+    await page.goto("/staff/dashboard");
+    for (const label of ["Credit Head", "Credit Executive", "Disbursement Head", "Accountant", "Collection Head", "Collection Executive", "Telecaller"]) {
+      await switchRole(page, label);
+      await expect(page.getByRole("link", { name: "Blocklist" })).toBeVisible();
+    }
+  });
+
+  test("Working role survives a reload and resets after sign-out + sign-in", async ({ page }) => {
+    await loginStaff(page, "ADMIN");
+    await page.goto("/staff/dashboard");
+    await switchRole(page, "Accountant");
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Switch role, currently Accountant" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.waitForURL(/\/staff\/login/);
+    await loginStaff(page, "ADMIN");
+    await page.goto("/staff/dashboard");
+    await expect(page.getByRole("button", { name: "Switch role, currently Credit Head" })).toBeVisible();
   });
 });

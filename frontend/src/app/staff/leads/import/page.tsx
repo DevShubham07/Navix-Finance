@@ -4,9 +4,8 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { LeadCsvImport } from "@/components/staff/lead-csv-import";
-import { hasPermission } from "@/lib/auth/rbac";
 import { leadsApi, storageApi, type ImportJobView } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 
@@ -20,11 +19,12 @@ import { formatDateTime } from "@/lib/utils";
  */
 export default function LeadImportPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const qc = useQueryClient();
 
   const jobs = useQuery({ queryKey: ["lead-import-jobs"], queryFn: leadsApi.importJobs });
 
-  if (myRole && !hasPermission(myRole, "leads:import")) {
+  if (myRole && !can("leads:import")) {
     return <NoAccessNotice message="You do not have access to lead imports." />;
   }
 

@@ -48,6 +48,10 @@ public class ApplicationEvent {
     @Column(name = "actor_role", length = 64)
     private String actorRole;
 
+    /** The validated "work as" sub-role the actor had selected (X-Acting-Role), or null. */
+    @Column(name = "acting_role", length = 64)
+    private String actingRole;
+
     /** The action label, e.g. RECOMMEND, APPROVE, REJECT, ASSIGN, VALIDATE. */
     @Column(name = "action", nullable = false, length = 64)
     private String action;

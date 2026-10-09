@@ -12,7 +12,7 @@ import { CreditBadge } from "@/components/staff/credit-badge";
 import { CasePaymentsCard, RecordPaymentCard } from "@/components/staff/collection-payments";
 import { CallLogRow, RemarksTab } from "@/components/staff/detail-parts";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
-import { collectionsApi, customersApi, paiseToINR, rupeesToPaise, type InteractionView, type LoanSummary } from "@/lib/api/applications";
+import { collectionsApi, customersApi, isCaseNotAssigned, paiseToINR, rupeesToPaise, type InteractionView, type LoanSummary } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 import { parsePositiveRupees, sanitizeRupeeInput } from "@/lib/collections/rupee-amount-input";
 
@@ -91,6 +91,10 @@ export default function CollectionsCasePage() {
           <Skeleton variant="row" />
           <Skeleton variant="row" />
         </div>
+      ) : isCaseNotAssigned(caseQ.error) ? (
+        <div className="rounded border border-line bg-grey-50 p-5 text-sm text-muted">
+          This case is assigned to another officer.
+        </div>
       ) : caseQ.error ? (
         <ErrorState error={caseQ.error} onRetry={() => void caseQ.refetch()} />
       ) : !c ? (
@@ -144,7 +148,9 @@ export default function CollectionsCasePage() {
             <div className="rounded border border-line bg-white p-4 shadow-sm">
               <AdminLogPaymentButton loanId={c.loanId} loanStatus={c.loan?.status} />
             </div>
-            <SettlementCard caseId={caseId} />
+            <PermissionGate permission="collections:interact">
+              <SettlementCard caseId={caseId} />
+            </PermissionGate>
           </div>
         </div>
       )}
@@ -321,6 +327,7 @@ function InteractionsCard({
     <div className="rounded border border-line bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-navy"><Phone size={16} /> Interactions</div>
 
+      <PermissionGate permission="collections:interact">
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <Select label="Type" value={type} onChange={(e) => setType(e.target.value)} options={TYPES.map((t) => ({ value: t, label: t }))} className="!mb-0" />
         <Select label="Outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} options={OUTCOMES.map((o) => ({ value: o, label: o }))} className="!mb-0" />
@@ -341,6 +348,7 @@ function InteractionsCard({
         </p>
       )}
       {log.error && <p className="mb-2 text-sm text-error-700">{errMessage(log.error)}</p>}
+      </PermissionGate>
 
       {loading ? (
         <Skeleton variant="line" rows={3} />

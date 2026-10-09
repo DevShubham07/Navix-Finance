@@ -132,7 +132,7 @@ navix_final/
 │   ├── navix-storage/            # S3 abstraction (presign)
 │   ├── navix-notification/       # ★ notification engine: events→dispatcher→in-app/SMS/email
 │   ├── navix-app/                # ★ the only bootable module; JwtAuthFilter, SecurityConfig, Flyway
-│   │   └── src/main/resources/db/migration/   # V1..V77 (the REAL schema lives here — see §10)
+│   │   └── src/main/resources/db/migration/   # V1..V78 (the REAL schema lives here — see §10)
 │   └── pom.xml                   # parent BOM
 ├── frontend/
 │   └── src/
@@ -410,15 +410,15 @@ endpoints, different httpOnly cookies, never shared.** This was an explicit requ
 
 | Role | Does (state transition) |
 |---|---|
-| `CREDIT_HEAD` | assign/reassign a credit file to self or an active Credit Executive; sanction, reject, or park any file in `CREDIT_EXEC_PENDING`; approve/reject KYC |
+| `CREDIT_HEAD` | assign/reassign a credit file to self or an active Credit Executive; reject a lead; in the **Credit Executive working role** sanction/park files assigned to them; approve/reject KYC |
 | `CREDIT_EXECUTIVE` | **the final credit decision** — sanction (amount + repayment date), reject, or park files assigned to them in `CREDIT_EXEC_PENDING`; absorbed the deleted `KYC_APPROVER` (V45), so it also holds `kyc:approve` |
 | `DISBURSEMENT_HEAD` | make the transfer and release it with a **txn id** (→ `DISBURSED`→`ACTIVE`; an accept without one is `TXN_REF_REQUIRED`); retry on failure; **settle referral payouts** (`referral:payout`) |
 | `ACCOUNTANT` | **verify or reject borrower repayments**; **view the transactions ledger**. No longer part of disbursement (V47/V48 retired the accountant hop) |
-| `COLLECTION_HEAD` | collections management + settlements (**approve / reject**); the **Loans register** (`loan:register`) |
-| `COLLECTION_EXECUTIVE` | borrower collections interactions |
+| `COLLECTION_HEAD` | collections management (assign cases incl. self) + settlements (**approve / reject**); the **Loans register** (`loan:register`); interactions/payments/proposals are done in the **Collection Executive working role** |
+| `COLLECTION_EXECUTIVE` | borrower collections interactions — sees **only the cases assigned to them** (server-scoped; another officer's case → `CASE_NOT_ASSIGNED`) |
 | `TELECALLER` | calls the lead list and logs the outcome (V42). **No lifecycle authority** — views customers, writes leads + call logs + remarks, self-assigns chase-up work; never in maker-checker or SoD |
 | `DSA` | **external commission agent** (V55). Enters leads and earns **3.5% of net disbursed** on their lead's *first* loan, payable only once that loan is fully repaid. Holds **no** lifecycle authority and is **firewalled from all customer data** — see the note below |
-| `ADMIN` | oversight — **bypasses role checks**; also exempt from the credit SoD + active-executive `assign`, so may walk a loan KYC→ACTIVE **solo, per-step** (credit queue shows an **"Assign to me"** button); OTP-gated mobile/sanctioned-amount corrections; edits salary/profile data; force `SANCTIONED → DISBURSEMENT_PENDING`; bureau backfill/rescore; manages company expenses, blocklist and the DSA program |
+| `ADMIN` | oversight — **bypasses role checks**; also exempt from the credit SoD + active-executive `assign`, so may walk a loan KYC→ACTIVE **solo, per-step by switching working role** (Credit Head → **"Assign to me"**, then Credit Executive → Sanction, then Disbursement Head → Release); OTP-gated mobile/sanctioned-amount corrections; edits salary/profile data; force `SANCTIONED → DISBURSEMENT_PENDING`; bureau backfill/rescore; manages company expenses, blocklist and the DSA program |
 
 > **A credit reject (`REJECT_LEAD`) carries a 30-day cooling-off.** `MANUAL_REJECT_BLOCK_DAYS = 30`
 > is written to `application_rejection.blocked_until`, and `assertNotBlocked` (mobile-keyed) then
@@ -468,6 +468,24 @@ every stage queue (credit, disbursement, accounting) — there is no separate `c
 Settlement approval enforces **SoD** (proposer ≠ approver) server-side. Staff screens carry small **ⓘ info-tooltips**
 (`components/ui/tooltip.tsx`) on dashboard cards / queue / DPD-bucket headers so a newly-added staffer
 knows what each section does.
+
+### Working role (switcher)
+
+A staffer picks a **working role** from a pill in the header (initials avatar only; tooltip "<name> · <real role>"). Spec: [`docs/design/claude-design-role-modes.md`](docs/design/claude-design-role-modes.md).
+
+| Real role | Working roles (first = default) |
+|---|---|
+| `ADMIN` | Credit Head, Credit Executive, Disbursement Head, Accountant, Collection Head, Collection Executive, Telecaller (no "Administrator" role, no DSA) |
+| `CREDIT_HEAD` | Credit Head, Credit Executive |
+| `COLLECTION_HEAD` | Collection Head, Collection Executive |
+| others | their own role only (static pill) |
+
+- **Admin powers are not a role:** a real ADMIN keeps the ADMINISTRATION nav, admin pages, Edit customer, Cancel, Force to disbursement, Export, Log payment, document delete, reference edit, Verification Retry and the dashboard "Admin overview" block in every working role.
+- **Head roles assign/approve; executive roles do the work:** Credit Head = assign/reassign/Assign to me/Reject (no Sanction/Mark pending); Credit Executive = only files assigned to me, Sanction/Reject/Mark pending, Verification Dashboard. Collection Head = assign cases, approve settlements/payments, Loans register, skip trace; Collection Executive = only my cases, log interactions, record payments, propose settlements.
+- **Transport:** frontend keeps the choice in localStorage `navix-staff-working-role:<staffId>` (cleared on sign-out) and sends `X-Acting-Role` on staff API calls when it differs from the real role; the BFF forwards it; `ActingRole.normalize` validates it against the hierarchy (illegal values ignored, never 400) into `CurrentActor.actingRole`.
+- **Authorization stays on the real JWT role.** `CurrentActor.effectiveRole()` is used only for **list scoping** (credit queues, customer book, decision history, collections cases/settlements/payments).
+- Reading another officer's collection case as an executive returns `CASE_NOT_ASSIGNED`; `assignOfficer` allows self-assign for a real COLLECTION_HEAD/ADMIN.
+- **Audit:** V78 adds `application_event.acting_role`; the timeline reads "by Meera Krishnan · ADMIN (as Credit Executive)".
 
 ---
 
@@ -568,7 +586,7 @@ Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`
 navix-common). Applied on every boot:
 
 Flyway migrations live in **`backend/navix-app/src/main/resources/db/migration/`** (not
-navix-common) and are applied on every boot — **V1..V77** today. Each file carries a header comment
+navix-common) and are applied on every boot — **V1..V78** today. Each file carries a header comment
 explaining *why* it exists; that is the source of truth. The index is
 [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md).
 
@@ -735,7 +753,7 @@ The rules that survive outside that file:
 - **[`docs/API_SURFACE.md`](docs/API_SURFACE.md)** — the full endpoint map (controllers still win).
 - **[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)** — Signzy / Digitap / Fintrix / SES / UltronSMS:
   capability routing, auth, hosts, live-test status, per-API gotchas.
-- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V77 Flyway catalog.
+- **[`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)** — the V1..V78 Flyway catalog.
 - **[`docs/whatsapp/WHATSAPP_GUIDE.md`](docs/whatsapp/WHATSAPP_GUIDE.md)** — borrower messaging: WhatsApp
   (SmartChat — API quirks, template catalogue, backlog), SMS (UltronSMS) and DLT in one place.
 

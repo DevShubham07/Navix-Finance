@@ -1,4 +1,4 @@
-import { NAV, navVisible, type NavItem } from "@/components/staff/staff-nav";
+import { NAV, navHref, navVisible, type NavItem } from "@/components/staff/staff-nav";
 import type { StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
 
@@ -93,22 +93,22 @@ function keywordsFor(item: NavItem, heading: string): string[] {
  * Filtered through {@link navVisible} — the sidebar's own gate — so it can never offer more than the
  * sidebar does.
  */
-export function buildFeatureIndex(role: StaffRole, flags?: FeatureFlags): FeatureHit[] {
+export function buildFeatureIndex(realRole: StaffRole, role: StaffRole, flags?: FeatureFlags): FeatureHit[] {
   const hits: FeatureHit[] = [];
   for (const group of NAV) {
     for (const item of group.items) {
-      if (!navVisible(item, role, flags)) continue;
+      if (!navVisible(item, realRole, role, flags)) continue;
       hits.push({
         kind: "feature",
         id: item.href,
         title: item.label,
         subtitle: group.heading,
-        href: item.href,
+        href: navHref(item.href, realRole, role),
         Icon: item.Icon,
         keywords: keywordsFor(item, group.heading),
       });
       for (const child of item.sub ?? []) {
-        const href = `${item.href.split("?")[0]}?seg=${child.seg}`;
+        const href = navHref(`${item.href.split("?")[0]}?seg=${child.seg}`, realRole, role);
         hits.push({
           kind: "feature",
           id: href,

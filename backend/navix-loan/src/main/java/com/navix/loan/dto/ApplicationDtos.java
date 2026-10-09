@@ -234,6 +234,7 @@ public final class ApplicationDtos {
             ApplicationStatus toStatus,
             String actorId,
             String actorRole,
+            String actingRole,
             String actorName,
             String action,
             String notes,
@@ -251,7 +252,7 @@ public final class ApplicationDtos {
          */
         public static EventView of(ApplicationEvent e, String actorName) {
             return new EventView(e.getId(), e.getFromStatus(), e.getToStatus(), e.getActorId(),
-                    e.getActorRole(), actorName, e.getAction(), e.getNotes(), e.getAt());
+                    e.getActorRole(), e.getActingRole(), actorName, e.getAction(), e.getNotes(), e.getAt());
         }
     }
 }

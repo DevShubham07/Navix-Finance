@@ -52,7 +52,7 @@ export function ExportMenu<Row>({
 
   // Exports are ADMIN-only across the whole console (data-governance decision) — every other role
   // gets no export control at all.
-  if (me?.role !== "ADMIN") return null;
+  if (me?.realRole !== "ADMIN") return null;
 
   const actor = {
     name: me?.name ?? "Unknown",

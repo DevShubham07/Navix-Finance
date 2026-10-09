@@ -413,7 +413,7 @@ public class DecisionHistoryService {
 
     /** Who the caller is allowed to see: ADMIN everyone, a Head their team, anyone else themselves. */
     private List<StaffSummary> rosterForCaller() {
-        String role = ActorContext.get().role();
+        String role = ActorContext.get().effectiveRole();
         if ("ADMIN".equals(role)) {
             return staffDirectory.listEveryone();
         }
@@ -432,7 +432,7 @@ public class DecisionHistoryService {
     /** Staff whose history the caller may open — for the Head's team switcher. */
     @Transactional(readOnly = true)
     public List<StaffSummary> inspectable() {
-        String role = ActorContext.get().role();
+        String role = ActorContext.get().effectiveRole();
         if ("ADMIN".equals(role)) {
             return TEAM_OF.values().stream().flatMap(Set::stream).distinct()
                     .flatMap(r -> staffDirectory.listActive(r).stream())
@@ -444,7 +444,7 @@ public class DecisionHistoryService {
     }
 
     private void requireCanInspect(Long staffId) {
-        String role = ActorContext.get().role();
+        String role = ActorContext.get().effectiveRole();
         if ("ADMIN".equals(role)) {
             return;
         }

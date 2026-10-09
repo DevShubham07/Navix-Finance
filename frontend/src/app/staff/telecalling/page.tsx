@@ -5,10 +5,9 @@ import { useMutation, useMutationState, useQuery, useQueryClient } from "@tansta
 import { Loader2, RefreshCw, Bell, UserPlus, Send, AlertTriangle } from "lucide-react";
 import { ConfirmDialog, EmptyState, ErrorState, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { NoAccessNotice, errMessage, useStaffMe } from "@/components/staff/live-pipeline";
+import { NoAccessNotice, errMessage, useStaffMe, useCan } from "@/components/staff/live-pipeline";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
-import { hasPermission } from "@/lib/auth/rbac";
 import { customersApi, staffApi, type TelecallingView } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import {
@@ -45,6 +44,7 @@ function usePendingIds(mutationKey: readonly string[]): ReadonlySet<number> {
  */
 export default function TelecallingPage() {
   const me = useStaffMe().data;
+  const can = useCan();
   const qc = useQueryClient();
   const q = useQuery({
     // Two minutes, not fifteen seconds. A lead queue's staleness is measured in days — an
@@ -106,7 +106,7 @@ export default function TelecallingPage() {
   });
   const reminding = usePendingIds(REMIND_MUTATION_KEY);
 
-  if (me && !hasPermission(me.role, "leads:manage")) {
+  if (me && !can("leads:manage")) {
     return <NoAccessNotice message="Telecalling access only (TELECALLER / ADMIN)." />;
   }
 

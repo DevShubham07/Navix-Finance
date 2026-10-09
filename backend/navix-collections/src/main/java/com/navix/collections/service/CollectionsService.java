@@ -94,6 +94,7 @@ public class CollectionsService {
         LoanSummary loan = loanDirectory.findLoan(loanId)
                 .orElseThrow(() -> new ResourceNotFoundException("Loan", String.valueOf(loanId)));
         Optional<CollectionCase> existing = caseRepository.findByLoanId(loanId);
+        existing.ifPresent(this::requireCaseOwnership);
         CollectionCase c = existing.orElseGet(() -> {
             CollectionCase nc = new CollectionCase();
             nc.setLoanId(loanId);
@@ -114,7 +115,9 @@ public class CollectionsService {
         // The UUID alone is not a secret: the settlements and payments lists hand it to every staff
         // role. Borrower PII in the detail needs the same DSA firewall as the by-loan lookup.
         requireStaff();
-        return buildDetail(getCase(caseId));
+        CollectionCase c = getCase(caseId);
+        requireCaseOwnership(c);
+        return buildDetail(c);
     }
 
     /**
@@ -143,6 +146,7 @@ public class CollectionsService {
         requireStaff();
         CollectionCase c = caseRepository.findFirstByLoanIdOrderByCreatedAtDesc(loanId)
                 .orElseThrow(() -> new ResourceNotFoundException("CollectionCase", "loan:" + loanId));
+        requireCaseOwnership(c);
         return buildDetail(c);
     }
 
@@ -172,8 +176,14 @@ public class CollectionsService {
     @Transactional(readOnly = true)
     public List<CaseView> listCaseViews() {
         requireCollectionsStaff();
-        List<CollectionCase> cases = caseRepository.findAll(org.springframework.data.domain.Sort.by(
-                org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+        Long me = scopeOfficerId();
+        List<CollectionCase> cases = me != null
+                ? caseRepository.findByAssignedOfficerId(me).stream()
+                        .sorted(java.util.Comparator.comparing(CollectionCase::getCreatedAt,
+                                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                        .toList()
+                : caseRepository.findAll(org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
         List<Long> loanIds = cases.stream().map(CollectionCase::getLoanId).filter(Objects::nonNull).toList();
         Map<Long, LoanSummary> loanById = loanDirectory.findLoans(loanIds);
         Map<Long, String> officerNames = officerNames(cases.stream()
@@ -216,7 +226,12 @@ public class CollectionsService {
                 .map(CollectionCase::getAssignedOfficerId).filter(Objects::nonNull).distinct().toList());
         Map<Long, HandledBy> handledBy = applicationActorDirectory.byLoanId(loanIds);
 
-        return loans.stream().map(loan -> {
+        Long me = scopeOfficerId();
+        return loans.stream().filter(loan -> {
+            if (me == null) return true;
+            CollectionCase c = caseByLoanId.get(loan.loanId());
+            return c != null && me.equals(c.getAssignedOfficerId());
+        }).map(loan -> {
             CollectionCase c = caseByLoanId.get(loan.loanId());
             HandledBy handled = handledBy.getOrDefault(loan.loanId(), HandledBy.NONE);
             int dpd = dpd(loan);
@@ -272,6 +287,9 @@ public class CollectionsService {
     @Transactional(readOnly = true)
     public List<UpcomingLoanView> upcomingWatchlist(LocalDate asOf) {
         requireStaff();
+        if (scopeOfficerId() != null) {
+            return List.of(); // an executive's book is only their assigned cases
+        }
         LocalDate on = asOf != null ? asOf : LocalDate.now(IST);
         List<LoanSummary> loans = loanDirectory.listUpcoming(on);
         if (loans.isEmpty()) {
@@ -321,7 +339,9 @@ public class CollectionsService {
                     "Only the Collection Head can assign a case to an officer");
         }
         CollectionCase c = getCase(caseId);
-        if (!staffDirectory.isActiveWithRole(officerId, OFFICER_ROLE)) {
+        boolean selfAssign = ("COLLECTION_HEAD".equals(actorRole) || "ADMIN".equals(actorRole))
+                && officerId != null && officerId.equals(actorStaffIdOrNull());
+        if (!selfAssign && !staffDirectory.isActiveWithRole(officerId, OFFICER_ROLE)) {
             throw new BusinessException("INVALID_OFFICER",
                     "The assignee must be an ACTIVE collections executive");
         }
@@ -340,6 +360,7 @@ public class CollectionsService {
     public InteractionLog logInteraction(UUID caseId, String type, String outcome,
                                          LocalDate promiseToPayDate, String proofRef) {
         CollectionCase c = getCase(caseId);
+        requireCaseOwnership(c);
         if (PAID_OUTCOME.equalsIgnoreCase(outcome) && (proofRef == null || proofRef.isBlank())) {
             throw new BusinessException("PROOF_REQUIRED",
                     "A PAID outcome requires a proof reference (transaction id or screenshot)");
@@ -359,7 +380,40 @@ public class CollectionsService {
     public List<InteractionLog> listInteractions(UUID caseId) {
         // Read from the loan detail dialog by every non-DSA staff role; DSA never.
         requireCollectionsStaff();
+        caseRepository.findById(caseId).ifPresent(this::requireCaseOwnership);
         return interactionRepository.findByCollectionCaseIdOrderByLoggedAtDesc(caseId);
+    }
+
+    /**
+     * Own staff id when the caller works as a COLLECTION_EXECUTIVE (real role or "work as"), else
+     * null = unscoped. Scoping only — authorization still keys off the real role.
+     */
+    private Long scopeOfficerId() {
+        return OFFICER_ROLE.equals(ActorContext.get().effectiveRole()) ? actorStaffIdOrNull() : null;
+    }
+
+    /** An executive may only touch cases assigned to them. */
+    private void requireCaseOwnership(CollectionCase c) {
+        if (!OFFICER_ROLE.equals(ActorContext.get().effectiveRole())) return;
+        Long me = actorStaffIdOrNull();
+        if (me == null || !me.equals(c.getAssignedOfficerId())) {
+            throw new BusinessException("CASE_NOT_ASSIGNED", "This case is not assigned to you");
+        }
+    }
+
+    /** For sibling services (settlements, payments): throws CASE_NOT_ASSIGNED when out of scope. */
+    @Transactional(readOnly = true)
+    public void assertCaseAccessible(UUID caseId) {
+        requireCaseOwnership(getCase(caseId));
+    }
+
+    /** Ids of the cases the caller is scoped to, or null when unscoped. */
+    @Transactional(readOnly = true)
+    public Set<UUID> scopedCaseIdsOrNull() {
+        Long me = scopeOfficerId();
+        if (OFFICER_ROLE.equals(ActorContext.get().effectiveRole()) && me == null) return Set.of();
+        return me == null ? null : caseRepository.findByAssignedOfficerId(me).stream()
+                .map(CollectionCase::getId).collect(Collectors.toSet());
     }
 
     /** The acting staff id, or null when it isn't resolvable (system paths) — never a guess. */

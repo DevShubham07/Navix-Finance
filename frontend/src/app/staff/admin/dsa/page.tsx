@@ -6,11 +6,10 @@ import { Loader2, RefreshCw, Check, Ban, ArrowRightLeft } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LeadCsvImport } from "@/components/staff/lead-csv-import";
 import { OutcomeChip } from "@/components/staff/lead-outcome";
-import { hasPermission } from "@/lib/auth/rbac";
 import { formatDateTime } from "@/lib/utils";
 import {
   type DsaLeadAttribution,
@@ -36,12 +35,13 @@ const COMMISSION_STATUSES: DsaCommissionStatus[] = ["ACCRUED", "PAYABLE", "PAID"
  */
 export default function AdminDsaPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const qc = useQueryClient();
   const [tab, setTab] = React.useState<Tab>("ROSTER");
 
   const roster = useQuery({ queryKey: ["admin-dsa-roster"], queryFn: adminDsaApi.roster });
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
+  if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

@@ -536,6 +536,41 @@ class ApplicationFlowServiceTest {
     }
 
     @Test
+    void logEventPersistsTheActingRoleWhenSetAndNullWhenNot() {
+        appAt(ApplicationStatus.KYC_PENDING);
+        ActorContext.set(new CurrentActor("1", "Root", "ADMIN", "CREDIT_HEAD"));
+        flow.assignExecutive(1L, 55L);
+        assertThat(events.get(events.size() - 1).getActingRole()).isEqualTo("CREDIT_HEAD");
+        assertThat(events.get(events.size() - 1).getActorRole()).isEqualTo("ADMIN");
+
+        actor("12", "CREDIT_HEAD");
+        flow.assignExecutive(1L, 56L);
+        assertThat(events.get(events.size() - 1).getActingRole()).isNull();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void byStatusNarrowsToTheExecutiveWhenAnAdminWorksAsOne() {
+        when(applicationRepository.findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of());
+        // Unidentifiable staff id: narrowing fails closed (no query at all) only if the executive
+        // branch was taken, so this proves the decision follows the acting role.
+        ActorContext.set(new CurrentActor("root", "Root", "ADMIN", "CREDIT_EXECUTIVE"));
+        assertThat(flow.byStatus(ApplicationStatus.CREDIT_EXEC_PENDING)).isEmpty();
+        verify(applicationRepository, never()).findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Sort.class));
+
+        ActorContext.set(new CurrentActor("root", "Root", "ADMIN"));
+        flow.byStatus(ApplicationStatus.CREDIT_EXEC_PENDING);
+        verify(applicationRepository).findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Sort.class));
+    }
+
+    @Test
     void createDraft_isTheBorrowersOwn_orAnAdminsOverride() {
         actor("7", "BORROWER");
         assertThatThrownBy(() -> flow.createDraft(8L))

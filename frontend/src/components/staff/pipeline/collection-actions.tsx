@@ -19,9 +19,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { Loader2, ArrowRight, UserPlus } from "lucide-react";
 import { ErrorState, Select, toast } from "@/components/ui";
-import { hasPermission } from "@/lib/auth/rbac";
 import { collectionsApi, type ApplicationView, type CaseView } from "@/lib/api/applications";
-import { useStaffMe, errMessage } from "@/components/staff/pipeline/hooks";
+import { useStaffMe, useCan, errMessage } from "@/components/staff/pipeline/hooks";
 import { WorklistAssignActions } from "@/components/staff/collections-assign";
 
 /** Shared across every row on the page — one request, deduped by React Query's key. */
@@ -36,8 +35,9 @@ export function useCollectionCases() {
 export function CollectionAssignActions({ app, compact }: { app: ApplicationView; compact?: boolean }) {
   const qc = useQueryClient();
   const role = useStaffMe().data?.role;
-  const canManage = role != null && hasPermission(role, "collections:manage");
-  const canInteract = role != null && hasPermission(role, "collections:interact");
+  const can = useCan();
+  const canManage = role != null && can("collections:manage");
+  const canInteract = role != null && can("collections:interact");
 
   const casesQ = useCollectionCases();
   const kase: CaseView | undefined = (casesQ.data ?? []).find((c) => c.loanId === app.loanId);
@@ -81,7 +81,7 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
 
   // No loan minted yet → nothing collectible. (Shouldn't happen in the ACTIVE/OVERDUE queues,
   // but the row renders for any application, so fail closed rather than crash on a null loanId.)
-  if (app.loanId == null || !canInteract) return null;
+  if (app.loanId == null || !(canManage || canInteract)) return null;
 
   // On a queue ROW the picker used to be hidden entirely (a full-width <select> forces the register
   // to scroll sideways), which left a Head able to SEE the assignment but never change it — the
@@ -115,7 +115,7 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
         </span>
       )}
 
-      {!canManage && !kase && (
+      {canInteract && !kase && (
         <button
           onClick={() => start.mutate()}
           disabled={start.isPending}

@@ -24,6 +24,7 @@ import com.navix.common.loan.LoanSummary;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.staff.StaffDirectory;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -512,5 +513,91 @@ class CollectionsServiceTest {
 
         assertThatThrownBy(() -> service.getCaseDetail(caseId)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> service.listInteractions(caseId)).isInstanceOf(BusinessException.class);
+    }
+
+    // ---- "work as" scoping --------------------------------------------------------------
+
+    private CollectionCase caseFor(long loanId, Long officer) {
+        CollectionCase c = new CollectionCase();
+        c.setId(UUID.randomUUID());
+        c.setLoanId(loanId);
+        c.setAssignedOfficerId(officer);
+        c.setCreatedAt(Instant.now());
+        return c;
+    }
+
+    private void actAs(String id, String role, String acting) {
+        ActorContext.set(new CurrentActor(id, "X", role, acting));
+    }
+
+    @Test
+    void executiveWorklistKeepsOnlyOwnCases() {
+        actAs("9", "COLLECTION_EXECUTIVE", null);
+        LoanSummary mine = loanSummary(2L, LocalDate.now(IST).minusDays(9));
+        LoanSummary theirs = loanSummary(3L, LocalDate.now(IST).minusDays(9));
+        LoanSummary none = loanSummary(4L, LocalDate.now(IST).minusDays(9));
+        when(loanDirectory.listCollectible(any())).thenReturn(java.util.List.of(mine, theirs, none));
+        when(caseRepository.findByLoanIdIn(any())).thenReturn(java.util.List.of(
+                caseFor(2L, 9L), caseFor(3L, 8L)));
+        when(applicationActorDirectory.byLoanId(any())).thenReturn(java.util.Map.of());
+
+        assertThat(service.worklist(LocalDate.now())).extracting(r -> r.loanId()).containsExactly(2L);
+    }
+
+    @Test
+    void headActingAsExecutiveListsOnlyOwnCasesAndGetsNoWatchlist() {
+        actAs("9", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE");
+        when(caseRepository.findByAssignedOfficerId(9L)).thenReturn(java.util.List.of(caseFor(2L, 9L)));
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of());
+
+        assertThat(service.listCaseViews()).hasSize(1);
+        verify(caseRepository, never()).findAll(any(org.springframework.data.domain.Sort.class));
+        assertThat(service.upcomingWatchlist(LocalDate.now())).isEmpty();
+        verify(loanDirectory, never()).listUpcoming(any());
+    }
+
+    @Test
+    void headWithoutActingRoleIsUnscoped() {
+        when(caseRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(java.util.List.of());
+
+        assertThat(service.listCaseViews()).isEmpty();
+        assertThat(service.scopedCaseIdsOrNull()).isNull();
+    }
+
+    @Test
+    void caseDetailOnAnotherOfficersCaseIsRefusedForExecutiveAndActingHead() {
+        when(caseRepository.findById(caseId)).thenReturn(Optional.of(caseFor(2L, 8L)));
+        for (CurrentActor a : new CurrentActor[] {
+                new CurrentActor("9", "X", "COLLECTION_EXECUTIVE"),
+                new CurrentActor("9", "X", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE")}) {
+            ActorContext.set(a);
+            assertThatThrownBy(() -> service.getCaseDetail(caseId))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("code").isEqualTo("CASE_NOT_ASSIGNED");
+            assertThatThrownBy(() -> service.assertCaseAccessible(caseId))
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Test
+    void scopedCaseIdsAreTheExecutivesOwn() {
+        actAs("9", "ADMIN", "COLLECTION_EXECUTIVE");
+        CollectionCase mine = caseFor(2L, 9L);
+        when(caseRepository.findByAssignedOfficerId(9L)).thenReturn(java.util.List.of(mine));
+
+        assertThat(service.scopedCaseIdsOrNull()).containsExactly(mine.getId());
+    }
+
+    @Test
+    void headAndAdminMaySelfAssignButNotAThirdParty() {
+        when(caseRepository.findById(caseId)).thenReturn(Optional.of(existingCase()));
+        when(caseRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        for (String role : new String[] {"COLLECTION_HEAD", "ADMIN"}) {
+            actAs("100", role, null);
+            assertThat(service.assignOfficer(caseId, 100L).getAssignedOfficerId()).isEqualTo(100L);
+        }
+        when(staffDirectory.isActiveWithRole(55L, OFFICER_ROLE)).thenReturn(false);
+        assertThatThrownBy(() -> service.assignOfficer(caseId, 55L)).isInstanceOf(BusinessException.class);
     }
 }

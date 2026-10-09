@@ -6,9 +6,9 @@ import { Badge, EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { Section } from "@/components/staff/detail-parts";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { useStaffSession } from "@/lib/auth/staff-session";
-import { hasPermission } from "@/lib/auth/rbac";
 import { customersApi } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
+import { can as rbacCan, type Permission } from "@/lib/auth/rbac";
 
 const TYPE_LABEL: Record<string, string> = {
   PAN: "PAN",
@@ -19,7 +19,9 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export function DedupeTab({ customerId, onTabChange }: TabCtx) {
-  const role = useStaffSession().session?.role;
+  const sess = useStaffSession().session;
+  const role = sess?.role;
+  const can = (p: Permission) => rbacCan(sess?.realRole, role, p);
   const q = useQuery({
     queryKey: ["customer-dedupe", customerId],
     queryFn: () => customersApi.dedupe(customerId),
@@ -43,7 +45,7 @@ export function DedupeTab({ customerId, onTabChange }: TabCtx) {
           </Badge>
         }
         action={
-          !clear && !passed && onTabChange && role != null && hasPermission(role, "kyc:approve") ? (
+          !clear && !passed && onTabChange && role != null && can("kyc:approve") ? (
             <button type="button" className="btn btn-sm btn-outline" onClick={() => onTabChange("verifications")}>
               Override
             </button>

@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { EventView } from "@/lib/api/applications";
+import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import { EmptyState } from "@/components/ui";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -149,7 +150,8 @@ export function EventTimeline({ events, className, dense }: EventTimelineProps) 
               </div>
               <div className={cn("text-muted", dense ? "text-[8.8px]" : "text-xs")}>
                 by {actorLabel(e)}
-                {e.actorName && e.actorRole ? ` · ${e.actorRole}` : ""} · {formatDateTime(e.at)}
+                {e.actorName && e.actorRole ? ` · ${e.actorRole}` : ""}
+                {e.actingRole ? ` (as ${STAFF_ROLE_LABELS[e.actingRole as StaffRole] ?? e.actingRole})` : ""} · {formatDateTime(e.at)}
               </div>
               {e.notes ? (
                 <p className={cn("mt-1 text-ink/90", dense ? "text-xs" : "text-sm")}>{e.notes}</p>

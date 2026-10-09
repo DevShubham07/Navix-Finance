@@ -7,9 +7,8 @@ import { Loader2, RefreshCw, Phone, Star } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { OutcomeChip, OUTCOME_LABEL } from "@/components/staff/lead-outcome";
-import { hasPermission } from "@/lib/auth/rbac";
 import { normalizeMobile } from "@/lib/utils";
 import {
   leadsApi,
@@ -57,10 +56,11 @@ export default function StaffLeadsPage() {
 function StaffLeadsPageInner() {
   const me = useStaffMe();
   const myRole = me.data?.role;
+  const can = useCan();
   // The same answer the page's own gate (below) acts on. Until it resolves, the list waits: it used
   // to fire before the gate had decided, so a role without leads:manage sent a request it could
   // never use.
-  const canManage = myRole != null && hasPermission(myRole, "leads:manage");
+  const canManage = myRole != null && can("leads:manage");
   const qc = useQueryClient();
   // Deep link from the global-search palette (`?q=`), so a lead hit lands on that lead.
   const [q, setQ] = React.useState(useSearchParams().get("q") ?? "");
@@ -109,7 +109,7 @@ function StaffLeadsPageInner() {
   const total = list.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  if (myRole && !hasPermission(myRole, "leads:manage")) {
+  if (myRole && !can("leads:manage")) {
     return <NoAccessNotice message="Telecaller or Admin access required." />;
   }
 

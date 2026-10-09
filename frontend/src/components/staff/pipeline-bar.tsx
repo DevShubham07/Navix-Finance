@@ -8,7 +8,7 @@
  * counts by bucketing each status through {@link stageOf}. It replaces the old
  * seven-stat-card grid with a single, role-aware overview.
  *
- * Role emphasis: ADMIN sees every segment at full opacity; a role that acts on a
+ * Role emphasis: a role without a span sees every segment at full opacity; a (working) role that acts on a
  * specific span (KYC, credit, disbursement, collections) gets that span
  * highlighted and the rest dimmed. Horizontally scrollable on narrow screens.
  *
@@ -48,8 +48,8 @@ const STAGE_INFO: Record<JourneyStageKey, string> = {
 const TERMINAL_STAGES: ReadonlySet<JourneyStageKey> = new Set(["CLOSED"]);
 
 /**
- * Which macro-stages each role acts on (drives the highlight span). ADMIN has
- * no single span — it sees all full-opacity (nothing to emphasise).
+ * Which macro-stages each (working) role acts on (drives the highlight span). A role
+ * with no entry has nothing to emphasise.
  */
 const ROLE_STAGES: Partial<Record<StaffRole, JourneyStageKey[]>> = {
   // The credit roles absorbed KYC in V45, so their span covers both stages.
@@ -85,10 +85,9 @@ export function PipelineBar({
     perStage[stageOf(status as ApplicationStatus).stage] += count ?? 0;
   }
 
-  const isAdmin = role === "ADMIN";
-  const span = ROLE_STAGES[role]; // undefined for ADMIN
-  const highlighted = (key: JourneyStageKey) => !isAdmin && !!span?.includes(key);
-  const dimmed = (key: JourneyStageKey) => !isAdmin && span != null && !span.includes(key);
+  const span = ROLE_STAGES[role]; // the WORKING role; undefined → nothing to emphasise
+  const highlighted = (key: JourneyStageKey) => !!span?.includes(key);
+  const dimmed = (key: JourneyStageKey) => span != null && !span.includes(key);
 
   return (
     <div className="overflow-x-auto">

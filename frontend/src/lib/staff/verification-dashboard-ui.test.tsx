@@ -22,7 +22,7 @@ function renderWithClient(ui: React.ReactElement) {
   // staleTime: Infinity so the seeded session is never refetched over the network.
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   // ADMIN is the one role holding both kyc:approve and verification:retry.
-  qc.setQueryData(["staff-me"], { id: "1", name: "Admin", role: "ADMIN" });
+  qc.setQueryData(["staff-me"], { id: "1", name: "Admin", role: "ADMIN", realRole: "ADMIN" });
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
@@ -112,7 +112,7 @@ describe("<VerificationChecksPanel/> retry in-flight guard", () => {
     vi.spyOn(staffApi, "retryVerification").mockRejectedValue(new VerificationRetryTimeoutError());
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-    qc.setQueryData(["staff-me"], { id: "1", name: "Admin", role: "ADMIN" });
+    qc.setQueryData(["staff-me"], { id: "1", name: "Admin", role: "ADMIN", realRole: "ADMIN" });
     const { rerender } = render(
       <QueryClientProvider client={qc}>
         <VerificationChecksPanel applicationId={42} />

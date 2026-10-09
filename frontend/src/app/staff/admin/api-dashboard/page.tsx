@@ -75,7 +75,7 @@ export default function ProviderApiDashboardPage() {
   const total = historyQ.data?.total ?? 0;
   const shownFrom = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const shownTo = Math.min((page + 1) * PAGE_SIZE, total);
-  if (!session.loading && session.session?.role !== "ADMIN") return <div className="card p-6"><ShieldAlert className="mb-2 text-error-700"/>Administrator access is required.</div>;
+  if (!session.loading && session.session?.realRole !== "ADMIN") return <div className="card p-6"><ShieldAlert className="mb-2 text-error-700"/>Administrator access is required.</div>;
   return <div className="space-y-6"><div><h1 className="text-3xl">Provider API dashboard</h1><p className="text-muted">Every Signzy and Digitap call the platform makes is recorded here with its exact request and response. Provider credentials remain server-side.</p></div>
     <section className="card p-5"><div className="grid gap-4 md:grid-cols-2"><label className="field"><span>API</span><select value={operation} onChange={(e)=>setOperation(e.target.value)}>{(catalogQ.data ?? []).map((i: ProviderApiCatalogItem)=><option key={i.operation}>{i.operation}</option>)}</select></label><label className="field"><span>Provider</span><select value={provider} onChange={(e)=>setProvider(e.target.value)}>{selected?.providers.map(p=><option key={p}>{p}</option>)}</select></label></div>
     <div className="mt-4 grid gap-3 md:grid-cols-2">{selected?.fields.map(field=><label key={field.key} className="field"><span>{field.label}{field.required ? " *" : ""}</span><input type={field.type} value={input[field.key] ?? ""} onChange={e=>setInput(v=>({...v,[field.key]:e.target.value}))}/></label>)}</div>

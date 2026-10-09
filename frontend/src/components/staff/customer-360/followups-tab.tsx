@@ -9,9 +9,9 @@ import { LogCallForm } from "@/components/staff/customer-360/communication-tab";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { customersApi, leadsApi, type CallLogView } from "@/lib/api/applications";
 import { useStaffSession } from "@/lib/auth/staff-session";
-import { hasPermission } from "@/lib/auth/rbac";
 import { istCalendarToday } from "@/lib/customers/customer-360";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { can as rbacCan, type Permission } from "@/lib/auth/rbac";
 
 function ymd(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -60,9 +60,11 @@ function FollowupTable({ rows, past, onDone }: { rows: CallLogView[]; past?: boo
 
 export function FollowupsTab({ detail, customerId }: TabCtx) {
   const mobile = detail.profile?.mobile ?? null;
-  const role = useStaffSession().session?.role;
+  const sess = useStaffSession().session;
+  const role = sess?.role;
+  const can = (p: Permission) => rbacCan(sess?.realRole, role, p);
   // The lead list is TELECALLER + ADMIN only server-side; other roles must not call it.
-  const canSeeLeads = role != null && hasPermission(role, "leads:manage");
+  const canSeeLeads = role != null && can("leads:manage");
   const leadQ = useQuery({
     queryKey: ["customer-lead", mobile],
     queryFn: () => leadsApi.list({ q: mobile as string }),

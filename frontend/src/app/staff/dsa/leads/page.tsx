@@ -7,8 +7,7 @@ import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/compon
 import { Dialog, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
-import { hasPermission } from "@/lib/auth/rbac";
+import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { normalizeMobile } from "@/lib/utils";
 import {
   ApplicationApiError,
@@ -39,6 +38,7 @@ const SMS_TEMPLATE = (name: string) =>
  */
 export default function DsaLeadsPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const qc = useQueryClient();
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState<DsaLeadStatus | "">("");
@@ -54,7 +54,7 @@ export default function DsaLeadsPage() {
   const rows = list.data ?? [];
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
-  if (myRole && !hasPermission(myRole, "dsa:portal")) {
+  if (myRole && !can("dsa:portal")) {
     return <NoAccessNotice message="DSA access required." />;
   }
 

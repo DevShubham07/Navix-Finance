@@ -119,7 +119,7 @@ export default function VerificationsDashboardPage() {
         </button>
       </PageHeader>
 
-      <PermissionGate permission="kyc:approve" fallback={<NoAccessNotice />}>
+      <PermissionGate permission={["kyc:approve", "verification:retry"]} fallback={<NoAccessNotice />}>
         {/* The tallies are queue-wide by design; say so while a search narrows the cards below. */}
         {searchTerm && (
           <p className="mb-1.5 text-xs text-muted">Tallies (all undecided files) — the search does not narrow these.</p>

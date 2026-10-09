@@ -5,9 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Mail, Copy, Check } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type StaffRoleName, type InviteResponse } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
@@ -20,6 +19,7 @@ const ROLES: StaffRoleName[] = [
 /** Admin · invites — issue an invite (returns a one-time token) and list invites. ADMIN only. */
 export default function AdminInvitesPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-invites"], queryFn: adminApi.listInvites });
   const [email, setEmail] = React.useState("");
@@ -36,7 +36,7 @@ export default function AdminInvitesPage() {
   const rows = q.data ?? [];
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
+  if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

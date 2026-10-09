@@ -33,10 +33,9 @@ import {
   Skeleton,
   StatusBadge,
 } from "@/components/ui";
-import { hasPermission } from "@/lib/auth/rbac";
 import { staffApi, paiseToINR } from "@/lib/api/applications";
 import { deriveJourney, type JourneyStage } from "@/lib/domain/journey";
-import { useStaffMe, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
+import { useStaffMe, useCan, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import { JourneyStepper } from "@/components/staff/journey-stepper";
 import { JourneyAssignee } from "@/components/staff/journey-assignee";
 import { StageDetailDialog } from "@/components/staff/stage-detail-dialog";
@@ -52,7 +51,8 @@ export interface ApplicationJourneyProps {
 
 export function ApplicationJourney({ applicationId, open, onClose, onOpenDetail }: ApplicationJourneyProps) {
   const role = useStaffMe().data?.role;
-  const canReview = role != null && REVIEW_PERMS.some((p) => hasPermission(role, p));
+  const can = useCan();
+  const canReview = role != null && REVIEW_PERMS.some((p) => can(p));
 
   const appQ = useQuery({
     queryKey: ["staff-application", applicationId],

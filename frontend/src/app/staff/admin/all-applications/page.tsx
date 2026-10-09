@@ -6,13 +6,12 @@ import { Loader2, RefreshCw, ArrowRight, Info, FilterX } from "lucide-react";
 import { EmptyState, ErrorState, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
 import type { ExportColumn } from "@/lib/export/exporters";
-import { hasPermission } from "@/lib/auth/rbac";
 import { staffApi, paiseToINR, statusLabel, type AdminApplicationView } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { formatDateTime } from "@/lib/utils";
@@ -68,10 +67,11 @@ const EXPORT_COLUMNS: ExportColumn<AdminApplicationView>[] = [
 export default function AdminAllApplicationsPage() {
   const me = useStaffMe();
   const myRole = me.data?.role;
+  const can = useCan();
   // `/api/applications/all` is ADMIN-only server-side. The register used to fire before `/me` had
   // answered — so every other role sent a request it could only ever have refused (FORBIDDEN_ROLE),
   // retried it once, and only then reached "Admin access only". It now waits for the role.
-  const isAdmin = myRole === "ADMIN";
+  const isAdmin = me.data?.realRole === "ADMIN";
   const [query, setQuery] = React.useState("");
   // Bumped to remount the SearchBar, whose draft text is its own state, when "Clear" resets the
   // search from outside it.
@@ -110,7 +110,7 @@ export default function AdminAllApplicationsPage() {
     toolbarRef.current?.querySelector("input")?.focus();
   }, [searchKey]);
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
+  if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

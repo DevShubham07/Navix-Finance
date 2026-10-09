@@ -6,7 +6,7 @@ import { CustomerTabBody } from "@/components/staff/customer-tabs";
 
 let role = "ADMIN";
 vi.mock("@/lib/auth/staff-session", () => ({
-  useStaffSession: () => ({ session: { role }, loading: false }),
+  useStaffSession: () => ({ session: { role, realRole: role }, loading: false }),
 }));
 vi.mock("@/components/staff/live-pipeline", () => ({
   PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,

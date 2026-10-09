@@ -12,6 +12,7 @@
  * surfacing `error.code` so the UI can show a meaningful message.
  */
 
+import { currentActingRole } from "@/lib/auth/working-role";
 import { daysBetween } from "@/lib/calc/loan-math";
 import type { JsonValue } from "@/lib/credit/provider-report";
 import type { BookStats } from "@/lib/staff/my-stats";
@@ -290,6 +291,8 @@ export interface EventView {
   toStatus: ApplicationStatus | null;
   actorId: number | null;
   actorRole: string | null;
+  /** Working role the actor acted as, when it differs from their real role. */
+  actingRole?: string | null;
   /** The resolved actor's display name (borrower profile name or staff name); null if unresolvable. */
   actorName: string | null;
   action: string | null;
@@ -1055,6 +1058,11 @@ export interface ApiResponse<T> {
 // Error + low-level fetch (talks to the BFF, same-origin)
 // ---------------------------------------------------------------------------
 
+/** An executive read a collection case that belongs to another officer — treat as "no case". */
+export function isCaseNotAssigned(e: unknown): boolean {
+  return e instanceof ApplicationApiError && e.code === "CASE_NOT_ASSIGNED";
+}
+
 export class ApplicationApiError extends Error {
   /** Backend `error.code` when present, otherwise an HTTP-derived code. */
   readonly code: string;
@@ -1086,11 +1094,16 @@ export class VerificationRetryTimeoutError extends Error {
 type Method = "GET" | "POST" | "PUT" | "DELETE";
 
 async function bff<T>(path: string, method: Method, body?: unknown): Promise<T> {
+  const acting = currentActingRole();
   let res: Response;
   try {
     res = await fetch(path, {
       method,
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(acting ? { "X-Acting-Role": acting } : {}),
+      },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       // BFF sets/reads httpOnly cookies; ensure they ride along.
       credentials: "same-origin",

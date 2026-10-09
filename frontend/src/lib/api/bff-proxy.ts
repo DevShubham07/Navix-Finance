@@ -32,6 +32,8 @@ export async function proxyToBackend(
     Authorization: `Bearer ${token}`,
     "X-Request-Id": requestId,
   };
+  const acting = req.headers.get("x-acting-role");
+  if (acting) headers["X-Acting-Role"] = acting;
 
   let body: string | undefined;
   if (req.method !== "GET" && req.method !== "HEAD") {

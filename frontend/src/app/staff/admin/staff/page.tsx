@@ -8,10 +8,9 @@ import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/compon
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice, ROLE_LABEL } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, useCan, NoAccessNotice, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { SearchBar } from "@/components/staff/search-bar";
-import { hasPermission } from "@/lib/auth/rbac";
 import {
   adminApi,
   type StaffResponse,
@@ -47,6 +46,7 @@ export default function AdminStaffPage() {
 function AdminStaffPageInner() {
   const me = useStaffMe();
   const role = me.data?.role;
+  const can = useCan();
   const q = useQuery({ queryKey: ["admin-staff"], queryFn: adminApi.listStaff });
 
   const [tab, setTab] = React.useState<StaffStatus>("ACTIVE");
@@ -80,7 +80,7 @@ function AdminStaffPageInner() {
     return <div className="h-40 animate-pulse rounded border border-line bg-white" />;
   }
 
-  if (role && !hasPermission(role, "staff:manage")) {
+  if (role && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

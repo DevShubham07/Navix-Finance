@@ -11,10 +11,10 @@ import {
   useCustomerDocumentGroups,
   viewDocument,
 } from "@/components/staff/detail-parts";
-import { hasPermission } from "@/lib/auth/rbac";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { formatDateTime } from "@/lib/utils";
 import { statusLabel, type DocumentView } from "@/lib/api/applications";
+import { can as rbacCan, type Permission } from "@/lib/auth/rbac";
 
 const GRID = "grid gap-3 md:grid-cols-3";
 
@@ -22,8 +22,10 @@ const GRID = "grid gap-3 md:grid-cols-3";
 export function DocumentsTab({ customerId }: { customerId: number }) {
   const { groupsQ, groups, customerDocuments, customerByType, applicationGroups, del, isAdmin } =
     useCustomerDocumentGroups(customerId);
-  const role = useStaffSession().session?.role;
-  const canUpload = role != null && hasPermission(role, "document:upload");
+  const sess = useStaffSession().session;
+  const role = sess?.role;
+  const can = (p: Permission) => rbacCan(sess?.realRole, role, p);
+  const canUpload = role != null && can("document:upload");
   const [busy, setBusy] = React.useState<string | null>(null);
   const [openIds, setOpenIds] = React.useState<Set<number> | null>(null);
   // The newest application starts open, once data arrives.

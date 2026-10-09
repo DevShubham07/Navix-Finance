@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Lock, Loader2, RefreshCw, AlertTriangle, ChevronDown, ChevronRight, Receipt } from "lucide-react";
 import { PageHeader, RefreshButton } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { hasPermission, type StaffRole } from "@/lib/auth/rbac";
+import { can, type StaffRole } from "@/lib/auth/rbac";
 import { staffApi, isLoanOverdue, type ApplicationView } from "@/lib/api/applications";
 import {
   useStaffMe,
@@ -82,7 +82,7 @@ function StaffApplicationsPageInner() {
   }
 
   const role = session.role;
-  const isPipeline = PIPELINE_ROLES.includes(role) || role === "ADMIN" || BACK_OFFICE_ROLES.includes(role);
+  const isPipeline = PIPELINE_ROLES.includes(role) || BACK_OFFICE_ROLES.includes(role);
 
   return (
     <div>
@@ -108,7 +108,7 @@ function StaffApplicationsPageInner() {
         />
         {/* Carried over from the removed accounting page's header — the ledger is the accountant's
             other destination and has no other entry point outside the Administration nav group. */}
-        {hasPermission(role, "loan:activate") && (
+        {can(session.realRole, role, "loan:activate") && (
           <Link
             href="/staff/accounting/transactions"
             className="inline-flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-sm font-semibold text-navy hover:bg-grey-100"
@@ -124,7 +124,7 @@ function StaffApplicationsPageInner() {
 
         {isPipeline ? (
           <QueueRangeProvider value={{ range, query }}>
-            <RoleQueues role={role} />
+            <RoleQueues role={role} meId={Number(session.id)} />
           </QueueRangeProvider>
         ) : (
           <div className="flex items-start gap-2 rounded border border-line bg-grey-50 p-4 text-sm text-muted">
@@ -139,7 +139,7 @@ function StaffApplicationsPageInner() {
 }
 
 /**
- * Role -> the queue panels it sees (ADMIN sees them all).
+ * Working role -> the queue panels it sees. A real ADMIN works as one of the seven roles via the header switcher.
  *
  * This is now the single workbench: every panel that used to live on the dedicated
  * /staff/kyc-approvals and /staff/kyc-review pages (both since removed) is rendered here, with
@@ -148,38 +148,38 @@ function StaffApplicationsPageInner() {
  * accountant's repayment-verify queue are mirrored here too, so a role never has to visit a second
  * page to see its own work.
  */
-function RoleQueues({ role }: { role: StaffRole }) {
-  const showAll = role === "ADMIN";
-
+function RoleQueues({ role, meId }: { role: StaffRole; meId: number }) {
   // "Awaiting repayment" (ACTIVE+OVERDUE) and "Closed" are back-office, not credit-pipeline,
-  // panels: the show-all view (ADMIN) and ACCOUNTANT get both; collections roles only
-  // need to see what's still owed, not the closed archive.
-  const showBothRepaymentPanels = showAll || role === "ACCOUNTANT";
+  // panels: ACCOUNTANT gets both; collections roles only need to see what's still owed, not the
+  // closed archive.
+  const showBothRepaymentPanels = role === "ACCOUNTANT";
   const isCollections = role === "COLLECTION_HEAD" || role === "COLLECTION_EXECUTIVE";
   const showAwaitingRepayment = showBothRepaymentPanels || isCollections;
 
   return (
     <div className="space-y-8">
       {/* The Credit Head's only lifecycle step (V45): hand a submitted intake to an executive. */}
-      {(showAll || role === "CREDIT_HEAD") && <CreditWorkbench />}
+      {role === "CREDIT_HEAD" && <CreditWorkbench />}
 
       {role === "CREDIT_EXECUTIVE" && (
         <>
           <StatusQueue
             title="Credit review — accept, reject or park"
             status="CREDIT_EXEC_PENDING"
+            filter={(a) => a.assignedExecutiveId === meId}
             actions={(app) => <CreditDecisionActions app={app} compact />}
             info="Files assigned to a credit executive. Accepting sets the sanctioned amount and repayment date — that decision is final and goes straight to disbursement, so there is no second approval behind it."
           />
           <StatusQueue
             title="Sanctioned — borrower completing their journey"
             status="SANCTIONED"
+            filter={(a) => a.assignedExecutiveId === meId}
             info="Credit has decided. The borrower is finishing the post-approval steps; the file reaches the Disbursement Head once they accept the offer."
           />
         </>
       )}
 
-      {(showAll || role === "DISBURSEMENT_HEAD") && (
+      {role === "DISBURSEMENT_HEAD" && (
         <>
           <StatusQueue
             title="Pre-approved — fast-track release"
@@ -210,14 +210,14 @@ function RoleQueues({ role }: { role: StaffRole }) {
       {/* The Accountant no longer touches disbursement at all (V48): the Disbursement Head's
           transaction id IS the validation. What's left is money coming back in — borrower
           repayments and what collections took in the field. */}
-      {(showAll || role === "ACCOUNTANT") && (
+      {role === "ACCOUNTANT" && (
         <>
           <RepaymentVerifyQueue />
           <CollectionPaymentValidationQueue />
         </>
       )}
 
-      {(showAll || role === "COLLECTION_HEAD") && <CollectionPaymentApprovalQueue />}
+      {role === "COLLECTION_HEAD" && <CollectionPaymentApprovalQueue />}
 
       {showAwaitingRepayment && <AwaitingRepaymentPanel />}
       {showBothRepaymentPanels && <ClosedPanel />}

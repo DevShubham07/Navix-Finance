@@ -5,9 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Wallet, Trash2, Paperclip, FileText } from "lucide-react";
 import { EmptyState, ErrorState, Input, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, storageApi, paiseToINR, rupeesToPaise, type ExpenseResponse } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
@@ -23,6 +22,7 @@ function todayIso(): string {
  */
 export default function AdminExpensesPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-expenses"], queryFn: adminApi.listExpenses });
 
@@ -90,7 +90,7 @@ export default function AdminExpensesPage() {
   const total = rows.reduce((sum, e) => sum + e.amountPaise, 0);
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total: rowsTotal } = usePagination(rows);
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
+  if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

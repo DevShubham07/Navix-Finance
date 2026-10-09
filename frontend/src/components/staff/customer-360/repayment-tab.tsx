@@ -21,7 +21,6 @@ import {
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { buildLedger, type LedgerRow } from "@/lib/calc/loan-ledger";
 import { daysBetween } from "@/lib/calc/loan-math";
-import { hasPermission } from "@/lib/auth/rbac";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { formatApiError } from "@/lib/api/errors";
 import { isoDayToLocalDate, istCalendarToday } from "@/lib/customers/customer-360";
@@ -34,6 +33,7 @@ import {
   REJECTION_REASON_LABEL,
   type RejectionReasonCode,
 } from "@/lib/api/applications";
+import { can as rbacCan, type Permission } from "@/lib/auth/rbac";
 
 const inr = (p: number | null | undefined) => (p == null ? null : paiseToINR(p));
 const METHOD_LABEL: Record<string, string> = { UPI: "UPI", BANK_TRANSFER: "Bank transfer", NACH: "NACH" };
@@ -60,9 +60,11 @@ export function RepaymentTab(ctx: TabCtx) {
 
 function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
   const qc = useQueryClient();
-  const role = useStaffSession().session?.role;
-  const canVerify = role != null && hasPermission(role, "loan:activate");
-  const canRecord = role != null && hasPermission(role, "customer:manage");
+  const sess = useStaffSession().session;
+  const role = sess?.role;
+  const can = (p: Permission) => rbacCan(sess?.realRole, role, p);
+  const canVerify = role != null && can("loan:activate");
+  const canRecord = role != null && can("customer:manage");
   const [addOpen, setAddOpen] = React.useState(false);
   const [rejectTarget, setRejectTarget] = React.useState<PaymentView | null>(null);
   const { outstanding } = useLoanData(ctx, loan.id);

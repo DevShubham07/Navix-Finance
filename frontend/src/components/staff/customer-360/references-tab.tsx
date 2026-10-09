@@ -7,9 +7,9 @@ import { EmptyState, ErrorState, Skeleton, toast } from "@/components/ui";
 import { Field, FieldGrid } from "@/components/ui/field-grid";
 import { Section } from "@/components/staff/detail-parts";
 import { errMessage } from "@/components/staff/pipeline/hooks";
-import { hasPermission } from "@/lib/auth/rbac";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { staffApi, REFERENCE_RELATIONS, type ReferenceInput } from "@/lib/api/applications";
+import { can as rbacCan, type Permission } from "@/lib/auth/rbac";
 
 const RELATION_LABEL: Record<string, string> = {
   PARENT: "Parent", SPOUSE: "Spouse", SIBLING: "Sibling", RELATIVE: "Relative",
@@ -31,8 +31,10 @@ export function ReferencesTab({ applicationId }: { applicationId: number | null 
 }
 
 function ReferencesFocus({ applicationId }: { applicationId: number }) {
-  const role = useStaffSession().session?.role;
-  const canEdit = role != null && hasPermission(role, "customer:manage");
+  const sess = useStaffSession().session;
+  const role = sess?.role;
+  const can = (p: Permission) => rbacCan(sess?.realRole, role, p);
+  const canEdit = role != null && can("customer:manage");
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["staff-references", applicationId],

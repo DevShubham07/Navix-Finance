@@ -82,8 +82,8 @@ export default function MyDecisionsPage() {
   // solely to populate the "whose decisions" picker below, which renders only when it comes back
   // non-empty. For a Credit Executive, an Accountant, a Telecaller — everyone else — the request
   // was fired on every visit to return a list that could never be shown.
-  const canInspectOthers =
-    me.data?.role === "CREDIT_HEAD" || me.data?.role === "COLLECTION_HEAD" || me.data?.role === "ADMIN";
+  // Working role, so an ADMIN working as a Head can; as an executive the server scopes to self.
+  const canInspectOthers = me.data?.role === "CREDIT_HEAD" || me.data?.role === "COLLECTION_HEAD";
   const team = useQuery({
     queryKey: ["decisions-inspectable"],
     queryFn: () => staffApi.inspectableStaff(),

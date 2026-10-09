@@ -22,11 +22,10 @@ import { CreditBadge } from "@/components/staff/credit-badge";
 import { NeedsManualReviewBadge } from "@/components/staff/detail-parts";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { stageActionTab } from "@/components/staff/customer-360/stage-actions";
-import { hasPermission } from "@/lib/auth/rbac";
 import { customerPageHref } from "@/lib/customers/customer-page";
 import { ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { staffApi, customersApi, type ApplicationStatus } from "@/lib/api/applications";
-import { useStaffMe, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
+import { useStaffMe, useCan, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import { NoAccessNotice } from "@/components/staff/live-pipeline";
 
 /** Stage-aware landing tab. */
@@ -50,16 +49,49 @@ function defaultTabFor(status: ApplicationStatus): string {
 
 export interface ApplicationDetailDialogProps {
   applicationId: number | null;
+  /** Alternative entry for a caller that holds only a loan id (`?open=<loanId>` deep links): the
+   *  application is resolved loan -> customer -> the application carrying that loan. Ignored when
+   *  `applicationId` is given. */
+  loanId?: number | null;
+  /** The tab to land on; wins over the stage-aware default. Set by the entry point (Customers ->
+   *  "customer", Loans -> "loan", DPD -> "repayment"). */
+  initialTab?: string;
   onClose: () => void;
   /** Set only on the stacked copy: it never opens a further level. */
   nested?: boolean;
 }
 
-export function ApplicationDetailDialog({ applicationId, onClose, nested = false }: ApplicationDetailDialogProps) {
-  const open = applicationId != null;
-  const id = applicationId ?? 0;
+export function ApplicationDetailDialog({
+  applicationId,
+  loanId = null,
+  initialTab,
+  onClose,
+  nested = false,
+}: ApplicationDetailDialogProps) {
+  const open = applicationId != null || loanId != null;
   const qc = useQueryClient();
-  const [tab, setTab] = React.useState("customer");
+
+  // Loan-only entry: loan -> customer -> the application that carries it.
+  const byLoan = applicationId == null && loanId != null;
+  const loanQ = useQuery({
+    queryKey: ["staff-loan", loanId],
+    queryFn: () => staffApi.loan(loanId as number),
+    enabled: byLoan,
+    retry: false,
+  });
+  const loanCustomerId = loanQ.data?.customerId ?? null;
+  const loanCustQ = useQuery({
+    queryKey: ["customer-detail", loanCustomerId],
+    queryFn: () => customersApi.get(loanCustomerId as number),
+    enabled: byLoan && loanCustomerId != null,
+    retry: false,
+  });
+  const resolvedId = applicationId ?? loanCustQ.data?.applications.find((a) => a.loanId === loanId)?.id ?? null;
+  const resolving = byLoan && resolvedId == null && (loanQ.isLoading || loanCustQ.isLoading);
+  const resolveError = byLoan && resolvedId == null ? (loanQ.error ?? loanCustQ.error) : null;
+  const id = resolvedId ?? 0;
+  const ready = id > 0;
+  const [tab, setTab] = React.useState(initialTab ?? "customer");
   /** Another application of the same customer, stacked on top of this one (see the render below). */
   const [nestedAppId, setNestedAppId] = React.useState<number | null>(null);
 
@@ -71,26 +103,28 @@ export function ApplicationDetailDialog({ applicationId, onClose, nested = false
   }, [open, id]);
 
   const role = useStaffMe().data?.role;
-  const canReview = role != null && REVIEW_PERMS.some((p) => hasPermission(role, p));
+
+  const can = useCan();
+  const canReview = role != null && REVIEW_PERMS.some((p) => can(p));
 
   const appQ = useQuery({
     queryKey: ["staff-application", id],
     queryFn: () => staffApi.get(id),
-    enabled: open,
-    refetchInterval: open ? 8000 : false,
+    enabled: ready,
+    refetchInterval: ready ? 8000 : false,
   });
   // get(id) is borrower-safe (no credit fields); the staff-only headline comes from the brief
   // endpoint. Same key and the same ungated call `application-info-dialog.tsx` already makes.
   const briefQ = useQuery({
     queryKey: ["credit-brief", id],
     queryFn: () => staffApi.creditBrief(id),
-    enabled: open,
+    enabled: ready,
   });
   // Backs the header identity (name/mobile/PAN/risk).
   const profileQ = useQuery({
     queryKey: ["staff-profile", id],
     queryFn: () => staffApi.getProfile(id),
-    enabled: open && canReview,
+    enabled: ready && canReview,
     retry: false,
   });
 
@@ -99,7 +133,7 @@ export function ApplicationDetailDialog({ applicationId, onClose, nested = false
   const detailQ = useQuery({
     queryKey: ["customer-detail", customerId],
     queryFn: () => customersApi.get(customerId as number),
-    enabled: open && customerId != null,
+    enabled: ready && customerId != null,
   });
 
   // The default tab is set once per file, when it first loads — not on every 8s refetch.
@@ -110,8 +144,8 @@ export function ApplicationDetailDialog({ applicationId, onClose, nested = false
   React.useEffect(() => {
     if (!app || defaultedFor.current === app.id) return;
     defaultedFor.current = app.id;
-    setTab(defaultTabFor(app.status));
-  }, [app]);
+    setTab(initialTab ?? defaultTabFor(app.status));
+  }, [app, initialTab]);
 
   // The 8s poll sees a status change that the (static) customer roll-up does not.
   const status = app?.status;
@@ -133,12 +167,18 @@ export function ApplicationDetailDialog({ applicationId, onClose, nested = false
       {/* `!w` pins the width (`size` sets only the max-width, and globals.css's un-layered `.modal`
           outranks a plain `w-` utility). The panel is a flex column with the body as its single
           scroller, so the header and tab strip stay pinned. */}
-      <Dialog open={open} onClose={onClose} size="xl" className="!w-[92vw] !p-6 !px-7 flex flex-col !overflow-hidden">
+      <Dialog
+        open={open}
+        onClose={onClose}
+        size="xl"
+        className="!w-[92vw] !h-[88dvh] !max-h-[88dvh] !p-6 !px-7 flex flex-col !overflow-hidden"
+      >
         <div className="shrink-0 border-b border-line pb-3">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
               <h3 className="font-serif text-lg text-navy">
-                {displayName} <span className="text-sm font-normal text-muted">— Application #{id}</span>
+                {displayName}{" "}
+                {ready && <span className="text-sm font-normal text-muted">— Application #{id}</span>}
               </h3>
               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span>#{app?.customerId ?? "—"}</span>
@@ -187,8 +227,12 @@ export function ApplicationDetailDialog({ applicationId, onClose, nested = false
         <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} className="mt-2 shrink-0" />
 
         <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
-          {appQ.isLoading ? (
+          {resolving || (ready && appQ.isLoading) ? (
             <Skeleton variant="line" rows={6} className="py-6" />
+          ) : resolveError ? (
+            <ErrorState error={resolveError} />
+          ) : !ready ? (
+            <ErrorState error={new Error(`No application found for loan #${loanId}.`)} />
           ) : appQ.error ? (
             <ErrorState error={appQ.error} onRetry={() => void appQ.refetch()} />
           ) : !app ? (

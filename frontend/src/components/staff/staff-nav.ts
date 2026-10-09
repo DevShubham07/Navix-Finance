@@ -21,7 +21,7 @@ import {
   Banknote,
   Landmark,
 } from "lucide-react";
-import { hasPermission, type Permission, type StaffRole } from "@/lib/auth/rbac";
+import { can, type Permission, type StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
 import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
 import {
@@ -45,7 +45,8 @@ export type NavItem = {
   label: string;
   href: string;
   Icon: typeof LayoutDashboard;
-  perm?: Permission;
+  /** Any-of when an array. */
+  perm?: Permission | Permission[];
   /** Hide this item when the named dev-controlled feature flag is off (in addition to RBAC). */
   flag?: string;
   /** Optional segment children (Customers, Loans). href for a child = `${parent.href}?seg=${seg}`.
@@ -62,11 +63,17 @@ export type NavGroup = { heading: string; items: NavItem[] };
 
 /** A nav item shows when its RBAC perm passes, its feature flag (if any) is not explicitly off,
  *  and the role isn't explicitly excluded via `hideFor`. */
-export function navVisible(it: NavItem, role: StaffRole, flags?: FeatureFlags): boolean {
+export function navVisible(it: NavItem, realRole: StaffRole, role: StaffRole, flags?: FeatureFlags): boolean {
   if (it.hideFor?.includes(role)) return false;
-  if (it.perm && !hasPermission(role, it.perm)) return false;
+  if (it.perm && ![it.perm].flat().some((p) => can(realRole, role, p))) return false;
   if (it.flag && flags?.[it.flag] === false) return false;
   return true;
+}
+
+/** Customers (and its segment children) open scoped to "mine" for roles without the whole book. */
+export function navHref(href: string, realRole: StaffRole, role: StaffRole): string {
+  if (!href.startsWith("/staff/customers") || can(realRole, role, "customer:view:all")) return href;
+  return href + (href.includes("?") ? "&" : "?") + "mine=1";
 }
 
 export const NAV: NavGroup[] = [
@@ -88,7 +95,7 @@ export const NAV: NavGroup[] = [
         Icon: UserX,
         perm: "customer:assign",
       },
-      { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: "kyc:approve" },
+      { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: ["kyc:approve", "verification:retry"] },
       // No `perm`: every staffer may read their own decision history (the server scopes it).
       { label: "My decisions", href: "/staff/my-decisions", Icon: History, hideFor: ["DSA"] },
       // No `perm`: the server scopes the roster (ADMIN → company, Head → team, else self), so
@@ -105,9 +112,9 @@ export const NAV: NavGroup[] = [
   {
     heading: "Collections",
     items: [
-      { label: "DPD buckets", href: "/staff/collections", Icon: HandCoins, perm: "collections:interact", collectionBuckets: true },
+      { label: "DPD buckets", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], collectionBuckets: true },
       // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
-      { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: "collections:interact" },
+      { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: ["collections:interact", "collections:manage"] },
       {
         label: "Loans",
         href: "/staff/loans",
@@ -140,7 +147,7 @@ export const NAV: NavGroup[] = [
       { label: "All applications", href: "/staff/admin/all-applications", Icon: Files, perm: "staff:manage" },
       { label: "Rejections", href: "/staff/admin/rejections", Icon: Ban, perm: "staff:manage" },
       { label: "Provider API dashboard", href: "/staff/admin/api-dashboard", Icon: ListChecks, perm: "verification:retry" },
-      { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: "loan:activate" },
+      { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: ["loan:activate", "staff:manage"] },
     ],
   },
 ];

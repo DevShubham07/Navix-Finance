@@ -104,9 +104,10 @@ export type Permission =
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
-  // The credit roles absorbed the deleted KYC_APPROVER (V45). The Executive holds kyc:approve
-  // because the sanction IS the credit decision — there is no Head counter-approval; the Head's
-  // loan:approve now gates assignment (handing work out), not a second sign-off.
+  // Head = assign / approve / monitor; executive = decide / field work. The Executive holds
+  // kyc:approve + loan:review because the sanction IS the credit decision; the Head's loan:approve
+  // gates assignment (handing work out). A Head who wants to decide a file works as Executive
+  // (see WORKING_ROLES below).
   CREDIT_EXECUTIVE: [
     "kyc:approve",
     "loan:review",
@@ -116,8 +117,6 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "leads:import",
   ],
   CREDIT_HEAD: [
-    "kyc:approve",
-    "loan:review",
     "loan:approve",
     "customer:view",
     "customer:view:all",
@@ -137,7 +136,6 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   ACCOUNTANT: ["loan:activate", "customer:view", "loan:pipeline", "leads:import"],
   COLLECTION_HEAD: [
     "collections:manage",
-    "collections:interact",
     "customer:view",
     "customer:view:all",
     "customer:assign",
@@ -186,6 +184,71 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
 export function hasPermission(role: StaffRole, permission: Permission): boolean {
   return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;
 }
+
+/**
+ * A staffer has a REAL role (session cookie) and a WORKING role (header switcher). First entry =
+ * default. Roles absent here may only work as themselves.
+ */
+export const WORKING_ROLES: Partial<Record<StaffRole, readonly StaffRole[]>> = {
+  ADMIN: [
+    "CREDIT_HEAD",
+    "CREDIT_EXECUTIVE",
+    "DISBURSEMENT_HEAD",
+    "ACCOUNTANT",
+    "COLLECTION_HEAD",
+    "COLLECTION_EXECUTIVE",
+    "TELECALLER",
+  ],
+  CREDIT_HEAD: ["CREDIT_HEAD", "CREDIT_EXECUTIVE"],
+  COLLECTION_HEAD: ["COLLECTION_HEAD", "COLLECTION_EXECUTIVE"],
+};
+
+export function workingRolesFor(real: StaffRole): readonly StaffRole[] {
+  return WORKING_ROLES[real] ?? [real];
+}
+
+export function canWorkAs(real: StaffRole, r: StaffRole): boolean {
+  return workingRolesFor(real).includes(r);
+}
+
+/** Admin powers are not a role: a real ADMIN keeps these in every working role. */
+const ADMIN_POWERS: Permission[] = [
+  "staff:manage",
+  "customer:manage",
+  "customer:view:all",
+  "customer:assign",
+  "verification:retry",
+  "dsa:manage",
+  "waitlist:view",
+  "loan:register",
+  "document:upload",
+];
+
+export function effectivePermissions(real: StaffRole, working: StaffRole): Permission[] {
+  return [...new Set([...ROLE_PERMISSIONS[working], ...(real === "ADMIN" ? ADMIN_POWERS : [])])];
+}
+
+/** Permission check for the signed-in staffer: working role + admin powers of the real role. */
+export function can(
+  real: StaffRole | undefined,
+  working: StaffRole | undefined,
+  p: Permission,
+): boolean {
+  if (!real || !working) return false;
+  return effectivePermissions(real, working).includes(p);
+}
+
+export const ROLE_META: Record<StaffRole, { purpose: string }> = {
+  CREDIT_HEAD: { purpose: "Assign leads and monitor your team" },
+  CREDIT_EXECUTIVE: { purpose: "Decide the files assigned to you" },
+  DISBURSEMENT_HEAD: { purpose: "Release approved loans" },
+  ACCOUNTANT: { purpose: "Verify repayments and payments" },
+  COLLECTION_HEAD: { purpose: "Assign cases and approve settlements" },
+  COLLECTION_EXECUTIVE: { purpose: "Work your collection cases" },
+  TELECALLER: { purpose: "Call leads and log outcomes" },
+  DSA: { purpose: "Your leads and earnings" },
+  ADMIN: { purpose: "Full administration" },
+};
 
 /** A maker-checker step in the loan lifecycle. */
 export type LoanStep = "kyc" | "review" | "approve" | "disburse" | "activate";

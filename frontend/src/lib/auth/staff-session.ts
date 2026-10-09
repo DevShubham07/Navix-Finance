@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import type { StaffRole } from "@/lib/auth/rbac";
+import { readWorkingRole } from "@/lib/auth/working-role";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 
 /**
@@ -16,18 +17,25 @@ import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 export interface StaffSession {
   id: string;
   name: string;
+  /** The WORKING role (header switcher); check permissions with `can(realRole, role, p)`. */
   role: StaffRole;
+  /** The role on the session cookie. */
+  realRole: StaffRole;
 }
 
 const STAFF_SESSION_EVENT = "navix-staff-session";
+
+function withWorkingRole(s: Omit<StaffSession, "realRole">): StaffSession {
+  return { ...s, realRole: s.role, role: readWorkingRole(s.id, s.role) };
+}
 
 /** Read the current staff identity from the BFF (or null when signed out). */
 export async function fetchStaffSession(): Promise<StaffSession | null> {
   try {
     const res = await fetch("/api/auth/staff/me", { cache: "no-store", credentials: "same-origin" });
     if (!res.ok) return null;
-    const json = (await res.json()) as { session: StaffSession | null };
-    return json.session ?? null;
+    const json = (await res.json()) as { session: Omit<StaffSession, "realRole"> | null };
+    return json.session ? withWorkingRole(json.session) : null;
   } catch {
     return null;
   }
@@ -71,7 +79,7 @@ export async function loginStaff(
     const env = await readEnvelopeError(res, "Sign-in failed. Please try again.");
     throw new StaffLoginError(formatEnvelopeError(env), env.code);
   }
-  const session = (await res.json()) as StaffSession;
+  const session = withWorkingRole((await res.json()) as Omit<StaffSession, "realRole">);
   if (typeof window !== "undefined") window.dispatchEvent(new Event(STAFF_SESSION_EVENT));
   return session;
 }

@@ -16,21 +16,21 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, Loader2, FileText, Download, ExternalLink, User } from "lucide-react";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
-import { hasPermission } from "@/lib/auth/rbac";
 import {
   staffApi,
   paiseToINR,
   openDocument,
   type DocumentView,
 } from "@/lib/api/applications";
-import { useStaffMe, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
+import { useStaffMe, useCan, errMessage, REVIEW_PERMS } from "@/components/staff/pipeline/hooks";
 import { NoAccessNotice } from "@/components/staff/pipeline/actions";
 import { DocPassword, docTypeLabel } from "@/components/staff/detail-parts";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 
 export function CustomerReview({ applicationId }: { applicationId: number }) {
   const role = useStaffMe().data?.role;
-  const canReview = role != null && REVIEW_PERMS.some((p) => hasPermission(role, p));
+  const can = useCan();
+  const canReview = role != null && REVIEW_PERMS.some((p) => can(p));
   const [load, setLoad] = React.useState(false);
   const profileQ = useQuery({
     queryKey: ["staff-profile", applicationId],

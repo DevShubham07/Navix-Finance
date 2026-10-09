@@ -5,9 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type BlocklistType, type BlocklistResponse } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
@@ -22,6 +21,7 @@ const TYPES: { value: BlocklistType; label: string }[] = [
 /** Admin · fraud blocklist — list / add / remove blocked identifiers (live /api/admin/blocklist). ADMIN only. */
 export default function AdminBlocklistPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["admin-blocklist"], queryFn: adminApi.listBlocklist });
   const [type, setType] = React.useState<BlocklistType>("PAN");
@@ -45,7 +45,7 @@ export default function AdminBlocklistPage() {
   const rows = q.data ?? [];
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
+  if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

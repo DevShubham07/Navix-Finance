@@ -14,10 +14,10 @@ import * as React from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Check, X, Loader2, Zap, UserPlus, UserCheck } from "lucide-react";
 import { ErrorState, Input, Select, toast } from "@/components/ui";
-import { hasPermission, type Permission } from "@/lib/auth/rbac";
+import { can, type Permission } from "@/lib/auth/rbac";
 import { staffApi, type ApplicationView } from "@/lib/api/applications";
 import { SanctionDialog } from "@/components/staff/sanction-dialog";
-import { useStaffMe, useRefreshAfterAction, errMessage } from "@/components/staff/pipeline/hooks";
+import { useStaffMe, useCan, useRefreshAfterAction, errMessage } from "@/components/staff/pipeline/hooks";
 import { RejectDialog, AssignDialog } from "@/components/staff/pipeline/bulk-actions";
 
 function ApproveRejectButtons({
@@ -68,9 +68,9 @@ function ActionError({ error }: { error: unknown }) {
  */
 function ActionGate({ permission, children }: { permission: Permission; children: React.ReactNode }) {
   const me = useStaffMe();
-  const role = me.data?.role;
-  if (!role) return null; // session still loading / not signed in
-  if (!hasPermission(role, permission)) {
+  const m = me.data;
+  if (!m) return null; // session still loading / not signed in
+  if (!can(m.realRole, m.role, permission)) {
     return <span className="text-xs italic text-muted">Not your step</span>;
   }
   return <>{children}</>;
@@ -93,10 +93,10 @@ export function PermissionGate({
   children: React.ReactNode;
   fallback?: React.ReactNode;
 }) {
-  const role = useStaffMe().data?.role;
-  if (!role) return null; // session still loading / not signed in
+  const m = useStaffMe().data;
+  if (!m) return null; // session still loading / not signed in
   const perms = Array.isArray(permission) ? permission : [permission];
-  if (!perms.some((p) => hasPermission(role, p))) return <>{fallback}</>;
+  if (!perms.some((p) => can(m.realRole, m.role, p))) return <>{fallback}</>;
   return <>{children}</>;
 }
 
@@ -245,7 +245,7 @@ export function KycActions({ app, compact }: { app: ApplicationView; compact?: b
 export function AssignActions({ app, compact }: { app: ApplicationView; compact?: boolean }) {
   const refresh = useRefreshAfterAction();
   const me = useStaffMe();
-  const canAssignSelf = me.data?.role === "ADMIN" || me.data?.role === "CREDIT_HEAD";
+  const canAssignSelf = useCan()("loan:approve");
   const [execId, setExecId] = React.useState("");
   // Assignee picker: only active Credit Executives, plus the acting Credit Head via self-assign.
   // Sourced from the dedicated staff-readable endpoint, NOT adminApi.listStaff() — that route is
@@ -372,7 +372,6 @@ export function AssignActions({ app, compact }: { app: ApplicationView; compact?
  */
 export function CreditDecisionActions({ app, compact }: { app: ApplicationView; compact?: boolean }) {
   const refresh = useRefreshAfterAction();
-  const me = useStaffMe();
   const [sanctioning, setSanctioning] = React.useState(false);
   const [assigning, setAssigning] = React.useState(false);
   const [rejecting, setRejecting] = React.useState(false);
@@ -398,17 +397,23 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
   });
 
   const busy = reject.isPending || pending.isPending;
-  const canAssign = me.data?.role === "CREDIT_HEAD" || me.data?.role === "ADMIN";
+  const canDo = useCan();
+  // Head assigns (loan:approve); Executive decides (loan:review). Rejecting is open to either.
+  const canDecide = canDo("loan:review");
+  const canAssign = canDo("loan:approve");
+  if (!canDecide && !canAssign) return <span className="text-xs italic text-muted">Not your step</span>;
 
   // On a queue row: Accept needs no typing at all; Assign and Reject are buttons that raise the
   // same single-id dialogs the bulk toolbar uses (bulk-actions.tsx) — "no typing *in the row*",
   // not "no controls in the row".
   if (compact) {
     return (
-      <ActionGate permission="loan:review">
-        <button onClick={() => setSanctioning(true)} className="btn btn-sm btn-gold">
-          <Check size={14} /> Accept
-        </button>
+      <>
+        {canDecide && (
+          <button onClick={() => setSanctioning(true)} className="btn btn-sm btn-gold">
+            <Check size={14} /> Accept
+          </button>
+        )}
         {canAssign && (
           <button onClick={() => setAssigning(true)} className="btn btn-sm btn-outline">
             {app.assignedExecutiveId ? <UserCheck size={14} /> : <UserPlus size={14} />}{" "}
@@ -421,17 +426,18 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
         >
           <X size={14} /> Reject
         </button>
-        <SanctionDialog app={app} open={sanctioning} onClose={() => setSanctioning(false)} />
+        {canDecide && <SanctionDialog app={app} open={sanctioning} onClose={() => setSanctioning(false)} />}
         {canAssign && <AssignDialog ids={[app.id]} open={assigning} onClose={() => setAssigning(false)} />}
         <RejectDialog ids={[app.id]} mode="credit" open={rejecting} onClose={() => setRejecting(false)} />
-      </ActionGate>
+      </>
     );
   }
 
   return (
-    <ActionGate permission="loan:review">
+    <>
       <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
         {canAssign && <AssignActions app={app} />}
+        {canAssign && !canDecide && <p className="text-xs text-muted">Switch to Credit Executive to decide.</p>}
         {app.markedPendingAt && (
           <p className="text-xs text-warning-700">
             Marked pending{app.pendingReason ? ` — ${app.pendingReason}` : ""}
@@ -469,17 +475,21 @@ export function CreditDecisionActions({ app, compact }: { app: ApplicationView; 
             >
               <X size={14} /> Reject lead
             </button>
-            <button onClick={() => setPrompt("pending")} className="btn btn-sm btn-outline">
-              Mark lead pending
-            </button>
-            <button onClick={() => setSanctioning(true)} className="btn btn-sm btn-gold">
-              <Check size={14} /> Accept lead
-            </button>
+            {canDecide && (
+              <>
+                <button onClick={() => setPrompt("pending")} className="btn btn-sm btn-outline">
+                  Mark lead pending
+                </button>
+                <button onClick={() => setSanctioning(true)} className="btn btn-sm btn-gold">
+                  <Check size={14} /> Accept lead
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
-      <SanctionDialog app={app} open={sanctioning} onClose={() => setSanctioning(false)} />
-    </ActionGate>
+      {canDecide && <SanctionDialog app={app} open={sanctioning} onClose={() => setSanctioning(false)} />}
+    </>
   );
 }
 

@@ -5,9 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Gift, Check, Clock } from "lucide-react";
 import { EmptyState, ErrorState, Input, Skeleton, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice, ROLE_LABEL } from "@/components/staff/live-pipeline";
+import { errMessage, useStaffMe, useCan, NoAccessNotice, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { hasPermission } from "@/lib/auth/rbac";
 import { staffReferralApi, featureFlagsApi, paiseToINR, type ReferralPayout } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 
@@ -30,11 +29,12 @@ function roleLabel(role: ReferralPayout["beneficiaryRole"]): string {
  */
 export default function ReferralPayoutsPage() {
   const role = useStaffMe().data?.role;
+  const can = useCan();
   const qc = useQueryClient();
   const [tab, setTab] = React.useState<"PENDING" | "PAID">("PENDING");
   const [txnRefs, setTxnRefs] = React.useState<Record<number, string>>({});
 
-  const allowed = role ? hasPermission(role, "referral:payout") : false;
+  const allowed = role ? can("referral:payout") : false;
 
   // Dev-controlled kill-switch: when the referral flag is off the whole feature (incl. these staff
   // endpoints) is disabled, so don't fire the payout/expense reads — show the disabled state instead.

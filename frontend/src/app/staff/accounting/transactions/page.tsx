@@ -182,7 +182,7 @@ export default function TransactionsPage() {
         {role && <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>}
       </PageHeader>
 
-      <PermissionGate permission="loan:activate" fallback={<NoAccessNotice />}>
+      <PermissionGate permission={["loan:activate", "staff:manage"]} fallback={<NoAccessNotice />}>
         <div className="mb-4">
           <Link href="/staff/applications" className="inline-flex items-center gap-1 text-sm text-navy hover:underline">
             <ArrowLeft size={14} /> Back to live applications

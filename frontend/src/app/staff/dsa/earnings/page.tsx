@@ -4,8 +4,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { PageHeader, StatCard } from "@/components/staff/staff-ui";
-import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
-import { hasPermission } from "@/lib/auth/rbac";
+import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { dsaApi, paiseToINR, type DsaCommissionStatus } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
@@ -23,6 +22,7 @@ const STATUS_TONE: Record<DsaCommissionStatus, string> = {
  */
 export default function DsaEarningsPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
 
   const summary = useQuery({ queryKey: ["dsa-earnings"], queryFn: dsaApi.earnings });
   const commissions = useQuery({ queryKey: ["dsa-commissions"], queryFn: dsaApi.commissions });
@@ -31,7 +31,7 @@ export default function DsaEarningsPage() {
   const s = summary.data;
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
-  if (myRole && !hasPermission(myRole, "dsa:portal")) {
+  if (myRole && !can("dsa:portal")) {
     return <NoAccessNotice message="DSA access required." />;
   }
 

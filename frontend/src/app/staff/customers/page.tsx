@@ -12,7 +12,7 @@ import { SearchBar } from "@/components/staff/search-bar";
 import {
   PermissionGate,
   NoAccessNotice,
-  useStaffMe,
+  useStaffMe, useCan,
   useQueueSelection,
   useBulkRoleFlags,
   RejectDialog,
@@ -51,7 +51,6 @@ import {
   type QueuePeriod,
   type QueueRange,
 } from "@/components/staff/pipeline/queue-date-filter";
-import { hasPermission } from "@/lib/auth/rbac";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { SEGMENTS, SEGMENT_LABEL, type CustomerSegment } from "@/lib/customers/segments";
 import {
@@ -138,6 +137,7 @@ function CustomersPageInner() {
     segParam === "all" || SEGMENTS.includes(segParam) ? segParam : "all";
   const mine = searchParams.get("mine") === "1";
   const me = useStaffMe().data;
+  const can = useCan();
   const qc = useQueryClient();
 
   // Deep link from the global-search palette's "View all" link (`?q=…`).
@@ -157,7 +157,7 @@ function CustomersPageInner() {
   // Heads + ADMIN see the whole book; everyone else is scoped server-side by CustomerService to
   // customers assigned to them or that they've decided on. This only drives the notice below —
   // the enforcement is the backend's.
-  const fullView = me?.role ? hasPermission(me.role, "customer:view:all") : true;
+  const fullView = me?.role ? can("customer:view:all") : true;
 
   // Any filter change lands on page 1 — page 7 of a different result set is meaningless. The reset
   // happens in the same update as the filter change (never in an effect afterwards), so the list
@@ -256,7 +256,7 @@ function CustomersPageInner() {
   // The backend allows PRE_APPROVED → REJECTED for ADMIN alone (ApplicationFlowService.rejectLead).
   const rowRejectMode = (c: CustomerSummary): RejectMode | null =>
     rejectModeFor(c.latestStatus) ??
-    (me?.role === "ADMIN" && c.latestStatus === "PRE_APPROVED" ? "credit" : null);
+    (me?.realRole === "ADMIN" && c.latestStatus === "PRE_APPROVED" ? "credit" : null);
   const actionableRows = React.useMemo(
     () => pageRows.filter((c) => c.latestApplicationId != null && notActionableReason(c) == null),
     [pageRows],

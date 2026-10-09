@@ -5,9 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { EmptyState, ErrorState, Input, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
-import { hasPermission } from "@/lib/auth/rbac";
 import { adminApi, type WaitlistEntry } from "@/lib/api/applications";
 import { exportCsv } from "@/lib/export/exporters";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -17,6 +16,7 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day
 /** Admin · onboarding waitlist — submissions captured while onboarding is paused (full PAN/Aadhaar). ADMIN only. */
 export default function AdminWaitlistPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const [search, setSearch] = React.useState("");
   // Seed from `?q=` after mount (reading it during render would break hydration).
   React.useEffect(() => {
@@ -34,7 +34,7 @@ export default function AdminWaitlistPage() {
   const rows = React.useMemo(() => list.data ?? [], [list.data]);
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
-  if (myRole && !hasPermission(myRole, "waitlist:view")) {
+  if (myRole && !can("waitlist:view")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

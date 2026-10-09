@@ -21,9 +21,8 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, UserPlus } from "lucide-react";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle, ErrorState, Select, toast } from "@/components/ui";
-import { hasPermission } from "@/lib/auth/rbac";
 import { collectionsApi } from "@/lib/api/applications";
-import { errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
+import { errMessage, useStaffMe, useCan } from "@/components/staff/pipeline/hooks";
 import { DEFAULT_BULK_CONCURRENCY, runWithConcurrency } from "@/lib/staff/queue-bulk";
 import {
   bulkAssignProgressLabel,
@@ -85,6 +84,17 @@ function useCollectionOfficers(enabled = true) {
   });
 }
 
+/** "Assign to me" for a Collection Head / Admin working as one: the staffer's own id, put at the top. */
+function useSelfOption(): { id: string } | null {
+  const me = useStaffMe().data;
+  const can = useCan();
+  return me && can("collections:manage") ? { id: me.id } : null;
+}
+
+function SelfOption({ self }: { self: { id: string } | null }) {
+  return self ? <option value={self.id}>Assign to me</option> : null;
+}
+
 export function WorklistAssignActions({
   loanId,
   assignedOfficerName,
@@ -95,7 +105,8 @@ export function WorklistAssignActions({
   compact?: boolean;
 }) {
   const role = useStaffMe().data?.role;
-  const canManage = role != null && hasPermission(role, "collections:manage");
+  const can = useCan();
+  const canManage = role != null && can("collections:manage");
   const [open, setOpen] = React.useState(false);
 
   if (!canManage) {
@@ -158,7 +169,8 @@ function AssignDialog({
   const [officerId, setOfficerId] = React.useState("");
 
   const officersQ = useCollectionOfficers();
-  const officers = officersQ.data ?? [];
+  const self = useSelfOption();
+  const officers = (officersQ.data ?? []).filter((s) => String(s.id) !== self?.id);
 
   const assign = useAssignOfficer(loanId);
 
@@ -182,7 +194,7 @@ function AssignDialog({
           onRetry={() => void officersQ.refetch()}
           className="py-4"
         />
-      ) : officers.length === 0 ? (
+      ) : officers.length === 0 && !self ? (
         <p className="text-sm text-muted">No active collections executives.</p>
       ) : (
         <Select
@@ -193,6 +205,7 @@ function AssignDialog({
           <option value="" disabled>
             {assignedOfficerName ? "Reassign to…" : "Assign to…"}
           </option>
+          <SelfOption self={self} />
           {officers.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
@@ -238,7 +251,8 @@ export function InlineOfficerSelect({
   officerName: string | null;
 }) {
   const role = useStaffMe().data?.role;
-  const canManage = role != null && hasPermission(role, "collections:manage");
+  const can = useCan();
+  const canManage = role != null && can("collections:manage");
 
   const officersQ = useCollectionOfficers(canManage);
   const assign = useAssignOfficer(loanId);
@@ -256,17 +270,22 @@ export function InlineOfficerSelect({
   }, [pending, current]);
   const value = pending ?? current;
 
-  const officers = React.useMemo(() => officersQ.data ?? [], [officersQ.data]);
+  const self = useSelfOption();
+  const officers = React.useMemo(
+    () => (officersQ.data ?? []).filter((s) => String(s.id) !== self?.id),
+    [officersQ.data, self?.id],
+  );
   // The list is ACTIVE officers only, and may not have arrived yet — either way a controlled
   // <select> whose value matches no option renders blank, i.e. an assigned loan would read as
   // unassigned. Keep whoever currently holds it in the list, active or not.
   const options = React.useMemo(() => {
     const base = officers.map((s) => ({ value: String(s.id), label: s.name }));
+    if (self) base.unshift({ value: self.id, label: "Assign to me" });
     if (value && !base.some((o) => o.value === value)) {
       base.unshift({ value, label: officerName ?? `Officer #${value}` });
     }
     return base;
-  }, [officers, value, officerName]);
+  }, [officers, self, value, officerName]);
 
   // Mirrors the register's `dash()` placeholder.
   const readOnlyName = officerName?.trim() ? officerName : "—";
@@ -369,7 +388,8 @@ export function BulkAssignOfficerDialog({
 }) {
   const qc = useQueryClient();
   const role = useStaffMe().data?.role;
-  const canManage = role != null && hasPermission(role, "collections:manage");
+  const can = useCan();
+  const canManage = role != null && can("collections:manage");
 
   const [officerId, setOfficerId] = React.useState("");
   // Captured per run, not read back from `loanIds`: the caller clears its selection once the run
@@ -386,7 +406,8 @@ export function BulkAssignOfficerDialog({
   }, [open]);
 
   const officersQ = useCollectionOfficers(open && canManage);
-  const officers = officersQ.data ?? [];
+  const self = useSelfOption();
+  const officers = (officersQ.data ?? []).filter((s) => String(s.id) !== self?.id);
 
   const m = useMutation({
     mutationFn: async () => {
@@ -479,7 +500,7 @@ export function BulkAssignOfficerDialog({
               onRetry={() => void officersQ.refetch()}
               className="py-4"
             />
-          ) : officers.length === 0 ? (
+          ) : officers.length === 0 && !self ? (
             <p className="text-sm text-muted">No active collections executives.</p>
           ) : (
             <Select
@@ -490,6 +511,7 @@ export function BulkAssignOfficerDialog({
               <option value="" disabled>
                 Assign to…
               </option>
+              <SelfOption self={self} />
               {officers.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}

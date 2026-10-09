@@ -16,6 +16,7 @@ import {
   staffApi,
   customersApi,
   collectionsApi,
+  isCaseNotAssigned,
   paiseToINR,
   type LoanView,
   type PaymentView,
@@ -126,7 +127,11 @@ export function LoanDetailDialog({
   // Overview "Assigned officer" row and the Calls tab's interaction log, same cache entry.
   const caseQ = useQuery({
     queryKey: ["staff-case-by-loan", loanId],
-    queryFn: () => collectionsApi.caseByLoan(loanId as number),
+    queryFn: () =>
+      collectionsApi.caseByLoan(loanId as number).catch((e) => {
+        if (isCaseNotAssigned(e)) return null; // another officer's case: same as "no case"
+        throw e;
+      }),
     enabled: open,
     retry: false,
   });
@@ -403,7 +408,11 @@ function CallsTab({
   });
   const interactionsQ = useQuery({
     queryKey: ["staff-case-interactions", caseId],
-    queryFn: () => collectionsApi.listInteractions(caseId as string),
+    queryFn: () =>
+      collectionsApi.listInteractions(caseId as string).catch((e) => {
+        if (isCaseNotAssigned(e)) return [];
+        throw e;
+      }),
     enabled: caseId != null,
   });
 

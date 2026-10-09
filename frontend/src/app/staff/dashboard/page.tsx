@@ -33,7 +33,6 @@ import {
   customersApi,
   dashboardApi,
   paiseToINR,
-  type ApplicationStatus,
   type ApplicationView,
   type BookStatsView,
   type TransactionPage,
@@ -118,7 +117,7 @@ const SECTIONS: Record<StaffRole, SectionKey[]> = {
   COLLECTION_HEAD: ["work", "decisions", "collections", "borrowers", "team"],
   TELECALLER: ["work", "decisions", "borrowers"],
   DSA: [],
-  ADMIN: ["work", "decisions", "outcomes", "borrowers", "collections", "team"],
+  ADMIN: [], // never a working role (the switcher offers none); oversight renders via `isAdmin`
 };
 
 /** Per-role "your queue" label (+ an ⓘ explanation) and the live statuses that feed it. */
@@ -128,8 +127,8 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
     info: "Verify the file, then accept it with a sanctioned amount and repayment date, reject it, or park it as pending. Your decision is final — it goes straight to disbursement.",
   },
   CREDIT_HEAD: {
-    label: "Leads to assign or decide",
-    info: "Hand each submitted intake to an ACTIVE credit executive, or decide it yourself. This count also includes files already out with your team, since you may decide those too — either way the decision is final.",
+    label: "Leads to assign",
+    info: "Hand each submitted intake to an active credit executive, or assign it to yourself. To decide a file, switch to Credit Executive.",
   },
   DISBURSEMENT_HEAD: {
     label: "Approved loans to release",
@@ -146,10 +145,6 @@ const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
   COLLECTION_EXECUTIVE: {
     label: "Open collection cases",
     info: "Work overdue loans assigned to you in your DPD buckets and log borrower interactions.",
-  },
-  ADMIN: {
-    label: "Live pipeline",
-    info: "Oversight across every queue — ADMIN can act in any role.",
   },
 };
 
@@ -168,7 +163,6 @@ const ROLE_HREF: Partial<Record<StaffRole, string>> = {
   ACCOUNTANT: "/staff/applications",
   COLLECTION_HEAD: "/staff/applications",
   COLLECTION_EXECUTIVE: "/staff/applications",
-  ADMIN: "/staff/applications",
 };
 
 /** A non-application actionable source (repayments, referral payouts, settlements, cases). */
@@ -227,17 +221,9 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
       break;
     }
     case "CREDIT_HEAD": {
-      // Everything the Head can act on: intakes to assign, plus files already out with an
-      // executive (the Head may decide those too).
-      const [queue, withExec] = await Promise.all([
-        safe(staffApi.creditQueue()),
-        safe(staffApi.listByStatus("CREDIT_EXEC_PENDING")),
-      ]);
-      base = {
-        apps: [...queue.value, ...withExec.value],
-        extras: [],
-        failed: queue.failed || withExec.failed,
-      };
+      // Intakes waiting to be assigned. Deciding is the Executive's job (switch role).
+      const queue = await safe(staffApi.creditQueue());
+      base = { apps: queue.value, extras: [], failed: queue.failed };
       break;
     }
     case "DISBURSEMENT_HEAD": {
@@ -277,28 +263,6 @@ async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
       // fetch, so casesQuery reports its own failure.
       base = { apps: [], extras: [], failed: false };
       break;
-    case "ADMIN": {
-      const [lists, repayments] = await Promise.all([
-        Promise.all(
-          // Deliberately NOT alphabetical/lifecycle order: files waiting on money
-          // (DISBURSEMENT_PENDING) lead, and SANCTIONED trails last — it's still moving inside the
-          // borrower's own journey (e-sign/penny-drop/transfer) with nobody on staff blocking it.
-          (["DISBURSEMENT_PENDING", "KYC_PENDING", "CREDIT_EXEC_PENDING", "SANCTIONED"] as ApplicationStatus[]).map(
-            (s) => safe(staffApi.listByStatus(s)),
-          ),
-        ),
-        pendingRepaymentCount(),
-      ]);
-      const extras: QueueExtra[] = [];
-      if (repayments.value > 0) extras.push(repaymentsExtra(repayments.value));
-      // Settlements count now comes from settlementsQuery alone (Step 1.2) — no separate fetch.
-      base = {
-        apps: lists.flatMap((l) => l.value),
-        extras,
-        failed: lists.some((l) => l.failed) || repayments.failed,
-      };
-      break;
-    }
     case "TELECALLER":
     case "DSA":
     default:
@@ -317,7 +281,7 @@ export default function StaffDashboardPage() {
   const sid = session?.id != null ? Number(session.id) : undefined;
   const sections = role ? SECTIONS[role] : [];
   const has = (k: SectionKey) => sections.includes(k);
-  const isAdmin = role === "ADMIN";
+  const isAdmin = session?.realRole === "ADMIN";
 
   // Reporting period for the decisions/outcomes sections — shared with /staff/my-decisions and
   // /staff/performance so the same "this month" means the same thing everywhere.
@@ -477,7 +441,7 @@ export default function StaffDashboardPage() {
   // from settlementsQuery/casesQuery instead of a separate fetch (Steps 1.2/1.3).
   const pendingSettlements = (settlementsQuery.data ?? []).filter((s) => s.status === "PROPOSED").length;
   const settlementExtras: QueueExtra[] =
-    (role === "COLLECTION_HEAD" || isAdmin) && pendingSettlements > 0 ? [settlementsExtra(pendingSettlements)] : [];
+    role === "COLLECTION_HEAD" && pendingSettlements > 0 ? [settlementsExtra(pendingSettlements)] : [];
   // Role-gated like settlementExtras: casesQuery is enabled for has("collections") (COLLECTION_HEAD
   // + COLLECTION_EXECUTIVE + ADMIN too), but this extra existed only in the COLLECTION_EXECUTIVE
   // branch of fetchRoleQueue. Fail CLOSED without a resolvable staff id — showing every company case
@@ -520,7 +484,7 @@ export default function StaffDashboardPage() {
   // renders half-populated. Preserve that with the queries that now feed the extras above.
   const queueLoading =
     queueQuery.isLoading ||
-    ((role === "COLLECTION_HEAD" || isAdmin) && settlementsQuery.isLoading) ||
+    (role === "COLLECTION_HEAD" && settlementsQuery.isLoading) ||
     (role === "COLLECTION_EXECUTIVE" && casesQuery.isLoading) ||
     // The payouts line waits on the referral flag, then on its own count.
     (role === "DISBURSEMENT_HEAD" && (referralOn === undefined || (referralOn && referralPayoutsQuery.isLoading)));
@@ -532,7 +496,7 @@ export default function StaffDashboardPage() {
     queueQuery.isError ||
     queueData.failed ||
     bookStatsQuery.isError ||
-    ((role === "COLLECTION_HEAD" || isAdmin) && settlementsQuery.isError) ||
+    (role === "COLLECTION_HEAD" && settlementsQuery.isError) ||
     (role === "COLLECTION_EXECUTIVE" && casesQuery.isError) ||
     (countsReferralPayouts && (referralPayoutsQuery.isError || referralPayoutsQuery.data?.failed === true));
 
@@ -686,9 +650,13 @@ export default function StaffDashboardPage() {
         <TeamSection rows={performanceQuery.data?.rows ?? []} loading={performanceQuery.isLoading} range={range} />
       )}
 
-      {/* Section 7 — Admin oversight */}
+      {/* Section 7 — Admin oversight: a real ADMIN sees this in every working role, after the role's own work. */}
       {isAdmin && (
         <>
+          <div className="mb-3 mt-10 flex items-center gap-2">
+            <h2 className="mb-0 text-xl">Admin overview</h2>
+            <InfoTooltip content="Company-wide oversight — visible to administrators in every role." />
+          </div>
           <TrendsSection data={trends.data} loading={trends.isLoading} />
 
           <section className="mt-8">

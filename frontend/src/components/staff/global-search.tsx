@@ -97,10 +97,12 @@ type Row =
   | { type: "item"; item: SearchItem };
 
 export function GlobalSearch({
+  realRole,
   role,
   staffId,
   flags,
 }: {
+  realRole: StaffRole;
   role: StaffRole;
   staffId: string;
   flags?: FeatureFlags;
@@ -132,6 +134,7 @@ export function GlobalSearch({
 
       {open && (
         <SearchPalette
+          realRole={realRole}
           role={role}
           staffId={staffId}
           flags={flags}
@@ -143,11 +146,13 @@ export function GlobalSearch({
 }
 
 function SearchPalette({
+  realRole,
   role,
   staffId,
   flags,
   onClose,
 }: {
+  realRole: StaffRole;
   role: StaffRole;
   staffId: string;
   flags?: FeatureFlags;
@@ -185,7 +190,7 @@ function SearchPalette({
     return () => document.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
-  const featureIndex = React.useMemo(() => buildFeatureIndex(role, flags), [role, flags]);
+  const featureIndex = React.useMemo(() => buildFeatureIndex(realRole, role, flags), [realRole, role, flags]);
   const featureHits = React.useMemo(() => matchFeatures(featureIndex, q, 5), [featureIndex, q]);
 
   const debounced = useDebouncedValue(q.trim(), 250);

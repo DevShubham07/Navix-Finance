@@ -32,8 +32,7 @@ import {
 } from "@/components/staff/pipeline/queue-date-filter";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
-import { useStaffMe } from "@/components/staff/pipeline/hooks";
-import { hasPermission } from "@/lib/auth/rbac";
+import { useStaffMe, useCan } from "@/components/staff/pipeline/hooks";
 import { BulkAssignOfficerDialog, InlineOfficerSelect } from "@/components/staff/collections-assign";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -255,7 +254,8 @@ export default function CollectionsBucketPage() {
   // Bulk assign of a collections executive. `collections:manage` is COLLECTION_HEAD + ADMIN — the
   // same pair the per-case assign endpoint already permits, so the button and the server agree.
   const role = useStaffMe().data?.role;
-  const canBulkAssign = role != null && hasPermission(role, "collections:manage");
+  const can = useCan();
+  const canBulkAssign = role != null && can("collections:manage");
   const [bulkOpen, setBulkOpen] = React.useState(false);
   const pageLoanIds = React.useMemo(() => pageRows.map((r) => r.loanId), [pageRows]);
   const selection = useQueueSelection(pageLoanIds);

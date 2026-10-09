@@ -75,6 +75,7 @@ public class CollectionPaymentService {
     private final LoanDirectory loanDirectory;
     private final StaffDirectory staffDirectory;
     private final ApplicationEventPublisher eventPublisher;
+    private final CollectionsService collectionsService;
 
     /**
      * Record a payment taken on a case. A settlement must name an <b>approved</b> settlement — the
@@ -89,6 +90,7 @@ public class CollectionPaymentService {
         if (amountPaise <= 0) {
             throw new BusinessException("INVALID_AMOUNT", "Payment amount must be positive");
         }
+        collectionsService.assertCaseAccessible(caseId);
         CollectionCase c = caseRepository.findById(caseId)
                 .orElseThrow(() -> new ResourceNotFoundException("CollectionCase", String.valueOf(caseId)));
 
@@ -210,6 +212,7 @@ public class CollectionPaymentService {
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listForCase(UUID caseId) {
         requireNonDsaStaff();
+        collectionsService.assertCaseAccessible(caseId);
         return toViews(paymentRepository.findByCollectionCaseIdOrderByRaisedAtDesc(caseId));
     }
 
@@ -217,13 +220,20 @@ public class CollectionPaymentService {
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listByStatus(CollectionPaymentStatus status) {
         requireNonDsaStaff();
-        return toViews(paymentRepository.findByStatusOrderByRaisedAtAsc(status));
+        return toViews(scoped(paymentRepository.findByStatusOrderByRaisedAtAsc(status)));
     }
 
     @Transactional(readOnly = true)
     public List<CollectionPaymentView> listAll() {
         requireNonDsaStaff();
-        return toViews(paymentRepository.findAllByOrderByRaisedAtDesc());
+        return toViews(scoped(paymentRepository.findAllByOrderByRaisedAtDesc()));
+    }
+
+    /** Narrows to the caller's own cases when they work as a collections executive. */
+    private List<CollectionPayment> scoped(List<CollectionPayment> payments) {
+        Set<UUID> ids = collectionsService.scopedCaseIdsOrNull();
+        return ids == null ? payments
+                : payments.stream().filter(p -> ids.contains(p.getCollectionCaseId())).toList();
     }
 
     /**

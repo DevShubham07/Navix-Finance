@@ -6,8 +6,8 @@ import {
   matchFeatures,
 } from "@/lib/staff/global-search";
 
-const titles = (role: Parameters<typeof buildFeatureIndex>[0]) =>
-  buildFeatureIndex(role).map((h) => h.title);
+type R = Parameters<typeof buildFeatureIndex>[0];
+const titles = (real: R, working: R = real) => buildFeatureIndex(real, working).map((h) => h.title);
 
 describe("buildFeatureIndex — RBAC", () => {
   it("gives a DSA only its own portal pages and the shared import screen", () => {
@@ -30,21 +30,38 @@ describe("buildFeatureIndex — RBAC", () => {
     expect(titles("COLLECTION_HEAD")).toContain("Loans");
   });
 
+  it("applies working role plus admin powers", () => {
+    const adminAsExec = titles("ADMIN", "CREDIT_EXECUTIVE");
+    expect(adminAsExec).toContain("Verification Dashboard");
+    expect(adminAsExec).toContain("Staff");
+    expect(titles("CREDIT_HEAD", "CREDIT_HEAD")).not.toContain("Verification Dashboard");
+    const ch = titles("COLLECTION_HEAD");
+    expect(ch).toContain("DPD buckets");
+    expect(ch).toContain("Settlements");
+  });
+
+  it("scopes Customers to mine for roles without the whole book", () => {
+    const hit = buildFeatureIndex("CREDIT_EXECUTIVE", "CREDIT_EXECUTIVE").find((h) => h.title === "Customers");
+    expect(hit?.href).toContain("mine=1");
+    const all = buildFeatureIndex("CREDIT_HEAD", "CREDIT_HEAD").find((h) => h.title === "Customers");
+    expect(all?.href).not.toContain("mine=1");
+  });
+
   it("hides a flagged page when its feature flag is explicitly off", () => {
-    expect(titles("ADMIN")).toContain("Referral payouts");
-    const withFlagOff = buildFeatureIndex("ADMIN", { referral: false }).map((h) => h.title);
+    expect(titles("ADMIN", "DISBURSEMENT_HEAD")).toContain("Referral payouts");
+    const withFlagOff = buildFeatureIndex("ADMIN", "DISBURSEMENT_HEAD", { referral: false }).map((h) => h.title);
     expect(withFlagOff).not.toContain("Referral payouts");
   });
 
   it("expands segment children so a segment name is findable", () => {
-    const admin = buildFeatureIndex("ADMIN");
+    const admin = buildFeatureIndex("ADMIN", "CREDIT_HEAD");
     const overdue = admin.find((h) => h.href === "/staff/loans?seg=overdue");
     expect(overdue?.title).toMatch(/^Loans · /);
   });
 });
 
 describe("matchFeatures", () => {
-  const index = buildFeatureIndex("ADMIN");
+  const index = buildFeatureIndex("ADMIN", "CREDIT_HEAD");
 
   it("ranks a token-prefix hit above a mid-word one", () => {
     const hits = matchFeatures(index, "cust", 5).map((h) => h.title);

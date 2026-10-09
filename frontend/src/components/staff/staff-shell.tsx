@@ -9,12 +9,14 @@ import { Brand } from "@/components/site/brand";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { GlobalSearch } from "@/components/staff/global-search";
 import { Toaster } from "@/components/ui/toast";
-import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
+import { can, STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import { collectionsApi, featureFlagsApi, type FeatureFlags } from "@/lib/api/applications";
 import { useStaffSession, signOutStaff } from "@/lib/auth/staff-session";
+import { RoleSwitcher } from "@/components/staff/role-switcher";
+import { clearWorkingRole } from "@/lib/auth/working-role";
 import { clearRecent } from "@/lib/staff/search-recents";
 import { cn } from "@/lib/utils";
-import { NAV, navVisible, SEGMENTED_PARENT_PATHS } from "@/components/staff/staff-nav";
+import { NAV, navHref, navVisible, SEGMENTED_PARENT_PATHS } from "@/components/staff/staff-nav";
 import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
@@ -85,11 +87,12 @@ function SidebarResizer({ asideRef }: { asideRef: React.RefObject<HTMLElement | 
 }
 
 /** Flattened horizontal nav for the mobile strip — ignores `sub` (segment chips live on the page). */
-function MobileNavLinks({ role, pathname, flags }: { role: StaffRole; pathname: string; flags?: FeatureFlags }) {
-  const items = NAV.flatMap((g) => g.items).filter((it) => navVisible(it, role, flags));
+function MobileNavLinks({ realRole, role, pathname, flags }: { realRole: StaffRole; role: StaffRole; pathname: string; flags?: FeatureFlags }) {
+  const items = NAV.flatMap((g) => g.items).filter((it) => navVisible(it, realRole, role, flags));
   return (
     <>
-      {items.map(({ label, href, Icon }) => {
+      {items.map(({ label, href: rawHref, Icon }) => {
+        const href = navHref(rawHref, realRole, role);
         const pathOnly = href.split("?")[0];
         const active = pathname === pathOnly || pathname.startsWith(pathOnly + "/");
         return (
@@ -112,7 +115,7 @@ function MobileNavLinks({ role, pathname, flags }: { role: StaffRole; pathname: 
   );
 }
 
-function NavLinks({ role, pathname, onNavigate, flags }: { role: StaffRole; pathname: string; onNavigate?: () => void; flags?: FeatureFlags }) {
+function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: StaffRole; role: StaffRole; pathname: string; onNavigate?: () => void; flags?: FeatureFlags }) {
   const searchParams = useSearchParams();
   const currentSeg = searchParams.get("seg");
   const currentBucket = searchParams.get("bucket");
@@ -126,7 +129,7 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: StaffRole; path
     // and only the ambient background cost drops.
     queryKey: ["collections-worklist"],
     queryFn: collectionsApi.worklist,
-    enabled: role === "COLLECTION_HEAD" || role === "COLLECTION_EXECUTIVE" || role === "ADMIN",
+    enabled: can(realRole, role, "collections:manage") || can(realRole, role, "collections:interact"),
     refetchInterval: 30_000,
   });
   const bucketCounts = collectionBucketCounts(collectionCases.data ?? []);
@@ -134,14 +137,15 @@ function NavLinks({ role, pathname, onNavigate, flags }: { role: StaffRole; path
   return (
     <>
       {NAV.map((group) => {
-        const items = group.items.filter((it) => navVisible(it, role, flags));
+        const items = group.items.filter((it) => navVisible(it, realRole, role, flags));
         if (!items.length) return null;
         return (
           <div key={group.heading} className="mb-5">
             <p className="px-3 pb-2 text-[0.544rem] font-bold uppercase tracking-wider text-navix-300">{group.heading}</p>
             <ul className="space-y-0.5">
               {items.map((it) => {
-                const { label, href, Icon, sub, collectionBuckets } = it;
+                const { label, Icon, sub, collectionBuckets } = it;
+                const href = navHref(it.href, realRole, role);
                 const pathOnly = href.split("?")[0];
                 const hrefSeg = href.includes("?")
                   ? new URL(href, "http://local").searchParams.get("seg")
@@ -318,6 +322,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     // the id is already in hand, rather than inside `signOutStaff` — that would have cost the
     // sign-out path an extra round-trip just to re-read an id the shell already has.
     clearRecent(session.id);
+    clearWorkingRole(session.id);
     await signOutStaff();
     queryClient.clear();
     router.push("/staff/login");
@@ -335,7 +340,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-5">
           <React.Suspense fallback={null}>
-            <NavLinks role={session.role} pathname={pathname} flags={flags} />
+            <NavLinks realRole={session.realRole} role={session.role} pathname={pathname} flags={flags} />
           </React.Suspense>
         </nav>
         <SidebarResizer asideRef={asideRef} />
@@ -350,30 +355,32 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
             {/* DSA is firewalled from customer/application/loan data, so it gets no palette at all
                 (the endpoint rejects it too). `global-search` is the dev-only kill switch. */}
             {session.role !== "DSA" && flags?.["global-search"] !== false && (
-              <GlobalSearch role={session.role} staffId={session.id} flags={flags} />
+              <GlobalSearch realRole={session.realRole} role={session.role} staffId={session.id} flags={flags} />
             )}
-            <Link href="/staff/profile" className="flex items-center gap-2 rounded-full px-1 py-0.5 hover:bg-grey-100" title="My profile">
-              <div className="hidden text-right sm:block">
-                <div className="text-sm font-semibold text-ink">{session.name}</div>
-                <div className="text-xs text-gold-dark">{STAFF_ROLE_LABELS[session.role]}</div>
-              </div>
-              <div className="grid h-9 w-9 place-items-center rounded-full bg-navy-tint font-serif font-bold text-navy">
-                {session.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-              </div>
+            <RoleSwitcher staffId={session.id} realRole={session.realRole} role={session.role} />
+            <Link
+              href="/staff/profile"
+              title={`${session.name} · ${STAFF_ROLE_LABELS[session.realRole]}`}
+              aria-label={`${session.name} · ${STAFF_ROLE_LABELS[session.realRole]}`}
+              className="grid h-9 w-9 place-items-center rounded-full bg-navy-tint font-serif font-bold text-navy"
+            >
+              {session.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
             </Link>
             <NotificationBell scope="staff" />
             <button
               onClick={signOut}
-              className="flex items-center gap-1.5 rounded border border-line px-3 py-2 text-sm text-muted hover:bg-grey-100 hover:text-ink"
+              title="Sign out"
+              aria-label="Sign out"
+              className="flex items-center rounded border border-line px-3 py-2 text-muted hover:bg-grey-100 hover:text-ink"
             >
-              <LogOut size={15} /> <span className="hidden sm:inline">Sign out</span>
+              <LogOut size={16} />
             </button>
           </div>
         </header>
 
         <div className="border-b border-line bg-navy-900 lg:hidden">
           <div className="flex gap-1 overflow-x-auto px-2 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none]">
-            <MobileNavLinks role={session.role} pathname={pathname} flags={flags} />
+            <MobileNavLinks realRole={session.realRole} role={session.role} pathname={pathname} flags={flags} />
           </div>
         </div>
 

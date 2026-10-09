@@ -24,19 +24,14 @@ import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui
 import { ErrorState, InfoTooltip, Select } from "@/components/ui";
 import { staffApi } from "@/lib/api/applications";
 import { runWithConcurrency, DEFAULT_BULK_CONCURRENCY } from "@/lib/staff/queue-bulk";
-import { useRefreshAfterAction, errMessage, useStaffMe } from "@/components/staff/pipeline/hooks";
-
-/** Roles that may bulk-reject (heads of the maker-checker stages + ADMIN). */
-const BULK_REJECT_ROLES = new Set(["CREDIT_HEAD", "DISBURSEMENT_HEAD", "COLLECTION_HEAD", "ADMIN"]);
-/** Roles that may bulk-assign — mirrors `staffApi.assign`'s own CREDIT_HEAD/ADMIN requirement. */
-const BULK_ASSIGN_ROLES = new Set(["CREDIT_HEAD", "ADMIN"]);
+import { useRefreshAfterAction, errMessage, useCan } from "@/components/staff/pipeline/hooks";
 
 /** The signed-in role's bulk-action rights, read off {@link useStaffMe} once per page. */
 export function useBulkRoleFlags() {
-  const role = useStaffMe().data?.role;
+  const can = useCan();
   return {
-    canBulkReject: role != null && BULK_REJECT_ROLES.has(role),
-    canBulkAssign: role != null && BULK_ASSIGN_ROLES.has(role),
+    canBulkReject: (["loan:approve", "loan:disburse", "collections:manage"] as const).some(can),
+    canBulkAssign: can("loan:approve"),
   };
 }
 

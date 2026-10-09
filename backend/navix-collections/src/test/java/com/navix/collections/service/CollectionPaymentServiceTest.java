@@ -47,6 +47,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class CollectionPaymentServiceTest {
 
     @Mock
+    private CollectionsService collectionsService;
+    @Mock
     private CollectionPaymentRepository paymentRepository;
     @Mock
     private CollectionCaseRepository caseRepository;
@@ -71,8 +73,9 @@ class CollectionPaymentServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(collectionsService.scopedCaseIdsOrNull()).thenReturn(null); // unscoped by default
         service = new CollectionPaymentService(paymentRepository, caseRepository, settlementRepository,
-                settlementService, loanDirectory, staffDirectory, event -> {});
+                settlementService, loanDirectory, staffDirectory, event -> {}, collectionsService);
     }
 
     @AfterEach
@@ -375,5 +378,20 @@ class CollectionPaymentServiceTest {
         } finally {
             ActorContext.clear();
         }
+    }
+
+    @Test
+    void listAllIsNarrowedToTheScopedCases() {
+        UUID mineCase = UUID.randomUUID();
+        CollectionPayment other = pending(CollectionPaymentStatus.PENDING_ACCOUNTANT);
+        CollectionPayment mine = pending(CollectionPaymentStatus.PENDING_ACCOUNTANT);
+        mine.setId(UUID.randomUUID());
+        mine.setCollectionCaseId(mineCase);
+        org.mockito.Mockito.when(collectionsService.scopedCaseIdsOrNull()).thenReturn(java.util.Set.of(mineCase));
+        when(paymentRepository.findAllByOrderByRaisedAtDesc()).thenReturn(List.of(other, mine));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of());
+        when(loanDirectory.findLoans(any())).thenReturn(java.util.Map.of());
+
+        assertThat(service.listAll()).extracting(CollectionPaymentView::id).containsExactly(mine.getId());
     }
 }

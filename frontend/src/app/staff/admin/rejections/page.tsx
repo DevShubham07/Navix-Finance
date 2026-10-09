@@ -5,10 +5,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { EmptyState, ErrorState, Select, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import type { ExportColumn } from "@/lib/export/exporters";
-import { hasPermission } from "@/lib/auth/rbac";
 import { staffApi, paiseToINR, type RejectionView } from "@/lib/api/applications";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
@@ -60,6 +59,7 @@ const EXPORT_COLUMNS: ExportColumn<RejectionView>[] = [
  */
 export default function AdminRejectionsPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const [reason, setReason] = React.useState("");
   const q = useQuery({
     queryKey: ["admin-rejections", reason],
@@ -70,7 +70,7 @@ export default function AdminRejectionsPage() {
   const now = Date.now();
   const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
+  if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

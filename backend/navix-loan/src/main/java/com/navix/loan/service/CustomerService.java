@@ -171,7 +171,7 @@ public class CustomerService {
      */
     private CustomerScope scope() {
         CurrentActor actor = ActorContext.get();
-        String role = actor != null ? actor.role() : null;
+        String role = actor != null ? actor.effectiveRole() : null;
         if (role != null && FULL_CUSTOMER_VIEW_ROLES.contains(role)) {
             return null;
         }

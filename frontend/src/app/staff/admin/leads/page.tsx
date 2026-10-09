@@ -6,11 +6,10 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { EmptyState, ErrorState, Input, Select, Skeleton } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
-import { useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
+import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { LeadsTracker } from "@/components/staff/leads-tracker";
 import { OutcomeChip, OUTCOME_LABEL } from "@/components/staff/lead-outcome";
-import { hasPermission } from "@/lib/auth/rbac";
 import {
   leadsApi,
   adminApi,
@@ -50,6 +49,7 @@ function todayIso(): string {
  */
 export default function AdminLeadsPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const [from, setFrom] = React.useState(() => daysAgoIso(30));
   const [to, setTo] = React.useState(todayIso);
   const [createdBy, setCreatedBy] = React.useState<number | "">("");
@@ -61,7 +61,7 @@ export default function AdminLeadsPage() {
   const staffQ = useQuery({
     queryKey: ["admin-staff"],
     queryFn: adminApi.listStaff,
-    enabled: !!myRole && hasPermission(myRole, "staff:manage"),
+    enabled: !!myRole && can("staff:manage"),
   });
 
   const telecallers = (staffQ.data ?? []).filter(
@@ -89,13 +89,13 @@ export default function AdminLeadsPage() {
         to: to || undefined,
         createdBy: createdBy === "" ? undefined : Number(createdBy),
       }),
-    enabled: !!myRole && hasPermission(myRole, "staff:manage"),
+    enabled: !!myRole && can("staff:manage"),
   });
 
   const list = useQuery({
     queryKey: ["admin-leads", filter, page, pageSize],
     queryFn: () => leadsApi.list({ ...filter, page, size: pageSize }),
-    enabled: !!myRole && hasPermission(myRole, "staff:manage"),
+    enabled: !!myRole && can("staff:manage"),
     placeholderData: keepPreviousData,
   });
 
@@ -106,7 +106,7 @@ export default function AdminLeadsPage() {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const pageRows = rows;
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
+  if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

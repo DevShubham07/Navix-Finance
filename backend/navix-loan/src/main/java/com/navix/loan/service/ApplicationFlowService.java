@@ -979,7 +979,7 @@ public class ApplicationFlowService {
      */
     @Transactional(readOnly = true)
     public List<LoanApplication> byStatus(ApplicationStatus status, LocalDate from, LocalDate to) {
-        boolean isExecutive = "CREDIT_EXECUTIVE".equals(ActorContext.get().role());
+        boolean isExecutive = "CREDIT_EXECUTIVE".equals(ActorContext.get().effectiveRole());
         Long execId = isExecutive ? actorIdOrNull() : null;
         if (isExecutive && execId == null) {
             return List.of();
@@ -1109,7 +1109,7 @@ public class ApplicationFlowService {
         if (needle == null || needle.isBlank() || limit <= 0) {
             return List.of();
         }
-        boolean isExecutive = "CREDIT_EXECUTIVE".equals(role);
+        boolean isExecutive = "CREDIT_EXECUTIVE".equals(ActorContext.get().effectiveRole());
         Long execId = isExecutive ? actorIdOrNull() : null;
         if (isExecutive && execId == null) {
             return List.of();
@@ -1253,14 +1253,15 @@ public class ApplicationFlowService {
         event.setToStatus(to);
         event.setActorId(actor.id());
         event.setActorRole(actor.role());
+        event.setActingRole(actor.actingRole());
         event.setAction(action);
         event.setNotes(notes);
         event.setAt(Instant.now());
         eventRepository.save(event);
         // Mirror the lifecycle event (already persisted to the DB audit table) into the log stream so
         // the state machine is debuggable in CloudWatch — ids + status enums + actor only, no PII.
-        log.info("application {} {} -> {} action={} actor={}/{}",
-                app.getId(), from, to, action, actor.id(), actor.role());
+        log.info("application {} {} -> {} action={} actor={}/{} acting={}",
+                app.getId(), from, to, action, actor.id(), actor.role(), actor.actingRole());
         // Fan out a domain event for the notification engine (consumed AFTER_COMMIT + async). All
         // data is carried inline — the async listener has no ActorContext/transaction. This single
         // publish covers every transition (incl. same-status APPLY → LOAN_APPLIED).

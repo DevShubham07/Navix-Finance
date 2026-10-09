@@ -54,6 +54,7 @@ public class SettlementService {
     private final StaffDirectory staffDirectory;
     private final LoanDirectory loanDirectory;
     private final ApplicationEventPublisher eventPublisher;
+    private final CollectionsService collectionsService;
 
     /** Authorise the current actor against one of {@code roles} (ADMIN always passes). */
     private static void requireOneOf(String... roles) {
@@ -102,6 +103,7 @@ public class SettlementService {
     public SettlementView propose(UUID caseId, long settlementAmountPaise) {
         // A collections officer (or the Head/ADMIN) proposes; not just any staff actor.
         requireOneOf(OFFICER_ROLE, MANAGER_ROLE);
+        collectionsService.assertCaseAccessible(caseId);
         CollectionCase c = caseRepository.findById(caseId)
                 .orElseThrow(() -> new ResourceNotFoundException("CollectionCase", String.valueOf(caseId)));
         Settlement s = new Settlement();
@@ -221,8 +223,10 @@ public class SettlementService {
     @Transactional(readOnly = true)
     public List<SettlementView> listAll() {
         requireNonDsaStaff();
+        Set<UUID> scoped = collectionsService.scopedCaseIdsOrNull();
         List<Settlement> settlements = settlementRepository.findAll(org.springframework.data.domain.Sort.by(
-                org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
+                org.springframework.data.domain.Sort.Direction.DESC, "createdAt")).stream()
+                .filter(s -> scoped == null || scoped.contains(s.getCollectionCaseId())).toList();
         Set<Long> staffIds = new HashSet<>();
         for (Settlement s : settlements) {
             staffIds.add(s.getProposedBy());

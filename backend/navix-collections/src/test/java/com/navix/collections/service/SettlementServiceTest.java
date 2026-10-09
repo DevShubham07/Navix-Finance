@@ -43,6 +43,8 @@ class SettlementServiceTest {
     private StaffDirectory staffDirectory;
     @Mock
     private LoanDirectory loanDirectory;
+    @Mock
+    private CollectionsService collectionsService;
 
     private SettlementService service;
 
@@ -57,8 +59,9 @@ class SettlementServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(collectionsService.scopedCaseIdsOrNull()).thenReturn(null); // unscoped by default
         service = new SettlementService(settlementRepository, caseRepository, staffDirectory,
-                loanDirectory, event -> {});
+                loanDirectory, event -> {}, collectionsService);
     }
 
     @AfterEach
@@ -291,5 +294,30 @@ class SettlementServiceTest {
         } finally {
             ActorContext.clear();
         }
+    }
+
+    @Test
+    void listAllIsNarrowedToTheScopedCases() {
+        ActorContext.set(new CurrentActor("9", "Sana", "COLLECTION_HEAD", "COLLECTION_EXECUTIVE"));
+        Settlement mine = proposedByOfficer(); // on caseId
+        Settlement other = proposedByOfficer();
+        other.setId(UUID.randomUUID());
+        other.setCollectionCaseId(UUID.randomUUID());
+        when(collectionsService.scopedCaseIdsOrNull()).thenReturn(java.util.Set.of(caseId));
+        when(settlementRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(java.util.List.of(mine, other));
+        when(staffDirectory.namesFor(any())).thenReturn(java.util.Map.of());
+
+        assertThat(service.listAll()).extracting(SettlementView::collectionCaseId).containsExactly(caseId);
+    }
+
+    @Test
+    void proposeOnAnUnassignedCaseIsRefused() {
+        ActorContext.set(OFFICER);
+        org.mockito.Mockito.doThrow(new BusinessException("CASE_NOT_ASSIGNED", "no"))
+                .when(collectionsService).assertCaseAccessible(caseId);
+
+        assertThatThrownBy(() -> service.propose(caseId, 1L)).isInstanceOf(BusinessException.class);
+        verify(settlementRepository, never()).save(any());
     }
 }

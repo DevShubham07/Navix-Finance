@@ -5,8 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, QrCode, FileText, Save } from "lucide-react";
 import { ErrorState, Input, Skeleton, ZoomableQr, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
-import { errMessage, useStaffMe, NoAccessNotice } from "@/components/staff/live-pipeline";
-import { hasPermission } from "@/lib/auth/rbac";
+import { errMessage, useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import {
   paymentSettingsApi,
   storageApi,
@@ -19,6 +18,7 @@ import {
  */
 export default function AdminPaymentSettingsPage() {
   const myRole = useStaffMe().data?.role;
+  const can = useCan();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["payment-settings"], queryFn: paymentSettingsApi.get });
 
@@ -85,7 +85,7 @@ export default function AdminPaymentSettingsPage() {
     },
   });
 
-  if (myRole && !hasPermission(myRole, "staff:manage")) {
+  if (myRole && !can("staff:manage")) {
     return <NoAccessNotice message="Admin access only." />;
   }
 

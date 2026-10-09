@@ -1,6 +1,7 @@
 package com.navix.config;
 
 import com.navix.common.security.ActorContext;
+import com.navix.common.security.ActingRole;
 import com.navix.common.security.CurrentActor;
 import com.navix.common.security.JwtService;
 import jakarta.servlet.FilterChain;
@@ -61,11 +62,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 if (JwtService.AUDIENCE_STAFF.equals(principal.audience())) {
                     request.setAttribute(STAFF_SESSION_ID_ATTR, principal.sessionId());
                 }
-                ActorContext.set(new CurrentActor(principal.id(), principal.name(), principal.role()));
+                String acting = JwtService.AUDIENCE_STAFF.equals(principal.audience())
+                        ? ActingRole.normalize(principal.role(), request.getHeader(ActingRole.HEADER)) : null;
+                ActorContext.set(new CurrentActor(principal.id(), principal.name(), principal.role(), acting));
                 // Enrich the log MDC so every line for this request is attributable (id/role only —
                 // never the token or name). RequestLoggingFilter (outermost) clears the MDC.
                 MDC.put("actorId", principal.id());
                 MDC.put("actorRole", principal.role());
+                if (acting != null) MDC.put("actingRole", acting);
                 // Two authorities: the actor role, and the token's AUDIENCE promoted to a role. The
                 // audience is what makes JwtService's "a borrower token can never satisfy a staff
                 // route" actually true — SecurityConfig gates /api/staff + /api/admin on ROLE_STAFF.
