@@ -399,7 +399,7 @@ function str(derived: Record<string, unknown> | undefined, key: string): string 
 /**
  * Which API answered this check, and when — or which one failed to.
  *
- * <p>Shared with the Overview card's `CheckState` so the two screens cannot drift on what they call a
+ * <p>Shared with the Verifications panel's per-check rows so every screen says the same thing about a
  * provider. The branch that matters is the failure one: a check the vendor could not run is stored
  * with **`provider` null** and a status of REVIEW, so before this existed both screens showed a bare
  * amber "Review" with no way to tell a genuine judgement call from an API that fell over. The

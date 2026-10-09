@@ -52,8 +52,8 @@ const TABS: TabDef[] = [
 ];
 
 /**
- * The product's single, full loan detail modal — read-only. Opened from the customer modal's
- * Loans tab, from loan history, and from the `/staff/loans` register.
+ * The product's single, full loan detail modal — read-only. Opened from the customer pop-up's
+ * Loan tab, from loan history, and from the `/staff/loans` register.
  *
  * `loanId == null` is the closed convention (mirrors `CustomerDetailDialog`). Everything else —
  * the application, the customer, the borrower identity, the collections case — is resolved from

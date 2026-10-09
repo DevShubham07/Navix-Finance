@@ -262,3 +262,20 @@ export function deriveJourney(
     isTerminalBad: TERMINAL_BAD_STATES.has(current.state),
   };
 }
+
+export type EventKind = "assignment" | "decision" | "lifecycle";
+
+// Mirrors DecisionHistoryService.DECISION_ACTIONS (minus ASSIGN/REASSIGN, which are their own bucket).
+const DECISION_ACTIONS = new Set([
+  "KYC_APPROVE", "KYC_REJECT", "SANCTION", "REJECT_LEAD", "MARK_PENDING",
+  "EXEC_APPROVE", "EXEC_REJECT", "HEAD_APPROVE", "HEAD_REJECT",
+  "DISB_ACCEPT", "DISB_REJECT", "VALIDATE_SUCCESS", "VALIDATE_FAIL", "RETRY", "CANCEL",
+]);
+
+/** Client-side bucket for the Journey tab's filter chips. */
+export function classifyEvent(e: Pick<EventView, "action" | "toStatus">): EventKind {
+  const a = (e.action ?? "").toUpperCase();
+  if (a === "ASSIGN" || a === "REASSIGN") return "assignment";
+  if (DECISION_ACTIONS.has(a) || a.startsWith("AUTO_REJECT_") || e.toStatus === "REJECTED") return "decision";
+  return "lifecycle";
+}

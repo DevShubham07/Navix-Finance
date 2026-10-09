@@ -6,32 +6,40 @@
  */
 
 import * as React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Check, XCircle } from "lucide-react";
-import { EmptyState, Select, Skeleton, StatusBadge, toast } from "@/components/ui";
-import { type TabDef } from "@/components/ui/tabs";
-import { displayAnnualSalaryPaise, formatDate, formatDateTime } from "@/lib/utils";
-import { LoanBreakdown, ProjectedCostBreakdown } from "@/components/staff/loan-breakdown";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Loader2, XCircle } from "lucide-react";
+import { EmptyState, Skeleton, StatusBadge, toast } from "@/components/ui";
+import {
+  Banknote, Building2, CalendarClock, Copy, FileSignature, Files, Gauge, History, IndianRupee,
+  Landmark, MapPin, MessageSquare, Repeat, Route, ShieldCheck, User, Users,
+} from "lucide-react";
+import { type PillTabDef } from "@/components/ui/pill-tabs";
+import type { TabCtx } from "@/components/staff/customer-360/types";
+import { CustomerTab } from "@/components/staff/customer-360/customer-tab";
+import { MandateTab } from "@/components/staff/customer-360/mandate-tab";
+import { ReferencesTab } from "@/components/staff/customer-360/references-tab";
+import { LoanTab } from "@/components/staff/customer-360/loan-tab";
+import { RepaymentTab } from "@/components/staff/customer-360/repayment-tab";
+import { SanctionTab } from "@/components/staff/customer-360/sanction-tab";
+import { DisbursalTab } from "@/components/staff/customer-360/disbursal-tab";
+import { DocumentsTab as DocumentsCardsTab } from "@/components/staff/customer-360/documents-tab";
+import { BankingTab } from "@/components/staff/customer-360/banking-tab";
+import { JourneyTab } from "@/components/staff/customer-360/journey-tab";
+import { AddressesTab } from "@/components/staff/customer-360/addresses-tab";
+import { CommunicationTab } from "@/components/staff/customer-360/communication-tab";
+import { DedupeTab } from "@/components/staff/customer-360/dedupe-tab";
+import { FollowupsTab } from "@/components/staff/customer-360/followups-tab";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { formatRupees } from "@/components/staff/credit/tradeline-table";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
-import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
 import { SkipTracePanel } from "@/components/staff/skip-trace-panel";
-import { PermissionGate, errMessage } from "@/components/staff/live-pipeline";
+import { PermissionGate } from "@/components/staff/live-pipeline";
 import {
-  Bool,
-  CallLogRow,
-  CustomerDocsByType,
-  DocumentsTab,
-  KV,
-  LimitBasisBadge,
   NeedsManualReviewBadge,
-  RemarksTab,
   Section,
 } from "@/components/staff/detail-parts";
-import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { VerificationChecksPanel } from "@/components/staff/verification-checks";
-import { PaymentProofLink } from "@/components/ui/payment-proof-link";
 import { stageOf, STAGE_LABELS } from "@/lib/domain/journey";
 import {
   AUDIT_FILTER_ALL,
@@ -47,26 +55,37 @@ import {
   staffApi,
   paiseToINR,
   statusLabel,
-  REJECTION_REASON_LABEL,
   type CustomerDetail,
   type ApplicationView,
   type ActivityEntry,
-  type LoanView,
-  type OutstandingView,
   type ApplicationStatus,
 } from "@/lib/api/applications";
 
-export const CUSTOMER_TABS: TabDef[] = [
-  { key: "personal", label: "Personal Details" },
-  { key: "employment", label: "Employment & salary" },
-  { key: "bank", label: "Bank Accounts" },
-  { key: "verifications", label: "Verifications" },
-  { key: "credit", label: "Credit Report" },
-  { key: "documents", label: "Documents" },
-  { key: "loans", label: "Loan Applications" },
-  { key: "calls", label: "Customer Call Logs" },
-  { key: "skiptrace", label: "Skip Tracer" },
-  { key: "audit", label: "Audit Logs" },
+/** The 17 lifecycle-ordered tabs shared by the pop-up and the full customer page. */
+export const CUSTOMER_TABS: PillTabDef[] = [
+  { key: "customer", label: "Customer", icon: User },
+  { key: "loan", label: "Loan", icon: Landmark },
+  { key: "sanction", label: "Sanction", icon: FileSignature },
+  { key: "disbursal", label: "Disbursal", icon: Banknote },
+  { key: "repayment", label: "Repayment", icon: IndianRupee },
+  { key: "banking", label: "Banking", icon: Building2 },
+  { key: "credit", label: "Credit report", icon: Gauge },
+  { key: "journey", label: "Journey", icon: Route },
+  { key: "references", label: "References", icon: Users },
+  { key: "documents", label: "Documents", icon: Files },
+  { key: "addresses", label: "Addresses", icon: MapPin },
+  { key: "dedupe", label: "Dedupe", icon: Copy },
+  { key: "communication", label: "Communication", icon: MessageSquare },
+  { key: "activity", label: "Activity", icon: History },
+  { key: "followups", label: "Follow-ups", icon: CalendarClock },
+  {
+    key: "mandate",
+    label: "Mandate",
+    icon: Repeat,
+    disabled: true,
+    badge: "Coming soon",
+  },
+  { key: "verifications", label: "Verifications", icon: ShieldCheck },
 ];
 
 const CANCELLABLE: Set<ApplicationStatus> = new Set([
@@ -74,20 +93,6 @@ const CANCELLABLE: Set<ApplicationStatus> = new Set([
   "CREDIT_EXEC_PENDING", "CREDIT_EXEC_APPROVED", "CREDIT_HEAD_PENDING", "CREDIT_HEAD_APPROVED",
   "DISBURSEMENT_PENDING", "ACCOUNTANT_PENDING", "DISBURSEMENT_FAILED",
 ]);
-
-const CALL_TYPES = [
-  { value: "OUTBOUND", label: "Outbound" },
-  { value: "INBOUND", label: "Inbound" },
-  { value: "MISSED", label: "Missed" },
-];
-
-const CALL_OUTCOMES = [
-  { value: "CONNECTED", label: "Connected" },
-  { value: "NO_ANSWER", label: "No answer" },
-  { value: "CALLBACK", label: "Callback" },
-  { value: "REFUSED", label: "Refused" },
-  { value: "WRONG_NUMBER", label: "Wrong number" },
-];
 
 const TYPE_STYLE: Record<string, string> = {
   LIFECYCLE: "bg-navy-tint text-navy",
@@ -104,82 +109,84 @@ export function CustomerTabBody({
   tab,
   detail,
   customerId,
-  applicationId,
-  onChanged,
+  applicationId: applicationIdProp,
+  app: appProp,
+  onChanged = noop,
   onOpenApplication,
-}: {
-  tab: string;
-  detail: CustomerDetail;
-  customerId: number;
-  applicationId?: number;
-  /** Fired after cancel / owner assign so parents can refetch. */
-  onChanged?: () => void;
-  /**
-   * Open another of this customer's applications. Optional, and taken as a callback rather than
-   * importing ApplicationDetailDialog here — that dialog already imports this module, so importing
-   * it back would be a cycle. Callers that can host a dialog pass a handler; the rest degrade to
-   * the plain non-clickable list.
-   */
-  onOpenApplication?: (applicationId: number) => void;
-}) {
-  const latestAppId = applicationId ?? detail.applications[0]?.id ?? null;
+  onTabChange,
+}: { tab: string } & Partial<TabCtx> & Pick<TabCtx, "detail" | "customerId">) {
+  // An explicit `null` (lead-only customer) is honoured; only an omitted prop falls back to the newest file.
+  const applicationId = applicationIdProp !== undefined ? applicationIdProp : (detail.applications[0]?.id ?? null);
+  const app = appProp !== undefined ? appProp : (detail.applications[0] ?? null);
+  const ctx: TabCtx = { detail, customerId, applicationId, app, onChanged, onOpenApplication, onTabChange };
+  const noApp = <EmptyState title="No application to show yet." />;
 
   const content = (() => {
     switch (tab) {
-      case "personal":
-        return <PersonalTab c={detail} applicationId={latestAppId} onChanged={onChanged} />;
-      case "employment":
-        return <EmploymentTab c={detail} customerId={customerId} />;
-      case "bank":
-        return <BankTab c={detail} latestAppId={latestAppId} />;
-      case "verifications":
-        // Every check on the file, penny drop included, with the same per-check detail and manual
-        // override the application dialog offers — reachable from the customer without having to
-        // find the right application first.
-        return latestAppId != null ? (
-          <VerificationChecksPanel applicationId={latestAppId} />
-        ) : (
-          <EmptyState title="No application to show verifications for." />
+      case "customer":
+        return <CustomerTab {...ctx} />;
+      case "loan":
+        return (
+          <LoanTab
+            {...ctx}
+            listing={
+              <ApplicationsList
+                c={detail}
+                onChanged={onChanged}
+                onOpenApplication={onOpenApplication}
+                currentApplicationId={applicationId}
+              />
+            }
+          />
         );
+      case "sanction":
+        return <SanctionTab {...ctx} />;
+      case "disbursal":
+        return <DisbursalTab {...ctx} />;
+      case "repayment":
+        return <RepaymentTab {...ctx} />;
+      case "banking":
+        return <BankingTab {...ctx} />;
       case "credit":
-        return <CreditTab c={detail} latestAppId={latestAppId} />;
+        return <CreditTab c={detail} latestAppId={applicationId} />;
+      case "journey":
+        return <JourneyTab app={app} applicationId={applicationId} />;
+      case "references":
+        return <ReferencesTab applicationId={applicationId} />;
       case "documents":
         // Grouped mode: every application this customer ever filed, not just the newest — a
         // reborrow's prior-application uploads must stay reachable (item 4).
-        return applicationId != null ? (
-          <DocumentsTab applicationId={applicationId} />
-        ) : (
-          <DocumentsTab customerId={customerId} />
-        );
-      case "loans":
-        return (
-          <LoansTab
-            c={detail}
-            onChanged={onChanged}
-            onOpenApplication={onOpenApplication}
-            currentApplicationId={applicationId ?? null}
-          />
-        );
-      case "calls":
-        return (
-          <div className="space-y-6">
-            <CallLogsTab customerId={customerId} loans={detail.loans} />
-            <Section title="Remarks">
-              <RemarksTab customerId={customerId} />
-            </Section>
-          </div>
-        );
-      case "skiptrace":
-        return <SkipTracePanel customerId={customerId} />;
-      case "audit":
+        return <DocumentsCardsTab customerId={customerId} />;
+      case "communication":
+        return <CommunicationTab customerId={customerId} loans={detail.loans} />;
+      case "activity":
         return <AuditLogsTab customerId={customerId} apps={detail.applications} />;
+      case "mandate":
+        return <MandateTab />;
+      case "verifications":
+        // Every check on the file, penny drop included, with the same per-check detail and manual
+        // override the application dialog offers — then the third-party skip-trace lookups.
+        return applicationId != null ? (
+          <div className="space-y-4">
+            <VerificationChecksPanel applicationId={applicationId} />
+            <SkipTracePanel customerId={customerId} />
+          </div>
+        ) : (
+          noApp
+        );
+      case "addresses":
+        return <AddressesTab {...ctx} />;
+      case "dedupe":
+        return <DedupeTab {...ctx} />;
+      case "followups":
+        return <FollowupsTab {...ctx} />;
       default:
         return null;
     }
   })();
 
   // The two callers of this body (the customer list dialog and the full customer page) each build
-  // their own bespoke header around <Tabs>/<CustomerTabBody> — there's no shared header component
+  // their own bespoke header around <PillTabs>/<CustomerTabBody> — there's no shared header component
   // to hang a badge off. Rendering it here instead, ahead of the per-tab content above, means it
   // stays visible across every tab both callers offer without duplicating it in each caller.
   return (
@@ -190,448 +197,11 @@ export function CustomerTabBody({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Personal + Owner
-// ---------------------------------------------------------------------------
-
-function PersonalTab({ c, applicationId, onChanged }: { c: CustomerDetail; applicationId: number | null; onChanged?: () => void }) {
-  const p = c.profile;
-  const currentLoan =
-    c.loans.find((l) =>
-      ["ACTIVE", "OVERDUE", "DISBURSED", "IN_COLLECTIONS", "DEFAULTED"].includes(l.status),
-    ) ??
-    c.loans[0] ??
-    null;
-  const latestApp = c.applications.find((app) => app.id === applicationId) ?? c.applications[0] ?? null;
-
-  // One cache entry per application for ALL of this file's verification reads (the Personal,
-  // Employment, Bank and Credit cards each want a different check off the SAME payload, and the
-  // key ["verifications", appId] is shared with AadhaarCard + VerificationChecksPanel) — five
-  // separate keys meant four extra round trips for identical data as a reviewer clicked the tabs.
-  const verQ = useQuery({
-    queryKey: ["verifications", latestApp?.id],
-    queryFn: () => staffApi.verifications(latestApp!.id),
-    enabled: latestApp != null,
-  });
-  const panDerived = ((verQ.data ?? []).find((s) => s.checkType === "PAN")?.derived ?? {}) as Record<
-    string,
-    unknown
-  >;
-  const emailDerived = ((verQ.data ?? []).find((s) => s.checkType === "EMAIL")?.derived ?? {}) as Record<
-    string,
-    unknown
-  >;
-  // Item 3b: the itemized interest/penalty/paid breakdown only renders when `outstanding` is
-  // passed — without it LoanBreakdown falls back to the loan's stale cached totalRepayable.
-  // The figure comes off the customer payload (`outstandingByLoanId`, computed server-side with
-  // the rest of it) rather than a per-loan request of our own.
-  const outstanding = currentLoan != null ? c.outstandingByLoanId?.[String(currentLoan.id)] : undefined;
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <Section title="Identity & profile">
-        <KV k="Full name" v={p?.fullName} />
-        <KV k="PAN" v={p?.pan} mono />
-        {/* Typed at intake (V75); shown in full to every staff role by product decision. */}
-        <KV k="Aadhaar number" v={p?.aadhaar} mono />
-        <KV k="Mobile" v={p?.mobile} mono />
-        <KV k="Email" v={p?.email} />
-        <KV k="Official (work) email" v={p?.officialEmail} />
-        <KV k="Date of birth" v={p?.dob} />
-        <KV k="Address" v={p?.address} />
-      </Section>
-
-      <Section title="Verification">
-        <KV k="PAN verified" v={<Bool on={p?.panVerified} />} />
-        <KV k="Aadhaar (DigiLocker)" v={<Bool on={p?.aadhaarVerified} />} />
-        <KV k="Aadhaar linked" v={<Bool on={p?.aadhaarLinked} />} />
-        <KV k="Work email (employer match)" v={<Bool on={p?.emailVerified} />} />
-        <KV k="Personal email (OTP)" v={<Bool on={p?.personalEmailVerified} />} />
-        <KV k="Work email (OTP)" v={<Bool on={p?.officialEmailOtpVerified} />} />
-        <KV k="Address verified" v={<Bool on={p?.addressVerified} />} />
-        <KV k="Penny drop" v={<Bool on={p?.pennyDropVerified} />} />
-        <KV
-          k="Identity match"
-          v={p?.nameMatchScore != null ? `${Math.round(p.nameMatchScore * 100)}%` : null}
-        />
-      </Section>
-
-      {latestApp != null && (
-        <Section title="PAN (provider)">
-          <KV k="Name on PAN" v={str(panDerived.fullName)} />
-          <KV k="Gender" v={str(panDerived.gender)} />
-          <KV k="DOB on PAN" v={str(panDerived.dob)} />
-          <KV k="PAN status" v={str(panDerived.panStatus)} />
-          <KV k="Allotment date" v={str(panDerived.panAllotmentDate)} />
-          <KV k="Compliant" v={str(panDerived.compliant)} />
-          <KV k="State" v={str(panDerived.addressState)} />
-          <KV k="PIN" v={str(panDerived.addressZip)} mono />
-        </Section>
-      )}
-
-      {latestApp != null && (
-        <Section title="Email (provider)">
-          <KV k="Status" v={str(emailDerived.status)} />
-          <KV k="Domain" v={str(emailDerived.domain)} />
-          <KV k="MX" v={str(emailDerived.mxRecord)} mono />
-          <KV k="SMTP" v={str(emailDerived.smtpProvider)} />
-          <KV k="Person name" v={str(emailDerived.personName)} />
-          <KV k="Company" v={str(emailDerived.companyName ?? emailDerived.matchedEstablishment)} />
-          <KV k="Did you mean" v={str(emailDerived.didYouMean)} />
-          <KV
-            k="Individual score"
-            v={emailDerived.individualScore != null ? String(emailDerived.individualScore) : null}
-          />
-        </Section>
-      )}
-
-      {latestApp != null && <AadhaarCard applicationId={latestApp.id} />}
-
-      {/* V75: the mandatory signup upload and the post-sanction DigiLocker fallback are different
-          documents taken at different moments, so they get separate cards rather than one list. */}
-      <Section title="Aadhaar card (signup upload)">
-        <CustomerDocsByType
-          customerId={c.customerId}
-          docTypes={new Set(["AADHAAR_CARD_FRONT", "AADHAAR_CARD_BACK"])}
-          emptyCopy="No Aadhaar card uploaded at signup (application predates the Aadhaar screen)."
-        />
-      </Section>
-
-      <Section title="PAN card (signup upload)">
-        <CustomerDocsByType
-          customerId={c.customerId}
-          docTypes={new Set(["PAN_CARD_FRONT", "PAN_CARD_BACK"])}
-          emptyCopy="No PAN card uploaded at signup (application predates the PAN-card screen)."
-        />
-      </Section>
-
-      <Section title="Aadhaar card (DigiLocker fallback)">
-        <CustomerDocsByType
-          customerId={c.customerId}
-          docTypes={new Set(["AADHAAR_FRONT", "AADHAAR_BACK"])}
-          emptyCopy="Not used — DigiLocker completed, or the step has not been reached."
-        />
-      </Section>
-
-      <Section title="Emergency contact">
-        <KV k="Name" v={p?.emergencyContactName} />
-        <KV k="Phone" v={p?.emergencyContactPhone} mono />
-        <KV k="Relation" v={p?.emergencyContactRelation} />
-      </Section>
-
-      {/* The consent trail. Collected at intake and carried on the profile, but until now visible on
-          no staff screen — leaving an auditor's two standard questions unanswerable from the app. */}
-      <Section title="Compliance">
-        <KV k="Terms version" v={p?.termsVersion} mono />
-        <KV k="Terms accepted" v={p?.termsAcceptedAt ? formatDateTime(p.termsAcceptedAt) : null} />
-        <KV k="PEP declared" v={p?.pepDeclaredAt ? formatDateTime(p.pepDeclaredAt) : null} />
-      </Section>
-
-      <CustomerOwnerPicker
-        customerId={c.customerId}
-        ownerStaffId={c.ownerStaffId}
-        ownerName={c.ownerName}
-        onChanged={onChanged}
-      />
-
-      <div className="md:col-span-2">
-        <Section title="Loan cost calculation">
-          {currentLoan ? (
-            <LoanBreakdown loan={currentLoan} outstanding={outstanding} />
-          ) : latestApp?.amountRequestedPaise != null ? (
-            <ProjectedCostBreakdown app={latestApp} />
-          ) : (
-            <p className="text-sm text-muted">No loan or requested amount yet.</p>
-          )}
-        </Section>
-      </div>
-    </div>
-  );
-}
+const noop = () => {};
 
 function str(v: unknown): string | null {
   if (v == null || v === "") return null;
   return String(v);
-}
-
-// ---------------------------------------------------------------------------
-// Employment & salary
-// ---------------------------------------------------------------------------
-
-/**
- * Employment and income on one tab: what the borrower declared, the EPFO record that corroborates
- * it, and the payslips they uploaded as proof.
- *
- * <p>This was split across two tabs — an "Employment" tab whose declared block already carried the
- * salary figures, and a "Salary" tab repeating a strict subset of them plus the slips. A reviewer
- * had to click between the two to read the same three numbers, so they are clubbed here.
- */
-function EmploymentTab({ c, customerId }: { c: CustomerDetail; customerId: number }) {
-  const p = c.profile;
-  const latestApp = c.applications[0] ?? null;
-  const annualPaise = p ? displayAnnualSalaryPaise(p) : null;
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
-        <Section title="Employment & salary (declared)">
-          <KV k="Employer" v={p?.employer} />
-          <KV k="Employment status" v={p?.employmentStatus} />
-          {/* The borrower's OWN declared UAN. The EPFO card alongside shows the provider's answer —
-              when that lookup returns no identifier, this is what a reviewer re-runs against. */}
-          <KV k="UAN" v={p?.uan} mono />
-          <KV k="Salary bank" v={p?.salaryBank} />
-          {/* The date the borrower reported being last paid, beside the recurring day the due date
-              is actually computed from. salaryCreditDay is derived from previousSalaryDate's
-              day-of-month at intake, so the two disagreeing is worth a reviewer's attention. */}
-          <KV
-            k="Last salary received"
-            v={p?.previousSalaryDate ? formatDate(p.previousSalaryDate) : null}
-          />
-          <KV
-            k="Salary day"
-            v={latestApp?.salaryCreditDay != null ? `Day ${latestApp.salaryCreditDay}` : null}
-          />
-          <KV
-            k="Monthly salary"
-            v={p?.monthlySalaryPaise != null ? paiseToINR(p.monthlySalaryPaise) : null}
-          />
-          <KV
-            k="Annual salary"
-            v={annualPaise != null ? paiseToINR(annualPaise) : null}
-          />
-          <KV
-            k="Salary %"
-            v={p?.salaryPercentage != null ? `${p.salaryPercentage}%` : null}
-          />
-          <KV
-            k="Increment %"
-            v={p?.incrementPercentage != null ? `${p.incrementPercentage}%` : null}
-          />
-          {/* An ADMIN override is the customer's live ceiling and outranks the salary rule; the
-              latest application's stored figure is only right when no override is set (and goes
-              stale once that application is disbursed, since the recompute skips it). */}
-          <KV
-            k="Eligible limit"
-            v={
-              c.limitOverridePaise != null || latestApp?.eligibleLimitPaise != null ? (
-                <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                  {paiseToINR(c.limitOverridePaise ?? latestApp?.eligibleLimitPaise ?? null)}
-                  <LimitBasisBadge overridePaise={c.limitOverridePaise} className="px-1.5 py-0 text-[9.6px]" />
-                </span>
-              ) : null
-            }
-          />
-        </Section>
-        {latestApp != null && <EpfoEmploymentCard applicationId={latestApp.id} />}
-      </div>
-      {/* Full width below the grid: a file list squeezed into a half-width column reads badly. */}
-      <Section title="Salary slips">
-        <CustomerDocsByType
-          customerId={customerId}
-          docTypes={new Set(["SALARY_SLIP"])}
-          emptyCopy="No salary slips uploaded."
-        />
-      </Section>
-    </div>
-  );
-}
-
-/**
- * The EPFO/UAN counterpart to the declared block above — what the provident-fund record says, so a
- * reviewer can put the borrower's claim and the EPFO's answer side by side. The declared employer is
- * repeated here on purpose: the comparison is the point, and making the reviewer look at two
- * different cards to make it is how mismatches get missed.
- *
- * <p>Reads the EMPLOYMENT verification row's `derived` fields. Booleans are deliberately tri-state:
- * null means "not carried / never asked", and rendering that as "No" would read as a contradiction
- * that was never actually checked. Several fields are null for every borrower today — the PF-filing
- * cross-check and the employer confidence score are Advanced-tier and we are provisioned for Basic
- * — so they show "—" rather than being hidden, and light up if that ever changes.
- */
-function EpfoEmploymentCard({ applicationId }: { applicationId: number }) {
-  const q = useQuery({
-    queryKey: ["verifications", applicationId],
-    queryFn: () => staffApi.verifications(applicationId),
-    enabled: applicationId != null,
-  });
-  const step = (q.data ?? []).find((s) => s.checkType === "EMPLOYMENT");
-  const d = (step?.derived ?? {}) as Record<string, unknown>;
-
-  if (!step) {
-    return (
-      <Section title="Employment (EPFO)">
-        <p className="text-sm text-muted">No EPFO employment check has been run for this application.</p>
-      </Section>
-    );
-  }
-
-  const tenure = d.tenureMonths;
-  // Three distinct "nothing to show" cases that must not be conflated: we never asked (no PAN or
-  // mobile on file), we asked and the EPFO had nothing, or the identity matched too many UANs to
-  // resolve one. Only the first is our own gap.
-  const notAsked = d.reason === "NO_IDENTIFIER";
-  const noRecord = d.found === false && !notAsked && d.tooManyRecords !== true;
-
-  return (
-    <Section title="Employment (EPFO)">
-      <KV k="Status" v={`${step.status}${step.message ? ` — ${step.message}` : ""}`} />
-      {notAsked && (
-        <p className="py-1 text-xs text-muted">
-          Not checked — no PAN or mobile was on file to look up.
-        </p>
-      )}
-      {noRecord && (
-        <p className="py-1 text-xs text-muted">
-          The EPFO holds no record for this identity. Common and not itself a concern: a first job, a
-          cash employer or a non-PF establishment all look like this.
-        </p>
-      )}
-      {d.tooManyRecords === true && (
-        <p className="py-1 text-xs text-muted">
-          The identity matched more than five UANs, so none could be resolved.
-        </p>
-      )}
-
-      <KV k="Declared employer" v={str(d.declaredEmployer)} />
-      <KV k="Employer on record" v={str(d.employerName)} />
-      <KV k="Employer name match" v={triState(d.employerNameMatch)} />
-      <KV k="Employee name match" v={triState(d.employeeNameMatch)} />
-
-      <KV k="Currently employed" v={triState(d.employed)} />
-      <KV k="Date of joining" v={str(d.dateOfJoining)} />
-      <KV k="Date of exit" v={str(d.dateOfExit)} />
-      <KV k="Exit marked by employer" v={triState(d.dateOfExitMarked)} />
-      <KV k="Leave reason" v={str(d.leaveReason)} />
-      <KV k="Tenure" v={typeof tenure === "number" ? `${tenure} month${tenure === 1 ? "" : "s"}` : null} />
-
-      <KV k="UAN" v={str(d.uan) ?? str(d.uanMasked)} mono />
-      <KV k="UANs matched" v={typeof d.uanCount === "number" ? String(d.uanCount) : null} />
-      <KV k="Matched on" v={str(d.uanSource)} />
-      <KV k="Establishment id" v={str(d.establishmentId)} mono />
-
-      <KV k="Recent PF filing" v={triState(d.recentPfFiling)} />
-      <KV k="PF filing details" v={triState(d.hasPfFilings)} />
-      <KV
-        k="Employer confidence"
-        v={typeof d.employerConfidenceScore === "number" ? d.employerConfidenceScore.toFixed(2) : null}
-      />
-      {d.manualOverride === true && (
-        <KV k="Manually overridden" v={`${str(d.manualBy) ?? "staff"}${d.manualAt ? ` · ${formatDateTime(String(d.manualAt))}` : ""}`} />
-      )}
-    </Section>
-  );
-}
-
-/** true → "Yes", false → "No", null/undefined → null (KV renders its own placeholder). */
-function triState(v: unknown): string | null {
-  if (v === true) return "Yes";
-  if (v === false) return "No";
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// Bank (synthesized — no bank-account entity)
-// ---------------------------------------------------------------------------
-
-function BankTab({ c, latestAppId }: { c: CustomerDetail; latestAppId: number | null }) {
-  const p = c.profile;
-  const pennyQ = useQuery({
-    queryKey: ["verifications", latestAppId],
-    queryFn: () => staffApi.verifications(latestAppId as number),
-    enabled: latestAppId != null,
-  });
-  const penny = (pennyQ.data ?? []).find((s) => s.checkType === "PENNY_DROP");
-  const derived = (penny?.derived ?? {}) as Record<string, unknown>;
-  const providerKeys = [
-    "accountNumber", "account", "ifsc", "bank", "nameMatch", "nameMatched",
-    "providerNameMatch", "beneficiaryName", "name", "bankRrn", "accountExists",
-  ];
-  const hasProviderData = providerKeys.some((key) => derived[key] != null && derived[key] !== "");
-  const manualNotice = derived.manualOverride
-    ? `Manually overridden by ${String(derived.manualBy ?? "staff")} on ${String(derived.manualAt ?? "an unknown date")}`
-    : null;
-  let emptyPennyCopy: string | null = null;
-  if (!hasProviderData) {
-    if (manualNotice) {
-      emptyPennyCopy = `${manualNotice} — no automated provider data on record.`;
-    } else if (!penny) {
-      emptyPennyCopy = "No penny-drop on this application — verification was carried over from a previous application.";
-    } else if (derived.providerError) {
-      emptyPennyCopy = String(derived.reason ?? "The provider could not complete penny-drop verification.");
-    } else {
-      emptyPennyCopy = "Not run — the borrower kept their salary account.";
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <p className="text-xs text-muted">
-        No dedicated bank-account entity — synthesized from the salary bank on the KYC profile,
-        the latest penny-drop verification, and disbursal transaction refs on loans.
-      </p>
-      <Section title="Salary bank">
-        <StaffFieldTable rows={[
-          ["Bank", p?.salaryBank, "KYC profile"],
-          ["Account", p?.salaryAccountNumber, "KYC profile"],
-          ["IFSC", p?.salaryIfsc, "KYC profile"],
-          // Worth surfacing beside the account: a number that differs from the profile mobile is
-          // what a reviewer wants to notice, and it was staff-invisible until now.
-          ["Account mobile", p?.salaryAccountMobile, "KYC profile"],
-          ["Penny drop verified", <Bool key="penny" on={p?.pennyDropVerified} />, "KYC profile"],
-        ]} />
-      </Section>
-      <Section title="Bank statements">
-        <CustomerDocsByType
-          customerId={c.customerId}
-          docTypes={new Set(["BANK_STATEMENT"])}
-          emptyCopy="No bank statements uploaded."
-        />
-      </Section>
-      <Section title="Cancelled cheque / passbook">
-        <CustomerDocsByType
-          customerId={c.customerId}
-          docTypes={new Set(["BANK_PROOF"])}
-          emptyCopy="No cancelled cheque or passbook uploaded."
-        />
-      </Section>
-      <Section title="Penny-drop derived">
-        {pennyQ.isLoading ? (
-          <Skeleton variant="table" rows={9} cols={4} />
-        ) : emptyPennyCopy ? (
-          <p className="text-sm text-muted">{emptyPennyCopy}</p>
-        ) : (
-          <>
-            {manualNotice && <p className="mb-2 text-xs text-muted">{manualNotice}.</p>}
-            <StaffFieldTable rows={[
-              ["Account", str(derived.accountNumber ?? derived.account), "Penny-drop provider"],
-              ["IFSC", str(derived.ifsc), "Penny-drop provider"],
-              ["Bank", str(derived.bank), "Penny-drop provider"],
-              ["Name match", str(derived.nameMatch ?? derived.nameMatched), "Penny-drop provider"],
-              ["Provider name match", str(derived.providerNameMatch), "Penny-drop provider"],
-              ["Beneficiary name", str(derived.beneficiaryName ?? derived.name), "Penny-drop provider"],
-              ["Bank RRN", str(derived.bankRrn), "Penny-drop provider"],
-              ["Reason", str(derived.reason), "Penny-drop provider"],
-              ["Account exists", str(derived.accountExists), "Penny-drop provider"],
-            ]} />
-          </>
-        )}
-      </Section>
-      <Section title="Disbursal txn refs">
-        {c.loans.length === 0 ? (
-          <EmptyState title="No loans." className="py-4" />
-        ) : (
-          <div className="staff-table-scroll">
-            <table className="staff-data-table">
-              <thead><tr><th>S.No.</th><th>Loan ID</th><th>Transaction reference</th></tr></thead>
-              <tbody>{c.loans.map((loan, i) => (
-                <tr key={loan.id}><td className="text-muted">{i + 1}</td><td>#{loan.id}</td><td className="font-mono">{loan.disbursalTxnRef ?? "—"}</td></tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
-      </Section>
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -710,49 +280,11 @@ function StaffFieldTable({ rows }: { rows: Array<[string, React.ReactNode, strin
   );
 }
 
-/**
- * The e-Aadhaar card as DigiLocker returned it, off the AADHAAR verification row's `derived`.
- * The number here is the provider's masked copy (last 4); the full number the borrower typed sits
- * on the Identity card above (V75). Rows completed before the backend started recording
- * gender/address show "—" for those two.
- */
-function AadhaarCard({ applicationId }: { applicationId: number }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["verifications", applicationId],
-    queryFn: () => staffApi.verifications(applicationId),
-  });
-  const row = data?.find((s) => s.checkType === "AADHAAR");
-  if (isLoading || !row) return null;
-  const d = row.derived as Record<string, string | null | undefined>;
-
-  return (
-    <Section title="Aadhaar (DigiLocker)">
-      <KV k="Name on Aadhaar" v={d.fullName} />
-      <KV k="Aadhaar number (provider, masked)" v={d.maskedAadhaar} mono />
-      {d.aadhaarMismatch ? (
-        <KV k="Cross-check" v={<span className="font-semibold text-error-700">Mismatch vs number entered — fraud-rejected</span>} />
-      ) : null}
-      <KV k="Date of birth" v={d.dob} />
-      <KV k="Gender" v={d.gender} />
-      <KV k="Address" v={d.address} />
-      <KV k="Address line" v={d.addressLine} />
-      <KV k="Landmark" v={d.landmark} />
-      <KV k="State" v={d.state} />
-      <KV k="District" v={d.district} />
-      <KV k="City" v={d.city} />
-      <KV k="PIN code" v={d.pincode} mono />
-      <KV k="Country" v={d.country} />
-      <KV k="Aadhaar signer" v={d.dscSubject} />
-      <KV k="Status" v={row.status === "PASS" ? <Bool on /> : row.message || row.status} />
-    </Section>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Loan applications
 // ---------------------------------------------------------------------------
 
-function LoansTab({
+function ApplicationsList({
   c,
   onChanged,
   onOpenApplication,
@@ -764,12 +296,30 @@ function LoansTab({
   /** The application already on screen, if any — it is never made clickable. */
   currentApplicationId?: number | null;
 }) {
-  const [selectedLoanId, setSelectedLoanId] = React.useState<number | null>(null);
   const exposure = customerExposure(c);
   const lastPaidOn = isoDayToLocalDate(exposure.lastVerifiedPaymentOn);
 
   return (
     <div className="space-y-4">
+      {c.loans.length > 0 && (
+        <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs text-muted">
+          <span>
+            Total principal{" "}
+            <span className="font-mono text-ink">{paiseToINR(exposure.totalPrincipalPaise)}</span>
+          </span>
+          {exposure.totalOutstandingPaise != null && (
+            <span>
+              · Outstanding{" "}
+              <span className="font-mono text-ink">{paiseToINR(exposure.totalOutstandingPaise)}</span>
+            </span>
+          )}
+          {lastPaidOn && (
+            <span>
+              · Last verified payment <span className="text-ink">{formatDate(lastPaidOn)}</span>
+            </span>
+          )}
+        </p>
+      )}
       <Section title={`Applications (${c.applications.length})`}>
         {c.applications.length === 0 ? (
           <EmptyState title="None." className="py-4" />
@@ -816,97 +366,6 @@ function LoansTab({
         )}
       </Section>
 
-      <Section title={`Loans (${c.loans.length})`}>
-        {c.loans.length === 0 ? (
-          <EmptyState title="None." className="py-4" />
-        ) : (
-          <div className="space-y-3">
-            {/* Exposure in one line, from figures already on the customer payload — a figure the
-                payload does not carry is left out rather than fetched. */}
-            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs text-muted">
-              <span>
-                Total principal{" "}
-                <span className="font-mono text-ink">{paiseToINR(exposure.totalPrincipalPaise)}</span>
-              </span>
-              {exposure.totalOutstandingPaise != null && (
-                <span>
-                  · Outstanding{" "}
-                  <span className="font-mono text-ink">{paiseToINR(exposure.totalOutstandingPaise)}</span>
-                </span>
-              )}
-              {lastPaidOn && (
-                <span>
-                  · Last verified payment <span className="text-ink">{formatDate(lastPaidOn)}</span>
-                </span>
-              )}
-            </p>
-            {c.loans.map((l) => (
-              <LoanCard
-                key={l.id}
-                loan={l}
-                outstanding={c.outstandingByLoanId?.[String(l.id)]}
-                onSelect={() => setSelectedLoanId(l.id)}
-              />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Section title={`Payments (${c.payments.length})`}>
-        {c.payments.length === 0 ? (
-          <EmptyState title="None." className="py-4" />
-        ) : (
-          <ul className="divide-y divide-line">
-            {c.payments.map((pm) => (
-              <li key={pm.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
-                <span className="text-ink">
-                  {paiseToINR(pm.amountPaise)} · {pm.method}
-                  {pm.paidOn ? <span className="text-muted"> · {formatDate(pm.paidOn)}</span> : null}
-                  {pm.partial ? <span className="text-muted"> · partial</span> : null}{" "}
-                  <PaymentProofLink url={pm.proofUrl} className="text-xs" />
-                </span>
-                <StatusBadge kind="payment" value={pm.status} />
-                {/* A REJECTED pill with no reason is a dead end — the reason is already on the row. */}
-                {pm.status === "REJECTED" && (
-                  <p className="w-full text-xs text-error-700">
-                    {pm.rejectionReason ? REJECTION_REASON_LABEL[pm.rejectionReason] : "Rejected"}
-                    {pm.rejectionNote ? ` — ${pm.rejectionNote}` : ""}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      <LoanDetailDialog loanId={selectedLoanId} onClose={() => setSelectedLoanId(null)} />
-    </div>
-  );
-}
-
-/** One loan row on the Loan applications tab — the itemized interest/penalty/paid breakdown (item
- *  3b) comes from the customer payload's `outstandingByLoanId`, handed down by LoansTab. Fetching
- *  it per card meant one request per loan the moment the tab opened. */
-function LoanCard({
-  loan,
-  outstanding,
-  onSelect,
-}: {
-  loan: LoanView;
-  outstanding?: OutstandingView;
-  onSelect: () => void;
-}) {
-  return (
-    <div className="rounded border border-line p-3">
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <button type="button" onClick={onSelect} className="font-semibold text-navy hover:underline">
-          Loan #{loan.id} · {paiseToINR(loan.principalPaise)}
-        </button>
-        <span className="rounded-full bg-navy-tint px-2 py-0.5 text-xs font-semibold text-navy">
-          {loan.status}
-        </span>
-      </div>
-      <LoanBreakdown loan={loan} outstanding={outstanding} />
     </div>
   );
 }
@@ -928,125 +387,6 @@ function CancelButton({ appId, onDone }: { appId: number; onDone?: () => void })
     >
       {m.isPending ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />} Cancel
     </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Call logs
-// ---------------------------------------------------------------------------
-
-function CallLogsTab({ customerId, loans }: { customerId: number; loans: LoanView[] }) {
-  const qc = useQueryClient();
-  const [callType, setCallType] = React.useState("OUTBOUND");
-  const [outcome, setOutcome] = React.useState("CONNECTED");
-  const [callbackOn, setCallbackOn] = React.useState("");
-  const [notes, setNotes] = React.useState("");
-  // "Relates to loan" — how a call gets tagged to a loan (the loan detail modal itself is
-  // read-only). Defaults to the customer's one loan when there's only one to pick; otherwise the
-  // caller has to choose, since guessing wrong would mistag the call.
-  const [loanId, setLoanId] = React.useState(loans.length === 1 ? String(loans[0].id) : "");
-
-  const q = useQuery({
-    queryKey: ["customer-call-logs", customerId],
-    queryFn: () => customersApi.callLogs(customerId),
-  });
-  const add = useMutation({
-    mutationFn: () =>
-      customersApi.addCallLog(customerId, {
-        callType,
-        outcome,
-        callbackOn: outcome === "CALLBACK" && callbackOn ? callbackOn : null,
-        notes: notes.trim() || null,
-        loanId: loanId ? Number(loanId) : undefined,
-      }),
-    onSuccess: () => {
-      setNotes("");
-      setCallbackOn("");
-      qc.invalidateQueries({ queryKey: ["customer-call-logs", customerId] });
-      qc.invalidateQueries({ queryKey: ["customer-activity", customerId] });
-      toast.success("Call logged");
-    },
-  });
-
-  const loanOptions = [
-    { value: "", label: "— not loan-specific —" },
-    ...loans.map((l) => ({
-      value: String(l.id),
-      label: `#${l.id} · disbursed ${l.disbursedOn ? formatDate(l.disbursedOn) : "—"}`,
-    })),
-  ];
-
-  const logs = q.data ?? [];
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Select
-          label="Call type"
-          value={callType}
-          onChange={(e) => setCallType(e.target.value)}
-          options={CALL_TYPES}
-          className="!mb-0"
-        />
-        <Select
-          label="Outcome"
-          value={outcome}
-          onChange={(e) => setOutcome(e.target.value)}
-          options={CALL_OUTCOMES}
-          className="!mb-0"
-        />
-      </div>
-      {loans.length > 0 && (
-        <Select
-          label="Relates to loan"
-          value={loanId}
-          onChange={(e) => setLoanId(e.target.value)}
-          options={loanOptions}
-          className="!mb-0"
-        />
-      )}
-      {outcome === "CALLBACK" && (
-        <label className="block text-xs text-muted">
-          Callback on
-          <input
-            type="date"
-            value={callbackOn}
-            onChange={(e) => setCallbackOn(e.target.value)}
-            className="mt-1 w-full rounded border border-line px-3 py-2 text-sm text-ink"
-          />
-        </label>
-      )}
-      <textarea
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        rows={3}
-        placeholder="Call notes…"
-        className="w-full rounded border border-line px-3 py-2 text-sm"
-      />
-      <button
-        onClick={() => add.mutate()}
-        disabled={add.isPending}
-        className="btn btn-sm btn-navy disabled:opacity-50"
-      >
-        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Log call
-      </button>
-      {add.error && <p className="text-xs text-error-700">{errMessage(add.error)}</p>}
-
-      {q.isLoading ? (
-        <div className="space-y-2">
-          <Skeleton variant="row" />
-          <Skeleton variant="row" />
-          <Skeleton variant="row" />
-        </div>
-      ) : logs.length === 0 ? (
-        <EmptyState title="No call logs yet." />
-      ) : (
-        <ul className="space-y-2">
-          {logs.map((r) => (
-            <CallLogRow key={r.id} log={r} />
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }
 

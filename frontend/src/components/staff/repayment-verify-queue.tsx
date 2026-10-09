@@ -217,7 +217,7 @@ export function RepaymentVerifyQueue() {
 }
 
 /** The reason picklist + optional note the accountant fills in before a reject goes through. */
-function RejectDialog({
+export function RejectDialog({
   payment,
   pending,
   onClose,

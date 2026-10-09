@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, RefreshCw, Pencil, Ban, Trash2, AlertTriangle, Gauge, Send, Phone, IndianRupee, Calendar } from "lucide-react";
 import { ErrorState, Input, Select, Skeleton, toast } from "@/components/ui";
-import { Tabs } from "@/components/ui/tabs";
+import { PillTabs } from "@/components/ui/pill-tabs";
 import { PageHeader } from "@/components/staff/staff-ui";
 import {
   PermissionGate,
@@ -44,7 +44,7 @@ export default function CustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const id = Number(customerId);
   const qc = useQueryClient();
-  const [tab, setTab] = React.useState("personal");
+  const [tab, setTab] = React.useState("customer");
   /** An application opened from the Loan applications tab — carries its own Journey. */
   const [selectedAppId, setSelectedAppId] = React.useState<number | null>(null);
   const q = useQuery({ queryKey: ["customer", id], queryFn: () => customersApi.get(id), enabled: Number.isFinite(id) });
@@ -87,12 +87,14 @@ export default function CustomerDetailPage() {
         ) : (
           <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,340px)]">
             <div className="min-w-0 rounded border border-line bg-white p-4 shadow-sm">
-              <Tabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
+              <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} />
               <div className="mt-3 max-h-[68vh] overflow-y-auto text-[10.4px]">
                 <CustomerTabBody
                   tab={tab}
                   detail={c}
                   customerId={id}
+                  app={c.applications[0] ?? null}
+                  onTabChange={setTab}
                   onChanged={invalidate}
                   onOpenApplication={setSelectedAppId}
                 />

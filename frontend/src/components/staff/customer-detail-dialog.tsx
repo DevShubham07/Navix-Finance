@@ -19,10 +19,10 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, ExternalLink } from "lucide-react";
+import { X } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { ErrorState, Skeleton } from "@/components/ui";
-import { Tabs } from "@/components/ui/tabs";
+import { PillTabs } from "@/components/ui/pill-tabs";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { customersApi } from "@/lib/api/applications";
@@ -34,7 +34,7 @@ export function CustomerDetailDialog({
   customerId: number | null;
   onClose: () => void;
 }) {
-  const [tab, setTab] = React.useState("personal");
+  const [tab, setTab] = React.useState("customer");
   const open = customerId != null;
 
   const detailQ = useQuery({
@@ -73,7 +73,7 @@ export function CustomerDetailDialog({
         </button>
       </div>
 
-      <Tabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} className="mt-2" />
+      <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} className="mt-2" />
 
       <div className="mt-3 max-h-[68vh] overflow-y-auto pr-1 text-[10.4px]">
         {detailQ.isLoading ? (
@@ -90,18 +90,11 @@ export function CustomerDetailDialog({
               tab={tab}
               detail={c}
               customerId={customerId}
+              applicationId={null}
+              app={null}
+              onTabChange={setTab}
               onChanged={() => detailQ.refetch()}
             />
-            {tab === "personal" && (
-              <p className="mt-4 text-sm text-muted">
-                <a
-                  href={`/staff/customers/${customerId}`}
-                  className="inline-flex items-center gap-1 font-semibold text-navy hover:underline"
-                >
-                  Open full customer page <ExternalLink size={13} />
-                </a>
-              </p>
-            )}
           </>
         )}
       </div>

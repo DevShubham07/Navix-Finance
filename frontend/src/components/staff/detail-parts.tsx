@@ -11,10 +11,10 @@
 
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Check, Upload, Trash2, FileText, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Check, Upload, Trash2, FileText, ExternalLink, ChevronDown, ChevronRight, CalendarClock, type LucideIcon } from "lucide-react";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { hasPermission } from "@/lib/auth/rbac";
-import { formatDateTime } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/tooltip";
 import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
 import { LIMIT_BASIS_LABEL, limitBasisOf } from "@/lib/customers/customer-360";
@@ -108,8 +108,11 @@ export function DocumentsTab({
   return <EmptyState title="No application to attach documents to." />;
 }
 
-/** Customer identity proofs are grouped by type; loan-specific documents stay under applications. */
-function GroupedDocumentsTab({ customerId }: { customerId: number }) {
+/**
+ * The grouped customer-documents data: identity proofs by type, loan documents per application, and
+ * the ADMIN delete mutation. Shared by the list-style tab here and the card-grid tab in customer-360.
+ */
+export function useCustomerDocumentGroups(customerId: number) {
   const qc = useQueryClient();
   const role = useStaffSession().session?.role;
   const isAdmin = role != null && hasPermission(role, "customer:manage");
@@ -117,7 +120,6 @@ function GroupedDocumentsTab({ customerId }: { customerId: number }) {
     queryKey: ["customer-documents", customerId],
     queryFn: () => customersApi.documents(customerId),
   });
-  const [openIds, setOpenIds] = React.useState<Set<number> | null>(null);
   const groups = groupsQ.data ?? [];
   const customerDocuments = groups.flatMap((group) =>
     group.documents
@@ -142,6 +144,14 @@ function GroupedDocumentsTab({ customerId }: { customerId: number }) {
       toast.success("Document deleted");
     },
   });
+  return { groupsQ, groups, customerDocuments, customerByType, applicationGroups, del, isAdmin };
+}
+
+/** Customer identity proofs are grouped by type; loan-specific documents stay under applications. */
+function GroupedDocumentsTab({ customerId }: { customerId: number }) {
+  const { groupsQ, groups, customerDocuments, customerByType, applicationGroups, del, isAdmin } =
+    useCustomerDocumentGroups(customerId);
+  const [openIds, setOpenIds] = React.useState<Set<number> | null>(null);
 
   // Expand the newest application by default, once data arrives.
   const effectiveOpen = openIds ?? new Set(groups.length ? [groups[0].applicationId] : []);
@@ -299,6 +309,16 @@ export function DocPassword({ password }: { password?: string | null }) {
   );
 }
 
+/** Open a staff-visible document in a new tab (presigned S3 URL, else the inline base64 blob). */
+export async function viewDocument(appId: number, doc: DocumentView): Promise<void> {
+  if (doc.s3) {
+    const { url } = await staffApi.documentUrl(appId, doc.id);
+    window.open(url, "_blank", "noopener,noreferrer");
+  } else {
+    openDocument(await staffApi.document(appId, doc.id), false);
+  }
+}
+
 export function DocRow({
   appId,
   doc,
@@ -318,12 +338,7 @@ export function DocRow({
   const view = async () => {
     setBusy(true);
     try {
-      if (doc.s3) {
-        const { url } = await staffApi.documentUrl(appId, doc.id);
-        window.open(url, "_blank", "noopener,noreferrer");
-      } else {
-        openDocument(await staffApi.document(appId, doc.id), false);
-      }
+      await viewDocument(appId, doc);
     } finally {
       setBusy(false);
     }
@@ -446,7 +461,7 @@ export function NeedsManualReviewBadge({ customerId, className }: { customerId: 
  * category still has a doc, upload is blocked. Deleting is ADMIN-only, so the hint differs by role:
  * an admin is told to delete it above, a credit user is told to ask an administrator.
  */
-function DocumentUpload({
+export function DocumentUpload({
   applicationId,
   customerId,
   existingCategories,
@@ -580,10 +595,27 @@ export function RemarksTab({ customerId }: { customerId: number }) {
 // Small presentational primitives
 // ---------------------------------------------------------------------------
 
-export function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
+export function Section({
+  title,
+  children,
+  icon: Icon,
+  pill,
+  action,
+}: {
+  title: React.ReactNode;
+  children: React.ReactNode;
+  icon?: LucideIcon;
+  pill?: React.ReactNode;
+  action?: React.ReactNode;
+}) {
   return (
     <div className="rounded border border-line bg-white p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{title}</div>
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+        {Icon && <Icon size={15} className="shrink-0" />}
+        <span>{title}</span>
+        {pill}
+        {action && <span className="ml-auto normal-case tracking-normal">{action}</span>}
+      </div>
       {children}
     </div>
   );
@@ -646,8 +678,12 @@ export function CallLogRow({ log }: { log: CallLogView }) {
     <li className="rounded border border-line p-2.5">
       <p className="text-sm font-semibold text-ink">
         {log.callType} · {log.outcome}
-        {log.callbackOn ? ` · callback ${log.callbackOn}` : ""}
         {log.loanId != null ? ` · Loan #${log.loanId}` : ""}
+        {log.callbackOn && (
+          <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-warning-50 px-2 py-0.5 text-[10px] font-semibold text-warning-800">
+            <CalendarClock size={11} /> Callback {formatDate(log.callbackOn)}
+          </span>
+        )}
       </p>
       {log.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{log.notes}</p>}
       <p className="mt-1 text-[8.8px] text-muted">

@@ -606,6 +606,8 @@ table.data td strong { color: var(--navy); }
    (`.on`); an unselected chip keeps the neutral default look. Reuses the existing status tokens. */
 .cal-preset--success.on { background: var(--success); border-color: var(--success); color: #fff; }
 .cal-preset--error.on { background: var(--danger); border-color: var(--danger); color: #fff; }
+.pill-tabs { overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent); mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent); }
+.pill-tabs::-webkit-scrollbar { display: none; }
 .cal-sublabel { font-family: var(--mono); font-size: 0.528rem; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-700); font-weight: 500; margin-bottom: 5px; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .cal-title { font-family: var(--font-display); font-size: clamp(0.96rem, 1.84vw, 1.2rem); font-weight: 700; color: var(--navy-800); letter-spacing: -.02em; line-height: 1; }

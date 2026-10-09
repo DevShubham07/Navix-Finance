@@ -66,7 +66,7 @@ describe("Audit Logs filter chips", () => {
         ev("PROFILE", "Updated Monthly salary"),
         ev("REMARK", "Remark", null),
       ]);
-    renderTab("audit", detail());
+    renderTab("activity", detail());
 
     const group = await screen.findByRole("group", { name: "Filter activity by type" });
     const chips = within(group).getAllByRole("button").map((b) => b.textContent);
@@ -94,7 +94,7 @@ describe("Audit Logs filter chips", () => {
   it("shows no chip row when only one type is present", async () => {
     vi.spyOn(customersApi, "documents").mockResolvedValue([]);
     vi.spyOn(customersApi, "activity").mockResolvedValue([ev("LIFECYCLE", "Sanction")]);
-    renderTab("audit", detail());
+    renderTab("activity", detail());
     expect(await screen.findByText("Sanction")).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Filter activity by type" })).not.toBeInTheDocument();
   });
@@ -126,7 +126,7 @@ describe("Loans exposure summary", () => {
     vi.spyOn(customersApi, "documents").mockResolvedValue([]);
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     renderTab(
-      "loans",
+      "loan",
       detail({
         loans: [loan(2, 2_000_000, "ACTIVE"), loan(1, 1_000_000)],
         payments: [pay(1, "VERIFIED", "2026-09-28"), pay(2, "PENDING_VERIFICATION", "2026-10-04")],
@@ -147,10 +147,30 @@ describe("Loans exposure summary", () => {
 
   it("omits outstanding and last payment when the payload does not carry them", () => {
     vi.spyOn(customersApi, "documents").mockResolvedValue([]);
-    renderTab("loans", detail({ loans: [loan(1, 1_000_000)], payments: [] }));
+    renderTab("loan", detail({ loans: [loan(1, 1_000_000)], payments: [] }));
     const line = screen.getByText(/Total principal/).closest("p")!;
     expect(line).toHaveTextContent("Total principal ₹10,000");
     expect(line).not.toHaveTextContent("Outstanding");
     expect(line).not.toHaveTextContent("Last verified payment");
+  });
+
+  it("lists applications only — loans and payments belong to the Loan card / Repayment tab", () => {
+    vi.spyOn(customersApi, "documents").mockResolvedValue([]);
+    renderTab("loan", detail({ loans: [loan(1, 1_000_000)], payments: [pay(1, "VERIFIED", "2026-09-28")] }));
+    expect(screen.getByText("Applications (1)")).toBeInTheDocument();
+    expect(screen.queryByText(/^Loans \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Payments \(/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Customer tab compliance", () => {
+  it("shows the terms / PEP consent trail", () => {
+    vi.spyOn(customersApi, "documents").mockResolvedValue([]);
+    renderTab(
+      "customer",
+      detail({ profile: { termsVersion: "v3" } as unknown as CustomerDetail["profile"] }),
+    );
+    expect(screen.getByText("Compliance")).toBeInTheDocument();
+    expect(screen.getByText("v3")).toBeInTheDocument();
   });
 });

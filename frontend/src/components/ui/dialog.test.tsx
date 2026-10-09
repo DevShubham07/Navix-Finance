@@ -76,7 +76,7 @@ describe("<Dialog/>", () => {
         <span>body</span>
       </Dialog>,
     );
-    expect(screen.getByRole("dialog")).toHaveClass("!max-w-[80vw]");
+    expect(screen.getByRole("dialog")).toHaveClass("!max-w-[1400px]");
   });
 });
 

@@ -281,6 +281,13 @@ public class CustomerService {
         }
     }
 
+    /** For sibling staff reads of one customer (e.g. dedupe): the DSA exclusion plus the same scope rule as {@link #detail}. */
+    @Transactional(readOnly = true)
+    public void assertVisible(Long customerId) {
+        rejectDsa();
+        requireVisible(customerId);
+    }
+
     /** Hard ceiling on one page of the Customers list. */
     public static final int MAX_PAGE_SIZE = 100;
     /** Hard ceiling on a "download all customers" export. */

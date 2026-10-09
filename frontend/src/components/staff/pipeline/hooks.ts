@@ -104,5 +104,8 @@ export function useRefreshAfterAction() {
     qc.invalidateQueries({ queryKey: ["staff-application", id] });
     qc.invalidateQueries({ queryKey: ["staff-dashboard-stats"] });
     qc.invalidateQueries({ queryKey: ["staff-dashboard-queue"] });
+    // The customer page and the pop-up render the same file from the customer roll-up.
+    qc.invalidateQueries({ queryKey: ["customer"] });
+    qc.invalidateQueries({ queryKey: ["customer-detail"] });
   };
 }

@@ -7,7 +7,7 @@ import { proxyToBackend, joinPath, unauthorized } from "@/lib/api/bff-proxy";
  *   `${backendBaseUrl}/api/customers/${path}${search}`
  * injecting STAFF identity from the `navix_staff` cookie. 401 if no session.
  *
- *  - GET    : list/search customers, one customer's full history, activity, remarks.
+ *  - GET    : list/search customers, one customer's full history, activity, remarks, dedupe.
  *  - PUT    : ADMIN corrects a customer's KYC data (`{customerId}/profile`).
  *  - POST   : add a staff remark (`{customerId}/remarks`).
  *  - DELETE : ADMIN permanently deletes a customer + all their data (`{customerId}`).

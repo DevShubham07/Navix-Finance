@@ -989,6 +989,24 @@ export interface CallLogView {
   loanId: number | null;
 }
 
+/** Mirrors backend `DedupeDtos.DedupeView` — identifiers arrive masked to the last four. */
+export interface DedupeView {
+  aadhaar: {
+    /** null = no AADHAAR_DUPLICATE row (clear); otherwise the verification status. */
+    status: string | null;
+    applicationId: number | null;
+    otherCustomerIds: number[];
+    message: string | null;
+  };
+  blocklistHits: { type: string; maskedValue: string; reason: string | null; addedOn: string | null }[];
+  rejection: {
+    applicationId: number | null;
+    reasonCode: string;
+    reasonDetail: string | null;
+    blockedUntil: string | null;
+  } | null;
+}
+
 export interface AddCallLogInput {
   callType: string;
   outcome: string;
@@ -2210,6 +2228,9 @@ export const customersApi = {
       `${CUSTOMERS_BASE}/${customerId}/call-logs${loanId != null ? `?loanId=${loanId}` : ""}`,
       "GET",
     ),
+
+  /** Aadhaar duplicate, blocklist hits and the live rejection block, in one staff read. */
+  dedupe: (customerId: number) => bff<DedupeView>(`${CUSTOMERS_BASE}/${customerId}/dedupe`, "GET"),
 
   /** Add a staff call log to a customer. */
   addCallLog: (customerId: number, body: AddCallLogInput) =>

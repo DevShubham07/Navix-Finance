@@ -14,7 +14,7 @@ export type DialogSize = "md" | "lg" | "xl";
 const sizeClasses: Record<DialogSize, string> = {
   md: "!max-w-[460px]",
   lg: "!max-w-[56rem]",
-  xl: "!max-w-[80vw]",
+  xl: "!max-w-[1400px]",
 };
 
 export interface DialogProps {
