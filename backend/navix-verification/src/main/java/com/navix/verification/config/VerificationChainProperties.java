@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * ECS task-def env var rather than a redeploy — and which must stay consistent with the ALB idle
  * timeout in front of the service.
  *
- * <p>{@code chain} -> {@code NAVIX_VERIFICATION_CHAIN} (default {@code [signzy, digitap, fintrix]}) —
+ * <p>{@code chain} -> {@code NAVIX_VERIFICATION_CHAIN} (default {@code [signzy, fintrix, digitap]}) —
  * the ordered list of provider ids the {@code RoutingVerificationPort} tries per capability: it calls
  * each in turn, skipping a provider that does not offer the capability and falling through to the next
  * on a failure, returning the first success. Provider ids: {@code fintrix}, {@code signzy},
@@ -39,7 +39,7 @@ public record VerificationChainProperties(
     /**
      * The bureau chain is sequential and the ALB idle timeout in front of the service is 120s, so every
      * leg has to fit inside that budget together. With {@code digitap-crif} OFF (its endpoint still 401s)
-     * the live worst case is Digitap Experian 45 + Fintrix CRIF 45 = <b>90s</b> read, <b>100s</b> once the
+     * the live worst case is Fintrix CRIF 45 + Digitap Experian 45 = <b>90s</b> read, <b>100s</b> once the
      * two 5s connect timeouts are counted — 20s of headroom. Signzy's bureau leg throws
      * {@code CapabilityNotSupportedException} without opening a socket, so it costs nothing.
      *
@@ -98,12 +98,12 @@ public record VerificationChainProperties(
     }
 
     /**
-     * The effective chain, defaulting to Signzy → Digitap → Fintrix when unset/blank. Kept in step with
+     * The effective chain, defaulting to Signzy → Fintrix → Digitap when unset/blank. Kept in step with
      * {@code application.yml}: tests have no verification block and fall through to this default, so a
      * divergence here would silently exercise a different provider order than production.
      */
     public List<String> effectiveChain() {
-        return (chain == null || chain.isEmpty()) ? List.of("signzy", "digitap", "fintrix") : chain;
+        return (chain == null || chain.isEmpty()) ? List.of("signzy", "fintrix", "digitap") : chain;
     }
 
     /**

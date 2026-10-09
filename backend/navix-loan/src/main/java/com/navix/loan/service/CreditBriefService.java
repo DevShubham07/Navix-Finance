@@ -187,7 +187,7 @@ public class CreditBriefService {
         if (profile == null || profile.getCreditBriefFacts() == null) {
             return new CreditBriefView(appId, providerResponse != null, null, null, null, null,
                     null, null, null, providerResponse, bureauState,
-                    profile != null ? profile.getBureauSource() : null);
+                    profile != null ? profile.getBureauSource() : null, bureauReportId(appId));
         }
         ensureBrief(appId, profile);
         // The identity shown on the brief must be the borrower's REAL KYC — the same profile the staff
@@ -213,7 +213,12 @@ public class CreditBriefService {
                 profile.getCreditRecommendation(),
                 profile.getCreditBriefSummary(),
                 profile.getCreditBriefGeneratedAt(),
-                docId, facts, providerResponse, bureauState, profile.getBureauSource());
+                docId, facts, providerResponse, bureauState, profile.getBureauSource(), bureauReportId(appId));
+    }
+
+    private Long bureauReportId(Long appId) {
+        return documentRepo.findFirstByApplicationIdAndDocTypeOrderByIdDesc(
+                appId, ApplicationVerificationService.BUREAU_REPORT).map(ApplicationDocument::getId).orElse(null);
     }
 
     private JsonNode providerResponse(Long appId) {

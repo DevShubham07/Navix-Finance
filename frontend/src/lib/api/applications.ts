@@ -907,6 +907,8 @@ export interface CreditBriefView {
   bureauState: BureauState;
   /** Which bureau produced creditScore — labels the score instead of a hardcoded bureau name. */
   bureauSource?: string | null;
+  /** The bureau's own PDF (BUREAU_REPORT — Fintrix CRIF), null when none was returned (Experian, KBA). */
+  bureauReportDocumentId?: number | null;
 }
 
 /** Admin edit of a customer's KYC / salary data (identity fields excluded — they stay locked). */

@@ -33,10 +33,11 @@ import org.springframework.stereotype.Component;
  * the synchronous face-match ({@code faceLiveness}) and the UAN/EPFO employment lookup
  * ({@code verifyEmployment}) are Digitap-only; PAN and email try Signzy first (with the Digitap legs
  * flag-gated off — neither product is provisioned) and PAN then falls back to Fintrix; address is
- * Digitap-only. Bureau is the one capability with a THREE-provider chain, and since 2026-09-11
- * (commit {@code 4b3a0c2}) the live order is <b>Digitap Experian → Fintrix CRIF</b>; Signzy's bureau
- * leg is retired and skips itself, staying in the map only because the chain is global across
- * capabilities. The default chain property is {@code signzy,digitap,fintrix}.
+ * Digitap-only. Bureau is the one capability with a THREE-provider chain. Digitap Experian led from
+ * 2026-09-11 (commit {@code 4b3a0c2}); since 2026-10-10 the order is back to <b>Fintrix CRIF → Digitap
+ * Experian</b>, because only the CRIF reply carries the vendor report PDF. Signzy's bureau leg is retired
+ * and skips itself, staying in the map only because the chain is global across capabilities. The default
+ * chain property is {@code signzy,fintrix,digitap}.
  */
 @Component
 @Primary

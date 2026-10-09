@@ -106,7 +106,7 @@ navix:
     # caller's real network IP. aws.md §5.1's static NAT egress IP — never changes.
     device-ip: ${NAVIX_STATIC_EGRESS_IP:3.109.169.131}
   fintrix:
-    # Bureau FALLBACK behind Digitap — POST /crif_combine (CRIF Highmark). Auth = Basic base64(clientId:clientSecret),
+    # Bureau PRIMARY — POST /crif_combine (CRIF Highmark), ahead of Digitap Experian. Auth = Basic base64(clientId:clientSecret),
     # same scheme as Digitap. No sandbox — every call is live and billable (see FintrixCrifClient and
     # the "fintrix-bureau" feature_flag kill switch in FintrixVerificationAdapter).
     base-url: ${FINTRIX_BASE_URL:https://admin.fintrix.tech/__api/api/v1/}
@@ -116,19 +116,20 @@ navix:
     # Ordered provider chain the router tries per capability (skips unsupported, falls back on failure).
     # The order is GLOBAL, not per-capability — a provider "opts out" of a capability by throwing
     # CapabilityNotSupportedException. Signzy leads so it stays the PAN primary. Bureau reads
-    # Digitap (Experian) then Fintrix (CRIF), because Signzy's bureau leg is retired and skips itself.
-    # Resetting this to signzy,fintrix,digitap is the rollback for the bureau reorder — and it moves
-    # PAN's fallback back to Fintrix-before-Digitap, since the two share one list.
-    chain: ${NAVIX_VERIFICATION_CHAIN:signzy,digitap,fintrix}
+    # Fintrix (CRIF) then Digitap (Experian), because Signzy's bureau leg is retired and skips itself.
+    # Fintrix leads (again, 2026-10-10) because only its CRIF reply carries the vendor report PDF that
+    # staff read in Documents; Digitap's CRIF leg is still 401 (not provisioned). Resetting this to
+    # signzy,digitap,fintrix makes Experian primary again, and moves PAN's fallback with it.
+    chain: ${NAVIX_VERIFICATION_CHAIN:signzy,fintrix,digitap}
     # A bureau no-hit falls through to the next provider instead of ending the chain, so a thin file
-    # Digitap/Experian has never seen still reaches Fintrix/CRIF. Costs a second billable pull on a
+    # Fintrix/CRIF has never seen still reaches Digitap/Experian. Costs a second billable pull on a
     # genuinely thin file; set false to restore "the first answer wins, no-hit included".
     bureau-no-hit-fall-through: ${NAVIX_VERIFICATION_BUREAU_NO_HIT_FALL_THROUGH:true}
     # Outbound provider HTTP timeouts (seconds). These must stay under the ALB idle timeout in front
     # of the service (120s), because each chain is walked sequentially. Counting the 5s connect
     # timeout on every leg, as the older note here failed to:
-    #   bureau: Digitap Experian 45 + Fintrix CRIF 45 + 2x5 connect = 100s  (20s headroom)
-    #   PAN:    Signzy 30 + Digitap 30 + Fintrix 45  + 3x5 connect  = 120s  (no headroom)
+    #   bureau: Fintrix CRIF 45 + Digitap Experian 45 + 2x5 connect = 100s  (20s headroom)
+    #   PAN:    Signzy 30 + Fintrix 45 + Digitap 30  + 3x5 connect  = 120s  (no headroom)
     # Signzy's bureau legs are retired from routing and workbench-only, and its skip opens no socket,
     # so they are outside both budgets.
     # BEFORE re-enabling the digitap-crif flag, raise the ALB idle timeout: that third bureau leg

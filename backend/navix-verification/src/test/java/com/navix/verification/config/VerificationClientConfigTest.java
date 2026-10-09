@@ -94,12 +94,12 @@ class VerificationClientConfigTest {
      * production does.
      */
     @Test
-    void effectiveChainDefaultsToSignzyDigitapFintrix() {
+    void effectiveChainDefaultsToSignzyFintrixDigitap() {
         VerificationChainProperties unset =
                 new VerificationChainProperties(null, null, null, null, null, null, null, null);
-        assertThat(unset.effectiveChain()).containsExactly("signzy", "digitap", "fintrix");
+        assertThat(unset.effectiveChain()).containsExactly("signzy", "fintrix", "digitap");
         assertThat(new VerificationChainProperties(List.of(), null, null, null, null, null, null, null)
-                .effectiveChain()).containsExactly("signzy", "digitap", "fintrix");
+                .effectiveChain()).containsExactly("signzy", "fintrix", "digitap");
     }
 
     @Test

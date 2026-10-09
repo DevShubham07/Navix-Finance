@@ -15,8 +15,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Maps the Fintrix clients onto the provider-neutral {@link VerificationPort}. Fintrix serves two
- * capabilities, and is LAST in the chain for both: bureau FALLBACK behind Digitap
- * ({@link FintrixCrifClient}) and PAN fallback behind Signzy and Digitap ({@link FintrixPanClient}) —
+ * capabilities, second in the chain for both: bureau PRIMARY ahead of Digitap Experian
+ * ({@link FintrixCrifClient}) and PAN fallback behind Signzy ({@link FintrixPanClient}) —
  * see the chain order in {@code RoutingVerificationPort}. Every other
  * method throws {@link CapabilityNotSupportedException} so the router skips straight to the next
  * provider for email/penny-drop/DigiLocker/liveness/address/employment.

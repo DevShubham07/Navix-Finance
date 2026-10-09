@@ -87,7 +87,7 @@ public class SignzyVerificationAdapter implements VerificationPort {
 
     @Override
     public BureauCheck pullBureau(String pan, String name, String mobile, String dob, String otp, String clientRef) {
-        // Retired from routing — Digitap Credit Analytics is now the bureau primary and Fintrix the
+        // Retired from routing — Fintrix CRIF is now the bureau primary and Digitap Experian the
         // fallback (see the class javadoc). Throwing here — rather than still calling Experian/CRIF —
         // is the only way to drop Signzy's bureau role while it stays in the chain for its other seven
         // capabilities (the chain property is global, not per-capability).

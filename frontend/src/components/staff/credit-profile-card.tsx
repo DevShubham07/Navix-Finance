@@ -181,15 +181,17 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
   const [downloading, setDownloading] = React.useState(false);
   const [pdfOpen, setPdfOpen] = React.useState(false);
   const [pdfUrl, setPdfUrl] = React.useState<string | null>(null);
+  const [pdfTitle, setPdfTitle] = React.useState("Credit brief");
 
   const brief = briefQ.data;
 
-  async function downloadPdf() {
-    if (!brief?.documentId) return;
+  async function openPdf(documentId: number | null | undefined, title: string) {
+    if (!documentId) return;
     setDownloading(true);
     try {
-      const { url } = await staffApi.documentUrl(applicationId, brief.documentId);
+      const { url } = await staffApi.documentUrl(applicationId, documentId);
       setPdfUrl(url);
+      setPdfTitle(title);
       setPdfOpen(true);
     } finally {
       setDownloading(false);
@@ -201,6 +203,16 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
       <div className="mb-3 flex items-center gap-2 font-serif text-base font-semibold text-navy">
         <Gauge size={16} /> Credit profile
         <InfoTooltip content="Bureau-derived credit score and a 1–5★ recommendation (should we lend?). Staff-only — never shown to the borrower." />
+        {brief?.bureauReportDocumentId != null && (
+          <button
+            type="button"
+            onClick={() => openPdf(brief.bureauReportDocumentId, "Bureau report (CRIF)")}
+            disabled={downloading}
+            className="ml-auto inline-flex items-center gap-1.5 rounded border border-line px-3 py-1.5 font-sans text-xs font-semibold text-navy hover:bg-navy-tint disabled:opacity-50"
+          >
+            <FileText size={14} /> CRIF report (PDF)
+          </button>
+        )}
       </div>
 
       {briefQ.isLoading ? (
@@ -262,7 +274,7 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
             )}
             <button
               type="button"
-              onClick={downloadPdf}
+              onClick={() => openPdf(brief.documentId, "Credit brief")}
               disabled={!brief.documentId || downloading}
               className="ml-auto inline-flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs font-semibold text-navy hover:bg-navy-tint disabled:opacity-50"
             >
@@ -275,7 +287,7 @@ export function CreditProfileCard({ applicationId }: { applicationId: number }) 
         </>
       )}
 
-      <PdfPreviewDialog open={pdfOpen} onClose={() => setPdfOpen(false)} url={pdfUrl} title="Credit brief" />
+      <PdfPreviewDialog open={pdfOpen} onClose={() => setPdfOpen(false)} url={pdfUrl} title={pdfTitle} />
     </div>
   );
 }

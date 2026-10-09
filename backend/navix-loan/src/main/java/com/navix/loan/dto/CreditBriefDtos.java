@@ -32,7 +32,10 @@ public final class CreditBriefDtos {
         /** Which bureau produced {@code creditScore} ({@code FINTRIX_CRIF}, {@code DIGITAP_EXPERIAN},
          *  …). Every surface labels the score with it rather than the old hardcoded "CIBIL", which
          *  named a bureau we have never pulled from. */
-        String bureauSource) {
+        String bureauSource,
+        /** The bureau's own report PDF ({@code BUREAU_REPORT} — Fintrix CRIF's {@code credit_report_link},
+         *  ingested at pull time), or {@code null} when the bureau returned none (Experian, KBA-released). */
+        Long bureauReportDocumentId) {
 
         /** Categorized facts for the card. Full PAN/mobile (staff-only); amounts in rupees (the bureau's unit). */
         public record Facts(
