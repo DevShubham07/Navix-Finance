@@ -3,8 +3,8 @@
 /**
  * Presentable cards for the Third-party logs tab. Each provider body maps a StepResult's `derived`
  * map (keys verified against ApplicationVerificationService) to cards; only keys that exist render.
- * Aadhaar: the backend only ever returns `maskedAadhaar` here (the full number lives on the
- * Personal tab), so this tab never shows it.
+ * Aadhaar: the provider `derived` only carries `maskedAadhaar`; staff see the full number, taken
+ * from the customer profile (`aadhaar` prop), falling back to the masked value when none is on file.
  */
 
 import * as React from "react";
@@ -23,10 +23,6 @@ type Variant = "success" | "warning" | "error" | "neutral" | "info";
 const has = (v: unknown) => v != null && v !== "";
 const str = (v: unknown): string | null => (has(v) ? String(v) : null);
 const date = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? formatDate(v) : str(v));
-const mask = (v: unknown) => {
-  const s = str(v);
-  return s ? `${"X".repeat(Math.max(0, s.length - 4))}${s.slice(-4)}` : null;
-};
 const pill = (text: React.ReactNode, variant: Variant = "neutral") => (
   <Badge variant={variant} size="sm">{text}</Badge>
 );
@@ -100,9 +96,9 @@ export const statusLabel = (s: StepResult) =>
 export const statusVariant = (s: StepResult): Variant =>
   s.status === "PASS" ? "success" : s.status === "FAIL" ? "error" : s.status === "REVIEW" ? "warning" : "neutral";
 
-type Body = { step: StepResult };
+type Body = { step: StepResult; aadhaar?: string | null };
 
-export function PanBody({ step: s }: Body) {
+export function PanBody({ step: s, aadhaar }: Body) {
   const d = s.derived as D;
   return (
     <div className="space-y-3">
@@ -116,7 +112,7 @@ export function PanBody({ step: s }: Body) {
           { label: "PAN number", value: str(d.panNumber), mono: true, key: true },
           { label: "Date of birth", value: date(d.dob) },
           { label: "Gender", value: str(d.gender) },
-          { label: "Aadhaar number", value: str(d.maskedAadhaar), mono: true, key: true },
+          { label: "Aadhaar number", value: str(aadhaar) ?? str(d.maskedAadhaar), mono: true, key: true },
           { label: "PAN allotted", value: date(d.panAllotmentDate) },
         ]} />
         <StatusCard title="Verification Status" rows={[
@@ -139,7 +135,7 @@ export function UanBody({ step: s }: Body) {
   return (
     <Grid>
       <InfoCard title="Employment Record" icon={Briefcase} items={[
-        { label: "UAN", value: str(d.uanMasked) ?? str(d.uan), mono: true, key: true },
+        { label: "UAN", value: str(d.uan) ?? str(d.uanMasked), mono: true, key: true },
         { label: "Employer (EPFO)", value: str(d.employerName) },
         { label: "Declared employer", value: str(d.declaredEmployer) },
         { label: "Joined", value: date(d.dateOfJoining) },
@@ -160,13 +156,13 @@ export function UanBody({ step: s }: Body) {
   );
 }
 
-export function AadhaarBody({ step: s }: Body) {
+export function AadhaarBody({ step: s, aadhaar }: Body) {
   const d = s.derived as D;
   return (
     <Grid>
       <InfoCard title="Personal Information" icon={IdCard} items={[
         { label: "Full name", value: str(d.fullName) },
-        { label: "Aadhaar number", value: str(d.maskedAadhaar), mono: true, key: true },
+        { label: "Aadhaar number", value: str(aadhaar) ?? str(d.maskedAadhaar), mono: true, key: true },
         { label: "Date of birth", value: date(d.dob) },
         { label: "Gender", value: str(d.gender) },
         { label: "Status", value: s.provider ? pill(`${statusLabel(s)} · ${s.provider}`, statusVariant(s) === "success" ? "success" : "neutral") : null },
@@ -234,7 +230,7 @@ export function PennyBody({ step: s }: Body) {
     <Grid>
       <InfoCard title="Bank Account" icon={Banknote} items={[
         { label: "Beneficiary name", value: str(d.beneficiaryName) },
-        { label: "Account number", value: mask(d.accountNumber), mono: true, key: true },
+        { label: "Account number", value: str(d.accountNumber), mono: true, key: true },
         { label: "IFSC", value: str(d.ifsc), mono: true, key: true },
         { label: "Bank", value: str(d.bank) },
         { label: "Bank RRN", value: str(d.bankRrn), mono: true },

@@ -8,6 +8,7 @@
  * rule the backend enforces, not the gate itself.
  */
 
+import { TrustStars } from "@/components/staff/trust-stars";
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -226,7 +227,7 @@ export default function MyDecisionsPage() {
         {q.error ? (
           <ErrorState error={q.error} onRetry={() => void q.refetch()} />
         ) : q.isLoading ? (
-          <Skeleton variant="table" rows={8} cols={13} />
+          <Skeleton variant="table" rows={8} cols={14} />
         ) : rows.length === 0 ? (
           <EmptyState title="No decisions recorded yet." />
         ) : matched.length === 0 ? (
@@ -256,6 +257,7 @@ export default function MyDecisionsPage() {
                   <th scope="col">Application</th>
                   <th scope="col">Customer ID</th>
                   <th scope="col">Customer</th>
+                  <th scope="col">Signals</th>
                   <th scope="col">PAN</th>
                   <SortableTh label="Decision" sortKey="decisionLabel" active={sortKey} dir={dir} onToggle={toggle} />
                   <th scope="col">Outcome</th>
@@ -301,6 +303,7 @@ export default function MyDecisionsPage() {
                         (r.customerName ?? "—")
                       )}
                     </td>
+                    <td><TrustStars trust={r.trust} /></td>
                     <td className="font-mono text-ink">{r.pan || "—"}</td>
                     <td className="font-semibold text-navy">{r.decisionLabel}</td>
                     <td>

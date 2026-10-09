@@ -64,6 +64,7 @@ public class LoanRegisterService {
     private final LoanMath loanMath;
     private final CollectionCaseDirectory collectionCaseDirectory;
     private final StaffDirectory staffDirectory;
+    private final CustomerTrustSignalsService trustSignals;
 
     /**
      * The full register, optionally windowed by {@code disbursedOn} ({@code from}/{@code to}),
@@ -103,6 +104,8 @@ public class LoanRegisterService {
         Map<Long, Long> officerIdByLoanId = collectionCaseDirectory.assignedOfficerByLoanId(loanIds);
         Map<Long, String> officerNameById = new HashMap<>();
 
+        Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = trustSignals.forCustomers(
+                loans.stream().map(Loan::getCustomerId).filter(java.util.Objects::nonNull).distinct().toList());
         LocalDate today = LocalDate.now();
         List<LoanRegisterRow> rows = new ArrayList<>(loans.size());
         for (Loan loan : loans) {
@@ -141,7 +144,8 @@ public class LoanRegisterService {
                     dpd,
                     officerId,
                     officerName,
-                    loan.getDisbursalTxnRef()));
+                    loan.getDisbursalTxnRef(),
+                    trustByCustomer.get(loan.getCustomerId())));
         }
 
         if (status != null && !status.isBlank()) {

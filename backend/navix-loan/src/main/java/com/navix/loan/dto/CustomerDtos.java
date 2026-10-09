@@ -116,7 +116,9 @@ public final class CustomerDtos {
              *  this is a positional record built positionally in {@code CustomerService.buildRows}. */
             String failureReason,
             String failureSeverity,
-            boolean failureRetryable) {
+            boolean failureRetryable,
+            /** Bureau / UAN / work-email trust stars (tri-state), batch-enriched; null when not computed. */
+            com.navix.common.loan.TrustSignals trust) {
     }
 
     /**

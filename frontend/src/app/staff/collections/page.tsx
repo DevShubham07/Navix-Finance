@@ -15,6 +15,7 @@
  * settlement) — there is no "open a case" step for a human to remember any more.
  */
 
+import { TrustStars } from "@/components/staff/trust-stars";
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -62,6 +63,7 @@ interface Row {
   preDue: boolean;
   caseId: string | null;
   borrowerName: string | null;
+  trust?: WorklistRow["trust"];
   mobile: string | null;
   pan: string | null;
   employer: string | null;
@@ -87,6 +89,7 @@ function toRow(w: WorklistRow): Row {
     preDue: w.preDue,
     caseId: w.caseId,
     borrowerName: w.loan?.borrowerName ?? null,
+    trust: w.trust,
     mobile: w.loan?.mobile ?? null,
     pan: w.loan?.pan ?? null,
     employer: w.loan?.employer ?? null,
@@ -413,7 +416,7 @@ export default function CollectionsBucketPage() {
         {q.error ? (
           <ErrorState error={q.error} onRetry={() => void q.refetch()} />
         ) : q.isLoading ? (
-          <Skeleton variant="table" rows={8} cols={canBulkAssign ? 17 : 16} />
+          <Skeleton variant="table" rows={8} cols={canBulkAssign ? 18 : 17} />
         ) : total === 0 ? (
           <EmptyState
             title={`No loans in ${meta.label}${query.trim() ? ` for “${query.trim()}”` : ""}${
@@ -453,6 +456,7 @@ export default function CollectionsBucketPage() {
                     dir={dir}
                     onToggle={toggle}
                   />
+                  <th scope="col">Signals</th>
                   <th scope="col">Mobile</th>
                   <th scope="col">PAN</th>
                   <SortableTh label="Loan" sortKey="loanId" active={sortKey} dir={dir} onToggle={toggle} />
@@ -537,6 +541,7 @@ export default function CollectionsBucketPage() {
                         </span>
                       )}
                     </td>
+                    <td><TrustStars trust={r.trust} /></td>
                     <td className="font-mono text-xs">{dash(r.mobile)}</td>
                     <td className="font-mono text-xs">{dash(r.pan)}</td>
                     <td className="font-mono">#{r.loanId}</td>

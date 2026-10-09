@@ -116,7 +116,7 @@ class DedupeServiceTest {
         when(blocklist.findByTypeAndValue(BlocklistType.AADHAAR_REF, "123412341234")).thenReturn(Optional.of(entry("x")));
         DedupeView v = service.dedupe(CUSTOMER);
         assertThat(v.blocklistHits()).extracting("type").containsExactly("AADHAAR_REF");
-        assertThat(v.blocklistHits().get(0).maskedValue()).isEqualTo("XXXXXXXX1234");
+        assertThat(v.blocklistHits().get(0).maskedValue()).isEqualTo("123412341234");
     }
 
     @Test
@@ -152,7 +152,7 @@ class DedupeServiceTest {
         assertThat(v.blocklistHits()).extracting("reason").containsOnlyNulls();
         assertThat(v.rejection().reasonDetail()).isNull();
         assertThat(v.rejection().reasonCode()).isEqualTo("MANUAL");
-        assertThat(v.blocklistHits()).extracting("maskedValue").containsExactly("XXXXXX234F", "XXXXXXX3445");
+        assertThat(v.blocklistHits()).extracting("maskedValue").containsExactly("ABCDE1234F", "00112233445");
     }
 
     @Test

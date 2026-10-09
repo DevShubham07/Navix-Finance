@@ -31,6 +31,7 @@ public final class TelecallingDtos {
             int stepsCompleted,
             int stepsRequired,
             Long ownerStaffId,
-            long staleDays) {
+            long staleDays,
+            com.navix.common.loan.TrustSignals trust) {
     }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { TrustStars } from "@/components/staff/trust-stars";
 import * as React from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -296,7 +297,7 @@ function LoansPageInner() {
           {/* Under keepPreviousData an empty previous result must not read as "No loans for <the
               new term>" before the new response has said so — show the skeleton instead. */}
           {q.isLoading || (q.isPlaceholderData && filtered.length === 0) ? (
-            <Skeleton variant="table" rows={8} cols={15} />
+            <Skeleton variant="table" rows={8} cols={16} />
           ) : q.error ? (
             <ErrorState error={q.error} onRetry={() => void q.refetch()} />
           ) : filtered.length === 0 ? (
@@ -322,6 +323,7 @@ function LoansPageInner() {
                     <th scope="col">S.No.</th>
                     <th scope="col" className="staff-sticky-identity">Loan</th>
                     <th scope="col">Borrower</th>
+                    <th scope="col">Signals</th>
                     <SortableTh label="Sanctioned" sortKey="sanctionedAt" active={sortKey} dir={dir} onToggle={toggle} />
                     <SortableTh label="Disbursed" sortKey="disbursedOn" active={sortKey} dir={dir} onToggle={toggle} />
                     <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
@@ -349,7 +351,7 @@ function LoansPageInner() {
                         <React.Fragment key={group.key}>
                           {groupField && (
                             <tr>
-                              <td colSpan={15} className="bg-grey-50 px-3 py-2">
+                              <td colSpan={16} className="bg-grey-50 px-3 py-2">
                                 <button
                                   type="button"
                                   onClick={() => toggleDate(group.key)}
@@ -375,6 +377,7 @@ function LoansPageInner() {
                                   <span className="block truncate font-medium text-ink">{l.borrowerName}</span>
                                   <span className="block truncate text-xs text-muted">{l.mobile} · {l.pan}</span>
                                 </td>
+                                <td><TrustStars trust={l.trust} /></td>
                                 <td className="whitespace-nowrap text-muted">{l.sanctionedAt ? formatDate(l.sanctionedAt) : "—"}</td>
                                 <td className="whitespace-nowrap text-muted">{l.disbursedOn ? formatDate(l.disbursedOn) : "—"}</td>
                                 <td className="whitespace-nowrap">

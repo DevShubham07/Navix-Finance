@@ -83,6 +83,7 @@ public class ApplicationController {
     private final LoanRepository loanRepository;
     private final ApplicationEventRepository eventRepository;
     private final EligibilityService eligibilityService;
+    private final com.navix.loan.service.CustomerTrustSignalsService trustSignals;
 
     @PostMapping
     public ApiResponse<ApplicationView> create(@Valid @RequestBody CreateApplicationRequest request) {
@@ -535,6 +536,8 @@ public class ApplicationController {
         Map<Long, ApplicationActorDirectory.HandledBy> handledBy =
                 applicationActorDirectory.byApplicationId(apps.stream().map(LoanApplication::getId).toList());
         Map<Long, String> officerByLoanId = collectionOfficerNames(loanIds);
+        Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = trustSignals.forCustomers(
+                apps.stream().map(LoanApplication::getCustomerId).filter(Objects::nonNull).distinct().toList());
         return apps.stream()
                 .map(a -> {
                     var handled = handledBy.getOrDefault(a.getId(), ApplicationActorDirectory.HandledBy.NONE);
@@ -543,7 +546,8 @@ public class ApplicationController {
                             .withAssignment(nameByExecutiveId.get(a.getAssignedExecutiveId()),
                                     stageEnteredAtByAppId.get(a.getId()))
                             .withHandledBy(handled.creditDecidedByName(), handled.disbursedByName(),
-                                    a.getLoanId() == null ? null : officerByLoanId.get(a.getLoanId()));
+                                    a.getLoanId() == null ? null : officerByLoanId.get(a.getLoanId()))
+                            .withTrust(trustByCustomer.get(a.getCustomerId()));
                 })
                 .toList();
     }

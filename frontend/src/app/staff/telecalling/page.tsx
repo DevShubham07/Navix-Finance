@@ -1,5 +1,6 @@
 "use client";
 
+import { TrustStars } from "@/components/staff/trust-stars";
 import * as React from "react";
 import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Bell, UserPlus, Send, AlertTriangle } from "lucide-react";
@@ -136,7 +137,7 @@ export default function TelecallingPage() {
 
       {q.isLoading ? (
         <div className="rounded border border-line bg-white shadow-sm">
-          <Skeleton variant="table" rows={8} cols={12} />
+          <Skeleton variant="table" rows={8} cols={13} />
         </div>
       ) : q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
@@ -313,6 +314,7 @@ function TelecallingSection({
                 <th scope="col">Application</th>
                 <th scope="col">Customer ID</th>
                 <th scope="col">Customer</th>
+                <th scope="col">Signals</th>
                 <th scope="col">Mobile</th>
                 <th scope="col">Email</th>
                 <th scope="col">PAN</th>
@@ -345,6 +347,7 @@ function TelecallingSection({
                       {r.customerName || `Customer #${r.customerId}`}
                     </button>
                   </td>
+                  <td><TrustStars trust={r.trust} /></td>
                   <td className="font-mono text-muted">{r.mobile || "—"}</td>
                   <td className="text-muted">
                     {r.email || (

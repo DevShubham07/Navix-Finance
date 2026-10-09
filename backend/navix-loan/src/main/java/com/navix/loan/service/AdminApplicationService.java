@@ -51,6 +51,7 @@ public class AdminApplicationService {
     private final CustomerOwnerRepository ownerRepository;
     private final BureauStateService bureauStateService;
     private final com.navix.common.staff.StaffDirectory staffDirectory;
+    private final CustomerTrustSignalsService trustSignals;
 
     /** Statuses that mean the application has reached (or passed) SANCTIONED — everything else is
      *  "still pre-sanction" and belongs in the telecalling queue (work item 10). */
@@ -87,6 +88,8 @@ public class AdminApplicationService {
         for (ApplicationEvent event : eventRepository.findByApplicationIdInOrderByAtDesc(appIds)) {
             stageEnteredAtByAppId.putIfAbsent(event.getApplicationId(), event.getAt());
         }
+        Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = trustSignals.forCustomers(
+                apps.stream().map(LoanApplication::getCustomerId).filter(Objects::nonNull).distinct().toList());
         return apps.stream()
                 .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> {
@@ -98,7 +101,8 @@ public class AdminApplicationService {
                     boolean complete = completed >= required && agreement;
                     return AdminApplicationView.of(a, p, bureauState, completed, required, agreement, complete)
                             .withAssignment(executiveNameById.get(a.getAssignedExecutiveId()),
-                                    stageEnteredAtByAppId.get(a.getId()));
+                                    stageEnteredAtByAppId.get(a.getId()))
+                            .withTrust(trustByCustomer.get(a.getCustomerId()));
                 })
                 .toList();
     }
@@ -156,6 +160,7 @@ public class AdminApplicationService {
         int required = ApplicationVerificationService.requiredCount();
         Map<Long, Integer> completedByApp = verification.requiredPassedCounts(apps);
         Instant now = Instant.now();
+        Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = trustSignals.forCustomers(customerIds);
         return apps.stream()
                 .map(a -> {
                     CustomerProfile p = byApp.get(a.getId());
@@ -171,7 +176,8 @@ public class AdminApplicationService {
                             p != null ? p.getMobile() : null,
                             p != null ? p.getEmail() : null,
                             p != null ? p.getPan() : null,
-                            completed, required, ownerByCustomer.get(a.getCustomerId()), staleDays);
+                            completed, required, ownerByCustomer.get(a.getCustomerId()), staleDays,
+                            trustByCustomer.get(a.getCustomerId()));
                 })
                 .sorted(Comparator.comparingLong(TelecallingView::staleDays).reversed())
                 .toList();

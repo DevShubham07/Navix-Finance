@@ -70,6 +70,7 @@ export const CUSTOMER_TABS: PillTabDef[] = [
   { key: "disbursal", label: "Disbursal", icon: Banknote },
   { key: "repayment", label: "Repayment", icon: IndianRupee },
   { key: "collections", label: "Collections", icon: HandCoins },
+  { key: "third-party", label: "Third-party logs", icon: Plug },
   { key: "banking", label: "Banking", icon: Building2 },
   { key: "credit", label: "Credit report", icon: Gauge },
   { key: "journey", label: "Journey", icon: Route },
@@ -87,7 +88,6 @@ export const CUSTOMER_TABS: PillTabDef[] = [
     disabled: true,
     badge: "Coming soon",
   },
-  { key: "third-party", label: "Third-party logs", icon: Plug },
   { key: "verifications", label: "Verifications", icon: ShieldCheck },
 ];
 

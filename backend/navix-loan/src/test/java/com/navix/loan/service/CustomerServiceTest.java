@@ -41,6 +41,7 @@ class CustomerServiceTest {
 
     @Mock private LoanApplicationRepository applicationRepository;
     @Mock private LoanRepository loanRepository;
+    @Mock private CustomerTrustSignalsService trustSignals;
     @Mock private CustomerProfileRepository profileRepository;
     @Mock private PaymentRepository paymentRepository;
     @Mock private RepaymentService repaymentService;
@@ -79,7 +80,7 @@ class CustomerServiceTest {
                 staffDirectory, applicationActorDirectory, collectionCaseDirectory,
                 jdbc, creditBriefService, documentRepository, bureauStateService,
                 verificationFailureService, providerAttempts, verificationRepository, referenceRepository, otpVerifier, borrowerIdentity, eventPublisher,
-                loanMath, bookQuery);
+                loanMath, bookQuery, trustSignals);
         lenient().when(ownerRepository.findAll()).thenReturn(List.of());
         // Nothing outstanding by default: an unstubbed mock returns null, and the summary
         // dereferences the reason. Tests about a specific failure stub this themselves.

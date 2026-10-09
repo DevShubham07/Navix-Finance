@@ -35,6 +35,9 @@ package com.navix.common.verification;
  *                                 this tradeline's {@code CAIS_Account_History} (the literal string
  *                                 {@code "900"} is a bureau sentinel, not a day count, and is excluded —
  *                                 see {@code ExperianFactsParser.DPD_SENTINEL})
+ * @param dateReported            {@code Date_Reported}, normalised to {@code YYYY-MM-DD} - the month the
+ *                                 FIRST character of {@code paymentHistory} refers to (Experian). Null on
+ *                                 facts stored before this field existed and on CRIF (which dates every month)
  */
 public record BureauTradeline(
         String lender,
@@ -50,5 +53,17 @@ public record BureauTradeline(
         String paymentHistory,
         String writtenOffSettledStatus,
         Long settlementAmountRupees,
-        Integer worstDpdMonths) {
+        Integer worstDpdMonths,
+        String dateReported) {
+
+    /** Back-compat for call sites and stored facts that predate {@link #dateReported}. */
+    public BureauTradeline(String lender, String accountNumberMasked, String accountTypeCode,
+            String portfolioTypeCode, String accountStatusCode, String openedOn, String closedOn,
+            Long currentBalanceRupees, Long amountPastDueRupees, Long creditLimitRupees,
+            String paymentHistory, String writtenOffSettledStatus, Long settlementAmountRupees,
+            Integer worstDpdMonths) {
+        this(lender, accountNumberMasked, accountTypeCode, portfolioTypeCode, accountStatusCode, openedOn,
+                closedOn, currentBalanceRupees, amountPastDueRupees, creditLimitRupees, paymentHistory,
+                writtenOffSettledStatus, settlementAmountRupees, worstDpdMonths, null);
+    }
 }

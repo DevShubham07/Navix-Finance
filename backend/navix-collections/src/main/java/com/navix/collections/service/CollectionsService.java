@@ -77,6 +77,7 @@ public class CollectionsService {
     private final StaffDirectory staffDirectory;
     private final DpdCalculator dpdCalculator;
     private final ApplicationActorDirectory applicationActorDirectory;
+    private final com.navix.common.loan.CustomerTrustDirectory customerTrustDirectory;
     private final ApplicationEventPublisher eventPublisher;
 
     /**
@@ -225,6 +226,8 @@ public class CollectionsService {
         Map<Long, String> officerNames = officerNames(caseByLoanId.values().stream()
                 .map(CollectionCase::getAssignedOfficerId).filter(Objects::nonNull).distinct().toList());
         Map<Long, HandledBy> handledBy = applicationActorDirectory.byLoanId(loanIds);
+        Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = customerTrustDirectory.forCustomers(
+                loans.stream().map(LoanSummary::customerId).filter(Objects::nonNull).distinct().toList());
 
         Long me = scopeOfficerId();
         return loans.stream().filter(loan -> {
@@ -242,7 +245,7 @@ public class CollectionsService {
                     c == null ? null : officerNames.get(c.getAssignedOfficerId()),
                     c == null ? null : c.getCreatedAt(),
                     handled.creditDecidedByName(), handled.disbursedByName(),
-                    loan);
+                    loan, trustByCustomer.get(loan.customerId()));
         }).toList();
     }
 

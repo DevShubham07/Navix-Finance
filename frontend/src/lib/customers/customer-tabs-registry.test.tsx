@@ -23,8 +23,8 @@ vi.mock("@/components/staff/event-timeline", () => ({ EventTimeline: () => null 
 vi.mock("@/components/staff/journey-stepper", () => ({ JourneyStepper: () => null }));
 
 const KEYS = [
-  "customer", "loan", "sanction", "disbursal", "repayment", "collections", "banking", "credit", "journey", "references",
-  "documents", "addresses", "dedupe", "communication", "activity", "followups", "mandate", "third-party", "verifications",
+  "customer", "loan", "sanction", "disbursal", "repayment", "collections", "third-party", "banking", "credit", "journey", "references",
+  "documents", "addresses", "dedupe", "communication", "activity", "followups", "mandate", "verifications",
 ];
 
 describe("CUSTOMER_TABS registry", () => {

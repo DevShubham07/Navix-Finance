@@ -74,6 +74,7 @@ public final class LoanRegisterDtos {
             int dpd,
             Long assignedOfficerId,
             String assignedOfficerName,
-            String disbursalTxnRef) {
+            String disbursalTxnRef,
+            com.navix.common.loan.TrustSignals trust) {
     }
 }

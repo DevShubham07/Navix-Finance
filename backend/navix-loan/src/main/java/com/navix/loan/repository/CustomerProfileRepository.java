@@ -134,4 +134,26 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "where lower(p.fullName) like :needle or p.mobile like :needle or lower(p.pan) like :needle "
             + "order by p.applicationId desc")
     List<CustomerProfile> searchByNameMobileOrPan(@Param("needle") String needle, Pageable pageable);
+
+    /** Which applications hold stored bureau facts and when they were pulled - without the (large) JSON. */
+    interface BriefMetaRow {
+        Long getApplicationId();
+        java.time.Instant getGeneratedAt();
+    }
+
+    @Query("select p.applicationId as applicationId, p.creditBriefGeneratedAt as generatedAt "
+            + "from CustomerProfile p where p.applicationId in :applicationIds and p.creditBriefFacts is not null")
+    List<BriefMetaRow> findBriefMetaByApplicationIdIn(@Param("applicationIds") Collection<Long> applicationIds);
+
+    /** Narrow projection of the stored bureau facts JSON for the trust stars — no other profile column. */
+    interface BriefFactsRow {
+        Long getApplicationId();
+        String getFacts();
+        java.time.Instant getGeneratedAt();
+    }
+
+    @Query("select p.applicationId as applicationId, p.creditBriefFacts as facts, "
+            + "p.creditBriefGeneratedAt as generatedAt from CustomerProfile p "
+            + "where p.applicationId in :applicationIds and p.creditBriefFacts is not null")
+    List<BriefFactsRow> findBriefFactsByApplicationIdIn(@Param("applicationIds") Collection<Long> applicationIds);
 }

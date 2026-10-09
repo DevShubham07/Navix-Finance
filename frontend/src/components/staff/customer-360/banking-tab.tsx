@@ -118,7 +118,7 @@ export function BankingTab({ detail, customerId, applicationId }: TabCtx) {
               <span className="cal-preset on">{a.bank}</span>
               {a.accounts.map((ac) => (
                 <span key={ac.maskedNumber} className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">
-                  {`•••• ${ac.maskedNumber.slice(-4)} · ${ac.type} · ${ac.txnCount} txns`}
+                  {`${ac.maskedNumber} · ${ac.type} · ${ac.txnCount} txns`}
                 </span>
               ))}
             </div>

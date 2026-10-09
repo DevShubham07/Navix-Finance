@@ -72,13 +72,15 @@ class StaffPerformanceSummaryTest {
     private StaffDirectory staffDirectory;
     @Mock
     private PaymentRepository paymentRepository;
+    @Mock
+    private CustomerTrustSignalsService trustSignals;
 
     private DecisionHistoryService service;
 
     @BeforeEach
     void setUp() {
         service = new DecisionHistoryService(eventRepository, profileRepository,
-                applicationRepository, callLogRepository, collectionActivity, staffDirectory, paymentRepository);
+                applicationRepository, callLogRepository, collectionActivity, staffDirectory, paymentRepository, trustSignals);
         lenient().when(applicationRepository.countGroupByAssignedExecutive(any())).thenReturn(List.of());
         lenient().when(callLogRepository.countByStaffInWindow(anyCollection(), any(), any()))
                 .thenReturn(List.of());
@@ -135,6 +137,31 @@ class StaffPerformanceSummaryTest {
         e.setNotes(notes);
         e.setToStatus(ApplicationStatus.SANCTIONED);
         return e;
+    }
+
+    @Test
+    void decisionsPageIsTrustEnrichedWithOneBatchedCall() {
+        com.navix.loan.entity.LoanApplication a1 = new com.navix.loan.entity.LoanApplication();
+        a1.setId(10L);
+        a1.setCustomerId(7L);
+        com.navix.loan.entity.LoanApplication a2 = new com.navix.loan.entity.LoanApplication();
+        a2.setId(11L);
+        a2.setCustomerId(8L);
+        when(eventRepository.findForActorsInWindow(anyCollection(), any(), any())).thenReturn(List.of(
+                event("1", "SANCTION", ist("2026-08-10", 10), 10L, null),
+                event("1", "REJECT_LEAD", ist("2026-08-10", 11), 11L, null),
+                event("1", "SANCTION", ist("2026-08-10", 12), 10L, null)));
+        when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of());
+        when(applicationRepository.findAllById(any())).thenReturn(List.of(a1, a2));
+        com.navix.common.loan.TrustSignals t = new com.navix.common.loan.TrustSignals("PASS", "FAIL", "NOT_CHECKED");
+        when(trustSignals.forCustomers(any())).thenReturn(Map.of(7L, t));
+
+        List<DecisionHistoryService.DecisionView> rows = service.decisions(null, null, null);
+
+        assertThat(rows).hasSize(3);
+        assertThat(rows.get(0).trust()).isEqualTo(t);
+        assertThat(rows.stream().filter(r -> r.customerId() == 8L).findFirst().orElseThrow().trust()).isNull();
+        org.mockito.Mockito.verify(trustSignals, org.mockito.Mockito.times(1)).forCustomers(any());
     }
 
     private void rosterIsEveryone(StaffSummary... staff) {

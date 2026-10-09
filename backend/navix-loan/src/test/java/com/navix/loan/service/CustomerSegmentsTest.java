@@ -130,6 +130,6 @@ class CustomerSegmentsTest {
                 1L, null, null, null, 1, 0, latestStatus, 0L, null, null,
                 loanStatus, ownerStaffId, null, BureauState.NOT_FETCHED, null, null,
                 null, null, null, null, null, false, null, null, null,
-                null, null, null, null, "NONE", "NONE", false);
+                null, null, null, null, "NONE", "NONE", false, null);
     }
 }

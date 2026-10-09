@@ -185,7 +185,8 @@ public final class ExperianFactsParser {
                 text(node.path("Payment_History_Profile")),
                 text(node.path("Written_off_Settled_Status")),
                 lng(node.path("Settlement_Amount")),
-                worstDpd(node.path("CAIS_Account_History"), Integer.MAX_VALUE));
+                worstDpd(node.path("CAIS_Account_History"), Integer.MAX_VALUE),
+                formatDate(text(node.path("Date_Reported"))));
     }
 
     private static BureauEnquiry parseEnquiry(JsonNode node) {

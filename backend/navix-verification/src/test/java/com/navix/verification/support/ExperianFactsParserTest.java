@@ -119,6 +119,16 @@ class ExperianFactsParserTest {
     }
 
     @Test
+    void dateReportedIsCarriedOntoTheTradeline() throws Exception {
+        String report = baseReport("""
+                [{"Subscriber_Name": "TEST BANK", "Payment_History_Profile": "0001", "Date_Reported": "20260715"}]
+                """);
+        BureauReportFacts facts = ExperianFactsParser.parse(json(report), 750, "N", "P", "M");
+
+        assertThat(facts.detail().tradelines().get(0).dateReported()).isEqualTo("2026-07-15");
+    }
+
+    @Test
     void undocumentedCharLDoesNotCrashDecoding() {
         // 'L' is not in the vendor spec master — BureauCodes must return empty, never throw or guess.
         assertThat(BureauCodes.paymentHistoryBucket("L")).isEmpty();

@@ -93,7 +93,8 @@ public final class AdminApplicationDtos {
             // Staff-only, server-resolved from assignedExecutiveId / the audit trail — populated only
             // via withAssignment(...), mirroring ApplicationDtos.ApplicationView.
             String assignedExecutiveName,
-            Instant currentStageEnteredAt) {
+            Instant currentStageEnteredAt,
+            com.navix.common.loan.TrustSignals trust) {
 
         public static AdminApplicationView of(LoanApplication a, CustomerProfile p, BureauState bureauState,
                 int stepsCompleted, int stepsRequired, boolean agreementAccepted, boolean complete) {
@@ -119,7 +120,7 @@ public final class AdminApplicationDtos {
                     p != null ? p.getCreditRecommendation() : null,
                     p != null ? p.getRiskCategory() : null,
                     stepsCompleted, stepsRequired, agreementAccepted, complete,
-                    p != null ? p.getCreatedAt() : null, bureauState, null, null);
+                    p != null ? p.getCreatedAt() : null, bureauState, null, null, null);
         }
 
         public AdminApplicationView withAssignment(String assignedExecutiveName, Instant currentStageEnteredAt) {
@@ -128,7 +129,16 @@ public final class AdminApplicationDtos {
                     email, dob, address, employer, employmentStatus, monthlySalaryPaise, salaryBank,
                     salaryAccountNumber, salaryIfsc, creditScore, starRating, recommendation, riskCategory,
                     stepsCompleted, stepsRequired, agreementAccepted, complete, kycCapturedAt, bureauState,
-                    assignedExecutiveName, currentStageEnteredAt);
+                    assignedExecutiveName, currentStageEnteredAt, trust);
+        }
+
+        public AdminApplicationView withTrust(com.navix.common.loan.TrustSignals trust) {
+            return new AdminApplicationView(id, customerId, status, amountRequestedPaise, eligibleLimitPaise,
+                    purpose, salaryCreditDay, assignedExecutiveId, loanId, hasProfile, fullName, pan, mobile,
+                    email, dob, address, employer, employmentStatus, monthlySalaryPaise, salaryBank,
+                    salaryAccountNumber, salaryIfsc, creditScore, starRating, recommendation, riskCategory,
+                    stepsCompleted, stepsRequired, agreementAccepted, complete, kycCapturedAt, bureauState,
+                    assignedExecutiveName, currentStageEnteredAt, trust);
         }
     }
 }

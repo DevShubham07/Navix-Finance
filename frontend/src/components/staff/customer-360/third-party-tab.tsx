@@ -17,8 +17,8 @@ import { bankAnalysisApi } from "@/lib/api/bank-analysis";
 import { paiseToINR } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
 
-// Never echo these into the support disclosure: account numbers, UAN, and one-time links/tokens.
-const REDACT = new Set(["accountNumber", "uan", "url", "token", "videoUrl"]);
+// Credentials only: staff see identifiers (account, UAN) in the raw view, never one-time links/tokens.
+const REDACT = new Set(["url", "token", "videoUrl", "sessionId"]);
 const rawJson = (d: Record<string, unknown>) =>
   JSON.stringify(d, (k, v) => (REDACT.has(k) ? "[hidden]" : v), 2);
 
@@ -26,13 +26,13 @@ type Row = {
   key: string;
   title: string;
   checkType?: string;
-  body?: (s: StepResult) => React.ReactNode;
+  body?: (s: StepResult, aadhaar?: string | null) => React.ReactNode;
 };
 
 const ROWS: Row[] = [
-  { key: "pan", title: "PAN Detail", checkType: "PAN", body: (s) => <PanBody step={s} /> },
+  { key: "pan", title: "PAN Detail", checkType: "PAN", body: (s, aadhaar) => <PanBody step={s} aadhaar={aadhaar} /> },
   { key: "uan", title: "UAN / EPFO Detail", checkType: "EMPLOYMENT", body: (s) => <UanBody step={s} /> },
-  { key: "aadhaar", title: "Aadhaar Detail (DigiLocker)", checkType: "AADHAAR", body: (s) => <AadhaarBody step={s} /> },
+  { key: "aadhaar", title: "Aadhaar Detail (DigiLocker)", checkType: "AADHAAR", body: (s, aadhaar) => <AadhaarBody step={s} aadhaar={aadhaar} /> },
   { key: "email", title: "Email Verification", checkType: "EMAIL", body: (s) => <EmailBody step={s} /> },
   { key: "bank", title: "Bank Statement Analysis" },
   {
@@ -68,7 +68,8 @@ function Header({ title, open, pill, provider, when }: {
   );
 }
 
-export function ThirdPartyTab({ customerId, applicationId }: TabCtx) {
+export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
+  const aadhaar = detail.profile?.aadhaar ?? null;
   const verQ = useQuery({
     queryKey: ["verifications", applicationId],
     queryFn: () => staffApi.verifications(applicationId as number),
@@ -120,7 +121,7 @@ export function ThirdPartyTab({ customerId, applicationId }: TabCtx) {
                 ) : (
                   <>
                     {s.message && <p className="text-[10.4px] text-black">{s.message}</p>}
-                    {r.body?.(s)}
+                    {r.body?.(s, aadhaar)}
                     {r.key === "bureau" && <CreditProfileCard applicationId={applicationId} />}
                     <details>
                       <summary className="cursor-pointer text-[10px] text-black">View raw response</summary>

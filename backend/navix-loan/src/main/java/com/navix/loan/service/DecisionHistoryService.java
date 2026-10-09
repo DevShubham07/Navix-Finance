@@ -66,6 +66,7 @@ public class DecisionHistoryService {
     private final CollectionActivityDirectory collectionActivity;
     private final StaffDirectory staffDirectory;
     private final PaymentRepository paymentRepository;
+    private final CustomerTrustSignalsService trustSignals;
 
     /**
      * One decision, with {@code application_event.notes} already parsed into typed columns by
@@ -76,7 +77,7 @@ public class DecisionHistoryService {
                                String action, String fromStatus, String toStatus, Instant at,
                                Long amountPaise, Integer salaryCreditDay, LocalDate repaymentDate,
                                Long assigneeId, String assigneeName, String txnRef, String remark,
-                               String notes) {
+                               String notes, com.navix.common.loan.TrustSignals trust) {
     }
 
     /**
@@ -115,8 +116,11 @@ public class DecisionHistoryService {
         // Assignee names are memoised over DISTINCT ids — bounded by the number of executives, not
         // the number of rows. StaffDirectory has no batch lookup, so never call it per row.
         Map<Long, String> assigneeNames = new HashMap<>();
+        // One batched trust lookup for the whole page (bureau / UAN / email stars).
+        Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = trustSignals.forCustomers(
+                customerIdByApp.values().stream().distinct().toList());
         return events.stream()
-                .map(e -> view(e, profileByApp, customerIdByApp, assigneeNames))
+                .map(e -> view(e, profileByApp, customerIdByApp, assigneeNames, trustByCustomer))
                 .toList();
     }
 
@@ -458,7 +462,8 @@ public class DecisionHistoryService {
     }
 
     private DecisionView view(ApplicationEvent e, Map<Long, CustomerProfile> profileByApp,
-                             Map<Long, Long> customerIdByApp, Map<Long, String> assigneeNames) {
+                             Map<Long, Long> customerIdByApp, Map<Long, String> assigneeNames,
+                             Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer) {
         CustomerProfile profile = profileByApp.get(e.getApplicationId());
         DecisionNotes.Parsed parsed = DecisionNotes.parse(e.getNotes());
         String assigneeName = parsed.assigneeId() == null ? null
@@ -480,6 +485,7 @@ public class DecisionHistoryService {
                 assigneeName,
                 parsed.txnRef(),
                 parsed.remark(),
-                e.getNotes());
+                e.getNotes(),
+                trustByCustomer.get(customerIdByApp.get(e.getApplicationId())));
     }
 }

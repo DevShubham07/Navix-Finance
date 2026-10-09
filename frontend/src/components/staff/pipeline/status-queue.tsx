@@ -292,7 +292,7 @@ export function QueuePanel({
           most queues are short, so a taller placeholder would only collapse on arrival. Before
           this, the panel claimed "Nothing in the … queue" while it was still loading. */}
       {isLoading ? (
-        <Skeleton variant="table" rows={5} cols={selection ? 18 : 17} />
+        <Skeleton variant="table" rows={5} cols={selection ? 19 : 18} />
       ) : error ? (
         <ErrorState error={error} onRetry={onRefresh} />
       ) : apps.length === 0 ? (
@@ -358,6 +358,7 @@ export function QueueTable({
               <th scope="col">Customer ID</th>
               <th scope="col">Date</th>
               <th scope="col">Customer</th>
+              <th scope="col">Signals</th>
               <th scope="col">Mobile</th>
               <th scope="col">PAN</th>
               <th scope="col">Account</th>

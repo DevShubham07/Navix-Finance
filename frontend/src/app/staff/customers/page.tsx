@@ -32,6 +32,7 @@ import {
   type CaseFailureSeverity,
 } from "@/components/staff/case-failure";
 import { CaseFailureDialog } from "@/components/staff/case-failure-dialog";
+import { TrustStars } from "@/components/staff/trust-stars";
 import { CustomerEditDialog } from "@/components/staff/customer-edit-dialog";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -289,7 +290,7 @@ function CustomersPageInner() {
   const [pendingAssign, setPendingAssign] = React.useState<number[] | null>(null);
   const showBulkColumn = canBulkReject || canBulkAssign;
   // +1 for the Failure column. The date-group header rows span the whole table with this.
-  const colCount = showBulkColumn ? 22 : 21;
+  const colCount = showBulkColumn ? 23 : 22;
 
   function setSeg(next: CustomerSegment) {
     const p = new URLSearchParams(searchParams.toString());
@@ -451,6 +452,7 @@ function CustomersPageInner() {
                     </th>
                   )}
                   <th scope="col" className={showBulkColumn ? undefined : "staff-sticky-identity"}>Customer</th>
+                  <th scope="col">Signals</th>
                   <th scope="col" title="Signup / application start date">Date</th>
                   <th scope="col">Mobile</th>
                   <th scope="col">PAN</th>
@@ -542,6 +544,7 @@ function CustomersPageInner() {
                         </span>
                       </button>
                     </td>
+                    <td><TrustStars trust={c.trust} /></td>
                     <td className="whitespace-nowrap text-muted">
                       {c.createdAt ? formatDateTime(c.createdAt) : "—"}
                     </td>

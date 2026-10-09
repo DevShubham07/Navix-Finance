@@ -8,7 +8,6 @@ import com.navix.collections.service.CollectionsService;
 import com.navix.common.exception.BusinessException;
 import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.security.ActorContext;
-import com.navix.common.util.Masking;
 import com.navix.iam.service.BlocklistService;
 import com.navix.iam.service.StaffService;
 import com.navix.loan.dto.CustomerDtos.CustomerSummary;
@@ -188,7 +187,7 @@ public class GlobalSearchService {
                 Group.CUSTOMER.kind,
                 String.valueOf(c.customerId()),
                 c.name() != null ? c.name() : "Customer #" + c.customerId(),
-                joinDetail(Masking.maskPhone(c.mobile()), Masking.maskPan(c.pan())),
+                joinDetail(c.mobile(), c.pan()),
                 meta("outstandingPaise", c.totalOutstandingPaise()),
                 "/staff/customers/" + c.customerId(),
                 status);
@@ -214,7 +213,7 @@ public class GlobalSearchService {
                     Group.APPLICATION.kind,
                     String.valueOf(app.getId()),
                     "#" + app.getId() + " · " + name,
-                    joinDetail(profile == null ? null : Masking.maskPhone(profile.getMobile()),
+                    joinDetail(profile == null ? null : profile.getMobile(),
                             app.getLoanId() == null ? null : "Loan #" + app.getLoanId()),
                     meta("amountPaise", amount),
                     // The queue page prefills its own search from ?q=, landing on this one file.
@@ -236,7 +235,7 @@ public class GlobalSearchService {
                 String.valueOf(row.loanId()),
                 "#" + row.loanId() + " · "
                         + (row.borrowerName() != null ? row.borrowerName() : "Loan"),
-                joinDetail(Masking.maskPhone(row.mobile()), Masking.maskPan(row.pan()),
+                joinDetail(row.mobile(), row.pan(),
                         row.dueDate() == null ? null : "due " + row.dueDate()),
                 meta("outstandingPaise", row.outstandingPaise()),
                 "/staff/loans?q=" + encode(String.valueOf(row.loanId()))
@@ -284,7 +283,7 @@ public class GlobalSearchService {
                 Group.LEAD.kind,
                 String.valueOf(lead.id()),
                 lead.name() != null ? lead.name() : "Lead #" + lead.id(),
-                joinDetail(Masking.maskPhone(lead.mobile()), lead.city()),
+                joinDetail(lead.mobile(), lead.city()),
                 null,
                 "/staff/leads?q=" + encode(lead.mobile() != null ? lead.mobile() : lead.name()),
                 lead.callStatus());
@@ -315,7 +314,7 @@ public class GlobalSearchService {
                 .map(b -> new SearchItem(
                         Group.BLOCKLIST.kind,
                         String.valueOf(b.getId()),
-                        maskIdentifier(b.getValue()),
+                        b.getValue(),
                         b.getReason(),
                         null,
                         "/staff/admin/blocklist?q=" + encode(b.getValue()),
@@ -345,22 +344,6 @@ public class GlobalSearchService {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put(key, value);
         return meta;
-    }
-
-    /**
-     * A blocklist row's value may be a PAN, a mobile or an email — mask whichever it is, with the
-     * same {@link Masking} helpers so one identifier never renders two ways.
-     */
-    private static String maskIdentifier(String value) {
-        if (value == null) {
-            return null;
-        }
-        if (value.contains("@")) {
-            return Masking.maskEmail(value);
-        }
-        return value.chars().allMatch(Character::isDigit)
-                ? Masking.maskPhone(value)
-                : Masking.maskPan(value);
     }
 
     private static String encode(String value) {

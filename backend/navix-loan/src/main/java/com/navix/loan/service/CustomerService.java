@@ -128,6 +128,7 @@ public class CustomerService {
     private final ApplicationEventPublisher eventPublisher;
     private final LoanMath loanMath;
     private final CustomerBookQuery bookQuery;
+    private final CustomerTrustSignalsService trustSignals;
 
     /**
      * Roles that see the ENTIRE customer book. Everyone else who holds {@code customer:view} is
@@ -717,6 +718,8 @@ public class CustomerService {
                 .collect(Collectors.groupingBy(Loan::getCustomerId));
         Map<Long, Long> owedByLoanId = repaymentService.outstandingForAll(allLoans, null);
         Map<Long, String> staffNames = new HashMap<>();
+        // Bureau / UAN / email stars: three queries for the whole page.
+        Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = trustSignals.forCustomers(byCustomer.keySet());
 
         // Every profile these applications could resolve to, batched in one query instead of one
         // findByApplicationId per application — latestProfile(apps, profileByAppId) below just picks
@@ -853,7 +856,8 @@ public class CustomerService {
                     latestApp != null ? latestApp.getSalaryCreditDay() : null,
                     failure.reason().name(),
                     failure.reason().severity().name(),
-                    failure.reason().retryable());
+                    failure.reason().retryable(),
+                    trustByCustomer.get(customerId));
             out.add(cs);
         }
         return out;

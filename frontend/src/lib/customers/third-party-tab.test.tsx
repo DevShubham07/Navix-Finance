@@ -9,11 +9,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderTab(steps: StepResult[], applicationId: number | null = 318) {
+function renderTab(steps: StepResult[], applicationId: number | null = 318, profile: Record<string, unknown> = {}) {
   vi.spyOn(staffApi, "verifications").mockResolvedValue(steps);
   vi.spyOn(skipTraceApi, "history").mockResolvedValue([]);
   const app = { id: 318 } as unknown as ApplicationView;
-  const detail = { customerId: 42, profile: {}, applications: [app], loans: [] } as unknown as CustomerDetail;
+  const detail = { customerId: 42, profile, applications: [app], loans: [] } as unknown as CustomerDetail;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -57,15 +57,26 @@ describe("Third-party tab", () => {
     expect(await screen.findByText("Penny Drop not run")).toBeInTheDocument();
   });
 
-  it("policy: Aadhaar is shown masked only; provider pill is neutral, never red", async () => {
+  it("policy: staff see the full Aadhaar from the profile; provider pill is neutral, never red", async () => {
     renderTab([
       { ...pan, checkType: "AADHAAR", derived: { fullName: "ASHA VERMA", maskedAadhaar: "XXXXXXXX1234", pincode: "122001" } } as StepResult,
-    ]);
-    expect(await screen.findByText("XXXXXXXX1234")).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/\d{12}/);
+    ], 318, { aadhaar: "123456781234" });
+    expect(await screen.findByText("123456781234")).toBeInTheDocument();
     const provider = screen.getByText("SIGNZY");
     expect(provider.className).toContain("neutral");
     expect(provider.className).not.toContain("error");
+  });
+
+  it("falls back to the masked Aadhaar when the profile has none", async () => {
+    renderTab([{ ...pan, checkType: "AADHAAR", derived: { maskedAadhaar: "XXXXXXXX1234" } } as StepResult]);
+    expect(await screen.findByText("XXXXXXXX1234")).toBeInTheDocument();
+  });
+
+  it("raw view shows the account number but hides credential urls", async () => {
+    renderTab([{ ...pan, checkType: "PENNY_DROP", derived: { accountNumber: "50100123456789", url: "https://secret.example/x" } } as StepResult]);
+    const raw = (await screen.findByText(/"accountNumber"/)).textContent ?? "";
+    expect(raw).toContain("50100123456789");
+    expect(raw).not.toContain("secret.example");
   });
 
   it("shows an empty state without an application", () => {

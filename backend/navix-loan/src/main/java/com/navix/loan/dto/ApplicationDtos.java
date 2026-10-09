@@ -120,7 +120,9 @@ public final class ApplicationDtos {
              * both historical, so "available to borrow" must not be read off it. Populated only by
              * {@link #withAvailableLimit} on the borrower read paths; null elsewhere.
              */
-            Long availableLimitPaise) {
+            Long availableLimitPaise,
+            /** Bureau / UAN / work-email trust stars; staff list paths only, null elsewhere. */
+            com.navix.common.loan.TrustSignals trust) {
 
         public static ApplicationView of(LoanApplication a) {
             return of(a, null, null);
@@ -171,7 +173,7 @@ public final class ApplicationDtos {
                     a.getDisbursalAccountNumber(), a.getDisbursalIfsc(), a.getDisbursalHolderName(),
                     a.getDisbursalBank(), a.getDisbursalAccountChanged(),
                     a.getDisbursalAccountVerified(), null, null, a.getCreatedAt(), null, null, null,
-                    null);
+                    null, null);
         }
 
         /**
@@ -189,7 +191,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
         }
 
         /**
@@ -207,7 +209,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
         }
 
         /**
@@ -224,7 +226,20 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+        }
+
+        /** Wither for the trust stars; only the batched staff list paths pay for the lookup. */
+        public ApplicationView withTrust(com.navix.common.loan.TrustSignals trust) {
+            return new ApplicationView(id, customerId, status, amountRequestedPaise, eligibleLimitPaise,
+                    purpose, assignedExecutiveId, loanId, salaryCreditDay, fastTrack, creditScore,
+                    starRating, recommendation, customerName, customerMobile, pan, salaryAccountNumber,
+                    salaryIfsc, loanStatus, loanDueDate, sanctionedAmountPaise, approvedRepaymentDate,
+                    sanctionTenureDays, sanctionRemarks, sanctionedAt, markedPendingAt, pendingReason,
+                    disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
+                    disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
+                    currentStageEnteredAt, createdAt,
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
         }
     }
 

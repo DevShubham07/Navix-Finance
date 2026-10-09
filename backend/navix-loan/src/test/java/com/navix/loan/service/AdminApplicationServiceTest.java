@@ -53,12 +53,14 @@ class AdminApplicationServiceTest {
     @Mock private BureauStateService bureauStateService;
     @Mock private com.navix.common.staff.StaffDirectory staffDirectory;
 
+    @Mock private CustomerTrustSignalsService trustSignals;
+
     private AdminApplicationService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminApplicationService(applicationRepository, profileRepository, verification,
-                rejectionRepository, eventRepository, ownerRepository, bureauStateService, staffDirectory);
+                rejectionRepository, eventRepository, ownerRepository, bureauStateService, staffDirectory, trustSignals);
         ActorContext.set(new CurrentActor("1", "Meera", "ADMIN"));
     }
 

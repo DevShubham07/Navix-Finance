@@ -1,5 +1,6 @@
 "use client";
 
+import { TrustStars } from "@/components/staff/trust-stars";
 import * as React from "react";
 import { ArrowRight, Route } from "lucide-react";
 import { CreditBadge } from "@/components/staff/credit-badge";
@@ -81,6 +82,7 @@ export function AppRow({
         <td className="staff-cell font-semibold text-ink" title={app.customerName || undefined}>
           {app.customerName || "Name unavailable"}
         </td>
+        <td><TrustStars trust={app.trust} /></td>
         <td className="font-mono text-muted">{app.customerMobile || "—"}</td>
         <td className="font-mono text-ink">{app.pan || "—"}</td>
         <td className="font-mono text-ink">{account || "—"}</td>
@@ -163,7 +165,7 @@ export function AppRow({
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={onToggleSelect ? 18 : 17} className="bg-grey-50">
+          <td colSpan={onToggleSelect ? 19 : 18} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

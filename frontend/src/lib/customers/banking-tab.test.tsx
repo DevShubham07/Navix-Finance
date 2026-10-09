@@ -62,7 +62,7 @@ describe("Banking tab", () => {
     renderTab();
     expect(await screen.findByText("3 consecutive months of salary credits")).toBeInTheDocument();
     expect(screen.getByText("ACCEPT")).toBeInTheDocument();
-    expect(screen.getByText("•••• 1154 · SAVINGS · 309 txns")).toBeInTheDocument();
+    expect(screen.getByText("XXXX1154 · SAVINGS · 309 txns")).toBeInTheDocument();
     expect(screen.queryByText("Declared only")).not.toBeInTheDocument();
   });
 });

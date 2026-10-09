@@ -45,6 +45,18 @@ export type ApplicationStatus =
   | "REJECTED"
   | "CANCELLED";
 
+/** Tri-state of one trust star: PASS = full, FAIL = empty, NOT_CHECKED = never run / no data. */
+export type TrustStar = "PASS" | "FAIL" | "NOT_CHECKED";
+
+/** The three small stars shown beside a customer in every staff table (mirrors backend `TrustSignals`).
+ *  bureau = no DPD on any account in the last 6 months of the latest report; uan = a valid EPFO/UAN
+ *  record was found; email = the work-email provider check passed. */
+export interface TrustSignals {
+  bureau: TrustStar;
+  uan: TrustStar;
+  email: TrustStar;
+}
+
 export interface ApplicationView {
   id: number;
   customerId: number;
@@ -54,6 +66,8 @@ export interface ApplicationView {
   /** What this customer may borrow right now — the admin limit override when set, else the
    *  application's own eligible limit. Populated on the borrower's own read paths (V69). */
   availableLimitPaise?: number | null;
+  /** Bureau / UAN / work-email trust stars (staff list rows); null when not computed. */
+  trust?: TrustSignals | null;
   purpose: string | null;
   assignedExecutiveId: number | null;
   loanId: number | null;
@@ -153,6 +167,8 @@ export interface DecisionView {
   remark: string | null;
   /** Raw `application_event.notes` — audit source of truth, not for display. */
   notes: string | null;
+  /** Bureau / UAN / work-email trust stars for the customer; null when not computed. */
+  trust?: TrustSignals | null;
 }
 
 /**
@@ -263,6 +279,8 @@ export interface AdminApplicationView {
   assignedExecutiveName?: string | null;
   /** When this application entered its CURRENT `status` (latest `application_event.at`). */
   currentStageEnteredAt?: string | null;
+  /** Bureau / UAN / work-email trust stars (staff list rows); null when not computed. */
+  trust?: TrustSignals | null;
 }
 
 /**
@@ -282,6 +300,8 @@ export interface TelecallingView {
   stepsRequired: number;
   ownerStaffId: number | null;
   staleDays: number;
+  /** Bureau / UAN / work-email trust stars (staff list rows); null when not computed. */
+  trust?: TrustSignals | null;
 }
 
 export interface EventView {
@@ -673,6 +693,8 @@ export interface CustomerSummary {
   failureReason?: string | null;
   failureSeverity?: string | null;
   failureRetryable?: boolean;
+  /** Bureau / UAN / work-email trust stars (staff list rows); null when not computed. */
+  trust?: TrustSignals | null;
 }
 
 /** One verification check in the collections handover export (mirrors backend `HandoverCheck`).
@@ -2289,6 +2311,8 @@ export interface LoanRegisterRow {
   /** The outgoing disbursal's transaction reference, when the Disbursement Head finalized directly
    *  with a txn id (fast-path) or the Accountant recorded one. */
   disbursalTxnRef: string | null;
+  /** Bureau / UAN / work-email trust stars (staff list rows); null when not computed. */
+  trust?: TrustSignals | null;
 }
 
 const LOANS_BASE = "/api/staff/loans";
@@ -3666,6 +3690,8 @@ export interface WorklistRow {
   creditDecidedByName: string | null;
   disbursedByName: string | null;
   loan: LoanSummary | null;
+  /** Bureau / UAN / work-email trust stars (staff list rows); null when not computed. */
+  trust?: TrustSignals | null;
 }
 
 export interface CaseDetailView {

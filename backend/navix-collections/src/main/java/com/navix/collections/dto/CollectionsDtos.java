@@ -110,7 +110,8 @@ public final class CollectionsDtos {
             Instant caseOpenedAt,
             String creditDecidedByName,
             String disbursedByName,
-            LoanSummary loan) {
+            LoanSummary loan,
+            com.navix.common.loan.TrustSignals trust) {
     }
 
     /**

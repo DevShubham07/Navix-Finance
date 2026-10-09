@@ -122,7 +122,7 @@ public class DedupeService {
             return;
         }
         blocklist.findByTypeAndValue(type, value).filter(BlocklistEntry::isActive).ifPresent(e -> {
-            String masked = Masking.maskAccount(value); // last four, X elsewhere — right for every type
+            String masked = value; // staff-only read (DSA rejected above): full value by product decision; field name kept for the API contract
             if (hits.stream().noneMatch(h -> h.type().equals(type.name()) && h.maskedValue().equals(masked))) {
                 hits.add(new BlocklistHit(type.name(), masked, isAdmin() ? e.getReason() : null, e.getCreatedAt()));
             }

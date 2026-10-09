@@ -1,5 +1,6 @@
 "use client";
 
+import { TrustStars } from "@/components/staff/trust-stars";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, FilterX } from "lucide-react";
@@ -179,7 +180,7 @@ export default function AdminAllApplicationsPage() {
       ) : q.isPending ? (
         // Pending covers both "waiting for /me" (the query is disabled until the role is known) and
         // the fetch itself.
-        <Skeleton variant="table" rows={8} cols={14} className="rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={15} className="rounded border border-line bg-white" />
       ) : q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
@@ -195,6 +196,7 @@ export default function AdminAllApplicationsPage() {
                   <th scope="col">S.No.</th>
                   <th scope="col" className="whitespace-nowrap">App</th>
                   <th scope="col">Customer</th>
+                  <th scope="col">Signals</th>
                   <th scope="col" className="whitespace-nowrap">PAN</th>
                   <th scope="col" className="whitespace-nowrap">Account</th>
                   <th scope="col" className="whitespace-nowrap">IFSC</th>
@@ -217,6 +219,7 @@ export default function AdminAllApplicationsPage() {
                       <span className="block max-w-[14rem] truncate font-semibold text-ink" title={a.fullName ?? ""}>{a.fullName || "—"}</span>
                       <span className="block text-xs text-muted">#{a.customerId}{a.email ? ` · ${a.email}` : ""}</span>
                     </td>
+                    <td><TrustStars trust={a.trust} /></td>
                     <td className="whitespace-nowrap font-mono text-ink">{a.pan || "—"}</td>
                     <td className="whitespace-nowrap font-mono text-ink">{a.salaryAccountNumber || "—"}</td>
                     <td className="whitespace-nowrap font-mono text-ink">{a.salaryIfsc || "—"}</td>

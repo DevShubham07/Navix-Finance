@@ -36,6 +36,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class LoanRegisterServiceTest {
 
     @Mock private LoanRepository loanRepository;
+    @Mock private CustomerTrustSignalsService trustSignals;
     @Mock private LoanApplicationRepository applicationRepository;
     @Mock private CustomerProfileRepository profileRepository;
     @Mock private PaymentRepository paymentRepository;
@@ -57,7 +58,7 @@ class LoanRegisterServiceTest {
         repaymentService = new RepaymentService(paymentRepository, loanRepository, loanMath,
                 applicationFlowService, settlementDirectory, eventPublisher, dsaCommissionService, storage);
         service = new LoanRegisterService(loanRepository, applicationRepository, profileRepository,
-                repaymentService, loanMath, collectionCaseDirectory, staffDirectory);
+                repaymentService, loanMath, collectionCaseDirectory, staffDirectory, trustSignals);
         lenient().when(settlementDirectory.approvedSettlementAmount(any())).thenReturn(java.util.Optional.empty());
         lenient().when(settlementDirectory.approvedSettlementAmounts(any())).thenReturn(java.util.Map.of());
         lenient().when(paymentRepository.sumAmountByLoanIdInAndStatus(anyList(), any())).thenReturn(List.of());
