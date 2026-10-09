@@ -58,9 +58,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     List<Payment> findDecidedByInWindow(@Param("staffIds") Collection<Long> staffIds,
                                         @Param("from") Instant from, @Param("to") Instant to);
 
-    /** Payments with a given status paid at or after {@code since} — backs the dashboard trend window. */
-    List<Payment> findByStatusAndPaidOnGreaterThanEqual(PaymentStatus status, LocalDate since);
-
     /**
      * Payments inside an optional inclusive {@code paid_on} window — the incoming half of the
      * transactions ledger. Mirrors {@code LoanRepository.findAllForRegister} (including its

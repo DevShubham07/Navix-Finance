@@ -3,7 +3,7 @@ import { getStaffSession } from "@/lib/api/bff-session";
 import { proxyToBackend, joinPath, unauthorized } from "@/lib/api/bff-proxy";
 
 /**
- * Staff dashboard proxy. Catch-all GET ->
+ * Staff dashboard proxy. Catch-all GET/PUT (PUT = monthly targets, body forwarded) ->
  *   `${backendBaseUrl}/api/dashboard/${path}${search}`
  * injecting STAFF identity from the `navix_staff` cookie. 401 if no session.
  */
@@ -22,3 +22,4 @@ async function handle(req: NextRequest, ctx: Ctx) {
 }
 
 export const GET = handle;
+export const PUT = handle;

@@ -1,1493 +1,164 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowRight,
-  Receipt,
-  RefreshCw,
-  Loader2,
-  ArrowDownLeft,
-  ArrowUpRight,
-  Clock,
-  Route,
-  ChevronRight,
-  Users,
-} from "lucide-react";
-import { PageHeader, StatCard } from "@/components/staff/staff-ui";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient, useIsFetching } from "@tanstack/react-query";
+import { Loader2, RefreshCw } from "lucide-react";
+import { PageHeader } from "@/components/staff/staff-ui";
 import { NoAccessNotice } from "@/components/staff/live-pipeline";
-import { EmptyState, InfoTooltip, Skeleton } from "@/components/ui";
-import { PipelineBar } from "@/components/staff/pipeline-bar";
-import { QueueTable } from "@/components/staff/pipeline/status-queue";
 import { PeriodPicker } from "@/components/staff/period-picker";
-import { rangeFor as decisionRangeFor, type Range } from "@/lib/period";
-import { STAGE_ORDER } from "@/lib/domain/journey";
+import { QueueStrip } from "@/components/staff/dashboard/queue-strip";
+import { RoleToggleStrip } from "@/components/staff/dashboard/role-toggle-strip";
+import { RecordsDrawer, useRecordsTarget } from "@/components/staff/dashboard/records-drawer";
+import {
+  ADMIN_TABS,
+  ADMIN_TAB_REGISTRY,
+  ROLE_VIEW_REGISTRY,
+  type AdminTabId,
+} from "@/components/staff/dashboard/registry";
+import { allowedViews, resolveView } from "@/components/staff/dashboard/views";
+import { fmtDayLong, todayIso } from "@/components/staff/dashboard/fmt";
+import type { DashParams, DashView } from "@/lib/api/applications";
 import { useStaffSession } from "@/lib/auth/staff-session";
-import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
-import {
-  staffApi,
-  staffReferralApi,
-  featureFlagsApi,
-  collectionsApi,
-  customersApi,
-  dashboardApi,
-  paiseToINR,
-  type ApplicationView,
-  type BookStatsView,
-  type TransactionPage,
-  type TrendPoint,
-  type TrendResponse,
-} from "@/lib/api/applications";
-import { SEGMENT_LABEL, SEGMENTS, type CustomerSegment, type SegmentCounts } from "@/lib/customers/segments";
-import { decidedCustomerIds } from "@/lib/customers/mine";
-import {
-  decisionStats,
-  outcomeStats,
-  collectionsStats,
-} from "@/lib/staff/my-stats";
+import { STAFF_ROLE_LABELS } from "@/lib/auth/rbac";
+import { rangeFor, type Range } from "@/lib/period";
 import { useMounted } from "@/hooks/use-mounted";
-import { cn, formatDate } from "@/lib/utils";
-import { SalaryDaysPanel } from "@/components/staff/salary-days-panel";
-import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
-import { collectionBucketCounts } from "@/lib/collection-buckets";
-import { bookDpdStack, caseBucketStack, type DpdStack } from "@/lib/staff/dashboard-dpd-stack";
-import { referralPayoutsGate } from "@/lib/staff/dashboard-referral-gate";
-
-const REFRESH_MS = 10_000;   // small, actionable queues
-// ponytail: two tiers, not per-query tuning — revisit when the backend lists are paged.
-const SLOW_MS = 60_000;      // whole-book lists and rollups
-// Whole-book aggregates (server-side rollups over every customer). They move on the timescale of a
-// disbursement or a repayment, not of a queue, so polling them at queue speed only costs the
-// database — a minute-old book count is indistinguishable from a live one.
-const BOOK_MS = 5 * 60_000;
+import { cn } from "@/lib/utils";
 
 /**
- * Every query key this page owns — the scope of its Refresh button. Listed rather than
- * prefix-matched because the transactions query predates the `staff-dashboard-` naming, and
- * listing them also keeps Refresh from reaching into another page's cache.
+ * When "All time" is picked there is no from/to; the analytics endpoints still want a window, and the
+ * backend rejects a span over 1100 days (INVALID_RANGE) -- so "all time" is the last 1095 days.
  */
-const DASHBOARD_QUERY_KEYS = new Set([
-  "staff-dashboard-queue",
-  "staff-dashboard-performance",
-  "staff-dashboard-decisions-windowed",
-  "staff-dashboard-book-stats",
-  "staff-dashboard-segment-summary",
-  "staff-dashboard-decided-customers",
-  "staff-dashboard-cases",
-  "staff-dashboard-settlements",
-  "staff-dashboard-collection-payments",
-  "staff-dashboard-stats",
-  "staff-dashboard-trends",
-  "admin-dashboard-txns",
-]);
-
-// ---------------------------------------------------------------------------
-// Formatting helpers — a null metric is unmeasurable, never a fabricated 0.
-// ---------------------------------------------------------------------------
-
-function num(n: number | null | undefined): string {
-  return n == null ? "—" : String(n);
-}
-function pct(n: number | null | undefined, digits = 0): string {
-  return n == null ? "—" : `${(n * 100).toFixed(digits)}%`;
-}
-function mins(n: number | null | undefined): string {
-  if (n == null) return "—";
-  return n < 60 ? `${Math.round(n)}m` : `${(n / 60).toFixed(1)}h`;
-}
-function score(n: number | null | undefined): string {
-  return n == null ? "—" : n.toFixed(0);
-}
-
-// ---------------------------------------------------------------------------
-// Section composition — which sections each role's dashboard shows.
-// ---------------------------------------------------------------------------
-
-type SectionKey = "work" | "decisions" | "outcomes" | "borrowers" | "collections" | "team";
-
-// Total Record<StaffRole, …> on purpose: adding a role to rbac.ts without listing its
-// sections here is a typecheck failure, not a silently blank dashboard.
-const SECTIONS: Record<StaffRole, SectionKey[]> = {
-  CREDIT_EXECUTIVE: ["work", "decisions", "outcomes", "borrowers"],
-  CREDIT_HEAD: ["work", "decisions", "outcomes", "borrowers", "team"],
-  DISBURSEMENT_HEAD: ["work", "decisions", "borrowers"],
-  ACCOUNTANT: ["work", "decisions", "borrowers"],
-  COLLECTION_EXECUTIVE: ["work", "collections", "borrowers"],
-  COLLECTION_HEAD: ["work", "decisions", "collections", "borrowers", "team"],
-  TELECALLER: ["work", "decisions", "borrowers"],
-  DSA: [],
-  ADMIN: [], // no stage work; the Admin overview renders via `isAdmin`
+const ALL_TIME_DAYS = 1095;
+const allTimeFrom = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - ALL_TIME_DAYS);
+  return todayIso(d);
 };
+const DEFAULT_PRESET = "this-month";
 
-/** Per-role "your queue" label (+ an ⓘ explanation) and the live statuses that feed it. */
-const QUEUE: Partial<Record<StaffRole, { label: string; info: string }>> = {
-  CREDIT_EXECUTIVE: {
-    label: "Leads to decide",
-    info: "Verify the file, then accept it with a sanctioned amount and repayment date, reject it, or park it as pending. Your decision is final — it goes straight to disbursement.",
-  },
-  CREDIT_HEAD: {
-    label: "Leads to assign",
-    info: "Hand each submitted intake to an active credit executive, or assign it to yourself. To decide a file, switch to Credit Executive.",
-  },
-  DISBURSEMENT_HEAD: {
-    label: "Approved loans to release",
-    info: "Release funds to the borrower's bank, then enter the transaction id — that activates the loan immediately. The transaction id is required; there is no second pair of eyes after you.",
-  },
-  ACCOUNTANT: {
-    label: "Repayments to verify",
-    info: "Confirm borrower repayments landed, and validate the payments collections raise. See all money movement under Accounting → all transactions.",
-  },
-  COLLECTION_HEAD: {
-    label: "Settlements awaiting your approval",
-    info: "Approve or reject the settlements collection executives propose. Separation of duties applies — you can't approve one you proposed. Work overdue loans from the collections desk.",
-  },
-  COLLECTION_EXECUTIVE: {
-    label: "Open collection cases",
-    info: "Work overdue loans assigned to you in your DPD buckets and log borrower interactions.",
-  },
-};
-
-/**
- * Deep-link from a role to the page where it acts on its queue.
- *
- * Every role now points at /staff/applications — the single workbench that renders each role's own
- * queues (the dedicated KYC-approvals / reborrow / credit / disbursement / accounting / DPD-buckets
- * pages were all folded into it). A Collection Executive lands on the awaiting-repayment columns +
- * the DPD grid; the Head's settlements worklist is still its own page, reached from the nav.
- */
-const ROLE_HREF: Partial<Record<StaffRole, string>> = {
-  CREDIT_EXECUTIVE: "/staff/applications",
-  CREDIT_HEAD: "/staff/applications",
-  DISBURSEMENT_HEAD: "/staff/applications",
-  ACCOUNTANT: "/staff/applications",
-  COLLECTION_HEAD: "/staff/applications",
-  COLLECTION_EXECUTIVE: "/staff/applications",
-};
-
-/** A non-application actionable source (repayments, referral payouts, settlements, cases). */
-type QueueExtra = { key: string; label: string; count: number; href: string };
-/**
- * A role's full action queue: applications the role acts on + non-application actionable sources,
- * plus whether any source it read FAILED. The per-source `.catch`es below are deliberate — one
- * dead call must never zero the whole count — but swallowing them silently made a dead backend
- * render as "you're all caught up", the one wrong answer this page must not give. The flag is how
- * the page tells "genuinely empty" from "could not load".
- */
-type RoleQueue = { apps: ApplicationView[]; extras: QueueExtra[]; failed: boolean };
-
-/** One fetched source: what it returned, and whether the call failed (vs. came back empty). */
-type Source<T> = { value: T; failed: boolean };
-
-const safe = (p: Promise<ApplicationView[]>): Promise<Source<ApplicationView[]>> =>
-  p
-    .then((value) => ({ value, failed: false }))
-    .catch(() => ({ value: [] as ApplicationView[], failed: true }));
-const countOf = <T,>(p: Promise<T[]>): Promise<Source<number>> =>
-  p.then((r) => ({ value: r.length, failed: false })).catch(() => ({ value: 0, failed: true }));
-
-/** Mirrors the accountant's repayment-verify queue on /staff/applications. */
-const pendingRepaymentCount = () => countOf(staffApi.pendingRepayments());
-
-/** Mirrors the accountant's collections-payment validation queue on /staff/applications. */
-const pendingCollectionPaymentCount = () =>
-  countOf(collectionsApi.listPayments("PENDING_ACCOUNTANT"));
-
-const repaymentsExtra = (count: number): QueueExtra =>
-  ({ key: "repayments", label: "Repayments to verify", count, href: "/staff/applications" });
-const collectionPaymentsExtra = (count: number): QueueExtra =>
-  ({ key: "collection-payments", label: "Collections payments to validate", count, href: "/staff/applications" });
-const settlementsExtra = (count: number): QueueExtra =>
-  ({ key: "settlements", label: "Settlements to approve", count, href: "/staff/collections/settlements" });
-const referralPayoutsExtra = (count: number): QueueExtra =>
-  ({ key: "referral-payouts", label: "Referral payouts to settle", count, href: "/staff/disbursement/referrals" });
-
-/**
- * The live items for a role's action queue — the union of everything the role's queue
- * page(s) actually list. Every source is individually fault-tolerant (`.catch`) so one
- * failing call can never zero the whole count.
- *
- * "My customers"/"my-overdue"/settlements/cases extras are derived in the component from their
- * own queries (Steps 1.1-1.3), not fetched again here.
- * // ponytail: whole-table rollup + client-side segmenting. Move to a paged indexed query when the
- * // list stops fitting one response — same change as adding server-side segment filters.
- */
-async function fetchRoleQueue(role: StaffRole): Promise<RoleQueue> {
-  let base: RoleQueue;
-  switch (role) {
-    case "CREDIT_EXECUTIVE": {
-      const own = await safe(staffApi.listByStatus("CREDIT_EXEC_PENDING"));
-      base = { apps: own.value, extras: [], failed: own.failed };
-      break;
-    }
-    case "CREDIT_HEAD": {
-      // Intakes waiting to be assigned. Deciding is the Executive's job (switch role).
-      const queue = await safe(staffApi.creditQueue());
-      base = { apps: queue.value, extras: [], failed: queue.failed };
-      break;
-    }
-    case "DISBURSEMENT_HEAD": {
-      // Pending referral payouts are counted by their own query in the component (referralPayoutsQuery),
-      // gated on the shell's cached feature flags — so they no longer wait here on a flags read.
-      const [pending, failedTransfers] = await Promise.all([
-        safe(staffApi.listByStatus("DISBURSEMENT_PENDING")),
-        safe(staffApi.listByStatus("DISBURSEMENT_FAILED")),
-      ]);
-      base = {
-        apps: [...pending.value, ...failedTransfers.value],
-        extras: [],
-        failed: pending.failed || failedTransfers.failed,
-      };
-      break;
-    }
-    case "ACCOUNTANT": {
-      // No application queue: since V48 the Accountant has no disbursement step at all. Their work
-      // is money coming back in — borrower repayments and what collections took in the field.
-      const [repayments, collected] = await Promise.all([
-        pendingRepaymentCount(),
-        pendingCollectionPaymentCount(),
-      ]);
-      const extras: QueueExtra[] = [];
-      if (repayments.value > 0) extras.push(repaymentsExtra(repayments.value));
-      if (collected.value > 0) extras.push(collectionPaymentsExtra(collected.value));
-      base = { apps: [], extras, failed: repayments.failed || collected.failed };
-      break;
-    }
-    case "COLLECTION_HEAD":
-      // Settlements count now comes from settlementsQuery alone (Step 1.2) — no separate fetch,
-      // so this branch reads nothing and cannot fail; settlementsQuery reports its own failure.
-      base = { apps: [], extras: [], failed: false };
-      break;
-    case "COLLECTION_EXECUTIVE":
-      // "Your open collection cases" now derives from casesQuery alone (Step 1.3) — no separate
-      // fetch, so casesQuery reports its own failure.
-      base = { apps: [], extras: [], failed: false };
-      break;
-    case "TELECALLER":
-    case "DSA":
-    default:
-      base = { apps: [], extras: [], failed: false };
-      break;
-  }
-
-  return base;
-}
-
-export default function StaffDashboardPage() {
+function Dashboard() {
   const mounted = useMounted();
-  const queryClient = useQueryClient();
   const { session } = useStaffSession();
-  const role = session?.role as StaffRole | undefined;
-  const sid = session?.id != null ? Number(session.id) : undefined;
-  const sections = role ? SECTIONS[role] : [];
-  const has = (k: SectionKey) => sections.includes(k);
-  const isAdmin = role === "ADMIN";
+  const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const queryClient = useQueryClient();
+  const fetching =
+    useIsFetching({ predicate: (q) => String(q.queryKey[0]).startsWith("staff-dashboard-") && q.queryKey[0] !== "staff-dashboard-records" }) > 0;
+  const { target, open, close } = useRecordsTarget();
 
-  // Reporting period for the decisions/outcomes sections — shared with /staff/my-decisions and
-  // /staff/performance so the same "this month" means the same thing everywhere.
-  const [preset, setPreset] = React.useState("this-month");
-  const [custom, setCustom] = React.useState<Range>({});
-  const range: Range = React.useMemo(() => decisionRangeFor(preset, custom), [preset, custom]);
-
-  // Layer 1+2 — the signed-in role's action queue (application rows only; the non-application
-  // extras — customers/settlements/cases — are derived below from their own queries).
-  const queueQuery = useQuery({
-    queryKey: ["staff-dashboard-queue", role, session?.id],
-    queryFn: () => fetchRoleQueue(role as StaffRole),
-    enabled: mounted && !!role && has("work"),
-    refetchInterval: REFRESH_MS,
-  });
-
-  // Feature flags — the staff shell's own cache entry (same key, queryFn and staleTime), so this
-  // observer dedupes onto the shell's read instead of re-reading every flag on the queue's 10s
-  // cycle. Only the Disbursement Head's queue reads a flag (referral). Re-read on the slow tier,
-  // not never: nothing else refreshes this entry while the page stays open (no focus refetch, the
-  // shell never remounts), and the payouts endpoint rejects once the kill switch is off — so a flag
-  // flipped mid-session would otherwise pin "Couldn't load part of your queue" until a reload.
-  const flagsQuery = useQuery({
-    queryKey: ["feature-flags"],
-    queryFn: () => featureFlagsApi.get(),
-    enabled: mounted && role === "DISBURSEMENT_HEAD" && has("work"),
-    staleTime: 60_000,
-    refetchInterval: SLOW_MS,
-  });
-  const referralOn = referralPayoutsGate(flagsQuery.data, flagsQuery.isError);
-
-  // Disbursement Head's pending referral payouts — a query of its own, so it runs alongside the
-  // queue's two lists instead of after them. It still waits for the referral flag when the shell has
-  // not cached it yet: firing first would ask the backend for a feature that may be switched off.
-  // Keyed under the queue's prefix because it is part of the role queue (it used to be fetched
-  // inside fetchRoleQueue), so the page's Refresh scope keeps covering it.
-  const referralPayoutsQuery = useQuery({
-    queryKey: ["staff-dashboard-queue", "referral-payouts", session?.id],
-    queryFn: () => countOf(staffReferralApi.payouts("PENDING")),
-    enabled: mounted && role === "DISBURSEMENT_HEAD" && has("work") && referralOn === true,
-    refetchInterval: REFRESH_MS,
-  });
-
-  // "Your decisions" + team roster — one call, server-scoped (self, or the whole team for a Head).
-  const performanceQuery = useQuery({
-    queryKey: ["staff-dashboard-performance", range.from ?? "", range.to ?? ""],
-    queryFn: () => staffApi.performance(range.from, range.to),
-    enabled: mounted && !!role && (has("decisions") || has("team")),
-    refetchInterval: REFRESH_MS,
-  });
-
-  // "Your decision outcomes" — decisions in the selected period, joined below against the customers
-  // those decisions name (decidedCustomersQuery).
-  const windowedDecisionsQuery = useQuery({
-    queryKey: ["staff-dashboard-decisions-windowed", range.from ?? "", range.to ?? ""],
-    queryFn: () => staffApi.decisions(undefined, range.from, range.to),
-    enabled: mounted && !!role && has("outcomes"),
-    refetchInterval: REFRESH_MS,
-  });
-
-  // "Your borrowers" — the fifteen tiles, aggregated server-side over the caller's own book (who is
-  // "mine" is the server's call now, so this is scoped identically to /staff/customers?mine=1 and
-  // needs no all-time decision list to narrow it). Also carries the two counts the "my customers" /
-  // "my overdue" queue lines below need.
-  const bookStatsQuery = useQuery({
-    queryKey: ["staff-dashboard-book-stats"],
-    queryFn: () => customersApi.bookStats(),
-    enabled: mounted && !!role && role !== "DSA" && (has("work") || has("borrowers")),
-    refetchInterval: BOOK_MS,
-    staleTime: BOOK_MS,
-  });
-
-  // Admin segment strip — the same twelve counts the customers page shows, rolled up server-side.
-  const segmentSummaryQuery = useQuery({
-    queryKey: ["staff-dashboard-segment-summary"],
-    queryFn: () => customersApi.summary(),
-    enabled: mounted && isAdmin,
-    refetchInterval: BOOK_MS,
-    staleTime: BOOK_MS,
-  });
-
-  // The customers behind the decisions in the selected period — outcomeStats joins the two. Fetched
-  // by id (sorted, so the key is stable) rather than by pulling the whole book to keep a handful of
-  // rows out of it; a customer the caller decided on is by definition in their book.
-  const decidedIds = React.useMemo(
-    () => [...decidedCustomerIds(windowedDecisionsQuery.data ?? [])].sort((a, b) => a - b),
-    [windowedDecisionsQuery.data],
+  const preset = sp.get("preset") ?? DEFAULT_PRESET;
+  const custom = React.useMemo<Range>(
+    () => ({ from: sp.get("from") ?? undefined, to: sp.get("to") ?? undefined }),
+    [sp],
   );
-  const decidedCustomersQuery = useQuery({
-    queryKey: ["staff-dashboard-decided-customers", decidedIds],
-    queryFn: () => customersApi.byIdsAll(decidedIds),
-    enabled: mounted && !!role && has("outcomes") && decidedIds.length > 0,
-    refetchInterval: BOOK_MS,
-    staleTime: BOOK_MS,
-  });
+  const range = React.useMemo(() => rangeFor(preset, custom), [preset, custom]);
 
-  // "My customers"/"my-overdue" queue extras — two counts off the book aggregate above. Empty until
-  // it resolves (error or still loading), same as the old try/catch swallowing a failure.
-  const myCustomerExtras: QueueExtra[] = React.useMemo(() => {
-    const book = bookStatsQuery.data;
-    if (book == null) return [];
-    const out: QueueExtra[] = [
-      { key: "my-customers", label: "Customers allocated to you", count: book.ownedCount, href: "/staff/customers?mine=1" },
-    ];
-    if (book.ownedOverdue > 0) {
-      out.push({ key: "my-overdue", label: "Your customers now overdue", count: book.ownedOverdue, href: "/staff/customers?seg=overdue&mine=1" });
-    }
-    return out;
-  }, [bookStatsQuery.data]);
+  const setUrl = React.useCallback(
+    (patch: Record<string, string | null>) => {
+      const next = new URLSearchParams(sp.toString());
+      for (const [k, v] of Object.entries(patch)) {
+        if (v == null || v === "") next.delete(k);
+        else next.set(k, v);
+      }
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [sp, router, pathname],
+  );
 
-  // Collections desk — only for the two collections roles (+ ADMIN).
-  const casesQuery = useQuery({
-    queryKey: ["staff-dashboard-cases"],
-    queryFn: () => collectionsApi.listCases(),
-    enabled: mounted && !!role && has("collections"),
-    refetchInterval: SLOW_MS,
-    staleTime: SLOW_MS,
-  });
-  const settlementsQuery = useQuery({
-    queryKey: ["staff-dashboard-settlements"],
-    queryFn: () => collectionsApi.listSettlements(),
-    enabled: mounted && !!role && has("collections"),
-    refetchInterval: SLOW_MS,
-    staleTime: SLOW_MS,
-  });
-  const collectionPaymentsQuery = useQuery({
-    queryKey: ["staff-dashboard-collection-payments"],
-    queryFn: () => collectionsApi.listPayments(),
-    enabled: mounted && !!role && has("collections"),
-    refetchInterval: SLOW_MS,
-    staleTime: SLOW_MS,
-  });
+  const realRole = session?.realRole;
+  const workingRole = session?.role;
+  const view = realRole && workingRole ? resolveView(realRole, workingRole, sp.get("view")) : null;
 
-  // Admin oversight only — company-wide pipeline / trend / segment / ledger rollups.
-  const stats = useQuery({
-    queryKey: ["staff-dashboard-stats"],
-    queryFn: () => staffApi.stats(),
-    enabled: mounted && isAdmin,
-    refetchInterval: REFRESH_MS,
-  });
-  const trends = useQuery({
-    queryKey: ["staff-dashboard-trends"],
-    queryFn: () => dashboardApi.trends(30),
-    enabled: mounted && isAdmin,
-    refetchInterval: SLOW_MS,
-    staleTime: SLOW_MS,
-  });
-  const txns = useQuery({
-    queryKey: ["admin-dashboard-txns"],
-    queryFn: () => staffApi.transactions(),
-    enabled: mounted && isAdmin,
-    refetchInterval: SLOW_MS,
-    staleTime: SLOW_MS,
-  });
+  const params = React.useMemo<DashParams | null>(
+    () => (view ? { view, from: range.from ?? allTimeFrom(), to: range.to ?? todayIso() } : null),
+    [view, range.from, range.to],
+  );
 
-  // Settlements/cases queue extras — mirror the old fetchRoleQueue best-effort counts, now derived
-  // from settlementsQuery/casesQuery instead of a separate fetch (Steps 1.2/1.3).
-  const pendingSettlements = (settlementsQuery.data ?? []).filter((s) => s.status === "PROPOSED").length;
-  const settlementExtras: QueueExtra[] =
-    role === "COLLECTION_HEAD" && pendingSettlements > 0 ? [settlementsExtra(pendingSettlements)] : [];
-  // Role-gated like settlementExtras: casesQuery is enabled for has("collections") (COLLECTION_HEAD
-  // + COLLECTION_EXECUTIVE + ADMIN too), but this extra existed only in the COLLECTION_EXECUTIVE
-  // branch of fetchRoleQueue. Fail CLOSED without a resolvable staff id — showing every company case
-  // is the bug, so an unknown actor gets nothing. Same convention as ApplicationFlowService.byStatus
-  // (returns List.of() when the executive id is missing) and CustomerService.scope().
-  const myCases = role !== "COLLECTION_EXECUTIVE" || sid == null
-    ? []
-    : (casesQuery.data ?? []).filter((c) => c.assignedOfficerId === sid);
-  const caseExtras: QueueExtra[] =
-    myCases.length > 0 ? [{ key: "cases", label: "Your open collection cases", count: myCases.length, href: "/staff/applications" }] : [];
-  // Counted only while the referral flag is on — a flag switched off drops the line even if a count
-  // from before is still cached.
-  const countsReferralPayouts = role === "DISBURSEMENT_HEAD" && referralOn === true;
-  const pendingPayouts = countsReferralPayouts ? referralPayoutsQuery.data?.value ?? 0 : 0;
-  const payoutExtras: QueueExtra[] = pendingPayouts > 0 ? [referralPayoutsExtra(pendingPayouts)] : [];
-
-  if (!mounted || !session || !role) {
+  if (!mounted || !session || !realRole || !workingRole) {
     return <div className="h-64 rounded border border-line bg-white" />;
   }
 
-  // DSA is a firewalled portal role with no dashboard permission at all (see lib/auth/rbac.ts) — the
-  // backend is the real guard, but bail out early so the page doesn't half-render empty queue panels.
-  if (role === "DSA") {
+  // DSA is a firewalled portal role with no dashboard permission at all; the backend is the real guard.
+  if (realRole === "DSA" || !view || !params) {
     return <NoAccessNotice message="DSAs use the leads and earnings pages — see the DSA menu." />;
   }
 
-  const queue = QUEUE[role];
-  const queueData: RoleQueue = queueQuery.data ?? { apps: [], extras: [], failed: false };
-  const myApps = queueData.apps;
-  // Extras order MUST match fetchRoleQueue's old push order: queue's own extras (repayments), then
-  // referral payouts (once pushed inside fetchRoleQueue too), then settlements, then cases, then
-  // my-customers/my-overdue.
-  const extras = [...queueData.extras, ...payoutExtras, ...settlementExtras, ...caseExtras, ...myCustomerExtras];
-  const activeExtras = extras.filter((e) => e.count > 0);
-  // Headline count = the union of everything the role's queue page(s) list: application
-  // rows + non-application actionable sources (repayments, payouts, settlements, cases).
-  const headlineCount = myApps.length + activeExtras.reduce((s, e) => s + e.count, 0);
-  const actingHref = ROLE_HREF[role];
-  // Today's queue promise resolves only after every source it awaited, so the headline never
-  // renders half-populated. Preserve that with the queries that now feed the extras above.
-  const queueLoading =
-    queueQuery.isLoading ||
-    (role === "COLLECTION_HEAD" && settlementsQuery.isLoading) ||
-    (role === "COLLECTION_EXECUTIVE" && casesQuery.isLoading) ||
-    // The payouts line waits on the referral flag, then on its own count.
-    (role === "DISBURSEMENT_HEAD" && (referralOn === undefined || (referralOn && referralPayoutsQuery.isLoading)));
-  // "Could not load" vs. "genuinely empty". fetchRoleQueue carries the flag for the sources it
-  // deliberately swallows; the queries that feed the extras (book stats, settlements, cases) report
-  // their own failure the same way. The headline count is only trustworthy when none of them failed
-  // — and a role whose dashboard disables one of these queries never sees its isError.
-  const queueFailed =
-    queueQuery.isError ||
-    queueData.failed ||
-    bookStatsQuery.isError ||
-    (role === "COLLECTION_HEAD" && settlementsQuery.isError) ||
-    (role === "COLLECTION_EXECUTIVE" && casesQuery.isError) ||
-    (countsReferralPayouts && (referralPayoutsQuery.isError || referralPayoutsQuery.data?.failed === true));
+  const periodLabel = `${fmtDayLong(params.from)} – ${fmtDayLong(params.to)}`;
+  const views = allowedViews(realRole);
+  const tab = (ADMIN_TABS.find((t) => t.id === sp.get("tab"))?.id ?? "snapshot") as AdminTabId;
+  const tabProps = { params, open, realAdmin: realRole === "ADMIN", periodLabel };
+  const Body = view === "ADMIN" ? ADMIN_TAB_REGISTRY[tab] : ROLE_VIEW_REGISTRY[view];
 
-  const decisions = performanceQuery.data ? decisionStats(performanceQuery.data, range.from) : null;
-  const outcomes = has("outcomes") && windowedDecisionsQuery.data
-    ? outcomeStats(windowedDecisionsQuery.data, decidedCustomersQuery.data ?? [])
-    : null;
-  const books = has("borrowers") ? bookStatsQuery.data ?? null : null;
-  const collections = has("collections")
-    && casesQuery.data && settlementsQuery.data && collectionPaymentsQuery.data && sid != null
-    ? collectionsStats(casesQuery.data, settlementsQuery.data, collectionPaymentsQuery.data, sid)
-    : null;
-  const accountantRow = performanceQuery.data?.rows?.[0];
-
-  // Refresh spinner (RQ v5): isLoading is first-load only — key the spinner off isFetching
-  // across every dashboard query so a manual refresh gives visible feedback.
-  const fetching =
-    queueQuery.isFetching ||
-    referralPayoutsQuery.isFetching ||
-    performanceQuery.isFetching ||
-    windowedDecisionsQuery.isFetching ||
-    bookStatsQuery.isFetching ||
-    segmentSummaryQuery.isFetching ||
-    decidedCustomersQuery.isFetching ||
-    casesQuery.isFetching ||
-    settlementsQuery.isFetching ||
-    collectionPaymentsQuery.isFetching ||
-    (isAdmin && (stats.isFetching || trends.isFetching || txns.isFetching));
-
-  // Scoped to this page's own keys, and to ACTIVE queries only. `.refetch()` is honoured
-  // regardless of a query's `enabled` (RQ v5), so the per-query version this replaces also fired
-  // the whole-book segment summary and three unscoped collections lists on every role whose
-  // dashboard deliberately disables them. `invalidateQueries` defaults to refetchType "active",
-  // and a query whose every observer is disabled is not active — it is only marked stale, and
-  // fetches if it ever enables. The spinner above still keys off each query's isFetching.
-  const refreshAll = () => {
-    void queryClient.invalidateQueries({
-      predicate: (query) => DASHBOARD_QUERY_KEYS.has(String(query.queryKey[0])),
-    });
-  };
+  const refresh = () =>
+    void queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("staff-dashboard-") });
 
   return (
     <div>
       <PageHeader
         title={`Welcome, ${session.name.split(" ")[0]}`}
-        subtitle={`${STAFF_ROLE_LABELS[role]} · your work, decisions and borrowers`}
+        subtitle={`${STAFF_ROLE_LABELS[workingRole]} · live business analytics`}
       >
         <button
-          onClick={refreshAll}
+          type="button"
+          onClick={refresh}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs text-muted hover:bg-grey-100 hover:text-ink"
         >
           {fetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
         </button>
       </PageHeader>
 
-      {/* Layer 1 — "Your work" hero */}
-      {has("work") && queue && (
-        <WorkHero
-          queue={queue}
-          count={headlineCount}
-          items={myApps}
-          extras={activeExtras}
-          loading={queueLoading}
-          failed={queueFailed}
-          onRefresh={refreshAll}
-          actingHref={actingHref}
-        />
-      )}
+      <QueueStrip role={workingRole} staffId={session.id} />
 
-      {has("work") && queue && (
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h2 className="mb-0 text-xl">{queue.label}</h2>
-              <InfoTooltip content={queue.info} />
-            </div>
-            <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">
-              {headlineCount} pending
-            </span>
-          </div>
+      <RoleToggleStrip views={views} active={view} onChange={(v: DashView) => setUrl({ view: v, tab: null })} />
 
-          {queueLoading ? (
-            // QueueTable's 17 columns (S.No. … Actions, no journey column).
-            <Skeleton variant="table" rows={6} cols={17} className="rounded border border-line bg-white" />
-          ) : headlineCount ? (
-            <div className="space-y-3">
-              {myApps.length > 0 && (
-                <QueueTable apps={myApps} actions={() => null} showJourney={false} />
-              )}
-              {activeExtras.length > 0 && (
-                <ul className="divide-y divide-grey-200 rounded border border-line bg-white">
-                  {activeExtras.map((extra) => <ExtraActionRow key={extra.key} extra={extra} />)}
-                </ul>
-              )}
-            </div>
-          ) : queueFailed ? (
-            // Not an empty queue — nothing could be read. The hero above carries the Refresh.
-            <div className="rounded border border-error-200 bg-error-50 p-8 text-center text-sm text-error-700">
-              Couldn&apos;t load your queue — Refresh to try again.
-            </div>
-          ) : (
-            <EmptyState
-              title="You're all caught up — nothing in your queue."
-              className="rounded border border-line bg-white"
-            />
-          )}
-        </section>
-      )}
+      <PeriodPicker
+        preset={preset}
+        onPreset={(p) => setUrl({ preset: p === DEFAULT_PRESET ? null : p, from: null, to: null })}
+        custom={custom}
+        onCustom={(r) => setUrl({ preset: "custom", from: r.from ?? null, to: r.to ?? null })}
+      />
 
-      {/* Period picker governs the two decision-quality sections below. */}
-      {(has("decisions") || has("outcomes")) && (
-        <section className="mt-8">
-          <PeriodPicker preset={preset} onPreset={setPreset} custom={custom} onCustom={setCustom} />
-        </section>
-      )}
-
-      {/* Section 2 — Your decisions */}
-      {has("decisions") && (
-        <DecisionsSection
-          stats={decisions}
-          loading={performanceQuery.isLoading}
-          error={performanceQuery.isError}
-          accountantExtra={role === "ACCOUNTANT" ? accountantRow : undefined}
-        />
-      )}
-
-      {/* Section 3 — Your decision outcomes */}
-      {has("outcomes") && (
-        <OutcomesSection
-          stats={outcomes}
-          loading={windowedDecisionsQuery.isLoading || decidedCustomersQuery.isLoading}
-        />
-      )}
-
-      {/* Section 4 — Your borrowers */}
-      {has("borrowers") && (
-        <BorrowersSection stats={books} loading={bookStatsQuery.isLoading} />
-      )}
-
-      {/* Section 5 — Collections desk */}
-      {has("collections") && (
-        <CollectionsSection
-          stats={collections}
-          isHead={role === "COLLECTION_HEAD"}
-          loading={casesQuery.isLoading || settlementsQuery.isLoading || collectionPaymentsQuery.isLoading}
-        />
-      )}
-
-      {/* Section 6 — Team roster (heads only) */}
-      {has("team") && (
-        <TeamSection rows={performanceQuery.data?.rows ?? []} loading={performanceQuery.isLoading} range={range} />
-      )}
-
-      {/* Section 7 — Admin oversight: only in the Admin working role. */}
-      {isAdmin && (
-        <>
-          <div className="mb-3 mt-10 flex items-center gap-2">
-            <h2 className="mb-0 text-xl">Admin overview</h2>
-            <InfoTooltip content="Company-wide oversight — visible in the Admin role." />
-          </div>
-          <TrendsSection data={trends.data} loading={trends.isLoading} />
-
-          <section className="mt-8">
-            <div className="mb-3 flex items-center gap-2">
-              <Route size={16} className="text-navy" />
-              <h2 className="mb-0 text-xl">Pipeline at a glance</h2>
-              <InfoTooltip content="Live application load across the loan lifecycle, company-wide. Your role's stage is highlighted; terminal (closed) loans are shown subdued." />
-            </div>
-            {stats.isLoading ? (
-              // One tile per pipeline stage, at PipelineBar's own tile width.
-              <div className="flex gap-2 overflow-hidden">
-                {STAGE_ORDER.map((key) => (
-                  <Skeleton key={key} variant="stat" className="min-w-[7.5rem] flex-1" />
-                ))}
-              </div>
-            ) : (
-              <PipelineBar stats={stats.data ?? {}} role={role} />
-            )}
-          </section>
-
-          <SegmentBar
-            counts={segmentSummaryQuery.data ?? null}
-            loading={segmentSummaryQuery.isLoading}
-          />
-          <SalaryDaysPanel />
-
-          <details className="group mt-8 rounded border border-line bg-white shadow-sm">
-            {/* No interactive children inside <summary> — it is itself a disclosure control. */}
-            <summary className="flex cursor-pointer items-center gap-2 px-5 py-4 [&::-webkit-details-marker]:hidden">
-              <ChevronRight size={15} className="text-navy transition-transform group-open:rotate-90" />
-              <Receipt size={16} className="text-navy" />
-              <h2 className="mb-0 text-lg">Transactions</h2>
-            </summary>
-            <div className="border-t border-line p-5">
-              <p className="mb-3 flex items-center gap-1.5 text-xs text-muted">
-                Company-wide money movement — disbursals out and repayments in.
-                <InfoTooltip content="Admin oversight; the full searchable ledger lives under Administration → Transactions." />
-              </p>
-              <AdminTransactions page={txns.data} loading={txns.isLoading} />
-            </div>
-          </details>
-        </>
-      )}
-    </div>
-  );
-}
-
-/**
- * The "couldn't load" notice shared by the hero and the queue section.
- *
- * Every queue source is individually fault-tolerant on purpose (see {@link RoleQueue}), so an
- * outage otherwise reads as an empty queue. This says what actually happened and offers the same
- * Refresh the header does.
- */
-function QueueLoadError({ onRefresh }: { onRefresh: () => void }) {
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded border border-error-200 bg-error-50 p-4">
-      <span className="min-w-0 text-sm text-error-700">
-        Couldn&apos;t load part of your queue — what you see here may be incomplete.
-      </span>
-      <button
-        onClick={onRefresh}
-        className="ml-auto flex items-center gap-1.5 rounded border border-error-200 bg-white px-3 py-1.5 text-xs font-semibold text-error-700 hover:bg-error-50"
-      >
-        <RefreshCw size={13} /> Refresh
-      </button>
-    </div>
-  );
-}
-
-/** Layer 1 — the signed-in role's actionable count + the oldest-waiting item + queue aging. */
-function WorkHero({
-  queue,
-  count,
-  items,
-  extras,
-  loading,
-  failed,
-  onRefresh,
-  actingHref,
-}: {
-  queue: { label: string; info: string };
-  count: number;
-  items: ApplicationView[];
-  extras: QueueExtra[];
-  loading: boolean;
-  /** A queue source failed rather than came back empty — the count may be short. */
-  failed: boolean;
-  onRefresh: () => void;
-  actingHref?: string;
-}) {
-  // Oldest-waiting: the application with the earliest created_at (V53) — falls back to id when
-  // createdAt is somehow absent, since id is still monotonic. Deliberately ascending (oldest
-  // first), unlike the staff queue tables, which sort newest-first — this hero exists specifically
-  // to surface the file that's been waiting longest. Operates on applications only —
-  // non-application sources (extras) have no created_at.
-  const oldest = items.length
-    ? [...items].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.id - b.id)[0]
-    : null;
-
-  // Queue aging: hours since the oldest item entered its CURRENT stage, plus how many items have
-  // been sitting more than a day / two days. currentStageEnteredAt resets on every transition, so
-  // this measures time-in-stage, not time-since-signup.
-  const now = Date.now();
-  const stageAgeHours = (a: ApplicationView) => {
-    const at = a.currentStageEnteredAt ?? a.createdAt;
-    if (!at) return null;
-    return (now - new Date(at).getTime()) / 3_600_000;
-  };
-  const oldestAgeHours = oldest ? stageAgeHours(oldest) : null;
-  const olderThan24h = items.filter((a) => (stageAgeHours(a) ?? 0) > 24).length;
-  const olderThan48h = items.filter((a) => (stageAgeHours(a) ?? 0) > 48).length;
-
-  // The id is captured on click, so the dialog stays on that file even if a poll changes `oldest`.
-  const [detailId, setDetailId] = React.useState<number | null>(null);
-
-  return (
-    <section className="mb-8 rounded-lg border border-gold-soft bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="mb-0 text-lg">Your work</h2>
-            <InfoTooltip content={queue.info} />
-          </div>
-          <p className="mt-1 text-sm text-muted">{queue.label}</p>
-          <div className="mt-3 flex items-baseline gap-2">
-            {loading ? (
-              // Keeps the figure's h-9 footprint so the row does not jump when the count lands.
-              <Skeleton rows={1} className="flex h-9 w-12 flex-col justify-center" />
-            ) : (
-              <span className="font-serif text-4xl font-bold text-navy lg:text-5xl">{count}</span>
-            )}
-            <span className="text-sm text-muted">
-              {count === 1 ? "item needs" : "items need"} your action
-            </span>
-          </div>
-        </div>
-        {actingHref && (
-          <Link href={actingHref} className="btn btn-sm btn-navy">
-            Open queue <ArrowRight size={15} />
-          </Link>
-        )}
-      </div>
-
-      {loading ? (
-        <Skeleton variant="row" className="mt-5" />
-      ) : oldest ? (
-        <div className="mt-5 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Same detail dialog as the queue row's "Open", so the file that has waited longest can be
-                acted on from here — the queue table below does not lead with it. */}
-            <button
-              type="button"
-              onClick={() => setDetailId(oldest.id)}
-              className="inline-flex items-center gap-1.5 rounded-full bg-navy-tint px-2.5 py-1 text-xs font-semibold text-navy hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-navy"
-              title={`Open application #${oldest.id}`}
-            >
-              <Clock size={12} aria-hidden /> Oldest waiting · #{oldest.id}
-              {oldestAgeHours != null ? ` · ${mins(oldestAgeHours * 60)} in stage` : ""}
-              <ArrowRight size={12} aria-hidden />
-            </button>
-            {(olderThan24h > 0 || olderThan48h > 0) && (
-              <span className="text-xs text-muted">
-                {olderThan24h} item{olderThan24h === 1 ? "" : "s"} over 24h waiting
-                {olderThan48h > 0 ? ` · ${olderThan48h} over 48h` : ""}
-              </span>
-            )}
-          </div>
-          <QueueTable apps={[oldest]} actions={() => null} showJourney={false} />
-        </div>
-      ) : count > 0 ? (
-        // No applications, but non-application work is waiting (repayments / payouts / settlements / cases).
-        <div className="mt-5 flex flex-wrap items-center gap-3 rounded border border-line bg-grey-50 p-4">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-navy-tint px-2.5 py-1 text-xs font-semibold text-navy">
-            <Clock size={12} /> Waiting on you
-          </span>
-          <span className="min-w-0 text-sm text-muted">
-            {extras.map((e) => `${e.count} ${e.label.toLowerCase()}`).join(" · ")}
-          </span>
-          {actingHref && (
-            <Link href={actingHref} className="btn btn-sm btn-ghost ml-auto">
-              Open queue <ArrowRight size={14} />
-            </Link>
-          )}
-        </div>
-      ) : failed ? null : (
-        <p className="mt-4 rounded border border-line bg-grey-50 p-4 text-sm text-muted">
-          You&apos;re all caught up — nothing waiting on you right now.
-        </p>
-      )}
-
-      {/* Shown in place of the empty hero, and alongside a count that loaded only in part. */}
-      {!loading && failed && (
-        <div className="mt-4">
-          <QueueLoadError onRefresh={onRefresh} />
-        </div>
-      )}
-
-      {detailId != null && (
-        <ApplicationDetailDialog applicationId={detailId} onClose={() => setDetailId(null)} />
-      )}
-    </section>
-  );
-}
-
-/** Section 2 — Your decisions, off decisionStats(). */
-function DecisionsSection({
-  stats,
-  loading,
-  error,
-  accountantExtra,
-}: {
-  stats: ReturnType<typeof decisionStats> | null;
-  loading: boolean;
-  error: boolean;
-  accountantExtra?: { verifiedCount: number | null; verifiedPaise: number | null; rejectedPaymentCount: number | null };
-}) {
-  return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h2 className="mb-0 text-xl">Your decisions</h2>
-          <InfoTooltip content="Everything you decided in the selected period. 'In queue now' is a live snapshot — it does not change with the period picker. A dash means the metric can't be measured, never a real zero." />
-        </div>
-        <Link href="/staff/my-decisions" className="inline-flex items-center gap-1 text-sm font-semibold text-navy hover:underline">
-          Full history <ArrowRight size={14} />
-        </Link>
-      </div>
-      {error && <p className="mb-3 text-sm text-error-700">Couldn&apos;t load your decision totals.</p>}
-      {loading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 8 }, (_, i) => (
-            <Skeleton key={i} variant="stat" />
-          ))}
-        </div>
-      ) : (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Decided" value={num(stats?.decided)} />
-            <StatCard
-              label="Approved / rejected"
-              value={`${num(stats?.approved)} / ${num(stats?.rejected)}`}
-              hint={`Approval rate ${pct(stats?.approvalRate)}`}
-              accent="success"
-            />
-            <StatCard
-              label="In queue now"
-              value={num(stats?.pendingNow)}
-              accent="gold"
-              info="Files sitting with you right now — a live snapshot, not scoped to the period picker."
-            />
-            <StatCard label="Avg turnaround" value={mins(stats?.avgTurnaroundMinutes)} info="Mean time from a file being assigned to you until you acted on it." />
-            <StatCard
-              label="Disbursement Pending Total Amount"
-              value={paiseToINR(stats?.valuePaise ?? null)}
-              hint="Sanctioned/disbursed value of the files you moved forward in this period."
-            />
-            <StatCard
-              label="Active days"
-              value={num(stats?.activeDays)}
-              hint={stats?.actionsPerActiveDay != null ? `${stats.actionsPerActiveDay.toFixed(1)} actions/day` : undefined}
-            />
-            <StatCard
-              label="Busiest day"
-              value={stats?.busiestDay ? `${formatDate(stats.busiestDay.date)}` : "—"}
-              hint={stats?.busiestDay ? `${stats.busiestDay.actions} actions` : undefined}
-            />
-            <StatCard
-              label="Working window"
-              value={stats?.firstActionAt ? formatDate(stats.firstActionAt) : "—"}
-              hint={stats?.lastActionAt ? `through ${formatDate(stats.lastActionAt)}` : undefined}
-            />
-            {stats?.callsTracked && (
-              <StatCard label="Calls made" value={num(stats.callsMade)} />
-            )}
-            {accountantExtra && (
-              <>
-                <StatCard
-                  label="Repayments verified"
-                  value={num(accountantExtra.verifiedCount)}
-                  hint={accountantExtra.verifiedPaise != null ? paiseToINR(accountantExtra.verifiedPaise) : undefined}
-                  accent="success"
-                />
-                <StatCard label="Repayments rejected" value={num(accountantExtra.rejectedPaymentCount)} accent="error" />
-              </>
-            )}
-          </div>
-          {stats && stats.daily.length > 0 && (
-            <div className="mt-4 rounded border border-line bg-white p-4 shadow-sm">
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted">Activity</span>
-              <Sparkline values={stats.daily.map((d) => d.actions)} color="#0C2540" />
-            </div>
-          )}
-        </>
-      )}
-    </section>
-  );
-}
-
-/** Section 3 — Your decision outcomes, off outcomeStats(). */
-function OutcomesSection({ stats, loading }: { stats: ReturnType<typeof outcomeStats> | null; loading: boolean }) {
-  return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="mb-0 text-xl">Your decision outcomes</h2>
-        <InfoTooltip content="What happened to the borrowers you approved in the selected period — the truest read on decision quality. A dash means there's nothing to measure yet, never a real zero." />
-      </div>
-      {loading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 6 }, (_, i) => (
-            <Skeleton key={i} variant="stat" />
-          ))}
-        </div>
-      ) : !stats || stats.approvedCount === 0 ? (
-        <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
-          No approvals in this period yet.
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="Now overdue"
-            value={num(stats.nowOverdue)}
-            hint={`${pct(stats.overdueRate)} of your approvals`}
-            accent={stats.nowOverdue > 0 ? "error" : "navy"}
-          />
-          <StatCard label="Repaid clean" value={num(stats.repaidClean)} accent="success" />
-          <StatCard label="Still live" value={num(stats.stillLive)} />
-          <StatCard
-            label="Your PAR"
-            value={pct(stats.parPct)}
-            hint={`${paiseToINR(stats.overdueOutstandingPaise)} overdue / ${paiseToINR(stats.liveOutstandingPaise)} live`}
-            accent={stats.parPct != null && stats.parPct > 0 ? "error" : "navy"}
-          />
-          <StatCard label="Avg sanctioned" value={stats.avgSanctionedPaise != null ? paiseToINR(stats.avgSanctionedPaise) : "—"} />
-          <StatCard
-            label="Avg bureau score"
-            value={`${score(stats.avgScoreApproved)} approved`}
-            hint={`vs ${score(stats.avgScoreRejected)} rejected`}
-          />
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** Section 4 — Your borrowers, off the server-side book aggregate (`customersApi.bookStats`). */
-function BorrowersSection({ stats, loading }: { stats: BookStatsView | null; loading: boolean }) {
-  const href = (seg?: CustomerSegment) => `/staff/customers?mine=1${seg ? `&seg=${seg}` : ""}`;
-  return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Users size={16} className="text-navy" />
-          <h2 className="mb-0 text-xl">Your borrowers</h2>
-          <InfoTooltip content="Every customer allocated to you or that you've decided on — your book, not the company's. Tiles link straight into the matching filter on Customers." />
-        </div>
-        <Link href={href()} className="inline-flex items-center gap-1 text-sm font-semibold text-navy hover:underline">
-          Open book <ArrowRight size={14} />
-        </Link>
-      </div>
-      {loading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 15 }, (_, i) => (
-            <Skeleton key={i} variant="stat" />
-          ))}
-        </div>
-      ) : !stats || stats.total === 0 ? (
-        <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
-          Nothing allocated to you yet.
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Link href={href()} className="block">
-            <StatCard label="Borrowers in your book" value={stats.total} />
-          </Link>
-          <Link href={href("active")} className="block">
-            <StatCard label="Live" value={stats.counts.active} />
-          </Link>
-          <Link href={href("overdue")} className="block">
-            <StatCard label="Overdue" value={stats.counts.overdue} accent={stats.counts.overdue > 0 ? "error" : "navy"} />
-          </Link>
-          <Link href={href("closed")} className="block">
-            <StatCard label="Closed" value={stats.counts.closed} />
-          </Link>
-          <StatCard label="Outstanding" value={paiseToINR(stats.outstandingPaise)} />
-          <StatCard label="At risk" value={paiseToINR(stats.atRiskPaise)} accent={stats.atRiskPaise > 0 ? "error" : "navy"} />
-          <DpdStackCard label="DPD split" stack={bookDpdStack(stats.dpd)} hint="Borrowers in your book, by days past due." />
-          <StatCard label="Due next 7 days" value={stats.dueNext7Days} accent="gold" />
-          <StatCard label="Avg ticket" value={stats.avgTicketPaise != null ? paiseToINR(stats.avgTicketPaise) : "—"} />
-          <StatCard label="Largest exposure" value={paiseToINR(stats.largestExposurePaise)} />
-          <StatCard label="Concentration" value={pct(stats.concentrationPct)} info="Largest single exposure as a share of your total outstanding." />
-          <StatCard label="Repeat borrowers" value={stats.repeatBorrowers} />
-          <StatCard label="Avg credit score" value={score(stats.avgCreditScore)} />
-          <StatCard label="Thin file" value={stats.thinFile} />
-          <Link href={href("incomplete")} className="block">
-            <StatCard label="To chase" value={stats.toChase} info="Abandoned mid-onboarding (DRAFT) — nobody can act on these until the borrower comes back." />
-          </Link>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** Section 5 — Collections desk, off collectionsStats(). */
-function CollectionsSection({
-  stats,
-  isHead,
-  loading,
-}: {
-  stats: ReturnType<typeof collectionsStats> | null;
-  isHead: boolean;
-  loading: boolean;
-}) {
-  return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="mb-0 text-xl">Collections desk</h2>
-        <InfoTooltip content="Your assigned cases, what you've recovered, and your settlement activity. Recovery rate is recovered ÷ outstanding across your cases." />
-      </div>
-      {loading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: isHead ? 9 : 7 }, (_, i) => (
-            <Skeleton key={i} variant="stat" />
-          ))}
-        </div>
-      ) : !stats ? (
-        <div className="rounded border border-line bg-white p-6 text-center text-sm text-muted">
-          No collections data yet.
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Open cases" value={stats.myCases.length} />
-          <DpdStackCard
-            label="By DPD bucket"
-            stack={caseBucketStack(collectionBucketCounts(stats.myCases))}
-            hint="Your open cases. Each bucket links to its full list on DPD buckets."
-            hideEmptySegments
-            emptyText="No open cases."
-          />
-          <StatCard label="Outstanding (your cases)" value={paiseToINR(stats.myCasesOutstandingPaise)} accent="error" />
-          <StatCard label="Recovered by you" value={paiseToINR(stats.recoveredPaise)} accent="success" />
-          <StatCard label="Recovery rate" value={pct(stats.recoveryRate)} />
-          <StatCard label="Awaiting validation" value={stats.awaitingValidation} accent="gold" />
-          <StatCard
-            label="Settlements proposed"
-            value={num(stats.settlementsProposed.proposed)}
-            hint={`${stats.settlementsProposed.approved} approved · ${stats.settlementsProposed.rejected} rejected`}
-          />
-          {isHead && (
-            <>
-              <StatCard label="Settlements you approved" value={stats.settlementsApproved} accent="success" />
-              <StatCard label="Conceded" value={paiseToINR(stats.concededPaise)} />
-            </>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** Section 6 — Team roster (heads only) — costs zero extra calls: summary.rows IS the team. */
-function TeamSection({
-  rows,
-  loading,
-  range,
-}: {
-  rows: import("@/lib/api/applications").StaffPerformanceRow[];
-  loading: boolean;
-  range: Range;
-}) {
-  const qs = new URLSearchParams();
-  if (range.from) qs.set("from", range.from);
-  if (range.to) qs.set("to", range.to);
-  return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="mb-0 text-xl">Team</h2>
-        <InfoTooltip content="Everyone reporting to you in the selected period. Click a row to see their full decision history." />
-      </div>
-      {loading ? (
-        <Skeleton variant="table" rows={4} cols={6} className="rounded border border-line bg-white shadow-sm" />
-      ) : rows.length === 0 ? (
-        <EmptyState title="No team data yet." className="rounded border border-line bg-white" />
-      ) : (
-        <div className="staff-table-scroll rounded border border-line bg-white shadow-sm">
-          <table className="staff-data-table">
-            <caption className="sr-only">Your team&apos;s decisions in the selected period</caption>
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Role</th>
-                <th scope="col" className="num text-right">Actions</th>
-                <th scope="col" className="text-right">Approval rate</th>
-                <th scope="col" className="text-right">Avg turnaround</th>
-                <th scope="col" className="num text-right">In queue now</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const approvalRate = r.accepted + r.rejected > 0 ? r.accepted / (r.accepted + r.rejected) : null;
-                const rowQs = new URLSearchParams(qs);
-                rowQs.set("staffId", String(r.staffId));
-                return (
-                  <tr key={r.staffId} className="hover:bg-grey-50">
-                    <td className="staff-cell">
-                      <Link href={`/staff/my-decisions?${rowQs.toString()}`} className="font-semibold text-navy hover:underline">
-                        {r.staffName}
-                      </Link>
-                    </td>
-                    <td className="text-muted">{r.role}</td>
-                    <td className="num text-right">{r.totalActions}</td>
-                    <td className="text-right">{pct(approvalRate)}</td>
-                    <td className="text-right">{mins(r.avgTurnaroundMinutes)}</td>
-                    <td className="num text-right">{r.pendingNow}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** Admin customer-book segment strip — totals match the customers page "All" count. */
-function SegmentBar({
-  counts,
-  loading,
-}: {
-  /** null until the summary is measured (still loading, or failed) — each tile then reads "—". */
-  counts: SegmentCounts | null;
-  loading: boolean;
-}) {
-  const chips: CustomerSegment[] = ["all", ...SEGMENTS];
-  return (
-    <section className="mt-8">
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="mb-0 text-xl">Customers by segment</h2>
-        <InfoTooltip content="Every customer rolled up into lifecycle segments, counted server-side. Unallocated is tinted when the backlog is non-zero." />
-      </div>
-      {loading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {chips.map((seg) => (
-            <Skeleton key={seg} variant="stat" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {chips.map((seg) => {
-            const href =
-              seg === "all" ? "/staff/customers" : `/staff/customers?seg=${seg}`;
-            const amber = seg === "unallocated" && (counts?.unallocated ?? 0) > 0;
-            const red = seg === "overdue" && (counts?.overdue ?? 0) > 0;
+      {view === "ADMIN" && (
+        <div
+          role="tablist"
+          aria-label="Admin dashboard sections"
+          className="mb-4 flex gap-1 overflow-x-auto rounded-xl bg-navy p-1.5"
+        >
+          {ADMIN_TABS.map((t) => {
+            const on = t.id === tab;
             return (
-              <Link key={seg} href={href} className="block transition hover:opacity-90">
-                <StatCard
-                  label={SEGMENT_LABEL[seg]}
-                  value={counts ? counts[seg] : null}
-                  accent={amber ? "gold" : red ? "error" : "navy"}
-                />
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** Segment colours, mildest to most severe. Never the only signal: every count is also written out. */
-const DPD_TONE: Record<string, string> = {
-  UPCOMING: "bg-info-500",
-  T0_T7: "bg-warning-500",
-  T8_T30: "bg-warning-700",
-  T30_T60: "bg-error-500",
-  T60_T90: "bg-error-700",
-  T90_PLUS: "bg-error-900",
-  d1to30: "bg-warning-500",
-  d31to60: "bg-error-500",
-  d60plus: "bg-error-800",
-};
-
-/**
- * A days-past-due tile: a small stacked bar plus a legend that writes each segment's count as text.
- * A segment that carries an `href` links there from both the bar (pointer) and the legend
- * (keyboard / screen reader — the bar itself is hidden from assistive tech).
- */
-function DpdStackCard({
-  label,
-  stack,
-  hint,
-  hideEmptySegments,
-  emptyText,
-}: {
-  label: string;
-  stack: DpdStack;
-  hint?: string;
-  /** Leave zero-count segments out of the legend (a six-bucket legend is mostly zeros otherwise). */
-  hideEmptySegments?: boolean;
-  /** Shown instead of the legend when it would be empty. */
-  emptyText?: string;
-}) {
-  const labelId = React.useId();
-  const filled = stack.segments.filter((seg) => seg.count > 0);
-  const legend = hideEmptySegments ? filled : stack.segments;
-  return (
-    <div className="rounded border border-line bg-white p-5 shadow-sm">
-      <div id={labelId} className="text-sm text-muted">{label}</div>
-      <div className="mt-3 flex h-2.5 gap-px overflow-hidden rounded-full bg-grey-100" aria-hidden>
-        {filled.map((seg) => {
-          const cls = cn("h-full min-w-[4px]", DPD_TONE[seg.key] ?? "bg-navy");
-          const style = { width: `${seg.pct}%` };
-          const title = `${seg.label}: ${seg.count}`;
-          return seg.href ? (
-            <Link key={seg.key} href={seg.href} tabIndex={-1} className={cls} style={style} title={title} />
-          ) : (
-            <span key={seg.key} className={cls} style={style} title={title} />
-          );
-        })}
-      </div>
-      {legend.length === 0 ? (
-        <p className="mt-2 text-xs text-muted">{emptyText ?? "—"}</p>
-      ) : (
-        <ul aria-labelledby={labelId} className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-          {legend.map((seg) => {
-            const body = (
-              <>
-                <span aria-hidden className={cn("h-2 w-2 flex-shrink-0 rounded-sm", DPD_TONE[seg.key] ?? "bg-navy")} />
-                <span className="text-muted">{seg.label}</span>
-                <span className="font-semibold tabular-nums text-ink">{seg.count}</span>
-              </>
-            );
-            return (
-              <li key={seg.key}>
-                {seg.href ? (
-                  <Link href={seg.href} className="inline-flex items-center gap-1 hover:underline">
-                    {body}
-                    <span className="sr-only"> — open this bucket</span>
-                  </Link>
-                ) : (
-                  <span className="inline-flex items-center gap-1">{body}</span>
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setUrl({ tab: t.id === "snapshot" ? null : t.id })}
+                className={cn(
+                  "shrink-0 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-xs font-semibold transition",
+                  on ? "bg-white text-navy shadow" : "text-white/80 hover:bg-white/10 hover:text-white",
                 )}
-              </li>
+              >
+                {t.label}
+              </button>
             );
           })}
-        </ul>
-      )}
-      {hint ? <div className="mt-1 text-xs text-muted">{hint}</div> : null}
-    </div>
-  );
-}
-
-/** Layer 2 row for a non-application actionable source (repayments / payouts / settlements / cases). */
-function ExtraActionRow({ extra }: { extra: QueueExtra }) {
-  return (
-    <li className="transition hover:bg-grey-100">
-      <Link
-        href={extra.href}
-        aria-label={`${extra.count} ${extra.label} — open queue`}
-        className="flex items-center gap-4 px-4 py-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-inset"
-      >
-        <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-full bg-gold-50 font-serif text-sm font-bold text-gold-dark">
-          {extra.count}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-ink">{extra.label}</span>
-          <span className="block text-xs text-muted">
-            {extra.count} {extra.count === 1 ? "item awaiting" : "items awaiting"} your action
-          </span>
-        </span>
-        <span className="flex flex-shrink-0 items-center gap-1 text-xs font-semibold text-navy">
-          Open queue <ArrowRight size={13} />
-        </span>
-      </Link>
-    </li>
-  );
-}
-
-/** 30-day activity trends — applications, disbursals and repayments per day with week-over-week deltas. */
-function TrendsSection({ data, loading }: { data?: TrendResponse; loading: boolean }) {
-  if (loading) {
-    // One tile per TrendCard, at the card's height (header + sparkline + footer).
-    return (
-      <div className="mb-8 grid gap-4 sm:grid-cols-3">
-        {Array.from({ length: 3 }, (_, i) => (
-          <Skeleton key={i} variant="stat" className="h-32" />
-        ))}
-      </div>
-    );
-  }
-  if (!data || data.points.length === 0) return null;
-  return (
-    <div className="mb-8 grid gap-4 sm:grid-cols-3">
-      <TrendCard
-        title="Applications"
-        color="#0C2540"
-        points={data.points}
-        pick={(p) => p.applications}
-        thisWeek={data.applicationsThisWeek}
-        lastWeek={data.applicationsLastWeek}
-      />
-      <TrendCard
-        title="Disbursals"
-        color="#14A06B"
-        points={data.points}
-        pick={(p) => p.disbursed}
-        thisWeek={data.disbursedThisWeek}
-        lastWeek={data.disbursedLastWeek}
-      />
-      <TrendCard
-        title="Repayments"
-        color="#2E9E6B"
-        points={data.points}
-        pick={(p) => p.repaid}
-        thisWeek={data.repaidThisWeek}
-        lastWeek={data.repaidLastWeek}
-      />
-    </div>
-  );
-}
-
-function TrendCard({
-  title,
-  color,
-  points,
-  pick,
-  thisWeek,
-  lastWeek,
-}: {
-  title: string;
-  color: string;
-  points: TrendPoint[];
-  pick: (p: TrendPoint) => number;
-  thisWeek: number;
-  lastWeek: number;
-}) {
-  const values = points.map(pick);
-  const total = values.reduce((s, v) => s + v, 0);
-  const delta = thisWeek - lastWeek;
-  const pctDelta = lastWeek > 0 ? Math.round((delta / lastWeek) * 100) : null;
-  return (
-    <div className="rounded border border-line bg-white p-4 shadow-sm">
-      <div className="flex items-baseline justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</span>
-        <span className="font-serif text-lg font-bold text-navy">{total}</span>
-      </div>
-      <Sparkline values={values} color={color} />
-      <div className="mt-1 flex items-center justify-between text-[8.8px] text-muted">
-        <span>Last 30 days</span>
-        <span className={delta > 0 ? "text-success-700" : delta < 0 ? "text-error-700" : ""}>
-          {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)} vs last wk{pctDelta != null ? ` (${delta >= 0 ? "+" : ""}${pctDelta}%)` : ""}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/** Minimal inline SVG sparkline — a filled area under a smoothed polyline. */
-function Sparkline({ values, color }: { values: number[]; color: string }) {
-  const w = 240;
-  const h = 40;
-  const max = Math.max(1, ...values);
-  const n = values.length;
-  const pts = values.map((v, i) => {
-    const x = n <= 1 ? 0 : (i / (n - 1)) * w;
-    const y = h - (v / max) * (h - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const line = pts.join(" ");
-  const area = `0,${h} ${line} ${w},${h}`;
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="mt-2 h-10 w-full" role="img" aria-label={`${values.length}-day trend`}>
-      <polygon points={area} fill={color} opacity={0.1} />
-      <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** Admin-only: company-wide money-movement summary + the latest transactions, with a link to the ledger. */
-function AdminTransactions({ page, loading }: { page?: TransactionPage; loading: boolean }) {
-  // Totals come off the page envelope, not the rows: the ledger is server-paged, so summing the
-  // rows in hand would quietly report one page's money as the company's.
-  // Undefined until the page lands (or when it failed) — paiseToINR renders that as "—", not ₹0.
-  const totalIn = page?.totalInPaise;
-  const totalOut = page?.totalOutPaise;
-  const latest = (page?.rows ?? []).slice(0, 5);
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center justify-end">
-        <Link href="/staff/accounting/transactions" className="inline-flex items-center gap-1 text-sm font-semibold text-navy hover:underline">
-          View all <ArrowRight size={14} />
-        </Link>
-      </div>
-
-      <div className="mb-4 grid grid-cols-2 gap-4 sm:max-w-md">
-        <div className="rounded border border-success-100 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowDownLeft size={14} className="text-success-600" /> Incoming</div>
-          <div className="mt-1 font-serif text-xl font-bold text-navy">{paiseToINR(totalIn)}</div>
         </div>
-        <div className="rounded border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowUpRight size={14} className="text-navy" /> Outgoing</div>
-          <div className="mt-1 font-serif text-xl font-bold text-navy">{paiseToINR(totalOut)}</div>
-        </div>
-      </div>
-
-      {loading ? (
-        <Skeleton rows={5} />
-      ) : latest.length === 0 ? (
-        <EmptyState title="No transactions yet." className="py-4" />
-      ) : (
-        <ul className="divide-y divide-line text-sm">
-          {latest.map((t) => {
-            const incoming = t.direction === "INCOMING";
-            return (
-              <li key={t.id} className="flex items-center justify-between gap-3 py-2">
-                <span className="min-w-0">
-                  <span className="text-ink">{t.borrowerName ?? "—"}</span>
-                  <span className="block text-xs text-muted">
-                    {t.type === "REPAYMENT" ? "Repayment" : "Disbursal"}{t.loanId != null ? ` · loan #${t.loanId}` : ""}{t.date ? ` · ${formatDate(t.date)}` : ""}
-                  </span>
-                </span>
-                <span className={`flex-shrink-0 font-semibold ${incoming ? "text-success-700" : "text-ink"}`}>
-                  {incoming ? "+" : "−"}{paiseToINR(t.amountPaise)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
       )}
+
+      <Body {...tabProps} />
+
+      <RecordsDrawer target={target} onClose={close} params={params} periodLabel={periodLabel} />
     </div>
+  );
+}
+
+export default function StaffDashboardPage() {
+  return (
+    <React.Suspense fallback={<div className="h-64 rounded border border-line bg-white" />}>
+      <Dashboard />
+    </React.Suspense>
   );
 }

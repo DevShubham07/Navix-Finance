@@ -15,7 +15,6 @@
 import { currentActingRole } from "@/lib/auth/working-role";
 import { daysBetween } from "@/lib/calc/loan-math";
 import type { JsonValue } from "@/lib/credit/provider-report";
-import type { BookStats } from "@/lib/staff/my-stats";
 
 // ---------------------------------------------------------------------------
 // Domain types (mirror the backend exactly)
@@ -328,16 +327,6 @@ export interface OutstandingScheduleView {
   asOf: OutstandingView;
   due: OutstandingView | null;
   grace: OutstandingView | null;
-}
-
-/**
- * The caller's own book, aggregated server-side — the same fifteen figures the dashboard's "your
- * borrowers" tiles used to compute in the browser over every row of the book, plus the two counts
- * its "customers allocated to you" / "now overdue" queue lines need.
- */
-export interface BookStatsView extends BookStats {
-  ownedCount: number;
-  ownedOverdue: number;
 }
 
 export interface OutstandingView {
@@ -1809,10 +1798,6 @@ export const staffApi = {
       "GET",
     ),
 
-  /** Application counts per status for the dashboard pipeline; statuses with no rows default to 0. */
-  stats: () =>
-    bff<Partial<Record<ApplicationStatus, number>>>(`${STAFF_BASE}/stats`, "GET"),
-
   /** ADMIN-only: every application (complete + incomplete) with full KYC detail + completeness. */
   listAllApplications: () => bff<AdminApplicationView[]>(`${STAFF_BASE}/all`, "GET"),
 
@@ -2137,15 +2122,6 @@ export const customersApi = {
     );
     return pages.flat();
   },
-
-  /**
-   * The caller's own book, aggregated server-side: lifecycle counts, exposure, DPD buckets and the
-   * headline averages the dashboard's "your borrowers" tiles read.
-   *
-   * The dashboard used to compute these in the browser from every row of the book — a 7.5MB fetch
-   * every 60s to render fifteen numbers.
-   */
-  bookStats: () => bff<BookStatsView>(`${CUSTOMERS_BASE}/book-stats`, "GET"),
 
   /**
    * One page of the customer book. Search, date window, segment, "mine" and paging are all applied
@@ -2845,32 +2821,400 @@ export interface CustomerDeletionResult {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard analytics — routes under /api/staff/dashboard/*
+// Dashboard analytics — routes under /api/staff/dashboard/* (contract: dashboard-contract.md)
 // ---------------------------------------------------------------------------
 
-/** One day's counts in the dashboard trend window. */
-export interface TrendPoint {
-  date: string;
-  applications: number;
-  disbursed: number;
-  repaid: number;
+export type DashView =
+  | "ADMIN"
+  | "CREDIT_HEAD"
+  | "CREDIT_EXECUTIVE"
+  | "COLLECTION_HEAD"
+  | "COLLECTION_EXECUTIVE"
+  | "TELECALLER"
+  | "DISBURSEMENT_HEAD"
+  | "ACCOUNTANT";
+
+export type DashMetric =
+  | "APPLICATIONS" | "DISBURSED" | "PENDING" | "REJECTED" | "PENDING_SANCTIONED" | "PENDING_DISBURSAL"
+  | "CLOSED" | "SETTLED" | "PART_PAID" | "DUE_ON" | "PRECLOSED_ON" | "PENDING_ON" | "RECEIVED_ON"
+  | "AUM_BUCKET" | "COLLECTION_MONTH" | "COLLECTION_GROUP" | "RELOAN_RETENTION" | "STATE" | "PINCODE"
+  | "COMPANY" | "CALENDAR_DUE" | "CALENDAR_DISBURSED" | "CALENDAR_BIRTHDAY" | "STAFF_FILES"
+  | "STAFF_CASES" | "PF_RATE" | "ROI_RATE";
+
+export type DashTone =
+  | "navy" | "emerald" | "orange" | "red" | "violet" | "teal" | "sky" | "royal" | "blue" | "amber";
+
+/** Query params common to every dashboard GET. */
+export interface DashParams {
+  view: DashView;
+  from?: string;
+  to?: string;
+  staffIds?: number[];
 }
 
-/** Trend window + this-week-vs-last-week deltas — mirrors backend TrendResponse. */
-export interface TrendResponse {
-  points: TrendPoint[];
-  applicationsThisWeek: number;
-  applicationsLastWeek: number;
-  disbursedThisWeek: number;
-  disbursedLastWeek: number;
-  repaidThisWeek: number;
-  repaidLastWeek: number;
+export interface DashKpi {
+  metric: DashMetric;
+  count: number;
+  amountPaise: number | null;
+  fresh: number;
+  reloan: number;
+  freshPaise: number | null;
+  reloanPaise: number | null;
+  previousCount: number | null;
+  previousAmountPaise: number | null;
+}
+
+export interface DashRateRow {
+  ratePct: number;
+  newCount: number;
+  repeatCount: number;
+  totalCases: number;
+  principalPaise: number;
+  netDisbursedPaise: number;
+  totalRepayablePaise: number;
+}
+
+export interface DashFactor {
+  key: string;
+  label: string;
+  value: number | null;
+  display: string;
+  weight: number;
+  stars: number | null;
+}
+
+export interface DashSnapshot {
+  from: string;
+  to: string;
+  kpis: { applications: DashKpi; disbursed: DashKpi; pending: DashKpi; rejected: DashKpi };
+  financial: {
+    totalLoan: DashKpi;
+    pendingSanctioned: DashKpi;
+    pendingDisbursal: DashKpi;
+    averageLoanPaise: number | null;
+    averageFreshPaise: number | null;
+    averageReloanPaise: number | null;
+  };
+  closed: {
+    closedCount: number;
+    settledCount: number;
+    partPaidCount: number;
+    closedPctOfDisbursed: number | null;
+    collectedClosedPaise: number;
+    collectedSettledPaise: number;
+    collectedPartPaise: number;
+    totalCollectedPaise: number;
+  };
+  rates: { disbursementRate: number | null; pendingRate: number | null; rejectionRate: number | null };
+  pfTable: DashRateRow[];
+  roiTable: DashRateRow[];
+}
+
+export interface DashMonthRow {
+  month: string;
+  dueLoans: number;
+  totalRepayablePaise: number;
+  collectedPaise: number;
+  collectionPct: number | null;
+  preclosedCount: number;
+  preclosurePct: number | null;
+  targetBp: number;
+  deficitPct: number | null;
+  targetAmountPaise: number;
+  deficitAmountPaise: number;
+  disbursedPaise: number;
+  disbursalTargetPaise: number | null;
+  achievedPct: number | null;
+}
+
+export interface DashMonthly {
+  months: DashMonthRow[];
+  marketing: { month: string; leads: number; converted: number; conversionPct: number | null }[];
+  retention: { due: number; closed: number; reloan: number; noRepeat: number; retentionPct: number | null };
+}
+
+export interface DashDaily {
+  days: { date: string; pfPaise: number; interestPaise: number; penaltyPaise: number; cumulativePaise: number }[];
+  totals: { pfPaise: number; interestPaise: number; penaltyPaise: number; revenuePaise: number };
+}
+
+export interface DashPreDay {
+  date: string | null;
+  dueCount: number;
+  dueAmountPaise: number;
+  preclosedCount: number;
+  preclosedPaise: number;
+  pendingCount: number;
+  pendingPaise: number;
+  receivedCount: number;
+  receivedPaise: number;
+  collectionPct: number | null;
+}
+export interface DashPreclosureWeek {
+  anchor: string;
+  rows: DashPreDay[];
+  total: DashPreDay;
+}
+
+export type DashBucket = "RUNNING" | "D1_30" | "D31_60" | "D61_90" | "D90_PLUS";
+export interface DashAumRow {
+  bucket: DashBucket | "TOTAL";
+  cases: number;
+  principalPaise: number;
+  owedPaise: number;
+  portfolioPct: number | null;
+}
+export interface DashAum {
+  asOf: string;
+  rows: DashAumRow[];
+  total: DashAumRow;
+  chips: {
+    currentPct: number | null;
+    d1to60Pct: number | null;
+    d61to90Pct: number | null;
+    d90PlusPct: number | null;
+    currentCount: number;
+    d1to60Count: number;
+    d61to90Count: number;
+    d90PlusCount: number;
+  };
+}
+
+export type DashGroupBy = "EXEC" | "STATE";
+export interface DashCollectionAnalysis {
+  date: string;
+  groupBy: DashGroupBy;
+  rows: {
+    key: string;
+    label: string;
+    loans: number;
+    principalPaise: number;
+    repayablePaise: number;
+    collectedCount: number;
+    collectedPaise: number;
+    averagePrincipalPaise: number | null;
+    collectedPct: number | null;
+  }[];
+}
+
+export interface DashTeam {
+  total: number;
+  active: number;
+  inactive: number;
+  invited: number;
+  byRole: { role: string; count: number }[];
+  heads: { staffId: number; name: string; role: string; score: number | null }[];
+}
+
+export type DashCalendarMode = "DUE" | "DISBURSED" | "BIRTHDAY";
+export interface DashCalendar {
+  month: string;
+  mode: string;
+  days: { date: string; count: number; amountPaise: number | null }[];
+  daysWithData: number;
+  totalCount: number;
+  totalAmountPaise: number | null;
+}
+
+export interface DashGeoRow {
+  key: string;
+  label: string;
+  state: string;
+  cases: number;
+  principalPaise: number;
+  closedCount: number;
+  dueCount: number;
+  closeRate: number | null;
+  prevPeriodCases: number;
+}
+export interface DashGeo {
+  states: DashGeoRow[];
+  pincodes: DashGeoRow[];
+}
+
+export interface DashCompanies {
+  totalCompanies: number;
+  totalUsers: number;
+  users: {
+    company: string;
+    users: number;
+    sharePct: number | null;
+    averageSalaryPaise: number | null;
+    employmentType: string | null;
+  }[];
+  performance: {
+    company: string;
+    disbursed: number;
+    disbursedPaise: number;
+    repayablePaise: number;
+    collectedPaise: number;
+    collectionPct: number | null;
+  }[];
+}
+
+export interface DashAllocRow {
+  staffId: number | null;
+  name: string;
+  assigned: number;
+  closed: number;
+  freshCount: number;
+  freshPaise: number;
+  reloanCount: number;
+  reloanPaise: number;
+  totalCount: number;
+  totalPaise: number;
+}
+export interface DashCollectionAllocation {
+  cards: {
+    assigned: number;
+    closed: number;
+    collectedCount: number;
+    collectedPaise: number;
+    previous: { assigned: number; closed: number; collectedCount: number; collectedPaise: number } | null;
+  };
+  rows: DashAllocRow[];
+  total: DashAllocRow;
+}
+
+export type DashBoard =
+  | "CREDIT_HEAD" | "CREDIT_EXECUTIVE" | "COLLECTION_HEAD" | "COLLECTION_EXECUTIVE" | "TELECALLER";
+export interface DashLeaderboardRow {
+  staffId: number;
+  name: string;
+  rank: number;
+  score: number | null;
+  stars: number | null;
+  volume: number;
+  self: boolean;
+  factors: DashFactor[] | null;
+}
+export interface DashLeaderboard {
+  board: string;
+  members: number;
+  rows: DashLeaderboardRow[];
+}
+
+export interface DashRoleCard {
+  key: string;
+  label: string;
+  count: number | null;
+  amountPaise: number | null;
+  previousCount: number | null;
+  previousAmountPaise: number | null;
+  metric: DashMetric | null;
+  tone: DashTone;
+}
+export interface DashChart {
+  id: string;
+  title: string;
+  kind: "line" | "bar";
+  keys: string[];
+  labels: Record<string, string>;
+  points: Array<Record<string, string | number>>;
+}
+export interface DashRoleView {
+  view: string;
+  cards: DashRoleCard[];
+  charts: DashChart[];
+  factors: DashFactor[] | null;
+  score: number | null;
+  ptp: { totalAfterAssignmentPaise: number; sameDayPaise: number; latestPaymentOn: string | null } | null;
+  table: DashRateRow[] | null;
+}
+
+export type DashSegment = "ALL" | "FRESH" | "RELOAN";
+export interface DashRecordsParams extends DashParams {
+  metric: DashMetric;
+  key?: string;
+  segment?: DashSegment;
+  q?: string;
+  page?: number;
+  size?: number;
+}
+export interface DashRecordRow {
+  applicationId: number | null;
+  loanId: number | null;
+  customerId: number | null;
+  customerName: string | null;
+  mobileLast4: string | null;
+  status: string | null;
+  segment: "FRESH" | "RELOAN";
+  amountPaise: number | null;
+  owedPaise: number | null;
+  disbursedOn: string | null;
+  dueDate: string | null;
+  closedOn: string | null;
+  assigneeName: string | null;
+  state: string | null;
+}
+export interface DashRecords {
+  rows: DashRecordRow[];
+  total: number;
+  freshCount: number;
+  reloanCount: number;
+  sumPaise: number | null;
+}
+
+export interface DashTarget {
+  month: string;
+  disbursalTargetPaise: number | null;
+  collectionTargetBp: number;
+}
+
+const DASH_BASE = "/api/staff/dashboard";
+
+function dashQs(p: DashParams, extra?: Record<string, string | number | undefined | null>): string {
+  const qs = new URLSearchParams();
+  qs.set("view", p.view);
+  if (p.from) qs.set("from", p.from);
+  if (p.to) qs.set("to", p.to);
+  if (p.staffIds?.length) qs.set("staffIds", p.staffIds.join(","));
+  for (const [k, v] of Object.entries(extra ?? {})) {
+    if (v != null && v !== "") qs.set(k, String(v));
+  }
+  return `?${qs.toString()}`;
 }
 
 export const dashboardApi = {
-  /** Daily applications / disbursals / repayments over the last `days` (default 30). */
-  trends: (days = 30) =>
-    bff<TrendResponse>(`/api/staff/dashboard/trends?days=${days}`, "GET"),
+  snapshot: (p: DashParams) => bff<DashSnapshot>(`${DASH_BASE}/snapshot${dashQs(p)}`, "GET"),
+  monthly: (p: DashParams, months = 4) =>
+    bff<DashMonthly>(`${DASH_BASE}/monthly${dashQs(p, { months })}`, "GET"),
+  daily: (p: DashParams) => bff<DashDaily>(`${DASH_BASE}/daily${dashQs(p)}`, "GET"),
+  preclosureWeek: (p: DashParams, date?: string) =>
+    bff<DashPreclosureWeek>(`${DASH_BASE}/preclosure-week${dashQs(p, { date })}`, "GET"),
+  aum: (p: DashParams, asOf?: string) => bff<DashAum>(`${DASH_BASE}/aum${dashQs(p, { asOf })}`, "GET"),
+  collectionAnalysis: (p: DashParams, date: string | undefined, groupBy: DashGroupBy) =>
+    bff<DashCollectionAnalysis>(`${DASH_BASE}/collection-analysis${dashQs(p, { date, groupBy })}`, "GET"),
+  team: (p: DashParams) => bff<DashTeam>(`${DASH_BASE}/team${dashQs(p)}`, "GET"),
+  calendar: (p: DashParams, month: string, mode: DashCalendarMode) =>
+    bff<DashCalendar>(`${DASH_BASE}/calendar${dashQs(p, { month, mode })}`, "GET"),
+  geo: (p: DashParams) => bff<DashGeo>(`${DASH_BASE}/geo${dashQs(p)}`, "GET"),
+  companies: (p: DashParams) => bff<DashCompanies>(`${DASH_BASE}/companies${dashQs(p)}`, "GET"),
+  collectionAllocation: (p: DashParams) =>
+    bff<DashCollectionAllocation>(`${DASH_BASE}/collection-allocation${dashQs(p)}`, "GET"),
+  leaderboard: (p: DashParams, board: DashBoard) =>
+    bff<DashLeaderboard>(`${DASH_BASE}/leaderboard${dashQs(p, { board })}`, "GET"),
+  roleView: (p: DashParams) => bff<DashRoleView>(`${DASH_BASE}/role-view${dashQs(p)}`, "GET"),
+  records: (p: DashRecordsParams) =>
+    bff<DashRecords>(
+      `${DASH_BASE}/records${dashQs(p, {
+        metric: p.metric,
+        key: p.key,
+        segment: p.segment ?? "ALL",
+        q: p.q,
+        page: p.page ?? 0,
+        size: p.size ?? 50,
+      })}`,
+      "GET",
+    ),
+  /** Months are yyyy-MM. Missing months come back with a null disbursal target and 8800 bp. */
+  targets: (view: DashView, from: string, to: string) => {
+    const qs = new URLSearchParams({ view, from, to });
+    return bff<DashTarget[]>(`${DASH_BASE}/targets?${qs.toString()}`, "GET");
+  },
+  /** Real ADMIN only. */
+  putTarget: (month: string, body: { disbursalTargetPaise: number | null; collectionTargetBp: number }) =>
+    bff<DashTarget>(`${DASH_BASE}/targets/${month}`, "PUT", body),
 };
 
 // ---------------------------------------------------------------------------

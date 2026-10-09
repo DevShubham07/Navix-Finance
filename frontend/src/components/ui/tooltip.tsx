@@ -25,7 +25,7 @@ const VIEWPORT_MARGIN = 8;
  * The popover is portalled to `document.body` and positioned from a measured snapshot of the
  * trigger's rect, rather than living in normal flow next to the icon. It used to be a plain
  * `absolute right-0` child of the trigger — which grows LEFTWARD from the icon, so the first card
- * in a horizontally-scrollable strip (`PipelineBar`'s "Started" stage) or the first filterable
+ * in a horizontally-scrollable strip (a dashboard KPI strip's first card) or the first filterable
  * column in `.staff-table-scroll` clipped the popover's left portion against the scroll
  * container's edge: the text rendered, just with its opening words cut off. A portal escapes
  * every such ancestor; the position is then clamped to the viewport on both axes so it can no
