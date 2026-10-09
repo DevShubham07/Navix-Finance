@@ -159,6 +159,7 @@ export function FinancialSummaryStrip({ loan, outstanding }: { loan: LoanView; o
       <FieldGrid cols={4} className="[&>div>div:nth-child(2)]:text-[14.4px] [&>div>div:nth-child(2)]:font-bold">
         <Field
           label="Amount due today"
+          keyLabel
           tone={closed ? "success" : "navy"}
           caption={closed && loan.closedOn ? `Closed on ${formatDate(loan.closedOn)}` : undefined}
         >
@@ -167,6 +168,7 @@ export function FinancialSummaryStrip({ loan, outstanding }: { loan: LoanView; o
         {closed && <Field label="Paid (verified)" tone="success">{money(outstanding?.verifiedPaise)}</Field>}
         <Field
           label="Interest accrued"
+          keyLabel
           tone="warning"
           caption={outstanding?.interestDays != null ? `${outstanding.interestDays} ${outstanding.interestDays === 1 ? "day" : "days"} × 1%` : undefined}
         >

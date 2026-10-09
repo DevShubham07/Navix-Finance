@@ -13,7 +13,7 @@ import { customersApi, staffApi, type CustomerDetail, type TelecallingView } fro
 import TelecallingPage from "@/app/staff/telecalling/page";
 
 // Neither is under test here; both fetch on their own.
-vi.mock("@/components/staff/application-info-dialog", () => ({ ApplicationInfoDialog: () => null }));
+vi.mock("@/components/staff/application-detail-dialog", () => ({ ApplicationDetailDialog: () => null }));
 vi.mock("@/components/staff/customer-owner-picker", () => ({ CustomerOwnerPicker: () => null }));
 
 const ME = 5;

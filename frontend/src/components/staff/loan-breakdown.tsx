@@ -11,7 +11,7 @@ import { formatDate } from "@/lib/utils";
 /**
  * The shared loan cost-breakdown `<dl>` — principal → fee/GST → net disbursed →
  * total repayable → accrued interest/penalty → paid → outstanding. Extracted
- * from `loan-detail-dialog.tsx` so the journey step popups, drawer and detail
+ * from the retired loan dialog so the journey step popups, drawer and detail
  * page render identical figures.
  *
  * `outstanding` (the penalty/prepayment-aware `OutstandingView`) is optional:

@@ -12,11 +12,10 @@
  * are now threaded through `staffApi.manualVerificationDecision(..., notes)` into the audit
  * trail (the client + backend already accepted `notes`; only the call site was dropping it).
  *
- * Query keys: the checks are read under `["verifications", id]`, the key Customer 360's tabs use for
- * the same `staffApi.verifications(id)` payload, so opening the Verifications tab there costs no extra
- * round trip. The application dialogs, the stage dialog and the force-disbursement action still read
- * that payload under `["staff-verifications", id]`, so every write here invalidates both (and the
- * application-info dialog's `["customer-verifications", id]`). `staff-verification-progress` is unchanged.
+ * Query keys: the checks are read under the single key `["verifications", id]`, shared by Customer 360's
+ * tabs, the application/stage dialogs and the force-disbursement action (one `staffApi.verifications(id)`
+ * payload, one fetch). Every write here invalidates it, plus the application-info dialog's
+ * `["customer-verifications", id]`. `staff-verification-progress` is unchanged.
  */
 
 import * as React from "react";
@@ -139,7 +138,6 @@ function stringifyDerived(value: unknown): string {
  * {@link CustomerReview} and the `/staff/verifications` dashboard.
  */
 export function VerificationChecksPanel({ applicationId }: { applicationId: number }) {
-  const qc = useQueryClient();
   // Same key and queryFn as Customer 360's tabs (customer-tabs.tsx): identical endpoint, identical
   // StepResult[] shape, no `select` — so one cache entry serves both.
   const q = useQuery({
@@ -361,9 +359,6 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
           checkType={resumeLink.checkType}
           onClose={() => {
             setResumeLink(null);
-            // The dialog refreshes `staff-verifications` after a send (a send can reopen the check);
-            // this panel reads the same rows under `verifications`, so refresh that copy too.
-            void qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
           }}
         />
       )}
@@ -523,12 +518,10 @@ function RetryDialog({
     },
     onSuccess: () => {
       onAnswered();
-      qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
+      qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verif-overview"] });
-      // Same reason as the override below: the customer tabs hold their own copy of these rows.
-      qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
-      // application-info-dialog.tsx still reads the same rows under its own key.
+      // the pop-up's Verifications tab may read the same rows under its own key.
       qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
       toast.success(`${humanizeCheck(step.checkType)} check re-run`);
       onClose();
@@ -612,16 +605,12 @@ function OverrideDialog({
     mutationFn: (d: boolean) =>
       staffApi.manualVerificationDecision(applicationId, step.checkType, d, notes.trim() || undefined),
     onSuccess: (_result, d) => {
-      qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
+      qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
       qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
       // The dashboard groups applications off this overview query; refresh it so a card's
       // failed/passed counts update immediately after an override (not on the 15s poll).
       qc.invalidateQueries({ queryKey: ["staff-verif-overview"] });
-      // The customer tabs re-fetch the same rows under one shared key, so without this an
-      // overridden check still reads its pre-override values on the Personal / Employment / Bank /
-      // Credit cards until that query happens to refetch.
-      qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
-      // application-info-dialog.tsx still reads the same rows under its own key.
+      // the pop-up's Verifications tab may read the same rows under its own key.
       qc.invalidateQueries({ queryKey: ["customer-verifications", applicationId] });
       toast.success(`${humanizeCheck(step.checkType)} overridden to ${d ? "PASS" : "FAIL"}`);
       onClose();

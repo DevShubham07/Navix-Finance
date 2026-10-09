@@ -115,11 +115,11 @@ img { max-width: 100%; display: block; }
    Only affects text with no explicit Tailwind size class; headings/labels keep their own sizes. */
 .navix-crm { font-size: 0.688rem; line-height: 1.45; }
 .navix-crm p { margin-bottom: 0.6em; }
-/* Pure-black headings + grey label text across the staff console. Excludes the dark sidebar (<aside>),
+/* Pure-black headings + grey label text across the staff console (body.staff-console, set by StaffShell, so portalled pop-ups are covered). Excludes the dark sidebar (<aside>),
    table header bars (white on navy), and disabled controls (stay grey so they read inactive).
    Placeholders, badges, buttons, links and error/success/warning tones are untouched. */
-.navix-crm { --staff-heading: #000; }
-.navix-crm :is(h1, h2, h3, h4, h5, h6, .font-serif, .text-ink, .text-muted, .text-slate, .text-neutral-500, .text-neutral-600, .text-neutral-700, .text-grey-500, .text-grey-600, .text-grey-700):not(aside *, thead *, :disabled, :disabled *, [aria-disabled="true"], [aria-disabled="true"] *, .btn, .btn *) { color: var(--staff-heading); }
+body.staff-console { --staff-heading: #000; }
+body.staff-console :is(h1, h2, h3, h4, h5, h6, .font-serif, .text-ink, .text-muted, .text-slate, .text-neutral-500, .text-neutral-600, .text-neutral-700, .text-grey-500, .text-grey-600, .text-grey-700):not(aside *, .staff-header *, thead *, .bg-navy *, .bg-navy-800 *, .bg-navy-900 *, :disabled, :disabled *, [aria-disabled="true"], [aria-disabled="true"] *, .btn, .btn *, [class*="text-error-"], [class*="text-success-"], [class*="text-warning-"], [class*="text-gold"], [class*="text-info-"], :is(a, button, [role="button"], [role="tab"], summary):hover) { color: var(--staff-heading); }
 a { color: var(--navy); text-decoration: none; }
 a:hover { color: var(--navy-700); }
 ::selection { background: var(--gold-300); color: var(--navy-800); }

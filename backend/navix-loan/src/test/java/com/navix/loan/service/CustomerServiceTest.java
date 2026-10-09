@@ -749,12 +749,51 @@ class CustomerServiceTest {
         givenAssignableCustomer("21", "Caller", "TELECALLER");
         CustomerOwner existing = new CustomerOwner();
         existing.setCustomerId(9000001L);
-        existing.setOwnerStaffId(22L);
+        existing.setOwnerStaffId(21L);
         when(ownerRepository.findById(9000001L)).thenReturn(Optional.of(existing));
 
         service.assignOwner(9000001L, null);
 
         verify(ownerRepository).deleteById(9000001L);
+    }
+
+    @Test
+    void assignOwner_asTelecaller_cannotTakeOverOrUnassignAnotherStaffersLead() {
+        givenAssignableCustomer("21", "Caller", "TELECALLER");
+        CustomerOwner existing = new CustomerOwner();
+        existing.setCustomerId(9000001L);
+        existing.setOwnerStaffId(99L);
+        when(ownerRepository.findById(9000001L)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.assignOwner(9000001L, 21L))
+                .isInstanceOf(com.navix.common.exception.ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.assignOwner(9000001L, null))
+                .isInstanceOf(com.navix.common.exception.ResourceNotFoundException.class);
+        verify(ownerRepository, org.mockito.Mockito.never()).save(any(CustomerOwner.class));
+        verify(ownerRepository, org.mockito.Mockito.never()).deleteById(any());
+    }
+
+    @Test
+    void assignOwner_asAdminActingAsTelecaller_canReassignAnotherStaffersLead() {
+        ActorContext.set(new CurrentActor("10", "Admin", "ADMIN", "TELECALLER"));
+        when(applicationRepository.findByCustomerId(9000001L))
+                .thenReturn(List.of(app(1, 9000001L, ApplicationStatus.KYC_PENDING)));
+        when(profileRepository.findByApplicationId(1L)).thenReturn(Optional.of(profile(1, "Asha Rao", "ABCDE1234F")));
+        when(loanRepository.findByCustomerId(9000001L)).thenReturn(List.of());
+        lenient().when(applicationRepository.existsByCustomerIdAndStatusNotIn(
+                9000001L, AdminApplicationService.REACHED_SANCTIONED)).thenReturn(true);
+        CustomerOwner existing = new CustomerOwner();
+        existing.setCustomerId(9000001L);
+        existing.setOwnerStaffId(99L);
+        when(ownerRepository.findById(9000001L)).thenReturn(Optional.of(existing));
+        lenient().when(staffDirectory.findStaff(99L))
+                .thenReturn(Optional.of(new StaffSummary(99L, "Other", "TELECALLER", true)));
+        when(staffDirectory.findStaff(22L))
+                .thenReturn(Optional.of(new StaffSummary(22L, "Colleague", "TELECALLER", true)));
+
+        service.assignOwner(9000001L, 22L);
+
+        verify(ownerRepository).save(any(CustomerOwner.class));
     }
 
     @Test
@@ -960,6 +999,39 @@ class CustomerServiceTest {
 
         assertThatThrownBy(() -> service.detail(9000002L))
                 .isInstanceOf(com.navix.common.exception.ResourceNotFoundException.class);
+    }
+
+    private void givenTelecallerOwnedByOther(long customerId, boolean onQueue) {
+        ActorContext.set(new CurrentActor("21", "Caller", "TELECALLER"));
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(21L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("21")).thenReturn(List.of());
+        CustomerOwner claimed = new CustomerOwner();
+        claimed.setCustomerId(customerId);
+        claimed.setOwnerStaffId(99L);
+        when(ownerRepository.findAll()).thenReturn(List.of(claimed));
+        when(applicationRepository.existsByCustomerIdAndStatusNotIn(
+                customerId, AdminApplicationService.REACHED_SANCTIONED)).thenReturn(onQueue);
+    }
+
+    @Test
+    void assertVisible_telecallerOpensOtherTelecallersCustomerWithPreSanctionApplication() {
+        givenTelecallerOwnedByOther(9000002L, true); // e.g. KYC_PENDING
+        service.assertVisible(9000002L);
+    }
+
+    @Test
+    void assertVisible_telecallerCannotOpenOtherTelecallersCustomerPastSanction() {
+        givenTelecallerOwnedByOther(9000002L, false); // only ACTIVE / CLOSED
+        assertThatThrownBy(() -> service.assertVisible(9000002L))
+                .isInstanceOf(com.navix.common.exception.ResourceNotFoundException.class);
+    }
+
+    @Test
+    void assertVisible_dsaStillRejected() {
+        ActorContext.set(new CurrentActor("77", "Agent", "DSA"));
+        assertThatThrownBy(() -> service.assertVisible(9000002L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("DSA");
     }
 
     @Test

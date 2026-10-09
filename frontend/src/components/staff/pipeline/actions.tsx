@@ -556,14 +556,14 @@ export function SanctionedRejectAction({ app }: { app: ApplicationView }) {
  * is a convenience, not the real authority check.
  *
  * The button stays disabled (with an explanatory tooltip) until the ESIGN verification row
- * reads PASS — read off the same `staff-verifications` query the KYC focus card uses, never a
+ * reads PASS — read off the same `verifications` query the KYC focus card uses, never a
  * boolean invented client-side. Confirming requires a non-empty reason, which the backend also
  * requires and folds into the `application_event` audit note.
  */
 export function AdminForceDisbursementAction({ app }: { app: ApplicationView }) {
   const refresh = useRefreshAfterAction();
   const checksQ = useQuery({
-    queryKey: ["staff-verifications", app.id],
+    queryKey: ["verifications", app.id],
     queryFn: () => staffApi.verifications(app.id),
   });
   const signed = (checksQ.data ?? []).some((s) => s.checkType === "ESIGN" && s.status === "PASS");

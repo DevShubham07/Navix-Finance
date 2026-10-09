@@ -13,7 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, Banknote, ArrowRight } from "lucide-react";
 import { customersApi, paiseToINR, type LoanView } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
-import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { OPEN_LOAN_STATUSES } from "@/components/staff/pipeline/hooks";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 
@@ -106,7 +106,12 @@ export function LoanHistory({ customerId }: { customerId: number }) {
         </div>
       )}
 
-      <LoanDetailDialog loanId={selectedLoanId} onClose={() => setSelectedLoanId(null)} />
+      <ApplicationDetailDialog
+        applicationId={c?.applications.find((a) => a.loanId === selectedLoanId)?.id ?? null}
+        loanId={selectedLoanId}
+        initialTab="loan"
+        onClose={() => setSelectedLoanId(null)}
+      />
     </div>
   );
 }

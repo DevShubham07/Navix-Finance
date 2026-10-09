@@ -156,6 +156,7 @@ export default function CustomerDetailPage() {
       {selectedAppId != null && (
         <ApplicationDetailDialog
           applicationId={selectedAppId}
+          initialTab="customer"
           onClose={() => setSelectedAppId(null)}
         />
       )}

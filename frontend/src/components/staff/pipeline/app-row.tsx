@@ -1,11 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, Route, Info } from "lucide-react";
+import { ArrowRight, Route } from "lucide-react";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { ApplicationJourney } from "@/components/staff/application-journey";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
-import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { LoanHistory } from "@/components/staff/pipeline/loan-history";
 import { type ApplicationView } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
@@ -45,7 +44,6 @@ export function AppRow({
 }) {
   const [journeyOpen, setJourneyOpen] = React.useState(false);
   const [showDetail, setShowDetail] = React.useState(false);
-  const [showInfo, setShowInfo] = React.useState(false);
   // Disbursal-then-salary fallback — the same rule DisbursementFocus uses. Full values, no
   // masking: an explicit product decision (queues are screen-shared in practice; noted for
   // security review).
@@ -127,15 +125,6 @@ export function AppRow({
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setShowInfo(true)}
-              className="btn btn-sm btn-outline btn-icon"
-              aria-label="Quick summary"
-              title="Quick summary"
-            >
-              <Info size={14} />
-            </button>
-            <button
-              type="button"
               onClick={() => setShowDetail(true)}
               className="btn btn-sm btn-outline"
               title="Open the full application detail"
@@ -169,9 +158,6 @@ export function AppRow({
           )}
           {showDetail && (
             <ApplicationDetailDialog applicationId={app.id} onClose={() => setShowDetail(false)} />
-          )}
-          {showInfo && (
-            <ApplicationInfoDialog applicationId={app.id} onClose={() => setShowInfo(false)} />
           )}
         </td>
       </tr>

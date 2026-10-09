@@ -101,7 +101,7 @@ function actorLabel(e: TimelineEvent): string {
  * The single shared audit-trail renderer for an application's `EventView[]`.
  * Vertical timeline (icon dots + connecting line) in the app's navy/gold/
  * semantic tokens. Replaces the two divergent renderers (live-pipeline
- * `EventsTrail`, loan-detail-dialog `EventLi`).
+ * `EventsTrail`, the former loan dialog's `EventLi`).
  */
 export function EventTimeline({ events, className, dense }: EventTimelineProps) {
   if (events.length === 0) {

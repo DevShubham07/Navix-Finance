@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { customersApi, staffApi, type ApplicationView, type CustomerDetail, type LoanView, type PaymentView } from "@/lib/api/applications";
@@ -92,5 +92,62 @@ describe("Repayment tab", () => {
     renderRepay("ACTIVE", [rej]);
     expect(await screen.findByText(/short by 50/)).toBeInTheDocument();
     expect(screen.getByText("Partial")).toBeInTheDocument();
+  });
+});
+
+describe("Repayment tab - Collection and profitability", () => {
+  it("lays out server-derived business figures", async () => {
+    role = "ADMIN";
+    renderRepay("OVERDUE", [{ ...pending, id: 11, status: "VERIFIED", amountPaise: 100_000, paidOn: "2026-10-05" } as PaymentView], "2026-10-01", {
+      penaltyPaise: 90_000, penaltyDays: 3, outstandingPaise: 595_000, verifiedPaise: 100_000,
+    });
+    expect(await screen.findByText("Collection & profitability")).toBeInTheDocument();
+    expect(screen.getByText("3 / 30")).toBeInTheDocument();
+    // 5,000 principal * 2% * 27 days = 2,700
+    expect(screen.getByText("₹2,700")).toBeInTheDocument();
+    expect(screen.getByText("15% of ₹6,650")).toBeInTheDocument();
+    expect(screen.getByText("Recovered vs disbursed").parentElement).toHaveTextContent("₹3,410");
+  });
+});
+
+describe("Repayment tab - closed loan figures", () => {
+  it("penalty headroom is a dash on a closed loan", async () => {
+    role = "ADMIN";
+    renderRepay("CLOSED");
+    await screen.findByText("Collection & profitability");
+    expect(screen.getByText("Penalty headroom").parentElement).toHaveTextContent("—");
+  });
+});
+
+describe("Repayment tab - colours by meaning", () => {
+  it("penalty headroom is plain ink on an active, not-overdue loan", async () => {
+    role = "ADMIN";
+    renderRepay("ACTIVE");
+    await screen.findByText("Collection & profitability");
+    expect(screen.getByText("Penalty headroom").nextElementSibling).not.toHaveClass("text-error-700");
+    expect(screen.getByText("Loan number")).toHaveClass("text-info-500");
+    expect(screen.getByText("Tenure").nextElementSibling).toHaveClass("text-warning-800");
+  });
+
+  it("penalty headroom is error once the loan is overdue", async () => {
+    role = "ADMIN";
+    renderRepay("OVERDUE", [], "2026-10-01", { penaltyPaise: 90_000, penaltyDays: 3 });
+    await screen.findByText("Collection & profitability");
+    expect(screen.getByText("Penalty headroom").nextElementSibling).toHaveClass("text-error-700");
+  });
+});
+
+describe("Repayment tab - payment amount colours", () => {
+  it("colours the amount by payment status", async () => {
+    role = "ADMIN";
+    renderRepay("ACTIVE", [
+      { ...pending, id: 1, status: "VERIFIED", amountPaise: 111_100 } as PaymentView,
+      { ...pending, id: 2, status: "PENDING_VERIFICATION", amountPaise: 222_200 } as PaymentView,
+      { ...pending, id: 3, status: "REJECTED", amountPaise: 333_300 } as PaymentView,
+    ]);
+    const pay = within((await screen.findByText("Payments")).parentElement!.parentElement!);
+    expect(await pay.findByText("₹1,111")).toHaveClass("text-success-700");
+    expect(pay.getByText("₹2,222")).toHaveClass("text-warning-800");
+    expect(pay.getByText("₹3,333")).toHaveClass("text-error-700");
   });
 });

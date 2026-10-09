@@ -2,13 +2,12 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, ArrowRight, Info, FilterX } from "lucide-react";
+import { Loader2, RefreshCw, ArrowRight, FilterX } from "lucide-react";
 import { EmptyState, ErrorState, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import { useStaffMe, useCan, NoAccessNotice } from "@/components/staff/live-pipeline";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
-import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
 import type { ExportColumn } from "@/lib/export/exporters";
@@ -78,7 +77,6 @@ export default function AdminAllApplicationsPage() {
   const [searchKey, setSearchKey] = React.useState(0);
   const [filter, setFilter] = React.useState<CompletenessFilter>("ALL");
   const [openId, setOpenId] = React.useState<number | null>(null);
-  const [infoId, setInfoId] = React.useState<number | null>(null);
   const q = useQuery({
     queryKey: ["admin-all-applications"],
     queryFn: staffApi.listAllApplications,
@@ -261,14 +259,6 @@ export default function AdminAllApplicationsPage() {
                     <td className="whitespace-nowrap text-muted">{a.riskCategory || "—"}</td>
                     <td className="whitespace-nowrap text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setInfoId(a.id)}
-                          className="btn btn-sm btn-outline btn-icon"
-                          aria-label="Quick summary"
-                          title="Quick summary"
-                        >
-                          <Info size={14} />
-                        </button>
                         <button onClick={() => setOpenId(a.id)} className="inline-flex items-center gap-1 text-navy hover:underline">
                           Open <ArrowRight size={14} />
                         </button>
@@ -287,7 +277,6 @@ export default function AdminAllApplicationsPage() {
       )}
 
       <ApplicationDetailDialog applicationId={openId} onClose={() => setOpenId(null)} />
-      <ApplicationInfoDialog applicationId={infoId} onClose={() => setInfoId(null)} />
     </div>
   );
 }

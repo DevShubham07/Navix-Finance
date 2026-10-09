@@ -167,6 +167,9 @@ public class CustomerService {
      * a telecaller sees zero rows on {@code ?seg=unallocated} and can never claim anyone, which is
      * their entire job.
      *
+     * <p>{@link #requireVisible} (single-customer reads) additionally lets a TELECALLER open any
+     * customer on their pre-sanction queue, regardless of owner.
+     *
      * <p>At most three queries, all constant in the number of customers — never per-customer work.
      */
     private CustomerScope scope() {
@@ -273,10 +276,23 @@ public class CustomerService {
         return c == null ? List.of() : c;
     }
 
+    /**
+     * A TELECALLER may open any customer with a pre-sanction application — exactly the set the
+     * telecalling queue lists ({@code AdminApplicationService.REACHED_SANCTIONED}, inverted). Reads
+     * {@code effectiveRole()} like {@link #scope()}, since this only widens a list-scoping rule;
+     * authorization of actions stays on the real role.
+     */
+    private boolean onTelecallerQueue(Long customerId) {
+        CurrentActor actor = ActorContext.get();
+        return actor != null && "TELECALLER".equals(actor.effectiveRole())
+                && applicationRepository.existsByCustomerIdAndStatusNotIn(
+                        customerId, AdminApplicationService.REACHED_SANCTIONED);
+    }
+
     /** Throws 404 (never 403 — that would confirm the customer exists) when out of the caller's scope. */
     private void requireVisible(Long customerId) {
         CustomerScope scope = scope();
-        if (scope != null && !scope.permits(customerId)) {
+        if (scope != null && !scope.permits(customerId) && !onTelecallerQueue(customerId)) {
             throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
         }
     }
@@ -994,6 +1010,15 @@ public class CustomerService {
         CustomerOwner existing = ownerRepository.findById(customerId).orElse(null);
         String oldVal = existing != null ? String.valueOf(existing.getOwnerStaffId()) : null;
 
+        // requireVisible lets a telecaller VIEW any queue customer; it must not let them take over or
+        // unassign another staffer's lead. Real role (as the check below), so ADMIN keeps full powers.
+        CurrentActor actor = ActorContext.get();
+        if (actor != null && "TELECALLER".equals(actor.role())
+                && existing != null && existing.getOwnerStaffId() != null
+                && !String.valueOf(existing.getOwnerStaffId()).equals(actor.id())) {
+            throw new ResourceNotFoundException("Customer", String.valueOf(customerId));
+        }
+
         if (staffId == null) {
             if (existing != null) {
                 ownerRepository.deleteById(customerId);
@@ -1006,7 +1031,6 @@ public class CustomerService {
                 .filter(StaffSummary::active)
                 .orElseThrow(() -> new BusinessException("INVALID_ASSIGNEE",
                         "The assignee must be an active staff member"));
-        CurrentActor actor = ActorContext.get();
         if (actor != null && "TELECALLER".equals(actor.role())
                 && !"TELECALLER".equals(assignee.role())) {
             throw new BusinessException("FORBIDDEN_ROLE",

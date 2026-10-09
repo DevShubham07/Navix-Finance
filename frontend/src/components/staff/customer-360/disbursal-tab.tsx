@@ -15,7 +15,7 @@ const NOTE = "mt-3 rounded border border-warning-100 bg-warning-50 px-3 py-2 tex
 
 export function DisbursalTab({ app, applicationId, detail }: TabCtx) {
   const verifQ = useQuery({
-    queryKey: ["staff-verifications", applicationId],
+    queryKey: ["verifications", applicationId],
     queryFn: () => staffApi.verifications(applicationId as number),
     enabled: applicationId != null,
   });
@@ -64,6 +64,7 @@ export function DisbursalTab({ app, applicationId, detail }: TabCtx) {
       <Section
         icon={dropIcon}
         title={<span className={dropTone}>Penny-drop verification</span>}
+        tone={verified ? "success" : failed ? "error" : "neutral"}
         pill={<span className="ml-1">{pill}</span>}
       >
         <FieldGrid cols={4}>
@@ -98,7 +99,7 @@ export function DisbursalTab({ app, applicationId, detail }: TabCtx) {
         )}
       </Section>
 
-      <Section icon={Banknote} title="Disbursal records">
+      <Section icon={Banknote} title="Disbursal records" tone={records.length > 0 ? "success" : "neutral"}>
         {records.length === 0 ? (
           <EmptyState title="Nothing disbursed yet." className="py-4" />
         ) : (

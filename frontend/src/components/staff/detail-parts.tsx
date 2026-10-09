@@ -13,7 +13,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Check, Upload, Trash2, FileText, ExternalLink, ChevronDown, ChevronRight, CalendarClock, type LucideIcon } from "lucide-react";
 import { useStaffSession } from "@/lib/auth/staff-session";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/tooltip";
 import { Badge, EmptyState, Skeleton, toast } from "@/components/ui";
 import { LIMIT_BASIS_LABEL, limitBasisOf } from "@/lib/customers/customer-360";
@@ -599,22 +599,34 @@ export function RemarksTab({ customerId }: { customerId: number }) {
 // Small presentational primitives
 // ---------------------------------------------------------------------------
 
+const SECTION_TONE = {
+  neutral: { border: "border-line", head: "" },
+  success: { border: "border-success-100", head: "-mx-3 -mt-3 rounded-t bg-success-50 px-3 py-1.5" },
+  warning: { border: "border-warning-100", head: "-mx-3 -mt-3 rounded-t bg-warning-50 px-3 py-1.5" },
+  error: { border: "border-error-100", head: "-mx-3 -mt-3 rounded-t bg-error-50 px-3 py-1.5" },
+  info: { border: "border-info-100", head: "-mx-3 -mt-3 rounded-t bg-info-50 px-3 py-1.5" },
+} as const;
+
 export function Section({
   title,
   children,
   icon: Icon,
   pill,
   action,
+  tone = "neutral",
 }: {
   title: React.ReactNode;
   children: React.ReactNode;
   icon?: LucideIcon;
   pill?: React.ReactNode;
   action?: React.ReactNode;
+  /** Tints only the header strip + border by meaning (design §1b). */
+  tone?: keyof typeof SECTION_TONE;
 }) {
+  const t = SECTION_TONE[tone];
   return (
-    <div className="rounded border border-line bg-white p-3">
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+    <div className={cn("rounded border bg-white p-3", t.border)}>
+      <div className={cn("mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted", t.head)}>
         {Icon && <Icon size={15} className="shrink-0" />}
         <span>{title}</span>
         {pill}
@@ -673,7 +685,7 @@ export function Bool({ on }: { on?: boolean | null }) {
 
 /**
  * One call-log row, shared verbatim between this tab and the loan detail modal's Calls tab
- * (`loan-detail-dialog.tsx`) so the two never render the same data two different ways. Shows
+ * (the pop-up's Loan tab) so the two never render the same data two different ways. Shows
  * the loan tag whenever the log carries one — the modal filters rows before handing them here,
  * so a bare `Loan #id` is enough context in either place.
  */

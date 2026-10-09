@@ -366,7 +366,7 @@ function KycSection({ applicationId, showCreditBrief }: { applicationId: number;
     retry: false,
   });
   const checksQ = useQuery({
-    queryKey: ["staff-verifications", applicationId],
+    queryKey: ["verifications", applicationId],
     queryFn: () => staffApi.verifications(applicationId),
     retry: false,
   });

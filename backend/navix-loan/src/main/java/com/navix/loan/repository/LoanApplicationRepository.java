@@ -44,6 +44,9 @@ public interface LoanApplicationRepository
      *  short-circuit on an empty collection; {@code not in ()} is not valid SQL. */
     List<LoanApplication> findByStatusNotIn(Collection<ApplicationStatus> statuses);
 
+    /** True when the customer has any application outside {@code statuses}; callers must pass a non-empty set. */
+    boolean existsByCustomerIdAndStatusNotIn(Long customerId, Collection<ApplicationStatus> statuses);
+
     List<LoanApplication> findByAssignedExecutiveIdAndStatusOrderByCreatedAtDescIdDesc(
             Long assignedExecutiveId, ApplicationStatus status);
 

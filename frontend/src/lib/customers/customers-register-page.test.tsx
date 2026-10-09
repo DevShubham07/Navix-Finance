@@ -31,20 +31,12 @@ vi.mock("next/navigation", () => ({
 
 // The real dialogs fetch whole files; here they only have to prove what they were opened on.
 vi.mock("@/components/staff/application-detail-dialog", () => ({
-  ApplicationDetailDialog: ({ applicationId }: { applicationId: number | null }) =>
-    applicationId == null ? null : <div role="dialog">Application {applicationId}</div>,
+  ApplicationDetailDialog: ({ applicationId, initialTab }: { applicationId: number | null; initialTab?: string }) =>
+    applicationId == null ? null : <div role="dialog">Application {applicationId} tab={initialTab}</div>,
 }));
 vi.mock("@/components/staff/customer-detail-dialog", () => ({
   CustomerDetailDialog: ({ customerId }: { customerId: number | null }) =>
     customerId == null ? null : <div role="dialog">Customer {customerId}</div>,
-}));
-vi.mock("@/components/staff/application-info-dialog", () => ({
-  ApplicationInfoDialog: ({ applicationId, customerId }: { applicationId?: number | null; customerId?: number | null }) =>
-    applicationId == null && customerId == null ? null : (
-      <div role="dialog">
-        Summary application={applicationId ?? "none"} customer={customerId ?? "none"}
-      </div>
-    ),
 }));
 
 function row(overrides: Partial<CustomerSummary> = {}): CustomerSummary {
@@ -145,7 +137,7 @@ describe("CustomersPage", () => {
     await screen.findByText("Asha Verma");
 
     fireEvent.click(within(rowFor("Asha Verma")).getByRole("button", { name: "Open" }));
-    expect(within(screen.getByRole("dialog")).getByText("Application 318")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Application 318 tab=customer")).toBeInTheDocument();
     expect(screen.queryByText(/^Customer \d+$/)).not.toBeInTheDocument();
     expect(get).not.toHaveBeenCalled();
   });
@@ -156,22 +148,6 @@ describe("CustomersPage", () => {
 
     fireEvent.click(within(rowFor("Bilal Khan")).getByRole("button", { name: "Open" }));
     expect(within(screen.getByRole("dialog")).getByText("Customer 77")).toBeInTheDocument();
-  });
-
-  it("opens the quick summary on the application id when the row has one, else on the customer", async () => {
-    renderPage();
-    await screen.findByText("Asha Verma");
-
-    fireEvent.click(within(rowFor("Asha Verma")).getByRole("button", { name: "Quick summary" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Summary application=318 customer=none");
-  });
-
-  it("opens the quick summary on the customer when the row has no application", async () => {
-    renderPage();
-    await screen.findByText("Bilal Khan");
-
-    fireEvent.click(within(rowFor("Bilal Khan")).getByRole("button", { name: "Quick summary" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Summary application=none customer=77");
   });
 
   it("says how the register is ordered, visibly and to a screen reader", async () => {

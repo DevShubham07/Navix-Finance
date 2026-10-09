@@ -16,10 +16,9 @@
  */
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw, ArrowRight, Eye } from "lucide-react";
+import { Loader2, RefreshCw, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
 import { useTableSort, SortableTh } from "@/components/staff/sortable-table";
@@ -135,9 +134,14 @@ export default function CollectionsBucketPage() {
   // Deep link from the global-search palette (`?q=…`).
   const [query, setQuery] = React.useState(search.get("q") ?? "");
 
-  // Quick-view only. "Open" still navigates to the collections case workspace — that page is where
-  // interactions, settlement and the case itself get created, and none of that lives in this dialog.
-  const [previewApplicationId, setPreviewApplicationId] = React.useState<number | null>(null);
+  // The pop-up opens on the Repayment tab. `?open=<loanId>` deep links (notifications, the old
+  // `/staff/collections/<loanId>` case URL) open it too, resolving the application from the loan.
+  const openParam = Number(search.get("open"));
+  const [openLoan, setOpenLoan] = React.useState<{ loanId: number; applicationId: number | null } | null>(
+    Number.isFinite(openParam) && openParam > 0 ? { loanId: openParam, applicationId: null } : null,
+  );
+  // `?tab=collections` (from the case-URL redirect) opens that tab; the DPD row Open stays on Repayment.
+  const [openTab, setOpenTab] = React.useState(search.get("tab") === "collections" ? "collections" : "repayment");
   const [period, setPeriod] = React.useState<QueuePeriod>("ALL");
   const [custom, setCustom] = React.useState<QueueRange>({});
   const range = rangeFor(period, custom);
@@ -556,19 +560,15 @@ export default function CollectionsBucketPage() {
                     <td className="staff-sticky-actions">
                       <div className="flex items-center justify-end gap-1.5">
                         <AdminLogPaymentButton loanId={r.loanId} loanStatus={r.loanStatus} compact />
-                        {r.applicationId != null && (
-                          <button
-                            onClick={() => setPreviewApplicationId(r.applicationId)}
-                            className="btn btn-sm btn-outline btn-icon"
-                            aria-label="Quick view application"
-                            title="Quick view — see the application without leaving the worklist"
-                          >
-                            <Eye size={14} />
-                          </button>
-                        )}
-                        <Link href={`/staff/collections/${r.loanId}`} className="btn btn-sm btn-outline">
+                        <button
+                          onClick={() => {
+                            setOpenTab("repayment");
+                            setOpenLoan({ loanId: r.loanId, applicationId: r.applicationId });
+                          }}
+                          className="btn btn-sm btn-outline"
+                        >
                           Open <ArrowRight size={14} />
-                        </Link>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -597,8 +597,19 @@ export default function CollectionsBucketPage() {
       />
 
       <ApplicationDetailDialog
-        applicationId={previewApplicationId}
-        onClose={() => setPreviewApplicationId(null)}
+        applicationId={openLoan?.applicationId ?? null}
+        loanId={openLoan?.loanId ?? null}
+        initialTab={openTab}
+        onClose={() => {
+          setOpenLoan(null);
+          // Drop `?open=` so a refresh does not reopen what was just closed.
+          if (search.has("open")) {
+            const next = new URLSearchParams(search.toString());
+            next.delete("open");
+            next.delete("tab");
+            router.replace(next.size ? `/staff/collections?${next}` : "/staff/collections", { scroll: false });
+          }
+        }}
       />
     </div>
   );

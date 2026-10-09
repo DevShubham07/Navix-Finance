@@ -96,7 +96,7 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
           compact
         />
         {kase && (
-          <Link href={`/staff/collections/${app.loanId}`} className="btn btn-sm btn-outline">
+          <Link href={`/staff/collections?open=${app.loanId}`} className="btn btn-sm btn-outline">
             Case <ArrowRight size={14} />
           </Link>
         )}
@@ -127,7 +127,7 @@ export function CollectionAssignActions({ app, compact }: { app: ApplicationView
       )}
 
       {kase && (
-        <Link href={`/staff/collections/${app.loanId}`} className="btn btn-sm btn-outline">
+        <Link href={`/staff/collections?open=${app.loanId}`} className="btn btn-sm btn-outline">
           Case <ArrowRight size={14} />
         </Link>
       )}

@@ -15,12 +15,16 @@ import {
   FinancialSummaryStrip,
   LoanCardHeader,
   LoanSelector,
+  todayISO,
   useLoanData,
   useSelectedLoanId,
 } from "@/components/staff/customer-360/loan-card";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { buildLedger, type LedgerRow } from "@/lib/calc/loan-ledger";
 import { daysBetween } from "@/lib/calc/loan-math";
+import { bucketOf, collectedPct, dpdDays, lastVerifiedPayment, penaltyHeadroom, recoveredVsDisbursed } from "@/lib/calc/loan-kpis";
+import { useCollectionsCase } from "@/components/staff/customer-360/collections-tab";
+import { COLLECTION_BUCKETS } from "@/lib/collection-buckets";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { formatApiError } from "@/lib/api/errors";
 import { isoDayToLocalDate, istCalendarToday } from "@/lib/customers/customer-360";
@@ -29,6 +33,7 @@ import {
   paiseToINR,
   staffApi,
   type LoanView,
+  type OutstandingView,
   type PaymentView,
   REJECTION_REASON_LABEL,
   type RejectionReasonCode,
@@ -152,16 +157,18 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
         )}
       </Section>
 
+      <BusinessFigures loan={loan} payments={payments} ledger={ledger} outstanding={outstanding} />
+
       <FieldGrid cols={7} className="border-y border-line py-2.5">
-        <Field label="Loan number">#{loan.id}</Field>
+        <Field label="Loan number" keyLabel>#{loan.id}</Field>
         <Field label="Max eligible">{inr(app?.eligibleLimitPaise)}</Field>
         <Field label="Requested">{inr(app?.amountRequestedPaise)}</Field>
         <Field label="Sanctioned on">{app?.sanctionedAt ? formatDate(app.sanctionedAt) : null}</Field>
-        <Field label="Disbursed on">{loan.disbursedOn ? formatDate(loan.disbursedOn) : null}</Field>
-        <Field label="Repayment date" tone={ledger.isOverdue ? "error" : "ink"} caption="salary day">
+        <Field label="Disbursed on" keyLabel>{loan.disbursedOn ? formatDate(loan.disbursedOn) : null}</Field>
+        <Field label="Repayment date" keyLabel tone={ledger.isOverdue ? "error" : "ink"} caption="salary day">
           {due ? formatDate(due) : null}
         </Field>
-        <Field label="Tenure">{due && disbursed ? `${daysBetween(disbursed, due)} days` : null}</Field>
+        <Field label="Tenure" tone="warning">{due && disbursed ? `${daysBetween(disbursed, due)} days` : null}</Field>
       </FieldGrid>
 
       <Section title="Payments" pill={<Badge variant="info">{payments.length}</Badge>}>
@@ -193,7 +200,7 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
                   return (
                     <tr key={p.id}>
                       <td className="text-muted">{i + 1}</td>
-                      <td className="num font-bold text-ink">{paiseToINR(p.amountPaise)}</td>
+                      <td className={`num font-bold ${p.status === "VERIFIED" ? "text-success-700" : p.status === "REJECTED" ? "text-error-700" : p.status === "PENDING_VERIFICATION" ? "text-warning-800" : "text-ink"}`}>{paiseToINR(p.amountPaise)}</td>
                       <td><Badge variant="neutral">{METHOD_LABEL[p.method] ?? p.method}</Badge></td>
                       <td className="font-mono text-xs">{p.txnRef || "—"}</td>
                       <td>
@@ -272,6 +279,56 @@ function PaymentsPanel({ ctx, loan }: { ctx: TabCtx; loan: LoanView }) {
         onSubmit={(reason, note) => rejectTarget && reject.mutate({ p: rejectTarget, reason, note })}
       />
     </>
+  );
+}
+
+/** "Collection & profitability": every figure is the server's or a count/ratio around it. */
+function BusinessFigures({
+  loan, payments, ledger, outstanding,
+}: {
+  loan: LoanView;
+  payments: PaymentView[];
+  ledger: ReturnType<typeof buildLedger>;
+  outstanding: OutstandingView | null;
+}) {
+  const col = useCollectionsCase(loan.id);
+  // A closed loan stops at closedOn; the server case dpd runs to today.
+  const dpd = loan.closedOn ? dpdDays(loan, istCalendarToday()) : (col.case?.dpd ?? dpdDays(loan, istCalendarToday()));
+  const bucket = (loan.closedOn ? null : col.case?.bucket) ?? (dpd != null ? bucketOf(dpd) : null);
+  const head = penaltyHeadroom(loan.principalPaise, outstanding?.penaltyDays ?? 0);
+  const last = lastVerifiedPayment(payments, loan.id);
+  const collected = ledger.rows.find((r) => r.key === "total")!.receivedPaise;
+  const pct = collectedPct(collected, loan.totalRepayablePaise);
+  const recovered = recoveredVsDisbursed(collected, loan.netDisbursedPaise);
+  const settled = outstanding?.settledAmountPaise ?? null;
+  const closed = loan.status === "CLOSED";
+  const ptpOverdue = col.ptp != null && !closed && col.ptp < todayISO();
+  return (
+    <Section title="Collection & profitability">
+      <FieldGrid cols={4}>
+        <Field label="DPD" keyLabel tone={dpd != null && dpd > 0 ? "error" : "ink"} caption={bucket ? COLLECTION_BUCKETS.find((b) => b.bucket === bucket)?.label : undefined}>
+          {dpd != null ? `${dpd} ${dpd === 1 ? "day" : "days"}` : null}
+        </Field>
+        <Field label="Penalty days used" tone={head.used > 0 ? "error" : "ink"} caption="of the 30-day cap">{`${head.used} / 30`}</Field>
+        <Field label="Penalty headroom" tone={!closed && (ledger.isOverdue || head.used > 0) && head.remainingPaise > 0 ? "error" : "ink"} caption={closed ? undefined : `${head.remainingDays} days left × 2%`}>{closed ? null : paiseToINR(head.remainingPaise)}</Field>
+        <Field label={ledger.isOverdue ? "Days overdue" : "Days to due"} tone={ledger.isOverdue ? "error" : "ink"}>
+          {ledger.daysToDue == null ? null : ledger.isOverdue ? `${ledger.daysOverdue} days` : `${ledger.daysToDue} days`}
+        </Field>
+        <Field label="Last verified payment" keyLabel tone="success" caption={last?.paidOn ? formatDate(last.paidOn) : undefined}>
+          {last ? paiseToINR(last.amountPaise) : null}
+        </Field>
+        <Field label="Collected vs repayable" tone="success" caption={pct != null ? `${pct}% of ${paiseToINR(loan.totalRepayablePaise)}` : undefined}>
+          {paiseToINR(collected)}
+        </Field>
+        <Field label="Recovered vs disbursed" tone={recovered >= 0 ? "success" : "error"} caption={`net disbursed ${paiseToINR(loan.netDisbursedPaise)}`}>
+          {`${recovered < 0 ? "-" : ""}${paiseToINR(Math.abs(recovered))}`}
+        </Field>
+        <Field label="Settlement">{settled != null ? `Approved ${paiseToINR(settled)}` : "None"}</Field>
+        <Field label="Promise to pay" tone={ptpOverdue ? "error" : "ink"} caption={ptpOverdue ? "overdue" : undefined}>
+          {col.ptp ? formatDate(col.ptp) : null}
+        </Field>
+      </FieldGrid>
+    </Section>
   );
 }
 

@@ -37,6 +37,7 @@ export function Field({
   tone = "ink",
   mono,
   caption,
+  keyLabel,
   className,
 }: {
   label: React.ReactNode;
@@ -44,12 +45,14 @@ export function Field({
   tone?: keyof typeof TONE_CLASS;
   mono?: boolean;
   caption?: React.ReactNode;
+  /** Key field: label in the info blue (competitor-style) instead of black. */
+  keyLabel?: boolean;
   className?: string;
 }) {
   const empty = children == null || children === "";
   return (
     <div className={cn("min-w-0", className)}>
-      <div className="text-[8.8px] font-semibold uppercase tracking-wide text-black">{label}</div>
+      <div className={cn("text-[8.8px] font-semibold uppercase tracking-wide", keyLabel ? "text-info-500" : "text-black")}>{label}</div>
       <div className={cn("break-words text-[10.4px]", TONE_CLASS[tone], mono && "font-mono tabular-nums")}>
         {empty ? "—" : children}
       </div>

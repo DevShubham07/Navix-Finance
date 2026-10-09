@@ -54,7 +54,7 @@ public class AdminApplicationService {
 
     /** Statuses that mean the application has reached (or passed) SANCTIONED — everything else is
      *  "still pre-sanction" and belongs in the telecalling queue (work item 10). */
-    private static final Set<ApplicationStatus> REACHED_SANCTIONED = EnumSet.of(
+    static final Set<ApplicationStatus> REACHED_SANCTIONED = EnumSet.of(
             ApplicationStatus.SANCTIONED, ApplicationStatus.DISBURSEMENT_PENDING,
             ApplicationStatus.ACCOUNTANT_PENDING, ApplicationStatus.DISBURSEMENT_FAILED,
             ApplicationStatus.DISBURSED, ApplicationStatus.ACTIVE, ApplicationStatus.OVERDUE,

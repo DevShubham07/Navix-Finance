@@ -52,7 +52,7 @@ export function SanctionTab({ app, applicationId, detail, customerId }: TabCtx) 
     enabled: applicationId != null,
   });
   const verifQ = useQuery({
-    queryKey: ["staff-verifications", applicationId],
+    queryKey: ["verifications", applicationId],
     queryFn: () => staffApi.verifications(applicationId as number),
     enabled: applicationId != null,
   });
@@ -107,6 +107,7 @@ export function SanctionTab({ app, applicationId, detail, customerId }: TabCtx) 
       <Section
         icon={ClipboardCheck}
         title="Decision"
+        tone={rejected ? "error" : sanctioned ? "success" : "warning"}
         pill={rejected ? pill("error", "Rejected") : sanctioned ? pill("success", "Sanctioned") : pill("warning", "Pending")}
       >
         {rejected ? (
@@ -117,9 +118,9 @@ export function SanctionTab({ app, applicationId, detail, customerId }: TabCtx) 
           </FieldGrid>
         ) : (
           <FieldGrid cols={4}>
-            <Field label="Sanctioned amount" tone="navy">{ceiling}</Field>
+            <Field label="Sanctioned amount" keyLabel tone="navy">{ceiling}</Field>
             <Field
-              label="Approved repayment date"
+              keyLabel label="Approved repayment date"
               caption={app.salaryCreditDay != null ? `on the borrower's salary day (day ${app.salaryCreditDay})` : undefined}
             >
               {repayDate}
@@ -184,10 +185,10 @@ export function SanctionTab({ app, applicationId, detail, customerId }: TabCtx) 
             <div className="mt-3 border-t border-line pt-3">
               <div className="mb-2 text-[9.6px] font-bold uppercase tracking-wide text-muted">Borrower acceptance</div>
               <FieldGrid cols={4}>
-                <Field label="Accepted amount" tone="navy" caption={ceiling ? `within the ${ceiling} ceiling` : undefined}>
+                <Field label="Accepted amount" keyLabel tone="navy" caption={ceiling ? `within the ${ceiling} ceiling` : undefined}>
                   {app.amountRequestedPaise != null ? paiseToINR(app.amountRequestedPaise) : null}
                 </Field>
-                <Field label="Accepted repayment date">{repayDate}</Field>
+                <Field label="Accepted repayment date" keyLabel>{repayDate}</Field>
                 <Field label="Accepted at">{formatDateTime(acceptEvent.at)}</Field>
                 <Field label="Consent / T&C" tone="success">✓ Yes</Field>
               </FieldGrid>

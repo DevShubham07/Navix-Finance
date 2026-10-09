@@ -6,7 +6,7 @@ import { Loader2, RefreshCw, Bell, UserPlus, Send, AlertTriangle } from "lucide-
 import { ConfirmDialog, EmptyState, ErrorState, Skeleton, StatusBadge, toast } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { NoAccessNotice, errMessage, useStaffMe, useCan } from "@/components/staff/live-pipeline";
-import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { customersApi, staffApi, type TelecallingView } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
@@ -168,7 +168,7 @@ export default function TelecallingPage() {
         </div>
       )}
 
-      <ApplicationInfoDialog applicationId={infoId} onClose={() => setInfoId(null)} />
+      <ApplicationDetailDialog applicationId={infoId} initialTab="customer" onClose={() => setInfoId(null)} />
     </div>
   );
 }

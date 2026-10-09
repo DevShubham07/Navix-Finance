@@ -38,6 +38,7 @@ export function DedupeTab({ customerId, onTabChange }: TabCtx) {
     <div className="space-y-3">
       <Section
         title="Aadhaar duplicate"
+        tone={clear || passed ? "neutral" : aadhaar.status === "FAIL" ? "error" : "warning"}
         icon={Copy}
         pill={
           <Badge variant={clear || passed ? "success" : aadhaar.status === "FAIL" ? "error" : "warning"} size="sm">
@@ -77,7 +78,7 @@ export function DedupeTab({ customerId, onTabChange }: TabCtx) {
         )}
       </Section>
 
-      <Section title="Blocklist hits" icon={ShieldAlert}>
+      <Section title="Blocklist hits" icon={ShieldAlert} tone={blocklistHits.length > 0 ? "error" : "neutral"}>
         {blocklistHits.length === 0 ? (
           <EmptyState title="No blocklist match" className="py-4" />
         ) : (
@@ -106,6 +107,7 @@ export function DedupeTab({ customerId, onTabChange }: TabCtx) {
 
       <Section
         title="Rejection register"
+        tone={rejection ? "error" : "neutral"}
         icon={Ban}
         pill={
           <Badge variant={rejection ? "error" : "success"} size="sm">

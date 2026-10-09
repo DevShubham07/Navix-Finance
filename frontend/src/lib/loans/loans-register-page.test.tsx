@@ -5,7 +5,7 @@
  *    applying a range changes no window, so it keeps the page;
  *  - the segment-chip counts hold their last values while a new date range loads, rather than
  *    flashing "(0)";
- *  - opening a row hands the dialog the customer and application ids the row already carries.
+ *  - opening a row hands the pop-up the application id the row already carries, on the Loan tab.
  *
  * Lives under `src/lib/loans` beside the helpers it exercises; the page itself is imported by path.
  */
@@ -26,20 +26,20 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
-// The real dialog fetches the whole loan; here it only has to prove what it was opened with.
-vi.mock("@/components/staff/loan-detail-dialog", () => ({
-  LoanDetailDialog: ({
+// The real dialog fetches whole files; here it only has to prove what it was opened with.
+vi.mock("@/components/staff/application-detail-dialog", () => ({
+  ApplicationDetailDialog: ({
     loanId,
-    customerId,
     applicationId,
+    initialTab,
   }: {
-    loanId: number | null;
-    customerId?: number | null;
-    applicationId?: number | null;
+    loanId?: number | null;
+    applicationId: number | null;
+    initialTab?: string;
   }) =>
     loanId == null ? null : (
       <div role="dialog">
-        Loan {loanId} customer={customerId ?? "none"} application={applicationId ?? "none"}
+        Loan {loanId} application={applicationId ?? "none"} tab={initialTab}
       </div>
     ),
 }));
@@ -216,18 +216,18 @@ describe("LoansPage", () => {
     expect(screen.queryByText("No loans.")).not.toBeInTheDocument();
   });
 
-  it("opens the dialog with the row's own customer and application ids", async () => {
+  it("opens the pop-up on the Loan tab with the row's own application id", async () => {
     renderPage();
     await screen.findByText("Borrower 3");
 
     fireEvent.click(within(rowFor("Borrower 3")).getByRole("button", { name: "#3" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Loan 3 customer=103 application=203");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Loan 3 application=203 tab=loan");
   });
 
   it("opens a ?open= deep link on the loan id alone", async () => {
     window.history.replaceState({}, "", "/staff/loans?q=7&open=7");
     renderPage();
 
-    expect(await screen.findByRole("dialog")).toHaveTextContent("Loan 7 customer=none application=none");
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Loan 7 application=none tab=loan");
   });
 });

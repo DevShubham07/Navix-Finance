@@ -10,8 +10,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Loader2, XCircle } from "lucide-react";
 import { EmptyState, Skeleton, StatusBadge, toast } from "@/components/ui";
 import {
-  Banknote, Building2, CalendarClock, Copy, FileSignature, Files, Gauge, History, IndianRupee,
-  Landmark, MapPin, MessageSquare, Repeat, Route, ShieldCheck, User, Users,
+  Banknote, Building2, CalendarClock, Copy, FileSignature, Files, Gauge, HandCoins, History, IndianRupee,
+  Landmark, MapPin, MessageSquare, Plug, Repeat, Route, ShieldCheck, User, Users,
 } from "lucide-react";
 import { type PillTabDef } from "@/components/ui/pill-tabs";
 import type { TabCtx } from "@/components/staff/customer-360/types";
@@ -20,6 +20,7 @@ import { MandateTab } from "@/components/staff/customer-360/mandate-tab";
 import { ReferencesTab } from "@/components/staff/customer-360/references-tab";
 import { LoanTab } from "@/components/staff/customer-360/loan-tab";
 import { RepaymentTab } from "@/components/staff/customer-360/repayment-tab";
+import { CollectionsTab } from "@/components/staff/customer-360/collections-tab";
 import { SanctionTab } from "@/components/staff/customer-360/sanction-tab";
 import { DisbursalTab } from "@/components/staff/customer-360/disbursal-tab";
 import { DocumentsTab as DocumentsCardsTab } from "@/components/staff/customer-360/documents-tab";
@@ -29,11 +30,11 @@ import { AddressesTab } from "@/components/staff/customer-360/addresses-tab";
 import { CommunicationTab } from "@/components/staff/customer-360/communication-tab";
 import { DedupeTab } from "@/components/staff/customer-360/dedupe-tab";
 import { FollowupsTab } from "@/components/staff/customer-360/followups-tab";
+import { ThirdPartyTab } from "@/components/staff/customer-360/third-party-tab";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { formatRupees } from "@/components/staff/credit/tradeline-table";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
-import { SkipTracePanel } from "@/components/staff/skip-trace-panel";
 import { PermissionGate } from "@/components/staff/live-pipeline";
 import {
   NeedsManualReviewBadge,
@@ -61,13 +62,14 @@ import {
   type ApplicationStatus,
 } from "@/lib/api/applications";
 
-/** The 17 lifecycle-ordered tabs shared by the pop-up and the full customer page. */
+/** The 19 lifecycle-ordered tabs shared by the pop-up and the full customer page. */
 export const CUSTOMER_TABS: PillTabDef[] = [
   { key: "customer", label: "Customer", icon: User },
   { key: "loan", label: "Loan", icon: Landmark },
   { key: "sanction", label: "Sanction", icon: FileSignature },
   { key: "disbursal", label: "Disbursal", icon: Banknote },
   { key: "repayment", label: "Repayment", icon: IndianRupee },
+  { key: "collections", label: "Collections", icon: HandCoins },
   { key: "banking", label: "Banking", icon: Building2 },
   { key: "credit", label: "Credit report", icon: Gauge },
   { key: "journey", label: "Journey", icon: Route },
@@ -85,6 +87,7 @@ export const CUSTOMER_TABS: PillTabDef[] = [
     disabled: true,
     badge: "Coming soon",
   },
+  { key: "third-party", label: "Third-party logs", icon: Plug },
   { key: "verifications", label: "Verifications", icon: ShieldCheck },
 ];
 
@@ -145,6 +148,8 @@ export function CustomerTabBody({
         return <DisbursalTab {...ctx} />;
       case "repayment":
         return <RepaymentTab {...ctx} />;
+      case "collections":
+        return <CollectionsTab {...ctx} />;
       case "banking":
         return <BankingTab {...ctx} />;
       case "credit":
@@ -165,15 +170,10 @@ export function CustomerTabBody({
         return <MandateTab />;
       case "verifications":
         // Every check on the file, penny drop included, with the same per-check detail and manual
-        // override the application dialog offers — then the third-party skip-trace lookups.
-        return applicationId != null ? (
-          <div className="space-y-4">
-            <VerificationChecksPanel applicationId={applicationId} />
-            <SkipTracePanel customerId={customerId} />
-          </div>
-        ) : (
-          noApp
-        );
+        // override the application dialog offers.
+        return applicationId != null ? <VerificationChecksPanel applicationId={applicationId} /> : noApp;
+      case "third-party":
+        return <ThirdPartyTab {...ctx} />;
       case "addresses":
         return <AddressesTab {...ctx} />;
       case "dedupe":

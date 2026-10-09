@@ -55,7 +55,8 @@ export type Permission =
   // department Heads + ADMIN see the whole book, everyone else is scoped server-side to customers
   // assigned to them or that they've recorded a decision on. This token mirrors the backend
   // CustomerService.FULL_CUSTOMER_VIEW_ROLES set; the real enforcement is there, not here (the UI
-  // check only drives copy — never trust it for access).
+  // check only drives copy — never trust it for access). A TELECALLER can additionally open any
+  // customer on the pre-sanction telecalling queue, whoever owns them.
   // Only ADMIN may edit / take lifecycle actions. customer:assign is Heads + TELECALLER (+ ADMIN) —
   // allocate book of business without granting KYC-edit/delete.
   | "customer:view"

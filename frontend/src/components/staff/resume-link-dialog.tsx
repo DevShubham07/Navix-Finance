@@ -38,7 +38,7 @@ export function ResumeLinkDialog({
   });
 
   const invalidateAfterShare = () => {
-    qc.invalidateQueries({ queryKey: ["staff-verifications", applicationId] });
+    qc.invalidateQueries({ queryKey: ["verifications", applicationId] });
     qc.invalidateQueries({ queryKey: ["staff-verification-progress", applicationId] });
     qc.invalidateQueries({ queryKey: ["resume-link", applicationId, checkType] });
   };

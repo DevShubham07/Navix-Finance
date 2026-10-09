@@ -56,7 +56,7 @@ export function CustomerTab({ detail: c, customerId, app, onChanged }: TabCtx) {
       <div className="grid gap-3 md:grid-cols-3">
         <Section title="Basic information" icon={User}>
           <FieldGrid cols={2}>
-            <Field label="Customer no" mono>#{customerId}</Field>
+            <Field label="Customer no" keyLabel mono>#{customerId}</Field>
             <Field label="Full name" tone="navy">{p?.fullName}</Field>
             <Field label="Gender">{str(pan.gender)}</Field>
             <Field label="Date of birth">{p?.dob ? formatDate(p.dob) : null}</Field>

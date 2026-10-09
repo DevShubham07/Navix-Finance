@@ -4,9 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import { customersApi, type ApplicationView, type CustomerDetail, type LoanView } from "@/lib/api/applications";
 import { CustomerTabBody } from "@/components/staff/customer-tabs";
 
-vi.mock("@/components/staff/loan-detail-dialog", () => ({
-  LoanDetailDialog: ({ loanId }: { loanId: number | null }) => (loanId != null ? <div>loan-dialog-{loanId}</div> : null),
-}));
 vi.mock("@/lib/auth/staff-session", () => ({
   useStaffSession: () => ({ session: { role: "ADMIN" }, loading: false }),
 }));
@@ -60,9 +57,8 @@ describe("Loan tab", () => {
     expect(onTabChange).toHaveBeenCalledWith("sanction");
   });
 
-  it("Open loan details opens the loan dialog", () => {
+  it("has no Open loan details button (the pop-up is the loan view)", () => {
     renderLoan({ loans: [loan("ACTIVE")] });
-    fireEvent.click(screen.getByRole("button", { name: "Open loan details" }));
-    expect(screen.getByText("loan-dialog-208")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open loan details" })).not.toBeInTheDocument();
   });
 });

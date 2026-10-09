@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { Loader2, RefreshCw, ArrowRight, Contact, Info, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
+import { Loader2, RefreshCw, ArrowRight, Contact, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { Badge, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -35,7 +35,6 @@ import { CaseFailureDialog } from "@/components/staff/case-failure-dialog";
 import { CustomerEditDialog } from "@/components/staff/customer-edit-dialog";
 import { CustomerDetailDialog } from "@/components/staff/customer-detail-dialog";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
-import { ApplicationInfoDialog } from "@/components/staff/application-info-dialog";
 import {
   customersApi,
   paiseToINR,
@@ -142,10 +141,9 @@ function CustomersPageInner() {
 
   // Deep link from the global-search palette's "View all" link (`?q=…`).
   const [query, setQuery] = React.useState(searchParams.get("q") ?? "");
-  // "Open" and ⓘ go straight to the row's latest application when it has one; only a customer with
+  // "Open" goes straight to the row's latest application when it has one; only a customer with
   // no application on file falls back to the customer view (see customerRowTarget).
   const [openTarget, setOpenTarget] = React.useState<CustomerRowTarget | null>(null);
-  const [infoTarget, setInfoTarget] = React.useState<CustomerRowTarget | null>(null);
   // Carries the name too, so the failure dialog can title itself without a second fetch.
   const [failureCustomer, setFailureCustomer] =
     React.useState<{ id: number; name: string | null } | null>(null);
@@ -653,14 +651,6 @@ function CustomersPageInner() {
                             <Pencil size={14} />
                           </button>
                         </PermissionGate>
-                        <button
-                          onClick={() => setInfoTarget(customerRowTarget(c))}
-                          className="btn btn-sm btn-outline btn-icon"
-                          aria-label="Quick summary"
-                          title="Quick summary"
-                        >
-                          <Info size={14} />
-                        </button>
                         <button onClick={() => setOpenTarget(customerRowTarget(c))} className="inline-flex items-center gap-1 text-navy hover:underline">
                           Open <ArrowRight size={14} />
                         </button>
@@ -688,22 +678,17 @@ function CustomersPageInner() {
       </PermissionGate>
 
       {openTarget?.kind === "application" && (
-        // Mounted per open (keyed by id) so every open lands on Overview, as it did when this went
-        // through CustomerDetailDialog's hand-over.
+        // Mounted per open (keyed by id). The customers register opens on the Customer tab.
         <ApplicationDetailDialog
           key={openTarget.applicationId}
           applicationId={openTarget.applicationId}
+          initialTab="customer"
           onClose={() => setOpenTarget(null)}
         />
       )}
       <CustomerDetailDialog
         customerId={openTarget?.kind === "customer" ? openTarget.customerId : null}
         onClose={() => setOpenTarget(null)}
-      />
-      <ApplicationInfoDialog
-        applicationId={infoTarget?.kind === "application" ? infoTarget.applicationId : null}
-        customerId={infoTarget?.kind === "customer" ? infoTarget.customerId : null}
-        onClose={() => setInfoTarget(null)}
       />
       {failureCustomer && (
         <CaseFailureDialog

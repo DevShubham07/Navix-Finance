@@ -84,7 +84,7 @@ export function AddressesTab({ detail, customerId, applicationId }: TabCtx) {
         ) : addresses.length === 0 ? (
           <EmptyState
             title={traceQ.data?.length ? "No addresses found by skip trace" : "No skip trace has been run"}
-            hint="Run a lookup from Verifications → Skip Tracer"
+            hint="Run a lookup from Third-party logs → Skip trace"
             className="py-4"
           />
         ) : (

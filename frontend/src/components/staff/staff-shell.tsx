@@ -296,6 +296,14 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     staleTime: 60_000,
   });
 
+  // Portalled dialogs/drawers/search live outside `.navix-crm`; this body flag lets the black-text rule reach them.
+  const authed = !isPublic && !loading && !!session;
+  React.useEffect(() => {
+    if (!authed) return;
+    document.body.classList.add("staff-console");
+    return () => document.body.classList.remove("staff-console");
+  }, [authed]);
+
   if (isPublic) {
     return <div className="min-h-screen bg-ivory">{children}</div>;
   }
@@ -347,7 +355,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-line bg-white px-4 py-3 lg:px-6">
+        <header className="staff-header sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-line bg-white px-4 py-3 lg:px-6">
           <div className="lg:hidden">
             <Brand href="/staff/dashboard" tag="Staff" />
           </div>

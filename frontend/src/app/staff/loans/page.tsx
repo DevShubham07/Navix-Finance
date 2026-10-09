@@ -11,7 +11,7 @@ import { SearchBar } from "@/components/staff/search-bar";
 import { PermissionGate, NoAccessNotice, useStaffMe, ROLE_LABEL } from "@/components/staff/live-pipeline";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { ExportMenu } from "@/components/staff/export-menu";
-import { LoanDetailDialog } from "@/components/staff/loan-detail-dialog";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { loansApi, paiseToINR, type LoanRegisterRow } from "@/lib/api/applications";
 import {
@@ -74,11 +74,12 @@ function loanStatusLabel(status: string): string {
     .join(" ");
 }
 
-type OpenLoan = { loanId: number; customerId?: number | null; applicationId?: number | null };
+/** The open loan; `applicationId` is set when opened from a row (the register row carries it), so
+ *  the pop-up skips the loan -> customer lookup a `?open=` deep link needs. */
+type OpenLoan = { loanId: number; applicationId?: number | null };
 
-/** All three ids come off the same register row, so they always describe the same loan. */
 function openFromRow(l: LoanRegisterRow): OpenLoan {
-  return { loanId: l.loanId, customerId: l.customerId, applicationId: l.applicationId };
+  return { loanId: l.loanId, applicationId: l.applicationId };
 }
 
 /** "12d" when late, "due today" / "not due" while current (IST day), "—" otherwise. */
@@ -415,10 +416,10 @@ function LoansPageInner() {
         </div>
       </PermissionGate>
 
-      <LoanDetailDialog
+      <ApplicationDetailDialog
+        applicationId={openLoan?.applicationId ?? null}
         loanId={openLoan?.loanId ?? null}
-        customerId={openLoan?.customerId}
-        applicationId={openLoan?.applicationId}
+        initialTab="loan"
         onClose={() => {
           setOpenLoan(null);
           // Drop `?open=` so a refresh (or a back-navigation) doesn't reopen what was just closed.
