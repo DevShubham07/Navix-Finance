@@ -15,15 +15,15 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How quickly can I get a loan?",
-    a: "Eligibility decisions are often instant. Once your KYC is complete and you e-sign the agreement, funds are typically disbursed by the partner NBFC within 24–48 hours.",
+    a: "Our credit team reviews every application. Once it is approved, your KYC is complete and you e-sign the agreement, funds are sent straight to your bank account.",
   },
   {
     q: "Will applying affect my credit score?",
-    a: "Checking eligibility on DhanBoost does not impact your credit score. A formal credit enquiry only happens if you proceed and accept a loan offer from the partner NBFC.",
+    a: "When you submit your application, we check your credit report with a credit bureau as part of our review. Repaying on time, on your salary day, is the best way to keep your score healthy.",
   },
   {
     q: "What documents do I need?",
-    a: "Typically your PAN, Aadhaar (for e-KYC) and bank account details. Everything is verified digitally — no physical paperwork or branch visits.",
+    a: "Typically your PAN, Aadhaar (for e-KYC) and bank account details. Everything is verified digitally, with no physical paperwork or branch visits.",
   },
   {
     q: "Who is eligible to apply?",
@@ -31,7 +31,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How much can I borrow?",
-    a: "Between ₹5,000 and ₹10,00,000, for a tenure of 7 to 40 days. Your approved limit depends on the NBFC's assessment of your profile.",
+    a: "From ₹1,000 up to 25% of your monthly salary. Your approved limit is set by our credit team. You repay once, on your next salary day, within 40 days.",
   },
   {
     q: "Are there any hidden charges or advance fees?",
@@ -39,11 +39,11 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Can I repay my loan early?",
-    a: "Yes — and there are no pre-closure or prepayment charges. Repaying early reduces the total interest you pay.",
+    a: "Yes, and there are no pre-closure or prepayment charges. Repaying early reduces the total interest you pay.",
   },
   {
     q: "What happens if I miss a payment?",
-    a: "Late payments attract a late-payment fee of 2% per day on the overdue principal (capped at 30 days), as set out in your Key Fact Statement, and can affect your credit score. If you're struggling, contact us early — we'll help you find a way forward respectfully.",
+    a: "Late payments attract a late-payment fee of 2% per day on the overdue principal (capped at 30 days), as set out in your Key Fact Statement, and can affect your credit score. If you're struggling, contact us early and we'll help you find a way forward respectfully.",
   },
   {
     q: "Is my data safe with DhanBoost?",

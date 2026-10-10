@@ -14,14 +14,14 @@ export const html = `<section class="page active" id="calculator">
       <div class="calc-controls reveal">
         <div class="cc-row">
           <div class="cc-top"><span class="cl"><span class="ci"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3.5a1.5 1.5 0 0 0 0 3H15"></path></svg></span> Loan amount</span><span class="cc-val" id="amtV">₹10,000</span></div>
-          <input type="range" id="amt" min="5000" max="1000000" step="5000" value="10000">
-          <div class="cc-scale"><span>₹5,000</span><span>₹10,00,000</span></div>
-          <div class="cc-presets"><button class="preset" data-v="5000">₹5K</button><button class="preset on" data-v="10000">₹10K</button><button class="preset" data-v="100000">₹1L</button><button class="preset" data-v="500000">₹5L</button><button class="preset" data-v="1000000">₹10L</button></div>
+          <input type="range" id="amt" min="1000" max="1000000" step="1000" value="10000" aria-label="Loan amount">
+          <div class="cc-scale"><span>₹1,000</span><span>₹10,00,000</span></div>
+          <div class="cc-presets"><button class="preset" data-v="1000">₹1K</button><button class="preset" data-v="5000">₹5K</button><button class="preset on" data-v="10000">₹10K</button><button class="preset" data-v="100000">₹1L</button><button class="preset" data-v="500000">₹5L</button><button class="preset" data-v="1000000">₹10L</button></div>
         </div>
         <div class="cc-row">
           <div class="cc-top"><span class="cl"><span class="ci"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg></span> Tenure</span><span class="cc-val" id="tenV">30 days</span></div>
-          <input type="range" id="ten" min="7" max="40" step="1" value="30">
-          <div class="cc-scale"><span>7 days</span><span>40 days</span></div>
+          <input type="range" id="ten" min="1" max="40" step="1" value="30" aria-label="Tenure in days">
+          <div class="cc-scale"><span>1 day</span><span>40 days</span></div>
         </div>
         <div class="cc-row">
           <div class="cc-top"><span class="cl"><span class="ci"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"></path><path d="M21 7v5h-5"></path></svg></span> Daily interest rate</span><span class="cc-val" id="rateV">1% / day</span></div>
@@ -55,14 +55,14 @@ export const html = `<section class="page active" id="calculator">
 
   <!-- REPAYMENT CALENDAR -->
   <div class="sec" style="padding-top:0"><div class="wrap">
-    <div class="sec-head left" style="max-width:760px"><span class="eyebrow">Plan ahead</span><h2>Mark your repayment date</h2><p>Set your amount, pick the day you're next paid, and see your exact interest, APR and total payable — calculated at a fixed 1% per day, the same way our calculator works.</p></div>
+    <div class="sec-head left" style="max-width:760px"><span class="eyebrow">Plan ahead</span><h2>Mark your repayment date</h2><p>Set your amount, pick the day you're next paid, and see your exact interest, APR and total payable, calculated at a fixed 1% per day, the same way our calculator works.</p></div>
     <div class="cal-card reveal">
       <div class="cal-main">
         <div class="cc-row">
           <div class="cc-top"><span class="cl"><span class="ci"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3.5a1.5 1.5 0 0 0 0 3H15"></path></svg></span> Loan amount</span><span class="cc-val" id="calAmtV">₹10,000</span></div>
-          <input type="range" id="calAmt" min="5000" max="1000000" step="5000" value="10000">
-          <div class="cc-scale"><span>₹5,000</span><span>₹10,00,000</span></div>
-          <div class="cc-presets"><button class="cal-preset" data-v="5000" type="button">₹5K</button><button class="cal-preset on" data-v="10000" type="button">₹10K</button><button class="cal-preset" data-v="100000" type="button">₹1L</button><button class="cal-preset" data-v="500000" type="button">₹5L</button><button class="cal-preset" data-v="1000000" type="button">₹10L</button></div>
+          <input type="range" id="calAmt" min="1000" max="1000000" step="1000" value="10000" aria-label="Loan amount">
+          <div class="cc-scale"><span>₹1,000</span><span>₹10,00,000</span></div>
+          <div class="cc-presets"><button class="cal-preset" data-v="1000" type="button">₹1K</button><button class="cal-preset" data-v="5000" type="button">₹5K</button><button class="cal-preset on" data-v="10000" type="button">₹10K</button><button class="cal-preset" data-v="100000" type="button">₹1L</button><button class="cal-preset" data-v="500000" type="button">₹5L</button><button class="cal-preset" data-v="1000000" type="button">₹10L</button></div>
         </div>
         <div class="cal-divide"></div>
         <div class="cal-head">
@@ -74,12 +74,12 @@ export const html = `<section class="page active" id="calculator">
         </div>
         <div class="cal-dows"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
         <div class="cal-grid" id="calGrid"></div>
-        <div class="cal-legend"><span><i class="lg-sel"></i> Selected repayment date</span><span class="cal-hintnote">Choose a date 7–40 days from today</span></div>
+        <div class="cal-legend"><span><i class="lg-sel"></i> Selected repayment date</span><span class="cal-hintnote">Choose a date up to 40 days from today</span></div>
       </div>
       <div class="cal-side">
         <span class="eyebrow">Your repayment plan</span>
-        <div class="cal-bigdate" id="calBig">—</div>
-        <div class="cal-subdate" id="calSub">—</div>
+        <div class="cal-bigdate" id="calBig">…</div>
+        <div class="cal-subdate" id="calSub">…</div>
         <div class="cr-rows" style="margin-top:24px">
           <div class="cr-line"><span>Loan amount</span><b id="calOA">₹10,000</b></div>
           <div class="cr-line"><span>Tenure</span><b id="calOT">30 days</b></div>
@@ -88,7 +88,7 @@ export const html = `<section class="page active" id="calculator">
           <div class="cr-line apr"><span>Representative APR</span><b id="calOApr">365.0%</b></div>
           <div class="cr-total"><span class="t-lbl">Total payable</span><span class="t-val" id="calOTotal">₹13,000</span></div>
         </div>
-        <p class="cal-note">Interest is a fixed 1% per day across your selected tenure. Figures are indicative — your exact due date and APR are confirmed before you accept, with no pre-closure or prepayment charge.</p>
+        <p class="cal-note">Interest is a fixed 1% per day across your selected tenure. Figures are indicative. Your exact due date and APR are confirmed before you accept, with no pre-closure or prepayment charge.</p>
         <a href="/signup/start" class="btn btn-gold btn-block" data-link="">Apply for this loan <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"></path></svg></a>
       </div>
     </div>
@@ -107,27 +107,27 @@ export const html = `<section class="page active" id="calculator">
       </div>
       <table class="rt"><thead><tr><th>Tenure</th><th>Interest @ 1%/day</th><th>Total payable</th><th>Interest share</th><th>Rep. APR</th></tr></thead><tbody>
         <!-- 5000 -->
-        <tr data-amt="5000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹350</td><td><b>₹5,350</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="5000" data-lo="1" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹350</td><td><b>₹5,350</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
         <tr data-amt="5000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹750</td><td><b>₹5,750</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
         <tr data-amt="5000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹1,500</td><td><b>₹6,500</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
         <tr data-amt="5000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹2,000</td><td><b>₹7,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
         <!-- 10000 -->
-        <tr data-amt="10000" data-lo="7" data-hi="10"><td><b>7 days</b></td><td>₹700</td><td><b>₹10,700</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="10000" data-lo="1" data-hi="10"><td><b>7 days</b></td><td>₹700</td><td><b>₹10,700</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
         <tr data-amt="10000" data-lo="11" data-hi="20"><td><b>15 days</b></td><td>₹1,500</td><td><b>₹11,500</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
         <tr data-amt="10000" data-lo="21" data-hi="35"><td><b>30 days</b></td><td>₹3,000</td><td><b>₹13,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
         <tr data-amt="10000" data-lo="36" data-hi="40"><td><b>40 days</b></td><td>₹4,000</td><td><b>₹14,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
         <!-- 25000 -->
-        <tr data-amt="25000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹1,750</td><td><b>₹26,750</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="25000" data-lo="1" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹1,750</td><td><b>₹26,750</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
         <tr data-amt="25000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹3,750</td><td><b>₹28,750</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
         <tr data-amt="25000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹7,500</td><td><b>₹32,500</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
         <tr data-amt="25000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹10,000</td><td><b>₹35,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
         <!-- 50000 -->
-        <tr data-amt="50000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹3,500</td><td><b>₹53,500</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="50000" data-lo="1" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹3,500</td><td><b>₹53,500</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
         <tr data-amt="50000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹7,500</td><td><b>₹57,500</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
         <tr data-amt="50000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹15,000</td><td><b>₹65,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
         <tr data-amt="50000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹20,000</td><td><b>₹70,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
         <!-- 1000000 -->
-        <tr data-amt="1000000" data-lo="7" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹70,000</td><td><b>₹10,70,000</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
+        <tr data-amt="1000000" data-lo="1" data-hi="10" style="display:none"><td><b>7 days</b></td><td>₹70,000</td><td><b>₹10,70,000</b></td><td><span class="rt-bar"><i style="width:7%"></i></span></td><td>365%</td></tr>
         <tr data-amt="1000000" data-lo="11" data-hi="20" style="display:none"><td><b>15 days</b></td><td>₹1,50,000</td><td><b>₹11,50,000</b></td><td><span class="rt-bar"><i style="width:13%"></i></span></td><td>365%</td></tr>
         <tr data-amt="1000000" data-lo="21" data-hi="35" style="display:none"><td><b>30 days</b></td><td>₹3,00,000</td><td><b>₹13,00,000</b></td><td><span class="rt-bar"><i style="width:23%"></i></span></td><td>365%</td></tr>
         <tr data-amt="1000000" data-lo="36" data-hi="40" style="display:none"><td><b>40 days</b></td><td>₹4,00,000</td><td><b>₹14,00,000</b></td><td><span class="rt-bar"><i style="width:29%"></i></span></td><td>365%</td></tr>
@@ -142,9 +142,9 @@ export const html = `<section class="page active" id="calculator">
       <span class="eyebrow">Rates &amp; charges</span>
       <h2 style="font-size:clamp(1.7rem,3.4vw,2.3rem);margin:14px 0 22px">Clear, upfront, and fair</h2>
       <div class="checklist">
-        <div class="chk"><span class="ck" style="background:rgb(var(--c-gold-500) / .14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Loan amount: ₹5,000 to ₹10,00,000</b><small>Borrow exactly what you need.</small></div></div>
-        <div class="chk"><span class="ck" style="background:rgb(var(--c-gold-500) / .14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Tenure: 7 to 40 days</b><small>Short-term, near-term repayment.</small></div></div>
-        <div class="chk"><span class="ck" style="background:rgb(var(--c-gold-500) / .14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>No pre-closure or prepayment charges</b><small>Clear early and pay less — always.</small></div></div>
+        <div class="chk"><span class="ck" style="background:rgb(var(--c-gold-500) / .14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Loan amount: from ₹1,000 up to 25% of your monthly salary</b><small>Your approved limit is set by our credit team.</small></div></div>
+        <div class="chk"><span class="ck" style="background:rgb(var(--c-gold-500) / .14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Repayment: once, on your next salary day</b><small>Within 40 days.</small></div></div>
+        <div class="chk"><span class="ck" style="background:rgb(var(--c-gold-500) / .14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>No pre-closure or prepayment charges</b><small>Clear early and pay less, always.</small></div></div>
         <div class="chk"><span class="ck" style="background:rgb(var(--c-gold-500) / .14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>No advance fees, ever</b><small>We never ask for upfront payments.</small></div></div>
         <div class="chk"><span class="ck" style="background:rgb(var(--c-gold-500) / .14);color:var(--gold-600)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg></span><div><b>Net monthly salary ≥ ₹40,000</b><small>A core eligibility criterion.</small></div></div>
       </div>

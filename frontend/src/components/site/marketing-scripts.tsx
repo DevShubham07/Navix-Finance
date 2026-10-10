@@ -240,7 +240,7 @@ export function MarketingScripts() {
       const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
       const DAY = 86_400_000;
       const RATE = 1;
-      const MIN_T = 7;
+      const MIN_T = 1;
       const MAX_T = 40;
       const today = new Date();
       today.setHours(0, 0, 0, 0);

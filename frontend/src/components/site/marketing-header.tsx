@@ -34,7 +34,7 @@ const NAV: NavItem[] = [
     href: "/products",
     label: "Loan Products",
     drop: [
-      { href: "/products", title: "Instant Personal Loan", sub: "₹5,000 – ₹10,00,000", icon: <IndianRupee size={16} /> },
+      { href: "/products", title: "Instant Personal Loan", sub: "Up to 25% of your salary", icon: <IndianRupee size={16} /> },
       { href: "/calculator", title: "Calculator & Rates", sub: "Plan repayment", icon: <Calculator size={16} /> },
     ],
   },

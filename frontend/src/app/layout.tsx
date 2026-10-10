@@ -39,7 +39,7 @@ const bebas = Bebas_Neue({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.dhanboost.com"),
-  title: "DhanBoost — Instant Personal Loans, Fully Digital",
+  title: "DhanBoost | Instant Personal Loans, Fully Digital",
   description:
     "DhanBoost is a digital lending platform offering instant, fully-digital, salary-linked personal loans. Paperless process, direct bank disbursal, single repayment, zero advance fees.",
   // Site-wide default canonical. Each (marketing) page sets its own self-canonical; a page
@@ -54,15 +54,15 @@ export const metadata: Metadata = {
     siteName: "DhanBoost",
     locale: "en_IN",
     url: "/",
-    title: "DhanBoost — Instant Personal Loans, Fully Digital",
+    title: "DhanBoost | Instant Personal Loans, Fully Digital",
     description:
-      "Instant, fully-digital, salary-linked personal loans — single repayment, no advance fees.",
+      "Instant, fully-digital, salary-linked personal loans with a single repayment and no advance fees.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "DhanBoost — Instant Personal Loans, Fully Digital",
+    title: "DhanBoost | Instant Personal Loans, Fully Digital",
     description:
-      "Instant, fully-digital, salary-linked personal loans — single repayment, no advance fees.",
+      "Instant, fully-digital, salary-linked personal loans with a single repayment and no advance fees.",
   },
 };
 

@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
-import { html } from "../_content/how-it-works";
-import { MarketingHtml } from "@/components/site/marketing-html";
+import { HowItWorksPage } from "@/components/site/landing/how-it-works";
 
 export const metadata: Metadata = {
-  title: 'How It Works — DhanBoost',
-  description: 'From application to your account in four simple steps — fully digital.',
+  title: 'How It Works | DhanBoost',
+  description: 'From application to your account in four simple steps, fully digital.',
   alternates: { canonical: '/how-it-works' },
 };
 
 export default function Page() {
-  return <MarketingHtml html={html} />;
+  return <HowItWorksPage />;
 }

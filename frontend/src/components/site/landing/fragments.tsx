@@ -210,7 +210,7 @@ export function VerifyArt() {
           <CircleCheck size={16} className="text-success-600" strokeWidth={2.2} />
         </div>
       ))}
-      <GoalProgress ratio={1} label="Eligibility check" trailing="Instant decision" className="mt-1.5" />
+      <GoalProgress ratio={1} label="Eligibility check" trailing="Reviewed by our credit team" className="mt-1.5" />
     </div>
   );
 }
@@ -317,7 +317,7 @@ export function SupportArt({ hours }: { hours: string }) {
       <div className="flex items-end gap-2">
         <Avatar name="DhanBoost Support" size={28} />
         <div className="max-w-[80%] rounded-[16px] rounded-bl-[6px] border border-line bg-paper px-3.5 py-2 text-[12px] text-ink">
-          Yes — and there are no pre-closure or prepayment charges.
+          Yes, and there are no pre-closure or prepayment charges.
         </div>
       </div>
       <span className="mx-auto mt-1 rounded-full border border-line bg-paper px-3 py-1 text-[10.5px] text-slate">{hours}</span>

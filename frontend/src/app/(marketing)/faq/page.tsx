@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { html } from "../_content/faq";
-import { MarketingHtml } from "@/components/site/marketing-html";
 import { FaqSchema } from "@/components/site/faq-schema";
 import { PaymentSafetyTicker } from "@/components/site/payment-safety-ticker";
+import { FaqPage } from "@/components/site/landing/faq";
 
 export const metadata: Metadata = {
-  title: 'Frequently Asked Questions — DhanBoost',
+  title: 'Frequently Asked Questions | DhanBoost',
   description: 'Answers on applications, rates, repayments and grievance redressal.',
   alternates: { canonical: '/faq' },
 };
@@ -15,7 +14,7 @@ export default function Page() {
     <>
       <FaqSchema />
       <PaymentSafetyTicker />
-      <MarketingHtml html={html} />
+      <FaqPage />
     </>
   );
 }

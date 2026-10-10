@@ -8,7 +8,6 @@ import {
   Fingerprint,
   FolderLock,
   Gauge,
-  Globe,
   HeartHandshake,
   IdCard,
   IndianRupee,
@@ -17,7 +16,6 @@ import {
   MessageSquareQuote,
   PenLine,
   Plus,
-  RefreshCw,
   ShieldCheck,
   Smartphone,
   Users,
@@ -89,7 +87,7 @@ function Hero() {
         <div aria-hidden className="pointer-events-none absolute inset-0 hidden xl:block">
           <FloatTile className="left-[4.5%] top-[11%]" rotate={-7} delay={0}>
             <StickyNote>
-              Repay once —
+              Repay once,
               <br />
               on your salary day.
             </StickyNote>
@@ -125,8 +123,8 @@ function Hero() {
             className="lp-enter mt-8 [--lp-e:.08s]"
           />
           <p className="lp-enter m-0 mt-6 max-w-[560px] text-[16px] leading-[1.6] text-slate [--lp-e:.16s] sm:text-[17px]">
-            A paperless application and transparent terms, from first tap to funds in your account. Borrow ₹5,000 to
-            ₹10,00,000 with no advance fees, ever.
+            A paperless application and transparent terms, from first tap to funds in your account. Borrow from ₹1,000
+            up to 25% of your monthly salary, with no advance fees, ever.
           </p>
           <div className="lp-enter mt-8 flex flex-wrap items-center justify-center gap-3 [--lp-e:.24s]">
             <ButtonLink href="/signup/start" size="lg" arrow>
@@ -158,7 +156,7 @@ function Hero() {
           <div aria-hidden className="relative mt-12 flex w-full justify-center gap-3 xl:hidden">
             <div className="-rotate-6 pt-4">
               <StickyNote className="w-[150px] px-4 pb-4 pt-6 [&_p]:text-[14px]">
-                Repay once — on your salary day.
+                Repay once, on your salary day.
               </StickyNote>
             </div>
             <div className="rotate-3">
@@ -185,11 +183,11 @@ function Solutions() {
           id="why-title"
           lead="Lending, reimagined"
           muted="to feel effortless"
-          sub="A transparent, fast and hassle-free experience built around you — with no hidden costs and no paperwork."
+          sub="A transparent, fast and hassle-free experience built around you, with no hidden costs and no paperwork."
         />
         <BlueprintGrid cols={3} className="reveal mt-14 sm:mt-16">
           <BlueprintItem icon={<Zap size={22} strokeWidth={1.9} />} title="Lightning-fast application">
-            Get an eligibility decision in minutes and funds sent straight to your account after you accept.
+            Apply in minutes. Our credit team reviews your application, and funds go straight to your account after you accept.
           </BlueprintItem>
           <BlueprintItem icon={<IndianRupee size={22} strokeWidth={1.9} />} title="100% transparent pricing">
             Every rupee of interest and charges is shown upfront before you accept. No surprises, no advance fees.
@@ -244,14 +242,14 @@ function Features() {
               id="features-title"
               lead="Every loan includes"
               muted="the DhanBoost promise"
-              sub="Flexible, short-term financing with transparent terms — fully online, from first tap to funds in your account."
+              sub="Flexible, short-term financing with transparent terms. Fully online, from first tap to funds in your account."
             />
             <div className="mt-14 grid gap-4 sm:mt-16 md:grid-cols-2 lg:grid-cols-3">
               <BentoCard className="reveal" title="Minimal documentation" art={<DocsArt />}>
-                Just PAN, Aadhaar and bank details — verified digitally. Complete everything from your phone.
+                Just PAN, Aadhaar and bank details, all verified digitally. Complete everything from your phone.
               </BentoCard>
               <BentoCard className="reveal d1" title="Instant digital verification" art={<VerifyArt />}>
-                Paperless KYC with PAN and Aadhaar, plus a quick eligibility check — all online.
+                Paperless KYC with PAN and Aadhaar, plus a quick eligibility check, all online.
               </BentoCard>
               <BentoCard className="reveal d2" title="Key Fact Statement upfront" art={<KfsArt />}>
                 See your exact interest, APR and total repayment in a clear summary. Happy with it? Sign securely in a tap.
@@ -260,14 +258,14 @@ function Features() {
                 Repay once, on your salary day. Your exact due date is confirmed before you accept.
               </BentoCard>
               <BentoCard className="reveal d1" title="Clear early, save more" art={<InterestArt />}>
-                Repay via UPI, net-banking or auto-debit. No pre-closure or prepayment charges.
+                Repay by UPI or bank transfer, then upload the receipt and we&apos;ll confirm it. No pre-closure or prepayment charges.
               </BentoCard>
               <BentoCard className="reveal d2" dashed title="Real human support" art={<SupportArt hours={BRAND.hours} />}>
-                Friendly support over chat, email and phone, six days a week — plus a transparent grievance redressal channel.
+                Friendly support over chat, email and phone, six days a week, plus a transparent grievance redressal channel.
               </BentoCard>
             </div>
             <p className="m-0 mt-10 text-center text-[14.5px] text-slate">
-              and a lot more, step by step —{" "}
+              and a lot more, step by step:{" "}
               <ArrowLink href="/how-it-works">see the full process</ArrowLink>
             </p>
           </Container>
@@ -293,8 +291,6 @@ const RAIL_BOTTOM: Rail[] = [
   { icon: FileText, label: "Key Fact Statement" },
   { icon: Banknote, label: "Bank transfer" },
   { icon: Smartphone, label: "UPI" },
-  { icon: Globe, label: "Net-banking" },
-  { icon: RefreshCw, label: "Auto-debit" },
 ];
 
 function RailTile({ icon: Icon, label, ghost }: Rail & { ghost?: boolean }) {
@@ -329,7 +325,7 @@ function Verification() {
           id="verify-title"
           lead="Everything is verified digitally"
           muted="no paperwork, no branch visits"
-          sub="Paperless KYC with PAN and Aadhaar, a securely e-signed agreement, funds straight to your bank — and easy repayment via UPI, net-banking or auto-debit."
+          sub="Paperless KYC with PAN and Aadhaar, a securely e-signed agreement, funds straight to your bank, and easy repayment by UPI or bank transfer."
         />
         <div className="relative mt-12 flex justify-center">
           <AppIcon size={96} className="relative z-10" />
@@ -427,7 +423,7 @@ function Reviews() {
             avatar={<ValueIcon icon={Users} />}
           />
           <QuoteCard
-            quote="Secure data handling, fair terms, and a clear grievance path — built in, not bolted on."
+            quote="Secure data handling, fair terms, and a clear grievance path. Built in, not bolted on."
             name="Our values"
             role="Compliance by design"
             avatar={<ValueIcon icon={HeartHandshake} />}
@@ -457,7 +453,7 @@ function Pricing() {
           id="pricing-title"
           lead="Simple, transparent pricing"
           muted="every rupee shown upfront"
-          sub="Fees are netted from your disbursal and disclosed in your Key Fact Statement — you never send money to receive a loan."
+          sub="Fees are netted from your disbursal and disclosed in your Key Fact Statement. You never send money to receive a loan."
         />
         <div className="mt-14 grid items-stretch gap-5 sm:mt-16 lg:mt-20 lg:grid-cols-3 lg:gap-6">
           <PlanCard
@@ -466,7 +462,7 @@ function Pricing() {
             unit="of principal"
             caption="A one-time processing fee, plus 18% GST on that fee."
             items={[
-              "Deducted from your disbursal — never paid in advance",
+              "Deducted from your disbursal, never paid in advance",
               "Shown in your Key Fact Statement before you accept",
               "No pre-closure or prepayment charges",
             ]}
@@ -480,7 +476,7 @@ function Pricing() {
             caption="On principal, only for the days you hold it. Repay early and pay less."
             items={[
               <>
-                Borrow <b className="font-semibold">₹10,000</b> — fee ₹1,000 + GST ₹180
+                Borrow <b className="font-semibold">₹10,000</b>: fee ₹1,000 + GST ₹180
               </>,
               <>
                 You receive <b className="font-semibold">₹8,820</b> in your bank account
@@ -488,7 +484,7 @@ function Pricing() {
               <>
                 Repay on day 27: <b className="font-semibold">₹12,700</b> (₹10,000 + ₹2,700 interest)
               </>,
-              "One repayment, on your salary day — within 40 days",
+              "One repayment, on your salary day, within 40 days",
             ]}
             cta={{ href: "/calculator", label: "Open the calculator" }}
             extra={
@@ -507,7 +503,7 @@ function Pricing() {
             items={[
               "Capped at 30 days",
               "Can affect your credit score",
-              "Struggling? Contact us early — we'll help you find a way forward respectfully",
+              "Struggling? Contact us early and we'll help you find a way forward respectfully",
             ]}
             cta={{ href: "/faq", label: "Read the FAQs" }}
           />
@@ -530,15 +526,15 @@ const FAQS = [
   },
   {
     q: "What documents do I need to apply?",
-    a: "Typically just your PAN, Aadhaar (for KYC) and bank account details. Everything is verified digitally — no physical paperwork or branch visits.",
+    a: "Typically just your PAN, Aadhaar (for KYC) and bank account details. Everything is verified digitally, with no physical paperwork or branch visits.",
   },
   {
     q: "Are there any hidden charges or advance fees?",
     a: "Never. DhanBoost does not charge any advance or upfront fee. All applicable interest and charges are shown in your loan summary before you accept the offer.",
   },
   {
-    q: "Will checking my eligibility affect my credit score?",
-    a: "No. Checking your eligibility on DhanBoost does not impact your credit score — a formal credit enquiry only happens if you choose to accept an offer.",
+    q: "Will applying affect my credit score?",
+    a: "When you submit your application, we check your credit report with a credit bureau as part of our review. Repaying on time, on your salary day, is the best way to keep your score healthy.",
   },
 ];
 
@@ -555,7 +551,7 @@ function Faq() {
           muted="questions"
           sub={
             <>
-              Everything about applying, rates, repayment and security —{" "}
+              Everything about applying, rates, repayment and security:{" "}
               <ArrowLink href="/faq" className="text-[15.5px]">
                 view all FAQs
               </ArrowLink>

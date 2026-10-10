@@ -4,7 +4,6 @@ import * as React from "react";
 import { Cell, Pie, PieChart, Sector } from "recharts";
 import { cn } from "@/lib/utils";
 import { ChartContainer } from "./chart";
-import { Figure } from "./figures";
 
 /**
  * <DonutChart> — rounded, gapped ring with the total in the centre. Hover/focus a segment and the
@@ -48,10 +47,26 @@ export function DonutChart({
   const total = data.reduce((s, d) => s + d.value, 0);
   const cur = active == null ? null : data[active];
 
+  // The centre readout must fit INSIDE the ring's hole whatever the value, page or font (the
+  // marketing site renders figures in a wider face than the app). Measure the chart box, derive
+  // the hole's diameter from the radii below, and size the text to ~78% of it.
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  const [box, setBox] = React.useState(208);
+  React.useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setBox(Math.min(e.contentRect.width, e.contentRect.height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const text = format(cur ? cur.value : total);
+  const hole = (box - 16) * 0.66; // innerRadius is 66% of the max radius (half the box minus margins)
+  const fontPx = Math.max(14, Math.min(36, (hole * 0.78) / (text.length * 0.56)));
+
   return (
     <div className={className}>
-      <div className="relative">
-        <ChartContainer config={{}} className="h-52">
+      <div ref={boxRef} className="relative h-52">
+        <ChartContainer config={{}} className="h-full">
           <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
             <Pie
               data={data}
@@ -81,8 +96,10 @@ export function DonutChart({
         </ChartContainer>
         <div className="pointer-events-none absolute inset-0 grid place-items-center text-center" aria-live="polite">
           <div key={cur?.name ?? "total"} className="animate-rise">
-            <Figure size="md">{format(cur ? cur.value : total)}</Figure>
-            <p className="m-0 text-[10px] text-muted">
+            <span className="figure-display block leading-none text-ink" style={{ fontSize: fontPx, fontWeight: 500 }}>
+              {text}
+            </span>
+            <p className="m-0 mt-1 text-[10px] text-muted">
               {cur ? `${cur.name} · ${total ? Math.round((cur.value / total) * 100) : 0}%` : totalLabel}
             </p>
           </div>

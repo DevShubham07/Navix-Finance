@@ -48,7 +48,7 @@ const COLUMNS = [
 
 const FOCUS = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-dark";
 
-/** The scattered tile field (decorative).  tiles stay visible on small screens. */
+/** The scattered tile field (decorative). Tiles marked `phone` stay visible on small screens. */
 const FIELD: { left: string; top: string; rotate: number; node: React.ReactNode; phone?: boolean }[] = [
   { left: "3%", top: "30%", rotate: -12, node: <CalendarTile day="30" month="Jun" size={70} />, phone: true },
   { left: "14%", top: "6%", rotate: 9, node: <MessageCircle size={26} strokeWidth={1.8} /> },
@@ -76,7 +76,7 @@ export function MarketingFooter() {
               <span className="block text-muted">transparent, fast and humane.</span>
             </h2>
             <p className="m-0 mt-6 max-w-[440px] text-[14.5px] leading-[1.65] text-slate">
-              A premium digital lending platform offering fast, fully-online, fairly-priced personal loans — salary-linked,
+              A premium digital lending platform offering fast, fully-online, fairly-priced personal loans: salary-linked,
               with a single repayment and no advance fees.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">

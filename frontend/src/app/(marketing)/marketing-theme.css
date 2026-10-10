@@ -223,3 +223,27 @@
 }
 @keyframes lp-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
 @keyframes lp-enter { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: none; } }
+
+/* Sub-page hero headline: one step down from the home hero. */
+.navix-mkt .lp-h1.lp-h1--page { font-size: clamp(2.3rem, 5vw, 3.9rem); line-height: 1.04; }
+
+/* Long-form documents (legal pages, blog posts): the existing HTML rendered verbatim inside
+   `.lp-prose`, set at a comfortable measure. Anchored h2s get scroll margin for the sticky header. */
+.navix-mkt .lp-prose { color: var(--slate); font-size: 16px; line-height: 1.75; }
+.navix-mkt .lp-prose > :first-child { margin-top: 0; }
+.navix-mkt .lp-prose h2 { font-family: var(--font-body); font-weight: 500; color: var(--ink); font-size: clamp(1.35rem, 2.2vw, 1.6rem); line-height: 1.25; letter-spacing: -.03em; margin: 2.4em 0 .7em; scroll-margin-top: 100px; }
+.navix-mkt .lp-prose h3 { font-family: var(--font-body); font-weight: 600; color: var(--ink); font-size: 1.1rem; line-height: 1.35; letter-spacing: -.02em; margin: 1.8em 0 .5em; }
+.navix-mkt .lp-prose p { margin: 0 0 1.1em; }
+.navix-mkt .lp-prose ul, .navix-mkt .lp-prose ol { margin: 0 0 1.3em; padding-left: 1.3em; }
+.navix-mkt .lp-prose ul { list-style: disc; }
+.navix-mkt .lp-prose ol { list-style: decimal; }
+.navix-mkt .lp-prose li { margin: 0 0 .5em; padding-left: .2em; }
+.navix-mkt .lp-prose li::marker { color: var(--gold-dark); }
+.navix-mkt .lp-prose b, .navix-mkt .lp-prose strong { color: var(--ink); font-weight: 600; }
+.navix-mkt .lp-prose a:not(.btn) { color: var(--ink); text-decoration: underline; text-decoration-color: rgb(var(--c-gold-500) / .6); text-underline-offset: 3px; }
+.navix-mkt .lp-prose a:not(.btn):hover { color: var(--gold-dark); }
+.navix-mkt .lp-prose .callout { margin: 0 0 1.6em; padding: 18px 22px; border-radius: 18px; background: var(--paper); border: 1px solid var(--line); border-left: 3px solid var(--gold-500); color: var(--slate); font-size: 15px; line-height: 1.7; }
+.navix-mkt .lp-prose .callout p:last-child { margin-bottom: 0; }
+.navix-mkt .lp-prose table { width: 100%; border-collapse: collapse; margin: 0 0 1.4em; font-size: 14.5px; }
+.navix-mkt .lp-prose th, .navix-mkt .lp-prose td { border-bottom: 1px solid var(--line); padding: 10px 12px; text-align: left; }
+.navix-mkt .lp-prose .btn { padding: 15px 26px; }

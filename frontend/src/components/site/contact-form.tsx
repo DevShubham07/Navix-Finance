@@ -1,104 +1,66 @@
 "use client";
 
 import * as React from "react";
+import { ArrowRight, Check, Mail, MapPin, Phone, ShieldAlert } from "lucide-react";
 import { config } from "@/lib/config";
 import { BRAND } from "@/lib/brand";
 import {
   COMMUNICATION_CONSENT_TEXT,
   COMMUNICATION_PRIVACY_TEXT,
 } from "@/lib/communication-consent";
+import { cn } from "@/lib/utils";
+import { PageHero } from "./landing/page-kit";
+import { Container, IconTile } from "./landing/primitives";
 
 const TOPICS = ["General enquiry", "Application help", "Repayment", "Grievance", "Report fraud"];
 
 type Status = "idle" | "sending" | "sent" | "error";
 
+const FOCUS = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-dark";
+const FIELD =
+  "block w-full rounded-[14px] border border-[rgb(var(--c-line-2))] bg-paper px-4 py-3 text-[15px] text-ink shadow-xs outline-none transition-[border-color,box-shadow] placeholder:text-muted focus:border-gold focus:shadow-focus disabled:opacity-60";
+const LABEL = "mb-1.5 block text-[13px] font-medium text-ink";
+
 /**
- * The live "Contact us" section for the marketing site. Reproduces the design-export markup (so it
- * shares the `.navix-mkt` styling + scroll-reveal) but wires the form to the BFF `/api/contact`
- * endpoint, which emails the enquiry to the DhanBoost support inbox. On success it swaps the form for a
- * confirmation that the query has been sent and will be answered as soon as possible.
- *
- * Rendered as one client component (rather than the usual static `MarketingHtml` blob) so the form is
- * interactive; the whole `<section>` lives here to keep the `.contact-grid` two-column layout intact.
+ * The live "Contact us" page for the marketing site, in the landing layout language. The form posts
+ * to the BFF `/api/contact` endpoint, which emails the enquiry to the DhanBoost support inbox; on
+ * success it swaps the form for a confirmation. Communication consent is required before sending.
  */
 export function ContactSection() {
   return (
-    <section className="page active" id="contact">
-      <div className="page-hero">
-        <div className="wrap">
-          <div className="crumb">
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- design SPA-nav anchor, intercepted by MarketingScripts */}
-            <a href="/" data-link="">
-              Home
-            </a>{" "}
-            &nbsp;/&nbsp; Contact
-          </div>
-          <h1>Let&apos;s talk</h1>
-          <p>
-            Questions, feedback or just need a hand? Send us a message and we&apos;ll get back within one
-            business day.
-          </p>
-        </div>
-      </div>
-
-      <div className="sec">
-        <div className="wrap">
-          <div className="contact-grid">
-            <div className="cinfo reveal">
-              <div className="ci-card">
-                <span className="ci-ico">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                    <circle cx="12" cy="10" r="3" />
-                  </svg>
-                </span>
-                <div>
-                  <b>Registered office</b>
-                  <small>
-                    Plot No 268, 1st Floor, Sector 33, Subhash Chowk, Islampur, Gurgaon, Haryana – 122001
-                  </small>
-                </div>
-              </div>
-              <div className="ci-card">
-                <span className="ci-ico">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
-                  </svg>
-                </span>
-                <div>
-                  <b>Phone</b>
-                  <small>{BRAND.phone} · {BRAND.hours}</small>
-                </div>
-              </div>
-              <div className="ci-card">
-                <span className="ci-ico">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="2" y="4" width="20" height="16" rx="2" />
-                    <path d="m22 7-10 5L2 7" />
-                  </svg>
-                </span>
-                <div>
-                  <b>Email</b>
-                  <small>{BRAND.email}</small>
-                </div>
-              </div>
-              <div className="ci-card">
-                <span className="ci-ico">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3z" />
-                  </svg>
-                </span>
-                <div>
-                  <b>Report fraud</b>
-                  <small>{BRAND.fraudEmail} — we never ask for advance fees.</small>
-                </div>
-              </div>
-            </div>
-            <ContactForm />
-          </div>
-        </div>
-      </div>
-    </section>
+    <div className="lp">
+      <PageHero
+        trail={[{ label: "Contact" }]}
+        label="Contact"
+        lead="Let's talk"
+        sub="Questions, feedback or just need a hand? Send us a message and we'll get back within one business day."
+      />
+      <Container className="grid gap-6 py-[clamp(48px,7vw,96px)] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-10">
+        <ul className="m-0 grid list-none content-start gap-3 p-0">
+          {[
+            {
+              icon: MapPin,
+              b: "Registered office",
+              s: <>Plot No 268, 1st Floor, Sector 33, Subhash Chowk, Islampur, Gurgaon, Haryana – 122001</>,
+            },
+            { icon: Phone, b: "Phone", s: <>{BRAND.phone} · {BRAND.hours}</> },
+            { icon: Mail, b: "Email", s: <>{BRAND.email}</> },
+            { icon: ShieldAlert, b: "Report fraud", s: <>{BRAND.fraudEmail}. We never ask for advance fees.</> },
+          ].map(({ icon: Icon, b, s }) => (
+            <li key={b} className="lp-card flex items-start gap-4 rounded-[22px] p-5">
+              <IconTile size={46} className="text-gold-dark">
+                <Icon aria-hidden size={20} strokeWidth={1.9} />
+              </IconTile>
+              <span className="min-w-0 pt-0.5 leading-snug">
+                <span className="block text-[15px] font-medium text-ink">{b}</span>
+                <span className="mt-1 block break-words text-[14px] text-slate">{s}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <ContactForm />
+      </Container>
+    </div>
   );
 }
 
@@ -158,35 +120,22 @@ function ContactForm() {
 
   if (status === "sent") {
     return (
-      <div className="formcard reveal d1">
-        <div style={{ textAlign: "center", padding: "18px 4px" }}>
-          <div
-            aria-hidden
-            style={{
-              width: 62,
-              height: 62,
-              margin: "0 auto 20px",
-              borderRadius: "50%",
-              background: "rgba(46,160,90,.12)",
-              color: "#2ea05a",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-          </div>
-          <h3 style={{ fontSize: "1.2rem", marginBottom: 8 }}>Message sent</h3>
-          <p style={{ fontSize: ".76rem", lineHeight: 1.6, marginBottom: 24 }}>
-            Thanks for reaching out — your query has reached our team. We&apos;ll get back to you as soon as
-            possible, usually within one business day.
-          </p>
-          <button className="btn btn-ghost" type="button" onClick={reset}>
-            Send another message
-          </button>
-        </div>
+      <div className="lp-card rounded-[28px] p-8 text-center sm:p-11" role="status">
+        <span aria-hidden className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-success-50 text-success-700">
+          <Check size={30} strokeWidth={2.5} />
+        </span>
+        <h2 className="lp-h3 mt-6 !text-[24px]">Message sent</h2>
+        <p className="m-0 mx-auto mt-3 max-w-[420px] text-[15px] leading-[1.65] text-slate">
+          Thanks for reaching out. Your query has reached our team. We&apos;ll get back to you as soon as possible, usually
+          within one business day.
+        </p>
+        <button
+          type="button"
+          onClick={reset}
+          className={cn("mt-7 inline-flex h-11 items-center rounded-full border border-[rgb(var(--c-line-2))] bg-paper px-5 text-[14px] font-semibold text-ink shadow-pill", FOCUS)}
+        >
+          Send another message
+        </button>
       </div>
     );
   }
@@ -194,96 +143,75 @@ function ContactForm() {
   const sending = status === "sending";
 
   return (
-    <div className="formcard reveal d1">
-      <h3 style={{ fontSize: "1.2rem", marginBottom: 6 }}>Send us a message</h3>
-      <p style={{ fontSize: ".736rem", marginBottom: 24 }}>
-        We&apos;ll never share your details. Required fields are marked *.
-      </p>
-      <form onSubmit={onSubmit} noValidate>
-        <div className="field-row">
-          <div className="field">
-            <label>Full name *</label>
-            <input
-              type="text"
-              placeholder="Your name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              disabled={sending}
-            />
+    <div className="lp-card rounded-[28px] p-6 sm:p-9">
+      <h2 className="lp-h3 !text-[24px]">Send us a message</h2>
+      <p className="m-0 mt-2 text-[14.5px] text-slate">We&apos;ll never share your details. Required fields are marked *.</p>
+      <form onSubmit={onSubmit} noValidate className="mt-7 grid gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="c-name" className={LABEL}>
+              Full name *
+            </label>
+            <input id="c-name" type="text" autoComplete="name" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required disabled={sending} className={FIELD} />
           </div>
-          <div className="field">
-            <label>Phone *</label>
-            <input
-              type="tel"
-              placeholder="+91"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
-              disabled={sending}
-            />
+          <div>
+            <label htmlFor="c-phone" className={LABEL}>
+              Phone *
+            </label>
+            <input id="c-phone" type="tel" autoComplete="tel" placeholder="+91" value={phone} onChange={(e) => setPhone(e.target.value)} required disabled={sending} className={FIELD} />
           </div>
         </div>
-        <div className="field">
-          <label>Email *</label>
-          <input
-            type="email"
-            placeholder="you@email.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            disabled={sending}
-          />
+        <div>
+          <label htmlFor="c-email" className={LABEL}>
+            Email *
+          </label>
+          <input id="c-email" type="email" autoComplete="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={sending} className={FIELD} />
         </div>
-        <div className="field">
-          <label>Topic</label>
-          <select value={topic} onChange={(e) => setTopic(e.target.value)} disabled={sending}>
+        <div>
+          <label htmlFor="c-topic" className={LABEL}>
+            Topic
+          </label>
+          <select id="c-topic" value={topic} onChange={(e) => setTopic(e.target.value)} disabled={sending} className={cn(FIELD, "select-themed")}>
             {TOPICS.map((t) => (
               <option key={t}>{t}</option>
             ))}
           </select>
         </div>
-        <div className="field">
-          <label>Message *</label>
-          <textarea
-            rows={4}
-            placeholder="How can we help?"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            required
-            disabled={sending}
-          />
+        <div>
+          <label htmlFor="c-message" className={LABEL}>
+            Message *
+          </label>
+          <textarea id="c-message" rows={4} placeholder="How can we help?" value={message} onChange={(e) => setMessage(e.target.value)} required disabled={sending} className={cn(FIELD, "resize-y")} />
         </div>
-        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 6, fontSize: ".72rem", lineHeight: 1.5 }}>
+        <label className="flex cursor-pointer items-start gap-3 text-[13.5px] leading-[1.55] text-ink">
           <input
             type="checkbox"
             checked={communicationConsent}
             onChange={(event) => setCommunicationConsent(event.target.checked)}
             disabled={sending}
-            style={{ width: 16, height: 16, marginTop: 2, flex: "0 0 auto" }}
+            className="mt-0.5 h-[18px] w-[18px] shrink-0 accent-[rgb(var(--c-gold-600))]"
           />
           <span>{COMMUNICATION_CONSENT_TEXT}</span>
         </label>
-        <p style={{ fontSize: ".68rem", lineHeight: 1.5, margin: "0 0 14px", opacity: 0.78 }}>
-          {COMMUNICATION_PRIVACY_TEXT}
-        </p>
+        <p className="m-0 text-[12.5px] leading-[1.55] text-slate">{COMMUNICATION_PRIVACY_TEXT}</p>
         {error && (
-          <p
-            role="alert"
-            style={{ fontSize: ".68rem", color: "#c0392b", margin: "0 0 14px", lineHeight: 1.5 }}
-          >
+          <p role="alert" className="m-0 text-[13.5px] leading-[1.5] text-error-700">
             {error}
           </p>
         )}
-        <button className="btn btn-gold btn-block btn-lg" type="submit" disabled={sending}>
+        <button
+          type="submit"
+          disabled={sending}
+          className={cn(
+            "group mt-1 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-full bg-gold text-[15px] font-semibold text-ink shadow-gold transition-[background-color,transform] duration-300 hover:-translate-y-px hover:bg-gold-400 disabled:opacity-70",
+            FOCUS,
+          )}
+        >
           {sending ? (
             "Sending…"
           ) : (
             <>
-              Send message{" "}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
+              Send message <ArrowRight aria-hidden size={16} className="transition-transform group-hover:translate-x-0.5" />
             </>
           )}
         </button>
