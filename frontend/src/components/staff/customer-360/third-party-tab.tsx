@@ -101,6 +101,7 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
         const pill =
           r.key === "skip" ? null
           : bank ? <Badge variant={bank.status === "ANALYSED" ? "success" : bank.status === "FAILED" ? "error" : "neutral"} size="sm">{bank.status === "ANALYSED" ? "Analysed" : bank.status === "FAILED" ? "Failed" : "Pending"}</Badge>
+          : r.key === "bank" ? <Badge variant="success" size="sm">Analysed</Badge>
           : s ? <Badge variant={statusVariant(s)} size="sm">{r.key === "aadhaar-pan" && s.status === "PASS" ? "Success" : statusLabel(s)}</Badge>
           : <Badge variant="neutral" size="sm">Not run</Badge>;
         return (
@@ -111,7 +112,7 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
               className="w-full px-3 py-2 text-left"
               onClick={() => setOpen(isOpen ? null : r.key)}
             >
-              <Header title={r.title} open={isOpen} pill={pill} provider={s?.provider} when={s ? checkedAt(s) : null} />
+              <Header title={r.title} open={isOpen} pill={pill} provider={r.key === "bank" && !bank ? "CRIF" : s?.provider} when={s ? checkedAt(s) : null} />
             </button>
             {isOpen && (
               <div className="space-y-3 border-t border-line p-3">
@@ -119,8 +120,8 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
                   <SkipTracePanel customerId={customerId} />
                 ) : r.key === "bank" ? (
                   <>
-                    {bank ? <BankBody bank={bank} /> : <EmptyState title="Analysis pending" hint="Bank statement analysis has not been run yet — the CRIF report analysis below stands in for it." className="py-4" />}
-                    <CrifAnalysisSection detail={detail} applicationId={applicationId} />
+                    {bank && <BankBody bank={bank} />}
+                    <CrifAnalysisSection detail={detail} applicationId={applicationId} showRaw={!bank} />
                   </>
                 ) : !s ? (
                   <EmptyState title={`${r.title} not run`} className="py-4" />

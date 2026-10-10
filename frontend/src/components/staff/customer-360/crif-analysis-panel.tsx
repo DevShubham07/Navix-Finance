@@ -110,7 +110,12 @@ export function CrifAnalysisPanel({ report, analysis }: { report: BureauReport |
 }
 
 /** Self-fetching Section for the Banking tab and the Third-party bank row. */
-export function CrifAnalysisSection({ detail, applicationId }: { detail: CustomerDetail; applicationId: number | null }) {
+export function CrifAnalysisSection({ detail, applicationId, showRaw }: {
+  detail: CustomerDetail;
+  applicationId: number | null;
+  /** Third-party logs: the analysis as a response payload, like every other provider row. */
+  showRaw?: boolean;
+}) {
   const a = useProfileAnalysis(detail, applicationId);
   return (
     <Section
@@ -123,8 +128,38 @@ export function CrifAnalysisSection({ detail, applicationId }: { detail: Custome
       ) : a.isLoading ? (
         <Skeleton variant="line" rows={3} />
       ) : (
-        <CrifAnalysisPanel report={a.report} analysis={a.analysis} />
+        <>
+          <CrifAnalysisPanel report={a.report} analysis={a.analysis} />
+          {showRaw && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[10px] text-black">View raw response</summary>
+              <pre className="mt-1 max-h-48 overflow-auto rounded bg-neutral-50 p-2 font-mono text-[10px] text-black">
+                {JSON.stringify(analysisResponse(detail, a.report, a.analysis), null, 2)}
+              </pre>
+            </details>
+          )}
+        </>
       )}
     </Section>
   );
+}
+
+/** The analysis as a bank-statement-analyser-style payload, built only from data on file. */
+function analysisResponse(detail: CustomerDetail, report: BureauReport | null, analysis: ProfileAnalysis) {
+  const p = detail.profile;
+  return {
+    status: report ? "ANALYSED" : "NO_BUREAU_REPORT",
+    source: report ? `${report.kind} bureau report (${report.source === "RAW" ? "full report" : "parsed tradelines"})` : null,
+    analysedOn: report?.reportDate ?? null,
+    salaryBank: p?.salaryBank ?? null,
+    salaryAccount: p?.salaryAccountNumber ?? null,
+    declaredMonthlySalaryPaise: p?.monthlySalaryPaise ?? null,
+    employer: p?.employer ?? null,
+    employment: analysis.bureauEmployment,
+    occupations: report?.occupations ?? [],
+    incomes: report?.incomes ?? [],
+    creditMix: analysis.mix,
+    window: analysis.window,
+    restrictedProfessionHits: analysis.hits,
+  };
 }
