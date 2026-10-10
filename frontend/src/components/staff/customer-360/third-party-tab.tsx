@@ -9,10 +9,11 @@ import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { SkipTracePanel } from "@/components/staff/skip-trace-panel";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import {
-  AadhaarBody, AddressCheckBody, BureauBody, EmailBody, EsignBody, PanBody, PennyBody, SelfieBody, UanBody,
+  AadhaarBody, AadhaarPanLinkBody, AddressCheckBody, BureauBody, EmailBody, EsignBody, PanBody, PennyBody, SelfieBody, UanBody,
   checkedAt, statusLabel, statusVariant,
 } from "@/components/staff/customer-360/third-party/presenters";
 import { staffApi, type StepResult } from "@/lib/api/applications";
+import { AADHAAR_PAN_LINK, withAadhaarPanLink } from "@/lib/staff/aadhaar-pan-link";
 import { bankAnalysisApi } from "@/lib/api/bank-analysis";
 import { paiseToINR } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
@@ -31,6 +32,7 @@ type Row = {
 
 const ROWS: Row[] = [
   { key: "pan", title: "PAN Detail", checkType: "PAN", body: (s, aadhaar) => <PanBody step={s} aadhaar={aadhaar} /> },
+  { key: "aadhaar-pan", title: "Aadhaar–PAN Linkage", checkType: AADHAAR_PAN_LINK, body: (s) => <AadhaarPanLinkBody step={s} /> },
   { key: "uan", title: "UAN / EPFO Detail", checkType: "EMPLOYMENT", body: (s) => <UanBody step={s} /> },
   { key: "aadhaar", title: "Aadhaar Detail (DigiLocker)", checkType: "AADHAAR", body: (s, aadhaar) => <AadhaarBody step={s} aadhaar={aadhaar} /> },
   { key: "email", title: "Email Verification", checkType: "EMAIL", body: (s) => <EmailBody step={s} /> },
@@ -76,7 +78,7 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
     enabled: applicationId != null,
   });
   const bankQ = useQuery({ queryKey: ["bank-analysis", customerId], queryFn: () => bankAnalysisApi.get(customerId) });
-  const steps = verQ.data ?? [];
+  const steps = React.useMemo(() => withAadhaarPanLink(verQ.data ?? [], aadhaar), [verQ.data, aadhaar]);
   const stepOf = (r: Row) => (r.checkType ? steps.find((x) => x.checkType === r.checkType) : undefined);
   const hasData = (r: Row) => (r.key === "bank" ? bankQ.data != null : r.key === "skip" ? false : stepOf(r) != null);
   const firstWithData = ROWS.find(hasData)?.key ?? null;
@@ -98,7 +100,7 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
         const pill =
           r.key === "skip" ? null
           : bank ? <Badge variant={bank.status === "ANALYSED" ? "success" : bank.status === "FAILED" ? "error" : "neutral"} size="sm">{bank.status === "ANALYSED" ? "Analysed" : bank.status === "FAILED" ? "Failed" : "Pending"}</Badge>
-          : s ? <Badge variant={statusVariant(s)} size="sm">{statusLabel(s)}</Badge>
+          : s ? <Badge variant={statusVariant(s)} size="sm">{r.key === "aadhaar-pan" && s.status === "PASS" ? "Success" : statusLabel(s)}</Badge>
           : <Badge variant="neutral" size="sm">Not run</Badge>;
         return (
           <div key={r.key} className="rounded border border-line bg-white">

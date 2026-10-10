@@ -24,6 +24,7 @@ import { Loader2, Bell, ShieldCheck, RotateCcw, Link2 } from "lucide-react";
 import { Dialog, DialogFooter } from "@/components/ui/dialog";
 import { staffApi, paiseToINR, type StepResult, type CheckStatus } from "@/lib/api/applications";
 import { humanizeCheck, formatDateTime } from "@/lib/utils";
+import { AADHAAR_PAN_LINK, withAadhaarPanLink } from "@/lib/staff/aadhaar-pan-link";
 import {
   isRetryOutcomeUnknown,
   isRetryStillRunning,
@@ -137,7 +138,11 @@ function stringifyDerived(value: unknown): string {
  * fields the reviewer needs, and a KYC-approver "Manual override" affordance. Embedded by
  * {@link CustomerReview} and the `/staff/verifications` dashboard.
  */
-export function VerificationChecksPanel({ applicationId }: { applicationId: number }) {
+export function VerificationChecksPanel({ applicationId, aadhaar }: {
+  applicationId: number;
+  /** Full Aadhaar from the customer profile, for the derived Aadhaar–PAN linkage card (masked otherwise). */
+  aadhaar?: string | null;
+}) {
   // Same key and queryFn as Customer 360's tabs (customer-tabs.tsx): identical endpoint, identical
   // StepResult[] shape, no `select` — so one cache entry serves both.
   const q = useQuery({
@@ -205,7 +210,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
   // not started, so "NOT RUN" would read as outstanding work on a file still under credit review.
   const applicationStatus = appQ.data?.status;
   const steps: DisplayStep[] = React.useMemo(() => {
-    const real = q.data ?? [];
+    const real = withAadhaarPanLink(q.data ?? [], aadhaar);
     const seen = new Set(real.map((s) => s.checkType));
     const wanted = PLACEHOLDER_CHECKS.filter(
       (c) => RETRYABLE_CHECKS.includes(c) || applicationStatus === "SANCTIONED",
@@ -217,7 +222,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
       derived: {},
     }));
     return [...real, ...placeholders];
-  }, [q.data, applicationStatus]);
+  }, [q.data, applicationStatus, aadhaar]);
   const p = progressQ.data;
   const retryLive = retry ? steps.find((s) => s.checkType === retry.checkType) ?? retry : null;
 
@@ -297,7 +302,8 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                     ))}
                   </dl>
                 )}
-                <PermissionGate permission="kyc:approve">
+                {/* The linkage card is derived from the PAN row — override or re-run PAN instead. */}
+                {s.checkType !== AADHAAR_PAN_LINK && <PermissionGate permission="kyc:approve">
                   <div className="mt-2 flex flex-wrap gap-2 border-t border-line pt-2">
                     <button
                       onClick={() => setOverride(s)}
@@ -314,7 +320,7 @@ export function VerificationChecksPanel({ applicationId }: { applicationId: numb
                       </button>
                     )}
                   </div>
-                </PermissionGate>
+                </PermissionGate>}
                 {RETRYABLE_CHECKS.includes(s.checkType) && (
                   <PermissionGate permission="verification:retry">
                     <div className="mt-2">

@@ -95,6 +95,7 @@ export function displayAnnualSalaryPaise(p: {
 
 /** Humanize a verification check type: "PENNY_DROP" → "Penny drop". */
 export function humanizeCheck(checkType: string): string {
+  if (checkType === "AADHAAR_PAN_LINK") return "Aadhaar–PAN linkage";
   return checkType
     .toLowerCase()
     .split(/[_\s]+/)

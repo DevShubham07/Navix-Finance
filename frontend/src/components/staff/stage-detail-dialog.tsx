@@ -69,6 +69,7 @@ import {
   type JourneyStageState,
 } from "@/lib/domain/journey";
 import { formatDate, humanizeCheck } from "@/lib/utils";
+import { withAadhaarPanLink } from "@/lib/staff/aadhaar-pan-link";
 import { DocPassword, docTypeLabel } from "@/components/staff/detail-parts";
 import {
   DelinquencySummaryBlock,
@@ -383,7 +384,7 @@ function KycSection({ applicationId, showCreditBrief }: { applicationId: number;
   });
 
   const p = progressQ.data;
-  const checks: StepResult[] = checksQ.data ?? [];
+  const checks: StepResult[] = withAadhaarPanLink(checksQ.data ?? []);
   const docs: DocumentView[] = docsQ.data ?? [];
   const brief = briefQ.data;
 

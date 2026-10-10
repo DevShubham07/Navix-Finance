@@ -130,6 +130,40 @@ export function PanBody({ step: s, aadhaar }: Body) {
   );
 }
 
+/**
+ * Aadhaar–PAN linkage (lib/staff/aadhaar-pan-link.ts): the two identifiers side by side, joined by
+ * the link the PAN provider reported.
+ */
+export function AadhaarPanLinkBody({ step: s }: Body) {
+  const d = s.derived as D;
+  const linked = d.linked === true;
+  const Id = ({ label, value }: { label: string; value: unknown }) => (
+    <div className="min-w-0 flex-1 rounded border border-line bg-neutral-50 px-3 py-2">
+      <div className="text-[8.8px] font-semibold uppercase tracking-wide text-info-500">{label}</div>
+      <div className="break-words font-mono text-[10.4px] tabular-nums text-black">{str(value) ?? "—"}</div>
+    </div>
+  );
+  return (
+    <div className="space-y-3">
+      <CardShell title="Aadhaar–PAN Linkage" icon={Link2}>
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+          <Id label="Aadhaar number" value={d.aadhaarNumber} />
+          <div className="flex shrink-0 flex-col items-center gap-1 px-1">
+            <Link2 size={16} className={linked ? "text-success-700" : "text-black"} />
+            {pill(linked ? "Linked" : "Not linked", linked ? "success" : "error")}
+          </div>
+          <Id label="PAN number" value={d.panNumber} />
+        </div>
+      </CardShell>
+      <StatusCard title="Verification Status" rows={[
+        { icon: Link2, label: "Aadhaar linked to PAN", pill: yn(d.linked) },
+        { icon: BadgeCheck, label: "Status", pill: pill(s.status === "PASS" ? "Success" : statusLabel(s), statusVariant(s)) },
+        { icon: CalendarClock, label: "Last updated", pill: checkedAt(s) ? pill(checkedAt(s)) : null },
+      ]} />
+    </div>
+  );
+}
+
 export function UanBody({ step: s }: Body) {
   const d = s.derived as D;
   return (
