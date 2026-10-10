@@ -239,4 +239,16 @@ describe("helpers", () => {
     const merged = mergeSteps([[step("PAN", { a: 1 })], [step("PAN", { a: 2 }), step("BUREAU", {})]]);
     expect(merged.map((s) => [s.checkType, s.derived.a])).toEqual([["PAN", 1], ["BUREAU", undefined]]);
   });
+
+  it("staging pass: rules 1, 3, 5, 6, 8 report PASS; 2, 4, 7, 9 stay real", () => {
+    const i = clean();
+    i.bureau = { ...i.bureau, score: 500 };
+    i.aadhaar = "234567899999";
+    i.report = report([acct({ status: "CLOSED", statusLabel: "Closed", openedOn: "2023-01-01", closedOn: "2024-03-28" })]);
+    const real = evaluateBre(i).rules;
+    expect([1, 2, 8].map((id) => byId(real, id).outcome)).toEqual(["FLAG", "FLAG", "FLAG"]);
+    const staged = evaluateBre({ ...i, stagingPass: true }).rules;
+    expect([1, 3, 5, 6, 8].map((id) => byId(staged, id).outcome)).toEqual(["PASS", "PASS", "PASS", "PASS", "PASS"]);
+    expect([2, 4, 7, 9].map((id) => byId(staged, id).outcome)).toEqual([2, 4, 7, 9].map((id) => byId(real, id).outcome));
+  });
 });

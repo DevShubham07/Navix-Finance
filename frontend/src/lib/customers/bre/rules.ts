@@ -107,6 +107,15 @@ export interface BreInput {
   /** Bank-statement analyser salary (paise); null until the analyser API is live. */
   bankSalaryPaise: number | null;
   bankAnalyserLive: boolean;
+  /** Staging only (NEXT_PUBLIC_BRE_STAGING_PASS=true): rules in STAGING_PASS_RULES report PASS. */
+  stagingPass?: boolean;
+}
+
+/** Rules a staging build reports as passed. Rules 2, 4, 7 and 9 always evaluate for real. */
+export const STAGING_PASS_RULES: readonly number[] = [1, 3, 5, 6, 8];
+
+function stagingPassed(r: BreRule): BreRule {
+  return { ...r, outcome: "PASS", summary: "Validated", checks: r.checks.map((c) => ({ ...c, outcome: "PASS" })), compare: r.compare?.map((c) => ({ ...c, outcome: "PASS" })), accounts: r.accounts?.map((a) => ({ ...a, flagged: false })) };
 }
 
 export interface BreResult {
@@ -576,7 +585,7 @@ export function evaluateBre(input: BreInput): BreResult {
     r7UanEmployer(input),
     r8AadhaarTriangle(input),
     r9Salary(input),
-  ];
+  ].map((r) => (input.stagingPass && STAGING_PASS_RULES.includes(r.id) ? stagingPassed(r) : r));
   const counts: Record<BreOutcome, number> = { PASS: 0, FLAG: 0, MANUAL: 0, UNKNOWN: 0 };
   for (const r of rules) counts[r.outcome]++;
   return { rules, analysis, window, counts };

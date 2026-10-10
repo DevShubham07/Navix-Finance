@@ -208,6 +208,8 @@ export function useBreData(detail: CustomerDetail, customerId: number, applicati
       documents,
       bankSalaryPaise: bankQ.data?.salary?.minSalaryPaise ?? null,
       bankAnalyserLive: bankQ.data != null,
+      // Off unless the staging build sets it — production always evaluates every rule.
+      stagingPass: process.env.NEXT_PUBLIC_BRE_STAGING_PASS === "true",
     });
   }, [applicationId, bureau.brief, bureau.report, detail.profile, stepsQ.steps, aadhaar, documents, bankQ.data]);
   return {
