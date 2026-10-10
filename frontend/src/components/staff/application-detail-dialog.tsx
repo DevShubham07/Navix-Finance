@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The single staff detail popup — a shell around the 17 lifecycle tabs in `customer-tabs.tsx`
+ * The single staff detail popup — a shell around the 20 lifecycle tabs in `customer-tabs.tsx`
  * (shared with the full `/staff/customers/{id}` page, so the two cannot drift). Every tab body,
  * stage action included, lives in `customer-360/`; this component owns only the queries, the
  * header and the tab state.

@@ -1,7 +1,9 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { customersApi, type ApplicationView, type CustomerDetail } from "@/lib/api/applications";
+import { customersApi, staffApi, type ApplicationView, type CreditBriefView, type CustomerDetail } from "@/lib/api/applications";
+import type { JsonValue } from "@/lib/credit/provider-report";
+import combine from "@/lib/customers/bre/__fixtures__/crif-combine-sample.json";
 import { bankAnalysisApi, type BankAnalysisView } from "@/lib/api/bank-analysis";
 import { CustomerTabBody } from "@/components/staff/customer-tabs";
 
@@ -15,6 +17,11 @@ vi.mock("@/components/staff/live-pipeline", () => ({
 
 function renderTab() {
   vi.spyOn(customersApi, "documents").mockResolvedValue([] as never);
+  vi.spyOn(staffApi, "verifications").mockResolvedValue([]);
+  vi.spyOn(staffApi, "creditBrief").mockResolvedValue({
+    applicationId: 318, creditScore: 799, bureauState: "FOUND", bureauSource: "FINTRIX_CRIF",
+    generatedAt: "2026-08-22T10:00:00Z", providerResponse: combine as unknown as JsonValue, facts: null,
+  } as CreditBriefView);
   const app = { id: 318, status: "ACTIVE" } as unknown as ApplicationView;
   const detail = {
     customerId: 42,
@@ -64,5 +71,13 @@ describe("Banking tab", () => {
     expect(screen.getByText("ACCEPT")).toBeInTheDocument();
     expect(screen.getByText("XXXX1154 · SAVINGS · 309 txns")).toBeInTheDocument();
     expect(screen.queryByText("Declared only")).not.toBeInTheDocument();
+  });
+
+  it("stands the CRIF report analysis in for the analyser until it is live", async () => {
+    renderTab();
+    expect(await screen.findByText("CRIF report analysis")).toBeInTheDocument();
+    expect(await screen.findByText("CRIF · full report")).toBeInTheDocument();
+    expect(screen.getAllByText("Salaried").length).toBeGreaterThan(0);
+    expect(screen.getByText(/No restricted profession found/)).toBeInTheDocument();
   });
 });

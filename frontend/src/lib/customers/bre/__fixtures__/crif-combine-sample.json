@@ -1,0 +1,491 @@
+{
+  "_comment": "REDACTED capture of a real Fintrix POST /crif_combine response (2026-08-22). Identity fields (name, PAN, DOB, email, addresses, mobile, account numbers) are replaced with synthetic values. Everything the parser depends on is byte-faithful to the wire: Indian-grouped money strings ('10,00,000', '1,12,685'), empty-string and null money, COMBINED-PAYMENT-HISTORY formatting, the pipe-delimited TRENDS series, and the deliberately WRONG PRIMARY-CURRENT-BALANCE of '0' (the tradelines total ~9.4L). credit_report_link keeps the vendor's HTML-escaped '&amp;' separators on purpose - unescaping them is a required step. Do not 'tidy' any of this.",
+  "success": true,
+  "canonical": {
+    "timestamp": "2026-08-22T14:58:47.946Z",
+    "transaction_id": "TXN-PROD-9b0d279f-36f6-48d1-bbcb-a3d9781080c5",
+    "status": "success",
+    "data": {
+      "name": "sample person",
+      "mobile": "9000000001",
+      "credit_report": {
+        "HEADER": {
+          "DATE-OF-REQUEST": "22-08-2026",
+          "DATE-OF-ISSUE": "22-08-2026",
+          "REPORT-ID": "CCR260822CR415935862",
+          "BATCH-ID": "4918517202260822",
+          "inquiryId_": "",
+          "STATUS": "SUCCESS"
+        },
+        "REQUEST": {
+          "NAME": "SAMPLE PERSON",
+          "DOB": "01-01-1990",
+          "PAN": "ABCDE1234F",
+          "UID": "",
+          "GENDER": "",
+          "EMAIL-1": "SAMPLE.PERSON@EXAMPLE.COM",
+          "ADDRESS-1": "2ND FLOOR,   E-40,   SAMPLE COLONY,   SECTOR 54 SAMPLE CITY SAMPLE DISTRICT HARAYANA SAMPLE CITY 122003 HR HR  HR Haryana 122003",
+          "ADDRESS-2": "",
+          "ADDRESS-3": "",
+          "PHONE-1": "9000000001"
+        },
+        "PERSONAL-INFO-VARIATION": {
+          "NAME-VARIATIONS": {
+            "VARIATION": [
+              { "VALUE": "SAMPLE PERSON", "REPORTED-DATE": "19-08-2026" }
+            ]
+          },
+          "ADDRESS-VARIATIONS": {
+            "VARIATION": [
+              { "VALUE": "SAMPLE EMPLOYER PRIVATE LIMITED 6TH FLOOR ,  BLOCK-V ,  BUSINESS PARK,  SECTOR 25A,  SA MPLE CITY,  HARYANA,   NEAR BUSINESS PARK 122002 HR", "REPORTED-DATE": "16-08-2026" },
+              { "VALUE": "2ND FLOOR,  E-40 SAMPLE COLONY 122002,  SAMPLE COLONY SECTOR 54 SAMPLE CITY 122002 HR", "REPORTED-DATE": "31-07-2026" },
+              { "VALUE": "C/O SAMPLE PARENT,  BHAWAN NO. 50 HOUSE NO . 428,  MAIN CHOWK,  SAMPLE AREA SAMPLE TOWN 138:SAMPLE TOWN 250002 UP", "REPORTED-DATE": "30-06-2026" },
+              { "VALUE": "2ND FLOOR,  E-40,  SAMPLE COLONY,  SECTOR 54 SAMPLE CITY SAMPLE COLONY SAMPLE DISTRICT HARAYANA SAMPLE CITY 122003 HR", "REPORTED-DATE": "19-08-2026" },
+              { "VALUE": "BHAWAN NO 50 HOUSE NO 428 MAIN CHOWK SAMPLE AREA SAMPLE TOWN SAMPLE TOWN . SAMPLE TOWN 250002 UP", "REPORTED-DATE": "19-08-2026" },
+              { "VALUE": "2ND FLOOR SAMPLE COLONY SAMPLE COLONY SAMPLE CITY 122003 HR", "REPORTED-DATE": "16-08-2026" }
+            ]
+          },
+          "PAN-VARIATIONS": {
+            "VARIATION": [
+              { "VALUE": "ABCDE1234F", "REPORTED-DATE": "31-07-2026" }
+            ]
+          },
+          "UID-VARIATIONS": "",
+          "OTHER-ID-VARIATIONS": "",
+          "DRIVING-LICENSE-VARIATIONS": "",
+          "DATE-OF-BIRTH-VARIATIONS": {
+            "VARIATION": [
+              { "VALUE": "01-01-1990", "REPORTED-DATE": "23-06-2026" }
+            ]
+          },
+          "VOTER-ID-VARIATIONS": "",
+          "PASSPORT-VARIATIONS": "",
+          "PHONE-NUMBER-VARIATIONS": {
+            "VARIATION": [
+              { "VALUE": "09000000001", "REPORTED-DATE": "15-09-2025" },
+              { "VALUE": "9000000001", "REPORTED-DATE": "31-07-2026" },
+              { "VALUE": "00919000000001", "REPORTED-DATE": "31-07-2026" },
+              { "VALUE": "+919000000001", "REPORTED-DATE": "30-06-2026" }
+            ]
+          },
+          "RATION-CARD-VARIATIONS": "",
+          "EMAIL-VARIATIONS": {
+            "VARIATION": [
+              { "VALUE": "SAMPLE.PERSON@EXAMPLE.COM", "REPORTED-DATE": "16-08-2026" },
+              { "VALUE": "sample.person@example.com", "REPORTED-DATE": "31-07-2026" }
+            ]
+          }
+        },
+        "SECONDARY-MATCHES": "",
+        "ACCOUNTS-SUMMARY": {
+          "DERIVED-ATTRIBUTES": {
+            "INQURIES-IN-LAST-SIX-MONTHS": "1",
+            "LENGTH-OF-CREDIT-HISTORY-YEAR": "1",
+            "LENGTH-OF-CREDIT-HISTORY-MONTH": "11",
+            "AVERAGE-ACCOUNT-AGE-YEAR": "1",
+            "AVERAGE-ACCOUNT-AGE-MONTH": "1",
+            "NEW-ACCOUNTS-IN-LAST-SIX-MONTHS": "2",
+            "NEW-DELINQ-ACCOUNT-IN-LAST-SIX-MONTHS": "0"
+          },
+          "PRIMARY-ACCOUNTS-SUMMARY": {
+            "PRIMARY-NUMBER-OF-ACCOUNTS": "7",
+            "PRIMARY-ACTIVE-NUMBER-OF-ACCOUNTS": "6",
+            "PRIMARY-OVERDUE-NUMBER-OF-ACCOUNTS": "0",
+            "PRIMARY-SECURED-NUMBER-OF-ACCOUNTS": "1",
+            "PRIMARY-UNSECURED-NUMBER-OF-ACCOUNTS": "6",
+            "PRIMARY-UNTAGGED-NUMBER-OF-ACCOUNTS": "0",
+            "PRIMARY-CURRENT-BALANCE": "0",
+            "PRIMARY-SANCTIONED-AMOUNT": "0",
+            "PRIMARY-DISBURSED-AMOUNT": "0",
+            "PRIMARY-OVERDUE-AMOUNT": ""
+          },
+          "SECONDARY-ACCOUNTS-SUMMARY": {
+            "SECONDARY-NUMBER-OF-ACCOUNTS": "0",
+            "SECONDARY-ACTIVE-NUMBER-OF-ACCOUNTS": "0",
+            "SECONDARY-OVERDUE-NUMBER-OF-ACCOUNTS": "0",
+            "SECONDARY-SECURED-NUMBER-OF-ACCOUNTS": "0.0",
+            "SECONDARY-UNSECURED-NUMBER-OF-ACCOUNTS": "0",
+            "SECONDARY-UNTAGGED-NUMBER-OF-ACCOUNTS": "0",
+            "SECONDARY-CURRENT-BALANCE": "0",
+            "SECONDARY-SANCTIONED-AMOUNT": "0",
+            "SECONDARY-DISBURSED-AMOUNT": "0",
+            "SECONDARY-OVERDUE-AMOUNT": ""
+          }
+        },
+        "EMPLOYMENT-DETAILS": {
+          "EMPLOYMENT-DETAIL": {
+            "ACCT-TYPE": "Credit Card",
+            "DATE-REPORTED": "15-02-2026",
+            "OCCUPATION": "SALARIED"
+          }
+        },
+        "RESPONSES": {
+          "RESPONSE": [
+            {
+              "LOAN-DETAILS": {
+                "ACCT-NUMBER": "XXXXXXXXXXXX1001",
+                "CREDIT-GUARANTOR": "AU SMALL FINANCE BANK LIMITED",
+                "CREDIT-GRANTOR-GROUP": "Category D",
+                "CREDIT-GRANTOR-TYPE": "SFB",
+                "ACCT-TYPE": "Credit Card",
+                "DATE-REPORTED": "19-08-2026",
+                "OWNERSHIP-IND": "Individual",
+                "ACCOUNT-STATUS": "Active",
+                "DISBURSED-AMT": "0",
+                "DISBURSED-DT": "24-04-2026",
+                "LAST-PAYMENT-DATE": "",
+                "CLOSED-DATE": null,
+                "INSTALLMENT-AMT": "",
+                "OVERDUE-AMT": "0",
+                "WRITE-OFF-AMT": "0",
+                "PRINCIPAL-WRITE-OFF-AMT": null,
+                "SETTLEMENT-AMT": null,
+                "CURRENT-BAL": "0",
+                "COMBINED-PAYMENT-HISTORY": "Aug:2026,000/XXX|Jul:2026,000/XXX|Jun:2026,000/XXX|May:2026,000/XXX|Apr:2026,000/XXX|",
+                "MATCHED-TYPE": "PRIMARY",
+                "LINKED-ACCOUNTS": "",
+                "SECURITY-DETAILS": "",
+                "SECURITY-STATUS": "Un-Secured",
+                "ACCOUNT-REMARKS": null,
+                "ACCT-IN-DISPUTE": null,
+                "SUIT-FILED-WILFUL-DEFAULT-STATUS": null,
+                "WRITTEN-OFF-SETTLED-STATUS": null,
+                "WRITE-OFF-DT": null,
+                "SUIT-FILED-DT": null,
+                "LAST-PAID-AMOUNT": null,
+                "OBLIGATION": null,
+                "ORIGINAL-TERM": "0",
+                "TERM-TO-MATURITY": "0",
+                "ACTUAL-PAYMENT": "",
+                "REPAYMENT-TENURE": "0",
+                "INTEREST-RATE": "0.0",
+                "CREDIT-LIMIT": "3,00,000",
+                "CASH-LIMIT": "60,000",
+                "OCCUPATION": "Others",
+                "INCOME-FREQUENCY": "",
+                "INCOME-AMOUNT": ""
+              }
+            },
+            {
+              "LOAN-DETAILS": {
+                "ACCT-NUMBER": "XXXXXXXXXXXX1002",
+                "CREDIT-GUARANTOR": "ICICI BANK LTD",
+                "CREDIT-GRANTOR-GROUP": "Category A",
+                "CREDIT-GRANTOR-TYPE": "PRB",
+                "ACCT-TYPE": "Credit Card",
+                "DATE-REPORTED": "16-08-2026",
+                "OWNERSHIP-IND": "Individual",
+                "ACCOUNT-STATUS": "Active",
+                "DISBURSED-AMT": "25,092",
+                "DISBURSED-DT": "28-10-2024",
+                "LAST-PAYMENT-DATE": "31-07-2026",
+                "CLOSED-DATE": null,
+                "INSTALLMENT-AMT": "",
+                "OVERDUE-AMT": "0",
+                "WRITE-OFF-AMT": "0",
+                "PRINCIPAL-WRITE-OFF-AMT": null,
+                "SETTLEMENT-AMT": null,
+                "CURRENT-BAL": "0",
+                "COMBINED-PAYMENT-HISTORY": "Aug:2026,000/XXX|Jul:2026,000/XXX|Jun:2026,000/XXX|May:2026,000/XXX|Apr:2026,000/XXX|Mar:2026,000/XXX|Feb:2026,000/XXX|Jan:2026,000/XXX|Dec:2025,000/XXX|Nov:2025,000/XXX|Oct:2025,000/XXX|Sep:2025,000/XXX|Aug:2025,000/XXX|Jul:2025,000/XXX|Jun:2025,XXX/XXX|May:2025,XXX/XXX|Apr:2025,000/XXX|Mar:2025,000/XXX|Feb:2025,XXX/XXX|Jan:2025,XXX/XXX|Dec:2024,000/XXX|Nov:2024,XXX/XXX|",
+                "MATCHED-TYPE": "PRIMARY",
+                "LINKED-ACCOUNTS": "",
+                "SECURITY-DETAILS": "",
+                "SECURITY-STATUS": "Un-Secured",
+                "ACCOUNT-REMARKS": null,
+                "ACCT-IN-DISPUTE": null,
+                "SUIT-FILED-WILFUL-DEFAULT-STATUS": "No Suit filed",
+                "WRITTEN-OFF-SETTLED-STATUS": null,
+                "WRITE-OFF-DT": null,
+                "SUIT-FILED-DT": null,
+                "LAST-PAID-AMOUNT": null,
+                "OBLIGATION": null,
+                "ORIGINAL-TERM": "0",
+                "TERM-TO-MATURITY": "0",
+                "ACTUAL-PAYMENT": "",
+                "REPAYMENT-TENURE": "0",
+                "INTEREST-RATE": "0.0",
+                "CREDIT-LIMIT": "3,00,000",
+                "CASH-LIMIT": "30,000",
+                "OCCUPATION": "",
+                "INCOME-FREQUENCY": "",
+                "INCOME-AMOUNT": ""
+              }
+            },
+            {
+              "LOAN-DETAILS": {
+                "ACCT-NUMBER": "PYTMPPABFL0000000001",
+                "CREDIT-GUARANTOR": "ADITYA BIRLA CAPITAL LIMITED",
+                "CREDIT-GRANTOR-GROUP": "Category D",
+                "CREDIT-GRANTOR-TYPE": "NBF",
+                "ACCT-TYPE": "Short Term Personal Loan",
+                "DATE-REPORTED": "31-05-2024",
+                "OWNERSHIP-IND": "Individual",
+                "ACCOUNT-STATUS": "Closed",
+                "DISBURSED-AMT": "3,000",
+                "DISBURSED-DT": "18-02-2023",
+                "LAST-PAYMENT-DATE": "06-08-2023",
+                "CLOSED-DATE": "28-03-2024",
+                "INSTALLMENT-AMT": "0",
+                "OVERDUE-AMT": "0",
+                "WRITE-OFF-AMT": "0",
+                "PRINCIPAL-WRITE-OFF-AMT": null,
+                "SETTLEMENT-AMT": null,
+                "CURRENT-BAL": "0",
+                "COMBINED-PAYMENT-HISTORY": "Mar:2024,000/STD|Feb:2024,000/STD|Jan:2024,000/STD|Dec:2023,000/STD|Nov:2023,000/STD|Oct:2023,000/STD|Sep:2023,000/STD|Aug:2023,000/STD|Jul:2023,000/STD|Jun:2023,000/STD|May:2023,000/STD|Apr:2023,000/STD|Mar:2023,000/STD|Feb:2023,000/STD|",
+                "MATCHED-TYPE": "PRIMARY",
+                "LINKED-ACCOUNTS": "",
+                "SECURITY-DETAILS": "",
+                "SECURITY-STATUS": "Un-Secured",
+                "ACCOUNT-REMARKS": null,
+                "ACCT-IN-DISPUTE": null,
+                "SUIT-FILED-WILFUL-DEFAULT-STATUS": null,
+                "WRITTEN-OFF-SETTLED-STATUS": null,
+                "WRITE-OFF-DT": null,
+                "SUIT-FILED-DT": null,
+                "LAST-PAID-AMOUNT": null,
+                "OBLIGATION": null,
+                "ORIGINAL-TERM": "0",
+                "TERM-TO-MATURITY": "0",
+                "ACTUAL-PAYMENT": "",
+                "REPAYMENT-TENURE": "0",
+                "INTEREST-RATE": "0.0",
+                "CREDIT-LIMIT": "",
+                "CASH-LIMIT": "",
+                "OCCUPATION": "",
+                "INCOME-FREQUENCY": "",
+                "INCOME-AMOUNT": ""
+              }
+            },
+            {
+              "LOAN-DETAILS": {
+                "ACCT-NUMBER": "XXXXXXXXXXXXXXX1004",
+                "CREDIT-GUARANTOR": "RBL BANK LIMITED",
+                "CREDIT-GRANTOR-GROUP": "Category B",
+                "CREDIT-GRANTOR-TYPE": "PRB",
+                "ACCT-TYPE": "Credit Card",
+                "DATE-REPORTED": "16-08-2026",
+                "OWNERSHIP-IND": "Individual",
+                "ACCOUNT-STATUS": "Active",
+                "DISBURSED-AMT": "6,232",
+                "DISBURSED-DT": "18-07-2025",
+                "LAST-PAYMENT-DATE": "30-10-2025",
+                "CLOSED-DATE": null,
+                "INSTALLMENT-AMT": "",
+                "OVERDUE-AMT": "0",
+                "WRITE-OFF-AMT": "0",
+                "PRINCIPAL-WRITE-OFF-AMT": null,
+                "SETTLEMENT-AMT": null,
+                "CURRENT-BAL": "0",
+                "COMBINED-PAYMENT-HISTORY": "Aug:2026,000/XXX|Jul:2026,000/XXX|Jun:2026,000/XXX|May:2026,000/XXX|Apr:2026,000/XXX|Mar:2026,000/XXX|Feb:2026,000/XXX|Jan:2026,000/XXX|Dec:2025,000/XXX|Nov:2025,000/XXX|Oct:2025,000/XXX|Sep:2025,000/XXX|Aug:2025,000/XXX|Jul:2025,000/XXX|",
+                "MATCHED-TYPE": "PRIMARY",
+                "LINKED-ACCOUNTS": "",
+                "SECURITY-DETAILS": "",
+                "SECURITY-STATUS": "Un-Secured",
+                "ACCOUNT-REMARKS": null,
+                "ACCT-IN-DISPUTE": null,
+                "SUIT-FILED-WILFUL-DEFAULT-STATUS": null,
+                "WRITTEN-OFF-SETTLED-STATUS": null,
+                "WRITE-OFF-DT": null,
+                "SUIT-FILED-DT": null,
+                "LAST-PAID-AMOUNT": null,
+                "OBLIGATION": null,
+                "ORIGINAL-TERM": "0",
+                "TERM-TO-MATURITY": "0",
+                "ACTUAL-PAYMENT": "",
+                "REPAYMENT-TENURE": "0",
+                "INTEREST-RATE": "46.2",
+                "CREDIT-LIMIT": "25,000",
+                "CASH-LIMIT": "7,000",
+                "OCCUPATION": "Salaried",
+                "INCOME-FREQUENCY": "",
+                "INCOME-AMOUNT": ""
+              }
+            },
+            {
+              "LOAN-DETAILS": {
+                "ACCT-NUMBER": "XXXXXXXXXXXXXXX1005",
+                "CREDIT-GUARANTOR": "HDFC BANK LTD",
+                "CREDIT-GRANTOR-GROUP": "Category A",
+                "CREDIT-GRANTOR-TYPE": "PRB",
+                "ACCT-TYPE": "Credit Card",
+                "DATE-REPORTED": "19-08-2026",
+                "OWNERSHIP-IND": "Individual",
+                "ACCOUNT-STATUS": "Active",
+                "DISBURSED-AMT": "1,38,556",
+                "DISBURSED-DT": "05-09-2024",
+                "LAST-PAYMENT-DATE": "17-08-2026",
+                "CLOSED-DATE": null,
+                "INSTALLMENT-AMT": "",
+                "OVERDUE-AMT": "",
+                "WRITE-OFF-AMT": "0",
+                "PRINCIPAL-WRITE-OFF-AMT": null,
+                "SETTLEMENT-AMT": null,
+                "CURRENT-BAL": "1,12,685",
+                "COMBINED-PAYMENT-HISTORY": "Aug:2026,000/XXX|Jul:2026,000/XXX|Jun:2026,000/XXX|May:2026,000/XXX|Apr:2026,000/XXX|Mar:2026,000/XXX|Feb:2026,000/XXX|Jan:2026,000/XXX|Dec:2025,000/XXX|Nov:2025,000/XXX|Oct:2025,000/XXX|Sep:2025,000/XXX|Aug:2025,000/XXX|Jul:2025,000/XXX|Jun:2025,000/XXX|May:2025,000/XXX|Apr:2025,000/XXX|Mar:2025,000/XXX|Feb:2025,000/XXX|Jan:2025,000/XXX|Dec:2024,000/XXX|Nov:2024,000/XXX|Oct:2024,000/XXX|Sep:2024,000/XXX|",
+                "MATCHED-TYPE": "PRIMARY",
+                "LINKED-ACCOUNTS": "",
+                "SECURITY-DETAILS": "",
+                "SECURITY-STATUS": "Un-Secured",
+                "ACCOUNT-REMARKS": null,
+                "ACCT-IN-DISPUTE": null,
+                "SUIT-FILED-WILFUL-DEFAULT-STATUS": null,
+                "WRITTEN-OFF-SETTLED-STATUS": null,
+                "WRITE-OFF-DT": null,
+                "SUIT-FILED-DT": null,
+                "LAST-PAID-AMOUNT": null,
+                "OBLIGATION": "5634.25",
+                "ORIGINAL-TERM": "0",
+                "TERM-TO-MATURITY": "0",
+                "ACTUAL-PAYMENT": "",
+                "REPAYMENT-TENURE": "0",
+                "INTEREST-RATE": "0.0",
+                "CREDIT-LIMIT": "5,49,000",
+                "CASH-LIMIT": "",
+                "OCCUPATION": "Salaried",
+                "INCOME-FREQUENCY": "",
+                "INCOME-AMOUNT": ""
+              }
+            },
+            {
+              "LOAN-DETAILS": {
+                "ACCT-NUMBER": "XXXXXXXXXXXXXXX1006",
+                "CREDIT-GUARANTOR": "HDFC BANK LTD",
+                "CREDIT-GRANTOR-GROUP": "Category A",
+                "CREDIT-GRANTOR-TYPE": "PRB",
+                "ACCT-TYPE": "Credit Card",
+                "DATE-REPORTED": "13-08-2026",
+                "OWNERSHIP-IND": "Individual",
+                "ACCOUNT-STATUS": "Active",
+                "DISBURSED-AMT": "14,968",
+                "DISBURSED-DT": "13-01-2025",
+                "LAST-PAYMENT-DATE": "31-07-2026",
+                "CLOSED-DATE": null,
+                "INSTALLMENT-AMT": "",
+                "OVERDUE-AMT": "",
+                "WRITE-OFF-AMT": "0",
+                "PRINCIPAL-WRITE-OFF-AMT": null,
+                "SETTLEMENT-AMT": null,
+                "CURRENT-BAL": "4,355",
+                "COMBINED-PAYMENT-HISTORY": "Aug:2026,000/XXX|Jul:2026,000/XXX|Jun:2026,000/XXX|May:2026,000/XXX|Apr:2026,000/XXX|Mar:2026,000/XXX|Feb:2026,000/XXX|Jan:2026,000/XXX|Dec:2025,000/XXX|Nov:2025,000/XXX|Oct:2025,000/XXX|Sep:2025,000/XXX|Aug:2025,000/XXX|Jul:2025,000/XXX|Jun:2025,000/XXX|May:2025,000/XXX|Apr:2025,000/XXX|Mar:2025,027/XXX|Feb:2025,000/XXX|Jan:2025,000/XXX|",
+                "MATCHED-TYPE": "PRIMARY",
+                "LINKED-ACCOUNTS": "",
+                "SECURITY-DETAILS": "",
+                "SECURITY-STATUS": "Un-Secured",
+                "ACCOUNT-REMARKS": null,
+                "ACCT-IN-DISPUTE": null,
+                "SUIT-FILED-WILFUL-DEFAULT-STATUS": null,
+                "WRITTEN-OFF-SETTLED-STATUS": null,
+                "WRITE-OFF-DT": null,
+                "SUIT-FILED-DT": null,
+                "LAST-PAID-AMOUNT": null,
+                "OBLIGATION": "217.75",
+                "ORIGINAL-TERM": "0",
+                "TERM-TO-MATURITY": "0",
+                "ACTUAL-PAYMENT": "",
+                "REPAYMENT-TENURE": "0",
+                "INTEREST-RATE": "0.0",
+                "CREDIT-LIMIT": "5,49,000",
+                "CASH-LIMIT": "",
+                "OCCUPATION": "Salaried",
+                "INCOME-FREQUENCY": "",
+                "INCOME-AMOUNT": ""
+              }
+            },
+            {
+              "LOAN-DETAILS": {
+                "ACCT-NUMBER": "00000040000000001",
+                "CREDIT-GUARANTOR": "STATE BANK OF INDIA",
+                "CREDIT-GRANTOR-GROUP": "Category A",
+                "CREDIT-GRANTOR-TYPE": "NAB",
+                "ACCT-TYPE": "Auto Loan (Personal)",
+                "DATE-REPORTED": "31-07-2026",
+                "OWNERSHIP-IND": "Individual",
+                "ACCOUNT-STATUS": "Active",
+                "DISBURSED-AMT": "10,00,000",
+                "DISBURSED-DT": "14-10-2024",
+                "LAST-PAYMENT-DATE": "",
+                "CLOSED-DATE": null,
+                "INSTALLMENT-AMT": "20,783/Monthly/Monthly",
+                "OVERDUE-AMT": "",
+                "WRITE-OFF-AMT": "0",
+                "PRINCIPAL-WRITE-OFF-AMT": null,
+                "SETTLEMENT-AMT": null,
+                "CURRENT-BAL": "7,02,175",
+                "COMBINED-PAYMENT-HISTORY": "Jul:2026,XXX/STD|Jun:2026,XXX/STD|May:2026,XXX/STD|Apr:2026,XXX/STD|Mar:2026,XXX/STD|Feb:2026,XXX/STD|Jan:2026,XXX/STD|Dec:2025,XXX/STD|Nov:2025,XXX/STD|Oct:2025,XXX/STD|Sep:2025,XXX/STD|Aug:2025,XXX/STD|Jul:2025,XXX/STD|Jun:2025,XXX/STD|May:2025,XXX/STD|Apr:2025,XXX/STD|Mar:2025,XXX/STD|Feb:2025,XXX/STD|Jan:2025,XXX/STD|Dec:2024,XXX/STD|Nov:2024,XXX/STD|Oct:2024,XXX/STD|",
+                "MATCHED-TYPE": "PRIMARY",
+                "LINKED-ACCOUNTS": "",
+                "SECURITY-DETAILS": "",
+                "SECURITY-STATUS": "Secured",
+                "ACCOUNT-REMARKS": null,
+                "ACCT-IN-DISPUTE": null,
+                "SUIT-FILED-WILFUL-DEFAULT-STATUS": null,
+                "WRITTEN-OFF-SETTLED-STATUS": null,
+                "WRITE-OFF-DT": null,
+                "SUIT-FILED-DT": null,
+                "LAST-PAID-AMOUNT": null,
+                "OBLIGATION": "21001.861309715707",
+                "ORIGINAL-TERM": "0",
+                "TERM-TO-MATURITY": "0",
+                "ACTUAL-PAYMENT": "",
+                "REPAYMENT-TENURE": "60",
+                "INTEREST-RATE": "9.05",
+                "CREDIT-LIMIT": "",
+                "CASH-LIMIT": "",
+                "OCCUPATION": "Others",
+                "INCOME-FREQUENCY": "",
+                "INCOME-AMOUNT": ""
+              }
+            }
+          ]
+        },
+        "INQUIRY-HISTORY": {
+          "HISTORY": [
+            {
+              "MEMBER-NAME": "SAMPLE LENDER PORTFOLIO",
+              "PURPOSE": "OTHER",
+              "AMOUNT": "10,000",
+              "REMARK": "—",
+              "INQUIRY-DATE": "02-08-2026"
+            },
+            {
+              "MEMBER-NAME": "HDFC BANK LTD",
+              "PURPOSE": "Credit Card",
+              "AMOUNT": "1,000",
+              "REMARK": "—",
+              "INQUIRY-DATE": "30-08-2025"
+            }
+          ]
+        },
+        "TRENDS": {
+          "NAME": "SCORE-HISTORY",
+          "DATES": "31-03-2026|31-12-2025|30-09-2025|30-06-2025|31-03-2025|31-12-2024|30-09-2024|30-06-2024|31-03-2024|31-12-2023|30-09-2023|30-06-2023",
+          "VALUES": "799|782|782|771|771|788|774|799|701|729|729|729",
+          "RESERVED1": "PERFORM CONSUMER V2.2",
+          "RESERVED2": null,
+          "RESERVED3": null,
+          "DESCRIPTION": "|||||||||||"
+        },
+        "SCORES": {
+          "SCORE": {
+            "SCORE-TYPE": "PERFORM CONSUMER 2.2",
+            "SCORE-VALUE": "799",
+            "SCORE-FACTORS": "SF03|SF11|SF33|"
+          }
+        },
+        "verificarionScoreList": "",
+        "PRINTABLE-REPORT": {
+          "TYPE": "",
+          "FILE-NAME": "",
+          "CONTENT": ""
+        },
+        "enhanceProCcirFlag": "false",
+        "ccirFlag": "false"
+      },
+      "credit_report_link": "https://fintrix-files-eunorth1.s3.eu-north-1.amazonaws.com/documents/0000000000000000000000000000000000000000000000000000000000000000.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Credential=EXAMPLEKEYID%2F20260822%2Feu-north-1%2Fs3%2Faws4_request&amp;X-Amz-Date=20260822T151349Z&amp;X-Amz-Expires=3600&amp;X-Amz-SignedHeaders=host&amp;X-Amz-Signature=0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "is_sandbox": false,
+  "vendor_transaction_id": "TXN-PROD-9b0d279f-36f6-48d1-bbcb-a3d9781080c5",
+  "request_id": "TXN-PROD-01M0N0J1SW5MFHHY16TX6PCMHH",
+  "transaction_id": "TXN-PROD-01M0N0J1SW5MFHHY16TX6PCMHH"
+}
