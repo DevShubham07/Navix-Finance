@@ -79,7 +79,7 @@ function bodyRow(loanId: number) {
 }
 
 beforeEach(() => {
-  localStorage.setItem("navix-staff-working-role:1", "COLLECTION_HEAD"); // ADMIN defaults to CREDIT_HEAD
+  localStorage.setItem("navix-staff-working-role:1", "COLLECTION_HEAD"); // ADMIN defaults to ADMIN
   // 2026-10-06 00:30 IST — still the 5th in UTC. Only `Date` is faked; timers and promises are real.
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-05T19:00:00Z"));

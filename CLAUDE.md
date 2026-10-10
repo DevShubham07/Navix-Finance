@@ -475,7 +475,7 @@ A staffer picks a **working role** from a pill in the header (initials avatar on
 
 | Real role | Working roles (first = default) |
 |---|---|
-| `ADMIN` | Credit Head, Credit Executive, Disbursement Head, Accountant, Collection Head, Collection Executive, Telecaller, Admin (no DSA) |
+| `ADMIN` | Admin (default), Credit Head, Credit Executive, Disbursement Head, Accountant, Collection Head, Collection Executive, Telecaller (no DSA) |
 | `CREDIT_HEAD` | Credit Head, Credit Executive |
 | `COLLECTION_HEAD` | Collection Head, Collection Executive |
 | others | their own role only (static pill) |

@@ -30,8 +30,11 @@ test.describe("RBAC", () => {
     await expect(page.getByText("Credit queue — assign an executive")).toBeVisible();
   });
 
-  test("ADMIN works as Credit Head by default and sees the review queue after switching", async ({ page }) => {
+  test("ADMIN lands on Administrator and sees the credit queues only after switching", async ({ page }) => {
     await loginStaff(page, "ADMIN");
+    await page.goto("/staff/applications");
+    await expect(page.getByRole("button", { name: "Switch role, currently Administrator" })).toBeVisible();
+    await switchRole(page, "Credit Head");
     await page.goto("/staff/applications");
     await expect(page.getByText("Credit queue — assign an executive")).toBeVisible();
     await expect(page.getByText("Credit review — accept, reject or park")).toHaveCount(0);
@@ -190,8 +193,9 @@ test.describe("RBAC", () => {
   test("Administration appears only in the Admin role", async ({ page }) => {
     await loginStaff(page, "ADMIN");
     await page.goto("/staff/dashboard");
+    await switchRole(page, "Credit Head");
     await expect(page.getByRole("link", { name: "Blocklist" })).toHaveCount(0);
-    await switchRole(page, "Admin");
+    await switchRole(page, "Administrator");
     await expect(page.getByRole("link", { name: "Blocklist" })).toBeVisible();
   });
 
@@ -206,6 +210,6 @@ test.describe("RBAC", () => {
     await page.waitForURL(/\/staff\/login/);
     await loginStaff(page, "ADMIN");
     await page.goto("/staff/dashboard");
-    await expect(page.getByRole("button", { name: "Switch role, currently Credit Head" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Switch role, currently Administrator" })).toBeVisible();
   });
 });

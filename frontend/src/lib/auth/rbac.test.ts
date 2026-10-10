@@ -2,11 +2,10 @@ import { describe, expect, it } from "vitest";
 import { can, canWorkAs, effectivePermissions, workingRolesFor } from "./rbac";
 
 describe("working roles", () => {
-  it("ADMIN can work as 7 operational roles plus Admin (last), never DSA", () => {
+  it("ADMIN can work as Admin (first, the default) plus 7 operational roles, never DSA", () => {
     const roles = workingRolesFor("ADMIN");
     expect(roles).toHaveLength(8);
-    expect(roles[0]).toBe("CREDIT_HEAD");
-    expect(roles[roles.length - 1]).toBe("ADMIN");
+    expect(roles[0]).toBe("ADMIN");
     expect(roles).not.toContain("DSA");
   });
 

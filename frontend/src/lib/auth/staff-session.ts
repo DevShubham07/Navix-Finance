@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import type { StaffRole } from "@/lib/auth/rbac";
-import { readWorkingRole } from "@/lib/auth/working-role";
+import { clearWorkingRole, readWorkingRole } from "@/lib/auth/working-role";
 import { readEnvelopeError, formatEnvelopeError } from "@/lib/api/errors";
 
 /**
@@ -79,7 +79,10 @@ export async function loginStaff(
     const env = await readEnvelopeError(res, "Sign-in failed. Please try again.");
     throw new StaffLoginError(formatEnvelopeError(env), env.code);
   }
-  const session = withWorkingRole((await res.json()) as Omit<StaffSession, "realRole">);
+  const body = (await res.json()) as Omit<StaffSession, "realRole">;
+  // A fresh login starts on the default working role; a refresh (no login) keeps the chosen one.
+  clearWorkingRole(body.id);
+  const session = withWorkingRole(body);
   if (typeof window !== "undefined") window.dispatchEvent(new Event(STAFF_SESSION_EVENT));
   return session;
 }

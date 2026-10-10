@@ -180,7 +180,48 @@ public class DashboardService {
 
         return new Snapshot(from.toString(), to.toString(), new Kpis(applications, disbursed, pending, rejected),
                 financial, closedBlock, rates, business.rateTable(Metric.PF_RATE, scope, from, to),
-                business.rateTable(Metric.ROI_RATE, scope, from, to));
+                business.rateTable(Metric.ROI_RATE, scope, from, to), position(scope, from, to));
+    }
+
+    /** The DISBURSED cohort valued today; every figure comes from the server's OutstandingBreakdown. */
+    Position position(DashboardScope scope, LocalDate from, LocalDate to) {
+        List<Loan> loans = loadLoans(metrics.groupLoans(Metric.DISBURSED, scope, from, to, null).stream()
+                .map(GroupLoan::loanId).toList());
+        Map<Long, OutstandingBreakdown> priced = price(loans, today());
+        long principal = 0, net = 0, receivable = 0, penalty = 0, received = 0, waived = 0, overpaid = 0, pending = 0;
+        for (Loan l : loans) {
+            principal += l.getPrincipal();
+            net += l.getNetDisbursed() == null ? 0 : l.getNetDisbursed();
+            OutstandingBreakdown b = priced.get(l.getId());
+            if (b == null) continue;
+            receivable += figure(Metric.POSITION_RECEIVABLE, l, b);
+            penalty += b.penaltyPaise();
+            received += b.verifiedPaise();
+            pending += b.outstandingPaise();
+            if (b.settledAmountPaise() != null) { // approved settlement: what the lender gave up
+                waived += Math.max(0, l.getPrincipal() + b.interestPaise() + b.penaltyPaise() - b.verifiedPaise()
+                        - b.outstandingPaise());
+            } else { // paid more than owed: outstanding floors at 0, so the excess is its own line
+                overpaid += Math.max(0, b.verifiedPaise() - l.getPrincipal() - b.interestPaise() - b.penaltyPaise());
+            }
+        }
+        return new Position(principal, net, receivable, penalty, received, waived, overpaid, pending, loans.size());
+    }
+
+    /** Per-loan value of a priced POSITION_* metric. */
+    private static long figure(Metric m, Loan l, OutstandingBreakdown b) {
+        return switch (m) {
+            case POSITION_RECEIVABLE -> l.getPrincipal() + b.interestPaise();
+            case POSITION_PENALTY -> b.penaltyPaise();
+            case POSITION_RECEIVED -> b.verifiedPaise();
+            case POSITION_PENDING -> b.outstandingPaise();
+            default -> 0;
+        };
+    }
+
+    private static boolean pricedPosition(Metric m) {
+        return m == Metric.POSITION_RECEIVABLE || m == Metric.POSITION_PENALTY || m == Metric.POSITION_RECEIVED
+                || m == Metric.POSITION_PENDING;
     }
 
     // ---- monthly ----------------------------------------------------------------------------
@@ -813,9 +854,13 @@ public class DashboardService {
         for (RowKey r : p.rows()) {
             AppDetail d = details.get(r.applicationId());
             Loan l = r.loanId() == null ? null : loanById.get(r.loanId());
+            Long amount = r.amount();
+            if (pricedPosition(m) && l != null && priced.get(l.getId()) != null) {
+                amount = figure(m, l, priced.get(l.getId()));
+            }
             rows.add(new RecordRow(r.applicationId(), r.loanId(), d == null ? null : d.customerId(),
                     d == null ? null : d.fullName(), d == null ? null : last4(d.mobile()), d == null ? null : d.status(),
-                    r.segment(), r.amount(), l == null ? null : owed(priced, l.getId()),
+                    r.segment(), amount, l == null ? null : owed(priced, l.getId()),
                     l == null || l.getDisbursedOn() == null ? null : l.getDisbursedOn().toString(),
                     l == null || l.getDueDate() == null ? null : l.getDueDate().toString(),
                     l == null || l.getClosedOn() == null ? null : l.getClosedOn().toString(),
@@ -824,8 +869,13 @@ public class DashboardService {
         }
         long sum = p.sum();
         if (m.owedSum()) {
-            sum = price(loadLoans(p.loanIds()), asOf).values().stream()
-                    .mapToLong(OutstandingBreakdown::outstandingPaise).sum();
+            List<Loan> all = loadLoans(p.loanIds());
+            Map<Long, OutstandingBreakdown> allPriced = price(all, asOf);
+            sum = 0;
+            for (Loan l : all) {
+                OutstandingBreakdown b = allPriced.get(l.getId());
+                if (b != null) sum += pricedPosition(m) ? figure(m, l, b) : b.outstandingPaise();
+            }
         }
         return new Records(rows, p.total(), p.fresh(), p.reloan(), sum);
     }

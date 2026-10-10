@@ -2934,7 +2934,9 @@ export type DashMetric =
   | "CLOSED" | "SETTLED" | "PART_PAID" | "DUE_ON" | "PRECLOSED_ON" | "PENDING_ON" | "RECEIVED_ON"
   | "AUM_BUCKET" | "COLLECTION_MONTH" | "COLLECTION_GROUP" | "RELOAN_RETENTION" | "STATE" | "PINCODE"
   | "COMPANY" | "CALENDAR_DUE" | "CALENDAR_DISBURSED" | "CALENDAR_BIRTHDAY" | "STAFF_FILES"
-  | "STAFF_CASES" | "PF_RATE" | "ROI_RATE";
+  | "STAFF_CASES" | "PF_RATE" | "ROI_RATE"
+  | "POSITION_PRINCIPAL" | "POSITION_NET" | "POSITION_RECEIVABLE" | "POSITION_PENALTY" | "POSITION_RECEIVED"
+  | "POSITION_PENDING";
 
 export type DashTone =
   | "navy" | "emerald" | "orange" | "red" | "violet" | "teal" | "sky" | "royal" | "blue" | "amber";
@@ -3003,6 +3005,20 @@ export interface DashSnapshot {
   rates: { disbursementRate: number | null; pendingRate: number | null; rejectionRate: number | null };
   pfTable: DashRateRow[];
   roiTable: DashRateRow[];
+  position?: DashPosition;
+}
+
+/** Loans disbursed in the period, valued today. Receivable excludes penalty. */
+export interface DashPosition {
+  principalPaise: number;
+  netDisbursedPaise: number;
+  receivablePaise: number;
+  penaltyPaise: number;
+  receivedPaise: number;
+  waivedPaise: number;
+  overpaidPaise: number;
+  pendingPaise: number;
+  loans: number;
 }
 
 export interface DashMonthRow {

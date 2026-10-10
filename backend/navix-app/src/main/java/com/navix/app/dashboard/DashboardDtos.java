@@ -44,8 +44,14 @@ public final class DashboardDtos {
     public record Rates(Double disbursementRate, Double pendingRate, Double rejectionRate) {
     }
 
+    /** Loans disbursed in the period, valued today. Receivable = principal + interest (no penalty);
+     *  receivable + penalty - received - waived + overpaid = pending. */
+    public record Position(long principalPaise, long netDisbursedPaise, long receivablePaise, long penaltyPaise,
+                           long receivedPaise, long waivedPaise, long overpaidPaise, long pendingPaise, int loans) {
+    }
+
     public record Snapshot(String from, String to, Kpis kpis, Financial financial, ClosedBlock closed, Rates rates,
-                           List<RateRow> pfTable, List<RateRow> roiTable) {
+                           List<RateRow> pfTable, List<RateRow> roiTable, Position position) {
     }
 
     // ---- monthly --------------------------------------------------------------------------

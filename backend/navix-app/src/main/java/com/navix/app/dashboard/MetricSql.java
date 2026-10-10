@@ -101,6 +101,11 @@ public final class MetricSql {
                 + grp + " as grp, " + extra + " as extra ";
     }
 
+    private static String positionSql(String amount) {
+        return sel(amount, "cast(l.disbursed_on as text)", NIL) + LOAN_JOIN
+                + "where l.disbursed_on between :from and :to %APP% %LOAN%";
+    }
+
     private static final Set<String> ADMIN_ONLY = Set.of("ADMIN");
     private static final Set<String> ADMIN_CREDIT = Set.of("ADMIN", "CREDIT_HEAD", "CREDIT_EXECUTIVE");
     private static final Set<String> ADMIN_CREDIT_DISB =
@@ -120,6 +125,13 @@ public final class MetricSql {
         DISBURSED(ADMIN_CREDIT_DISB, KeyKind.OTHER, false,
                 sel("l.principal", "cast(l.disbursed_on as text)", NIL) + LOAN_JOIN
                         + "where l.disbursed_on between :from and :to %APP% %LOAN%"),
+        // Business position: the DISBURSED cohort; the priced four take their per-loan figure from RepaymentService.
+        POSITION_PRINCIPAL(ADMIN_ONLY, KeyKind.OTHER, false, positionSql("l.principal")),
+        POSITION_NET(ADMIN_ONLY, KeyKind.OTHER, false, positionSql("l.net_disbursed")),
+        POSITION_RECEIVABLE(ADMIN_ONLY, KeyKind.OTHER, true, positionSql("l.principal")),
+        POSITION_PENALTY(ADMIN_ONLY, KeyKind.OTHER, true, positionSql("l.principal")),
+        POSITION_RECEIVED(ADMIN_ONLY, KeyKind.OTHER, true, positionSql("l.principal")),
+        POSITION_PENDING(ADMIN_ONLY, KeyKind.OTHER, true, positionSql("l.principal")),
         PENDING(ADMIN_CREDIT, KeyKind.OTHER, false,
                 sel(REQUESTED, "cast(a.created_on as text)", NIL)
                         + "from seg a where a.created_on between :from and :to %APP%"

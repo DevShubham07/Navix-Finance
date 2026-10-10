@@ -10,7 +10,7 @@ A staffer has one **real role** (from login, used for all permissions) and works
 
 | Real role | Working roles (first = default after login) |
 | --- | --- |
-| ADMIN | **Credit Head** · Credit Executive · Disbursement Head · Accountant · Collection Head · Collection Executive · Telecaller · **Admin** (last; no DSA) |
+| ADMIN | **Admin** (default) · Credit Head · Credit Executive · Disbursement Head · Accountant · Collection Head · Collection Executive · Telecaller (no DSA) |
 | CREDIT_HEAD | **Credit Head** · Credit Executive |
 | COLLECTION_HEAD | **Collection Head** · Collection Executive |
 | everyone else (Credit Executive, Disbursement Head, Accountant, Collection Executive, Telecaller, DSA) | their own role only — the same pill, **static, no chevron, no menu** |
@@ -56,18 +56,18 @@ Clicking the pill opens a white card anchored under it, right-aligned to the pil
   - Right: 14px navy `Check` on the **current** role only.
 - **Footer** (top border `line`, padding 8px 10px, 8.8px muted): *"Actions are recorded with the role you worked as."*
 
-ADMIN menu (8 rows, Admin last; Credit Head current):
+ADMIN menu (8 rows, Admin first and current):
 
 | Role | Purpose line |
 | --- | --- |
-| Credit Head ✓ | Assign leads and monitor your team |
+| Admin ✓ | Staff, settings and company-wide oversight |
+| Credit Head | Assign leads and monitor your team |
 | Credit Executive | Decide the files assigned to you |
 | Disbursement Head | Release approved loans |
 | Accountant | Verify repayments and payments |
 | Collection Head | Assign cases and approve settlements |
 | Collection Executive | Work your collection cases |
 | Telecaller | Call leads and log outcomes |
-| Admin | Staff, settings and company-wide oversight |
 
 CREDIT_HEAD menu: Credit Head ✓ · Credit Executive. COLLECTION_HEAD menu: Collection Head ✓ · Collection Executive. (Same rows and purpose lines as above.)
 

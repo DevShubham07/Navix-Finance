@@ -26,7 +26,7 @@ describe("RoleSwitcher", () => {
 
     const items = screen.getAllByRole("menuitemradio");
     expect(items).toHaveLength(8);
-    expect(items[7]).toHaveTextContent("Admin");
+    expect(items[0]).toHaveTextContent("Administrator");
     expect(screen.getByText("Staff, settings and company-wide oversight")).toBeInTheDocument();
     expect(screen.getByText("Assign leads and monitor your team")).toBeInTheDocument();
     expect(items.filter((i) => i.getAttribute("aria-checked") === "true")).toHaveLength(1);

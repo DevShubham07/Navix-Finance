@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CheckCircle2, Clock, FileText, IndianRupee, Scale, Timer, TrendingUp, XCircle } from "lucide-react";
+import { Banknote, CheckCircle2, Clock, FileText, Hourglass, IndianRupee, Landmark, Receipt, Scale, Timer, TrendingUp, TriangleAlert, XCircle } from "lucide-react";
 import { dashboardApi, paiseToINR, type DashKpi, type DashMetric, type DashRateRow } from "@/lib/api/applications";
 import { cn } from "@/lib/utils";
 import { ChartCard, SectionTitle } from "../chart-card";
@@ -21,6 +21,7 @@ import { AXIS_TICK, CURSOR, GRID_STROKE, ProgressBar, activeRow } from "../chart
 import { NAVY, SERIES, TONE_SOLID, TONE_TINT, fmtPct, gradientCss } from "../colors";
 import { nf } from "../fmt";
 import { KpiCard } from "../kpi-card";
+import { PositionCard } from "../position-card";
 import type { DashTabProps } from "../tab-props";
 import { useDashQuery } from "../use-dash-query";
 import { SnapshotMonthly } from "./snapshot-monthly";
@@ -36,6 +37,7 @@ export function BusinessSnapshot(props: DashTabProps) {
   const { params, open } = props;
   const q = useDashQuery("snapshot", params, [], () => dashboardApi.snapshot(params));
   const s = q.data;
+  const pos = s?.position; // absent on an older backend
 
   const openMetric = (metric: DashMetric, title: string, segment?: "FRESH" | "RELOAN") =>
     open({ metric, title, segment });
@@ -89,6 +91,59 @@ export function BusinessSnapshot(props: DashTabProps) {
           <KpiCard title="Disbursed Cases" tone="emerald" icon={CheckCircle2} kpi={s.kpis.disbursed} shareLabel={shareOf(s.kpis.disbursed.count, total, "applications")} onOpen={(m) => openMetric(m, "Disbursed cases")} />
           <KpiCard title="Pending Cases" tone="orange" icon={Clock} kpi={s.kpis.pending} shareLabel={shareOf(s.kpis.pending.count, total, "applications")} onOpen={(m) => openMetric(m, "Pending cases")} />
           <KpiCard title="Rejected Cases" tone="red" icon={XCircle} kpi={s.kpis.rejected} shareLabel={shareOf(s.kpis.rejected.count, total, "applications")} onOpen={(m) => openMetric(m, "Rejected cases")} />
+        </div>
+      )}
+
+      {!q.isError && (!s || pos) && (
+        <>
+          <SectionTitle>Business position</SectionTitle>
+          <p className="-mt-2 mb-3 text-xs text-grey-500">Loans disbursed in the selected period</p>
+        </>
+      )}
+      {q.isError || (s && !pos) ? null : !pos ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-xl bg-grey-100" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {(
+            [
+              ["Principal disbursed", "navy", Banknote, pos.principalPaise, "POSITION_PRINCIPAL", undefined, "Sum of principal on loans disbursed in the period."],
+              ["Net disbursed", "teal", Landmark, pos.netDisbursedPaise, "POSITION_NET", "after fee + GST", "Cash actually sent to borrowers: principal less processing fee and GST."],
+              ["Net receivable", "violet", Receipt, pos.receivablePaise, "POSITION_RECEIVABLE", "principal + interest to date", "Principal plus interest accrued to date, excluding late penalty."],
+              ["Total penalty", "red", TriangleAlert, pos.penaltyPaise, "POSITION_PENALTY", undefined, "Late penalty accrued on these loans."],
+              ["Net received", "emerald", CheckCircle2, pos.receivedPaise, "POSITION_RECEIVED", "verified payments", "Verified repayments received against these loans."],
+              ["Pending", "orange", Hourglass, pos.pendingPaise, "POSITION_PENDING", pos.waivedPaise > 0 ? `owed today · ${paiseToINR(pos.waivedPaise)} waived` : "owed today, after settlements", "Still owed today on these loans, after settlements."],
+            ] as const
+          ).map(([title, tone, icon, paise, metric, caption, definition]) => (
+            <PositionCard
+              key={metric}
+              title={title}
+              tone={tone}
+              icon={icon}
+              paise={paise}
+              loans={pos.loans}
+              metric={metric}
+              caption={caption}
+              definition={definition}
+              detail={
+                metric === "POSITION_PENDING" ? (
+                  <>
+                    {pos.waivedPaise > 0 && (
+                      <p className="m-0 mt-1.5 tabular-nums">Waived via settlements: {paiseToINR(pos.waivedPaise)}</p>
+                    )}
+                    {pos.overpaidPaise > 0 && (
+                      <p className="m-0 mt-1.5 tabular-nums">Overpaid by borrowers: {paiseToINR(pos.overpaidPaise)}</p>
+                    )}
+                    <p className="m-0 mt-1.5 text-white/70">Receivable + penalty − received − waived + overpaid</p>
+                  </>
+                ) : undefined
+              }
+              onOpen={(m) => openMetric(m, title)}
+            />
+          ))}
         </div>
       )}
 

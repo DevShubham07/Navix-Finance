@@ -188,10 +188,11 @@ export function hasPermission(role: StaffRole, permission: Permission): boolean 
 
 /**
  * A staffer has a REAL role (session cookie) and a WORKING role (header switcher). First entry =
- * default. Roles absent here may only work as themselves.
+ * default (an ADMIN lands as Admin, then the operational roles). Roles absent here may only work as themselves.
  */
 export const WORKING_ROLES: Partial<Record<StaffRole, readonly StaffRole[]>> = {
   ADMIN: [
+    "ADMIN",
     "CREDIT_HEAD",
     "CREDIT_EXECUTIVE",
     "DISBURSEMENT_HEAD",
@@ -199,7 +200,6 @@ export const WORKING_ROLES: Partial<Record<StaffRole, readonly StaffRole[]>> = {
     "COLLECTION_HEAD",
     "COLLECTION_EXECUTIVE",
     "TELECALLER",
-    "ADMIN",
   ],
   CREDIT_HEAD: ["CREDIT_HEAD", "CREDIT_EXECUTIVE"],
   COLLECTION_HEAD: ["COLLECTION_HEAD", "COLLECTION_EXECUTIVE"],
