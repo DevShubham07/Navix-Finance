@@ -98,4 +98,20 @@ describe("Third-party tab", () => {
     expect(await screen.findByText(/skip trace/i, { selector: "div,span,p,h3" })).toBeTruthy();
     expect(skipTraceApi.history).toHaveBeenCalled();
   });
+  it("derives the Aadhaar–PAN linkage step from the PAN response: both numbers, linked, success", async () => {
+    renderTab([pan], 318, { aadhaar: "123456781234" });
+    await screen.findByText("Personal Information");
+    fireEvent.click(screen.getByText("Aadhaar–PAN Linkage"));
+    expect(await screen.findByText("Linked")).toBeInTheDocument();
+    expect(screen.getAllByText("123456781234").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ABCDE1234F").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Success").length).toBeGreaterThan(0);
+  });
+
+  it("shows the linkage as not linked when the PAN provider says so", async () => {
+    renderTab([{ ...pan, derived: { ...pan.derived, aadhaarLinked: false } } as StepResult]);
+    await screen.findByText("Personal Information");
+    fireEvent.click(screen.getByText("Aadhaar–PAN Linkage"));
+    expect(await screen.findByText("Not linked")).toBeInTheDocument();
+  });
 });

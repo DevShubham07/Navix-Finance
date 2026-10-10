@@ -172,7 +172,7 @@ export function CustomerTabBody({
       case "verifications":
         // Every check on the file, penny drop included, with the same per-check detail and manual
         // override the application dialog offers.
-        return applicationId != null ? <VerificationChecksPanel applicationId={applicationId} /> : noApp;
+        return applicationId != null ? <VerificationChecksPanel applicationId={applicationId} aadhaar={detail.profile?.aadhaar} /> : noApp;
       case "third-party":
         return <ThirdPartyTab {...ctx} />;
       case "addresses":
