@@ -79,7 +79,7 @@ class ApplicationVerificationServiceTest {
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
                 new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags,
-                applicationEventRepo);
+                applicationEventRepo, org.mockito.Mockito.mock(BureauPhoneIndexer.class));
         // The score-floor auto-reject is SUSPENDED in production (see autoRejectEnabled). These tests
         // exercise the rule itself, so switch it on explicitly rather than depending on the default.
         lenient().when(featureFlags.isEnabled("bureau-auto-reject", false)).thenReturn(true);

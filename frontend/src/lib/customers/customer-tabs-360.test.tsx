@@ -124,6 +124,7 @@ const pay = (id: number, status: PaymentView["status"], paidOn: string) =>
 describe("Loans exposure summary", () => {
   it("reads total principal, outstanding and last verified payment off the payload", async () => {
     vi.spyOn(customersApi, "documents").mockResolvedValue([]);
+    vi.spyOn(customersApi, "mobileMatches").mockResolvedValue({ bureau: null, checked: [], matches: [] });
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     renderTab(
       "loan",

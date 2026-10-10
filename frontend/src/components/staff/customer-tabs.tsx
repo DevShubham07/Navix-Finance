@@ -31,6 +31,7 @@ import { CommunicationTab } from "@/components/staff/customer-360/communication-
 import { DedupeTab } from "@/components/staff/customer-360/dedupe-tab";
 import { FollowupsTab } from "@/components/staff/customer-360/followups-tab";
 import { ThirdPartyTab } from "@/components/staff/customer-360/third-party-tab";
+import { BureauMobilesStrip } from "@/components/staff/mobile-matches";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { formatRupees } from "@/components/staff/credit/tradeline-table";
@@ -192,6 +193,7 @@ export function CustomerTabBody({
   return (
     <>
       <NeedsManualReviewBadge customerId={customerId} className="mb-3" />
+      {(tab === "loan" || tab === "repayment" || tab === "disbursal") && <BureauMobilesStrip customerId={customerId} />}
       {content}
     </>
   );

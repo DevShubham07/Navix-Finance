@@ -22,6 +22,7 @@ import { CreditBadge } from "@/components/staff/credit-badge";
 import { NeedsManualReviewBadge } from "@/components/staff/detail-parts";
 import { CUSTOMER_TABS, CustomerTabBody } from "@/components/staff/customer-tabs";
 import { stageActionTab } from "@/components/staff/customer-360/stage-actions";
+import { MobileMatchDrawer, MobileReuseStrip } from "@/components/staff/mobile-matches";
 import { customerPageHref } from "@/lib/customers/customer-page";
 import { ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { staffApi, customersApi, type ApplicationStatus } from "@/lib/api/applications";
@@ -94,12 +95,14 @@ export function ApplicationDetailDialog({
   const [tab, setTab] = React.useState(initialTab ?? "customer");
   /** Another application of the same customer, stacked on top of this one (see the render below). */
   const [nestedAppId, setNestedAppId] = React.useState<number | null>(null);
+  const [matchesOpen, setMatchesOpen] = React.useState(false);
 
   // Drop the stacked application when this dialog closes OR retargets: the parent keeps this
   // component mounted and swaps `applicationId`, so without this a stale nested dialog would
   // reappear over an unrelated file.
   React.useEffect(() => {
     setNestedAppId(null);
+    setMatchesOpen(false);
   }, [open, id]);
 
   const role = useStaffMe().data?.role;
@@ -169,7 +172,7 @@ export function ApplicationDetailDialog({
           scroller, so the header and tab strip stay pinned. */}
       <Dialog
         open={open}
-        onClose={onClose}
+        onClose={matchesOpen ? () => {} : onClose}
         size="xl"
         className="!w-[92vw] !h-[88dvh] !max-h-[88dvh] !p-6 !px-7 flex flex-col !overflow-hidden"
       >
@@ -224,6 +227,8 @@ export function ApplicationDetailDialog({
           </div>
         </div>
 
+        {canReview && customerId != null && <MobileReuseStrip customerId={customerId} onOpen={() => setMatchesOpen(true)} />}
+
         <PillTabs tabs={CUSTOMER_TABS} active={tab} onChange={setTab} className="mt-2 shrink-0" />
 
         <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1 text-[10.4px]">
@@ -257,6 +262,15 @@ export function ApplicationDetailDialog({
           ) : null}
         </div>
       </Dialog>
+
+      {canReview && customerId != null && (
+        <MobileMatchDrawer
+          customerId={customerId}
+          open={matchesOpen}
+          onClose={() => setMatchesOpen(false)}
+          onOpenApplication={nested ? undefined : setNestedAppId}
+        />
+      )}
 
       {/* Another of this customer's applications, opened from the Loan tab. Stacked rather than
           swapped so closing it returns you here, on the tab you left. One level only: the nested

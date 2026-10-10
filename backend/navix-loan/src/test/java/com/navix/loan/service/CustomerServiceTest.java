@@ -1534,4 +1534,47 @@ class CustomerServiceTest {
         verify(loanMath, org.mockito.Mockito.never())
                 .dueDateFromSalary(any(), org.mockito.ArgumentMatchers.anyInt());
     }
+
+    // ---- visibleAmong(): the batched twin of requireVisible ----
+
+    @Test
+    void visibleAmongFullViewRoleSeesEverything() {
+        ActorContext.set(new CurrentActor("31", "Head", "CREDIT_HEAD"));
+        assertThat(service.visibleAmong(List.of(1L, 2L))).containsExactlyInAnyOrder(1L, 2L);
+        assertThat(service.visibleAmong(List.of())).isEmpty();
+    }
+
+    @Test
+    void visibleAmongScopedExecutiveSeesOnlyAssignedOrDecided() {
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L)).thenReturn(java.util.Set.of(1L));
+        ApplicationEvent decided = new ApplicationEvent();
+        decided.setApplicationId(500L);
+        decided.setAction(DecisionHistoryService.DECISION_ACTIONS.iterator().next());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("12")).thenReturn(List.of(decided));
+        when(applicationRepository.findCustomerIdsByIdIn(List.of(500L))).thenReturn(java.util.Set.of(2L));
+        assertThat(service.visibleAmong(List.of(1L, 2L, 3L))).containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void visibleAmongTelecallerGetsUnallocatedAndPreSanctionViaOneBatchedQuery() {
+        ActorContext.set(new CurrentActor("12", "Tele", "TELECALLER"));
+        CustomerOwner taken = new CustomerOwner();
+        taken.setCustomerId(2L);
+        taken.setOwnerStaffId(99L);
+        CustomerOwner taken3 = new CustomerOwner();
+        taken3.setCustomerId(3L);
+        taken3.setOwnerStaffId(99L);
+        when(ownerRepository.findAll()).thenReturn(List.of(taken, taken3));
+        when(applicationRepository.findCustomerIdsWithStatusNotIn(any(), any())).thenReturn(java.util.Set.of(3L));
+        // 1 unallocated (permitted by inversion); 2 allocated elsewhere and past sanction; 3 allocated elsewhere but pre-sanction
+        assertThat(service.visibleAmong(List.of(1L, 2L, 3L))).containsExactlyInAnyOrder(1L, 3L);
+        verify(applicationRepository).findCustomerIdsWithStatusNotIn(any(), any());
+    }
+
+    @Test
+    void visibleAmongActorWithoutUsableIdSeesNothing() {
+        ActorContext.set(new CurrentActor("not-a-number", "Odd", "CREDIT_EXECUTIVE"));
+        assertThat(service.visibleAmong(List.of(1L, 2L))).isEmpty();
+    }
 }

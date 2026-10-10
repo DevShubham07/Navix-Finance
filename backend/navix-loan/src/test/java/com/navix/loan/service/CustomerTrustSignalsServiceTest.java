@@ -188,7 +188,9 @@ class CustomerTrustSignalsServiceTest {
         service.forCustomers(customerIds); // second page view: the verdict is cached
 
         assertThat(out).hasSize(51 - 1);
-        assertThat(out.get(1L)).isEqualTo(new TrustSignals("PASS", "NOT_CHECKED", "PASS"));
+        assertThat(out.get(1L).bureau()).isEqualTo("PASS");
+        assertThat(out.get(1L).uan()).isEqualTo("NOT_CHECKED");
+        assertThat(out.get(1L).email()).isEqualTo("PASS");
         assertThat(out.get(2L)).isEqualTo(TrustSignals.NONE);
         verify(apps, times(2)).findByCustomerIdIn(any());
         verify(verifications, times(2)).findByApplicationIdInAndCheckTypeIn(any(), any());
@@ -244,5 +246,120 @@ class CustomerTrustSignalsServiceTest {
         List<BriefMetaRow> metas = List.of(meta(20));
         assertThat(bureauFor(List.of(app(20, 7)), rows, metas)).isEqualTo("NOT_CHECKED");
         verify(profiles, times(0)).findBriefFactsByApplicationIdIn(any());
+    }
+
+    // ---- reasons ----------------------------------------------------------------------------------
+
+    private static BureauReportFacts lender(String lender, String typeCode, String history, String dateReported) {
+        BureauTradeline t = new BureauTradeline(lender, "XXXX1", typeCode, null, null, null, null, null, null,
+                null, history, null, null, null, dateReported);
+        return new BureauReportFacts(null, null, null, null, null, null, 700, 1, 1, 0, 0, null, null, null,
+                0, "R", new BureauDetail(List.of(t), 1, List.of(), null, null));
+    }
+
+    @Test
+    void crifFailNamesLenderAccountTypeMonthAndDpd() {
+        var v = CustomerTrustSignalsService.verdict(
+                lender("HDFC BANK", "05", "Aug:2026,000/STD|Jul:2026,030/STD", null), REPORT);
+        assertThat(v.star()).isEqualTo("FAIL");
+        assertThat(v.why()).startsWith("HDFC BANK · ").endsWith(" · Jul 2026: 30 DPD");
+        assertThat(v.why().split(" · ")).hasSize(3);
+    }
+
+    @Test
+    void crifAssetClassFailReason() {
+        var v = CustomerTrustSignalsService.verdict(lender("ICICI", null, "Aug:2026,000/SUB", null), REPORT);
+        assertThat(v.why()).isEqualTo("ICICI · Aug 2026: asset class SUB");
+    }
+
+    @Test
+    void experianBucketFailReason() {
+        // char 3 of a tradeline reported 2026-08 is May 2026; bucket 1 = 30-59 DPD
+        var v = CustomerTrustSignalsService.verdict(lender("AXIS", null, "000100000", "2026-08-10"), REPORT);
+        assertThat(v.why()).isEqualTo("AXIS · May 2026: 30-59 DPD");
+    }
+
+    @Test
+    void passCarriesAccountCountWindowAndReportDate() {
+        var crif = CustomerTrustSignalsService.verdict(facts("Aug:2026,000/STD", "Jul:2026,000/STD"), REPORT);
+        assertThat(crif.why()).isEqualTo("No DPD on 2 accounts, 6 months to Aug 2026 (report 15 Aug 2026)");
+        var exp = CustomerTrustSignalsService.verdict(one("000000010", "2026-08-10", null), REPORT);
+        assertThat(exp.why()).isEqualTo(
+                "No DPD on 1 account, 6 months to Aug 2026 (report 15 Aug 2026); Experian shows 30+ DPD only");
+    }
+
+    @Test
+    void notCheckedReasons() {
+        assertThat(CustomerTrustSignalsService.verdict(facts("N"), REPORT).why())
+                .isEqualTo("No account history in the last 6 months");
+        assertThat(CustomerTrustSignalsService.verdict(null, REPORT).star()).isEqualTo("NOT_CHECKED");
+    }
+
+    @Test
+    void identityMismatchAndNoRecordReasons() throws Exception {
+        List<LoanApplication> one = List.of(app(20, 7));
+        List<BriefMetaRow> metas = List.of(meta(20));
+        List<CaseFailureRow> mismatch = List.of(bureauRow(20, "REVIEW", "{\"identityMismatch\":\"PAN_NAME\"}"));
+        List<CaseFailureRow> noHit = List.of(bureauRow(20, "REVIEW", "{\"noRecord\":true}"));
+        when(apps.findByCustomerIdIn(any())).thenReturn(one);
+        when(verifications.findByApplicationIdInAndCheckTypeIn(any(), any())).thenReturn(mismatch);
+        when(profiles.findBriefMetaByApplicationIdIn(any())).thenReturn(metas);
+        assertThat(service.forCustomers(List.of(7L)).get(7L).bureauWhy())
+                .isEqualTo("Report may be another person: PAN_NAME");
+
+        when(verifications.findByApplicationIdInAndCheckTypeIn(any(), any())).thenReturn(noHit);
+        when(profiles.findBriefMetaByApplicationIdIn(any())).thenReturn(List.of());
+        assertThat(service.forCustomers(List.of(7L)).get(7L).bureauWhy())
+                .isEqualTo("Bureau has no record for this customer");
+
+        // a newer no-hit (no brief) hides an older report
+        List<BriefMetaRow> old = List.of(meta(19));
+        List<CaseFailureRow> both = List.of(bureauRow(19, "PASS", null), bureauRow(20, "REVIEW", "{\"noRecord\":true}"));
+        when(apps.findByCustomerIdIn(any())).thenReturn(List.of(app(19, 7), app(20, 7)));
+        when(verifications.findByApplicationIdInAndCheckTypeIn(any(), any())).thenReturn(both);
+        when(profiles.findBriefMetaByApplicationIdIn(any())).thenReturn(old);
+        assertThat(service.forCustomers(List.of(7L)).get(7L).bureauWhy())
+                .isEqualTo("Bureau has no record for this customer");
+
+        when(apps.findByCustomerIdIn(any())).thenReturn(one);
+        when(verifications.findByApplicationIdInAndCheckTypeIn(any(), any())).thenReturn(List.of());
+        when(profiles.findBriefMetaByApplicationIdIn(any())).thenReturn(List.of());
+        TrustSignals none = service.forCustomers(List.of(7L)).get(7L);
+        assertThat(none.bureauWhy()).isEqualTo("No bureau report yet");
+        assertThat(none.uanWhy()).isEqualTo("EPFO check not run");
+        assertThat(none.emailWhy()).isEqualTo("Work-email check not run");
+    }
+
+    @Test
+    void uanReasons() {
+        assertThat(service.uanVerdict("REVIEW", "{\"found\":true,\"uan\":\"100412345673\",\"uanMasked\":\"1004XXXX5673\","
+                + "\"employerName\":\"ACME LTD\",\"declaredEmployer\":\"Globex\"}", null).why())
+                .isEqualTo("UAN 100412345673 found · EPFO shows ACME LTD, declared Globex");
+        assertThat(service.uanVerdict("PASS", "{\"found\":true,\"uan\":\"1\",\"uanMasked\":\"XX1\","
+                + "\"employerName\":\"Acme\",\"declaredEmployer\":\"ACME\",\"dateOfExit\":\"2026-05-01\"}", null).why())
+                .isEqualTo("UAN 1 found · exited 2026-05-01");
+        assertThat(service.uanVerdict("PASS", "{\"uan\":\"\",\"uanMasked\":\"XX9\"}", null).why())
+                .isEqualTo("UAN XX9 found");
+        assertThat(service.uanVerdict("REVIEW", "{\"tooManyRecords\":true,\"uanCount\":3}", null).why())
+                .isEqualTo("3 UAN records matched");
+        assertThat(service.uanVerdict("REVIEW", "{\"reason\":\"NO_IDENTIFIER\"}", null).why())
+                .isEqualTo("No identifier to search EPFO");
+        assertThat(service.uanVerdict("PENDING", null, null).why()).isEqualTo("EPFO check pending");
+        assertThat(service.uanVerdict("REVIEW", "{\"providerError\":true}", null).why())
+                .isEqualTo("EPFO unavailable — will retry");
+        assertThat(service.uanVerdict("REVIEW", "{\"found\":false}", "No EPFO record").why())
+                .isEqualTo("No EPFO record");
+    }
+
+    @Test
+    void emailReasons() {
+        assertThat(service.emailVerdict("PASS", "{\"domain\":\"acme.com\",\"matchedEstablishment\":\"ACME LTD\"}", null).why())
+                .isEqualTo("acme.com: email + employer matched (ACME LTD)");
+        assertThat(service.emailVerdict("REVIEW", "{\"verified\":true,\"genericEmail\":true,\"domain\":\"gmail.com\"}", null).why())
+                .isEqualTo("Not an official email (gmail.com)");
+        assertThat(service.emailVerdict("REVIEW", "{\"verified\":false}", null).why()).isEqualTo("Email not verified");
+        assertThat(service.emailVerdict("REVIEW", "{\"verified\":true,\"genericEmail\":false}", null).why())
+                .isEqualTo("Employer not matched — manual review");
+        assertThat(service.emailVerdict("REVIEW", "{\"providerError\":true}", null).star()).isEqualTo("NOT_CHECKED");
     }
 }

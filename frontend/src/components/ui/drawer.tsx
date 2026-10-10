@@ -48,10 +48,16 @@ export function Drawer({
   // Escape closes.
   React.useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Only the topmost modal reacts, so Esc on a drawer over a dialog leaves the dialog open.
+      const modals = document.querySelectorAll('[aria-modal="true"]');
+      if (modals[modals.length - 1] !== panelRef.current) return;
+      onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, panelRef]);
 
   // Lock body scroll while open (scoped to this drawer).
   React.useEffect(() => {

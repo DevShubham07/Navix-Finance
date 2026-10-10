@@ -156,4 +156,12 @@ public interface CustomerProfileRepository extends JpaRepository<CustomerProfile
             + "p.creditBriefGeneratedAt as generatedAt from CustomerProfile p "
             + "where p.applicationId in :applicationIds and p.creditBriefFacts is not null")
     List<BriefFactsRow> findBriefFactsByApplicationIdIn(@Param("applicationIds") Collection<Long> applicationIds);
+
+    /** Another customer's registered mobile; one row per profile, [profile, customerId, applicationStatus]. */
+    @Query("select p.mobile, a.customerId, a.id, a.status, p.fullName, a.createdAt "
+            + "from CustomerProfile p, LoanApplication a "
+            + "where p.applicationId = a.id and p.mobile in :mobiles and a.customerId <> :customerId "
+            + "order by a.id desc")
+    List<Object[]> findOtherBorrowersByMobileIn(@Param("mobiles") Collection<String> mobiles,
+                                                @Param("customerId") Long customerId);
 }

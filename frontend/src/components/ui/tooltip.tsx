@@ -14,6 +14,8 @@ export interface InfoTooltipProps {
   label?: string;
   /** Icon size in px. */
   size?: number;
+  /** Custom trigger content; replaces the ⓘ icon when given. */
+  children?: React.ReactNode;
 }
 
 const POPOVER_MAX_WIDTH = 256; // 16rem, matches max-w-[16rem] below
@@ -31,11 +33,12 @@ const VIEWPORT_MARGIN = 8;
  * every such ancestor; the position is then clamped to the viewport on both axes so it can no
  * longer run off-screen there either.
  */
-export function InfoTooltip({ content, className, label = "More information", size = 14 }: InfoTooltipProps) {
+export function InfoTooltip({ content, className, label = "More information", size = 14, children }: InfoTooltipProps) {
   const [open, setOpen] = React.useState(false);
   const triggerRef = React.useRef<HTMLSpanElement | null>(null);
   const popoverRef = React.useRef<HTMLSpanElement | null>(null);
   const [style, setStyle] = React.useState<React.CSSProperties | null>(null);
+  const openedBy = React.useRef<"hover" | "click">("hover");
   const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelClose = () => {
@@ -114,7 +117,7 @@ export function InfoTooltip({ content, className, label = "More information", si
     <span
       ref={triggerRef}
       className={cn("relative inline-flex", className)}
-      onMouseEnter={() => { cancelClose(); setOpen(true); }}
+      onMouseEnter={() => { cancelClose(); if (!open) openedBy.current = "hover"; setOpen(true); }}
       onMouseLeave={scheduleClose}
     >
       <button
@@ -124,11 +127,14 @@ export function InfoTooltip({ content, className, label = "More information", si
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          setOpen((o) => !o);
+          // Touch emulates mouseenter then click: a click opens, and only a second click on a
+          // click-opened card closes it.
+          if (open && openedBy.current === "click") setOpen(false);
+          else { openedBy.current = "click"; setOpen(true); }
         }}
-        className="inline-flex items-center justify-center rounded-full text-muted transition-colors hover:text-navy focus:outline-none focus-visible:text-navy"
+        className="inline-flex items-center justify-center rounded-full text-muted transition-colors hover:text-navy focus:outline-none focus-visible:text-navy focus-visible:ring-2 focus-visible:ring-navy/40"
       >
-        <Info size={size} strokeWidth={2.25} />
+        {children ?? <Info size={size} strokeWidth={2.25} />}
       </button>
       {open
         && createPortal(

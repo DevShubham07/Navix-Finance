@@ -55,6 +55,10 @@ export interface TrustSignals {
   bureau: TrustStar;
   uan: TrustStar;
   email: TrustStar;
+  /** Staff-only one-line reason behind each star (e.g. "HDFC Bank · Personal Loan · Jul 2026: 30 DPD"). */
+  bureauWhy?: string | null;
+  uanWhy?: string | null;
+  emailWhy?: string | null;
 }
 
 export interface ApplicationView {
@@ -1021,6 +1025,69 @@ export interface DedupeView {
     reasonDetail: string | null;
     blockedUntil: string | null;
   } | null;
+}
+
+/** One phone number a bureau report lists for the customer (mirrors backend `BureauMobiles.Phone`). */
+export interface BureauPhone {
+  /** As the bureau printed it (may be masked, prefixed or a landline). */
+  value: string;
+  /** 10-digit mobile, or null when masked / not a mobile. */
+  normalized: string | null;
+  kind: "MOBILE" | "MASKED" | "OTHER";
+  /** ISO date the bureau last reported the number, when it says. */
+  reportedDate: string | null;
+  source: "CRIF" | "EXPERIAN";
+  /** Where in the report: the lender for an Experian account phone, "Application", "Our request"… */
+  context: string | null;
+  /** True when it equals one of the customer's registered mobiles. */
+  registered: boolean;
+}
+
+export interface BureauPhones {
+  provider: string;
+  applicationId: number;
+  /** ISO timestamp of the pull the numbers come from. */
+  pulledAt: string | null;
+  /** The report was flagged as possibly another person's; its numbers are not used for matching. */
+  identityMismatch: boolean;
+  numbers: BureauPhone[];
+}
+
+/** One of this customer's numbers that was searched for elsewhere. */
+export interface OurNumber {
+  mobile: string;
+  sources: ("REGISTERED" | "BUREAU" | "REFERENCE")[];
+  /** The reference's name when the number came from one of this customer's references. */
+  referenceName: string | null;
+}
+
+/** Another case where one of this customer's numbers appears. Out-of-book rows carry no identifiers. */
+export interface MobileMatch {
+  kind: "BORROWER" | "BUREAU" | "REFERENCE" | "LEAD";
+  mobile: string;
+  /** False when the other customer is outside the viewer's book — ids, names and status are then null. */
+  inBook: boolean;
+  customerId: number | null;
+  applicationId: number | null;
+  applicationStatus: string | null;
+  borrowerName: string | null;
+  /** REFERENCE: the contact name as given on that application. */
+  contactName: string | null;
+  relation: string | null;
+  leadId: number | null;
+  leadName: string | null;
+  leadSource: string | null;
+  /** LEAD: staff who added it. */
+  addedBy: string | null;
+  /** ISO timestamp of when the number was used there. */
+  at: string | null;
+}
+
+/** Mirrors backend `DedupeDtos.MobileMatchView` (GET /api/customers/{id}/mobile-matches). */
+export interface MobileMatchView {
+  bureau: BureauPhones | null;
+  checked: OurNumber[];
+  matches: MobileMatch[];
 }
 
 export interface AddCallLogInput {
@@ -2244,6 +2311,8 @@ export const customersApi = {
 
   /** Aadhaar duplicate, blocklist hits and the live rejection block, in one staff read. */
   dedupe: (customerId: number) => bff<DedupeView>(`${CUSTOMERS_BASE}/${customerId}/dedupe`, "GET"),
+  mobileMatches: (customerId: number) =>
+    bff<MobileMatchView>(`${CUSTOMERS_BASE}/${customerId}/mobile-matches`, "GET"),
 
   /** Add a staff call log to a customer. */
   addCallLog: (customerId: number, body: AddCallLogInput) =>

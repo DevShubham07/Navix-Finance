@@ -298,6 +298,37 @@ public class CustomerService {
         }
     }
 
+    /**
+     * The subset of {@code customerIds} the caller may open — {@link #requireVisible}'s rule, batched
+     * (null scope = all; the telecaller pre-sanction widening included). No DSA check: callers run
+     * {@link #assertVisible} first.
+     */
+    @Transactional(readOnly = true)
+    public Set<Long> visibleAmong(Collection<Long> customerIds) {
+        if (customerIds == null || customerIds.isEmpty()) {
+            return Set.of();
+        }
+        CustomerScope scope = scope();
+        if (scope == null) {
+            return new HashSet<>(customerIds);
+        }
+        Set<Long> visible = new HashSet<>();
+        List<Long> rest = new java.util.ArrayList<>();
+        for (Long id : customerIds) {
+            if (scope.permits(id)) {
+                visible.add(id);
+            } else {
+                rest.add(id);
+            }
+        }
+        CurrentActor actor = ActorContext.get();
+        if (!rest.isEmpty() && actor != null && "TELECALLER".equals(actor.effectiveRole())) {
+            visible.addAll(nullSafe(applicationRepository.findCustomerIdsWithStatusNotIn(
+                    rest, AdminApplicationService.REACHED_SANCTIONED)));
+        }
+        return visible;
+    }
+
     /** For sibling staff reads of one customer (e.g. dedupe): the DSA exclusion plus the same scope rule as {@link #detail}. */
     @Transactional(readOnly = true)
     public void assertVisible(Long customerId) {

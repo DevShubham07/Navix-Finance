@@ -98,4 +98,10 @@ public interface LoanApplicationRepository
 
         Long getCount();
     }
+
+    /** Batched {@link #existsByCustomerIdAndStatusNotIn}: which of {@code customerIds} have an application outside {@code statuses}. */
+    @Query("select distinct a.customerId from LoanApplication a where a.customerId in :customerIds "
+            + "and a.status not in :statuses")
+    Set<Long> findCustomerIdsWithStatusNotIn(@Param("customerIds") Collection<Long> customerIds,
+                                             @Param("statuses") Collection<ApplicationStatus> statuses);
 }

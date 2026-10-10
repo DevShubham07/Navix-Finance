@@ -76,7 +76,7 @@ class BureauChallengeAnswerTest {
                 documentRepo, verification, esign, otpVerifier, emailOtp, storage, risk,
                 new EligibilityService(applicationRepo, limitOverrideRepository, risk), new ObjectMapper(),
                 creditBriefService, eventPublisher, changeLogger, flow, pennyDropGuard, featureFlags,
-                applicationEventRepo);
+                applicationEventRepo, org.mockito.Mockito.mock(BureauPhoneIndexer.class));
         lenient().when(verificationRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(profileRepo.save(any())).thenAnswer(i -> i.getArgument(0));
         ActorContext.set(new CurrentActor("7", "Borrower", "BORROWER"));

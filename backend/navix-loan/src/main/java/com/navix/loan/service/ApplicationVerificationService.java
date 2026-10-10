@@ -308,6 +308,8 @@ public class ApplicationVerificationService {
     // verification verdict lands on it — see logVerificationOverride. Read-free edge: this service
     // only ever appends.
     private final ApplicationEventRepository eventRepo;
+    // Derived bureau_phone rows (V80); swallows its own failures so it can never break a pull.
+    private final BureauPhoneIndexer bureauPhones;
 
     /** Borrower-safe view of one step (never carries bureau score / raw PII). */
     /**
@@ -1669,6 +1671,7 @@ public class ApplicationVerificationService {
         ApplicationVerification row = upsert(appId, BUREAU, status, r.source(), r.txnId(), ref,
                 null, bureauScore != null ? bureauScore.longValue() : null, null, derived,
                 message, cleanRawResponseJson);
+        bureauPhones.index(appId, row, Instant.now());
 
         // Engine auto-reject (revamp.md-style intake rule, same shape as self-employed/past-delinquency):
         // a real, numeric sub-floor score rejects the application outright. A null/missing score
@@ -1734,6 +1737,7 @@ public class ApplicationVerificationService {
         ApplicationVerification row = upsert(appId, BUREAU, status, source.getProvider(),
                 source.getProviderTxnId(), ref, source.getNameMatch(), score, null, derived,
                 message, source.getRawResponse());
+        bureauPhones.index(appId, row, Instant.now());
 
         profile.setBureauScore(score);
         profile.setBureauSource(source.getProvider());

@@ -117,4 +117,22 @@ public interface ApplicationVerificationRepository extends JpaRepository<Applica
                                                                 @Param("maxRetries") int maxRetries,
                                                                 @Param("appStatuses") Collection<String> appStatuses,
                                                                 @Param("limit") int limit);
+
+    /** BUREAU rows that hold a stored report, one page at a time (bureau-phone backfill). */
+    org.springframework.data.domain.Slice<ApplicationVerification> findByCheckTypeAndRawResponseIsNotNull(
+            String checkType, Pageable pageable);
+
+    /** The stored bureau envelope per application, for the mobile-reuse check. */
+    interface BureauRawRow {
+        Long getApplicationId();
+        String getRawResponse();
+        java.time.Instant getUpdatedAt();
+        String getProvider();
+        String getDerived();
+    }
+
+    @Query("select v.applicationId as applicationId, v.rawResponse as rawResponse, v.updatedAt as updatedAt, "
+            + "v.provider as provider, v.derived as derived from ApplicationVerification v "
+            + "where v.checkType = 'BUREAU' and v.rawResponse is not null and v.applicationId in :appIds")
+    List<BureauRawRow> findBureauRaw(@Param("appIds") Collection<Long> appIds);
 }

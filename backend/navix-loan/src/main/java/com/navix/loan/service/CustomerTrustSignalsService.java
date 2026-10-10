@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.navix.common.loan.CustomerTrustDirectory;
 import com.navix.common.loan.TrustSignals;
+import com.navix.common.verification.BureauCodes;
 import com.navix.common.verification.BureauReportFacts;
 import com.navix.common.verification.BureauTradeline;
 import com.navix.loan.entity.LoanApplication;
@@ -77,7 +78,12 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
 
     /** Bureau verdict per (application, pull time): parsing tradeline JSON for a whole register on
      *  every poll is the only expensive step. ponytail: cleared wholesale past 50k entries. */
-    private final Map<String, String> bureauCache = new ConcurrentHashMap<>();
+    private final Map<String, Verdict> bureauCache = new ConcurrentHashMap<>();
+
+    /** A star and the one-line reason behind it. */
+    record Verdict(String star, String why) {}
+
+    private static final Verdict NO_REPORT = new Verdict(NOT_CHECKED, "No bureau report yet");
 
     @Override
     @Transactional(readOnly = true)
@@ -116,7 +122,7 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
         // Deferred consent, challenges, missing profile fields, provider errors and PENDING rows never
         // did a pull, so they must neither decide nor hide an older report.
         Map<Long, Long> decidingByCustomer = new HashMap<>();
-        Map<Long, Boolean> unusable = new HashMap<>(); // deciding app -> no-hit or identity mismatch
+        Map<Long, String> unusable = new HashMap<>(); // deciding app -> why the report cannot be used (null = usable)
         newestFirstByCustomer.forEach((c, ids2) -> {
             for (Long id : ids2) {
                 CaseFailureRow r = rows.get(id + ":" + ApplicationVerificationService.BUREAU);
@@ -126,14 +132,15 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
                     decidingByCustomer.put(c, id);
                     // The report may belong to someone else when the identity check disagreed.
                     boolean mismatch = d != null && !d.path("identityMismatch").asText("").isBlank();
-                    unusable.put(id, noRecord || mismatch);
+                    unusable.put(id, noRecord ? "Bureau has no record for this customer"
+                            : mismatch ? "Report may be another person: " + d.path("identityMismatch").asText() : null);
                     return;
                 }
             }
         });
         // Fetch the (large) facts JSON only for reports we have not already judged.
         List<Long> misses = decidingByCustomer.values().stream().distinct()
-                .filter(id -> !unusable.get(id) && !bureauCache.containsKey(
+                .filter(id -> unusable.get(id) == null && !bureauCache.containsKey(
                         cacheKey(id, meta.get(id).getGeneratedAt())))
                 .toList();
         if (!misses.isEmpty()) {
@@ -147,49 +154,105 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
             List<Long> newestFirst = newestFirstByCustomer.get(customerId);
             Long bureauApp = decidingByCustomer.get(customerId);
             BriefMetaRow m = bureauApp == null ? null : meta.get(bureauApp);
-            String bureau = m == null || unusable.get(bureauApp) ? NOT_CHECKED
-                    : bureauCache.getOrDefault(cacheKey(bureauApp, m.getGeneratedAt()), NOT_CHECKED);
-            out.put(customerId, new TrustSignals(bureau,
-                    latest(newestFirst, rows, ApplicationVerificationService.EMPLOYMENT, true),
-                    latest(newestFirst, rows, ApplicationVerificationService.EMAIL, false)));
+            Verdict bureau = bureauApp == null ? NO_REPORT
+                    : unusable.get(bureauApp) != null ? new Verdict(NOT_CHECKED, unusable.get(bureauApp))
+                    : m == null ? NO_REPORT
+                    : bureauCache.getOrDefault(cacheKey(bureauApp, m.getGeneratedAt()), NO_REPORT);
+            Verdict uan = latest(newestFirst, rows, ApplicationVerificationService.EMPLOYMENT, true);
+            Verdict email = latest(newestFirst, rows, ApplicationVerificationService.EMAIL, false);
+            out.put(customerId, new TrustSignals(bureau.star(), uan.star(), email.star(),
+                    bureau.why(), uan.why(), email.why()));
         }
         return out;
     }
 
-    private String latest(List<Long> newestFirst, Map<String, CaseFailureRow> rows, String type, boolean uan) {
+    private Verdict latest(List<Long> newestFirst, Map<String, CaseFailureRow> rows, String type, boolean uan) {
+        Verdict fallback = null; // newest row's reason when nothing decided (pending, outage, no identifier)
         for (Long id : newestFirst) {
             CaseFailureRow r = rows.get(id + ":" + type);
             if (r == null) {
                 continue;
             }
-            String v = uan ? uan(r.getStatus(), r.getDerived()) : email(r.getStatus(), r.getDerived());
-            if (!NOT_CHECKED.equals(v)) {
+            Verdict v = uan ? uanVerdict(r.getStatus(), r.getDerived(), r.getMessage())
+                    : emailVerdict(r.getStatus(), r.getDerived(), r.getMessage());
+            if (!NOT_CHECKED.equals(v.star())) {
                 return v;
             }
+            if (fallback == null) {
+                fallback = v;
+            }
         }
-        return NOT_CHECKED;
+        return fallback != null ? fallback
+                : new Verdict(NOT_CHECKED, uan ? "EPFO check not run" : "Work-email check not run");
     }
 
     // ---- rules (package-visible for tests) -------------------------------------------------------
 
     String uan(String status, String derivedJson) {
-        JsonNode d = json(derivedJson);
-        if (ApplicationVerificationService.PENDING.equals(status) || d.path("providerError").asBoolean(false)
-                || "NO_IDENTIFIER".equals(d.path("reason").asText(""))) {
-            return NOT_CHECKED;
-        }
-        // Several UANs matched: ambiguous for the reviewer, but a UAN demonstrably exists.
-        boolean hasUan = d.path("tooManyRecords").asBoolean(false)
-                || (d.path("found").asBoolean(false) && !d.path("uan").asText("").isBlank());
-        return ApplicationVerificationService.PASS.equals(status) || hasUan ? PASS : FAIL;
+        return uanVerdict(status, derivedJson, null).star();
     }
 
     String email(String status, String derivedJson) {
-        if (ApplicationVerificationService.PENDING.equals(status)
-                || json(derivedJson).path("providerError").asBoolean(false)) {
-            return NOT_CHECKED;
+        return emailVerdict(status, derivedJson, null).star();
+    }
+
+    Verdict uanVerdict(String status, String derivedJson, String message) {
+        JsonNode d = json(derivedJson);
+        if (ApplicationVerificationService.PENDING.equals(status)) {
+            return new Verdict(NOT_CHECKED, "EPFO check pending");
         }
-        return ApplicationVerificationService.PASS.equals(status) ? PASS : FAIL;
+        if (d.path("providerError").asBoolean(false)) {
+            return new Verdict(NOT_CHECKED, "EPFO unavailable \u2014 will retry");
+        }
+        if ("NO_IDENTIFIER".equals(d.path("reason").asText(""))) {
+            return new Verdict(NOT_CHECKED, "No identifier to search EPFO");
+        }
+        // Several UANs matched: ambiguous for the reviewer, but a UAN demonstrably exists.
+        if (d.path("tooManyRecords").asBoolean(false)) {
+            int n = d.path("uanCount").asInt(0);
+            return new Verdict(PASS, (n > 1 ? n + " UAN records" : "Several UAN records") + " matched");
+        }
+        boolean hasUan = d.path("found").asBoolean(false) && !d.path("uan").asText("").isBlank();
+        if (!ApplicationVerificationService.PASS.equals(status) && !hasUan) {
+            return new Verdict(FAIL, message != null && !message.isBlank() ? message : "No UAN found in EPFO");
+        }
+        String masked = d.path("uan").asText("");
+        if (masked.isBlank()) {
+            masked = d.path("uanMasked").asText("");
+        }
+        StringBuilder w = new StringBuilder(masked.isBlank() ? "UAN found" : "UAN " + masked + " found");
+        String shown = d.path("employerName").asText("").trim();
+        String declared = d.path("declaredEmployer").asText("").trim();
+        String exit = d.path("dateOfExit").asText("").trim();
+        if (!shown.isEmpty() && !declared.isEmpty() && !shown.equalsIgnoreCase(declared)) {
+            w.append(" \u00b7 EPFO shows ").append(shown).append(", declared ").append(declared);
+        } else if (!exit.isEmpty()) {
+            w.append(" \u00b7 exited ").append(exit);
+        }
+        return new Verdict(PASS, w.toString());
+    }
+
+    Verdict emailVerdict(String status, String derivedJson, String message) {
+        JsonNode d = json(derivedJson);
+        if (ApplicationVerificationService.PENDING.equals(status)) {
+            return new Verdict(NOT_CHECKED, "Work-email check pending");
+        }
+        if (d.path("providerError").asBoolean(false)) {
+            return new Verdict(NOT_CHECKED, "Email check unavailable \u2014 will retry");
+        }
+        String domain = d.path("domain").asText("");
+        if (ApplicationVerificationService.PASS.equals(status)) {
+            String est = d.path("matchedEstablishment").asText("");
+            return new Verdict(PASS, (domain.isBlank() ? "" : domain + ": ") + "email + employer matched"
+                    + (est.isBlank() ? "" : " (" + est + ")"));
+        }
+        if (d.has("verified") && !d.path("verified").asBoolean(true)) {
+            return new Verdict(FAIL, "Email not verified");
+        }
+        if (d.path("genericEmail").asBoolean(false)) {
+            return new Verdict(FAIL, "Not an official email" + (domain.isBlank() ? "" : " (" + domain + ")"));
+        }
+        return new Verdict(FAIL, "Employer not matched \u2014 manual review");
     }
 
     private JsonNode json(String raw) {
@@ -205,12 +268,12 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
     }
 
     private void judge(BriefFactsRow row) {
-        String v = NOT_CHECKED;
+        Verdict v = new Verdict(NOT_CHECKED, "Bureau report could not be read");
         try {
             BureauReportFacts f = objectMapper.readValue(row.getFacts(), BureauReportFacts.class);
             LocalDate reportDate = row.getGeneratedAt() == null ? LocalDate.now(IST)
                     : row.getGeneratedAt().atZone(IST).toLocalDate();
-            v = bureau(f, reportDate);
+            v = verdict(f, reportDate);
         } catch (Exception e) {
             log.debug("Trust signal: unreadable bureau facts for application {}", row.getApplicationId());
         }
@@ -222,20 +285,58 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
 
     /** PASS / FAIL / NOT_CHECKED over the last 6 reporting months ending at {@code reportDate}. */
     static String bureau(BureauReportFacts facts, LocalDate reportDate) {
+        return verdict(facts, reportDate).star();
+    }
+
+    private static final java.time.format.DateTimeFormatter DAY =
+            java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
+
+    static Verdict verdict(BureauReportFacts facts, LocalDate reportDate) {
         if (facts == null || facts.detail() == null || facts.detail().tradelines() == null) {
-            return NOT_CHECKED;
+            return new Verdict(NOT_CHECKED, "Bureau report could not be read");
         }
         YearMonth report = YearMonth.from(reportDate);
         YearMonth cutoff = report.minusMonths(WINDOW_MONTHS - 1L);
-        boolean known = false;
+        int clean = 0;
+        boolean anyExperian = false;
         for (BureauTradeline t : facts.detail().tradelines()) {
-            int r = windowDpd(t, report, cutoff);
-            if (r == 1) {
-                return FAIL;
+            Win w = windowDpd(t, report, cutoff);
+            if (w.r == 1) {
+                return new Verdict(FAIL, w.why);
             }
-            known |= r == 0;
+            if (w.r == 0) {
+                clean++;
+                anyExperian |= !w.crif;
+            }
         }
-        return known ? PASS : NOT_CHECKED;
+        if (clean == 0) {
+            return new Verdict(NOT_CHECKED, "No account history in the last 6 months");
+        }
+        return new Verdict(PASS, "No DPD on " + clean + (clean == 1 ? " account" : " accounts")
+                + ", 6 months to " + monthLabel(report) + " (report " + reportDate.format(DAY) + ")"
+                + (anyExperian ? "; Experian shows 30+ DPD only" : ""));
+    }
+
+    private static String monthLabel(YearMonth m) {
+        return m.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH) + " " + m.getYear();
+    }
+
+    /** r: 1 = a delinquent month in the window, 0 = readable and clean, -1 = nothing readable in it. */
+    private record Win(int r, boolean crif, String why) {}
+
+    private static final Win NONE = new Win(-1, false, null);
+
+    private static String lenderLine(BureauTradeline t, String detail) {
+        List<String> parts = new ArrayList<>();
+        if (t.lender() != null && !t.lender().isBlank()) {
+            parts.add(t.lender().trim());
+        }
+        String code = t.accountTypeCode();
+        if (code != null && !code.isBlank()) {
+            parts.add(BureauCodes.accountType(code).orElse(code.trim()));
+        }
+        parts.add(detail);
+        return String.join(" \u00b7 ", parts);
     }
 
     /** CRIF asset classes that mean a non-performing account regardless of the DPD figure. */
@@ -244,15 +345,15 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
         return c.equals("SUB") || c.equals("DBT") || c.equals("LSS") || c.startsWith("SMA");
     }
 
-    /** 1 = a delinquent month in the window, 0 = readable and clean, -1 = nothing readable in it. */
-    private static int windowDpd(BureauTradeline t, YearMonth report, YearMonth cutoff) {
+    private static Win windowDpd(BureauTradeline t, YearMonth report, YearMonth cutoff) {
         String history = t.paymentHistory();
         if (history == null || history.isBlank() || "N".equals(history.trim())) {
-            return -1;
+            return NONE;
         }
         String h = history.trim();
         boolean known = false;
-        if (h.contains(",")) { // CRIF: "Aug:2026,000/STD|Jul:2026,030/XXX|..." newest first
+        boolean crif = h.contains(",");
+        if (crif) { // CRIF: "Aug:2026,000/STD|Jul:2026,030/XXX|..." newest first
             for (String seg : h.split("\\|")) {
                 int comma = seg.indexOf(',');
                 YearMonth m = comma < 0 ? null : month(seg.substring(0, comma));
@@ -261,19 +362,20 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
                 }
                 String[] parts = seg.substring(comma + 1).split("/", 2);
                 if (parts.length > 1 && npaClass(parts[1])) {
-                    return 1;
+                    return new Win(1, true, lenderLine(t, monthLabel(m) + ": asset class "
+                            + parts[1].trim().toUpperCase(Locale.ROOT)));
                 }
                 try {
                     int dpd = Integer.parseInt(parts[0].trim());
                     known = true;
                     if (dpd > 0) {
-                        return 1;
+                        return new Win(1, true, lenderLine(t, monthLabel(m) + ": " + dpd + " DPD"));
                     }
                 } catch (NumberFormatException notReported) {
                     // "XXX" = not reported for that month: neither clean nor delinquent
                 }
             }
-            return known ? 0 : -1;
+            return known ? new Win(0, crif, null) : NONE;
         }
         // Experian: one bucket char per month, char 0 = the tradeline OWN Date_Reported month (not the
         // pull month), so the window is offset by how far that lags the report. 1-6 = 30+ DPD, B/D/M = NPA.
@@ -288,16 +390,17 @@ public class CustomerTrustSignalsService implements CustomerTrustDirectory {
         int skip = Math.max(0, (int) java.time.temporal.ChronoUnit.MONTHS.between(report, first));
         int last = (int) java.time.temporal.ChronoUnit.MONTHS.between(cutoff, first); // inclusive char index
         if (last < 0) {
-            return -1; // the newest char is already older than the window
+            return NONE; // the newest char is already older than the window
         }
         for (int i = skip; i <= last && i < h.length(); i++) {
             char c = h.charAt(i);
             if ("123456BDM".indexOf(c) >= 0) {
-                return 1;
+                String bucket = BureauCodes.paymentHistoryBucket(String.valueOf(c)).orElse(String.valueOf(c));
+                return new Win(1, false, lenderLine(t, monthLabel(first.minusMonths(i)) + ": " + bucket));
             }
             known |= c == '0' || c == 'S';
         }
-        return known ? 0 : -1;
+        return known ? new Win(0, crif, null) : NONE;
     }
 
     private static YearMonth isoMonth(String iso) {

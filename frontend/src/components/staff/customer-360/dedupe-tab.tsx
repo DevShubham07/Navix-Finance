@@ -5,6 +5,7 @@ import { Ban, Copy, ShieldAlert } from "lucide-react";
 import { Badge, EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { Section } from "@/components/staff/detail-parts";
 import type { TabCtx } from "@/components/staff/customer-360/types";
+import { MobileMatchesSection } from "@/components/staff/mobile-matches";
 import { useStaffSession } from "@/lib/auth/staff-session";
 import { customersApi } from "@/lib/api/applications";
 import { formatDate } from "@/lib/utils";
@@ -18,7 +19,7 @@ const TYPE_LABEL: Record<string, string> = {
   DEVICE: "Device",
 };
 
-export function DedupeTab({ customerId, onTabChange }: TabCtx) {
+export function DedupeTab({ customerId, onTabChange, onOpenApplication }: TabCtx) {
   const sess = useStaffSession().session;
   const role = sess?.role;
   const can = (p: Permission) => rbacCan(sess?.realRole, role, p);
@@ -36,6 +37,8 @@ export function DedupeTab({ customerId, onTabChange }: TabCtx) {
 
   return (
     <div className="space-y-3">
+      <MobileMatchesSection customerId={customerId} onOpenApplication={onOpenApplication} />
+
       <Section
         title="Aadhaar duplicate"
         tone={clear || passed ? "neutral" : aadhaar.status === "FAIL" ? "error" : "warning"}
