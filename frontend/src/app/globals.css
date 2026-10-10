@@ -848,7 +848,8 @@ input[type="range"]:focus-visible { outline: 2px solid var(--navy); outline-offs
 .nav-pill.is-active, .nav-pill[aria-current="page"] { background: var(--navy); border-color: var(--navy); color: #fff; box-shadow: var(--shadow-sm); }
 .icon-pill {
   display: inline-grid; place-items: center; width: 38px; height: 38px; flex-shrink: 0;
-  border-radius: 50%; border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+  /* pill radius, not 50%: a circle on the square icon buttons, a proper pill when widened (search) */
+  border-radius: var(--pill); border: 1px solid var(--line); background: var(--paper); color: var(--ink);
   box-shadow: var(--shadow-pill); transition: box-shadow .2s, transform .2s;
 }
 .icon-pill:hover { color: var(--ink); box-shadow: var(--shadow); transform: translateY(-1px); }
@@ -922,3 +923,15 @@ select { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .animate-rise, .animate-grow-y, .animate-pop { animation: none; }
 }
+
+/* ==========================================================================
+   Scrollbars — thin, rounded, quiet; darken on hover. Page and every scroller.
+   ========================================================================== */
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--c-navy-200)) transparent; }
+*:hover { scrollbar-color: rgb(var(--c-navy-300)) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(var(--c-navy-200)); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-navy-300)); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
