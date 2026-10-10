@@ -100,7 +100,7 @@ export function AccountMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
-        className="flex items-center gap-2 rounded px-2 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-navy-tint hover:text-navy"
+        className="flex items-center gap-2 rounded-full border border-line bg-paper py-1 pl-1 pr-3 text-sm font-medium text-ink shadow-pill transition-shadow hover:shadow-base"
       >
         <span className="grid h-8 w-8 place-items-center rounded-full bg-navy text-white">
           <User size={16} />
@@ -113,7 +113,7 @@ export function AccountMenu() {
         <div
           role="menu"
           aria-label="Account"
-          className="absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-md border border-line bg-white py-1 shadow-lg"
+          className="absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-paper py-1 shadow-lg"
         >
           <div className="border-b border-line px-4 py-2.5">
             <div className="truncate text-sm font-semibold text-navy">{name}</div>

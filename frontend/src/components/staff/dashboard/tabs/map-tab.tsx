@@ -16,7 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ChartCard } from "../chart-card";
 import { ProgressBar } from "../chart-parts";
-import { PCT_TONE_COLOR, STAT_CHIP, TONE_SOLID, fmtPct, pctTone } from "../colors";
+import { PCT_TONE_COLOR, PCT_TONE_FILL, STAT_CHIP, TONE_SOLID, fmtPct, pctTone } from "../colors";
 import { nf } from "../fmt";
 import type { DashTabProps } from "../tab-props";
 import { useDashQuery } from "../use-dash-query";
@@ -95,7 +95,7 @@ export function MapTab({ params, open }: DashTabProps) {
             <MapPin size={16} aria-hidden /> India — principal by state
           </span>
         }
-        info="Loans disbursed in the period, shaded emerald (little) to navy (most) by principal. Click a state to filter the table; click it again to clear."
+        info="Loans disbursed in the period, shaded mint (little) to black (most) by principal. Click a state to filter the table; click it again to clear."
         accent={TONE_SOLID.teal}
         loading={q.isLoading}
         error={q.error}
@@ -179,7 +179,7 @@ export function MapTab({ params, open }: DashTabProps) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search pincode, city, state"
             aria-label="Search locations"
-            className="w-full rounded border border-line py-1.5 pl-7 pr-2 text-xs"
+            className="h-9 w-full rounded-full border border-line bg-paper py-1.5 pl-7 pr-3 text-xs shadow-xs"
           />
         </label>
 
@@ -200,7 +200,7 @@ export function MapTab({ params, open }: DashTabProps) {
               onClick={() => setSeg(seg === s.key ? null : s.key)}
               className={cn(
                 "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition hover:-translate-y-0.5",
-                seg === s.key ? "border-navy bg-grey-100 shadow" : "border-line",
+                seg === s.key ? "border-navy bg-paper shadow-pill" : "border-line bg-paper",
               )}
             >
               <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: s.color }} />
@@ -214,7 +214,7 @@ export function MapTab({ params, open }: DashTabProps) {
         ) : (
           <div className="staff-table-scroll max-h-[28rem] overflow-y-auto">
             <table className="w-full min-w-[26rem] text-left text-xs">
-              <thead className="sticky top-0 bg-navy text-white">
+              <thead className="sticky top-0 border-b border-line bg-grey-50 text-slate">
                 <tr>
                   <th className="px-3 py-2 font-semibold">Location</th>
                   <th className="px-3 py-2 text-right font-semibold">Cases</th>
@@ -250,7 +250,7 @@ export function MapTab({ params, open }: DashTabProps) {
                       <td className="px-3 py-1.5 text-right tabular-nums">{formatInrCompact(l.principalPaise)}</td>
                       <td className="w-28 px-3 py-1.5">
                         <span className="flex items-center gap-1.5">
-                          <ProgressBar ratio={l.closeRate} color={PCT_TONE_COLOR[tone]} className="w-14" />
+                          <ProgressBar ratio={l.closeRate} color={PCT_TONE_FILL[tone]} className="w-14" />
                           <span className="font-bold tabular-nums" style={{ color: PCT_TONE_COLOR[tone] }}>
                             {fmtPct(l.closeRate, 1)}
                           </span>

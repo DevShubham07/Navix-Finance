@@ -178,18 +178,22 @@ function LoginInner() {
         </div>
 
         <div className="form-card">
-          <div className="mb-4 grid grid-cols-2 gap-2">
+          <div className="mb-5 grid grid-cols-2 gap-1 rounded-full bg-grey-100 p-1" role="tablist" aria-label="Sign-in method">
             <button
               type="button"
               onClick={() => { setMethod("otp"); setError(undefined); }}
-              className={`rounded border px-3 py-2 text-sm font-semibold transition ${method === "otp" ? "border-navy bg-navy-tint text-navy" : "border-line text-muted hover:border-navy"}`}
+              role="tab"
+              aria-selected={method === "otp"}
+              className={`rounded-full px-3 py-2 text-sm font-medium transition-all duration-300 ${method === "otp" ? "bg-navy text-white shadow-sm" : "text-muted hover:text-ink"}`}
             >
               <Smartphone size={14} className="mr-1 inline" /> Mobile OTP
             </button>
             <button
               type="button"
               onClick={() => { setMethod("password"); setError(undefined); }}
-              className={`rounded border px-3 py-2 text-sm font-semibold transition ${method === "password" ? "border-navy bg-navy-tint text-navy" : "border-line text-muted hover:border-navy"}`}
+              role="tab"
+              aria-selected={method === "password"}
+              className={`rounded-full px-3 py-2 text-sm font-medium transition-all duration-300 ${method === "password" ? "bg-navy text-white shadow-sm" : "text-muted hover:text-ink"}`}
             >
               <Lock size={14} className="mr-1 inline" /> Password
             </button>

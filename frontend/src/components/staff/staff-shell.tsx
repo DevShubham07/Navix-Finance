@@ -16,6 +16,7 @@ import { RoleSwitcher } from "@/components/staff/role-switcher";
 import { clearWorkingRole } from "@/lib/auth/working-role";
 import { clearRecent } from "@/lib/staff/search-recents";
 import { cn } from "@/lib/utils";
+import { UserChip } from "@/components/kit/nav";
 import { NAV, navHref, navVisible, SEGMENTED_PARENT_PATHS } from "@/components/staff/staff-nav";
 import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
 
@@ -81,7 +82,7 @@ function SidebarResizer({ asideRef }: { asideRef: React.RefObject<HTMLElement | 
       onDoubleClick={onDoubleClick}
       className="group absolute -right-1 top-0 hidden h-full w-2 cursor-col-resize lg:block"
     >
-      <div className="mx-auto h-full w-px bg-white/10 transition-colors group-hover:bg-gold group-active:bg-gold" />
+      <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-gold group-active:bg-gold" />
     </div>
   );
 }
@@ -100,10 +101,10 @@ function MobileNavLinks({ realRole, role, pathname, flags }: { realRole: StaffRo
             key={href}
             href={href}
             className={cn(
-              "flex flex-shrink-0 items-center gap-2 whitespace-nowrap rounded px-3 py-2 text-sm transition-colors",
+              "flex flex-shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-2 text-sm transition-colors",
               active
-                ? "bg-white/10 font-semibold text-white"
-                : "text-navix-200 hover:bg-white/5 hover:text-white",
+                ? "bg-navy font-medium text-white shadow-sm"
+                : "bg-paper text-slate shadow-pill hover:text-ink",
             )}
           >
             <Icon size={16} className="flex-shrink-0" />
@@ -141,7 +142,7 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
         if (!items.length) return null;
         return (
           <div key={group.heading} className="mb-5">
-            <p className="px-3 pb-2 text-[0.544rem] font-bold uppercase tracking-wider text-navix-300">{group.heading}</p>
+            <p className="px-3 pb-2 text-[0.544rem] font-semibold uppercase tracking-[.14em] text-muted">{group.heading}</p>
             <ul className="space-y-0.5">
               {items.map((it) => {
                 const { label, Icon, sub, collectionBuckets } = it;
@@ -157,8 +158,8 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
                     <li key={href}>
                       <details open={pathname === pathOnly} className="group">
                         <summary className={cn(
-                          "flex cursor-pointer list-none items-center gap-3 rounded px-3 py-2 text-sm transition-colors [&::-webkit-details-marker]:hidden",
-                          pathname === pathOnly ? "bg-white/10 font-semibold text-white shadow-[inset_3px_0_0_0_var(--gold)]" : "text-navix-200 hover:bg-white/5 hover:text-white",
+                          "flex cursor-pointer list-none items-center gap-3 rounded-full px-3.5 py-2 text-sm transition-all [&::-webkit-details-marker]:hidden",
+                          pathname === pathOnly ? "bg-navy font-medium text-white shadow-sm" : "text-slate hover:bg-paper hover:text-ink hover:shadow-pill",
                         )}>
                           <Icon size={17} className="flex-shrink-0" />
                           <Link
@@ -170,15 +171,15 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
                           </Link>
                           <ChevronRight size={14} className="flex-shrink-0 opacity-60 transition-transform group-open:rotate-90" />
                         </summary>
-                        <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
+                        <ul className="ml-5 mt-1 space-y-0.5 border-l border-line pl-2">
                           {COLLECTION_BUCKETS.map((item) => (
                             <li key={item.bucket}>
                               <Link href={`${href}?bucket=${item.bucket}`} onClick={onNavigate} className={cn(
-                                "flex items-center justify-between rounded px-2 py-1.5 text-xs transition-colors",
-                                pathname === pathOnly && currentBucket === item.bucket ? "bg-white/10 font-semibold text-white" : "text-navix-300 hover:bg-white/5 hover:text-white",
+                                "flex items-center justify-between rounded-full px-2.5 py-1.5 text-xs transition-colors",
+                                pathname === pathOnly && currentBucket === item.bucket ? "bg-paper font-medium text-ink shadow-pill" : "text-muted hover:bg-paper hover:text-ink",
                               )}>
                                 <span>{item.label}</span>
-                                <span className="rounded-full bg-white/10 px-1.5 py-0.5 font-mono text-[8px]">{bucketCounts[item.bucket]}</span>
+                                <span className="rounded-full bg-grey-200 px-1.5 py-0.5 font-mono text-[8px] text-slate">{bucketCounts[item.bucket]}</span>
                               </Link>
                             </li>
                           ))}
@@ -194,10 +195,10 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
                       <details open={parentActive} className="group">
                         <summary
                           className={cn(
-                            "flex cursor-pointer list-none items-center gap-3 rounded px-3 py-2 text-sm transition-colors [&::-webkit-details-marker]:hidden",
+                            "flex cursor-pointer list-none items-center gap-3 rounded-full px-3.5 py-2 text-sm transition-all [&::-webkit-details-marker]:hidden",
                             parentActive
-                              ? "bg-white/10 font-semibold text-white shadow-[inset_3px_0_0_0_var(--gold)]"
-                              : "text-navix-200 hover:bg-white/5 hover:text-white",
+                              ? "bg-navy font-medium text-white shadow-sm"
+                              : "text-slate hover:bg-paper hover:text-ink hover:shadow-pill",
                           )}
                         >
                           <Icon size={17} className="flex-shrink-0" />
@@ -210,7 +211,7 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
                           </Link>
                           <ChevronRight size={14} className="flex-shrink-0 opacity-60 transition-transform group-open:rotate-90" />
                         </summary>
-                        <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
+                        <ul className="ml-5 mt-1 space-y-0.5 border-l border-line pl-2">
                           {sub.map(({ label: sl, seg, tone }) => {
                             const childActive = parentActive && currentSeg === seg;
                             return (
@@ -219,10 +220,10 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
                                   href={`${href}?seg=${seg}`}
                                   onClick={onNavigate}
                                   className={cn(
-                                    "flex items-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors",
+                                    "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-colors",
                                     childActive
-                                      ? "bg-white/10 font-semibold text-white"
-                                      : "text-navix-300 hover:bg-white/5 hover:text-white",
+                                      ? "bg-paper font-medium text-ink shadow-pill"
+                                      : "text-muted hover:bg-paper hover:text-ink",
                                   )}
                                 >
                                   {/* Status dot only for segments carrying a success/error tone (e.g.
@@ -261,10 +262,10 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
                       href={href}
                       onClick={onNavigate}
                       className={cn(
-                        "flex items-center gap-3 rounded px-3 py-2 text-sm transition-colors",
+                        "flex items-center gap-3 rounded-full px-3.5 py-2 text-sm transition-all",
                         active
-                          ? "bg-white/10 font-semibold text-white shadow-[inset_3px_0_0_0_var(--gold)]"
-                          : "text-navix-200 hover:bg-white/5 hover:text-white",
+                          ? "bg-navy font-medium text-white shadow-sm"
+                          : "text-slate hover:bg-paper hover:text-ink hover:shadow-pill",
                       )}
                     >
                       <Icon size={17} className="flex-shrink-0" />
@@ -305,18 +306,18 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   }, [authed]);
 
   if (isPublic) {
-    return <div className="min-h-screen bg-ivory">{children}</div>;
+    return <div className="app-backdrop">{children}</div>;
   }
 
   if (loading) {
-    return <div className="grid min-h-screen place-items-center bg-ivory text-muted">Loading console…</div>;
+    return <div className="app-backdrop grid place-items-center text-muted">Loading console…</div>;
   }
 
   if (!session) {
     return (
-      <div className="grid min-h-screen place-items-center bg-ivory">
+      <div className="app-backdrop grid place-items-center">
         <div className="form-card max-w-sm text-center">
-          <h2 className="font-serif text-xl text-navy">Staff sign-in required</h2>
+          <h1 className="text-3xl">Staff sign-in required</h1>
           <p className="mt-2 text-sm text-muted">Your session has ended. Please sign in to continue.</p>
           <Link href="/staff/login" className="btn btn-navy mt-4">Go to staff sign-in</Link>
         </div>
@@ -337,62 +338,64 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex min-h-screen bg-ivory">
-      <aside
-        ref={asideRef}
-        style={{ width: "var(--sidebar-w, 240px)" }}
-        className="sticky top-0 hidden h-screen flex-shrink-0 flex-col bg-navy-900 lg:flex"
-      >
-        <div className="border-b border-white/10 px-5 py-4">
-          <Brand href="/staff/dashboard" tag="Staff Console" light />
-        </div>
-        <nav className="flex-1 overflow-y-auto px-3 py-5">
-          <React.Suspense fallback={null}>
-            <NavLinks realRole={session.realRole} role={session.role} pathname={pathname} flags={flags} />
-          </React.Suspense>
-        </nav>
-        <SidebarResizer asideRef={asideRef} />
-      </aside>
+    <div className="app-backdrop">
+      <div className="app-frame flex">
+        <aside
+          ref={asideRef}
+          style={{ width: "var(--sidebar-w, 240px)" }}
+          className="sticky top-[14px] hidden h-[calc(100dvh-28px)] flex-shrink-0 flex-col border-r border-line lg:flex"
+        >
+          <div className="px-5 pb-3 pt-5">
+            <Brand href="/staff/dashboard" tag="Staff Console" />
+          </div>
+          <nav className="flex-1 overflow-y-auto px-3 py-4 [scrollbar-width:thin]">
+            <React.Suspense fallback={null}>
+              <NavLinks realRole={session.realRole} role={session.role} pathname={pathname} flags={flags} />
+            </React.Suspense>
+          </nav>
+          <SidebarResizer asideRef={asideRef} />
+        </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="staff-header sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-line bg-white px-4 py-3 lg:px-6">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="staff-header sticky top-0 z-30 flex items-center justify-between gap-2 bg-frame/85 px-4 py-3 backdrop-blur-md sm:rounded-tr-[var(--r-frame)] lg:px-7 lg:pt-4">
+            <div className="lg:hidden">
+              <Brand href="/staff/dashboard" tag="Staff" className="max-sm:[&_.brand-text]:hidden" />
+            </div>
+            <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
+              {/* DSA is firewalled from customer/application/loan data, so it gets no palette at all
+                  (the endpoint rejects it too). `global-search` is the dev-only kill switch. */}
+              {session.role !== "DSA" && flags?.["global-search"] !== false && (
+                <GlobalSearch realRole={session.realRole} role={session.role} staffId={session.id} flags={flags} />
+              )}
+              <NotificationBell scope="staff" />
+              <RoleSwitcher staffId={session.id} realRole={session.realRole} role={session.role} />
+              <Link
+                href="/staff/profile"
+                title={`${session.name} · ${STAFF_ROLE_LABELS[session.realRole]}`}
+                aria-label={`${session.name} · ${STAFF_ROLE_LABELS[session.realRole]}`}
+                className="rounded-full"
+              >
+                <UserChip name={session.name} role={STAFF_ROLE_LABELS[session.realRole]} />
+              </Link>
+              <button
+                onClick={signOut}
+                title="Sign out"
+                aria-label="Sign out"
+                className="icon-pill text-muted hover:text-ink"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          </header>
+
           <div className="lg:hidden">
-            <Brand href="/staff/dashboard" tag="Staff" />
+            <div className="flex gap-1 overflow-x-auto px-2 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none]">
+              <MobileNavLinks realRole={session.realRole} role={session.role} pathname={pathname} flags={flags} />
+            </div>
           </div>
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            {/* DSA is firewalled from customer/application/loan data, so it gets no palette at all
-                (the endpoint rejects it too). `global-search` is the dev-only kill switch. */}
-            {session.role !== "DSA" && flags?.["global-search"] !== false && (
-              <GlobalSearch realRole={session.realRole} role={session.role} staffId={session.id} flags={flags} />
-            )}
-            <RoleSwitcher staffId={session.id} realRole={session.realRole} role={session.role} />
-            <Link
-              href="/staff/profile"
-              title={`${session.name} · ${STAFF_ROLE_LABELS[session.realRole]}`}
-              aria-label={`${session.name} · ${STAFF_ROLE_LABELS[session.realRole]}`}
-              className="grid h-9 w-9 place-items-center rounded-full bg-navy-tint font-serif font-bold text-navy"
-            >
-              {session.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-            </Link>
-            <NotificationBell scope="staff" />
-            <button
-              onClick={signOut}
-              title="Sign out"
-              aria-label="Sign out"
-              className="flex items-center rounded border border-line px-3 py-2 text-muted hover:bg-grey-100 hover:text-ink"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
-        </header>
 
-        <div className="border-b border-line bg-navy-900 lg:hidden">
-          <div className="flex gap-1 overflow-x-auto px-2 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:none]">
-            <MobileNavLinks realRole={session.realRole} role={session.role} pathname={pathname} flags={flags} />
-          </div>
+          <main className="navix-crm flex-1 px-3 pb-6 pt-1 lg:px-7 lg:pb-8">{children}</main>
         </div>
-
-        <main className="navix-crm flex-1 p-3 lg:p-6">{children}</main>
       </div>
       {/* The one mount point for `toast.*` across the console. Without it every toast call is a
           silent no-op — the store queues the message and nothing renders it. It portals to

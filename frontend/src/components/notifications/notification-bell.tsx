@@ -65,13 +65,11 @@ export function NotificationBell({ scope }: { scope: NotificationScope }) {
         aria-expanded={open}
         aria-label={count > 0 ? `Notifications (${count} unread)` : "Notifications"}
         className={cn(
-          "relative grid h-9 w-9 place-items-center rounded-full transition-colors",
-          scope === "staff"
-            ? "text-muted hover:bg-grey-100 hover:text-ink"
-            : "text-ink hover:bg-navy-tint hover:text-navy",
+          "icon-pill relative",
+          scope === "staff" ? "text-slate hover:text-ink" : "text-ink",
         )}
       >
-        <Bell size={18} />
+        <Bell size={16} strokeWidth={1.8} />
         {count > 0 && (
           <span className="absolute -right-0.5 -top-0.5 grid min-w-[1.05rem] place-items-center rounded-full bg-error-600 px-1 text-[0.496rem] font-bold leading-[1.05rem] text-white">
             {count > 99 ? "99+" : count}
@@ -83,7 +81,7 @@ export function NotificationBell({ scope }: { scope: NotificationScope }) {
         <div
           role="menu"
           aria-label="Notifications"
-          className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-md border border-line bg-white shadow-lg sm:w-96"
+          className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-line bg-paper shadow-lg sm:w-96"
         >
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <div className="text-sm font-semibold text-navy">Notifications</div>

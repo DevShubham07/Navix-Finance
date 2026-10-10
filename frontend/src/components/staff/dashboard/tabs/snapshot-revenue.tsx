@@ -28,17 +28,17 @@ import { formatInrCompact } from "@/lib/staff/format-inr";
 import { cn } from "@/lib/utils";
 import { ChartCard } from "../chart-card";
 import { ChartTooltip } from "../chart-tooltip";
-import { AXIS_TICK, BarGradient, CURSOR, GRID_STROKE, PctChip, ProgressBar, activeRow, payloadOf } from "../chart-parts";
+import { BAR, CURSOR, GRID, PctChip, ProgressBar, VALUE_LABEL, X_AXIS, Y_AXIS, activeRow, payloadOf } from "../chart-parts";
 import {
   DPD_COLORS,
   DPD_LABELS,
-  GRADIENTS,
   NAVY,
   PCT_TONE_COLOR,
   SERIES,
-  TEXT,
   TONE_SOLID,
+  TONE_TEXT,
   TONE_TINT,
+  WHITE,
   fmtPct,
   pctTone,
 } from "../colors";
@@ -47,7 +47,7 @@ import type { DashTabProps } from "../tab-props";
 import { useDashQuery } from "../use-dash-query";
 
 const chartBox = "h-64 min-h-[240px] w-full";
-const dateInput = "rounded border border-line bg-white px-2 py-1 text-xs";
+const dateInput = "h-8 rounded-full border border-line bg-paper px-3 text-xs font-medium text-ink shadow-pill";
 /** Value labels above bars stop being legible past this many bars. */
 const LABELS_MAX_BARS = 10;
 
@@ -108,8 +108,9 @@ export function Revenue(props: DashTabProps) {
       }
     >
       {t && (
-        <p className="m-0 mb-2 font-serif text-2xl font-bold" style={{ color: TEXT.good }} title={paiseToINR(t.revenuePaise)}>
-          {paiseToINR(t.revenuePaise)} <span className="text-xs font-normal text-muted">total revenue</span>
+        <p className="m-0 mb-3 flex flex-wrap items-end gap-x-2" title={paiseToINR(t.revenuePaise)}>
+          <span className="figure-display text-[2.2rem] text-ink">{paiseToINR(t.revenuePaise)}</span>{" "}
+          <span className="pb-1 text-xs text-slate">total revenue</span>
         </p>
       )}
       <div className={chartBox}>
@@ -117,13 +118,13 @@ export function Revenue(props: DashTabProps) {
           <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="dg-rev" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={SERIES.good} stopOpacity={0.55} />
-                <stop offset="100%" stopColor={SERIES.good} stopOpacity={0.05} />
+                <stop offset="0%" stopColor={SERIES.good} stopOpacity={0.32} />
+                <stop offset="100%" stopColor={SERIES.good} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-            <XAxis dataKey="label" tick={AXIS_TICK} minTickGap={16} />
-            <YAxis tick={AXIS_TICK} tickFormatter={(v: number) => formatInrCompact(v)} width={58} />
+            <CartesianGrid {...GRID} />
+            <XAxis dataKey="label" {...X_AXIS} minTickGap={16} />
+            <YAxis {...Y_AXIS} tickFormatter={(v: number) => formatInrCompact(v)} width={58} />
             <Tooltip
               content={
                 <ChartTooltip
@@ -140,8 +141,8 @@ export function Revenue(props: DashTabProps) {
               stroke={SERIES.good}
               strokeWidth={2.5}
               fill="url(#dg-rev)"
-              dot={{ r: 3, fill: SERIES.good }}
-              activeDot={{ r: 6 }}
+              dot={false}
+              activeDot={{ r: 5, strokeWidth: 3, stroke: WHITE }}
             />
             {/* Hidden helper series so the tooltip can show the day's components. */}
             <Area dataKey="interest" stroke={SERIES.interest} strokeOpacity={0} fill="none" legendType="none" activeDot={false} dot={false} />
@@ -199,13 +200,9 @@ export function InterestPf(props: DashTabProps) {
                 });
             }}
           >
-            <defs>
-              <BarGradient id="dg-int" color={SERIES.interest} />
-              <BarGradient id="dg-pf" color={SERIES.pf} />
-            </defs>
-            <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-            <XAxis dataKey="label" tick={AXIS_TICK} minTickGap={12} />
-            <YAxis tick={AXIS_TICK} tickFormatter={(v: number) => formatInrCompact(v)} width={58} />
+            <CartesianGrid {...GRID} />
+            <XAxis dataKey="label" {...X_AXIS} minTickGap={12} />
+            <YAxis {...Y_AXIS} tickFormatter={(v: number) => formatInrCompact(v)} width={58} />
             <Tooltip
               cursor={CURSOR}
               content={
@@ -217,11 +214,11 @@ export function InterestPf(props: DashTabProps) {
                 />
               }
             />
-            <Bar dataKey="interest" name="Interest" fill="url(#dg-int)" radius={[6, 6, 0, 0]} cursor="pointer">
-              {labelled && <LabelList dataKey="interest" position="top" formatter={(v: number) => formatInrCompact(v)} style={{ fontSize: 9, fill: TEXT.blueDark }} />}
+            <Bar dataKey="interest" name="Interest" fill={SERIES.interest} {...BAR} cursor="pointer">
+              {labelled && <LabelList dataKey="interest" position="top" formatter={(v: number) => formatInrCompact(v)} style={{ ...VALUE_LABEL, fontSize: 9 }} />}
             </Bar>
-            <Bar dataKey="pf" name="Processing fee" fill="url(#dg-pf)" radius={[6, 6, 0, 0]} cursor="pointer">
-              {labelled && <LabelList dataKey="pf" position="top" formatter={(v: number) => formatInrCompact(v)} style={{ fontSize: 9, fill: TEXT.good }} />}
+            <Bar dataKey="pf" name="Processing fee" fill={SERIES.pf} {...BAR} cursor="pointer">
+              {labelled && <LabelList dataKey="pf" position="top" formatter={(v: number) => formatInrCompact(v)} style={{ ...VALUE_LABEL, fontSize: 9 }} />}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -312,9 +309,9 @@ export function PreclosureWeek({ params, open }: DashTabProps) {
                         }
                         title={`${c.label} ${fmtDayLong(d.date)}: ${nf(v.count)} loans · ${paiseToINR(v.paise)}`}
                         className="block w-full rounded-lg px-3 py-2 text-left transition hover:-translate-y-0.5 hover:shadow disabled:hover:translate-y-0"
-                        style={{ background: TONE_TINT[c.tone], borderLeft: `3px solid ${GRADIENTS[c.tone][0]}` }}
+                        style={{ background: TONE_TINT[c.tone] }}
                       >
-                        <span className="block text-sm font-bold" style={{ color: GRADIENTS[c.tone][1] }}>
+                        <span className="block text-sm font-semibold" style={{ color: TONE_TEXT[c.tone] }}>
                           {nf(v.count)} <span className="text-[10px] font-medium">loans</span>
                         </span>
                         <span className="block tabular-nums text-muted">{paiseToINR(v.paise)}</span>
@@ -333,7 +330,7 @@ export function PreclosureWeek({ params, open }: DashTabProps) {
                 {WEEK_CELLS.map((c) => {
                   const v = weekCell(total, c.key);
                   return (
-                    <td key={c.key} className="rounded-lg bg-navy px-3 py-2 text-white">
+                    <td key={c.key} className="rounded-xl bg-grey-100 px-3 py-2 text-ink">
                       {nf(v.count)} · {paiseToINR(v.paise)}
                     </td>
                   );
@@ -400,18 +397,18 @@ function Aum({ params, open }: DashTabProps) {
             type="button"
             onClick={() => openBucket(d.bucket)}
             title={`${d.label}: ${nf(d.cases)} cases · ${paiseToINR(d.principal)} principal`}
-            className="rounded-full px-3 py-1 text-xs font-semibold text-white hover:-translate-y-0.5 hover:shadow"
-            style={{ background: DPD_COLORS[d.bucket] }}
+            className="flex items-center gap-1.5 rounded-full border border-line bg-paper px-3 py-1 text-xs font-semibold text-ink shadow-xs transition hover:-translate-y-0.5 hover:shadow-md"
           >
+            <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: DPD_COLORS[d.bucket] }} />
             {d.label} · {nf(d.cases)}
           </button>
         ))}
       </div>
       {total && (
-        <div className="mb-3 flex flex-wrap gap-2 text-xs font-semibold text-white">
-          <span className="rounded-full bg-navy px-3 py-1">Cases {nf(total.cases)}</span>
-          <span className="rounded-full bg-navy px-3 py-1">Principal {paiseToINR(total.principalPaise)}</span>
-          <span className="rounded-full bg-navy px-3 py-1">Owed {paiseToINR(total.owedPaise)}</span>
+        <div className="mb-3 flex flex-wrap gap-2 text-xs font-semibold text-ink">
+          <span className="rounded-full border border-line bg-paper px-3 py-1 shadow-xs">Cases {nf(total.cases)}</span>
+          <span className="rounded-full border border-line bg-paper px-3 py-1 shadow-xs">Principal {paiseToINR(total.principalPaise)}</span>
+          <span className="rounded-full border border-line bg-paper px-3 py-1 shadow-xs">Owed {paiseToINR(total.owedPaise)}</span>
         </div>
       )}
       {chips && (
@@ -424,11 +421,12 @@ function Aum({ params, open }: DashTabProps) {
               ["90+ days", chips.d90PlusPct, chips.d90PlusCount, DPD_COLORS.D90_PLUS],
             ] as const
           ).map(([l, pct, n, c]) => (
-            <div key={l} className="rounded-lg border border-line px-3 py-1.5" style={{ borderLeft: `4px solid ${c}` }}>
-              <span className="block text-[11px] text-muted">{l}</span>
-              <span className="text-sm font-bold" style={{ color: c }}>
-                {fmtPct(pct, 1)}
+            <div key={l} className="rounded-xl bg-grey-100 px-3 py-2">
+              <span className="flex items-center gap-1.5 text-[11px] text-slate">
+                <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: c }} />
+                {l}
               </span>
+              <span className="text-sm font-semibold text-ink">{fmtPct(pct, 1)}</span>
               <span className="ml-1 text-[11px] text-muted">{nf(n)} cases</span>
             </div>
           ))}
@@ -436,7 +434,7 @@ function Aum({ params, open }: DashTabProps) {
       )}
 
       <div className="mb-2 flex items-center justify-between">
-        <h4 className="m-0 text-xs font-semibold text-navy">DPD Buckets Visualization</h4>
+        <h4 className="m-0 text-xs font-medium text-ink">DPD Buckets Visualization</h4>
         <div role="group" aria-label="Chart type" className="flex gap-1 rounded-full bg-grey-100 p-0.5">
           {(["donut", "bar"] as const).map((m) => (
             <button
@@ -460,9 +458,11 @@ function Aum({ params, open }: DashTabProps) {
                 data={data}
                 dataKey="cases"
                 nameKey="label"
-                innerRadius="55%"
-                outerRadius="85%"
-                paddingAngle={2}
+                innerRadius="62%"
+                outerRadius="90%"
+                paddingAngle={3}
+                cornerRadius={8}
+                stroke="none"
                 cursor="pointer"
                 onClick={(d) => {
                   const row = payloadOf<{ bucket: DashBucket }>(d);
@@ -483,15 +483,15 @@ function Aum({ params, open }: DashTabProps) {
                 if (row) openBucket(row.bucket);
               }}
             >
-              <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-              <XAxis dataKey="label" tick={AXIS_TICK} />
-              <YAxis tick={AXIS_TICK} allowDecimals={false} width={36} />
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="label" {...X_AXIS} />
+              <YAxis {...Y_AXIS} allowDecimals={false} width={36} />
               <Tooltip cursor={CURSOR} content={tip} />
-              <Bar dataKey="cases" name="Cases" radius={[6, 6, 0, 0]} cursor="pointer">
+              <Bar dataKey="cases" name="Cases" {...BAR} cursor="pointer">
                 {data.map((d) => (
                   <Cell key={d.bucket} fill={DPD_COLORS[d.bucket]} />
                 ))}
-                <LabelList dataKey="cases" position="top" style={{ fontSize: 11, fontWeight: 600, fill: NAVY }} />
+                <LabelList dataKey="cases" position="top" style={VALUE_LABEL} />
               </Bar>
             </BarChart>
           )}
@@ -500,7 +500,7 @@ function Aum({ params, open }: DashTabProps) {
 
       <div className="staff-table-scroll mt-3">
         <table className="w-full min-w-[26rem] text-left text-xs">
-          <thead className="bg-navy text-white">
+          <thead className="border-b border-line bg-grey-50 text-slate">
             <tr>
               {["Bucket", "Cases", "Principal", "Owed", "% of cases"].map((h) => (
                 <th key={h} className="px-3 py-1.5 font-semibold">
@@ -518,8 +518,11 @@ function Aum({ params, open }: DashTabProps) {
                 onKeyDown={(e) => e.key === "Enter" && openBucket(d.bucket)}
                 className="cursor-pointer border-b border-line hover:bg-grey-50"
               >
-                <td className="px-3 py-1.5 font-semibold" style={{ color: DPD_COLORS[d.bucket] }}>
-                  {d.label}
+                <td className="px-3 py-1.5 font-semibold text-ink">
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: DPD_COLORS[d.bucket] }} />
+                    {d.label}
+                  </span>
                 </td>
                 <td className="px-3 py-1.5 tabular-nums">{nf(d.cases)}</td>
                 <td className="px-3 py-1.5 tabular-nums">{paiseToINR(d.principal)}</td>
@@ -595,7 +598,7 @@ function CollectionAnalysis({ params, open }: DashTabProps) {
                 className="w-full rounded-lg border border-line px-3 py-2 text-left hover:-translate-y-0.5 hover:shadow"
               >
                 <span className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-md bg-navy px-2 py-0.5 text-xs font-semibold text-white">{r.label}</span>
+                  <span className="text-xs font-semibold text-ink">{r.label}</span>
                   <span className="rounded bg-grey-100 px-1.5 py-0.5 text-[10px] font-semibold text-muted">
                     {groupBy === "EXEC" ? "Credit Executive" : "State"}
                   </span>

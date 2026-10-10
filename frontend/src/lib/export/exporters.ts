@@ -34,12 +34,12 @@ export interface ExportMeta {
   timezone?: string;
 }
 
-// DhanBoost design tokens (2026 "calendar" system) — navy #0C2540 · emerald accent
-// #14A06B (token still named GOLD) · warm-cream row #F7F2E9. Keeps branded PDFs
-// aligned with the re-skinned UI.
-const NAVY: [number, number, number] = [12, 37, 64];
-const GOLD: [number, number, number] = [20, 160, 107];
-const ROW_ALT: [number, number, number] = [247, 242, 233];
+// DhanBoost design tokens, mirrored from src/styles/theme.css (jsPDF needs raw RGB): ink
+// --c-navy-800 · ember accent --c-gold-500 (token still named GOLD) · zebra --c-grey-50.
+// Keeps branded PDFs aligned with the re-skinned UI.
+const NAVY: [number, number, number] = [11, 11, 12];
+const GOLD: [number, number, number] = [255, 91, 55];
+const ROW_ALT: [number, number, number] = [247, 248, 248];
 
 function cell(v: string | number | null | undefined): string {
   return v == null ? "" : String(v);

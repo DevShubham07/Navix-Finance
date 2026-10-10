@@ -5,7 +5,7 @@ import { Banknote, CalendarCheck, Handshake } from "lucide-react";
 import { ErrorState, Skeleton } from "@/components/ui";
 import { paiseToINR } from "@/lib/api/applications";
 import { SectionTitle } from "../chart-card";
-import { TONE_SOLID, TONE_TINT, WHITE } from "../colors";
+import { TONE_TEXT } from "../colors";
 import { fmtDayLong } from "../fmt";
 import { RatingFactors } from "../rating-factors";
 import type { DashTabProps } from "../tab-props";
@@ -86,17 +86,14 @@ export function CollectionView(props: DashTabProps) {
               <div
                 key={c.label}
                 title={`${c.label}: ${c.value}. ${c.hint}`}
-                className="flex items-center gap-3 rounded-xl border border-line p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                style={{ borderLeft: `5px solid ${TONE_SOLID[c.tone]}`, background: `linear-gradient(90deg, ${TONE_TINT[c.tone]}, ${WHITE} 70%)` }}
+                className="surface flex items-center gap-3 p-4 transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                <IconSquare color={TONE_SOLID[c.tone]}>
-                  <Icon size={18} />
+                <IconSquare color={TONE_TEXT[c.tone]}>
+                  <Icon size={16} />
                 </IconSquare>
                 <div>
-                  <p className="m-0 text-xs font-semibold text-muted">{c.label}</p>
-                  <p className="m-0 font-serif text-xl font-bold tabular-nums" style={{ color: TONE_SOLID[c.tone] }}>
-                    {c.value}
-                  </p>
+                  <p className="m-0 text-xs font-medium text-slate">{c.label}</p>
+                  <p className="figure-display m-0 mt-1 text-[1.6rem] text-ink">{c.value}</p>
                 </div>
               </div>
             );

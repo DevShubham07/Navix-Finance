@@ -59,8 +59,9 @@ export interface ChartTooltipProps {
 }
 
 /**
- * The one Recharts tooltip for every dashboard chart: navy card, white text, the date or month as
- * the title, one row per series (colour dot, label, exact value) and optional derived lines.
+ * The one Recharts tooltip for every dashboard chart, in the kit's minimal style (`ChartTooltipContent`):
+ * white card, hairline border, soft shadow, the date or month as the title, one row per series
+ * (colour dot, muted label, ink value) and optional derived lines.
  * Pass as `<Tooltip content={<ChartTooltip kinds={...} />} />`.
  */
 export function ChartTooltip({
@@ -81,32 +82,33 @@ export function ChartTooltip({
   const sum = total ? shown.reduce((s, p) => s + (Number(p.value) || 0), 0) : null;
 
   return (
-    <div className="min-w-[10rem] rounded-lg bg-navy px-3 py-2.5 text-xs text-white shadow-xl" role="status">
-      <p className="m-0 mb-1.5 font-semibold">{heading}</p>
+    <div className="min-w-[10rem] rounded-xl border border-line bg-paper px-3 py-2 text-[11px] text-ink shadow-md" role="status">
+      <p className="m-0 mb-1.5 font-semibold text-ink">{heading}</p>
       <ul className="m-0 list-none space-y-1 p-0">
         {shown.map((p) => {
           const key = String(p.dataKey);
-          const color = p.color ?? p.stroke ?? p.fill;
+          // A gradient fill (`url(#…)`) has no colour to paint a dot with; fall back to the stroke.
+          const color = [p.color, p.fill, p.stroke].find((c) => c && !c.startsWith("url("));
           return (
             <li key={key} className="flex items-center justify-between gap-4">
-              <span className="flex items-center gap-1.5 text-white/80">
+              <span className="flex items-center gap-1.5 text-muted">
                 <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
                 {labels?.[key] ?? p.name ?? key}
               </span>
-              <span className="font-semibold tabular-nums">{formatTooltipValue(kinds?.[key] ?? "count", p.value)}</span>
+              <span className="font-semibold tabular-nums text-ink">{formatTooltipValue(kinds?.[key] ?? "count", p.value)}</span>
             </li>
           );
         })}
         {sum != null && total && shown.length > 1 && (
-          <li className="flex items-center justify-between gap-4 border-t border-white/20 pt-1">
-            <span className="text-white/80">Total</span>
-            <span className="font-semibold tabular-nums">{formatTooltipValue(total, sum)}</span>
+          <li className="flex items-center justify-between gap-4 border-t border-line pt-1">
+            <span className="text-muted">Total</span>
+            <span className="font-semibold tabular-nums text-ink">{formatTooltipValue(total, sum)}</span>
           </li>
         )}
         {row &&
           extra?.(row).map((l) => (
-            <li key={l.label} className="flex items-center justify-between gap-4 text-white/90">
-              <span className="flex items-center gap-1.5 text-white/70">
+            <li key={l.label} className="flex items-center justify-between gap-4 text-ink">
+              <span className="flex items-center gap-1.5 text-muted">
                 {l.color && <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: l.color }} />}
                 {l.label}
               </span>

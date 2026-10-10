@@ -1,0 +1,208 @@
+/* ==========================================================================
+   DhanBoost — THEME (single source of truth)
+   --------------------------------------------------------------------------
+   Every colour, font, radius and shadow in the product resolves to a variable
+   in this file. Three consumers read it:
+
+     1. tailwind.config.ts   → `bg-navy`, `text-gold/60`, `border-line` … read the
+                               `--c-*` RGB channels below (channels, not hex, so
+                               Tailwind's `/opacity` modifiers keep working).
+     2. app/globals.css      → component classes (.btn, .card, .field, .cal-*…)
+                               read the hex aliases (`--navy`, `--gold-500`…).
+     3. marketing-theme.css  → `.navix-mkt` re-points its tokens at these.
+
+   To re-skin the product, change VALUES here. Token NAMES are load-bearing
+   across ~54 screens and must not be renamed (`navy` = the primary dark ink,
+   `gold` = the brand accent, `ivory` = the page canvas — the names are
+   historical, the values are what the brand is today).
+
+   Current skin (2026-10): "Monochrome + Ember" — near-black ink, ember-orange
+   accent, cool grey canvas with soft white cards; yellow / green / violet as
+   chart companions. Display face: Bebas Neue (condensed caps — page titles and
+   headline figures only); body: Inter.
+   ========================================================================== */
+
+:root {
+  /* ---------- primary dark ("navy" — now near-black ink) ---------- */
+  --c-navy-950: 0 0 0;
+  --c-navy-900: 5 5 6;
+  --c-navy-800: 11 11 12;
+  --c-navy-700: 34 35 38;
+  --c-navy-600: 58 60 64;
+  --c-navy-500: 85 88 94;
+  --c-navy-400: 125 129 135;
+  --c-navy-300: 163 166 171;
+  --c-navy-200: 205 207 209;
+  --c-navy-100: 231 232 233;
+  --c-navy-50:  243 244 244;
+  --c-navy-tint: 236 237 238;
+
+  /* ---------- brand accent ("gold" — now ember orange) ---------- */
+  --c-gold-700: 169 48 19;
+  --c-gold-600: 229 70 31;
+  --c-gold-500: 255 91 55;
+  --c-gold-400: 255 138 107;
+  --c-gold-300: 255 201 184;
+  --c-gold-dark: 199 58 24;   /* accent as TEXT on light surfaces (≥4.5:1 on white) */
+  --c-gold-soft: 255 217 204;
+  --c-gold-50:  255 241 236;
+
+  /* ---------- canvas / surfaces ---------- */
+  --c-canvas:   228 230 231;  /* behind the app frame (with the faint grid) */
+  --c-frame:    242 243 243;  /* the rounded app frame */
+  --c-ivory:    242 243 243;  /* page background inside the frame */
+  --c-surface:  250 250 250;  /* cards */
+  --c-paper:    255 255 255;  /* inner tiles, inputs, pills */
+  --c-cream-100: 237 238 239;
+  --c-cream-200: 227 229 230;
+  --c-cream-300: 216 218 219;
+  --c-grey-50:  247 248 248;
+  --c-grey-100: 241 242 242;
+  --c-grey-200: 231 233 233;
+
+  /* ---------- text / lines ---------- */
+  --c-ink:      11 11 12;
+  --c-slate:    74 77 82;
+  --c-charcoal: 42 44 48;
+  --c-muted:    139 143 150;
+  --c-line:     229 231 232;
+  --c-line-2:   217 219 221;
+
+  /* ---------- status ---------- */
+  --c-success-50:  227 247 236;
+  --c-success-100: 194 238 214;
+  --c-success-500: 61 201 133;
+  --c-success-600: 23 128 79;
+  --c-success-700: 17 106 64;
+  --c-success-800: 13 85 51;
+  --c-success-900: 9 61 37;
+  --c-warning-50:  254 246 216;
+  --c-warning-100: 252 234 166;
+  --c-warning-500: 245 197 49;
+  --c-warning-600: 138 98 0;
+  --c-warning-700: 111 79 0;
+  --c-warning-800: 87 62 0;
+  --c-warning-900: 61 43 0;
+  --c-error-50:  253 236 236;
+  --c-error-100: 250 211 212;
+  --c-error-500: 229 72 77;
+  --c-error-600: 198 42 47;
+  --c-error-700: 161 31 36;
+  --c-error-800: 126 24 28;
+  --c-error-900: 92 17 20;
+  --c-info-50:  241 237 254;
+  --c-info-100: 224 216 252;
+  --c-info-500: 142 108 242;
+  --c-info-600: 106 77 224;
+  --c-info-700: 81 54 184;
+
+  /* ---------- chart companions (reference palette) ---------- */
+  --c-chart-ember:  255 91 55;
+  --c-chart-sun:    248 207 64;
+  --c-chart-mint:   92 211 152;
+  --c-chart-violet: 142 108 242;
+  --c-chart-ink:    11 11 12;
+  --c-chart-sky:    91 163 240;
+  --c-chart-track:  214 217 220;  /* "empty"/"due" series — must stay visible on --surface AND under the hover band */
+
+  /* ---------- shadow tint ---------- */
+  --c-shadow: 17 19 24;
+
+  /* ===== hex/rgb aliases consumed by plain CSS (globals.css, marketing) ===== */
+  --navy-900: rgb(var(--c-navy-900));
+  --navy-800: rgb(var(--c-navy-800));
+  --navy-700: rgb(var(--c-navy-700));
+  --navy-600: rgb(var(--c-navy-600));
+  --navy-500: rgb(var(--c-navy-500));
+  --navy:     rgb(var(--c-navy-800));
+  --navy-tint: rgb(var(--c-navy-tint));
+
+  --gold-700: rgb(var(--c-gold-700));
+  --gold-600: rgb(var(--c-gold-600));
+  --gold-500: rgb(var(--c-gold-500));
+  --gold-400: rgb(var(--c-gold-400));
+  --gold-300: rgb(var(--c-gold-300));
+  --gold:      rgb(var(--c-gold-500));
+  --gold-dark: rgb(var(--c-gold-dark));
+  --gold-soft: rgb(var(--c-gold-soft));
+
+  --canvas:    rgb(var(--c-canvas));
+  --frame:     rgb(var(--c-frame));
+  --surface:   rgb(var(--c-surface));
+  --cream-50:  rgb(var(--c-ivory));
+  --cream-100: rgb(var(--c-cream-100));
+  --cream-200: rgb(var(--c-cream-200));
+  --cream-300: rgb(var(--c-cream-300));
+  --ivory:     rgb(var(--c-ivory));
+  --paper:     rgb(var(--c-paper));
+  --white:     #FFFFFF;
+
+  --ink:      rgb(var(--c-ink));
+  --slate:    rgb(var(--c-slate));
+  --charcoal: rgb(var(--c-charcoal));
+  --muted:    rgb(var(--c-muted));
+  --line:     rgb(var(--c-line));
+  --line-2:   rgb(var(--c-line-2));
+  --hair:     rgb(var(--c-shadow) / .08);
+  --grey-100: rgb(var(--c-grey-100));
+  --grey-200: rgb(var(--c-grey-200));
+
+  --success: rgb(var(--c-success-600));
+  --ok:      rgb(var(--c-success-600));
+  --ok-bg:   rgb(var(--c-success-50));
+  --warn:    rgb(var(--c-warning-600));
+  --warn-bg: rgb(var(--c-warning-50));
+  --danger:  rgb(var(--c-error-600));
+
+  /* "Dark on dark" text tints, for copy sitting on a --navy surface. */
+  --on-dark:       rgb(255 255 255 / .92);
+  --on-dark-muted: rgb(255 255 255 / .62);
+  --on-dark-faint: rgb(255 255 255 / .42);
+
+  /* ---------- gradients ---------- */
+  --grad-gold:  linear-gradient(135deg, rgb(var(--c-gold-400)) 0%, rgb(var(--c-gold-600)) 100%);
+  --grad-navy:  linear-gradient(160deg, rgb(var(--c-navy-700)) 0%, rgb(var(--c-navy-900)) 100%);
+  --grad-cream: linear-gradient(180deg, rgb(var(--c-surface)) 0%, rgb(var(--c-frame)) 100%);
+  --grad-hero:  linear-gradient(180deg, rgb(var(--c-surface)) 0%, rgb(var(--c-frame)) 100%);
+
+  /* ---------- type ---------- */
+  --font-body:    var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Condensed caps for page titles + headline figures. ₹ and lowercase fall back to Inter. */
+  --font-display: var(--font-bebas), "Bebas Neue", "Oswald", var(--font-inter), "Inter", sans-serif;
+  --serif: var(--font-body);   /* `font-serif` is the HEADING face (mixed case) — not a literal serif */
+  --sans:  var(--font-body);
+  --mono:  var(--font-body);   /* figures: Inter + tabular nums */
+  --font-mono: var(--mono);
+
+  /* ---------- geometry ---------- */
+  --maxw: 1240px;
+  --r-sm: 12px;
+  --r:    16px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+  --r-frame: 32px;
+  --pill: 999px;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+
+  /* ---------- shadows (soft, cool, layered — plus a white top edge on cards) ---------- */
+  --shadow-xs: 0 1px 2px rgb(var(--c-shadow) / .05);
+  --shadow-sm: 0 1px 2px rgb(var(--c-shadow) / .04), 0 4px 14px -6px rgb(var(--c-shadow) / .08);
+  --shadow:    0 1px 2px rgb(var(--c-shadow) / .04), 0 10px 28px -14px rgb(var(--c-shadow) / .14);
+  --shadow-md: 0 2px 4px rgb(var(--c-shadow) / .04), 0 18px 40px -20px rgb(var(--c-shadow) / .18);
+  --shadow-lg: 0 2px 6px rgb(var(--c-shadow) / .05), 0 40px 80px -36px rgb(var(--c-shadow) / .28);
+  --shadow-gold: 0 10px 24px -12px rgb(var(--c-gold-500) / .55);
+  --shadow-pill: 0 1px 2px rgb(var(--c-shadow) / .06), 0 3px 10px -4px rgb(var(--c-shadow) / .10);
+  --edge-light: inset 0 1px 0 rgb(255 255 255 / .9);
+  --ring-focus: 0 0 0 4px rgb(var(--c-gold-500) / .18);
+
+  /* ---------- the backdrop (faint architectural grid behind the app frame) ---------- */
+  --backdrop:
+    linear-gradient(rgb(var(--c-shadow) / .045) 1px, transparent 1px) 0 0 / 100% 50vh,
+    linear-gradient(90deg, rgb(var(--c-shadow) / .045) 1px, transparent 1px) 0 0 / 50vw 100%,
+    rgb(var(--c-canvas));
+
+  --space: clamp(64px, 8vw, 104px);
+}

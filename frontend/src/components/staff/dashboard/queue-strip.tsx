@@ -14,7 +14,7 @@ import {
   type FeatureFlags,
 } from "@/lib/api/applications";
 import type { StaffRole } from "@/lib/auth/rbac";
-import { GRADIENTS, TONE_SOLID, gradientCss } from "./colors";
+import { TONE_SOLID, TONE_TEXT } from "./colors";
 import { useMounted } from "@/hooks/use-mounted";
 
 const REFRESH_MS = 10_000; // small, actionable queues
@@ -265,13 +265,18 @@ export function QueueStrip({ role, staffId }: { role: StaffRole; staffId?: strin
   return (
     <section
       aria-label="Your work"
-      className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-line border-l-4 bg-white px-4 py-3 shadow-sm"
-      style={{ borderLeftColor: TONE_SOLID.emerald }}
+      className="surface mb-4 flex flex-wrap items-center gap-3 px-4 py-3"
     >
-      <Inbox size={18} aria-hidden style={{ color: GRADIENTS.emerald[0] }} />
+      <span
+        aria-hidden
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line bg-paper shadow-pill"
+        style={{ color: TONE_TEXT.emerald }}
+      >
+        <Inbox size={15} />
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-sm font-semibold text-navy">{queue.label}</span>
+          <span className="text-sm font-medium text-ink">{queue.label}</span>
           <InfoTooltip content={queue.info} />
         </div>
         {extras.length > 0 && (
@@ -294,11 +299,9 @@ export function QueueStrip({ role, staffId }: { role: StaffRole; staffId?: strin
           <RefreshCw size={13} /> Couldn&apos;t load your queue — Refresh
         </button>
       ) : (
-        <span
-          className="rounded-full px-3 py-1 text-sm font-bold text-white"
-          style={{ backgroundImage: gradientCss("emerald") }}
-        >
-          {headline} {headline === 1 ? "item needs" : "items need"} your action
+        <span className="flex items-center gap-1.5 rounded-full bg-grey-100 px-3 py-1 text-xs font-medium text-ink">
+          <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: TONE_SOLID.emerald }} />
+          <b className="font-semibold tabular-nums">{headline}</b> {headline === 1 ? "item needs" : "items need"} your action
         </span>
       )}
       {href && (

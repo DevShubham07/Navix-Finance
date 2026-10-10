@@ -7,7 +7,6 @@ import {
   Pie,
   Cell,
   Tooltip,
-  Legend,
   BarChart,
   Bar,
   XAxis,
@@ -17,11 +16,15 @@ import {
   Line,
 } from "recharts";
 import type { LeadStats } from "@/lib/api/applications";
+import { ChartTooltipContent, chartAxis, chartGrid, chartYAxis } from "@/components/kit";
+import { CHART, NAVY, SERIES, TEXT, TONE_SOLID, WHITE } from "@/components/staff/dashboard/colors";
 
-const NAVY = "#0C2540";
-const GOLD = "#E9B53A";
-const CREAM = "#FDFBF6";
-const MUTED = ["#0C2540", "#E9B53A", "#3D5A80", "#98C1D9", "#EE6C4D", "#293241", "#8B7355"];
+/** Ink for the primary series, ember for the second; the pie walks the chart companions. */
+const EMBER = TONE_SOLID.orange;
+const PALETTE = [NAVY, EMBER, TONE_SOLID.emerald, TONE_SOLID.amber, TONE_SOLID.violet, TONE_SOLID.sky, SERIES.target];
+const TICK = { fontSize: 11, fill: TEXT.axis } as const;
+const CURSOR = { fill: CHART.cursor, radius: 10 } as const;
+const tip = <ChartTooltipContent />;
 
 /** Admin tracker charts for lead stats. */
 export function LeadsTracker({ stats }: { stats: LeadStats }) {
@@ -67,24 +70,28 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
           {statusData.length === 0 ? (
             <EmptyChart />
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
-                >
-                  {statusData.map((_, i) => (
-                    <Cell key={i} fill={MUTED[i % MUTED.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={196}>
+                <PieChart>
+                  <Pie
+                    data={statusData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={58}
+                    outerRadius={86}
+                    paddingAngle={3}
+                    cornerRadius={8}
+                    stroke="none"
+                  >
+                    {statusData.map((_, i) => (
+                      <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={tip} />
+                </PieChart>
+              </ResponsiveContainer>
+              <DotLegend items={statusData.map((d, i): [string, string] => [d.name, PALETTE[i % PALETTE.length]])} />
+            </>
           )}
         </ChartCard>
 
@@ -93,12 +100,12 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
             <EmptyChart />
           ) : (
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={sourceData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e8e4dc" />
-                <XAxis dataKey="name" tick={{ fontSize: 8.8 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 8.8 }} />
-                <Tooltip />
-                <Bar dataKey="value" fill={NAVY} name="Leads" radius={[4, 4, 0, 0]} />
+              <BarChart data={sourceData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid {...chartGrid} stroke={CHART.grid} />
+                <XAxis dataKey="name" {...chartAxis} tick={TICK} />
+                <YAxis allowDecimals={false} {...chartYAxis} width={32} tick={TICK} />
+                <Tooltip cursor={CURSOR} content={tip} />
+                <Bar dataKey="value" fill={NAVY} name="Leads" radius={8} maxBarSize={34} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -108,28 +115,30 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
           {trend.length === 0 ? (
             <EmptyChart />
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={trend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e8e4dc" />
-                <XAxis dataKey="date" tick={{ fontSize: 8 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 8.8 }} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="created" stroke={NAVY} strokeWidth={2} name="Created" dot={false} />
-                <Line type="monotone" dataKey="called" stroke={GOLD} strokeWidth={2} name="Called" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={196}>
+                <LineChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid {...chartGrid} stroke={CHART.grid} />
+                  <XAxis dataKey="date" {...chartAxis} tick={TICK} />
+                  <YAxis allowDecimals={false} {...chartYAxis} width={32} tick={TICK} />
+                  <Tooltip cursor={{ stroke: CHART.grid }} content={tip} />
+                  <Line type="monotone" dataKey="created" stroke={NAVY} strokeWidth={2.5} name="Created" dot={false} activeDot={{ r: 5, strokeWidth: 3, stroke: WHITE }} />
+                  <Line type="monotone" dataKey="called" stroke={EMBER} strokeWidth={2.5} name="Called" dot={false} activeDot={{ r: 5, strokeWidth: 3, stroke: WHITE }} />
+                </LineChart>
+              </ResponsiveContainer>
+              <DotLegend items={[["Created", NAVY], ["Called", EMBER]]} />
+            </>
           )}
         </ChartCard>
 
         <ChartCard title="Quality ★ distribution">
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={ratingData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e8e4dc" />
-              <XAxis dataKey="rating" tick={{ fontSize: 8.8 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 8.8 }} />
-              <Tooltip />
-              <Bar dataKey="count" fill={GOLD} name="Leads" radius={[4, 4, 0, 0]} />
+            <BarChart data={ratingData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid {...chartGrid} stroke={CHART.grid} />
+              <XAxis dataKey="rating" {...chartAxis} tick={TICK} />
+              <YAxis allowDecimals={false} {...chartYAxis} width={32} tick={TICK} />
+              <Tooltip cursor={CURSOR} content={tip} />
+              <Bar dataKey="count" fill={EMBER} name="Leads" radius={8} maxBarSize={34} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -139,12 +148,12 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
             <EmptyChart />
           ) : (
             <ResponsiveContainer width="100%" height={Math.max(180, staffData.length * 36)}>
-              <BarChart data={staffData} layout="vertical" margin={{ left: 24 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e8e4dc" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 8.8 }} />
-                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 8.8 }} />
-                <Tooltip />
-                <Bar dataKey="count" fill={NAVY} name="Leads" radius={[0, 4, 4, 0]} />
+              <BarChart data={staffData} layout="vertical" margin={{ top: 0, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid horizontal={false} strokeDasharray="0" stroke={CHART.grid} />
+                <XAxis type="number" allowDecimals={false} {...chartAxis} tick={TICK} />
+                <YAxis type="category" dataKey="name" {...chartAxis} width={120} tick={TICK} />
+                <Tooltip cursor={CURSOR} content={tip} />
+                <Bar dataKey="count" fill={NAVY} name="Leads" radius={8} maxBarSize={22} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -156,10 +165,24 @@ export function LeadsTracker({ stats }: { stats: LeadStats }) {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-navy/10 bg-ivory px-4 py-3" style={{ background: CREAM }}>
-      <div className="text-xs uppercase tracking-wide text-navy/50">{label}</div>
-      <div className="mt-1 font-serif text-2xl text-navy">{value}</div>
+    <div className="surface px-5 py-4">
+      <div className="text-xs font-medium text-slate">{label}</div>
+      <div className="figure-display mt-2 text-[2.2rem] text-ink">{value}</div>
     </div>
+  );
+}
+
+/** Dot + label legend (the kit's ChartLegend look) under a chart. */
+function DotLegend({ items }: { items: [string, string][] }) {
+  return (
+    <ul className="m-0 mt-2 flex list-none flex-wrap justify-center gap-x-4 gap-y-1 p-0 text-[11px] text-slate">
+      {items.map(([label, color]) => (
+        <li key={label} className="flex items-center gap-1.5">
+          <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
+          {label}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -173,13 +196,13 @@ function ChartCard({
   className?: string;
 }) {
   return (
-    <div className={`rounded-lg border border-navy/10 bg-white p-4 ${className ?? ""}`}>
-      <h3 className="mb-2 font-serif text-base text-navy">{title}</h3>
+    <div className={`surface p-5 ${className ?? ""}`}>
+      <h3 className="mb-3 font-sans text-base font-medium tracking-tight text-ink">{title}</h3>
       {children}
     </div>
   );
 }
 
 function EmptyChart() {
-  return <p className="flex h-[220px] items-center justify-center text-sm text-navy/40">No data in range</p>;
+  return <p className="flex h-[220px] items-center justify-center text-sm text-muted">No data in range</p>;
 }

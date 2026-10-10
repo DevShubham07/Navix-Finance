@@ -7,6 +7,7 @@ import {
   Wallet, CalendarClock, ArrowRight, AlertTriangle, CheckCircle2, Sparkles, FileClock,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
+import { Figure, GoalProgress, Panel } from "@/components/kit";
 import type { BorrowerStatus } from "@/lib/domain/borrower";
 import {
   useLiveApplication,
@@ -171,11 +172,11 @@ export default function DashboardPage() {
         </div>
 
         <aside className="flex flex-col gap-4">
-          <div className="rounded border border-line bg-white p-5 shadow-sm">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-navy">
-              <NextMilestoneIcon icon={nextMilestone.icon} /> Next milestone
+          <Panel>
+            <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted">
+              <span className="icon-pill h-8 w-8"><NextMilestoneIcon icon={nextMilestone.icon} /></span> Next milestone
             </div>
-            <div className="font-serif text-xl font-bold leading-tight text-navy">
+            <div className="text-lg font-semibold leading-tight tracking-tight text-ink">
               {nextMilestone.title}
             </div>
             <p className="mt-2 text-xs leading-relaxed text-muted">{nextMilestone.detail}</p>
@@ -185,16 +186,25 @@ export default function DashboardPage() {
             >
               {nextMilestone.actionLabel} <ArrowRight size={14} />
             </Link>
-          </div>
+          </Panel>
 
-          <div className="rounded border border-line bg-white p-5 shadow-sm">
-            <div className="mb-2 text-sm font-semibold text-navy">Quick links</div>
-            <ul className="text-sm">
-              <li><Link href="/loan/status" className="-mx-2 block rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">Application status</Link></li>
-              <li><Link href="/repay" className="-mx-2 block rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">Repay / prepay</Link></li>
-              <li><Link href="/profile" className="-mx-2 block rounded px-2 py-2 text-ink hover:bg-grey-100 hover:text-navy">Profile &amp; KYC</Link></li>
+          <Panel>
+            <div className="mb-2 text-xs font-medium text-muted">Quick links</div>
+            <ul className="m-0 list-none space-y-1.5 p-0 text-sm">
+              {[
+                { href: "/loan/status", label: "Application status" },
+                { href: "/repay", label: "Repay / prepay" },
+                { href: "/profile", label: "Profile & KYC" },
+              ].map((l) => (
+                <li key={l.href}>
+                  <Link href={l.href} className="group flex items-center justify-between rounded-full border border-line bg-paper px-4 py-2.5 text-ink shadow-xs transition-shadow hover:shadow-pill">
+                    {l.label}
+                    <ArrowRight size={14} className="text-muted transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                </li>
+              ))}
             </ul>
-          </div>
+          </Panel>
 
           <ReferralCard />
         </aside>
@@ -369,7 +379,7 @@ function LoanCard({
 
   if (status === "REPAID") {
     return (
-      <div className="rounded border border-success-100 bg-success-50/50 p-7 shadow-sm">
+      <div className="rounded-xl border border-success-100 bg-success-50/50 p-7 shadow-sm">
         <span className="mb-3 grid h-14 w-14 place-items-center rounded-full bg-success-50 text-success-600">
           <CheckCircle2 size={28} />
         </span>
@@ -381,48 +391,60 @@ function LoanCard({
   }
 
   return (
-    <div className="overflow-hidden rounded border border-line bg-white shadow-sm">
-      <div className={`flex items-center justify-between gap-3 px-6 py-4 text-white ${overdue ? "bg-error-600" : "bg-navy"}`}>
-        <span className="font-serif text-base font-semibold">{overdue ? "Repayment overdue" : "Active advance"}</span>
-        <span className="text-sm text-white/80">{overdue ? `${Math.abs(days)} days past due` : `Due in ${days} days`}</span>
+    <Panel className="p-6 sm:p-7">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm font-medium text-ink">{overdue ? "Repayment overdue" : "Active advance"}</span>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${overdue ? "bg-error-600 text-white" : "bg-navy text-white"}`}
+        >
+          {overdue ? `${Math.abs(days)} days past due` : `Due in ${days} days`}
+        </span>
       </div>
-      <div className="p-6">
-        <div className="text-sm text-muted">Total outstanding</div>
-        <div className="font-serif text-3xl font-bold text-navy sm:text-4xl">{formatINR0(outstanding)}</div>
-        {penalty > 0 && (
-          <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-error-600">
-            <AlertTriangle size={14} /> Includes {formatINR0(penalty)} late penalty (2%/day, cap 30d)
-          </div>
-        )}
 
-        <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-grey-200">
-          <div className="h-full rounded-full bg-success-600 transition-all" style={{ width: `${pct}%` }} />
+      <p className="m-0 mt-6 text-xs text-muted">Total outstanding</p>
+      <Figure size="xl" className="mt-1">{formatINR0(outstanding)}</Figure>
+      {penalty > 0 && (
+        <div className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-error-600">
+          <AlertTriangle size={14} /> Includes {formatINR0(penalty)} late penalty (2%/day, cap 30d)
         </div>
-        <div className="mt-1.5 flex justify-between text-xs text-muted">
-          <span>{formatINR0(repaid)} repaid</span>
-          <span>{formatINR0(total)} total</span>
-        </div>
+      )}
 
-        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-grey-200 pt-5 text-sm text-muted">
-          <span className="flex items-center gap-1.5"><CalendarClock size={15} /> Due {formatDate(due)}</span>
-        </div>
+      <GoalProgress
+        className="mt-6"
+        tone="light"
+        ratio={pct / 100}
+        label={`${formatINR0(repaid)} repaid`}
+        trailing={`${formatINR0(total)} total`}
+      />
 
-        <Link href="/repay" className="btn btn-gold btn-block mt-5">
+      <div className="mt-5 grid grid-cols-3 gap-2">
+        <div className="surface-tile px-3 py-3 sm:px-4">
+          <p className="m-0 flex items-center gap-1.5 text-[11px] text-muted"><CalendarClock size={13} className="max-sm:hidden" /> Due date</p>
+          <p className="m-0 mt-1 text-sm font-semibold text-ink">{formatDate(due)}</p>
+        </div>
+        <div className="surface-tile px-3 py-3 sm:px-4">
+          <p className="m-0 text-[11px] text-muted">Principal</p>
+          <p className="m-0 mt-1 text-sm font-semibold tabular-nums text-ink">{formatINR0(principal)}</p>
+        </div>
+        <div className="surface-tile px-3 py-3 sm:px-4">
+          <p className="m-0 text-[11px] text-muted">Repaid</p>
+          <p className="m-0 mt-1 text-sm font-semibold tabular-nums text-ink">{pct}%</p>
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <Link href="/repay" className="btn btn-gold flex-1">
           <Wallet size={16} /> {overdue ? "Pay now" : "Repay / prepay"}
         </Link>
         {onViewDetails && (
-          <button
-            type="button"
-            onClick={onViewDetails}
-            className="mt-3 block w-full text-center text-sm font-semibold text-navy hover:underline"
-          >
+          <button type="button" onClick={onViewDetails} className="btn btn-outline max-sm:w-full">
             View full breakdown
           </button>
         )}
-
-        <PaymentHelp variant="inline" compact className="mt-5 border-t border-grey-200 pt-4" />
       </div>
-    </div>
+
+      <PaymentHelp variant="inline" compact className="mt-6 border-t border-line pt-4" />
+    </Panel>
   );
 }
 
@@ -476,7 +498,7 @@ function InfoCard({
   extra?: React.ReactNode;
 }) {
   return (
-    <div className={`rounded border p-7 shadow-sm ${tone === "error" ? "border-error-100 bg-error-50/40" : "border-line bg-white"}`}>
+    <div className={`p-7 ${tone === "error" ? "rounded-xl border border-error-100 bg-error-50/40" : "surface"}`}>
       <span className={`mb-3 grid h-14 w-14 place-items-center rounded-full ${tone === "error" ? "bg-error-50 text-error-600" : "bg-navy-tint text-navy"}`}>
         {icon}
       </span>

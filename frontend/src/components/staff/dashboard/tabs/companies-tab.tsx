@@ -5,7 +5,7 @@ import { Building2, ChevronRight, Users } from "lucide-react";
 import { dashboardApi, paiseToINR } from "@/lib/api/applications";
 import { ChartCard } from "../chart-card";
 import { PctChip, ProgressBar } from "../chart-parts";
-import { PCT_TONE_COLOR, STAT_CHIP, TONE_SOLID, fmtPct, pctTone } from "../colors";
+import { PCT_TONE_FILL, STAT_CHIP, TONE_SOLID, TONE_TEXT, fmtPct, pctTone } from "../colors";
 import { nf } from "../fmt";
 import type { DashTabProps } from "../tab-props";
 import { useDashQuery } from "../use-dash-query";
@@ -47,7 +47,7 @@ export function CompaniesTab({ params, open }: DashTabProps) {
       >
         <div className="staff-table-scroll">
           <table className="w-full min-w-[30rem] text-left text-xs">
-            <thead className="bg-navy text-white">
+            <thead className="border-b border-line bg-grey-50 text-slate">
               <tr>
                 <th className={th}>#</th>
                 <th className={th}>Company</th>
@@ -71,7 +71,7 @@ export function CompaniesTab({ params, open }: DashTabProps) {
                     <RankBadge rank={i + 1} />
                   </td>
                   <td className="px-3 py-1.5 font-semibold text-ink">{u.company}</td>
-                  <td className="px-3 py-1.5 text-right font-bold tabular-nums text-blue-700">{nf(u.users)}</td>
+                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums" style={{ color: TONE_TEXT.blue }}>{nf(u.users)}</td>
                   <td className="w-36 px-3 py-1.5">
                     <span className="flex items-center gap-2">
                       <ProgressBar ratio={u.users / maxUsers} color={TONE_SOLID.blue} className="w-20" />
@@ -100,7 +100,7 @@ export function CompaniesTab({ params, open }: DashTabProps) {
       >
         <div className="staff-table-scroll">
           <table className="w-full min-w-[34rem] text-left text-xs">
-            <thead className="bg-navy text-white">
+            <thead className="border-b border-line bg-grey-50 text-slate">
               <tr>
                 <th className={th}>#</th>
                 <th className={th}>Company</th>
@@ -128,7 +128,7 @@ export function CompaniesTab({ params, open }: DashTabProps) {
                       <RankBadge rank={i + 1} />
                     </td>
                     <td className="px-3 py-1.5 font-semibold text-ink">{p.company}</td>
-                    <td className="px-3 py-1.5 text-right font-bold tabular-nums text-blue-700">{nf(p.disbursed)}</td>
+                    <td className="px-3 py-1.5 text-right font-semibold tabular-nums" style={{ color: TONE_TEXT.blue }}>{nf(p.disbursed)}</td>
                     <td className="w-40 px-3 py-1.5">
                       <span className="block tabular-nums">{paiseToINR(p.disbursedPaise)}</span>
                       <ProgressBar ratio={p.disbursedPaise / maxDisbursed} color={TONE_SOLID.emerald} className="mt-0.5" />
@@ -138,7 +138,7 @@ export function CompaniesTab({ params, open }: DashTabProps) {
                     <td className="w-32 px-3 py-1.5">
                       <span className="flex items-center gap-1.5">
                         <PctChip ratio={p.collectionPct} />
-                        <ProgressBar ratio={p.collectionPct} color={PCT_TONE_COLOR[tone]} className="w-12" />
+                        <ProgressBar ratio={p.collectionPct} color={PCT_TONE_FILL[tone]} className="w-12" />
                       </span>
                     </td>
                     <td className="px-1 text-muted">

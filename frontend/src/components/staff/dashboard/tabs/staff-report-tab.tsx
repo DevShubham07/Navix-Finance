@@ -60,7 +60,7 @@ export function StaffReportTab({ params, open, kind }: DashTabProps & { kind: ke
     >
       <div className="staff-table-scroll">
         <table className="w-full min-w-[36rem] text-left text-xs">
-          <thead className="bg-navy text-white">
+          <thead className="border-b border-line bg-grey-50 text-slate">
             <tr>
               <th className="px-3 py-2 font-semibold">Rank</th>
               <th className="px-3 py-2 font-semibold">Name</th>
@@ -92,7 +92,7 @@ export function StaffReportTab({ params, open, kind }: DashTabProps & { kind: ke
                     <RankBadge rank={r.rank} />
                   </td>
                   <td className="px-3 py-1.5 font-semibold text-ink">{r.name}</td>
-                  <td className="px-3 py-1.5 text-right font-bold tabular-nums text-blue-700">{nf(r.volume)}</td>
+                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-ink">{nf(r.volume)}</td>
                   {factorCols.map((c) => {
                     const f = r.factors?.find((x) => x.key === c.key);
                     const t = PCT_TONE_COLOR[pctTone(f?.value)];

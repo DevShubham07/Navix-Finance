@@ -34,7 +34,7 @@ export const ROLE_ICON: Record<StaffRole, LucideIcon> = {
   ADMIN: Shield,
 };
 
-const PILL = "inline-flex items-center gap-1.5 rounded-full border border-line-2 bg-white px-3 py-1.5";
+const PILL = "inline-flex h-[38px] items-center gap-1.5 rounded-full border border-line bg-paper px-3.5 shadow-pill";
 
 /** Header pill showing the working role; a menu to switch when the real role allows more than one. */
 export function RoleSwitcher({ staffId, realRole, role }: { staffId: string; realRole: StaffRole; role: StaffRole }) {

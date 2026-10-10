@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { html } from "./_content/home";
-import { MarketingHtml } from "@/components/site/marketing-html";
+import { HomePage } from "@/components/site/landing/home";
 
 export const metadata: Metadata = {
   title: 'DhanBoost — Instant Personal Loans, Fully Digital',
@@ -9,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <MarketingHtml html={html} />;
+  return <HomePage />;
 }

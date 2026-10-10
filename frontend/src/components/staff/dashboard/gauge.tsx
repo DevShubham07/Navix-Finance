@@ -21,7 +21,7 @@ const CY = 132;
 const INNER = 82;
 const OUTER = 118;
 
-/** Red -> amber -> emerald arc split on the shared percent-tone thresholds. */
+/** Red -> sun -> mint arc split on the shared percent-tone thresholds. */
 const ARCS = [
   { name: "low", value: PCT_LOW * 100, fill: SERIES.bad },
   { name: "mid", value: (PCT_HIGH - PCT_LOW) * 100, fill: SERIES.pending },
@@ -68,7 +68,8 @@ export function Gauge({
             innerRadius={INNER}
             outerRadius={OUTER}
             stroke={WHITE}
-            strokeWidth={2}
+            strokeWidth={3}
+            cornerRadius={5}
             isAnimationActive={false}
           >
             {ARCS.map((a) => (
@@ -86,10 +87,10 @@ export function Gauge({
           disabled={!onOpen || !current}
           onClick={() => current && onOpen?.(current.key)}
           aria-label={`${current?.label ?? ""}: ${fmtPct(current?.pct, 2)} across ${nf(current?.loans)} loans. View loans.`}
-          className="absolute left-1/2 top-[62px] flex -translate-x-1/2 flex-col items-center rounded px-2 text-center hover:bg-grey-50 disabled:cursor-default"
+          className="absolute left-1/2 top-[62px] flex -translate-x-1/2 flex-col items-center rounded px-2 text-center hover:bg-grey-100 disabled:cursor-default"
         >
           <span className="text-[11px] text-muted">{nf(current?.loans)} loans</span>
-          <span className="font-serif text-3xl font-bold leading-tight text-navy">{fmtPct(current?.pct, 2)}</span>
+          <span className="figure-display text-[2.2rem] text-ink">{fmtPct(current?.pct, 2)}</span>
           <span className="text-[11px] text-muted">{current?.label ?? ""}</span>
         </button>
       </div>
@@ -107,8 +108,8 @@ export function Gauge({
               onClick={() => onSelect(m.key)}
               title={`${m.label}: ${nf(m.loans)} loans · ${fmtPct(m.pct, 2)}`}
               className={cn(
-                "min-w-[5.5rem] rounded-lg border px-3 py-1.5 text-center transition hover:-translate-y-0.5 hover:shadow",
-                on ? "border-navy shadow" : "border-line",
+                "min-w-[5.5rem] rounded-xl border px-3 py-1.5 text-center shadow-xs transition hover:-translate-y-0.5 hover:shadow-md",
+                on ? "border-navy" : "border-line",
               )}
               style={{ background: on ? PCT_TONE_TINT[tone] : WHITE }}
             >
@@ -116,7 +117,7 @@ export function Gauge({
               <span className="block text-sm font-bold" style={{ color: PCT_TONE_COLOR[tone] }}>
                 {fmtPct(m.pct, 2)}
               </span>
-              <span className="block text-[10px] text-blue-700">{nf(m.loans)} loans</span>
+              <span className="block text-[10px] text-slate">{nf(m.loans)} loans</span>
             </button>
           );
         })}

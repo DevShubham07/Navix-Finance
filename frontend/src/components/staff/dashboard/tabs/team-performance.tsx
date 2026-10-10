@@ -9,8 +9,8 @@ import { STAFF_ROLE_LABELS, type StaffRole } from "@/lib/auth/rbac";
 import { cn } from "@/lib/utils";
 import { ChartCard } from "../chart-card";
 import { ChartTooltip } from "../chart-tooltip";
-import { AXIS_TICK, CURSOR, GRID_STROKE, activeRow } from "../chart-parts";
-import { CHART, NAVY, PCT_TONE_COLOR, STAT_CHIP, TEXT, TONE_SOLID, TONE_TINT, WHITE, pctTone } from "../colors";
+import { BAR, CURSOR, GRID, VALUE_LABEL, X_AXIS, Y_AXIS, activeRow } from "../chart-parts";
+import { CHART, PCT_TONE_FILL, STAT_CHIP, TEXT, TONE_SOLID, TONE_TEXT, TONE_TINT, WHITE, pctTone } from "../colors";
 import { nf } from "../fmt";
 import type { DashTabProps } from "../tab-props";
 import { useDashQuery } from "../use-dash-query";
@@ -75,16 +75,16 @@ export function TeamPerformance({ params, open }: DashTabProps) {
                       onClick={() => setPicked(on ? null : r.key)}
                       title={`${r.label}: ${nf(t[r.key])} — click to list`}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition hover:-translate-y-0.5 hover:shadow",
+                        "flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left shadow-xs transition hover:-translate-y-0.5 hover:shadow-md",
                         on ? "border-navy" : "border-line",
                       )}
                       style={{ background: on ? TONE_TINT[r.tone] : WHITE }}
                     >
-                      <IconSquare color={TONE_SOLID[r.tone]}>
-                        <Icon size={18} />
+                      <IconSquare color={TONE_TEXT[r.tone]}>
+                        <Icon size={16} />
                       </IconSquare>
                       <span className="flex-1 text-sm font-medium text-ink">{r.label}</span>
-                      <span className="font-serif text-2xl font-bold tabular-nums" style={{ color: TONE_SOLID[r.tone] }}>
+                      <span className="figure-display text-[1.6rem] text-ink">
                         {nf(t[r.key])}
                       </span>
                     </button>
@@ -143,7 +143,7 @@ export function TeamPerformance({ params, open }: DashTabProps) {
               ["CREDIT_HEAD", "Credit"],
               ["COLLECTION_HEAD", "Collection"],
             ]}
-            colors={{ CREDIT_HEAD: TONE_SOLID.emerald, COLLECTION_HEAD: TONE_SOLID.red }}
+            colors={{ CREDIT_HEAD: TONE_TEXT.emerald, COLLECTION_HEAD: TONE_TEXT.red }}
           />
         }
         loading={q.isLoading}
@@ -163,9 +163,9 @@ export function TeamPerformance({ params, open }: DashTabProps) {
                   open({ metric: BOARDS[board].metric, key: String(row.staffId), title: `${row.name} · ${BOARDS[board].label} head` });
               }}
             >
-              <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-              <XAxis dataKey="name" tick={AXIS_TICK} interval={0} />
-              <YAxis domain={[0, 10]} tick={AXIS_TICK} width={28} />
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="name" {...X_AXIS} interval={0} />
+              <YAxis domain={[0, 10]} {...Y_AXIS} width={28} />
               <Tooltip
                 cursor={CURSOR}
                 content={
@@ -176,11 +176,11 @@ export function TeamPerformance({ params, open }: DashTabProps) {
                   />
                 }
               />
-              <Bar dataKey="score" name="Score" radius={[6, 6, 0, 0]} cursor="pointer">
+              <Bar dataKey="score" name="Score" {...BAR} cursor="pointer">
                 {data.map((d) => (
-                  <Cell key={d.staffId} fill={d.measured ? PCT_TONE_COLOR[pctTone(d.score / 10)] : CHART.unmeasured} />
+                  <Cell key={d.staffId} fill={d.measured ? PCT_TONE_FILL[pctTone(d.score / 10)] : CHART.unmeasured} />
                 ))}
-                <LabelList dataKey="score" position="top" formatter={(v: number) => v.toFixed(2)} style={{ fontSize: 11, fontWeight: 700, fill: NAVY }} />
+                <LabelList dataKey="score" position="top" formatter={(v: number) => v.toFixed(2)} style={VALUE_LABEL} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>

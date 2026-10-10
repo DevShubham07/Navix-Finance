@@ -118,14 +118,14 @@ export interface SegmentInfo {
   color: string;
 }
 
-/** Display order of the segment chips. */
+/** Display order of the segment chips. Colours are dot fills only (theme chart companions), never text. */
 export const SEGMENTS: SegmentInfo[] = [
-  { key: "BEST", label: "Best", color: "#F59E0B" },
-  { key: "BETTER", label: "Better", color: "#14A06B" },
-  { key: "LARGE", label: "Large users", color: "#2563EB" },
-  { key: "LARGE_WEAK_CLOSE", label: "Large, weak close", color: "#7C3AED" },
-  { key: "GROWING", label: "Growing", color: "#64748B" },
-  { key: "NEEDS_ATTENTION", label: "Needs attention", color: "#D33C32" },
+  { key: "BEST", label: "Best", color: "#F8CF40" },
+  { key: "BETTER", label: "Better", color: "#5CD398" },
+  { key: "LARGE", label: "Large users", color: "#5BA3F0" },
+  { key: "LARGE_WEAK_CLOSE", label: "Large, weak close", color: "#8E6CF2" },
+  { key: "GROWING", label: "Growing", color: "#A3A6AB" },
+  { key: "NEEDS_ATTENTION", label: "Needs attention", color: "#E5484D" },
 ];
 
 export const SEGMENT_BY_KEY: Record<LocationSegment, SegmentInfo> = Object.fromEntries(

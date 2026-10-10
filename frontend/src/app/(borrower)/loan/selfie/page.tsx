@@ -207,7 +207,7 @@ export default function LoanSelfiePage() {
             />
             {phase === "capture-live" || phase === "capture-uploading" ? (
               <div className="pointer-events-none absolute inset-0 grid place-items-center">
-                <div className="h-[80%] w-[80%] rounded-full border-2 border-dashed border-white/90 shadow-[0_0_0_9999px_rgba(12,37,64,0.35)]" />
+                <div className="h-[80%] w-[80%] rounded-full border-2 border-dashed border-white/90 shadow-[0_0_0_9999px_rgb(var(--c-shadow) / 0.35)]" />
               </div>
             ) : null}
             {phase === "capture-idle" ? <Camera size={64} className="text-muted" /> : null}

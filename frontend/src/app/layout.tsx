@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Bebas_Neue, Inter } from "next/font/google";
+import "../styles/theme.css";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { RouteProgress } from "@/components/app/route-progress";
@@ -22,6 +23,17 @@ const inter = Inter({
   // swap-in — leaving line 1 in a different (Arial-like) face than the rest.
   // `block` makes every line wait for Inter; the entrance animation already keeps
   // the words invisible for ~120ms, so this adds no perceptible delay.
+  display: "block",
+});
+
+/**
+ * Display face — condensed caps for page titles and headline figures only (theme.css
+ * `--font-display`, tailwind `font-display`). Body copy and card titles stay Inter.
+ */
+const bebas = Bebas_Neue({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-bebas",
   display: "block",
 });
 
@@ -62,7 +74,7 @@ export default function RootLayout({
   return (
     <html
       lang="en-IN"
-      className={inter.variable}
+      className={`${inter.variable} ${bebas.variable}`}
     >
       {/* suppressHydrationWarning: browser extensions (screenshot/zoom tools, etc.)
           mutate <body> attributes — e.g. style="zoom:1" — before React hydrates,

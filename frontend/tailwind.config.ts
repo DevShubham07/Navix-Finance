@@ -1,16 +1,15 @@
 import type { Config } from "tailwindcss";
 
 /**
- * NAVIX Finance — unified design tokens (2026 "calendar" design system).
- * Palette: navy #0C2540 · emerald accent #14A06B (token name kept as `gold`/`--gold-*`) · cream #FDFBF6 · ink #0C2238 · slate #46566E.
- * Type: Inter (display, body, and figures).
+ * DhanBoost — Tailwind tokens.
  *
- * Token NAMES are stable across re-skins so the 54 functional screens cascade
- * automatically; a re-skin moves only the VALUES (the marketing site already
- * uses this system, scoped under .navix-mkt). The
- * `navix`/`navy` ramps are a deep-navy ramp; brand tokens (navy/gold/ivory/ink/
- * muted/line) mirror the CSS variables in globals.css.
+ * Every colour here is a pointer into `src/styles/theme.css` (the single source of truth); the
+ * values live there as RGB channels so `/opacity` modifiers (`text-navy/60`) keep working.
+ * Re-skin by changing theme.css VALUES — never rename a token here (the names are load-bearing
+ * across ~54 screens: `navy` = primary dark ink, `gold` = brand accent, `ivory` = page canvas).
  */
+const v = (name: string) => `rgb(var(--c-${name}) / <alpha-value>)`;
+
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   // Disable Tailwind's `container` so the design-system `.container`
@@ -19,110 +18,122 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Primary brand ramp (deep navy)
         navix: {
-          DEFAULT: "#0C2540",
-          50: "#EAF0F6",
-          100: "#D5E0EC",
-          200: "#AEC3D9",
-          300: "#7E9CC0",
-          400: "#4E739B",
-          500: "#2C6298",
-          600: "#1B4A7A",
-          700: "#12365C",
-          800: "#0C2540",
-          900: "#081A31",
+          DEFAULT: v("navy-800"),
+          50: v("navy-50"),
+          100: v("navy-100"),
+          200: v("navy-200"),
+          300: v("navy-300"),
+          400: v("navy-400"),
+          500: v("navy-500"),
+          600: v("navy-600"),
+          700: v("navy-700"),
+          800: v("navy-800"),
+          900: v("navy-900"),
         },
         navy: {
-          DEFAULT: "#0C2540",
-          900: "#081A31",
-          800: "#0C2540",
-          700: "#12365C",
-          tint: "#EAEFF6",
-          deep: "#081A31",
+          DEFAULT: v("navy-800"),
+          900: v("navy-900"),
+          800: v("navy-800"),
+          700: v("navy-700"),
+          tint: v("navy-tint"),
+          deep: v("navy-900"),
         },
-        // Brand accent — emerald green. Token name kept as `gold` (load-bearing
-        // across ~98 files) per the re-skin rule: remap VALUES, never rename.
         gold: {
-          DEFAULT: "#14A06B",
-          dark: "#0B6B46",
-          soft: "#A7E8CE",
-          50: "#E7F6EF",
+          DEFAULT: v("gold-500"),
+          dark: v("gold-dark"),
+          soft: v("gold-soft"),
+          50: v("gold-50"),
+          300: v("gold-300"),
+          400: v("gold-400"),
+          500: v("gold-500"),
+          600: v("gold-600"),
+          700: v("gold-700"),
         },
-        ivory: "#FDFBF6",
-        charcoal: "#2D3A4A",
-        ink: "#0C2238",
-        muted: "#8593A6",
-        line: "#EAE1D0",
-        // Warm light neutrals (mirror the design --cream-* / --line-* vars).
+        ivory: v("ivory"),
+        canvas: v("canvas"),
+        frame: v("frame"),
+        surface: v("surface"),
+        paper: v("paper"),
+        charcoal: v("charcoal"),
+        ink: v("ink"),
+        slate: v("slate"),
+        muted: v("muted"),
+        line: v("line"),
         grey: {
-          50: "#FBF7F0",
-          100: "#F7F2E9",
-          200: "#EFE7D6",
+          50: v("grey-50"),
+          100: v("grey-100"),
+          200: v("grey-200"),
         },
-        // Semantic status colours (success aligned to design --success #1C9B6A)
         success: {
-          DEFAULT: "#1C9B6A",
-          50: "#E7F5EF",
-          100: "#C5E9D9",
-          500: "#22A06B",
-          600: "#1C9B6A",
-          700: "#167A54",
-          800: "#115C40",
-          900: "#0C3F2C",
-          bg: "#E7F5EF",
+          DEFAULT: v("success-600"),
+          50: v("success-50"),
+          100: v("success-100"),
+          500: v("success-500"),
+          600: v("success-600"),
+          700: v("success-700"),
+          800: v("success-800"),
+          900: v("success-900"),
+          bg: v("success-50"),
         },
         warning: {
-          DEFAULT: "#8A5A06",
-          50: "#FBF1D8",
-          100: "#F6E3B0",
-          500: "#B5820E",
-          600: "#8A5A06",
-          700: "#6E4B08",
-          800: "#5A3D05",
-          900: "#412c04",
-          bg: "#FBF1D8",
+          DEFAULT: v("warning-600"),
+          50: v("warning-50"),
+          100: v("warning-100"),
+          500: v("warning-500"),
+          600: v("warning-600"),
+          700: v("warning-700"),
+          800: v("warning-800"),
+          900: v("warning-900"),
+          bg: v("warning-50"),
         },
         error: {
-          DEFAULT: "#B3261E",
-          50: "#FCEBEA",
-          100: "#F9D4D1",
-          500: "#D33C32",
-          600: "#B3261E",
-          700: "#8F1E18",
-          800: "#6f1712",
-          900: "#54110d",
+          DEFAULT: v("error-600"),
+          50: v("error-50"),
+          100: v("error-100"),
+          500: v("error-500"),
+          600: v("error-600"),
+          700: v("error-700"),
+          800: v("error-800"),
+          900: v("error-900"),
         },
         info: {
-          DEFAULT: "#2C6298",
-          50: "#EAF0F6",
-          100: "#D5E0EC",
-          500: "#2C6298",
-          600: "#1B4A7A",
-          700: "#12365C",
+          DEFAULT: v("info-600"),
+          50: v("info-50"),
+          100: v("info-100"),
+          500: v("info-500"),
+          600: v("info-600"),
+          700: v("info-700"),
+        },
+        chart: {
+          ember: v("chart-ember"),
+          sun: v("chart-sun"),
+          mint: v("chart-mint"),
+          violet: v("chart-violet"),
+          ink: v("chart-ink"),
+          sky: v("chart-sky"),
+          track: v("chart-track"),
         },
         neutral: {
-          50: "#F6F5F2",
-          100: "#ECEAE4",
-          200: "#DEDBD2",
-          300: "#C6C3BA",
-          400: "#9C9A93",
-          500: "#6B7280",
-          600: "#4B5563",
-          700: "#374151",
-          800: "#1F2937",
-          900: "#0C2540",
+          50: v("grey-50"),
+          100: v("navy-50"),
+          200: v("navy-100"),
+          300: v("navy-200"),
+          400: v("navy-300"),
+          500: v("navy-400"),
+          600: v("navy-500"),
+          700: v("navy-600"),
+          800: v("navy-700"),
+          900: v("navy-800"),
         },
       },
       fontFamily: {
-        // Inter powers everything (2026 system). `sans`/`serif`/`mono` all
-        // resolve to Inter — the `serif` key is kept only so the existing
-        // `font-serif` heading usages cascade (it is NOT a literal serif), and
-        // `mono` is kept so `font-mono` figure usages cascade (Inter's tabular
-        // figures keep them aligned via `font-feature-settings: "tnum"`).
-        sans: ["var(--font-inter)", "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
-        serif: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
-        mono: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
+        // `serif` is the HEADING face and `mono` the FIGURE face — both Inter (names kept so existing
+        // usages cascade). `display` is the condensed caps face for page titles + headline figures.
+        sans: ["var(--font-body)"],
+        serif: ["var(--serif)"],
+        mono: ["var(--mono)"],
+        display: ["var(--font-display)"],
       },
       // Values are 80% of the previous scale (20% smaller base typography); line-heights
       // scaled proportionally so leading stays visually consistent at the new size.
@@ -162,37 +173,58 @@ const config: Config = {
         container: "1200px",
         content: "720px",
       },
-      // Softer, larger radii to match the new design system (--r-* vars).
+      // Generous, soft radii (reference: pill controls, 22–28px cards). Mirrors theme.css --r-*.
       borderRadius: {
         none: "0",
-        sm: "8px",
-        DEFAULT: "12px",
-        base: "12px",
-        md: "12px",
-        lg: "16px",
-        xl: "20px",
-        "2xl": "26px",
+        sm: "10px",
+        DEFAULT: "14px",
+        base: "14px",
+        md: "14px",
+        lg: "18px",
+        xl: "22px",
+        "2xl": "28px",
+        "3xl": "32px",
         full: "9999px",
       },
       // Soft shadows, tuned so small dropdowns/tooltips (shadow-md/lg) stay crisp
       // while large surfaces keep the design's diffuse cast.
       boxShadow: {
-        xs: "0 1px 2px rgba(12, 37, 64, .05)",
-        sm: "0 6px 18px -10px rgba(12, 37, 64, .18)",
-        base: "0 10px 26px -14px rgba(12, 37, 64, .20)",
-        md: "0 16px 36px -18px rgba(12, 37, 64, .22)",
-        lg: "0 24px 48px -20px rgba(12, 37, 64, .28)",
-        xl: "0 40px 80px -36px rgba(12, 37, 64, .40)",
-        gold: "0 16px 34px -16px rgba(20, 160, 107, .42)",
-        focus: "0 0 0 4px rgba(63, 191, 137, .22)",
+        xs: "var(--shadow-xs)",
+        sm: "var(--shadow-sm)",
+        base: "var(--shadow)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
+        xl: "var(--shadow-lg)",
+        pill: "var(--shadow-pill)",
+        gold: "var(--shadow-gold)",
+        focus: "var(--ring-focus)",
+      },
+      transitionTimingFunction: {
+        "out-expo": "cubic-bezier(.16, 1, .3, 1)",
       },
       animation: {
         spin: "spin 1s linear infinite",
+        // Kit motion (see globals.css "Motion"): panels rise in, bars grow, chips pop.
+        rise: "rise .6s cubic-bezier(.16, 1, .3, 1) backwards",
+        "grow-y": "growY .9s cubic-bezier(.16, 1, .3, 1) backwards",
+        pop: "pop .45s cubic-bezier(.34, 1.56, .64, 1) backwards",
         "fade-up": "fadeUp 0.4s ease",
         // Two copies of the message sit side by side, so shifting by exactly half loops seamlessly.
         ticker: "ticker 38s linear infinite",
       },
       keyframes: {
+        rise: {
+          "0%": { opacity: "0", transform: "translateY(10px) scale(.985)" },
+          "100%": { opacity: "1", transform: "none" },
+        },
+        growY: {
+          "0%": { transform: "scaleY(0)" },
+          "100%": { transform: "scaleY(1)" },
+        },
+        pop: {
+          "0%": { opacity: "0", transform: "scale(.4)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
         fadeUp: {
           "0%": { opacity: "0", transform: "translateY(14px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },

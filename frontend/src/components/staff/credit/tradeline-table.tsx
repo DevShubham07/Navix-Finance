@@ -14,6 +14,7 @@
 import * as React from "react";
 import { KV } from "@/components/staff/detail-parts";
 import { EmptyState } from "@/components/ui";
+import { NAVY, TONE_SOLID, WHITE } from "@/components/staff/dashboard/colors";
 import type {
   Tradeline,
   Enquiry,
@@ -368,7 +369,7 @@ export function TradelineTable({
 
       <div className="max-h-[28rem] overflow-auto rounded border border-line">
         <table className="w-full min-w-[64rem] table-fixed border-collapse text-left text-xs">
-          <thead className="sticky top-0 z-10 bg-navy text-white">
+          <thead className="sticky top-0 z-10 border-b border-line bg-grey-50 text-slate">
             <tr>
               <th className="w-[14%] px-2 py-1.5 font-semibold">Lender</th>
               <th className="w-[10%] px-2 py-1.5 font-semibold">Type</th>
@@ -441,7 +442,7 @@ export function EnquiryTable({ enquiries }: { enquiries: Enquiry[] }) {
   return (
     <div className="max-h-[20rem] overflow-auto rounded border border-line">
       <table className="w-full min-w-[40rem] table-fixed border-collapse text-left text-xs">
-        <thead className="sticky top-0 z-10 bg-navy text-white">
+        <thead className="sticky top-0 z-10 border-b border-line bg-grey-50 text-slate">
           <tr>
             <th className="w-[16%] px-2 py-1.5 font-semibold">Date</th>
             <th className="w-[34%] px-2 py-1.5 font-semibold">Lender</th>
@@ -565,11 +566,11 @@ export function ScoreTrendBlock({ h }: { h: BureauScoreHistory | null | undefine
   return (
     <div className="space-y-2">
       <svg viewBox={`0 0 ${w} ${hgt}`} className="h-12 w-64 max-w-full" role="img" aria-label="Score trend">
-        <polyline points={pts} fill="none" stroke="#0A2540" strokeWidth={1.5} />
+        <polyline points={pts} fill="none" stroke={NAVY} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {oldestFirst.map((p, i) => {
           if (p.score == null) return null;
           const [cx, cy] = xy(i, p.score);
-          return <circle key={i} cx={cx} cy={cy} r={1.8} fill="#D4A017" />;
+          return <circle key={i} cx={cx} cy={cy} r={2.2} fill={TONE_SOLID.orange} stroke={WHITE} strokeWidth={1} />;
         })}
       </svg>
       <div className="flex justify-between text-[10px] text-muted">

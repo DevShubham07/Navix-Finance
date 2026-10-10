@@ -19,8 +19,8 @@ import { dashboardApi, paiseToINR, type DashMonthRow } from "@/lib/api/applicati
 import { formatInrCompact } from "@/lib/staff/format-inr";
 import { ChartCard } from "../chart-card";
 import { ChartTooltip } from "../chart-tooltip";
-import { AXIS_TICK, BarGradient, CURSOR, DeltaPill, GRID_STROKE, PctChip, activeRow } from "../chart-parts";
-import { NAVY, PCT_TONE_COLOR, SERIES, TEXT, TONE_SOLID, fmtPct, pctTone } from "../colors";
+import { BAR, CURSOR, DeltaPill, GRID, PctChip, VALUE_LABEL, X_AXIS, Y_AXIS, activeRow } from "../chart-parts";
+import { NAVY, PCT_TONE_COLOR, SERIES, TEXT, TONE_SOLID, WHITE, fmtPct, pctTone } from "../colors";
 import { fmtMonth, fmtMonthShort, monthRange, nf } from "../fmt";
 import { deltaPct } from "../kpi-card";
 import { Gauge } from "../gauge";
@@ -31,7 +31,7 @@ import { useDashQuery } from "../use-dash-query";
 const MONTHS_BACK = 4;
 
 const chartBox = "h-64 min-h-[240px] w-full";
-const selectCls = "rounded border border-line bg-white px-2 py-1 text-xs";
+const selectCls = "h-8 cursor-pointer rounded-full border border-line bg-paper px-3 text-xs font-medium text-ink shadow-pill";
 
 /** Monthly widgets of the Business Snapshot: collection %, pre-closure gauge, deficit, target vs achieved, retention, marketing. */
 /** `topOnly` renders just the collection %, pre-closure and deficit cards (the collection role views). */
@@ -119,7 +119,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                 type="button"
                 onClick={() => openMonth(m.month, "Loans due")}
                 title={`${fmtMonth(m.month)}: ${nf(m.dueLoans)} loans due · target ${(m.targetBp / 100).toFixed(0)}%`}
-                className="rounded-lg border border-line px-2.5 py-1 text-center hover:-translate-y-0.5 hover:shadow"
+                className="rounded-xl border border-line bg-paper px-2.5 py-1 text-center shadow-xs transition hover:-translate-y-0.5 hover:shadow-md"
               >
                 <span className="block text-[10px] font-semibold text-muted">{fmtMonthShort(m.month)}</span>
                 <span className="block text-sm font-bold" style={{ color: PCT_TONE_COLOR[pctTone(m.collectionPct)] }}>
@@ -138,14 +138,10 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                   if (row) openMonth(row.month, "Loans due");
                 }}
               >
-                <defs>
-                  <BarGradient id="dg-tloan" color={SERIES.tloan} />
-                  <BarGradient id="dg-coll" color={SERIES.collected} />
-                </defs>
-                <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-                <XAxis dataKey="label" tick={AXIS_TICK} />
-                <YAxis yAxisId="amt" tick={AXIS_TICK} tickFormatter={(v: number) => formatInrCompact(v)} width={58} />
-                <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tick={AXIS_TICK} tickFormatter={(v: number) => `${v}%`} width={40} />
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" {...X_AXIS} />
+                <YAxis yAxisId="amt" {...Y_AXIS} tickFormatter={(v: number) => formatInrCompact(v)} width={58} />
+                <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} {...Y_AXIS} tickFormatter={(v: number) => `${v}%`} width={40} />
                 <Tooltip
                   cursor={CURSOR}
                   content={
@@ -160,8 +156,8 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                     />
                   }
                 />
-                <Bar yAxisId="amt" dataKey="tloan" name="T.Loan" fill="url(#dg-tloan)" radius={[6, 6, 0, 0]} cursor="pointer" />
-                <Bar yAxisId="amt" dataKey="collected" name="Collected" fill="url(#dg-coll)" radius={[6, 6, 0, 0]} cursor="pointer" />
+                <Bar yAxisId="amt" dataKey="tloan" name="T.Loan" fill={SERIES.tloan} {...BAR} cursor="pointer" />
+                <Bar yAxisId="amt" dataKey="collected" name="Collected" fill={SERIES.collected} {...BAR} cursor="pointer" />
                 <Line
                   yAxisId="pct"
                   type="monotone"
@@ -169,10 +165,10 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                   name="Collection %"
                   stroke={SERIES.pctLine}
                   strokeWidth={2.5}
-                  dot={{ r: 4, fill: SERIES.pctLine }}
-                  activeDot={{ r: 6 }}
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 3, stroke: WHITE }}
                 >
-                  <LabelList dataKey="pct" position="top" formatter={(v: number) => (v == null ? "" : `${v.toFixed(1)}%`)} style={{ fontSize: 10, fill: SERIES.pctLine }} />
+                  <LabelList dataKey="pct" position="top" formatter={(v: number) => (v == null ? "" : `${v.toFixed(1)}%`)} style={VALUE_LABEL} />
                 </Line>
               </ComposedChart>
             </ResponsiveContainer>
@@ -229,7 +225,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
               className="rounded-lg px-4 py-1 hover:bg-grey-50"
               title="Click to view the loans behind this month"
             >
-              <span className="block font-serif text-3xl font-bold" style={{ color: deficit > 0 ? TEXT.bad : TEXT.good }}>
+              <span className="figure-display block text-[2.2rem]" style={{ color: deficit > 0 ? TEXT.bad : TEXT.good }}>
                 {paiseToINR(deficit)}
               </span>
               <span className="text-xs text-muted">Deficit · {dm ? fmtMonth(dm.month) : ""}</span>
@@ -243,11 +239,13 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                   <button
                     type="button"
                     onClick={() => openMonth(m.month, "Loans due")}
-                    className="w-full rounded-lg border border-line px-3 py-2 text-left text-xs hover:-translate-y-0.5 hover:shadow"
-                    style={{ borderLeft: `4px solid ${bad ? SERIES.bad : SERIES.good}` }}
+                    className="w-full rounded-xl border border-line bg-paper px-3 py-2 text-left text-xs shadow-xs transition hover:-translate-y-0.5 hover:shadow-md"
                   >
                     <span className="flex items-center justify-between">
-                      <span className="font-semibold text-navy">{fmtMonthShort(m.month)}</span>
+                      <span className="flex items-center gap-1.5 font-semibold text-ink">
+                        <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: bad ? SERIES.bad : SERIES.good }} />
+                        {fmtMonthShort(m.month)}
+                      </span>
                       <span className="text-muted">
                         Target {(m.targetBp / 100).toFixed(0)}% · Actual {fmtPct(m.collectionPct, 2)} ·{" "}
                         <b style={{ color: bad ? TEXT.bad : TEXT.good }}>Deficit {fmtPct(m.deficitPct, 2)}</b>
@@ -301,7 +299,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
           {...shared}
         >
           <div className="mb-2 flex items-center gap-2">
-            <span className="font-serif text-3xl font-bold" style={{ color: PCT_TONE_COLOR[pctTone(tm?.achievedPct)] }}>
+            <span className="figure-display text-[2.2rem]" style={{ color: PCT_TONE_COLOR[pctTone(tm?.achievedPct)] }}>
               {fmtPct(tm?.achievedPct, 1)}
             </span>
             <span className="text-xs text-muted">achieved</span>
@@ -318,13 +316,9 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                     open({ metric: "DISBURSED", title: `Disbursed · ${fmtMonth(row.month)}`, range: monthRange(row.month) });
                 }}
               >
-                <defs>
-                  <BarGradient id="dg-target" color={SERIES.target} />
-                  <BarGradient id="dg-achieved" color={SERIES.neutral} />
-                </defs>
-                <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-                <XAxis dataKey="label" tick={AXIS_TICK} />
-                <YAxis tick={AXIS_TICK} tickFormatter={(v: number) => formatInrCompact(v)} width={58} />
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" {...X_AXIS} />
+                <YAxis {...Y_AXIS} tickFormatter={(v: number) => formatInrCompact(v)} width={58} />
                 <Tooltip
                   cursor={CURSOR}
                   content={
@@ -340,9 +334,9 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                     />
                   }
                 />
-                <Bar dataKey="target" name="Target" fill="url(#dg-target)" radius={[6, 6, 0, 0]} cursor="pointer" />
-                <Bar dataKey="achieved" name="Achieved" fill="url(#dg-achieved)" radius={[6, 6, 0, 0]} cursor="pointer">
-                  <LabelList dataKey="achieved" position="top" formatter={(v: number) => formatInrCompact(v)} style={{ fontSize: 10, fill: NAVY }} />
+                <Bar dataKey="target" name="Target" fill={SERIES.target} {...BAR} cursor="pointer" />
+                <Bar dataKey="achieved" name="Achieved" fill={SERIES.neutral} {...BAR} cursor="pointer">
+                  <LabelList dataKey="achieved" position="top" formatter={(v: number) => formatInrCompact(v)} style={VALUE_LABEL} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -370,9 +364,9 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                   if (row) open({ metric: "RELOAN_RETENTION", key: row.key, title: `Re-loan retention · ${row.label}` });
                 }}
               >
-                <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-                <XAxis dataKey="label" tick={AXIS_TICK} />
-                <YAxis tick={AXIS_TICK} allowDecimals={false} width={32} />
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" {...X_AXIS} />
+                <YAxis {...Y_AXIS} allowDecimals={false} width={32} />
                 <Tooltip
                   cursor={CURSOR}
                   content={
@@ -388,11 +382,11 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                     />
                   }
                 />
-                <Bar dataKey="value" name="Loans" radius={[6, 6, 0, 0]} cursor="pointer">
+                <Bar dataKey="value" name="Loans" {...BAR} cursor="pointer">
                   {retData.map((d) => (
                     <Cell key={d.key} fill={d.color} />
                   ))}
-                  <LabelList dataKey="value" position="top" style={{ fontSize: 11, fontWeight: 600, fill: NAVY }} />
+                  <LabelList dataKey="value" position="top" style={VALUE_LABEL} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -429,12 +423,9 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
           <div className={chartBox}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={mkData} margin={{ top: 20, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <BarGradient id="dg-mk" color={TONE_SOLID.blue} />
-                </defs>
-                <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-                <XAxis dataKey="label" tick={AXIS_TICK} />
-                <YAxis tick={AXIS_TICK} tickFormatter={(v: number) => `${v}%`} width={40} />
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" {...X_AXIS} />
+                <YAxis {...Y_AXIS} tickFormatter={(v: number) => `${v}%`} width={40} />
                 <Tooltip
                   cursor={CURSOR}
                   content={
@@ -448,8 +439,8 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                     />
                   }
                 />
-                <Bar dataKey="pct" name="Conversion" fill="url(#dg-mk)" radius={[6, 6, 0, 0]}>
-                  <LabelList dataKey="pct" position="top" formatter={(v: number) => (v == null ? "" : `${v.toFixed(1)}%`)} style={{ fontSize: 10, fill: TEXT.blueDark }} />
+                <Bar dataKey="pct" name="Conversion" fill={TONE_SOLID.blue} {...BAR}>
+                  <LabelList dataKey="pct" position="top" formatter={(v: number) => (v == null ? "" : `${v.toFixed(1)}%`)} style={VALUE_LABEL} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

@@ -34,6 +34,8 @@ import { useColumnFilters, FilterableTh, type FilterColumn } from "@/components/
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { PeriodPicker } from "@/components/staff/period-picker";
 import { InfoTooltip } from "@/components/ui/tooltip";
+import { ChartTooltipContent, chartAxis, chartGrid, chartYAxis } from "@/components/kit";
+import { CHART, NAVY, TEXT, WHITE } from "@/components/staff/dashboard/colors";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { rangeFor, periodLabelFor, type Range } from "@/lib/period";
 import { staffApi, paiseToINR, type StaffPerformanceRow } from "@/lib/api/applications";
@@ -45,8 +47,6 @@ import {
   performanceTotals,
   withPerformanceSort,
 } from "@/lib/staff/performance-view";
-
-const NAVY = "#0C2540";
 
 /** Minutes → "3h 20m" / "45m" / "2d 4h" — a bare minute count is unreadable past an hour. */
 function humanMinutes(mins: number | null): string {
@@ -246,24 +246,32 @@ function StaffPerformanceInner() {
         // Dimmed like the tiles and the register: under keepPreviousData this is still the last
         // window's trend until the new one lands, and must not read as the picked period's.
         <div
-          className={`mb-4 rounded border border-line bg-white p-4 shadow-sm transition-opacity ${q.isPlaceholderData ? "opacity-60" : ""}`}
+          className={`surface mb-4 p-5 transition-opacity ${q.isPlaceholderData ? "opacity-60" : ""}`}
           aria-busy={q.isPlaceholderData}
         >
           {/* The trend is computed server-side across the whole visible roster and the rows carry no
               per-day breakdown to rebuild it from, so it cannot follow a column filter the way the
               tiles above do. Say so rather than let it read as the selected person's own activity. */}
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+          <div className="mb-3 text-base font-medium tracking-tight text-ink">
             Actions per day
-            {activeCount > 0 && <span className="normal-case"> — all staff, not filtered</span>}
+            {activeCount > 0 && <span className="text-xs font-normal text-muted"> — all staff, not filtered</span>}
           </div>
           <div style={{ width: "100%", height: 180 }}>
             <ResponsiveContainer>
-              <LineChart data={daily} margin={{ top: 4, right: 8, bottom: 4, left: -20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                <RTooltip />
-                <Line type="monotone" dataKey="actions" stroke={NAVY} strokeWidth={2} dot={false} />
+              <LineChart data={daily} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                <CartesianGrid {...chartGrid} stroke={CHART.grid} />
+                <XAxis dataKey="date" {...chartAxis} tick={{ fontSize: 11, fill: TEXT.axis }} />
+                <YAxis allowDecimals={false} {...chartYAxis} width={32} tick={{ fontSize: 11, fill: TEXT.axis }} />
+                <RTooltip cursor={{ stroke: CHART.grid }} content={<ChartTooltipContent />} />
+                <Line
+                  type="monotone"
+                  dataKey="actions"
+                  name="Actions"
+                  stroke={NAVY}
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 3, stroke: WHITE }}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>

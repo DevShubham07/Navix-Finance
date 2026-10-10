@@ -26,21 +26,20 @@ export function AppHeader() {
   });
 
   return (
-    <header className="site-header">
-      <div className="container">
-        <nav className="nav" aria-label="Borrower" style={{ minHeight: 64 }}>
-          <Brand href={session ? "/dashboard" : "/"} tag="Borrower" />
+    <header className="sticky top-0 z-40 bg-frame/85 backdrop-blur-md sm:rounded-t-[var(--r-frame)]">
+      <div className="container py-2">
+        <nav className="nav gap-2" aria-label="Borrower" style={{ minHeight: 64 }}>
+          <Brand href={session ? "/dashboard" : "/"} tag="Borrower" className="max-sm:[&_.brand-text]:hidden" />
           {session ? (
-            <div className="flex items-center gap-1">
+            <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
               {APP_NAV.map(({ label, href, Icon }) => {
                 const active = pathname.startsWith(href);
                 return (
                   <Link
                     key={href}
                     href={href}
-                    className={`flex items-center gap-2 rounded px-3 py-2 text-sm font-medium transition-colors ${
-                      active ? "bg-navy-tint text-navy" : "text-ink hover:bg-navy-tint hover:text-navy"
-                    }`}
+                    aria-current={active ? "page" : undefined}
+                    className={`nav-pill max-sm:px-3 ${active ? "is-active" : ""}`}
                   >
                     <Icon size={16} /> <span className="hidden sm:inline">{label}</span>
                   </Link>

@@ -237,7 +237,7 @@ export function RecordsDrawer({ target, onClose, params, periodLabel }: RecordsD
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name or application #"
                 aria-label="Search records"
-                className="w-full rounded border border-line py-1.5 pl-7 pr-2 text-xs"
+                className="h-9 w-full rounded-full border border-line bg-paper py-1.5 pl-7 pr-3 text-xs shadow-xs"
               />
             </label>
             {session?.realRole === "ADMIN" && (
@@ -245,7 +245,7 @@ export function RecordsDrawer({ target, onClose, params, periodLabel }: RecordsD
                 type="button"
                 onClick={() => void doExport()}
                 disabled={exporting || total === 0}
-                className="flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-xs font-semibold text-navy hover:bg-grey-100 disabled:opacity-50"
+                className="nav-pill disabled:opacity-50"
               >
                 <Download size={13} /> {exporting ? "Preparing…" : "Export CSV"}
               </button>
@@ -253,7 +253,7 @@ export function RecordsDrawer({ target, onClose, params, periodLabel }: RecordsD
           </div>
 
           <p
-            className="m-0 mt-2 rounded bg-navy-tint px-3 py-1.5 text-xs font-semibold text-navy"
+            className="m-0 mt-2 rounded-xl bg-grey-100 px-3 py-2 text-xs font-medium text-ink"
             data-testid="records-total"
           >
             {query.isLoading
@@ -275,7 +275,7 @@ export function RecordsDrawer({ target, onClose, params, periodLabel }: RecordsD
             <>
               <div className="staff-table-scroll">
                 <table className="w-full min-w-[40rem] text-left text-xs">
-                  <thead className="sticky top-0 bg-navy text-white">
+                  <thead className="sticky top-0 border-b border-line bg-grey-50 text-slate">
                     <tr>
                       {["App #", "Customer", "Status", "Amount", "Dates", "Assignee", "State"].map((h) => (
                         <th key={h} className="px-3 py-2 font-semibold">
@@ -293,7 +293,7 @@ export function RecordsDrawer({ target, onClose, params, periodLabel }: RecordsD
                         onKeyDown={(e) => e.key === "Enter" && setDetail(r)}
                         className="cursor-pointer border-b border-line hover:bg-grey-50 focus:bg-grey-50 focus:outline-none"
                       >
-                        <td className="px-3 py-2 font-semibold text-navy">{r.applicationId ?? "—"}</td>
+                        <td className="px-3 py-2 font-semibold text-ink">{r.applicationId ?? "—"}</td>
                         <td className="px-3 py-2">
                           <span className="block font-medium text-ink">{r.customerName ?? "—"}</span>
                           <span className="text-muted">

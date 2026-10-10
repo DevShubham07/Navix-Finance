@@ -19,17 +19,21 @@ import { StarRating } from "@/components/ui/star-rating";
 import { cn } from "@/lib/utils";
 import { bureauStateLabel, reportWithoutScoreLabel } from "@/components/staff/bureau-state";
 import type { BureauState } from "@/lib/api/applications";
+import { CHART, NAVY, TEXT, WHITE } from "@/components/staff/dashboard/colors";
 
 const MIN_SCORE = 300;
 const MAX_SCORE = 900;
 
-/** Band table — the single source of truth for the wedges, labels and verdict tone. */
+/**
+ * Band table — the single source of truth for the wedges, labels and verdict tone. Wedge colours run
+ * red → ember → sun → mint on the theme's chart companions; no text sits on them.
+ */
 const BANDS = [
-  { from: 300, to: 550, label: "POOR", color: "#D33C32", tone: "bg-error-100 text-error-800" },
-  { from: 550, to: 650, label: "FAIR", color: "#E07B39", tone: "bg-warning-100 text-warning-800" },
-  { from: 650, to: 700, label: "GOOD", color: "#D7B02A", tone: "bg-warning-100 text-warning-800" },
-  { from: 700, to: 750, label: "VERY GOOD", color: "#7FBF44", tone: "bg-success-100 text-success-800" },
-  { from: 750, to: 900, label: "EXCELLENT", color: "#22A06B", tone: "bg-success-100 text-success-800" },
+  { from: 300, to: 550, label: "POOR", color: "#E5484D", tone: "bg-error-100 text-error-800" },
+  { from: 550, to: 650, label: "FAIR", color: "#FF8A6B", tone: "bg-warning-100 text-warning-800" },
+  { from: 650, to: 700, label: "GOOD", color: "#F8CF40", tone: "bg-warning-100 text-warning-800" },
+  { from: 700, to: 750, label: "VERY GOOD", color: "#8FDDB2", tone: "bg-success-100 text-success-800" },
+  { from: 750, to: 900, label: "EXCELLENT", color: "#3DC985", tone: "bg-success-100 text-success-800" },
 ] as const;
 
 /**
@@ -45,7 +49,10 @@ const LABEL_ZONES = [
   { from: 750, to: 900, label: "EXCELLENT" },
 ] as const;
 
-const EMPTY_COLOR = "#C6C3BA"; // neutral-300 — used when there is no bureau score yet.
+const EMPTY_COLOR = CHART.unmeasured; // pale track — used when there is no bureau score yet.
+/** Dial ink (needle, zone labels, score) and the muted shade for end-stops and empty states. */
+const INK = NAVY;
+const MUTED = TEXT.axis;
 
 /** The band a score falls in; upper boundaries read as the higher band (750 → EXCELLENT). */
 export function bandForScore(score: number | null | undefined) {
@@ -236,7 +243,7 @@ export function CreditScoreGauge({
               fontSize={dims.label}
               fontWeight={700}
               letterSpacing="0.06em"
-              fill={has ? "#0C2238" : "#8593A6"}
+              fill={has ? INK : MUTED}
               style={{
                 opacity: armed ? 1 : 0,
                 transition: reduced ? undefined : `opacity .4s ease ${0.25 + i * 0.09}s`,
@@ -262,17 +269,17 @@ export function CreditScoreGauge({
           <path
             d={`M ${CX - 3.4} ${CY} L ${CX - 1.6} ${CY - R - 4} L ${CX + 1.6} ${CY - R - 4} L ${CX + 3.4} ${CY} Z`}
             transform={`rotate(-90 ${CX} ${CY})`}
-            fill="#0C2238"
+            fill={INK}
           />
         </g>
-        <circle cx={CX} cy={CY} r={12} fill="#FFFFFF" stroke="#EAE1D0" strokeWidth={1} aria-hidden />
-        <circle cx={CX} cy={CY} r={5} fill={has ? (band?.color ?? "#0C2238") : EMPTY_COLOR} aria-hidden />
+        <circle cx={CX} cy={CY} r={12} fill={WHITE} stroke={CHART.grid} strokeWidth={1} aria-hidden />
+        <circle cx={CX} cy={CY} r={5} fill={has ? (band?.color ?? INK) : EMPTY_COLOR} aria-hidden />
 
         {/* Axis end-stops, tucked under the arc ends. */}
-        <text x={CX - R} y={CY + 13} textAnchor="middle" fontSize={dims.caption - 1.5} fill="#8593A6" aria-hidden>
+        <text x={CX - R} y={CY + 13} textAnchor="middle" fontSize={dims.caption - 1.5} fill={MUTED} aria-hidden>
           {MIN_SCORE}
         </text>
-        <text x={CX + R} y={CY + 13} textAnchor="middle" fontSize={dims.caption - 1.5} fill="#8593A6" aria-hidden>
+        <text x={CX + R} y={CY + 13} textAnchor="middle" fontSize={dims.caption - 1.5} fill={MUTED} aria-hidden>
           {MAX_SCORE}
         </text>
 
@@ -283,7 +290,7 @@ export function CreditScoreGauge({
           textAnchor="middle"
           fontSize={has ? dims.score : dims.score * 0.55}
           fontWeight={700}
-          fill={has ? "#0C2540" : "#8593A6"}
+          fill={has ? INK : MUTED}
           style={{ fontVariantNumeric: "tabular-nums" }}
           aria-hidden
         >
@@ -296,7 +303,7 @@ export function CreditScoreGauge({
           fontSize={dims.caption}
           fontWeight={700}
           letterSpacing="0.14em"
-          fill="#8593A6"
+          fill={MUTED}
           aria-hidden
         >
           {has ? "CREDIT SCORE" : emptyCaption}

@@ -17,14 +17,15 @@ import { dashboardApi, paiseToINR, type DashKpi, type DashMetric, type DashRateR
 import { cn } from "@/lib/utils";
 import { ChartCard, SectionTitle } from "../chart-card";
 import { ChartTooltip } from "../chart-tooltip";
-import { AXIS_TICK, CURSOR, GRID_STROKE, ProgressBar, activeRow } from "../chart-parts";
-import { NAVY, SERIES, TONE_SOLID, TONE_TINT, fmtPct, gradientCss } from "../colors";
+import { BAR, CURSOR, GRID, ProgressBar, VALUE_LABEL, X_AXIS, Y_AXIS, activeRow } from "../chart-parts";
+import { NAVY, SERIES, TONE_SOLID, TONE_TEXT, fmtPct } from "../colors";
 import { nf } from "../fmt";
 import { KpiCard } from "../kpi-card";
 import { PositionCard } from "../position-card";
 import type { DashTabProps } from "../tab-props";
 import { useDashQuery } from "../use-dash-query";
 import { SnapshotMonthly } from "./snapshot-monthly";
+import { SnapshotOverview } from "./snapshot-overview";
 import { SnapshotRevenue } from "./snapshot-revenue";
 
 const chartBox = "h-56 min-h-[240px] w-full";
@@ -60,7 +61,7 @@ export function BusinessSnapshot(props: DashTabProps) {
   const placeholder = (n: number) => (
     <div className={kpiGrid}>
       {Array.from({ length: n }, (_, i) => (
-        <div key={i} className="h-36 animate-pulse rounded-xl bg-grey-100" />
+        <div key={i} className="h-36 animate-pulse rounded-[22px] bg-grey-100" />
       ))}
     </div>
   );
@@ -79,6 +80,9 @@ export function BusinessSnapshot(props: DashTabProps) {
 
   return (
     <div>
+      {/* ------------------------------------------------------------- overview */}
+      {s && <SnapshotOverview s={s} params={params} open={open} />}
+
       {/* ------------------------------------------------------------- KPIs */}
       <SectionTitle>Key Performance Indicators</SectionTitle>
       {q.isError ? (
@@ -90,20 +94,20 @@ export function BusinessSnapshot(props: DashTabProps) {
           <KpiCard title="Total Applications" tone="navy" icon={FileText} kpi={s.kpis.applications} onOpen={(m) => openMetric(m, "Total applications")} />
           <KpiCard title="Disbursed Cases" tone="emerald" icon={CheckCircle2} kpi={s.kpis.disbursed} shareLabel={shareOf(s.kpis.disbursed.count, total, "applications")} onOpen={(m) => openMetric(m, "Disbursed cases")} />
           <KpiCard title="Pending Cases" tone="orange" icon={Clock} kpi={s.kpis.pending} shareLabel={shareOf(s.kpis.pending.count, total, "applications")} onOpen={(m) => openMetric(m, "Pending cases")} />
-          <KpiCard title="Rejected Cases" tone="red" icon={XCircle} kpi={s.kpis.rejected} shareLabel={shareOf(s.kpis.rejected.count, total, "applications")} onOpen={(m) => openMetric(m, "Rejected cases")} />
+          <KpiCard title="Rejected Cases" tone="red" icon={XCircle} kpi={s.kpis.rejected} lowerIsBetter shareLabel={shareOf(s.kpis.rejected.count, total, "applications")} onOpen={(m) => openMetric(m, "Rejected cases")} />
         </div>
       )}
 
       {!q.isError && (!s || pos) && (
         <>
           <SectionTitle>Business position</SectionTitle>
-          <p className="-mt-2 mb-3 text-xs text-grey-500">Loans disbursed in the selected period</p>
+          <p className="-mt-2 mb-3 text-xs text-muted">Loans disbursed in the selected period</p>
         </>
       )}
       {q.isError || (s && !pos) ? null : !pos ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="h-28 animate-pulse rounded-xl bg-grey-100" />
+            <div key={i} className="h-28 animate-pulse rounded-[22px] bg-grey-100" />
           ))}
         </div>
       ) : (
@@ -137,7 +141,7 @@ export function BusinessSnapshot(props: DashTabProps) {
                     {pos.overpaidPaise > 0 && (
                       <p className="m-0 mt-1.5 tabular-nums">Overpaid by borrowers: {paiseToINR(pos.overpaidPaise)}</p>
                     )}
-                    <p className="m-0 mt-1.5 text-white/70">Receivable + penalty − received − waived + overpaid</p>
+                    <p className="m-0 mt-1.5 text-slate">Receivable + penalty − received − waived + overpaid</p>
                   </>
                 ) : undefined
               }
@@ -180,9 +184,9 @@ export function BusinessSnapshot(props: DashTabProps) {
                   if (row) openMetric(row.key, `${row.label} cases`);
                 }}
               >
-                <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-                <XAxis dataKey="label" tick={AXIS_TICK} />
-                <YAxis tick={AXIS_TICK} allowDecimals={false} width={32} />
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" {...X_AXIS} />
+                <YAxis {...Y_AXIS} allowDecimals={false} width={32} />
                 <Tooltip
                   cursor={CURSOR}
                   content={
@@ -193,11 +197,11 @@ export function BusinessSnapshot(props: DashTabProps) {
                     />
                   }
                 />
-                <Bar dataKey="value" name="Applications" radius={[6, 6, 0, 0]} cursor="pointer">
+                <Bar dataKey="value" name="Applications" {...BAR} cursor="pointer">
                   {statusData.map((d) => (
                     <Cell key={d.key} fill={d.color} />
                   ))}
-                  <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 700, fill: NAVY }} />
+                  <LabelList dataKey="value" position="top" style={VALUE_LABEL} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -218,13 +222,14 @@ export function BusinessSnapshot(props: DashTabProps) {
               <button
                 type="button"
                 onClick={() => openMetric("CLOSED", "Closed + settlement loans")}
-                className="mb-3 w-full rounded-lg px-4 py-3 text-left text-white shadow transition hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ backgroundImage: gradientCss("emerald") }}
+                className="surface-tile mb-4 w-full px-4 py-3 text-left transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                <span className="block text-xs font-semibold uppercase tracking-wide text-white/80">Closed + Settlement</span>
-                <span className="font-serif text-3xl font-bold">{nf(c.closedCount)}</span>
-                <span className="ml-2 text-xs text-white/80">
-                  {fmtPct(c.closedPctOfDisbursed, 1)} of disbursed · Click to view loans
+                <span className="block text-xs font-medium text-slate">Closed + Settlement</span>
+                <span className="mt-1 flex flex-wrap items-end gap-x-2">
+                  <span className="figure-display text-[2.2rem] text-ink">{nf(c.closedCount)}</span>
+                  <span className="pb-1 text-xs text-slate">
+                    {fmtPct(c.closedPctOfDisbursed, 1)} of disbursed · Click to view loans
+                  </span>
                 </span>
               </button>
               {(
@@ -242,7 +247,7 @@ export function BusinessSnapshot(props: DashTabProps) {
                 >
                   <span className="flex justify-between text-xs">
                     <span className="font-medium text-ink">{label}</span>
-                    <span className="font-bold tabular-nums" style={{ color: TONE_SOLID[tone] }}>
+                    <span className="font-bold tabular-nums" style={{ color: TONE_TEXT[tone] }}>
                       {nf(n)}
                     </span>
                   </span>
@@ -264,10 +269,9 @@ export function BusinessSnapshot(props: DashTabProps) {
         >
           {c && (
             <>
-              <p className="m-0 mb-3">
-                <span className="inline-block rounded-full bg-navy px-4 py-1.5 text-sm font-bold text-white">
-                  Total Collected {paiseToINR(c.totalCollectedPaise)}
-                </span>
+              <p className="m-0 mb-4">
+                <span className="block text-xs font-medium text-slate">Total Collected</span>
+                <span className="figure-display mt-1 block text-[2.2rem] text-ink">{paiseToINR(c.totalCollectedPaise)}</span>
               </p>
               {(
                 [
@@ -285,7 +289,7 @@ export function BusinessSnapshot(props: DashTabProps) {
                 >
                   <span className="flex justify-between text-xs">
                     <span className="font-medium text-ink">{label}</span>
-                    <span className="font-bold tabular-nums" style={{ color: TONE_SOLID[tone] }}>
+                    <span className="font-bold tabular-nums" style={{ color: TONE_TEXT[tone] }}>
                       {paiseToINR(paise)}
                     </span>
                   </span>
@@ -355,13 +359,15 @@ export function BusinessSnapshot(props: DashTabProps) {
                 key={label}
                 type="button"
                 onClick={() => openMetric(metric, label)}
-                className={cn("rounded-xl px-4 py-5 text-center transition hover:-translate-y-0.5 hover:shadow-lg")}
-                style={{ background: TONE_TINT[tone], border: `2px solid ${TONE_SOLID[tone]}` }}
+                className={cn("surface-tile flex flex-col items-center px-4 py-5 text-center transition hover:-translate-y-0.5 hover:shadow-md")}
               >
-                <span className="block font-serif text-4xl font-bold" style={{ color: TONE_SOLID[tone] }}>
+                <span className="figure-display block text-[2.9rem]" style={{ color: TONE_TEXT[tone] }}>
                   {fmtPct(ratio, 1)}
                 </span>
-                <span className="text-xs font-semibold text-ink">{label}</span>
+                <span className="mt-2 flex items-center gap-1.5 text-xs font-medium text-ink">
+                  <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: TONE_SOLID[tone] }} />
+                  {label}
+                </span>
               </button>
             ))}
           </div>
@@ -411,7 +417,7 @@ export function RateTable({
     <ChartCard title={title} info={info} accent={NAVY} loading={loading} error={error} onRetry={onRetry} empty={!rows || rows.length === 0}>
       <div className="staff-table-scroll">
         <table className="w-full min-w-[34rem] text-left text-xs">
-          <thead className="bg-navy text-white">
+          <thead className="border-b border-line bg-grey-50 text-slate">
             <tr>
               {["Rate %", "New", "Repeat", "Total cases", "Principal", "Net disbursed", "Total repayable"].map((h) => (
                 <th key={h} className="px-3 py-2 font-semibold">

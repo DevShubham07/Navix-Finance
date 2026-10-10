@@ -6,7 +6,7 @@ import { dashboardApi, paiseToINR, type DashCalendarMode, type DashMetric } from
 import { formatInrCompact } from "@/lib/staff/format-inr";
 import { cn } from "@/lib/utils";
 import { ChartCard } from "../chart-card";
-import { NAVY, STAT_CHIP, SUNDAY_STRIPE, TONE_SOLID, WHITE, hexToRgb } from "../colors";
+import { NAVY, STAT_CHIP, SUNDAY_STRIPE, TONE_SOLID, TONE_TEXT, WHITE, hexToRgb } from "../colors";
 import { fmtDayLong, fmtMonth, nf, todayIso } from "../fmt";
 import type { DashTabProps } from "../tab-props";
 import { useDashQuery } from "../use-dash-query";
@@ -14,10 +14,11 @@ import { Segmented, StatChip, selectCls } from "../ui-bits";
 
 const rgbOf = (hex: string) => hexToRgb(hex).join(",");
 
+/** `color` = the deep shade (mode pill, amount text, today ring); `rgb` = the bright heat-map fill. */
 const MODES: Record<DashCalendarMode, { label: string; color: string; rgb: string; metric: DashMetric; noun: string }> = {
   DUE: { label: "Due Amount", color: NAVY, rgb: rgbOf(NAVY), metric: "CALENDAR_DUE", noun: "due" },
-  DISBURSED: { label: "Disbursed Amount", color: TONE_SOLID.emerald, rgb: rgbOf(TONE_SOLID.emerald), metric: "CALENDAR_DISBURSED", noun: "disbursed" },
-  BIRTHDAY: { label: "Customer Birthday", color: TONE_SOLID.violet, rgb: rgbOf(TONE_SOLID.violet), metric: "CALENDAR_BIRTHDAY", noun: "birthdays" },
+  DISBURSED: { label: "Disbursed Amount", color: TONE_TEXT.emerald, rgb: rgbOf(TONE_SOLID.emerald), metric: "CALENDAR_DISBURSED", noun: "disbursed" },
+  BIRTHDAY: { label: "Customer Birthday", color: TONE_TEXT.violet, rgb: rgbOf(TONE_SOLID.violet), metric: "CALENDAR_BIRTHDAY", noun: "birthdays" },
 };
 
 /** Five heat steps, light to strong; alpha over white keeps the dark text legible on every step. */
@@ -88,16 +89,16 @@ export function CalendarTab({ params, open }: DashTabProps) {
           type="button"
           aria-label="Previous month"
           onClick={() => setMonth(shiftMonth(month, -1))}
-          className="rounded border border-line p-1 hover:bg-grey-100"
+          className="icon-pill"
         >
           <ChevronLeft size={14} />
         </button>
-        <span className="min-w-[8.5rem] text-center font-serif text-base font-semibold text-navy">{fmtMonth(month)}</span>
+        <span className="min-w-[8.5rem] text-center text-sm font-medium text-ink">{fmtMonth(month)}</span>
         <button
           type="button"
           aria-label="Next month"
           onClick={() => setMonth(shiftMonth(month, 1))}
-          className="rounded border border-line p-1 hover:bg-grey-100"
+          className="icon-pill"
         >
           <ChevronRight size={14} />
         </button>
@@ -157,8 +158,8 @@ export function CalendarTab({ params, open }: DashTabProps) {
                   })
                 }
                 className={cn(
-                  "flex min-h-[4.5rem] flex-col items-center rounded-lg border px-1 py-1.5 text-center transition",
-                  rec ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg" : "cursor-default",
+                  "flex min-h-[4.5rem] flex-col items-center rounded-xl border px-1 py-1.5 text-center transition",
+                  rec ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md" : "cursor-default",
                   isToday ? "ring-2 ring-offset-1" : "",
                   step === 0 ? "border-line" : "border-transparent",
                 )}
@@ -187,7 +188,7 @@ export function CalendarTab({ params, open }: DashTabProps) {
       <div className="mt-3 flex items-center gap-2 text-[11px] text-muted" aria-hidden>
         Less
         {HEAT_ALPHA.map((a) => (
-          <span key={a} className="inline-block h-3 w-6 rounded" style={{ background: `rgba(${cfg.rgb},${a})` }} />
+          <span key={a} className="inline-block h-3 w-6 rounded-full" style={{ background: `rgba(${cfg.rgb},${a})` }} />
         ))}
         More
       </div>

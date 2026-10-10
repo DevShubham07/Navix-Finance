@@ -2,13 +2,13 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Card primitives — on-brand surface (white, hairline border, 4px radius, soft
- * shadow) matching the design's `.card`. Padding is owned by the sub-parts so
+ * Card primitives — the theme's `.surface` (near-white, hairline border, 22px radius, soft
+ * shadow + white top edge), matching the kit's <Panel>. Padding is owned by the sub-parts so
  * dashboards can compose header/content/footer freely.
  */
 export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("rounded border border-line bg-white shadow-sm", className)} {...props} />
+    <div ref={ref} className={cn("surface", className)} {...props} />
   ),
 );
 Card.displayName = "Card";
@@ -22,7 +22,7 @@ CardHeader.displayName = "CardHeader";
 
 export const CardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
   ({ className, ...props }, ref) => (
-    <h3 ref={ref} className={cn("font-serif text-lg font-semibold leading-tight text-navy", className)} {...props} />
+    <h3 ref={ref} className={cn("text-base font-medium leading-tight tracking-tight text-ink", className)} {...props} />
   ),
 );
 CardTitle.displayName = "CardTitle";

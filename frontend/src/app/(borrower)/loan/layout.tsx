@@ -34,12 +34,12 @@ export default function LoanLayout({ children }: { children: React.ReactNode }) 
   const step = steps[idx];
   // A step outside this borrower's list (mid-navigation, before the server's list lands) has no
   // number to show; render the chrome without a count rather than "step 0".
-  if (!step) return <div className="bg-ivory"><div className="container max-w-content py-10">{children}</div></div>;
+  if (!step) return <div><div className="container max-w-content py-10">{children}</div></div>;
   const pct = Math.round(((idx + 1) / steps.length) * 100);
 
   return (
-    <div className="bg-ivory">
-      <div className="border-b border-line bg-white">
+    <div>
+      <div className="border-b border-line">
         <div className="container py-5">
           <div className="mb-2 flex items-center justify-between">
             {/* Held back until the server's list lands. On a deep link the fallback is the full

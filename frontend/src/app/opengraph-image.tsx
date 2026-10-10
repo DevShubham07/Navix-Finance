@@ -22,12 +22,12 @@ export default function Image() {
           flexDirection: "column",
           justifyContent: "center",
           padding: "80px",
-          background: "#0C2540",
-          color: "#FDFBF6",
+          background: "#0B0B0C",
+          color: "#F2F3F3",
           fontFamily: "sans-serif",
         }}
       >
-        <div style={{ fontSize: 96, fontWeight: 800, letterSpacing: "-0.03em", color: "#14A06B" }}>
+        <div style={{ fontSize: 96, fontWeight: 800, letterSpacing: "-0.03em", color: "#FF5B37" }}>
           DhanBoost
         </div>
         <div style={{ fontSize: 52, fontWeight: 700, marginTop: 24, lineHeight: 1.1 }}>

@@ -22,8 +22,8 @@ export default function SignupLayout({ children }: { children: React.ReactNode }
   useJourneyGuard(appId);
 
   return (
-    <div className="bg-ivory">
-      <div className="border-b border-line bg-white">
+    <div>
+      <div className="border-b border-line">
         <div className="container py-5">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-gold-dark">

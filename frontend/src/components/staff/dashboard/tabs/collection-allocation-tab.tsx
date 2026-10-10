@@ -6,14 +6,14 @@ import type { LucideIcon } from "lucide-react";
 import { dashboardApi, paiseToINR, type DashAllocRow } from "@/lib/api/applications";
 import { ChartCard } from "../chart-card";
 import { DeltaPill } from "../chart-parts";
-import { NAVY, TEXT, TONE_SOLID, TONE_TINT, WHITE } from "../colors";
+import { NAVY, TEXT, TONE_SOLID, TONE_TEXT } from "../colors";
 import { nf } from "../fmt";
 import { deltaPct } from "../kpi-card";
 import type { DashTabProps } from "../tab-props";
 import { useDashQuery } from "../use-dash-query";
 import { IconSquare } from "../ui-bits";
 
-/** Collection Allocation: four coloured stat cards + the per-collector table (Admin tab and Collection Head view). */
+/** Collection Allocation: four light stat cards (tone on the icon pill) + the per-collector table (Admin tab and Collection Head view). */
 export function CollectionAllocationTab({ params, open }: DashTabProps) {
   const q = useDashQuery("collection-allocation", params, [], () => dashboardApi.collectionAllocation(params));
   const d = q.data;
@@ -57,20 +57,17 @@ export function CollectionAllocationTab({ params, open }: DashTabProps) {
             <div
               key={k.label}
               title={`${k.label}: ${k.value}`}
-              className="rounded-xl border border-line p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-              style={{ borderLeft: `5px solid ${TONE_SOLID[k.tone]}`, background: `linear-gradient(90deg, ${TONE_TINT[k.tone]}, ${WHITE} 60%)` }}
+              className="surface p-5 transition hover:-translate-y-0.5 hover:shadow-md"
             >
-              <div className="flex items-center gap-2">
-                <IconSquare color={TONE_SOLID[k.tone]}>
-                  <Icon size={16} />
+              <div className="flex items-start justify-between gap-2">
+                <span className="pt-1 text-xs font-medium text-slate">{k.label}</span>
+                <IconSquare color={TONE_TEXT[k.tone]}>
+                  <Icon size={15} />
                 </IconSquare>
-                <span className="text-xs font-semibold text-muted">{k.label}</span>
               </div>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="font-serif text-2xl font-bold tabular-nums" style={{ color: TONE_SOLID[k.tone] }}>
-                  {q.isLoading ? "…" : k.value}
-                </span>
-                <DeltaPill pct={deltaPct(k.cur, k.prev)} />
+              <div className="mt-3 flex flex-wrap items-start gap-2">
+                <span className="figure-display text-[2.2rem] text-ink">{q.isLoading ? "…" : k.value}</span>
+                <DeltaPill pct={deltaPct(k.cur, k.prev)} className="mt-0.5" />
               </div>
             </div>
           );
@@ -90,7 +87,7 @@ export function CollectionAllocationTab({ params, open }: DashTabProps) {
         {d && (
           <div className="staff-table-scroll">
             <table className="w-full min-w-[46rem] text-xs">
-              <thead className="bg-navy text-white">
+              <thead className="border-b border-line bg-grey-50 text-slate">
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold">S.No</th>
                   <th className="px-3 py-2 text-left font-semibold">Collection Ops</th>
@@ -123,7 +120,7 @@ export function CollectionAllocationTab({ params, open }: DashTabProps) {
                     <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{paiseToINR(r.totalPaise)}</td>
                   </tr>
                 ))}
-                <tr className="bg-grey-100 font-bold text-navy">
+                <tr className="bg-grey-50 font-semibold text-ink">
                   <td className="px-3 py-2">—</td>
                   <td className="px-3 py-2">GRAND TOTAL</td>
                   <td className="px-3 py-2 text-right tabular-nums">{nf(d.total.assigned)}</td>

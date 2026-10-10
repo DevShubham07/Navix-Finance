@@ -494,19 +494,25 @@ A staffer picks a **working role** from a pill in the header (initials avatar on
 - **Route groups:** `(marketing)` landing, `(borrower)` applicant flows, `staff/` back-office.
   `src/middleware.ts` gates `/staff/*` on cookie *presence* (real RBAC is enforced server-side in
   the flow service, not the middleware).
-- **Design system (unified 2026 "calendar"):** one visual language across marketing **and** the
-  functional app — navy `#0C2540` · gold `#E9B53A` · cream `#FDFBF6`; **Bricolage Grotesque** (display) /
-  **Hanken Grotesk** (body) / **IBM Plex Mono** (figures). Tokens live in **`tailwind.config.ts`** (colour/
-  font/radius/shadow scales) + **`globals.css`** `:root`, and the functional app styles via those Tailwind
-  tokens (`bg-ivory`/`text-navy`/`font-serif`…) **and** globals.css component classes (`.btn*`/`.card`/
-  `.field`/`.cal-*`). The marketing site re-declares the **same** tokens scoped under **`.navix-mkt`**
-  (`marketing-theme.css`) so it can't bleed into the app. **Re-skin by remapping token *values*, never by
-  renaming** — names are load-bearing across ~54 screens (`font-serif` is the Bricolage *display* face,
-  not a literal serif). The salary-day `<SalaryCalendar>` (reborrow `/loan/salary`) and the marketing
-  `/calculator` calendar share the `.cal-*` styles (unscoped in globals.css; `.navix-mkt`-scoped copy in
-  marketing-theme.css). Don't reintroduce the retired "Classic Corporate" theme (navy #1B3A6B / Source
-  Serif). ⚠️ Running `npm run build` while `npm run dev` is up corrupts the dev server's `.next`
-  (`Cannot find module './638.js'`) — kill dev, `rm -rf .next`, restart.
+- **Design system ("Monochrome + Ember", 2026-10):** one visual language across marketing, borrower
+  and staff — near-black ink, ember-orange accent, cool-grey canvas, near-white cards; sun/mint/violet as
+  chart companions; **Bebas Neue** (display: page titles `h1` + headline figures, `font-display` /
+  `.figure-display`) and **Inter** (everything else, incl. card titles and tabular figures).
+  **Single source of truth: `frontend/src/styles/theme.css`** — every colour (as RGB channels `--c-*`
+  plus `--navy`/`--gold`… aliases), font, radius, shadow and the gridded `--backdrop`. Three consumers
+  read it: `tailwind.config.ts` (`rgb(var(--c-x) / <alpha-value>)`, so `text-navy/60` works),
+  `globals.css` component classes (`.btn*`/`.card`/`.field`/`.cal-*`/`.surface`/`.nav-pill`/`.icon-pill`/
+  `.app-backdrop`/`.app-frame`), and `marketing-theme.css` (`.navix-mkt` inherits, no copies). **Re-skin by
+  changing values in theme.css, never by renaming** — names are historical and load-bearing across ~54
+  screens (`navy` = primary ink, `gold` = accent, `ivory` = canvas; `font-serif` = the Inter heading face).
+  Never hardcode a hex/rgba of a brand colour in CSS or TSX. Shells render inside `.app-backdrop` >
+  `.app-frame` (rounded frame on the grid). **Reusable UI kit: `src/components/kit`** (Panel, PillSelect/
+  Dropdown, Figure, DeltaChip, MetricTile, CapsuleBarChart, TargetColumns, SegmentBars, DotMatrix,
+  DonutChart, GoalProgress, PillNav, UnderlineTabs, shadcn-style `ChartContainer` + `chartAxis`/`chartGrid`
+  on Recharts) — **live showcase at `/sample`** (static, no session). Native `<select>`s are themed
+  app-wide via `appearance: base-select` (Chrome/Edge 135+). The salary-day `<SalaryCalendar>` and the
+  marketing `/calculator` share the `.cal-*` styles. ⚠️ Running `npm run build` while `npm run dev` is up
+  corrupts the dev server's `.next` (`Cannot find module './638.js'`) — kill dev, `rm -rf .next`, restart.
 - **CSS scope:** never apply global scaling like `html { font-size: X% }` or global rem overrides.
   Font-size and spacing changes must be scoped to specific utilities/components so the staff
   sidebar and dense tables are not broken.

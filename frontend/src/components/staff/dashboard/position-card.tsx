@@ -4,7 +4,7 @@ import * as React from "react";
 import type { LucideIcon } from "lucide-react";
 import { paiseToINR, type DashMetric, type DashTone } from "@/lib/api/applications";
 import { cn } from "@/lib/utils";
-import { CARD_HIGHLIGHT, gradientCss } from "./colors";
+import { CARD_BUTTON, CardIcon, CardPopover } from "./kpi-card";
 import { useCountUp } from "./use-count-up";
 
 export interface PositionCardProps {
@@ -23,12 +23,17 @@ export interface PositionCardProps {
   onOpen: (metric: DashMetric) => void;
 }
 
-/** Vivid gradient card for one Business-position figure: hover = exact ₹ + loans, click = records. */
-export function PositionCard({ title, tone, icon: Icon, paise, loans, metric, caption, definition, detail, onOpen }: PositionCardProps) {
+/**
+ * Light-panel card for one Business-position figure (the black feature card for a `navy` tone):
+ * muted title, the rupees in the display face, the tone only on the icon pill. Hover = exact ₹ +
+ * loans, click = records.
+ */
+export function PositionCard({ title, tone, icon, paise, loans, metric, caption, definition, detail, onOpen }: PositionCardProps) {
   const animated = useCountUp(paise);
   const [open, setOpen] = React.useState(false);
   const tipId = React.useId();
   const loansText = `${loans.toLocaleString("en-IN")} ${loans === 1 ? "loan" : "loans"}`;
+  const dark = tone === "navy";
 
   return (
     <div
@@ -44,43 +49,26 @@ export function PositionCard({ title, tone, icon: Icon, paise, loans, metric, ca
         aria-label={`${title}: ${paiseToINR(paise)} across ${loansText}. Open the records behind this number.`}
         aria-describedby={open ? tipId : undefined}
         onClick={() => onOpen(metric)}
-        style={{ backgroundImage: gradientCss(tone) }}
-        className={cn(
-          "group relative flex h-full w-full flex-col overflow-hidden rounded-xl p-4 text-left text-white shadow-md",
-          "transition duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:ring-2 hover:ring-white/40",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-navy",
-        )}
+        className={cn(dark ? "surface-dark" : "surface", CARD_BUTTON, "p-4")}
       >
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full"
-          style={{ background: CARD_HIGHLIGHT }}
-        />
-        <Icon aria-hidden className="pointer-events-none absolute -bottom-3 -right-2 h-24 w-24 text-white/10" />
-        <span className="relative flex items-start justify-between gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-white/90">{title}</span>
-          <Icon aria-hidden size={16} className="shrink-0 text-white" />
+        <span className="flex items-start justify-between gap-2">
+          <span className={cn("pt-1 text-xs font-medium", dark ? "text-white/65" : "text-slate")}>{title}</span>
+          <CardIcon icon={icon} tone={tone} dark={dark} />
         </span>
-        <span aria-hidden className="relative mt-2 font-serif text-2xl font-bold leading-none tabular-nums">
+        <span aria-hidden className={cn("figure-display mt-3 text-[1.6rem]", dark ? "text-white" : "text-ink")}>
           {paiseToINR(Math.round(animated))}
         </span>
-        <span className="relative mt-3 min-h-4 text-xs text-white/80">{caption ?? " "}</span>
+        <span className={cn("mt-2 min-h-4 text-[11px]", dark ? "text-white/65" : "text-slate")}>{caption ?? " "}</span>
       </button>
 
       {open && (
-        <div
-          role="tooltip"
-          id={tipId}
-          className="pointer-events-none absolute inset-x-2 top-full z-30 mt-2 rounded-lg bg-navy p-3 text-xs text-white shadow-xl"
-        >
-          <p className="m-0 mb-1.5 font-semibold">{title}</p>
-          <p className="m-0 mb-1.5 text-white/80">{definition}</p>
-          <p className="m-0 tabular-nums">
+        <CardPopover id={tipId} title={title}>
+          <p className="m-0 mb-1.5 text-slate">{definition}</p>
+          <p className="m-0 font-medium tabular-nums">
             {paiseToINR(paise)} · {loansText}
           </p>
           {detail}
-          <p className="m-0 mt-1.5 text-[10px] text-white/60">Click to view records</p>
-        </div>
+        </CardPopover>
       )}
     </div>
   );

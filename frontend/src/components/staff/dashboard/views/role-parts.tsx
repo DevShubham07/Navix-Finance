@@ -27,8 +27,8 @@ import { formatInrCompact } from "@/lib/staff/format-inr";
 import { cn } from "@/lib/utils";
 import { ChartCard } from "../chart-card";
 import { ChartTooltip, type TooltipKind } from "../chart-tooltip";
-import { AXIS_TICK, BarGradient, CURSOR, DeltaPill, GRID_STROKE, activeRow } from "../chart-parts";
-import { SERIES, TONE_SOLID, TONE_TINT, gradientCss } from "../colors";
+import { BAR, CURSOR, DeltaPill, GRID, X_AXIS, Y_AXIS, activeRow } from "../chart-parts";
+import { SERIES, TONE_SOLID, TONE_TEXT, TONE_TINT, WHITE } from "../colors";
 import { fmtAxisLabel, fmtDay, nf } from "../fmt";
 import { deltaPct } from "../kpi-card";
 import { Leaderboard } from "../leaderboard";
@@ -54,7 +54,7 @@ export function useOwnStaffKey(params: DashParams): string | undefined {
 
 /* -------------------------------------------------------------- leaderboards */
 
-/** One ranked board (own = royal banner, child = teal) whose rows open the files / cases drawer. */
+/** One ranked board (own = royal dot, child = teal) whose rows open the files / cases drawer. */
 export function BoardPanel({
   params,
   open,
@@ -91,8 +91,9 @@ const fmtCard = (c: DashRoleCard): { main: string; sub?: string } =>
     : { main: paiseToINR(c.amountPaise) };
 
 /**
- * Role-view stat cards. `tint` = small pale cards with a coloured edge and a count badge (Lead
- * Overview); `gradient` = the vivid white-on-colour cards. Cards with a `metric` open the drawer.
+ * Role-view stat cards. `tint` = compact white tiles with a tone dot and a pale count badge (Lead
+ * Overview); `gradient` = the larger light-panel KPI look (display-face figure, delta pill, the tone
+ * only on the dot). The variant name is historical. Cards with a `metric` open the drawer.
  */
 export function RoleCards({
   cards,
@@ -124,52 +125,43 @@ export function RoleCards({
               })
           : undefined;
         const solid = variant === "gradient";
+        const goodWhenUp = c.key !== "rejected" && c.key !== "failed" && c.key !== "rejectedPayments";
         const body = (
           <>
             <span className="flex items-start justify-between gap-2">
-              <span className={cn("text-xs font-semibold", solid ? "uppercase tracking-wide text-white/90" : "text-ink")}>{c.label}</span>
+              <span className="flex items-center gap-1.5 text-xs font-medium text-slate">
+                <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: TONE_SOLID[c.tone] }} />
+                {c.label}
+              </span>
               {!solid && c.count != null && (
-                <span className="rounded-full px-2 py-0.5 text-[10px] font-bold text-white" style={{ background: TONE_SOLID[c.tone] }}>
+                <span
+                  className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                  style={{ background: TONE_TINT[c.tone], color: TONE_TEXT[c.tone] }}
+                >
                   {nf(c.count)}
                 </span>
               )}
             </span>
-            <span className="mt-1.5 flex flex-wrap items-center gap-2">
-              <span
-                className={cn("font-serif font-bold tabular-nums", solid ? "text-2xl text-white" : "text-xl")}
-                style={solid ? undefined : { color: TONE_SOLID[c.tone] }}
-              >
-                {main}
-              </span>
-              {solid ? (
-                delta != null && (
-                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-semibold text-white">
-                    {delta > 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
-                  </span>
-                )
-              ) : (
-                <DeltaPill pct={delta} goodWhenUp={c.key !== "rejected" && c.key !== "failed" && c.key !== "rejectedPayments"} />
-              )}
+            <span className={cn("flex flex-wrap items-start gap-2", solid ? "mt-3" : "mt-2")}>
+              <span className={cn("figure-display text-ink", solid ? "text-[2.2rem]" : "text-[1.6rem]")}>{main}</span>
+              <DeltaPill pct={delta} goodWhenUp={goodWhenUp} className="mt-0.5" />
             </span>
-            {sub && <span className={cn("mt-0.5 block text-xs tabular-nums", solid ? "text-white/80" : "text-muted")}>{sub}</span>}
-            {go && <span className={cn("mt-1 block text-[10px]", solid ? "text-white/60" : "text-muted")}>Click to view records</span>}
+            {sub && <span className="mt-1 block text-xs tabular-nums text-slate">{sub}</span>}
+            {go && <span className="mt-1 block text-[10px] text-slate">Click to view records</span>}
           </>
         );
-        const style: React.CSSProperties = solid
-          ? { backgroundImage: gradientCss(c.tone) }
-          : { background: TONE_TINT[c.tone], borderLeft: `4px solid ${TONE_SOLID[c.tone]}` };
         const cls = cn(
-          "flex w-full flex-col rounded-xl p-3.5 text-left shadow-sm transition",
-          solid ? "text-white shadow-md" : "border border-line",
-          go && "hover:-translate-y-0.5 hover:shadow-lg",
+          "flex w-full flex-col text-left transition",
+          solid ? "surface p-5" : "surface-tile p-3.5",
+          go && "hover:-translate-y-0.5 hover:shadow-md",
         );
         const title = `${c.label}: ${main}${sub ? ` · ${sub}` : ""}${prev != null ? ` (previous period ${c.count != null ? nf(prev) : paiseToINR(prev)})` : ""}`;
         return go ? (
-          <button key={c.key} type="button" onClick={go} className={cls} style={style} title={title} aria-label={`${title}. Open the records.`}>
+          <button key={c.key} type="button" onClick={go} className={cls} title={title} aria-label={`${title}. Open the records.`}>
             {body}
           </button>
         ) : (
-          <div key={c.key} className={cls} style={style} title={title}>
+          <div key={c.key} className={cls} title={title}>
             {body}
           </div>
         );
@@ -242,9 +234,9 @@ export function RoleChart({
       accent={accent ?? (keys[0] ? color(keys[0], 0) : undefined)}
       info={note}
       controls={sums.map(({ k, v }) => (
-        <span key={k} className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink">
+        <span key={k} className="inline-flex items-center gap-1.5 text-[11px] text-slate">
           <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: color(k, keys.indexOf(k)) }} />
-          {chart?.labels[k] ?? k} <b className="tabular-nums">{isPaise(k) ? formatInrCompact(v) : nf(v)}</b>
+          {chart?.labels[k] ?? k} <b className="font-semibold tabular-nums text-ink">{isPaise(k) ? formatInrCompact(v) : nf(v)}</b>
         </span>
       ))}
       loading={loading}
@@ -255,27 +247,22 @@ export function RoleChart({
       <div className={chartBox}>
         <ResponsiveContainer width="100%" height="100%">
           {chart?.kind === "bar" ? (
-            <BarChart {...common}>
-              <defs>
-                {keys.map((k, i) => (
-                  <BarGradient key={k} id={`rc-${chart.id}-${k}`} color={color(k, i)} />
-                ))}
-              </defs>
-              <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-              <XAxis dataKey="label" tick={AXIS_TICK} minTickGap={10} />
-              <YAxis tick={AXIS_TICK} allowDecimals={false} width={keys.some(isPaise) ? 58 : 32} tickFormatter={leftTick(keys[0] ?? "")} />
+            <BarChart {...common} barGap={4}>
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="label" {...X_AXIS} minTickGap={10} />
+              <YAxis {...Y_AXIS} allowDecimals={false} width={keys.some(isPaise) ? 58 : 32} tickFormatter={leftTick(keys[0] ?? "")} />
               {tooltip}
-              {keys.map((k) => (
-                <Bar key={k} dataKey={k} name={chart.labels[k] ?? k} fill={`url(#rc-${chart.id}-${k})`} radius={[6, 6, 0, 0]} cursor={onPoint ? "pointer" : undefined} />
+              {keys.map((k, i) => (
+                <Bar key={k} dataKey={k} name={chart.labels[k] ?? k} fill={color(k, i)} {...BAR} cursor={onPoint ? "pointer" : undefined} />
               ))}
             </BarChart>
           ) : (
             <LineChart {...common}>
-              <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-              <XAxis dataKey="label" tick={AXIS_TICK} minTickGap={10} />
-              <YAxis yAxisId="n" tick={AXIS_TICK} allowDecimals={false} width={32} />
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="label" {...X_AXIS} minTickGap={10} />
+              <YAxis yAxisId="n" {...Y_AXIS} allowDecimals={false} width={32} />
               {hasRight && (
-                <YAxis yAxisId="p" orientation="right" tick={AXIS_TICK} width={58} tickFormatter={(v: number) => formatInrCompact(v)} />
+                <YAxis yAxisId="p" orientation="right" {...Y_AXIS} width={58} tickFormatter={(v: number) => formatInrCompact(v)} />
               )}
               {tooltip}
               {keys.map((k, i) => (
@@ -286,10 +273,10 @@ export function RoleChart({
                   dataKey={k}
                   name={chart?.labels[k] ?? k}
                   stroke={color(k, i)}
-                  strokeWidth={2.5}
-                  strokeDasharray={i > 0 && !isPaise(k) ? "6 4" : undefined}
-                  dot={{ r: 3.5, fill: color(k, i) }}
-                  activeDot={{ r: 6 }}
+                  strokeWidth={i > 0 ? 2 : 2.5}
+                  strokeDasharray={i > 0 && !isPaise(k) ? "4 4" : undefined}
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 3, stroke: WHITE }}
                 />
               ))}
             </LineChart>

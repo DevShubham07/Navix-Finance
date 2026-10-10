@@ -120,9 +120,9 @@ export function GlobalSearch({
         title={`Search (${isMac ? "⌘" : "Ctrl "}K)`}
         className={cn(
           // Phone: an icon button sized like the notification bell beside it, with a padded hit area.
-          "grid h-9 w-9 place-items-center rounded-full text-muted transition-colors hover:bg-grey-100 hover:text-ink",
+          "icon-pill text-slate hover:text-ink",
           // Tablet up: a search field the eye reads as one, with the shortcut spelled out.
-          "sm:flex sm:h-9 sm:w-56 sm:items-center sm:justify-start sm:gap-2 sm:rounded-full sm:border sm:border-line sm:bg-grey-50 sm:px-3 sm:text-sm sm:hover:bg-white lg:w-64",
+          "sm:flex sm:h-[38px] sm:w-56 sm:items-center sm:justify-start sm:gap-2 sm:px-3.5 sm:text-sm lg:w-64",
         )}
       >
         <Search size={16} className="flex-shrink-0" />

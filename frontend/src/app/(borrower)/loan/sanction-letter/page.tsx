@@ -85,7 +85,7 @@ export default function SanctionLetterPage() {
     if (!point || !context) return;
     drawing.current = true;
     canvasRef.current?.setPointerCapture(event.pointerId);
-    context.strokeStyle = "#0C2540";
+    context.strokeStyle = "#0B0B0C"; // --c-ink (canvas cannot read CSS vars)
     context.lineWidth = 3;
     context.lineCap = "round";
     context.beginPath();
