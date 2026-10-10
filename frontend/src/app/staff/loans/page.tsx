@@ -358,7 +358,7 @@ function LoansPageInner() {
                                   className="flex items-center gap-1.5 font-semibold text-ink"
                                 >
                                   {isCollapsed ? <ChevronRightIcon size={14} /> : <ChevronDown size={14} />}
-                                  {group.key === "unknown" ? "Date unknown" : formatDate(group.key)} · {group.rows.length} loan
+                                  {group.key === "unknown" ? "Date unknown" : formatDate(group.key)} · <span data-redact>{group.rows.length}</span> loan
                                   {group.rows.length === 1 ? "" : "s"}
                                 </button>
                               </td>

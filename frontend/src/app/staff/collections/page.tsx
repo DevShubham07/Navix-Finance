@@ -377,8 +377,8 @@ export default function CollectionsBucketPage() {
               }`}
             >
               <p className="text-xs text-muted">{item.label}</p>
-              <p className="font-mono text-lg font-semibold text-navy">{c.n}</p>
-              <p className="text-xs text-muted">{paiseToINR(c.outstandingPaise)}</p>
+              <p data-redact className="font-mono text-lg font-semibold text-navy">{c.n}</p>
+              <p data-redact className="text-xs text-muted">{paiseToINR(c.outstandingPaise)}</p>
             </button>
           );
         })}

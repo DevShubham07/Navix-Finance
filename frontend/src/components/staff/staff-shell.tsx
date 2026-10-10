@@ -179,7 +179,7 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
                                 pathname === pathOnly && currentBucket === item.bucket ? "bg-paper font-medium text-ink shadow-pill" : "text-muted hover:bg-paper hover:text-ink",
                               )}>
                                 <span>{item.label}</span>
-                                <span className="rounded-full bg-grey-200 px-1.5 py-0.5 font-mono text-[8px] text-slate">{bucketCounts[item.bucket]}</span>
+                                <span data-redact className="rounded-full bg-grey-200 px-1.5 py-0.5 font-mono text-[8px] text-slate">{bucketCounts[item.bucket]}</span>
                               </Link>
                             </li>
                           ))}

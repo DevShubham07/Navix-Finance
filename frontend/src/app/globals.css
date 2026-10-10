@@ -936,6 +936,33 @@ select { cursor: pointer; }
 ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-button { display: none; }
 
-/* app.dhanboost.com demo host — figures blurred by <NumberBlur/> (components/staff/number-blur.tsx). */
-[data-num-blur] { filter: blur(6px); user-select: none; }
+/* app.dhanboost.com demo host — business-scale figures hidden by <NumberBlur/>
+   (components/staff/number-blur.tsx). Figures frost into a soft, even haze rather than a jagged
+   per-element blur; charts are frosted whole under a "Figures hidden" chip. */
+[data-num-blur] {
+  /* Glyphs go transparent but `color` survives, so the shadow (currentColor) keeps each figure's own
+     tint — dark haze on paper, light haze on the gradient KPI cards. */
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: 0 0 9px;
+  user-select: none;
+}
 svg [data-num-blur] { filter: url(#num-blur); }
+[data-redact-chart] > :not(.recharts-tooltip-wrapper) { filter: blur(6px) saturate(0.7); opacity: 0.6; pointer-events: none; }
+[data-redact-chart] .recharts-tooltip-wrapper { display: none !important; }
+[data-redact-chart]::after {
+  content: "Figures hidden";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: max-content;
+  height: max-content;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--navy);
+}

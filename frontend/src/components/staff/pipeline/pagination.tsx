@@ -84,7 +84,7 @@ export function PaginationBar({
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-white px-3 py-2 text-xs text-muted">
       <span>
-        Showing {start}–{end} of {total}
+        Showing {start}–{end} of <span data-redact>{total}</span>
         {unitLabel ? ` ${unitLabel}` : ""}
       </span>
       <div className="flex items-center gap-3">
