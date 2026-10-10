@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { StaffShell } from "@/components/staff/staff-shell";
+import { NumberBlur } from "@/components/staff/number-blur";
 
 // The staff console is private back-office — never index any of it.
 export const metadata: Metadata = { robots: { index: false, follow: false } };
@@ -11,5 +12,10 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
  * (handled inside StaffShell). Route-level auth is gated by middleware.ts.
  */
 export default function StaffLayout({ children }: { children: ReactNode }) {
-  return <StaffShell>{children}</StaffShell>;
+  return (
+    <>
+      <NumberBlur />
+      <StaffShell>{children}</StaffShell>
+    </>
+  );
 }
