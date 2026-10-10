@@ -11,7 +11,7 @@ import { Loader2, XCircle } from "lucide-react";
 import { EmptyState, Skeleton, StatusBadge, toast } from "@/components/ui";
 import {
   Banknote, Building2, CalendarClock, Copy, FileSignature, Files, Gauge, HandCoins, History, IndianRupee,
-  Landmark, MapPin, MessageSquare, Plug, Repeat, Route, ShieldCheck, User, Users,
+  Landmark, ListChecks, MapPin, MessageSquare, Plug, Repeat, Route, ShieldCheck, User, Users,
 } from "lucide-react";
 import { type PillTabDef } from "@/components/ui/pill-tabs";
 import type { TabCtx } from "@/components/staff/customer-360/types";
@@ -31,6 +31,7 @@ import { CommunicationTab } from "@/components/staff/customer-360/communication-
 import { DedupeTab } from "@/components/staff/customer-360/dedupe-tab";
 import { FollowupsTab } from "@/components/staff/customer-360/followups-tab";
 import { ThirdPartyTab } from "@/components/staff/customer-360/third-party-tab";
+import { BreTab } from "@/components/staff/customer-360/bre-tab";
 import { BureauMobilesStrip } from "@/components/staff/mobile-matches";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
@@ -63,7 +64,7 @@ import {
   type ApplicationStatus,
 } from "@/lib/api/applications";
 
-/** The 19 lifecycle-ordered tabs shared by the pop-up and the full customer page. */
+/** The 20 lifecycle-ordered tabs shared by the pop-up and the full customer page. */
 export const CUSTOMER_TABS: PillTabDef[] = [
   { key: "customer", label: "Customer", icon: User },
   { key: "loan", label: "Loan", icon: Landmark },
@@ -74,6 +75,7 @@ export const CUSTOMER_TABS: PillTabDef[] = [
   { key: "third-party", label: "Third-party logs", icon: Plug },
   { key: "banking", label: "Banking", icon: Building2 },
   { key: "credit", label: "Credit report", icon: Gauge },
+  { key: "bre", label: "BRE", icon: ListChecks },
   { key: "journey", label: "Journey", icon: Route },
   { key: "references", label: "References", icon: Users },
   { key: "documents", label: "Documents", icon: Files },
@@ -175,6 +177,8 @@ export function CustomerTabBody({
         return applicationId != null ? <VerificationChecksPanel applicationId={applicationId} aadhaar={detail.profile?.aadhaar} /> : noApp;
       case "third-party":
         return <ThirdPartyTab {...ctx} />;
+      case "bre":
+        return <BreTab {...ctx} />;
       case "addresses":
         return <AddressesTab {...ctx} />;
       case "dedupe":

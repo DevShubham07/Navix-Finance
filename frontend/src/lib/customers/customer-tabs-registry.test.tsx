@@ -1,4 +1,4 @@
-/** The 19-tab registry: order, the disabled Mandate tab, and every body rendering for a lead-only customer. */
+/** The 20-tab registry: order, the disabled Mandate tab, and every body rendering for a lead-only customer. */
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
@@ -23,15 +23,15 @@ vi.mock("@/components/staff/event-timeline", () => ({ EventTimeline: () => null 
 vi.mock("@/components/staff/journey-stepper", () => ({ JourneyStepper: () => null }));
 
 const KEYS = [
-  "customer", "loan", "sanction", "disbursal", "repayment", "collections", "third-party", "banking", "credit", "journey", "references",
+  "customer", "loan", "sanction", "disbursal", "repayment", "collections", "third-party", "banking", "credit", "bre", "journey", "references",
   "documents", "addresses", "dedupe", "communication", "activity", "followups", "mandate", "verifications",
 ];
 
 describe("CUSTOMER_TABS registry", () => {
-  it("has the 19 tabs in lifecycle order, Third-party logs before Verifications (last)", () => {
+  it("has the 20 tabs in lifecycle order, Third-party logs before Verifications (last)", () => {
     expect(CUSTOMER_TABS.map((t) => t.key)).toEqual(KEYS);
     expect(CUSTOMER_TABS.at(-1)?.key).toBe("verifications");
-    expect(CUSTOMER_TABS.length).toBe(19);
+    expect(CUSTOMER_TABS.length).toBe(20);
   });
 
   it("disables only Mandate", () => {

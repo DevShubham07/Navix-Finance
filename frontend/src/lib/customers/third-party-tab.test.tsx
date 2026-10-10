@@ -114,4 +114,13 @@ describe("Third-party tab", () => {
     fireEvent.click(screen.getByText("Aadhaar–PAN Linkage"));
     expect(await screen.findByText("Not linked")).toBeInTheDocument();
   });
+
+  it("shows the CRIF report analysis under Bank Statement Analysis while the analyser is not live", async () => {
+    vi.spyOn(staffApi, "creditBrief").mockResolvedValue({ applicationId: 318, bureauState: "NOT_FETCHED", providerResponse: null, facts: null } as never);
+    renderTab([pan]);
+    await screen.findByText("Personal Information");
+    fireEvent.click(screen.getByText("Bank Statement Analysis"));
+    expect(await screen.findByText("CRIF report analysis")).toBeInTheDocument();
+    expect(await screen.findByText("No bureau report to analyse")).toBeInTheDocument();
+  });
 });

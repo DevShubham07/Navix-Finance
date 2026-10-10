@@ -808,6 +808,8 @@ export interface Tradeline {
    */
   paymentHistory: string | null;
   writtenOffSettledStatus: string | null;
+  /** YYYY-MM-DD the lender last reported the account (Experian); always null for CRIF tradelines. */
+  dateReported?: string | null;
   /**
    * Worst DPD ever recorded for this account. Real long-default reads run 900-999 (900 occurs 981
    * times in production) — this is NOT a sentinel/placeholder to be hidden, it means "in default

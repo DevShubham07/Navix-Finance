@@ -8,6 +8,7 @@ import { Field, FieldGrid } from "@/components/ui/field-grid";
 import { DocCard } from "@/components/staff/doc-card";
 import { Section, docTypeLabel, useCustomerDocumentGroups, viewDocument } from "@/components/staff/detail-parts";
 import type { TabCtx } from "@/components/staff/customer-360/types";
+import { CrifAnalysisSection } from "@/components/staff/customer-360/crif-analysis-panel";
 import { bankAnalysisApi } from "@/lib/api/bank-analysis";
 import { paiseToINR } from "@/lib/api/applications";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -146,6 +147,9 @@ export function BankingTab({ detail, customerId, applicationId }: TabCtx) {
           </div>
         )}
       </Section>
+
+      {/* Until the analyser API is live, the CRIF report is the third-party read on employment. */}
+      <CrifAnalysisSection detail={detail} applicationId={applicationId} />
 
       <Section
         title="Salary identification"

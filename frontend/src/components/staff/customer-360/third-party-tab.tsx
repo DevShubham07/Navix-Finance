@@ -7,6 +7,7 @@ import { Badge, EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { SkipTracePanel } from "@/components/staff/skip-trace-panel";
+import { CrifAnalysisSection } from "@/components/staff/customer-360/crif-analysis-panel";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import {
   AadhaarBody, AadhaarPanLinkBody, AddressCheckBody, BureauBody, EmailBody, EsignBody, PanBody, PennyBody, SelfieBody, UanBody,
@@ -117,7 +118,10 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
                 {r.key === "skip" ? (
                   <SkipTracePanel customerId={customerId} />
                 ) : r.key === "bank" ? (
-                  bank ? <BankBody bank={bank} /> : <EmptyState title="Analysis pending" hint="Bank statement analysis has not been run yet." className="py-4" />
+                  <>
+                    {bank ? <BankBody bank={bank} /> : <EmptyState title="Analysis pending" hint="Bank statement analysis has not been run yet — the CRIF report analysis below stands in for it." className="py-4" />}
+                    <CrifAnalysisSection detail={detail} applicationId={applicationId} />
+                  </>
                 ) : !s ? (
                   <EmptyState title={`${r.title} not run`} className="py-4" />
                 ) : (
