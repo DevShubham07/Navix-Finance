@@ -122,5 +122,7 @@ describe("Third-party tab", () => {
     fireEvent.click(screen.getByText("Bank Statement Analysis"));
     expect(await screen.findByText("CRIF report analysis")).toBeInTheDocument();
     expect(await screen.findByText("No bureau report to analyse")).toBeInTheDocument();
+    expect(screen.getByText("Analysed")).toBeInTheDocument();
+    expect(screen.queryByText("Analysis pending")).not.toBeInTheDocument();
   });
 });
