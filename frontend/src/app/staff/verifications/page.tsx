@@ -195,7 +195,7 @@ export default function VerificationsDashboardPage() {
                         className={`text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
                       />
                       <span className={b.accent}>{b.label}</span>
-                      <span className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">{list.length}</span>
+                      <span data-redact className="rounded-full bg-grey-100 px-2 py-0.5 text-xs font-semibold text-muted">{list.length}</span>
                     </button>
                   </h2>
                   <div id={panelId} hidden={isCollapsed}>

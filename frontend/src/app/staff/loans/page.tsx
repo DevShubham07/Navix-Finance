@@ -263,7 +263,7 @@ function LoansPageInner() {
       <PermissionGate permission="loan:register" fallback={<NoAccessNotice />}>
         <div className="mb-3 flex flex-wrap gap-1.5">
           <button type="button" className={`cal-preset${seg === "all" ? " on" : ""}`} onClick={() => setSeg("all")}>
-            {SEGMENT_LABEL.all} ({counts.all})
+            {SEGMENT_LABEL.all} (<span data-redact>{counts.all}</span>)
           </button>
           {SEGMENTS.map((s) => (
             <button
@@ -274,7 +274,7 @@ function LoansPageInner() {
               }`}
               onClick={() => setSeg(s)}
             >
-              {SEGMENT_LABEL[s]} ({counts[s]})
+              {SEGMENT_LABEL[s]} (<span data-redact>{counts[s]}</span>)
             </button>
           ))}
         </div>

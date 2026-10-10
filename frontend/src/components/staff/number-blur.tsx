@@ -91,7 +91,7 @@ export function NumberBlur() {
   return (
     <svg width="0" height="0" aria-hidden="true" style={{ position: "absolute" }}>
       <filter id="num-blur" x="-50%" y="-50%" width="200%" height="200%">
-        <feGaussianBlur stdDeviation="3" />
+        <feGaussianBlur stdDeviation="6" />
       </filter>
     </svg>
   );

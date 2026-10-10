@@ -271,7 +271,7 @@ export function QueuePanel({
           <h2 className="font-serif text-lg font-semibold text-navy">{title}</h2>
           {info && <InfoTooltip content={info} />}
           {isLoading && <Loader2 size={15} className="animate-spin text-muted" />}
-          <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{apps.length}</span>
+          <span data-redact className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{apps.length}</span>
         </div>
         <div className="flex items-center gap-3">
           {bulkHint && <span className="text-xs text-muted">{bulkHint}</span>}

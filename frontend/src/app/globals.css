@@ -943,11 +943,14 @@ select { cursor: pointer; }
   /* Glyphs go transparent but `color` survives, so the shadow (currentColor) keeps each figure's own
      tint — dark haze on paper, light haze on the gradient KPI cards. */
   -webkit-text-fill-color: transparent !important;
-  text-shadow: 0 0 9px;
+  /* Three overlapping, font-relative clouds smear the digits sideways so no glyph survives, at any
+     size — a single fixed-radius shadow still left large KPI figures readable. */
+  --redact-ink: color-mix(in srgb, currentColor 55%, transparent);
+  text-shadow: 0 0 0.5em var(--redact-ink), 0.3em 0 0.55em var(--redact-ink), -0.3em 0 0.55em var(--redact-ink) !important;
   user-select: none;
 }
 svg [data-num-blur] { filter: url(#num-blur); }
-[data-redact-chart] > :not(.recharts-tooltip-wrapper) { filter: blur(6px) saturate(0.7); opacity: 0.6; pointer-events: none; }
+[data-redact-chart] > :not(.recharts-tooltip-wrapper) { filter: blur(10px) saturate(0.6); opacity: 0.5; pointer-events: none; }
 [data-redact-chart] .recharts-tooltip-wrapper { display: none !important; }
 [data-redact-chart]::after {
   content: "Figures hidden";

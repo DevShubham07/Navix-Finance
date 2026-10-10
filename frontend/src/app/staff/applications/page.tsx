@@ -413,7 +413,7 @@ function ClosedPanel() {
           <h2 className="font-serif text-lg font-semibold text-navy">Closed (fully repaid)</h2>
           {open && q.isLoading && <Loader2 size={15} className="animate-spin text-muted" />}
           {open && (
-            <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{apps.length}</span>
+            <span data-redact className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{apps.length}</span>
           )}
         </div>
         {open ? <ChevronDown size={16} className="text-muted" /> : <ChevronRight size={16} className="text-muted" />}

@@ -271,7 +271,7 @@ function TelecallingSection({
         <div>
           <div className="flex items-center gap-2">
             <h2 className="font-serif text-lg font-semibold text-navy">{title}</h2>
-            <span className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{rows.length}</span>
+            <span data-redact className="rounded-full bg-navy-tint px-2.5 py-0.5 text-xs font-semibold text-navy">{rows.length}</span>
             <span className="hidden text-xs text-muted sm:inline" title={info}>
               {info}
             </span>

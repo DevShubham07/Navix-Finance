@@ -119,7 +119,7 @@ export default function CollectionsSettlementsPage() {
                 setPage(1);
               }}
             >
-              {SETTLEMENT_SEGMENT_LABEL[seg]} ({counts[seg]})
+              {SETTLEMENT_SEGMENT_LABEL[seg]} (<span data-redact>{counts[seg]}</span>)
             </button>
           ))}
         </div>

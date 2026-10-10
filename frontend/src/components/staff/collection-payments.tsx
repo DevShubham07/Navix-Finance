@@ -320,7 +320,7 @@ function QueueShell({
     <section>
       <div className="mb-1 flex items-baseline gap-2">
         <h3 className="font-serif text-lg text-navy">{title}</h3>
-        <span className="text-xs text-muted">({rows.length})</span>
+        <span className="text-xs text-muted">(<span data-redact>{rows.length}</span>)</span>
       </div>
       <p className="mb-3 text-xs text-muted">{info}</p>
       {error ? <p className="mb-2 text-sm text-error-700">{errMessage(error)}</p> : null}
