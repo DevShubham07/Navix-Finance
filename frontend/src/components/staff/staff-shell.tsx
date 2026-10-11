@@ -16,7 +16,7 @@ import { RoleSwitcher } from "@/components/staff/role-switcher";
 import { clearWorkingRole } from "@/lib/auth/working-role";
 import { clearRecent } from "@/lib/staff/search-recents";
 import { cn } from "@/lib/utils";
-import { NAV, navHref, navVisible, SEGMENTED_PARENT_PATHS } from "@/components/staff/staff-nav";
+import { navGroupsFor, navHref, navLabel, navVisible, SEGMENTED_PARENT_PATHS } from "@/components/staff/staff-nav";
 import { COLLECTION_BUCKETS, collectionBucketCounts } from "@/lib/collection-buckets";
 
 const PUBLIC_STAFF = ["/staff/login", "/staff/activate", "/staff/forgot-password", "/staff/reset-password"];
@@ -88,10 +88,12 @@ function SidebarResizer({ asideRef }: { asideRef: React.RefObject<HTMLElement | 
 
 /** Flattened horizontal nav for the mobile strip — ignores `sub` (segment chips live on the page). */
 function MobileNavLinks({ realRole, role, pathname, flags }: { realRole: StaffRole; role: StaffRole; pathname: string; flags?: FeatureFlags }) {
-  const items = NAV.flatMap((g) => g.items).filter((it) => navVisible(it, realRole, role, flags));
+  const items = navGroupsFor(role).flatMap((g) => g.items).filter((it) => navVisible(it, realRole, role, flags));
   return (
     <>
-      {items.map(({ label, href: rawHref, Icon }) => {
+      {items.map((it) => {
+        const { href: rawHref, Icon } = it;
+        const label = navLabel(it, role);
         const href = navHref(rawHref, realRole, role);
         const pathOnly = href.split("?")[0];
         const active = pathname === pathOnly || pathname.startsWith(pathOnly + "/");
@@ -136,7 +138,7 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
 
   return (
     <>
-      {NAV.map((group) => {
+      {navGroupsFor(role).map((group) => {
         const items = group.items.filter((it) => navVisible(it, realRole, role, flags));
         if (!items.length) return null;
         return (
@@ -144,7 +146,8 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
             <p className="px-3 pb-2 text-[0.544rem] font-bold uppercase tracking-wider text-navix-300">{group.heading}</p>
             <ul className="space-y-0.5">
               {items.map((it) => {
-                const { label, Icon, sub, collectionBuckets } = it;
+                const { Icon, sub, collectionBuckets } = it;
+                const label = navLabel(it, role);
                 const href = navHref(it.href, realRole, role);
                 const pathOnly = href.split("?")[0];
                 const hrefSeg = href.includes("?")
@@ -216,7 +219,7 @@ function NavLinks({ realRole, role, pathname, onNavigate, flags }: { realRole: S
                             return (
                               <li key={seg}>
                                 <Link
-                                  href={`${href}?seg=${seg}`}
+                                  href={`${href}${href.includes("?") ? "&" : "?"}seg=${seg}`}
                                   onClick={onNavigate}
                                   className={cn(
                                     "flex items-center gap-1.5 rounded px-2 py-1.5 text-xs transition-colors",

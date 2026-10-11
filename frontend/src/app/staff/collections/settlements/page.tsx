@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, Check, X } from "lucide-react";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { errMessage, PermissionGate } from "@/components/staff/live-pipeline";
 import { useStaffMe } from "@/components/staff/pipeline/hooks";
+import { pageTitleFor } from "@/components/staff/staff-nav";
 import { ExportMenu } from "@/components/staff/export-menu";
 import { collectionsApi, paiseToINR, type SettlementView, type SettlementStatusName } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
@@ -70,6 +71,7 @@ export default function CollectionsSettlementsPage() {
   const actionError = approve.error ?? reject.error;
   const busy = approve.isPending || reject.isPending;
 
+  const role = useStaffMe().data?.role;
   const rows = React.useMemo(() => q.data ?? [], [q.data]);
   const [segment, setSegment] = React.useState<SettlementSegment>("ALL");
   const counts = React.useMemo(() => settlementSegmentCounts(rows), [rows]);
@@ -78,7 +80,7 @@ export default function CollectionsSettlementsPage() {
 
   return (
     <div>
-      <PageHeader title="Collections · settlements" subtitle="Approve proposed settlements (separation of duties enforced).">
+      <PageHeader title={pageTitleFor("/staff/collections/settlements", role, "Collections · settlements")} subtitle="Approve proposed settlements (separation of duties enforced).">
         <ExportMenu
           title="Collections settlements"
           fileBase="dhanboost-settlements"

@@ -27,6 +27,7 @@ import {
   CollectionPaymentValidationQueue,
 } from "@/components/staff/collection-payments";
 import { CollectionAssignActions } from "@/components/staff/pipeline/collection-actions";
+import { pageTitleFor } from "@/components/staff/staff-nav";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import {
   QueueDateFilter,
@@ -87,7 +88,7 @@ function StaffApplicationsPageInner() {
   return (
     <div>
       <PageHeader
-        title="Live applications"
+        title={pageTitleFor("/staff/applications", role, "Live applications")}
         subtitle="Every queue your role can act on, in one place. Real backend state machine — walk loans through to ACTIVE."
       >
         <span className="rounded-full bg-navy-tint px-3 py-1 text-sm font-semibold text-navy">{ROLE_LABEL[role]}</span>
@@ -363,7 +364,7 @@ function RepaymentColumn({
         <InfoTooltip content={note} />
       </div>
       {isLoading ? (
-        <Skeleton variant="table" rows={5} cols={17} />
+        <Skeleton variant="table" rows={5} cols={18} />
       ) : apps.length === 0 ? (
         <EmptyState title={emptyText} />
       ) : (
@@ -422,7 +423,7 @@ function ClosedPanel() {
       {open && (
         <div className="border-t border-line">
           {q.isLoading ? (
-            <Skeleton variant="table" rows={5} cols={17} />
+            <Skeleton variant="table" rows={5} cols={18} />
           ) : q.error ? (
             <ErrorState error={q.error} onRetry={() => void q.refetch()} />
           ) : apps.length === 0 ? (

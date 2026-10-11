@@ -24,7 +24,8 @@ describe("buildFeatureIndex — RBAC", () => {
     expect(telecaller).not.toContain("Blocklist");
 
     const collectionExec = titles("COLLECTION_EXECUTIVE");
-    expect(collectionExec).toContain("DPD buckets");
+    expect(collectionExec).toContain("My DPD cases");
+    expect(collectionExec).not.toContain("DPD buckets (all)");
     // Loans register is loan:register — COLLECTION_HEAD and ADMIN only.
     expect(collectionExec).not.toContain("Loans");
     expect(titles("COLLECTION_HEAD")).toContain("Loans");
@@ -32,14 +33,16 @@ describe("buildFeatureIndex — RBAC", () => {
 
   it("applies the working role only — admin pages live in the Admin role", () => {
     const adminAsHead = titles("ADMIN", "CREDIT_HEAD");
-    for (const t of ["Staff", "Blocklist", "Verification Dashboard", "Loans"]) expect(adminAsHead).not.toContain(t);
+    for (const t of ["Staff", "Blocklist", "Loans"]) expect(adminAsHead).not.toContain(t);
     const adminAsAdmin = titles("ADMIN", "ADMIN");
-    for (const t of ["Staff", "Verification Dashboard", "Transactions", "Loans"]) expect(adminAsAdmin).toContain(t);
+    for (const t of ["Staff", "Transactions", "Loans", "Settings", "DPD buckets (all)"]) expect(adminAsAdmin).toContain(t);
     expect(adminAsAdmin).not.toContain("Live applications");
-    expect(titles("CREDIT_HEAD", "CREDIT_HEAD")).not.toContain("Verification Dashboard");
+    expect(adminAsAdmin).not.toContain("Unallocated customers");
+    expect(adminAsAdmin).not.toContain("Verification Dashboard");
     const ch = titles("COLLECTION_HEAD");
-    expect(ch).toContain("DPD buckets");
-    expect(ch).toContain("Settlements");
+    expect(ch).toContain("Team DPD buckets");
+    expect(ch).toContain("Settlement approvals");
+    expect(ch).toContain("DPD buckets (all)");
   });
 
   it("scopes Customers to mine for roles without the whole book", () => {

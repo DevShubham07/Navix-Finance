@@ -83,9 +83,9 @@ CREDIT_HEAD menu: Credit Head ✓ · Credit Executive. COLLECTION_HEAD menu: Col
 
 Group headings (OPERATIONS / COLLECTIONS / ADMINISTRATION), icons and active styling are unchanged. Groups with no items are omitted. Draw eight columns side by side on one frame ("Frame 18 — sidebar per working role"): the seven operational roles below plus a final **Admin** column. Other roles show no admin extras. Active item "Dashboard" in each.
 
-**Credit Head** — OPERATIONS Dashboard · Live applications · Customers ▸ (11 segments) · Unallocated customers · My decisions · Staff performance · Import leads. (No Verification Dashboard — overrides are executive work.)
+**Credit Head** — OPERATIONS Dashboard · Live applications · Customers ▸ (11 segments) · Unallocated customers · My decisions · Staff performance · Import leads.
 
-**Credit Executive** — OPERATIONS Dashboard · Live applications · Customers (→ `/staff/customers?mine=1`, no segment children) · Verification Dashboard · My decisions · Staff performance · Import leads.
+**Credit Executive** — OPERATIONS Dashboard · Live applications · Customers (→ `/staff/customers?mine=1`, no segment children) · My decisions · Staff performance · Import leads.
 
 **Disbursement Head** — OPERATIONS Dashboard · Live applications · Customers ▸ · My decisions · Staff performance · Import leads · Referral payouts (only when the referral flag is on).
 
@@ -97,7 +97,7 @@ Group headings (OPERATIONS / COLLECTIONS / ADMINISTRATION), icons and active sty
 
 **Telecaller** — OPERATIONS Dashboard · Customers ▸ · Unallocated customers · My decisions · Staff performance · Leads · Import leads · Telecalling.
 
-**Admin** — OPERATIONS Dashboard · Customers ▸ (11 segments) · Unallocated customers · Verification Dashboard · My decisions · Staff performance · Import leads · Loans ▸ (Active · Overdue · Closed) · ADMINISTRATION Staff · DSA · Invites · Blocklist · Payment settings · Company expenses · Leads dashboard · All applications · Rejections · Provider API dashboard · Transactions. No Live applications, DPD buckets, Settlements, Leads, Telecalling or Referral payouts.
+**Admin** — OPERATIONS Dashboard · Customers ▸ (11 segments) · My decisions · Staff performance · Import leads · Loans ▸ (Active · Overdue · Closed) · ADMINISTRATION Staff · DSA · Invites · Blocklist · Settings (onboarding switch + payment settings) · Company expenses · Leads dashboard · All applications · Rejections · Provider API dashboard · Transactions. Admin order is fixed (`ADMIN_NAV_ORDER`) and includes DPD buckets (all). No Live applications, per-bucket DPD buckets, Settlements, Leads, Telecalling or Referral payouts.
 
 ---
 
@@ -253,7 +253,7 @@ Style: same 9.6px/8.8px muted line; the bracket text is not emphasised. In the *
 ## 8. Blocked and empty states (plain notices, no auto-switch)
 
 - Stage action hidden by the working role → the action row shows **"Not your step"**.
-- Page not in the role's nav but opened by link (e.g. a notification to the Verification Dashboard in Credit Head) → the NoAccessNotice card: *"This page isn't available in your current role."* (shield icon, muted, centred, white card).
+- Page not in the role's nav but opened by link (e.g. a notification link to the Loans register in Credit Head) → the NoAccessNotice card: *"This page isn't available in your current role."* (shield icon, muted, centred, white card).
 - Credit Executive with nothing assigned → *"No files are assigned to you. Assign one to yourself in Credit Head mode."*
 - Collection Executive with nothing assigned → *"No cases are assigned to you yet."*; another officer's case → *"This case is assigned to another officer."*
 

@@ -122,7 +122,9 @@ public final class ApplicationDtos {
              */
             Long availableLimitPaise,
             /** Bureau / UAN / work-email trust stars; staff list paths only, null elsewhere. */
-            com.navix.common.loan.TrustSignals trust) {
+            com.navix.common.loan.TrustSignals trust,
+            /** Stored {@code journey_step} pointer (JourneyService.Step / OfferStep name); null if never set. */
+            String journeyStep) {
 
         public static ApplicationView of(LoanApplication a) {
             return of(a, null, null);
@@ -173,7 +175,7 @@ public final class ApplicationDtos {
                     a.getDisbursalAccountNumber(), a.getDisbursalIfsc(), a.getDisbursalHolderName(),
                     a.getDisbursalBank(), a.getDisbursalAccountChanged(),
                     a.getDisbursalAccountVerified(), null, null, a.getCreatedAt(), null, null, null,
-                    null, null);
+                    null, null, a.getJourneyStep());
         }
 
         /**
@@ -191,7 +193,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust, journeyStep);
         }
 
         /**
@@ -209,7 +211,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust, journeyStep);
         }
 
         /**
@@ -226,7 +228,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust, journeyStep);
         }
 
         /** Wither for the trust stars; only the batched staff list paths pay for the lookup. */
@@ -239,7 +241,7 @@ public final class ApplicationDtos {
                     disbursalAccountNumber, disbursalIfsc, disbursalHolderName, disbursalBank,
                     disbursalAccountChanged, disbursalAccountVerified, assignedExecutiveName,
                     currentStageEnteredAt, createdAt,
-                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust);
+                    creditDecidedByName, disbursedByName, collectionOfficerName, availableLimitPaise, trust, journeyStep);
         }
     }
 

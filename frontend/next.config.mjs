@@ -78,6 +78,18 @@ const nextConfig = {
       },
     ];
   },
+  // staff.dhanboost.com is the staging host for the staff console: anything outside /staff (except
+  // the BFF, Next assets and public files) lands on /staff, which routes to login or the dashboard.
+  async redirects() {
+    return [
+      {
+        source: "/:path((?!staff|api/|_next/|.*[.]).*)",
+        has: [{ type: "host", value: "staff.dhanboost.com" }],
+        destination: "/staff",
+        permanent: false,
+      },
+    ];
+  },
   // typedRoutes intentionally disabled: the app uses many dynamic, hash, and
   // data-driven hrefs (marketing anchors, staff case IDs, mock flows) where
   // compile-time route literals add friction without runtime benefit.

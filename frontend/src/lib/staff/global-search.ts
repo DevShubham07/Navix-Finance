@@ -1,4 +1,4 @@
-import { NAV, navHref, navVisible, type NavItem } from "@/components/staff/staff-nav";
+import { NAV, navHref, navLabel, navVisible, type NavItem } from "@/components/staff/staff-nav";
 import type { StaffRole } from "@/lib/auth/rbac";
 import type { FeatureFlags } from "@/lib/api/applications";
 
@@ -75,13 +75,14 @@ export function isSearchable(raw: string): boolean {
 }
 
 /** Tokens a nav entry should match on: its label, its group heading, and its URL path segments. */
-function keywordsFor(item: NavItem, heading: string): string[] {
+function keywordsFor(item: NavItem, heading: string, role: StaffRole): string[] {
   const fromHref = item.href
     .split("?")[0]
     .split("/")
     .filter((s) => s && s !== "staff")
     .flatMap((s) => s.split("-"));
   return [
+    ...navLabel(item, role).toLowerCase().split(/\s+/),
     ...item.label.toLowerCase().split(/\s+/),
     ...heading.toLowerCase().split(/\s+/),
     ...fromHref.map((s) => s.toLowerCase()),
@@ -101,22 +102,22 @@ export function buildFeatureIndex(realRole: StaffRole, role: StaffRole, flags?: 
       hits.push({
         kind: "feature",
         id: item.href,
-        title: item.label,
+        title: navLabel(item, role),
         subtitle: group.heading,
         href: navHref(item.href, realRole, role),
         Icon: item.Icon,
-        keywords: keywordsFor(item, group.heading),
+        keywords: keywordsFor(item, group.heading, role),
       });
       for (const child of item.sub ?? []) {
         const href = navHref(`${item.href.split("?")[0]}?seg=${child.seg}`, realRole, role);
         hits.push({
           kind: "feature",
           id: href,
-          title: `${item.label} · ${child.label}`,
+          title: `${navLabel(item, role)} · ${child.label}`,
           subtitle: group.heading,
           href,
           Icon: item.Icon,
-          keywords: [...keywordsFor(item, group.heading), ...child.label.toLowerCase().split(/\s+/)],
+          keywords: [...keywordsFor(item, group.heading, role), ...child.label.toLowerCase().split(/\s+/)],
         });
       }
     }

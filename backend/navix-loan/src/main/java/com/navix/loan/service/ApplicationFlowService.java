@@ -351,7 +351,7 @@ public class ApplicationFlowService {
      * each. The eSign is excluded — see {@link #reborrow}.
      *
      * <p>The copies keep the original status and provider but are re-stamped with a message naming
-     * the source application, so the staff Verification Dashboard shows evidence that was carried
+     * the source application, so the staff verification view shows evidence that was carried
      * over rather than passing it off as a check run today.
      */
     private void copyCarriedVerifications(Long sourceAppId, Long newAppId) {

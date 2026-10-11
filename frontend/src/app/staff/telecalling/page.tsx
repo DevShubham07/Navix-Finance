@@ -10,6 +10,7 @@ import { NoAccessNotice, errMessage, useStaffMe, useCan } from "@/components/sta
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import { CustomerOwnerPicker } from "@/components/staff/customer-owner-picker";
 import { customersApi, staffApi, type TelecallingView } from "@/lib/api/applications";
+import { StageSignal } from "@/components/staff/stage-signal";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import {
   assignedToOthersLabel,
@@ -137,7 +138,7 @@ export default function TelecallingPage() {
 
       {q.isLoading ? (
         <div className="rounded border border-line bg-white shadow-sm">
-          <Skeleton variant="table" rows={8} cols={13} />
+          <Skeleton variant="table" rows={8} cols={14} />
         </div>
       ) : q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
@@ -319,6 +320,7 @@ function TelecallingSection({
                 <th scope="col">Email</th>
                 <th scope="col">PAN</th>
                 <th scope="col">Status</th>
+                <th scope="col">Stage</th>
                 <th scope="col" className="num">Completeness</th>
                 <th scope="col" className="num">Stale (days)</th>
                 <th scope="col" className="staff-sticky-actions">Actions</th>
@@ -361,6 +363,9 @@ function TelecallingSection({
                   <td className="font-mono text-ink">{r.pan || "—"}</td>
                   <td>
                     <StatusBadge kind="application" value={r.status} />
+                  </td>
+                  <td>
+                    <StageSignal compact status={r.status} journeyStep={r.journeyStep} />
                   </td>
                   <td className="num whitespace-nowrap text-ink">
                     <span className="inline-flex items-center gap-2">

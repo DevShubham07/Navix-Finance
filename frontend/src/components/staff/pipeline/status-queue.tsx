@@ -292,7 +292,7 @@ export function QueuePanel({
           most queues are short, so a taller placeholder would only collapse on arrival. Before
           this, the panel claimed "Nothing in the … queue" while it was still loading. */}
       {isLoading ? (
-        <Skeleton variant="table" rows={5} cols={selection ? 19 : 18} />
+        <Skeleton variant="table" rows={5} cols={selection ? 20 : 19} />
       ) : error ? (
         <ErrorState error={error} onRetry={onRefresh} />
       ) : apps.length === 0 ? (
@@ -367,6 +367,7 @@ export function QueueTable({
               <th scope="col" className="num">Amount</th>
               <th scope="col">Due</th>
               <th scope="col">Credit</th>
+              <th scope="col">Stage</th>
               {/* Who worked the file. "Credit exec" is who DECIDED it — on a reassigned or
                   Head-decided file that is not the assignee. Blank until the stage happens. */}
               <th scope="col" title="The credit executive who decided this file">Credit exec</th>

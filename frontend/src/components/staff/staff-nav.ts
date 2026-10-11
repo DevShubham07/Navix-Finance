@@ -8,7 +8,7 @@ import {
   UserX,
   Mail,
   Ban,
-  CreditCard,
+  Settings,
   Wallet,
   Files,
   ListChecks,
@@ -57,6 +57,8 @@ export type NavItem = {
   /** Roles that never see this item even if it has no `perm` (e.g. perm-less items that would
    *  otherwise leak to a firewalled role like DSA). */
   hideFor?: StaffRole[];
+  /** Per working-role label override (e.g. "Live applications" reads "My credit files" for an executive). */
+  labelFor?: Partial<Record<StaffRole, string>>;
 };
 
 export type NavGroup = { heading: string; items: NavItem[] };
@@ -70,6 +72,17 @@ export function navVisible(it: NavItem, realRole: StaffRole, role: StaffRole, fl
   return true;
 }
 
+/** Sidebar / search label for this working role. */
+export function navLabel(item: NavItem, role: StaffRole): string {
+  return item.labelFor?.[role] ?? item.label;
+}
+
+/** Page title for a nav href: the role's override when it has one, else `fallback`. */
+export function pageTitleFor(href: string, role: StaffRole | undefined, fallback: string): string {
+  const item = NAV.flatMap((g) => g.items).find((it) => it.href === href);
+  return (role && item?.labelFor?.[role]) || fallback;
+}
+
 /** Customers (and its segment children) open scoped to "mine" for roles without the whole book. */
 export function navHref(href: string, realRole: StaffRole, role: StaffRole): string {
   if (!href.startsWith("/staff/customers") || can(realRole, role, "customer:view:all")) return href;
@@ -81,7 +94,20 @@ export const NAV: NavGroup[] = [
     heading: "Operations",
     items: [
       { label: "Dashboard", href: "/staff/dashboard", Icon: LayoutDashboard, hideFor: ["DSA"] },
-      { label: "Live applications", href: "/staff/applications", Icon: Workflow, perm: "loan:pipeline" },
+      {
+        label: "Live applications",
+        href: "/staff/applications",
+        Icon: Workflow,
+        perm: "loan:pipeline",
+        labelFor: {
+          CREDIT_HEAD: "Credit desk · all files",
+          CREDIT_EXECUTIVE: "My credit files",
+          DISBURSEMENT_HEAD: "Disbursal queue",
+          ACCOUNTANT: "Repayments to verify",
+          COLLECTION_HEAD: "Payment approvals",
+          COLLECTION_EXECUTIVE: "My repayment book",
+        },
+      },
       {
         label: "Customers",
         href: "/staff/customers",
@@ -94,8 +120,8 @@ export const NAV: NavGroup[] = [
         href: "/staff/customers?seg=unallocated",
         Icon: UserX,
         perm: "customer:assign",
+        hideFor: ["ADMIN"],
       },
-      { label: "Verification Dashboard", href: "/staff/verifications", Icon: ListChecks, perm: ["kyc:approve", "verification:retry"] },
       // No `perm`: every staffer may read their own decision history (the server scopes it).
       { label: "My decisions", href: "/staff/my-decisions", Icon: History, hideFor: ["DSA"] },
       // No `perm`: the server scopes the roster (ADMIN → company, Head → team, else self), so
@@ -112,9 +138,10 @@ export const NAV: NavGroup[] = [
   {
     heading: "Collections",
     items: [
-      { label: "DPD buckets", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], collectionBuckets: true },
+      { label: "DPD buckets", href: "/staff/collections", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], collectionBuckets: true, labelFor: { COLLECTION_HEAD: "Team DPD buckets", COLLECTION_EXECUTIVE: "My DPD cases" } },
+      { label: "DPD buckets (all)", href: "/staff/collections/overview", Icon: Gauge, perm: "collections:overview" },
       // Collection Executive can see settlements they proposed; approve stays PermissionGate-gated.
-      { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: ["collections:interact", "collections:manage"] },
+      { label: "Settlements", href: "/staff/collections/settlements", Icon: HandCoins, perm: ["collections:interact", "collections:manage"], labelFor: { COLLECTION_HEAD: "Settlement approvals", COLLECTION_EXECUTIVE: "My settlements" } },
       {
         label: "Loans",
         href: "/staff/loans",
@@ -140,14 +167,14 @@ export const NAV: NavGroup[] = [
       { label: "DSA", href: "/staff/admin/dsa", Icon: Briefcase, perm: "staff:manage" },
       { label: "Invites", href: "/staff/admin/invites", Icon: Mail, perm: "staff:manage" },
       { label: "Blocklist", href: "/staff/admin/blocklist", Icon: Ban, perm: "staff:manage" },
-      { label: "Onboarding waitlist", href: "/staff/admin/waitlist", Icon: Users, perm: "waitlist:view", flag: "onboarding-paused" },
-      { label: "Payment settings", href: "/staff/admin/payment-settings", Icon: CreditCard, perm: "staff:manage" },
+      { label: "Onboarding waitlist", href: "/staff/admin/waitlist", Icon: Users, perm: "waitlist:view" },
       { label: "Company expenses", href: "/staff/admin/expenses", Icon: Wallet, perm: "staff:manage" },
       { label: "Leads dashboard", href: "/staff/admin/leads", Icon: Phone, perm: "staff:manage" },
       { label: "All applications", href: "/staff/admin/all-applications", Icon: Files, perm: "staff:manage" },
       { label: "Rejections", href: "/staff/admin/rejections", Icon: Ban, perm: "staff:manage" },
       { label: "Provider API dashboard", href: "/staff/admin/api-dashboard", Icon: ListChecks, perm: "verification:retry" },
       { label: "Transactions", href: "/staff/accounting/transactions", Icon: Receipt, perm: ["loan:activate", "staff:manage"] },
+      { label: "Settings", href: "/staff/admin/settings", Icon: Settings, perm: "staff:manage" },
     ],
   },
 ];
@@ -159,3 +186,40 @@ export const NAV: NavGroup[] = [
 export const SEGMENTED_PARENT_PATHS = new Set(
   NAV.flatMap((g) => g.items).filter((it) => it.sub?.length).map((it) => it.href.split("?")[0]),
 );
+
+/**
+ * The ADMIN working role's sidebar order (hrefs). Reloan is a Customers child (`?seg=reloan`), so it
+ * sits right under Customers rather than being a separate entry. Items not listed fall to the end.
+ */
+export const ADMIN_NAV_ORDER: string[] = [
+  "/staff/dashboard",
+  "/staff/loans",
+  "/staff/collections/overview",
+  "/staff/performance",
+  "/staff/admin/staff",
+  "/staff/customers",
+  "/staff/admin/all-applications",
+  "/staff/admin/rejections",
+  "/staff/my-decisions",
+  "/staff/admin/waitlist",
+  "/staff/admin/leads",
+  "/staff/leads/import",
+  "/staff/admin/dsa",
+  "/staff/admin/invites",
+  "/staff/admin/blocklist",
+  "/staff/accounting/transactions",
+  "/staff/admin/expenses",
+  "/staff/admin/api-dashboard",
+  "/staff/admin/settings",
+];
+
+/** The groups the sidebar renders: ADMIN gets one flat, hand-ordered list; others keep {@link NAV}. */
+export function navGroupsFor(role: StaffRole): NavGroup[] {
+  if (role !== "ADMIN") return NAV;
+  const rank = (it: NavItem) => {
+    const i = ADMIN_NAV_ORDER.indexOf(it.href.split("?")[0]);
+    return i < 0 ? ADMIN_NAV_ORDER.length : i;
+  };
+  const items = NAV.flatMap((g) => g.items).sort((a, b) => rank(a) - rank(b));
+  return [{ heading: "Admin", items }];
+}

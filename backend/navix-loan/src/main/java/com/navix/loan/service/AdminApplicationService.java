@@ -177,7 +177,7 @@ public class AdminApplicationService {
                             p != null ? p.getEmail() : null,
                             p != null ? p.getPan() : null,
                             completed, required, ownerByCustomer.get(a.getCustomerId()), staleDays,
-                            trustByCustomer.get(a.getCustomerId()));
+                            trustByCustomer.get(a.getCustomerId()), a.getJourneyStep());
                 })
                 .sorted(Comparator.comparingLong(TelecallingView::staleDays).reversed())
                 .toList();

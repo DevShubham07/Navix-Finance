@@ -3,6 +3,7 @@
 import { TrustStars } from "@/components/staff/trust-stars";
 import * as React from "react";
 import { ArrowRight, Route } from "lucide-react";
+import { StageSignal } from "@/components/staff/stage-signal";
 import { CreditBadge } from "@/components/staff/credit-badge";
 import { ApplicationJourney } from "@/components/staff/application-journey";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
@@ -114,6 +115,9 @@ export function AppRow({
             recommendation={app.recommendation}
           />
         </td>
+        <td>
+          <StageSignal compact status={app.status} loanStatus={app.loanStatus} journeyStep={app.journeyStep} />
+        </td>
         <td className="staff-cell text-muted" title={app.creditDecidedByName || undefined}>
           {app.creditDecidedByName || "—"}
         </td>
@@ -165,7 +169,7 @@ export function AppRow({
       </tr>
       {withLoanHistory && (
         <tr>
-          <td colSpan={onToggleSelect ? 19 : 18} className="bg-grey-50">
+          <td colSpan={onToggleSelect ? 20 : 19} className="bg-grey-50">
             <LoanHistory customerId={app.customerId} />
           </td>
         </tr>

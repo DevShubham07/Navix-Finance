@@ -679,10 +679,12 @@ public class CustomerService {
         Map<String, Long> bySegment = new HashMap<>();
         long all = 0;
         long unallocated = 0;
+        long reloan = 0;
         for (CustomerBookQuery.SegmentCount c : bookQuery.segmentCounts(filter)) {
             bySegment.merge(c.segment(), c.count(), Long::sum);
             all += c.count();
             unallocated += c.unallocated();
+            reloan += c.reloan();
         }
         return new CustomerSummaryCounts(
                 all,
@@ -696,7 +698,8 @@ public class CustomerService {
                 bySegment.getOrDefault("hold", 0L),
                 bySegment.getOrDefault("rejected", 0L),
                 bySegment.getOrDefault("closed", 0L),
-                unallocated);
+                unallocated,
+                reloan);
     }
 
     private CustomerBookQuery.BookFilter bookFilter(String q, LocalDate from, LocalDate to, String seg,
@@ -888,10 +891,23 @@ public class CustomerService {
                     failure.reason().name(),
                     failure.reason().severity().name(),
                     failure.reason().retryable(),
-                    trustByCustomer.get(customerId));
+                    trustByCustomer.get(customerId),
+                    latestApp != null ? latestApp.getJourneyStep() : null,
+                    isReloan(latestApp, loans));
             out.add(cs);
         }
         return out;
+    }
+
+    /** Same rule as the dashboard's RELOAN segment (MetricSql.SEG): a loan CLOSED on/before the latest file was created. */
+    private static boolean isReloan(LoanApplication latestApp, List<Loan> loans) {
+        if (latestApp == null || latestApp.getCreatedAt() == null
+                || latestApp.getStatus() == com.navix.loan.domain.ApplicationStatus.DRAFT) {
+            return false;
+        }
+        LocalDate createdOn = latestApp.getCreatedAt().atZone(IST).toLocalDate();
+        return loans.stream().anyMatch(l -> l.getStatus() == com.navix.loan.domain.LoanStatus.CLOSED
+                && l.getClosedOn() != null && !l.getClosedOn().isAfter(createdOn));
     }
 
     /**

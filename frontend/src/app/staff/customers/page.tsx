@@ -6,6 +6,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Contact, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { StageSignal } from "@/components/staff/stage-signal";
 import { Badge, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
 import { SearchBar } from "@/components/staff/search-bar";
@@ -290,7 +291,7 @@ function CustomersPageInner() {
   const [pendingAssign, setPendingAssign] = React.useState<number[] | null>(null);
   const showBulkColumn = canBulkReject || canBulkAssign;
   // +1 for the Failure column. The date-group header rows span the whole table with this.
-  const colCount = showBulkColumn ? 23 : 22;
+  const colCount = showBulkColumn ? 24 : 23;
 
   function setSeg(next: CustomerSegment) {
     const p = new URLSearchParams(searchParams.toString());
@@ -361,7 +362,7 @@ function CustomersPageInner() {
               className={`cal-preset${seg === s ? " on" : ""}`}
               onClick={() => setSeg(s)}
             >
-              {SEGMENT_LABEL[s]} ({counts[s]})
+              {SEGMENT_LABEL[s]} ({counts[s] ?? 0})
             </button>
           ))}
         </div>
@@ -467,6 +468,7 @@ function CustomersPageInner() {
                   <th scope="col">Bureau</th>
                   <th scope="col" title="Why this file has no usable credit decision yet">Failure</th>
                   <th scope="col">Latest status</th>
+                  <th scope="col">Stage</th>
                   <th scope="col" title="When this customer entered their current status">Stage date</th>
                   {/* Who worked the file. "Credit exec" is who DECIDED it, which on a reassigned or
                       Head-decided file is not the same person as Owner. Blank until it happens. */}
@@ -604,6 +606,9 @@ function CustomersPageInner() {
                     </td>
                     <td>
                       {c.latestStatus ? <StatusBadge kind="application" value={c.latestStatus} /> : "—"}
+                    </td>
+                    <td>
+                      <StageSignal compact status={c.latestStatus} loanStatus={c.loanStatus} journeyStep={c.journeyStep} />
                     </td>
                     <td className="whitespace-nowrap text-muted">
                       {c.statusChangedAt ? formatDateTime(c.statusChangedAt) : "—"}

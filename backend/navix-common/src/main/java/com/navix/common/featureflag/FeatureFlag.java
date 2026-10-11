@@ -15,7 +15,8 @@ import lombok.Setter;
  * the table is changed only by a developer running SQL against the database (e.g.
  * {@code update feature_flag set enabled = false where flag_key = 'referral';}). The app only
  * <i>reads</i> these rows via {@link FeatureFlagService} to gate features at runtime — a change takes
- * effect immediately, with no redeploy.
+ * effect immediately, with no redeploy. Single exception: {@code onboarding-paused} is flipped by ADMIN
+ * from the Settings page.
  */
 @Entity
 @Table(name = "feature_flag")

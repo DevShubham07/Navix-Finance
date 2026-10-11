@@ -101,7 +101,10 @@ export type Permission =
   // for oversight; COLLECTION_HEAD because DPD/overdue triage is their job and the register is
   // where they'd start a case. This token is display-only wording — the backend enforces the real
   // gate (mirrors this file's own convention: see customer:view / document:upload above).
-  | "loan:register";
+  | "loan:register"
+  // Read-only all-DPD-buckets overview. COLLECTION_HEAD + ADMIN (also as working-role Admin, which
+  // otherwise holds no collections:* token).
+  | "collections:overview";
 
 /** Static role -> permission mapping. TODO: confirm against backend authz. */
 const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
@@ -142,6 +145,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "customer:assign",
     "loan:pipeline",
     "loan:register",
+    "collections:overview",
     "leads:import",
   ],
   COLLECTION_EXECUTIVE: ["collections:interact", "customer:view", "loan:pipeline", "leads:import"],
@@ -171,6 +175,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     "referral:payout",
     "verification:retry",
     "loan:register",
+    "collections:overview",
     // NOT dsa:portal — that is the DSA's own self-service portal, gated backend-side by
     // DsaService.requireDsaId() with a strict role equality and no ADMIN bypass (the portal is
     // scoped by JWT identity, and an ADMIN owns no lead/commission rows). Granting it here put
@@ -228,6 +233,7 @@ const ADMIN_ROLE_PERMISSIONS: Permission[] = [
   "dsa:manage",
   "waitlist:view",
   "loan:register",
+  "collections:overview",
   "document:upload",
   "leads:import",
 ];

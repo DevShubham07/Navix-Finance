@@ -15,6 +15,7 @@ import type { ExportColumn } from "@/lib/export/exporters";
 import { staffApi, paiseToINR, statusLabel, type AdminApplicationView } from "@/lib/api/applications";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
 import { formatDateTime } from "@/lib/utils";
+import { StageSignal } from "@/components/staff/stage-signal";
 import {
   filterAdminApplications,
   isAdminApplicationsFilterActive,
@@ -180,7 +181,7 @@ export default function AdminAllApplicationsPage() {
       ) : q.isPending ? (
         // Pending covers both "waiting for /me" (the query is disabled until the role is known) and
         // the fetch itself.
-        <Skeleton variant="table" rows={8} cols={15} className="rounded border border-line bg-white" />
+        <Skeleton variant="table" rows={8} cols={16} className="rounded border border-line bg-white" />
       ) : q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
@@ -202,6 +203,7 @@ export default function AdminAllApplicationsPage() {
                   <th scope="col" className="whitespace-nowrap">IFSC</th>
                   <th scope="col" className="whitespace-nowrap">Mobile</th>
                   <th scope="col" className="whitespace-nowrap">Status</th>
+                  <th scope="col" className="whitespace-nowrap">Stage</th>
                   <th scope="col" className="whitespace-nowrap">Stage since</th>
                   <th scope="col" className="whitespace-nowrap">Completeness</th>
                   <th scope="col" className="num whitespace-nowrap text-right">Amount</th>
@@ -226,6 +228,9 @@ export default function AdminAllApplicationsPage() {
                     <td className="whitespace-nowrap font-mono text-muted">{a.mobile || "—"}</td>
                     <td className="whitespace-nowrap">
                       <StatusBadge kind="application" value={a.status} />
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <StageSignal compact status={a.status} journeyStep={a.journeyStep} />
                     </td>
                     {/* When the application entered its CURRENT status (latest application_event.at),
                         formatted like every other "in stage since" in the console. */}

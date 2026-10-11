@@ -3,6 +3,7 @@ package com.navix.loan.controller;
 import com.navix.common.web.ApiResponse;
 import com.navix.loan.service.OnboardingWaitlistService;
 import com.navix.loan.service.OnboardingWaitlistService.GateView;
+import com.navix.loan.service.OnboardingWaitlistService.PausedStatus;
 import com.navix.loan.service.OnboardingWaitlistService.SubmissionView;
 import com.navix.loan.service.OnboardingWaitlistService.SubmitRequest;
 import com.navix.loan.service.OnboardingWaitlistService.WaitlistRow;
@@ -11,6 +12,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,5 +47,15 @@ public class OnboardingWaitlistController {
     @GetMapping("/api/staff/onboarding-waitlist")
     public ApiResponse<List<WaitlistRow>> list(@RequestParam(required = false) String q) {
         return ApiResponse.ok(service.list(q));
+    }
+
+    @GetMapping("/api/staff/onboarding-waitlist/paused")
+    public ApiResponse<PausedStatus> pausedStatus() {
+        return ApiResponse.ok(service.status());
+    }
+
+    @PutMapping("/api/staff/onboarding-waitlist/paused")
+    public ApiResponse<PausedStatus> setPaused(@RequestBody Map<String, Boolean> body) {
+        return ApiResponse.ok(service.setPaused(Boolean.TRUE.equals(body.get("paused"))));
     }
 }

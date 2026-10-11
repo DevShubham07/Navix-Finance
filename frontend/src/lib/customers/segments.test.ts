@@ -81,3 +81,16 @@ describe("inSegment / segmentCounts", () => {
     expect(segmentCounts(rows).unallocated).toBe(1);
   });
 });
+
+describe("reloan overlay", () => {
+  const rs = [
+    { latestStatus: "SANCTIONED", reloan: true },
+    { latestStatus: "CLOSED", reloan: false },
+    { latestStatus: "DRAFT" },
+  ];
+  it("filters and counts reloan without changing segmentOf", () => {
+    expect(rs.filter((c) => inSegment(c, "reloan"))).toHaveLength(1);
+    expect(segmentCounts(rs).reloan).toBe(1);
+    expect(segmentOf(rs[0])).toBe("approved");
+  });
+});

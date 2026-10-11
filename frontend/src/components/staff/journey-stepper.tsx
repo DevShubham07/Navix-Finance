@@ -43,7 +43,7 @@ interface NodeMeta {
 }
 
 /** Visual treatment per stage state — icon + text label + tone (never colour-only). */
-const NODE_META: Record<JourneyStageState, NodeMeta> = {
+export const NODE_META: Record<JourneyStageState, NodeMeta> = {
   upcoming: {
     Icon: Circle,
     statusText: "Upcoming",

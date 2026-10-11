@@ -118,7 +118,13 @@ public final class CustomerDtos {
             String failureSeverity,
             boolean failureRetryable,
             /** Bureau / UAN / work-email trust stars (tri-state), batch-enriched; null when not computed. */
-            com.navix.common.loan.TrustSignals trust) {
+            com.navix.common.loan.TrustSignals trust,
+            /** The latest application's stored {@code journey_step} pointer (JourneyService.Step /
+             *  OfferStep name); null when never set. May lag the borrower by one screen. */
+            String journeyStep,
+            /** Returning borrower: the latest (non-DRAFT) application was created after one of this
+             *  customer's loans CLOSED — same rule as the dashboard's RELOAN segment. */
+            boolean reloan) {
     }
 
     /**
@@ -175,7 +181,9 @@ public final class CustomerDtos {
             long hold,
             long rejected,
             long closed,
-            long unallocated) {
+            long unallocated,
+            /** Overlay like {@code unallocated}: customers whose latest file is a reloan. */
+            long reloan) {
     }
 
     /** How many of the caller's loans sit in each days-past-due band. Counts of loans, not money. */

@@ -9,6 +9,8 @@ export type SegmentableCustomer = {
   loanStatus?: string | null;
   latestStatus?: string | null;
   ownerStaffId?: number | null;
+  /** Returning borrower: the latest application was created after an earlier loan closed. */
+  reloan?: boolean | null;
 };
 
 export type CustomerSegment =
@@ -22,6 +24,7 @@ export type CustomerSegment =
   | "hold"
   | "rejected"
   | "closed"
+  | "reloan"
   | "unallocated"
   | "all";
 
@@ -37,6 +40,7 @@ export const SEGMENT_LABEL: Record<CustomerSegment, string> = {
   hold: "Hold",
   rejected: "Rejected",
   closed: "Closed",
+  reloan: "Reloan",
   unallocated: "Unallocated",
 };
 
@@ -52,6 +56,7 @@ export const SEGMENTS: CustomerSegment[] = [
   "hold",
   "rejected",
   "closed",
+  "reloan",
   "unallocated",
 ];
 
@@ -81,7 +86,7 @@ const CLOSED_APP = new Set(["CLOSED", "WRITTEN_OFF", "CANCELLED"]);
 /** Lifecycle segment for one customer row (loan status outranks application status). */
 export function segmentOf(
   c: Pick<SegmentableCustomer, "loanStatus" | "latestStatus">,
-): Exclude<CustomerSegment, "unallocated" | "all"> {
+): Exclude<CustomerSegment, "unallocated" | "reloan" | "all"> {
   const loan = c.loanStatus ?? null;
   const app = c.latestStatus ?? null;
 
@@ -106,6 +111,7 @@ export function segmentOf(
 export function inSegment(c: SegmentableCustomer, seg: CustomerSegment): boolean {
   if (seg === "all") return true;
   if (seg === "unallocated") return c.ownerStaffId == null;
+  if (seg === "reloan") return c.reloan === true;
   return segmentOf(c) === seg;
 }
 
@@ -125,11 +131,13 @@ export function segmentCounts(rows: SegmentableCustomer[]): SegmentCounts {
     hold: 0,
     rejected: 0,
     closed: 0,
+    reloan: 0,
     unallocated: 0,
   };
   for (const c of rows) {
     counts[segmentOf(c)]++;
     if (c.ownerStaffId == null) counts.unallocated++;
+    if (c.reloan === true) counts.reloan++;
   }
   return counts;
 }

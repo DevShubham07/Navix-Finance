@@ -34,6 +34,7 @@ import { ExportMenu } from "@/components/staff/export-menu";
 import { useQueueSelection } from "@/components/staff/pipeline/bulk-actions";
 import { useStaffMe, useCan } from "@/components/staff/pipeline/hooks";
 import { BulkAssignOfficerDialog, InlineOfficerSelect } from "@/components/staff/collections-assign";
+import { pageTitleFor } from "@/components/staff/staff-nav";
 import { AdminLogPaymentButton } from "@/components/staff/admin-log-payment";
 import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 import {
@@ -48,6 +49,7 @@ import { collectionHandoverColumns } from "@/lib/export/collection-handover-colu
 import { COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
 import { worklistDueCue, worklistDueLabel, type WorklistDueCue } from "@/lib/collections/worklist-due";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
+import { StageSignal } from "@/components/staff/stage-signal";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
 /** Flattened row: the sort primitive compares top-level keys, and `loan` is a nested object. */
@@ -284,7 +286,7 @@ export default function CollectionsBucketPage() {
   return (
     <div>
       <PageHeader
-        title={`Collections · ${meta.label}`}
+        title={`${pageTitleFor("/staff/collections", role, "Collections")} · ${meta.label}`}
         subtitle="Every live loan in this bucket — past due, or falling due within the week. DPD is computed on read."
       >
         <ExportMenu<Row>
@@ -416,7 +418,7 @@ export default function CollectionsBucketPage() {
         {q.error ? (
           <ErrorState error={q.error} onRetry={() => void q.refetch()} />
         ) : q.isLoading ? (
-          <Skeleton variant="table" rows={8} cols={canBulkAssign ? 18 : 17} />
+          <Skeleton variant="table" rows={8} cols={canBulkAssign ? 19 : 18} />
         ) : total === 0 ? (
           <EmptyState
             title={`No loans in ${meta.label}${query.trim() ? ` for “${query.trim()}”` : ""}${
@@ -478,6 +480,7 @@ export default function CollectionsBucketPage() {
                   />
                   <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
                   <SortableTh className="num" label="DPD" sortKey="dpd" active={sortKey} dir={dir} onToggle={toggle} />
+                  <th scope="col">Stage</th>
                   <th scope="col">Employer</th>
                   <SortableTh
                     className="num"
@@ -551,6 +554,9 @@ export default function CollectionsBucketPage() {
                       {r.dueDate ? formatDate(r.dueDate) : "—"}
                     </td>
                     <DpdCell row={r} now={now} />
+                    <td>
+                      <StageSignal compact status="ACTIVE" loanStatus={r.loanStatus} dpd={r.dpd} />
+                    </td>
                     <td>{dash(r.employer)}</td>
                     <td className="num font-mono">{r.salaryPaise != null ? paiseToINR(r.salaryPaise) : "—"}</td>
                     <td>{dash(r.creditDecidedByName)}</td>

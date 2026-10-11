@@ -322,8 +322,8 @@ public class JourneyService {
      * SET_PASSWORD in the intake; only the stored pointer can hold a borrower on one.
      *
      * <p>DigiLocker, selfie and address are satisfied by a row in <em>any</em> terminal status, not
-     * by a PASS: a Phase-3 check that fails passes through silently and surfaces only on the staff
-     * Verification Dashboard (revamp.md decision 11).
+     * by a PASS: a Phase-3 check that fails passes through silently and surfaces only in the staff
+     * verification view (revamp.md decision 11).
      *
      * <p>The signature is the one exception, because it is not a check but the borrower's agreement to
      * the Key Fact Statement: only a {@code PASS} row proves it. A {@code PENDING} row is a provider

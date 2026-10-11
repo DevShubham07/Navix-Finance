@@ -481,7 +481,7 @@ A staffer picks a **working role** from a pill in the header (initials avatar on
 | others | their own role only (static pill) |
 
 - **Each working role shows only its own tabs and buttons.** Admin pages and admin-only buttons (edit customer, force to disbursement, export, log payment, document delete, reference edit, verification retry, the Admin overview dashboard) live in the **Admin** working role.
-- **Head roles assign/approve; executive roles do the work:** Credit Head = assign/reassign/Assign to me/Reject (no Sanction/Mark pending); Credit Executive = only files assigned to me, Sanction/Reject/Mark pending, Verification Dashboard. Collection Head = assign cases, approve settlements/payments, Loans register, skip trace; Collection Executive = only my cases, log interactions, record payments, propose settlements.
+- **Head roles assign/approve; executive roles do the work:** Credit Head = assign/reassign/Assign to me/Reject (no Sanction/Mark pending); Credit Executive = only files assigned to me, Sanction/Reject/Mark pending (the standalone Verification Dashboard was removed; per-file checks live in the customer pop-up). Collection Head = assign cases, approve settlements/payments, Loans register, skip trace; Collection Executive = only my cases, log interactions, record payments, propose settlements.
 - **Transport:** frontend keeps the choice in localStorage `navix-staff-working-role:<staffId>` (cleared on sign-out) and sends `X-Acting-Role` on staff API calls when it differs from the real role; the BFF forwards it; `ActingRole.normalize` validates it against the hierarchy (illegal values ignored, never 400) into `CurrentActor.actingRole`.
 - **Authorization stays on the real JWT role.** `CurrentActor.effectiveRole()` is used only for **list scoping** (credit queues, customer book, decision history, collections cases/settlements/payments).
 - Reading another officer's collection case as an executive returns `CASE_NOT_ASSIGNED`; `assignOfficer` allows self-assign for a real COLLECTION_HEAD/ADMIN.
@@ -658,8 +658,9 @@ What holds across all of it, and does not belong in that file:
 - **Maker-checker steps always have a reject path.** Wherever an actor can approve (credit, disbursement,
   settlement, repayment verification), the counter-action **reject** exists too, SoD-checked
   (proposer ≠ rejecter) and audited; don't add an approve-only flow.
-- **Feature flags are dev-only & read-only.** The `feature_flag` table is changed **only by SQL** — there
-  is no write API and no admin UI (not even ADMIN). Code reads `FeatureFlagService.isEnabled(key)`
+- **Feature flags are dev-only & read-only, with one exception.** The `feature_flag` table is changed **only by SQL** —
+  there is no general write API or admin UI. The one flag ADMIN may flip is `onboarding-paused`, from Staff → Settings
+  (`PUT /api/staff/onboarding-waitlist/paused`). Code reads `FeatureFlagService.isEnabled(key)`
   (navix-common, no cache → instant, no redeploy); gate a feature by adding a row + the check. Live
   flags: `referral` (kill switch), `fintrix-bureau` (bureau primary; off falls back to Digitap),
   `bureau-auto-reject` (**suspended in V64**, read with `defaultWhenMissing = FALSE` so deleting the

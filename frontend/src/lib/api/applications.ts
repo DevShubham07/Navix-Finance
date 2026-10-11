@@ -65,6 +65,8 @@ export interface ApplicationView {
   id: number;
   customerId: number;
   status: ApplicationStatus;
+  /** Stored JourneyService step (Step / OfferStep enum name); null when unknown. Staff stage signal only. */
+  journeyStep?: string | null;
   amountRequestedPaise: number | null;
   eligibleLimitPaise: number | null;
   /** What this customer may borrow right now — the admin limit override when set, else the
@@ -247,6 +249,8 @@ export interface AdminApplicationView {
   id: number;
   customerId: number;
   status: ApplicationStatus;
+  /** Stored JourneyService step (Step / OfferStep enum name); null when unknown. Staff stage signal only. */
+  journeyStep?: string | null;
   amountRequestedPaise: number | null;
   eligibleLimitPaise: number | null;
   purpose: string | null;
@@ -296,6 +300,8 @@ export interface TelecallingView {
   id: number;
   customerId: number;
   status: ApplicationStatus;
+  /** Stored JourneyService step (Step / OfferStep enum name); null when unknown. Staff stage signal only. */
+  journeyStep?: string | null;
   customerName: string | null;
   mobile: string | null;
   email: string | null;
@@ -650,6 +656,10 @@ export interface CustomerSummary {
   applicationCount: number;
   loanCount: number;
   latestStatus: string | null;
+  /** Stored JourneyService step (Step / OfferStep enum name); null when unknown. Staff stage signal only. */
+  journeyStep?: string | null;
+  /** Returning borrower: the latest file was created after a prior loan closed. */
+  reloan?: boolean | null;
   totalOutstandingPaise: number;
   /** Latest credit headline for the customer (staff-only). */
   creditScore?: number | null;
@@ -1464,54 +1474,6 @@ export interface VerificationProgress {
   percent: number;
 }
 
-/** One row in the pending-API dashboard (Phase 3.3) — mirrors backend VerificationOverviewRow. */
-export interface VerificationOverviewRow {
-  applicationId: number;
-  customerId: number | null;
-  borrowerName: string | null;
-  borrowerMobile: string | null;
-  checkType: string;
-  status: CheckStatus;
-  provider: string | null;
-  message: string | null;
-  updatedAt: string | null;
-  /** The owning application's lifecycle status (e.g. "KYC_PENDING") — lets staff surfaces scope
-   *  verification rows to applications that still need a KYC decision. */
-  applicationStatus: ApplicationStatus | null;
-}
-
-/** Pending-API dashboard payload (Phase 3.3) — status tallies + rows. */
-export interface VerificationOverview {
-  passed: number;
-  review: number;
-  failed: number;
-  pending: number;
-  neverRun: number;
-  /** The requested page's rows, grouped whole: an application's checks are never split across pages. */
-  rows: VerificationOverviewRow[];
-  page: number;
-  size: number;
-  /** Matching APPLICATIONS (the paging unit), not rows. The five tallies above always cover the
-   *  whole undecided queue, whatever page or filter is showing. */
-  total: number;
-  /**
-   * The "Not started" bucket: KYC_PENDING applications with no verification row at all, newest
-   * first, capped at 200, with the same `q` search as the rows. Not paged — the same list comes back
-   * on every page. Optional only so a backend that predates it (mid-deploy) reads as an empty bucket.
-   */
-  notStarted?: VerificationNotStarted[];
-  /** True size of the "Not started" bucket; larger than `notStarted.length` when the list is capped. */
-  notStartedTotal?: number;
-}
-
-/** One KYC_PENDING application with no verification row yet — mirrors backend `NotStartedApplication`. */
-export interface VerificationNotStarted {
-  applicationId: number;
-  customerId: number | null;
-  borrowerName: string | null;
-  borrowerMobile: string | null;
-}
-
 /** Result of a staff-triggered KYC reminder (Phase 3.4). */
 export interface ReminderResult {
   sent: boolean;
@@ -2074,27 +2036,6 @@ export const staffApi = {
       ]);
     } finally { if (timer) clearTimeout(timer); }
   },
-  /** Pending-API dashboard: cross-application verification overview + tallies (Phase 3.3). */
-  verificationOverview: (filters?: {
-    status?: string;
-    checkType?: string;
-    q?: string;
-    /** Default (undefined/true): only applications that still need a reviewer — the page's own
-     *  "failures" and "awaiting" buckets. `false` returns the whole undecided queue. */
-    needsAttention?: boolean;
-    page?: number;
-    size?: number;
-  }) => {
-    const params = new URLSearchParams();
-    if (filters?.status) params.set("status", filters.status);
-    if (filters?.checkType) params.set("checkType", filters.checkType);
-    if (filters?.q) params.set("q", filters.q);
-    if (filters?.needsAttention === false) params.set("needsAttention", "false");
-    if (filters?.page) params.set("page", String(filters.page));
-    if (filters?.size) params.set("size", String(filters.size));
-    const qs = params.toString();
-    return bff<VerificationOverview>(`${STAFF_BASE}/verifications/overview${qs ? `?${qs}` : ""}`, "GET");
-  },
   /** KYC approver / admin nudges the borrower with their pending verification steps (Phase 3.4). */
   sendReminder: (id: number) => bff<ReminderResult>(`${STAFF_BASE}/${id}/send-reminder`, "POST"),
 
@@ -2158,6 +2099,8 @@ export type CustomerSummaryCounts = {
   hold: number;
   rejected: number;
   closed: number;
+  /** Overlay segment; absent until the backend ships it. */
+  reloan?: number;
   unallocated: number;
 };
 
@@ -3399,10 +3342,17 @@ const ADMIN_INVITES_BASE = "/api/staff/invites";
 const ADMIN_BLOCKLIST_BASE = "/api/admin/blocklist";
 const ADMIN_EXPENSES_BASE = "/api/admin/expenses";
 
+export type OnboardingStatus = { paused: boolean; updatedBy: string | null; updatedAt: string | null };
+
 export const adminApi = {
   /** Onboarding-paused waitlist submissions, newest first (ADMIN only). */
   waitlist: (q?: string) =>
     bff<WaitlistEntry[]>(`/api/staff/onboarding-waitlist${q ? `?q=${encodeURIComponent(q)}` : ""}`, "GET"),
+  /** Whether new-customer onboarding is paused (the `onboarding-paused` flag). */
+  onboardingStatus: () => bff<OnboardingStatus>("/api/staff/onboarding-waitlist/paused", "GET"),
+  /** Pause (true) or resume (false) new-customer onboarding (ADMIN only). */
+  setOnboardingPaused: (paused: boolean) =>
+    bff<OnboardingStatus>("/api/staff/onboarding-waitlist/paused", "PUT", { paused }),
   // --- staff users ---
   listStaff: () => bff<StaffResponse[]>(ADMIN_STAFF_BASE, "GET"),
   getStaff: (id: number) => bff<StaffResponse>(`${ADMIN_STAFF_BASE}/${id}`, "GET"),

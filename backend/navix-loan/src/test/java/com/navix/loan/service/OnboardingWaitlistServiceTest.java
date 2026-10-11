@@ -12,6 +12,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.featureflag.FeatureFlag;
+import com.navix.common.featureflag.FeatureFlagRepository;
 import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.notification.event.WaitlistSubmittedEvent;
 import com.navix.common.security.ActorContext;
@@ -41,6 +43,8 @@ class OnboardingWaitlistServiceTest {
     @Mock
     private FeatureFlagService featureFlags;
     @Mock
+    private FeatureFlagRepository featureFlagRepository;
+    @Mock
     private OnboardingWaitlistRepository waitlistRepository;
     @Mock
     private LoanRepository loanRepository;
@@ -53,7 +57,7 @@ class OnboardingWaitlistServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new OnboardingWaitlistService(featureFlags, waitlistRepository, loanRepository,
+        service = new OnboardingWaitlistService(featureFlags, featureFlagRepository, waitlistRepository, loanRepository,
                 profileRepository, eventPublisher);
         lenient().when(featureFlags.isEnabled(OnboardingWaitlistService.FLAG, false)).thenReturn(true);
         lenient().when(waitlistRepository.save(any())).thenAnswer(i -> {
@@ -71,6 +75,39 @@ class OnboardingWaitlistServiceTest {
 
     private static SubmitRequest good() {
         return new SubmitRequest(" Rinku ", "rinku@example.com", "+91 73039 36960", "abcde1234f", "2341 2341 2346");
+    }
+
+    @Test
+    void adminPausesAndResumes() {
+        ActorContext.set(new CurrentActor("1", "1", "ADMIN"));
+        FeatureFlag row = new FeatureFlag();
+        row.setFlagKey(OnboardingWaitlistService.FLAG);
+        row.setEnabled(true);
+        when(featureFlagRepository.findByFlagKey(OnboardingWaitlistService.FLAG)).thenReturn(Optional.of(row));
+        when(featureFlagRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        assertThat(service.setPaused(false).paused()).isFalse();
+        assertThat(row.isEnabled()).isFalse();
+        assertThat(service.setPaused(true).paused()).isTrue();
+        assertThat(service.status().paused()).isTrue();
+    }
+
+    @Test
+    void setPausedCreatesMissingRow() {
+        ActorContext.set(new CurrentActor("1", "1", "ADMIN"));
+        when(featureFlagRepository.findByFlagKey(OnboardingWaitlistService.FLAG)).thenReturn(Optional.empty());
+        when(featureFlagRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        assertThat(service.setPaused(true).paused()).isTrue();
+        verify(featureFlagRepository).save(org.mockito.ArgumentMatchers.argThat(
+                (FeatureFlag f) -> OnboardingWaitlistService.FLAG.equals(f.getFlagKey()) && f.isEnabled()));
+    }
+
+    @Test
+    void nonAdminCannotSwitch() {
+        ActorContext.set(new CurrentActor("5", "5", "CREDIT_HEAD"));
+        assertThatThrownBy(() -> service.setPaused(true)).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ADMIN");
+        assertThatThrownBy(() -> service.status()).isInstanceOf(BusinessException.class);
+        verify(featureFlagRepository, never()).save(any());
     }
 
     @Test
