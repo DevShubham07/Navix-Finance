@@ -53,12 +53,44 @@ export function RepaymentTab(ctx: TabCtx) {
     <div className="space-y-4">
       <Section title="Repayment">
         <div className="space-y-3">
+          <RepaymentDate loan={loan} />
           <LoanSelector loans={ctx.detail.loans} value={loan.id} onChange={setLoanId} />
           <LoanCardHeader ctx={ctx} loan={loan} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
           {!collapsed && <FinancialSummaryStrip loan={loan} outstanding={outstanding} />}
         </div>
       </Section>
       <PaymentsPanel ctx={ctx} loan={loan} />
+    </div>
+  );
+}
+
+/** The date the money is due, first — every figure below is "as of" it. */
+function RepaymentDate({ loan }: { loan: LoanView }) {
+  const due = isoDayToLocalDate(loan.dueDate);
+  const today = istCalendarToday();
+  const days = due ? daysBetween(today, due) : null;
+  const overdue = loan.status !== "CLOSED" && days != null && days < 0;
+  return (
+    <div
+      aria-label="Repayment date"
+      className={`rounded border-2 px-4 py-3 ${overdue ? "border-error-600 bg-error-50" : "border-info-500 bg-white"}`}
+    >
+      <div className={`text-[9.2px] font-semibold uppercase tracking-wide ${overdue ? "text-error-700" : "text-info-500"}`}>
+        Repayment date
+      </div>
+      <div className={`font-mono text-[1.6rem] font-bold leading-tight ${overdue ? "text-error-700" : "text-navy"}`}>
+        {due ? formatDate(due) : "—"}
+      </div>
+      <div className="text-[10.4px] text-ink">
+        On the borrower&apos;s salary day
+        {loan.status === "CLOSED" || days == null
+          ? ""
+          : overdue
+            ? ` · ${-days} ${days === -1 ? "day" : "days"} overdue`
+            : days === 0
+              ? " · due today"
+              : ` · in ${days} ${days === 1 ? "day" : "days"}`}
+      </div>
     </div>
   );
 }

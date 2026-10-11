@@ -17,15 +17,18 @@ vi.mock("@/components/staff/live-pipeline", () => ({
   DisbursementActions: () => <div>disbursement-actions</div>,
 }));
 
-function renderTab(status: string, steps: StepResult[]) {
+function renderTab(status: string, steps: StepResult[], extra: Partial<ApplicationView> = {}) {
   const app = {
     id: 318, status, disbursalAccountNumber: "1234567890", disbursalIfsc: "HDFC0001",
-    disbursalHolderName: "VIJAY", disbursalBank: "HDFC Bank",
+    disbursalHolderName: "VIJAY", disbursalBank: "HDFC Bank", ...extra,
   } as unknown as ApplicationView;
   vi.spyOn(staffApi, "verifications").mockResolvedValue(steps);
   const detail = {
     customerId: 42, profile: null, applications: [app], payments: [],
-    loans: [{ id: 208, netDisbursedPaise: 441_000, disbursedOn: "2026-10-08", disbursalTxnRef: "TXN9" }],
+    loans: [{
+      id: 208, principalPaise: 500_000, processingFeePaise: 50_000, gstPaise: 9_000, netDisbursedPaise: 441_000,
+      disbursedOn: "2026-10-08", disbursalTxnRef: "TXN9",
+    }],
   } as unknown as CustomerDetail;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -70,5 +73,21 @@ describe("Disbursal tab", () => {
     ]);
     expect(await screen.findByText("RRN-77")).toBeInTheDocument();
     expect(screen.getByText(/Manually overridden by Credit Reviewer/)).toBeInTheDocument();
+  });
+
+  it("leads with the net amount to send and the sanctioned ceiling before disbursal", async () => {
+    renderTab("DISBURSEMENT_PENDING", [], { amountRequestedPaise: 1_000_000, sanctionedAmountPaise: 1_500_000 });
+    const top = await screen.findByLabelText("Disbursal amounts");
+    expect(top).toHaveTextContent("Amount to be disbursed");
+    expect(top).toHaveTextContent("₹8,820");
+    expect(top).toHaveTextContent("Loan ₹10,000 − fee ₹1,000 − GST ₹180");
+    expect(top).toHaveTextContent("Sanctioned amount₹15,000");
+  });
+
+  it("shows the loan's real net figure once disbursed", async () => {
+    renderTab("ACTIVE", [], { loanId: 208, amountRequestedPaise: 1_000_000, sanctionedAmountPaise: 1_500_000 });
+    const top = await screen.findByLabelText("Disbursal amounts");
+    expect(top).toHaveTextContent("Amount disbursed₹4,410");
+    expect(top).toHaveTextContent("Loan ₹5,000 − fee ₹500 − GST ₹90");
   });
 });

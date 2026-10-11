@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { customersApi, staffApi, type ApplicationView, type CustomerDetail, type LoanView, type PaymentView } from "@/lib/api/applications";
 import { CustomerTabBody } from "@/components/staff/customer-tabs";
+import { formatDate } from "@/lib/utils";
 
 let role = "ADMIN";
 vi.mock("@/lib/auth/staff-session", () => ({
@@ -149,5 +150,12 @@ describe("Repayment tab - payment amount colours", () => {
     expect(await pay.findByText("₹1,111")).toHaveClass("text-success-700");
     expect(pay.getByText("₹2,222")).toHaveClass("text-warning-800");
     expect(pay.getByText("₹3,333")).toHaveClass("text-error-700");
+  });
+
+  it("leads with the repayment date, flagged when overdue", () => {
+    renderRepay("ACTIVE", [], "2026-10-01");
+    const top = screen.getByLabelText("Repayment date");
+    expect(top).toHaveTextContent(formatDate(new Date(2026, 9, 1)));
+    expect(top).toHaveTextContent(/salary day · \d+ days? overdue/);
   });
 });

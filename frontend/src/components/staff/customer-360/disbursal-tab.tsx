@@ -9,7 +9,8 @@ import { Section } from "@/components/staff/detail-parts";
 import { stageActionFor, stageActionTab } from "@/components/staff/customer-360/stage-actions";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { staffApi, paiseToINR } from "@/lib/api/applications";
+import { staffApi, paiseToINR, type ApplicationView, type LoanView } from "@/lib/api/applications";
+import { gstOnFee, netDisbursed, processingFee } from "@/lib/calc/loan-math";
 
 const NOTE = "mt-3 rounded border border-warning-100 bg-warning-50 px-3 py-2 text-[10.4px] text-warning-800";
 
@@ -48,6 +49,7 @@ export function DisbursalTab({ app, applicationId, detail }: TabCtx) {
 
   return (
     <div className="space-y-3">
+      <DisbursalAmounts app={app} loan={detail.loans.find((l) => l.id === app.loanId)} />
       {action && <div className="flex flex-wrap items-end gap-2">{action}</div>}
 
       <Section icon={Landmark} title="Bank details">
@@ -129,6 +131,41 @@ export function DisbursalTab({ app, applicationId, detail }: TabCtx) {
           </div>
         )}
       </Section>
+    </div>
+  );
+}
+
+/** What leaves the bank (principal less fee and GST) and the sanction ceiling, first, so the
+ *  Disbursement Head never sends the principal by mistake. */
+function DisbursalAmounts({ app, loan }: { app: ApplicationView; loan?: LoanView }) {
+  const principal = loan?.principalPaise ?? app.amountRequestedPaise;
+  const fee = loan?.processingFeePaise ?? (principal != null ? processingFee(principal) : null);
+  const gst = loan?.gstPaise ?? (fee != null ? gstOnFee(fee) : null);
+  const net = loan?.netDisbursedPaise ?? (principal != null ? netDisbursed(principal) : null);
+  return (
+    <div className="grid gap-2 sm:grid-cols-2" aria-label="Disbursal amounts">
+      <div className="rounded border-2 border-success-600 bg-success-50 px-4 py-3">
+        <div className="text-[9.2px] font-semibold uppercase tracking-wide text-success-700">
+          {loan ? "Amount disbursed" : "Amount to be disbursed"}
+        </div>
+        <div className="font-mono text-[1.6rem] font-bold leading-tight text-success-700">
+          {net != null ? paiseToINR(net) : "—"}
+        </div>
+        <div className="text-[10.4px] text-ink">
+          {principal != null && fee != null && gst != null
+            ? `Loan ${paiseToINR(principal)} − fee ${paiseToINR(fee)} − GST ${paiseToINR(gst)}`
+            : "The borrower has not chosen an amount yet."}
+        </div>
+      </div>
+      <div className="rounded border border-line bg-white px-4 py-3">
+        <div className="text-[9.2px] font-semibold uppercase tracking-wide text-muted">Sanctioned amount</div>
+        <div className="font-mono text-[1.6rem] font-bold leading-tight text-navy">
+          {app.sanctionedAmountPaise != null ? paiseToINR(app.sanctionedAmountPaise) : "—"}
+        </div>
+        <div className="text-[10.4px] text-ink">
+          Credit ceiling{app.sanctionedAt ? ` · sanctioned ${formatDate(app.sanctionedAt)}` : ""}
+        </div>
+      </div>
     </div>
   );
 }
