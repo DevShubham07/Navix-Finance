@@ -1,19 +1,23 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { Badge, EmptyState, ErrorState, Skeleton } from "@/components/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, Loader2, Radar, RotateCcw } from "lucide-react";
+import { Badge, ConfirmDialog, EmptyState, ErrorState, Skeleton, toast } from "@/components/ui";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { SkipTracePanel } from "@/components/staff/skip-trace-panel";
+import { PermissionGate } from "@/components/staff/pipeline/actions";
+import { errMessage } from "@/components/staff/pipeline/hooks";
+import { RETRYABLE_CHECKS, RetryDialog, type DisplayStep } from "@/components/staff/verification-checks";
+import { isRetryStillRunning, retryGuardKey } from "@/lib/staff/verification-dashboard";
 import { CrifAnalysisSection } from "@/components/staff/customer-360/crif-analysis-panel";
 import type { TabCtx } from "@/components/staff/customer-360/types";
 import {
   AadhaarBody, AadhaarPanLinkBody, AddressCheckBody, BureauBody, EmailBody, EsignBody, PanBody, PennyBody, SelfieBody, UanBody,
   checkedAt, statusLabel, statusVariant,
 } from "@/components/staff/customer-360/third-party/presenters";
-import { staffApi, type StepResult } from "@/lib/api/applications";
+import { skipTraceApi, staffApi, type StepResult } from "@/lib/api/applications";
 import { AADHAAR_PAN_LINK, withAadhaarPanLink } from "@/lib/staff/aadhaar-pan-link";
 import { bankAnalysisApi } from "@/lib/api/bank-analysis";
 import { paiseToINR } from "@/lib/api/applications";
@@ -29,15 +33,26 @@ type Row = {
   title: string;
   checkType?: string;
   body?: (s: StepResult, aadhaar?: string | null) => React.ReactNode;
+  /** The check an ADMIN re-run calls (the backend retry allow-list), when it is not `checkType`. */
+  runCheck?: string;
+  /** Why this row has no staff re-run — shown as the disabled button's tooltip. */
+  noRun?: string;
+};
+
+/** The check type an ADMIN "Run" on this row re-runs, or null when staff cannot run it. */
+const runCheckOf = (r: Row): string | null => {
+  const c = r.runCheck ?? r.checkType;
+  return c && RETRYABLE_CHECKS.includes(c) ? c : null;
 };
 
 const ROWS: Row[] = [
   { key: "pan", title: "PAN Detail", checkType: "PAN", body: (s, aadhaar) => <PanBody step={s} aadhaar={aadhaar} /> },
-  { key: "aadhaar-pan", title: "Aadhaar–PAN Linkage", checkType: AADHAAR_PAN_LINK, body: (s) => <AadhaarPanLinkBody step={s} /> },
+  { key: "aadhaar-pan", title: "Aadhaar–PAN Linkage", checkType: AADHAAR_PAN_LINK, runCheck: "PAN", body: (s) => <AadhaarPanLinkBody step={s} /> },
   { key: "uan", title: "UAN / EPFO Detail", checkType: "EMPLOYMENT", body: (s) => <UanBody step={s} /> },
-  { key: "aadhaar", title: "Aadhaar Detail (DigiLocker)", checkType: "AADHAAR", body: (s, aadhaar) => <AadhaarBody step={s} aadhaar={aadhaar} /> },
+  { key: "aadhaar", title: "Aadhaar Detail (DigiLocker)", checkType: "AADHAAR", noRun: "DigiLocker needs the borrower's own consent — send them the link from Verifications.", body: (s, aadhaar) => <AadhaarBody step={s} aadhaar={aadhaar} /> },
   { key: "email", title: "Email Verification", checkType: "EMAIL", body: (s) => <EmailBody step={s} /> },
-  { key: "bank", title: "Bank Statement Analysis" },
+  // The analysis is read off the bureau report until the bank-statement analyser is live.
+  { key: "bank", title: "Bank Statement Analysis", runCheck: "BUREAU" },
   {
     key: "bureau",
     title: "Bureau and Credit Report",
@@ -52,7 +67,7 @@ const ROWS: Row[] = [
   { key: "penny", title: "Penny Drop", checkType: "PENNY_DROP", body: (s) => <PennyBody step={s} /> },
   { key: "selfie", title: "Selfie / Liveness", checkType: "SELFIE", body: (s) => <SelfieBody step={s} /> },
   { key: "address", title: "Address Check", checkType: "ADDRESS", body: (s) => <AddressCheckBody step={s} /> },
-  { key: "esign", title: "eSign", checkType: "ESIGN", body: (s) => <EsignBody step={s} /> },
+  { key: "esign", title: "eSign", checkType: "ESIGN", noRun: "eSign is the borrower's own legally binding signature — staff cannot run it.", body: (s) => <EsignBody step={s} /> },
   { key: "skip", title: "Skip Trace" },
 ];
 
@@ -86,6 +101,41 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
   const [open, setOpen] = React.useState<string | null | undefined>(undefined);
   const current = open === undefined ? firstWithData : open;
 
+  // ADMIN re-runs. Same billable-call guard as the Verifications tab: once a retry's outcome is
+  // unknown (the client gave up at 120s), Run stays off for that check until its row is rewritten.
+  const qc = useQueryClient();
+  const [retry, setRetry] = React.useState<DisplayStep | null>(null);
+  const [inFlight, setInFlight] = React.useState<Record<string, string | null>>({});
+  const release = (key: string) =>
+    setInFlight((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  const stepByType = (c: string) => steps.find((x) => x.checkType === c);
+  const running = (c: string) =>
+    applicationId != null && isRetryStillRunning(inFlight, retryGuardKey(applicationId, c), stepByType(c)?.checkedAt);
+  const openRetry = (c: string) =>
+    setRetry(stepByType(c) ?? { checkType: c, status: "NOT_RUN", message: null, derived: {} } as DisplayStep);
+
+  const [confirmSkip, setConfirmSkip] = React.useState(false);
+  const skip = useMutation({
+    mutationFn: () => skipTraceApi.run(customerId),
+    onSuccess: (run) => {
+      setConfirmSkip(false);
+      setOpen("skip");
+      toast.success(run.status === "SUCCESS" ? "Skip trace complete." : run.status === "NO_RECORD" ? "Digitap has no record for this customer." : "Skip trace recorded.");
+      void qc.invalidateQueries({ queryKey: ["skip-trace", customerId] });
+    },
+    onError: (e) => {
+      setConfirmSkip(false);
+      toast.error(errMessage(e));
+      // A failed attempt is still stored server-side.
+      void qc.invalidateQueries({ queryKey: ["skip-trace", customerId] });
+    },
+  });
+
   if (applicationId == null) {
     return <EmptyState title="No application yet" hint="Third-party results appear once the customer has an application." />;
   }
@@ -106,14 +156,27 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
           : <Badge variant="neutral" size="sm">Not run</Badge>;
         return (
           <div key={r.key} className="rounded border border-line bg-white">
-            <button
-              type="button"
-              aria-expanded={isOpen}
-              className="w-full px-3 py-2 text-left"
-              onClick={() => setOpen(isOpen ? null : r.key)}
-            >
-              <Header title={r.title} open={isOpen} pill={pill} provider={r.key === "bank" && !bank ? "CRIF" : s?.provider} when={s ? checkedAt(s) : null} />
-            </button>
+            <div className="flex items-center gap-2 pr-2">
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                className="min-w-0 flex-1 px-3 py-2 text-left"
+                onClick={() => setOpen(isOpen ? null : r.key)}
+              >
+                <Header title={r.title} open={isOpen} pill={pill} provider={r.key === "bank" && !bank ? "CRIF" : s?.provider} when={s ? checkedAt(s) : null} />
+              </button>
+              <PermissionGate permission="verification:retry">
+                <RunButton
+                  row={r}
+                  ran={(() => { const c = runCheckOf(r); return c ? stepByType(c) != null : false; })()}
+                  busy={r.key === "skip" ? skip.isPending : (() => { const c = runCheckOf(r); return c ? running(c) : false; })()}
+                  onRun={() => {
+                    if (r.key === "skip") setConfirmSkip(true);
+                    else { const c = runCheckOf(r); if (c) openRetry(c); }
+                  }}
+                />
+              </PermissionGate>
+            </div>
             {isOpen && (
               <div className="space-y-3 border-t border-line p-3">
                 {r.key === "skip" ? (
@@ -141,7 +204,50 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
           </div>
         );
       })}
+
+      {retry && (
+        <RetryDialog
+          applicationId={applicationId}
+          step={retry}
+          currentCheckedAt={stepByType(retry.checkType)?.checkedAt ?? null}
+          stillRunning={running(retry.checkType)}
+          onSent={(baseline) => setInFlight((prev) => ({ ...prev, [retryGuardKey(applicationId, retry.checkType)]: baseline }))}
+          onAnswered={() => release(retryGuardKey(applicationId, retry.checkType))}
+          onRefresh={() => void verQ.refetch()}
+          onClose={() => setRetry(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={confirmSkip}
+        onClose={() => setConfirmSkip(false)}
+        onConfirm={() => skip.mutate()}
+        busy={skip.isPending}
+        title="Run skip trace?"
+        confirmLabel="Run skip trace"
+        body={<p className="m-0">Looks up alternate mobiles, emails and addresses from Digitap for this customer. Each run is a paid lookup.</p>}
+      />
     </div>
+  );
+}
+
+/** The compact per-row ADMIN action: Run / Re-run, or a disabled button saying why not. */
+function RunButton({ row, ran, busy, onRun }: { row: Row; ran: boolean; busy: boolean; onRun: () => void }) {
+  const cls = "inline-flex shrink-0 items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-navy hover:bg-grey-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+  const runnable = row.key === "skip" || runCheckOf(row) != null;
+  if (!runnable) {
+    return (
+      <button type="button" className={cls} disabled title={row.noRun ?? "This check cannot be run by staff."} aria-label={`Run ${row.title} (unavailable)`}>
+        <RotateCcw size={11} /> Run
+      </button>
+    );
+  }
+  const Icon = row.key === "skip" ? Radar : RotateCcw;
+  const label = row.key === "skip" ? "Run" : ran ? "Re-run" : "Run";
+  const hint = row.key === "bank" ? "Re-pulls the bureau report this analysis is read from" : row.key === "aadhaar-pan" ? "Re-runs the PAN check, which returns the linkage" : undefined;
+  return (
+    <button type="button" className={cls} onClick={onRun} disabled={busy} title={hint} aria-label={`${label} ${row.title}`}>
+      {busy ? <Loader2 size={11} className="animate-spin" /> : <Icon size={11} />} {label}
+    </button>
   );
 }
 

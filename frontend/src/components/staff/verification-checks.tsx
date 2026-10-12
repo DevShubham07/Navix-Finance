@@ -43,7 +43,7 @@ import { ConfirmDialog, EmptyState, ErrorState, Skeleton, StatusBadge, toast } f
  * the backend's real `CheckStatus` enum; this widened type only exists for this panel's display list.
  */
 type DisplayStatus = CheckStatus | "NOT_RUN";
-type DisplayStep = Omit<StepResult, "status"> & { status: DisplayStatus };
+export type DisplayStep = Omit<StepResult, "status"> & { status: DisplayStatus };
 
 /**
  * The {@link StatusBadge} kind for a check's status pill. EMPLOYMENT (the EPFO/UAN lookup) gates
@@ -71,7 +71,7 @@ const DERIVED_RENDERED_BY_PROVENANCE: ReadonlySet<string> = new Set([
  * needs the borrower's own consent redirect) even though they do get a synthetic placeholder card,
  * see {@link PLACEHOLDER_CHECKS}.
  */
-const RETRYABLE_CHECKS: readonly string[] = ["PAN", "EMAIL", "ADDRESS", "BUREAU", "EMPLOYMENT", "PENNY_DROP", "SELFIE"];
+export const RETRYABLE_CHECKS: readonly string[] = ["PAN", "EMAIL", "ADDRESS", "BUREAU", "EMPLOYMENT", "PENNY_DROP", "SELFIE"];
 
 /**
  * Checks that get a synthetic `NOT_RUN` placeholder card when `summary()` has no row for them yet —
@@ -482,7 +482,7 @@ function StillRunningNote({ onRefresh }: { onRefresh: () => void }) {
   );
 }
 
-function RetryDialog({
+export function RetryDialog({
   applicationId,
   step,
   currentCheckedAt,

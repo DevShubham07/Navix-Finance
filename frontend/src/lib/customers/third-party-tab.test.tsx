@@ -7,7 +7,13 @@ import { ThirdPartyTab } from "@/components/staff/customer-360/third-party-tab";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+/** Signs in as `role` for PermissionGate (it reads /api/auth/staff/me). */
+function signInAs(role: string) {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ session: { id: "7", name: "Meera", role } }))));
+}
 
 function renderTab(steps: StepResult[], applicationId: number | null = 318, profile: Record<string, unknown> = {}) {
   vi.spyOn(staffApi, "verifications").mockResolvedValue(steps);
@@ -124,5 +130,43 @@ describe("Third-party tab", () => {
     expect(await screen.findByText("No bureau report to analyse")).toBeInTheDocument();
     expect(screen.getByText("Analysed")).toBeInTheDocument();
     expect(screen.queryByText("Analysis pending")).not.toBeInTheDocument();
+  });
+
+  it("admin: every API row carries a compact Run / Re-run, borrower-only steps disabled", async () => {
+    signInAs("ADMIN");
+    renderTab([pan]);
+    await screen.findByText("Personal Information");
+    expect(await screen.findByRole("button", { name: "Re-run PAN Detail" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run Penny Drop" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run UAN / EPFO Detail" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run Skip Trace" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run eSign (unavailable)" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run Aadhaar Detail (DigiLocker) (unavailable)" })).toBeDisabled();
+  });
+
+  it("admin: Run opens the retry dialog and calls the admin retry endpoint", async () => {
+    signInAs("ADMIN");
+    const retry = vi.spyOn(staffApi, "retryVerification").mockResolvedValue({ ...pan, checkType: "EMPLOYMENT" } as StepResult);
+    renderTab([pan]);
+    fireEvent.click(await screen.findByRole("button", { name: "Run UAN / EPFO Detail" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    await vi.waitFor(() => expect(retry).toHaveBeenCalledWith(318, "EMPLOYMENT", {}));
+  });
+
+  it("admin: skip trace runs from the row after a confirm", async () => {
+    signInAs("ADMIN");
+    const run = vi.spyOn(skipTraceApi, "run").mockResolvedValue({ id: 1, status: "SUCCESS" } as never);
+    renderTab([pan]);
+    fireEvent.click(await screen.findByRole("button", { name: "Run Skip Trace" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Run skip trace" }));
+    await vi.waitFor(() => expect(run).toHaveBeenCalledWith(42));
+  });
+
+  it("non-admin roles see no Run buttons", async () => {
+    signInAs("CREDIT_EXECUTIVE");
+    renderTab([pan]);
+    await screen.findByText("Personal Information");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("button", { name: /^(Run|Re-run) / })).not.toBeInTheDocument();
   });
 });
