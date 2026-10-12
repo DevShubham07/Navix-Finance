@@ -108,7 +108,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
         {/* Collection % ------------------------------------------------- */}
         <ChartCard
           title={`Collection % (last ${MONTHS_BACK} months)`}
-          info="Per due month: verified payments ÷ what the loans due that month actually owed — interest only up to the day each was repaid (less for an early repayment), plus grace-day interest and late penalty for a late one. Loans not yet due count at their contract amount."
+          info="Each loan sits in the month it is DUE — not the month it was disbursed or paid. Collected = every verified payment on those loans, whenever it arrived, so a month keeps rising as late payments come in. Owed = what the loans actually had to pay: interest only to the day repaid if early, plus grace-day interest and late penalty if late; loans not yet due count at their contract amount."
           accent={SERIES.collected}
           {...shared}
         >

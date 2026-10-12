@@ -84,7 +84,10 @@ export function BusinessSnapshot(props: DashTabProps) {
       {!q.isError && (!s || pos) && (
         <>
           <SectionTitle>Business position</SectionTitle>
-          <p className="-mt-2 mb-3 text-xs text-grey-500">Loans disbursed in the selected period</p>
+          <p className="-mt-2 mb-3 text-xs text-grey-500">
+            Every card follows the same loans: those <b>disbursed</b> in the selected period, valued as of today. A loan
+            disbursed earlier is not counted here even if it was repaid in this period — Collection Amount below shows that.
+          </p>
         </>
       )}
       {q.isError || (s && !pos) ? null : !pos ? (
@@ -97,12 +100,19 @@ export function BusinessSnapshot(props: DashTabProps) {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {(
             [
-              ["Principal disbursed", "navy", Banknote, pos.principalPaise, "POSITION_PRINCIPAL", undefined, "Sum of principal on loans disbursed in the period."],
-              ["Net disbursed", "teal", Landmark, pos.netDisbursedPaise, "POSITION_NET", "after fee + GST", "Cash actually sent to borrowers: principal less processing fee and GST."],
-              ["Net receivable", "violet", Receipt, pos.receivablePaise, "POSITION_RECEIVABLE", "principal + interest to date", "Principal plus interest accrued to date, excluding late penalty."],
-              ["Total penalty", "red", TriangleAlert, pos.penaltyPaise, "POSITION_PENALTY", undefined, "Late penalty accrued on these loans."],
-              ["Net received", "emerald", CheckCircle2, pos.receivedPaise, "POSITION_RECEIVED", "verified payments", "Verified repayments received against these loans."],
-              ["Outstanding", "orange", Hourglass, pos.pendingPaise, "POSITION_PENDING", pos.waivedPaise > 0 ? `owed today · ${paiseToINR(pos.waivedPaise)} waived` : "owed today, after settlements", "Still owed today on these loans, after settlements."],
+              ["Principal disbursed", "navy", Banknote, pos.principalPaise, "POSITION_PRINCIPAL", "Loan amount given out",
+                "The full loan amount on these loans. Customers repay all of it, plus interest."],
+              ["Net disbursed", "teal", Landmark, pos.netDisbursedPaise, "POSITION_NET", "Cash sent to customers' banks",
+                "Loan amount minus the 10% processing fee and 18% GST on that fee: a ₹100 loan puts ₹88.20 in the customer's account."],
+              ["Net receivable", "violet", Receipt, pos.receivablePaise, "POSITION_RECEIVABLE", "Principal + interest so far",
+                "What customers owe on these loans before late fees: the loan amount plus 1% a day interest up to today."],
+              ["Total penalty", "red", TriangleAlert, pos.penaltyPaise, "POSITION_PENALTY", "Late fees",
+                "2% a day on the loan amount once a loan is past its due date and 1 grace day, capped at 30 days."],
+              ["Net received", "emerald", CheckCircle2, pos.receivedPaise, "POSITION_RECEIVED", "Repayments verified",
+                "Money customers have paid back on these loans and the accountant has verified, whenever it was paid."],
+              ["Outstanding", "orange", Hourglass, pos.pendingPaise, "POSITION_PENDING",
+                pos.waivedPaise > 0 ? `Still to collect · ${paiseToINR(pos.waivedPaise)} waived` : "Still to collect today",
+                "Receivable + penalty − received − anything waived in a settlement. Zero once every loan is repaid."],
             ] as const
           ).map(([title, tone, icon, paise, metric, caption, definition]) => (
             <PositionCard
