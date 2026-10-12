@@ -79,21 +79,8 @@ export function BusinessSnapshot(props: DashTabProps) {
 
   return (
     <div>
-      {/* ------------------------------------------------------------- KPIs */}
-      <SectionTitle>Key Performance Indicators</SectionTitle>
-      {q.isError ? (
-        <ChartCard title="Key Performance Indicators" error={q.error} onRetry={() => void q.refetch()} />
-      ) : !s ? (
-        placeholder(4)
-      ) : (
-        <div className={kpiGrid}>
-          <KpiCard title="Total Applications" tone="navy" icon={FileText} kpi={s.kpis.applications} onOpen={(m) => openMetric(m, "Total applications")} />
-          <KpiCard title="Disbursed Cases" tone="emerald" icon={CheckCircle2} kpi={s.kpis.disbursed} shareLabel={shareOf(s.kpis.disbursed.count, total, "applications")} onOpen={(m) => openMetric(m, "Disbursed cases")} />
-          <KpiCard title="Pending Cases" tone="orange" icon={Clock} kpi={s.kpis.pending} shareLabel={shareOf(s.kpis.pending.count, total, "applications")} onOpen={(m) => openMetric(m, "Pending cases")} />
-          <KpiCard title="Rejected Cases" tone="red" icon={XCircle} kpi={s.kpis.rejected} shareLabel={shareOf(s.kpis.rejected.count, total, "applications")} onOpen={(m) => openMetric(m, "Rejected cases")} />
-        </div>
-      )}
-
+      {/* ------------------------------------------------- Business position */}
+      {/* The money row comes first: it is what an admin wants to see on landing. */}
       {!q.isError && (!s || pos) && (
         <>
           <SectionTitle>Business position</SectionTitle>
@@ -144,6 +131,21 @@ export function BusinessSnapshot(props: DashTabProps) {
               onOpen={(m) => openMetric(m, title)}
             />
           ))}
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- KPIs */}
+      <SectionTitle>Key Performance Indicators</SectionTitle>
+      {q.isError ? (
+        <ChartCard title="Key Performance Indicators" error={q.error} onRetry={() => void q.refetch()} />
+      ) : !s ? (
+        placeholder(4)
+      ) : (
+        <div className={kpiGrid}>
+          <KpiCard title="Total Applications" tone="navy" icon={FileText} kpi={s.kpis.applications} onOpen={(m) => openMetric(m, "Total applications")} />
+          <KpiCard title="Disbursed Cases" tone="emerald" icon={CheckCircle2} kpi={s.kpis.disbursed} shareLabel={shareOf(s.kpis.disbursed.count, total, "applications")} onOpen={(m) => openMetric(m, "Disbursed cases")} />
+          <KpiCard title="Pending Cases" tone="orange" icon={Clock} kpi={s.kpis.pending} shareLabel={shareOf(s.kpis.pending.count, total, "applications")} onOpen={(m) => openMetric(m, "Pending cases")} />
+          <KpiCard title="Rejected Cases" tone="red" icon={XCircle} kpi={s.kpis.rejected} shareLabel={shareOf(s.kpis.rejected.count, total, "applications")} onOpen={(m) => openMetric(m, "Rejected cases")} />
         </div>
       )}
 

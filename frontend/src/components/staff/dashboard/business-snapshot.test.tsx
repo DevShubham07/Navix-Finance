@@ -69,6 +69,14 @@ describe("BusinessSnapshot position section", () => {
     }
   });
 
+  it("puts Business position first, above the KPI counts", () => {
+    data = full;
+    const { container } = wrap(<BusinessSnapshot {...props()} />);
+    const text = container.textContent ?? "";
+    expect(text.indexOf("Business position")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Business position")).toBeLessThan(text.indexOf("Key Performance Indicators"));
+  });
+
   it("explains settlement waivers in the Pending popover", async () => {
     data = full;
     wrap(<BusinessSnapshot {...props()} />);
