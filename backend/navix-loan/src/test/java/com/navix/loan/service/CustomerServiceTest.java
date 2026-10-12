@@ -894,6 +894,19 @@ class CustomerServiceTest {
     }
 
     @Test
+    void byIds_asCreditExecutive_includesCustomersAllocatedToThemAsOwner() {
+        ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(12L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("12")).thenReturn(List.of());
+        // Allocated through the owner picker, which offers Credit Executives.
+        when(ownerRepository.findCustomerIdsByOwnerStaffId(12L)).thenReturn(java.util.Set.of(9000002L));
+
+        assertThat(visibleOfTheTwo()).extracting(CustomerSummary::customerId)
+                .containsExactly(9000002L);
+    }
+
+    @Test
     void byIds_ignoresNonDecisionEventsWhenScoping() {
         ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
         givenTwoCustomers();

@@ -162,8 +162,8 @@ public class CustomerService {
     /**
      * The caller's customer scope, or {@code null} when they may see the entire book.
      *
-     * <p>A scoped staffer sees a customer when they have an application <b>assigned</b> to them or
-     * have <b>recorded a decision</b> on one. Roles that allocate the book (TELECALLER, via
+     * <p>A scoped staffer sees a customer when they have an application <b>assigned</b> to them,
+     * <b>own</b> the customer ({@code customer_owner}), or have <b>recorded a decision</b> on one. Roles that allocate the book (TELECALLER, via
      * {@code customer:assign}) additionally see <b>unallocated</b> customers — without that carve-out
      * a telecaller sees zero rows on {@code ?seg=unallocated} and can never claim anyone, which is
      * their entire job.
@@ -195,6 +195,10 @@ public class CustomerService {
         Set<Long> owned = new HashSet<>(
                 nullSafe(applicationRepository.findCustomerIdsByAssignedExecutiveId(staffId)));
         owned.addAll(decidedCustomerIds(staffId));
+        // A customer allocated to this staffer through the owner picker (customer_owner) is theirs
+        // too. The picker offers Credit Executives, so without this an executive could be handed a
+        // customer and then get a 404 on the roll-up, leaving every tab of the pop-up empty.
+        owned.addAll(nullSafe(ownerRepository.findCustomerIdsByOwnerStaffId(staffId)));
 
         // A collections officer acquires neither of the two above: the credit assignment is a
         // different field (assigned_executive_id) and DECISION_ACTIONS are all credit/disbursement
