@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Loader2, Radar, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronRight, Link2, Loader2, Radar, RotateCcw } from "lucide-react";
 import { Badge, ConfirmDialog, EmptyState, ErrorState, Skeleton, toast } from "@/components/ui";
 import { CreditProfileCard } from "@/components/staff/credit-profile-card";
 import { CreditScoreGauge } from "@/components/staff/credit-score-gauge";
 import { SkipTracePanel } from "@/components/staff/skip-trace-panel";
+import { ResumeLinkDialog } from "@/components/staff/resume-link-dialog";
 import { PermissionGate } from "@/components/staff/pipeline/actions";
 import { errMessage } from "@/components/staff/pipeline/hooks";
 import { RETRYABLE_CHECKS, RetryDialog, type DisplayStep } from "@/components/staff/verification-checks";
@@ -35,8 +36,8 @@ type Row = {
   body?: (s: StepResult, aadhaar?: string | null) => React.ReactNode;
   /** The check an ADMIN re-run calls (the backend retry allow-list), when it is not `checkType`. */
   runCheck?: string;
-  /** Why this row has no staff re-run — shown as the disabled button's tooltip. */
-  noRun?: string;
+  /** A borrower-only step: staff cannot run it, only send the borrower a link to finish it. */
+  sendLink?: boolean;
 };
 
 /** The check type an ADMIN "Run" on this row re-runs, or null when staff cannot run it. */
@@ -49,7 +50,7 @@ const ROWS: Row[] = [
   { key: "pan", title: "PAN Detail", checkType: "PAN", body: (s, aadhaar) => <PanBody step={s} aadhaar={aadhaar} /> },
   { key: "aadhaar-pan", title: "Aadhaar–PAN Linkage", checkType: AADHAAR_PAN_LINK, runCheck: "PAN", body: (s) => <AadhaarPanLinkBody step={s} /> },
   { key: "uan", title: "UAN / EPFO Detail", checkType: "EMPLOYMENT", body: (s) => <UanBody step={s} /> },
-  { key: "aadhaar", title: "Aadhaar Detail (DigiLocker)", checkType: "AADHAAR", noRun: "DigiLocker needs the borrower's own consent — send them the link from Verifications.", body: (s, aadhaar) => <AadhaarBody step={s} aadhaar={aadhaar} /> },
+  { key: "aadhaar", title: "Aadhaar Detail (DigiLocker)", checkType: "AADHAAR", sendLink: true, body: (s, aadhaar) => <AadhaarBody step={s} aadhaar={aadhaar} /> },
   { key: "email", title: "Email Verification", checkType: "EMAIL", body: (s) => <EmailBody step={s} /> },
   // The analysis is read off the bureau report until the bank-statement analyser is live.
   { key: "bank", title: "Bank Statement Analysis", runCheck: "BUREAU" },
@@ -67,7 +68,7 @@ const ROWS: Row[] = [
   { key: "penny", title: "Penny Drop", checkType: "PENNY_DROP", body: (s) => <PennyBody step={s} /> },
   { key: "selfie", title: "Selfie / Liveness", checkType: "SELFIE", body: (s) => <SelfieBody step={s} /> },
   { key: "address", title: "Address Check", checkType: "ADDRESS", body: (s) => <AddressCheckBody step={s} /> },
-  { key: "esign", title: "eSign", checkType: "ESIGN", noRun: "eSign is the borrower's own legally binding signature — staff cannot run it.", body: (s) => <EsignBody step={s} /> },
+  { key: "esign", title: "eSign", checkType: "ESIGN", sendLink: true, body: (s) => <EsignBody step={s} /> },
   { key: "skip", title: "Skip Trace" },
 ];
 
@@ -86,7 +87,7 @@ function Header({ title, open, pill, provider, when }: {
   );
 }
 
-export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
+export function ThirdPartyTab({ detail, customerId, applicationId, app }: TabCtx) {
   const aadhaar = detail.profile?.aadhaar ?? null;
   const verQ = useQuery({
     queryKey: ["verifications", applicationId],
@@ -118,6 +119,14 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
     applicationId != null && isRetryStillRunning(inFlight, retryGuardKey(applicationId, c), stepByType(c)?.checkedAt);
   const openRetry = (c: string) =>
     setRetry(stepByType(c) ?? { checkType: c, status: "NOT_RUN", message: null, derived: {} } as DisplayStep);
+
+  // DigiLocker and eSign are the borrower's own acts: the backend issues a resume link only on a
+  // SANCTIONED file (the offer journey) whose step is not already done.
+  const [linkFor, setLinkFor] = React.useState<string | null>(null);
+  const linkBlocked = (c: string): string | null =>
+    stepByType(c)?.status === "PASS" ? "Already completed by the borrower"
+    : app?.status !== "SANCTIONED" ? "Available once the file is sanctioned (the borrower's offer journey)"
+    : null;
 
   const [confirmSkip, setConfirmSkip] = React.useState(false);
   const skip = useMutation({
@@ -166,6 +175,9 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
                 <Header title={r.title} open={isOpen} pill={pill} provider={r.key === "bank" && !bank ? "CRIF" : s?.provider} when={s ? checkedAt(s) : null} />
               </button>
               <PermissionGate permission="verification:retry">
+                {r.sendLink && r.checkType ? (
+                  <SendLinkButton title={r.title} blocked={linkBlocked(r.checkType)} onClick={() => setLinkFor(r.checkType!)} />
+                ) : (
                 <RunButton
                   row={r}
                   ran={(() => { const c = runCheckOf(r); return c ? stepByType(c) != null : false; })()}
@@ -175,6 +187,7 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
                     else { const c = runCheckOf(r); if (c) openRetry(c); }
                   }}
                 />
+                )}
               </PermissionGate>
             </div>
             {isOpen && (
@@ -217,6 +230,7 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
           onClose={() => setRetry(null)}
         />
       )}
+      {linkFor && <ResumeLinkDialog applicationId={applicationId} checkType={linkFor} onClose={() => setLinkFor(null)} />}
       <ConfirmDialog
         open={confirmSkip}
         onClose={() => setConfirmSkip(false)}
@@ -230,13 +244,26 @@ export function ThirdPartyTab({ detail, customerId, applicationId }: TabCtx) {
   );
 }
 
+const ROW_ACTION =
+  "inline-flex shrink-0 items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-navy hover:bg-grey-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+
+/** Borrower-only steps (DigiLocker, eSign): send the borrower a link instead of a Run. */
+function SendLinkButton({ title, blocked, onClick }: { title: string; blocked: string | null; onClick: () => void }) {
+  return (
+    <button type="button" className={ROW_ACTION} onClick={onClick} disabled={blocked != null}
+      title={blocked ?? "Send the borrower a link to finish this step"} aria-label={`Send link for ${title}`}>
+      <Link2 size={11} /> Send link
+    </button>
+  );
+}
+
 /** The compact per-row ADMIN action: Run / Re-run, or a disabled button saying why not. */
 function RunButton({ row, ran, busy, onRun }: { row: Row; ran: boolean; busy: boolean; onRun: () => void }) {
-  const cls = "inline-flex shrink-0 items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-navy hover:bg-grey-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
+  const cls = ROW_ACTION;
   const runnable = row.key === "skip" || runCheckOf(row) != null;
   if (!runnable) {
     return (
-      <button type="button" className={cls} disabled title={row.noRun ?? "This check cannot be run by staff."} aria-label={`Run ${row.title} (unavailable)`}>
+      <button type="button" className={cls} disabled title="This check cannot be run by staff." aria-label={`Run ${row.title} (unavailable)`}>
         <RotateCcw size={11} /> Run
       </button>
     );
