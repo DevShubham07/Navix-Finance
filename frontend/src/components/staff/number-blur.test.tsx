@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { BLUR_ATTR, BLUR_HOSTS, CHART_ATTR, NumberBlur, isAnalyticsRoute, scan } from "./number-blur";
+import { render as renderRtl, waitFor } from "@testing-library/react";
+import { featureFlagsApi } from "@/lib/api/applications";
+import { BLUR_ATTR, BLUR_HOSTS, CHART_ATTR, NumberBlur, REDACT_FLAG, isAnalyticsRoute, scan } from "./number-blur";
 
 let pathname = "/staff/customers";
 vi.mock("next/navigation", () => ({ usePathname: () => pathname }));
@@ -81,5 +83,56 @@ describe("number blur", () => {
     } finally {
       BLUR_HOSTS.delete(window.location.hostname);
     }
+  });
+
+  describe("redact-figures flag", () => {
+    const tree = (
+      <>
+        <NumberBlur />
+        <main>
+          <p id="kpi">₹4.2 Cr</p>
+        </main>
+      </>
+    );
+    afterEach(() => {
+      BLUR_HOSTS.delete(window.location.hostname);
+      vi.restoreAllMocks();
+    });
+
+    it("flag OFF on the demo host: figures are shown", async () => {
+      pathname = "/staff/dashboard";
+      BLUR_HOSTS.add(window.location.hostname);
+      const get = vi.spyOn(featureFlagsApi, "get").mockResolvedValue({ [REDACT_FLAG]: false });
+      renderRtl(tree);
+      await waitFor(() => expect(get).toHaveBeenCalled());
+      await waitFor(() => expect(blurred($("kpi"))).toBe(false));
+    });
+
+    it("blurs from the first paint, and stays blurred when the flag is ON", async () => {
+      pathname = "/staff/dashboard";
+      BLUR_HOSTS.add(window.location.hostname);
+      let resolve: (v: Record<string, boolean>) => void = () => {};
+      vi.spyOn(featureFlagsApi, "get").mockReturnValue(new Promise((r) => { resolve = r; }));
+      renderRtl(tree);
+      expect(blurred($("kpi"))).toBe(true); // before the flag has loaded
+      resolve({ [REDACT_FLAG]: true });
+      await Promise.resolve();
+      expect(blurred($("kpi"))).toBe(true);
+    });
+
+    it("fails closed: no row, or an unreadable flag, keeps the blur", async () => {
+      pathname = "/staff/dashboard";
+      BLUR_HOSTS.add(window.location.hostname);
+      vi.spyOn(featureFlagsApi, "get").mockRejectedValue(new Error("401"));
+      renderRtl(tree);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(blurred($("kpi"))).toBe(true);
+    });
+
+    it("never fetches the flag off the demo host", () => {
+      const get = vi.spyOn(featureFlagsApi, "get");
+      renderRtl(tree);
+      expect(get).not.toHaveBeenCalled();
+    });
   });
 });

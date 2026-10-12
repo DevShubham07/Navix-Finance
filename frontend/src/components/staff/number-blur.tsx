@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { featureFlagsApi } from "@/lib/api/applications";
 
 /**
  * Demo host: on app.dhanboost.com the staff console hides how big the business is — dashboard and
@@ -15,7 +16,17 @@ import { usePathname } from "next/navigation";
  *    sidebar badges).
  * Figures are flagged with an attribute React never manages, so re-renders cannot strip it; charts
  * are frosted whole, with their tooltips suppressed.
+ *
+ * Switch: the `redact-figures` row of the shared `feature_flag` table (no redeploy; SQL only, like
+ * every flag). The backend and database are shared with the main site, but only this host ever
+ * blurs. Fail-closed: a missing row or a failed read keeps the blur ON, and it is on from the first
+ * paint, lifted only once the flag reads false — so real figures never flash on screen.
+ *   update feature_flag set enabled = false where flag_key = 'redact-figures';   -- show figures
+ *   insert into feature_flag (flag_key, enabled, description, created_at)
+ *     values ('redact-figures', false, 'app.dhanboost.com figure blur', now())
+ *     on conflict (flag_key) do update set enabled = excluded.enabled;            -- if no row yet
  */
+export const REDACT_FLAG = "redact-figures";
 export const BLUR_HOSTS = new Set(["app.dhanboost.com"]);
 export const BLUR_ATTR = "data-num-blur";
 export const CHART_ATTR = "data-redact-chart";
@@ -67,9 +78,27 @@ export function clear() {
 export function NumberBlur() {
   const pathname = usePathname() ?? "";
   const wholeMain = isAnalyticsRoute(pathname);
+  // Blur until the flag says otherwise; only an explicit `false` lifts it.
+  const [flagOn, setFlagOn] = useState(true);
 
   useEffect(() => {
     if (!BLUR_HOSTS.has(window.location.hostname)) return;
+    let live = true;
+    featureFlagsApi
+      .get()
+      .then((flags) => {
+        if (live) setFlagOn(flags?.[REDACT_FLAG] !== false);
+      })
+      .catch(() => {
+        /* unreadable: stay blurred */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!BLUR_HOSTS.has(window.location.hostname) || !flagOn) return;
     scan(document.body, wholeMain);
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
@@ -85,7 +114,7 @@ export function NumberBlur() {
       observer.disconnect();
       clear();
     };
-  }, [wholeMain]);
+  }, [wholeMain, flagOn]);
 
   // SVG text outside a chart wrapper takes a url() filter — CSS blur() on SVG elements is unreliable.
   return (
