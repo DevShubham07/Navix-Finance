@@ -1,12 +1,16 @@
 import { type NextRequest } from "next/server";
 import { getStaffSession } from "@/lib/api/bff-session";
-import { proxyToBackend, unauthorized } from "@/lib/api/bff-proxy";
+import { proxyToBackend, joinPath, unauthorized } from "@/lib/api/bff-proxy";
 
 /** Onboarding waitlist (staff, ADMIN enforced by the backend). `?q=` rides along via proxyToBackend. */
-async function handle(req: NextRequest) {
+type Ctx = { params: Promise<{ path?: string[] }> };
+
+async function handle(req: NextRequest, ctx: Ctx) {
   const session = await getStaffSession();
   if (!session) return unauthorized("Staff session required.");
-  return proxyToBackend(req, "/api/staff/onboarding-waitlist", session.token);
+  const suffix = joinPath((await ctx.params).path);
+  const backendPath = suffix ? `/api/staff/onboarding-waitlist/${suffix}` : "/api/staff/onboarding-waitlist";
+  return proxyToBackend(req, backendPath, session.token);
 }
 
 export const GET = handle;
