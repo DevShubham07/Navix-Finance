@@ -63,6 +63,11 @@ public class DsaController {
         return ApiResponse.ok(dsaService.outreach(id, req));
     }
 
+    @GetMapping("/leads/{id}/email-templates")
+    public ApiResponse<List<com.navix.loan.dto.DsaDtos.EmailTemplateView>> emailTemplates(@PathVariable Long id) {
+        return ApiResponse.ok(dsaService.emailTemplates(id));
+    }
+
     @GetMapping("/commissions")
     public ApiResponse<List<DsaCommissionView>> commissions() {
         return ApiResponse.ok(dsaService.commissions());

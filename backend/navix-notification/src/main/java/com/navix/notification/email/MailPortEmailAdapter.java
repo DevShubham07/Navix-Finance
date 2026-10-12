@@ -31,11 +31,15 @@ public class MailPortEmailAdapter implements MailPort {
 
     @Override
     public boolean send(String to, String subject, String textBody) {
+        return sendHtml(to, subject, textBody, htmlRenderer.render(subject, textBody));
+    }
+
+    @Override
+    public boolean sendHtml(String to, String subject, String textBody, String html) {
         if (!Boolean.TRUE.equals(emailProperties.enabled())) {
             log.info("EMAIL disabled — outbound mail via MailPort not sent");
             return false;
         }
-        String html = htmlRenderer.render(subject, textBody);
         EmailResult result = emailClient.send(new EmailMessage(to, subject, textBody, html));
         if (!result.ok()) {
             log.warn("MailPort send failed: {}", result.error());

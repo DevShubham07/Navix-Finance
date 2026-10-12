@@ -182,6 +182,16 @@ public class ApplicationController {
         return ApiResponse.ok(adminApplications.listAll());
     }
 
+    /** ADMIN — one page of {@link #all()}, searched, completeness-filtered and paged server-side. */
+    @GetMapping("/all/page")
+    public ApiResponse<com.navix.loan.dto.AdminApplicationDtos.AdminApplicationPage> allPage(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String completeness,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        return ApiResponse.ok(adminApplications.page(q, completeness, page, size));
+    }
+
     /** ADMIN — the rejection register (self-employed, past delinquency, manual), newest first. */
     @GetMapping("/rejections")
     public ApiResponse<List<RejectionView>> rejections(@RequestParam(required = false) String reason) {

@@ -1,9 +1,8 @@
 /**
  * Pure helpers for the ADMIN "All applications" register (`/staff/admin/all-applications`).
  *
- * The register fetches every application once (`GET /api/applications/all`) and filters in the
- * browser, so the filter lives here — a plain function the page can `useMemo` and a test can pin —
- * instead of an inline closure re-run on every render.
+ * The register pages server-side (`GET /api/applications/all/page`); this filter is the browser twin
+ * of that search, applied to the full register (`GET /api/applications/all`) for "Download all".
  */
 
 import { ApplicationApiError, statusLabel, type AdminApplicationView } from "@/lib/api/applications";

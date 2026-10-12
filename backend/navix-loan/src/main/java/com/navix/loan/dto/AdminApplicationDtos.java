@@ -5,6 +5,7 @@ import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * ADMIN-only flat view over every application — complete AND incomplete (DRAFT / partially filled) —
@@ -52,6 +53,11 @@ public final class AdminApplicationDtos {
                     r.getReasonCode(), r.getReasonDetail(), Boolean.TRUE.equals(r.getAuto()),
                     r.getBlockedUntil(), r.getCreatedAt());
         }
+    }
+
+    /** One page of the ADMIN register; {@code total} matches the filter, {@code allCount} is every row. */
+    public record AdminApplicationPage(List<AdminApplicationView> rows, int page, int size, long total,
+                                       long allCount) {
     }
 
     public record AdminApplicationView(

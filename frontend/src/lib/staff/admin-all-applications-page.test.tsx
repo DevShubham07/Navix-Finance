@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApplicationApiError, staffApi, type AdminApplicationView } from "@/lib/api/applications";
 import { formatDateTime } from "@/lib/utils";
 import AdminAllApplicationsPage from "@/app/staff/admin/all-applications/page";
+import { filterAdminApplications } from "@/lib/staff/admin-all-applications";
 
 function app(overrides: Partial<AdminApplicationView> = {}): AdminApplicationView {
   return {
@@ -61,6 +62,14 @@ function mockSession(session: { id: string; name: string; role: string } | null)
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ session })));
 }
 
+/** A stand-in for the server-paged register, filtering ROWS the way the backend does. */
+function fakeServer() {
+  return vi.spyOn(staffApi, "listAllApplicationsPage").mockImplementation(async (p) => {
+    const rows = filterAdminApplications(ROWS, p.completeness ?? "ALL", p.q ?? "");
+    return { rows: rows.slice((p.page - 1) * p.size, p.page * p.size), page: p.page, size: p.size, total: rows.length, allCount: ROWS.length };
+  });
+}
+
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -78,7 +87,7 @@ afterEach(() => {
 describe("AdminAllApplicationsPage", () => {
   it("never asks a non-admin's register for data", async () => {
     mockSession({ id: "7", name: "Head", role: "CREDIT_HEAD" });
-    const list = vi.spyOn(staffApi, "listAllApplications").mockResolvedValue(ROWS);
+    const list = fakeServer();
     renderPage();
 
     expect(await screen.findByText("Admin access only.")).toBeInTheDocument();
@@ -87,7 +96,7 @@ describe("AdminAllApplicationsPage", () => {
 
   it("does not fire for a signed-out session, and says so instead of claiming no access", async () => {
     mockSession(null);
-    const list = vi.spyOn(staffApi, "listAllApplications").mockResolvedValue(ROWS);
+    const list = fakeServer();
     renderPage();
 
     expect(await screen.findByText("Couldn't confirm your staff session.")).toBeInTheDocument();
@@ -99,7 +108,7 @@ describe("AdminAllApplicationsPage", () => {
   it("asks once for an admin and does not retry a 4xx", async () => {
     mockSession({ id: "1", name: "Admin", role: "ADMIN" });
     const list = vi
-      .spyOn(staffApi, "listAllApplications")
+      .spyOn(staffApi, "listAllApplicationsPage")
       .mockRejectedValue(new ApplicationApiError("Not allowed", "FORBIDDEN_ROLE", 403));
     // A client whose default WOULD retry, so the page's own `retry` is what is under test.
     const client = new QueryClient({ defaultOptions: { queries: { retry: 3 } } });
@@ -115,7 +124,7 @@ describe("AdminAllApplicationsPage", () => {
 
   it("shows when each application entered its stage", async () => {
     mockSession({ id: "1", name: "Admin", role: "ADMIN" });
-    vi.spyOn(staffApi, "listAllApplications").mockResolvedValue(ROWS);
+    fakeServer();
     renderPage();
 
     await screen.findByText("Asha Rao");
@@ -130,7 +139,7 @@ describe("AdminAllApplicationsPage", () => {
 
   it("offers Clear only while a filter is active, and Clear restores the whole register", async () => {
     mockSession({ id: "1", name: "Admin", role: "ADMIN" });
-    vi.spyOn(staffApi, "listAllApplications").mockResolvedValue(ROWS);
+    fakeServer();
     renderPage();
 
     await screen.findByText("Asha Rao");
@@ -145,7 +154,7 @@ describe("AdminAllApplicationsPage", () => {
     expect(screen.queryByText("Asha Rao")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Completeness" }), { target: { value: "INCOMPLETE" } });
-    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("1 of 2")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 

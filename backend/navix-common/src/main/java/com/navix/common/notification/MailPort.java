@@ -18,4 +18,7 @@ public interface MailPort {
      *         in a state that counts as success), {@code false} on a real delivery failure
      */
     boolean send(String to, String subject, String textBody);
+
+    /** Send caller-built HTML as-is (with {@code textBody} as the plain-text alternative). */
+    boolean sendHtml(String to, String subject, String textBody, String html);
 }

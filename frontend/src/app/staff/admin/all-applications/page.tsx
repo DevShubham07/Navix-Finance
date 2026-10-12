@@ -2,7 +2,7 @@
 
 import { TrustStars } from "@/components/staff/trust-stars";
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, FilterX } from "lucide-react";
 import { EmptyState, ErrorState, Select, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -13,7 +13,7 @@ import { ExportMenu } from "@/components/staff/export-menu";
 import { bureauStateLabel } from "@/components/staff/bureau-state";
 import type { ExportColumn } from "@/lib/export/exporters";
 import { staffApi, paiseToINR, statusLabel, type AdminApplicationView } from "@/lib/api/applications";
-import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
+import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { formatDateTime } from "@/lib/utils";
 import { StageSignal } from "@/components/staff/stage-signal";
 import {
@@ -63,7 +63,8 @@ const EXPORT_COLUMNS: ExportColumn<AdminApplicationView>[] = [
 /**
  * Admin · all applications — EVERY application, complete and incomplete (DRAFT / partially filled),
  * with full KYC detail and an onboarding-completeness flag. Search + completeness filter; full CSV /
- * PDF export. Live `/api/applications/all`. ADMIN only.
+ * PDF export. Paged server-side (`/api/applications/all/page`) — only the page on screen is loaded;
+ * "Download all" fetches the full register on demand. ADMIN only.
  */
 export default function AdminAllApplicationsPage() {
   const me = useStaffMe();
@@ -79,19 +80,28 @@ export default function AdminAllApplicationsPage() {
   const [searchKey, setSearchKey] = React.useState(0);
   const [filter, setFilter] = React.useState<CompletenessFilter>("ALL");
   const [openId, setOpenId] = React.useState<number | null>(null);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSizeState] = React.useState(25);
+  const setPageSize = (n: number) => {
+    setPageSizeState(n);
+    setPage(1);
+  };
   const q = useQuery({
-    queryKey: ["admin-all-applications"],
-    queryFn: staffApi.listAllApplications,
+    queryKey: ["admin-all-applications-page", query, filter, page, pageSize],
+    queryFn: () => staffApi.listAllApplicationsPage({ q: query, completeness: filter, page, size: pageSize }),
     enabled: isAdmin,
+    // Keep the previous page on screen while the next one loads instead of flashing a skeleton.
+    placeholderData: keepPreviousData,
     // A 4xx (refused, signed out) will not change on a second ask; only a 5xx/network blip is retried.
     retry: retryUnlessClientError,
   });
 
-  // Memoised so `rows` keeps its identity between renders that change nothing it depends on —
-  // usePagination's own memo over `rows` can then hit instead of re-slicing every render.
-  const rows = React.useMemo(() => filterAdminApplications(q.data ?? [], filter, query), [q.data, filter, query]);
-  const allCount = q.data?.length ?? 0;
-  const { pageRows, page, setPage, pageSize, setPageSize, pageCount, total } = usePagination(rows);
+  const pageRows = q.data?.rows ?? [];
+  const total = q.data?.total ?? 0;
+  const allCount = q.data?.allCount ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  // "Download all" — the whole register, filtered exactly as the server filters the pages.
+  const getAllRows = async () => filterAdminApplications(await staffApi.listAllApplications(), filter, query);
   const filtered = isAdminApplicationsFilterActive(filter, query);
 
   const clearFilters = () => {
@@ -122,7 +132,8 @@ export default function AdminAllApplicationsPage() {
           subtitle="Full application register"
           fileBase="dhanboost-all-applications"
           columns={EXPORT_COLUMNS}
-          rows={rows}
+          rows={pageRows}
+          getAllRows={getAllRows}
         />
         {/* `refetch()` ignores `enabled`, so the button is held until the role is known to be ADMIN. */}
         <button
@@ -149,7 +160,10 @@ export default function AdminAllApplicationsPage() {
         <Select
           aria-label="Completeness"
           value={filter}
-          onChange={(e) => setFilter(e.target.value as CompletenessFilter)}
+          onChange={(e) => {
+            setFilter(e.target.value as CompletenessFilter);
+            setPage(1);
+          }}
           className="!mb-0"
           options={[
             { value: "ALL", label: "All applications" },
@@ -169,7 +183,7 @@ export default function AdminAllApplicationsPage() {
         {/* Only once the register has loaded — "0 of 0" before then would read as an empty register. */}
         {q.data && (
           <span className="pb-2 text-xs text-muted" aria-live="polite">
-            {rows.length} of {allCount}
+            {total} of {allCount}
           </span>
         )}
       </div>
@@ -274,7 +288,7 @@ export default function AdminAllApplicationsPage() {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
+                {pageRows.length === 0 && (
                   <EmptyState title="No applications match." inTable={14} />
                 )}
               </tbody>

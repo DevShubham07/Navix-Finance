@@ -4,6 +4,7 @@ import com.navix.common.exception.BusinessException;
 import com.navix.common.security.ActorContext;
 import com.navix.common.security.CurrentActor;
 import com.navix.loan.domain.ApplicationStatus;
+import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationPage;
 import com.navix.loan.dto.AdminApplicationDtos.AdminApplicationView;
 import com.navix.loan.dto.BureauState;
 import com.navix.loan.dto.AdminApplicationDtos.RejectionView;
@@ -65,7 +66,54 @@ public class AdminApplicationService {
     @Transactional(readOnly = true)
     public List<AdminApplicationView> listAll() {
         requireAdmin();
-        List<LoanApplication> apps = applicationRepository.findAll();
+        return enrich(applicationRepository.findAll().stream()
+                .sorted(Comparator.comparing(LoanApplication::getId).reversed()).toList());
+    }
+
+    static final int MAX_PAGE_SIZE = 100;
+
+    /**
+     * One page of {@link #listAll()}: search ({@code q} over app id, customer id, status, name, PAN,
+     * mobile, email) and paging run in SQL, and only the page on screen is enriched. A completeness
+     * filter ({@code COMPLETE}/{@code INCOMPLETE}) is computed over the search matches first — it is
+     * derived from verification evidence, not a column. ADMIN only.
+     */
+    @Transactional(readOnly = true)
+    public AdminApplicationPage page(String q, String completeness, int page, int size) {
+        requireAdmin();
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        int safePage = Math.max(1, page);
+        String needle = q == null || q.isBlank() ? "%"
+                : "%" + q.trim().toLowerCase().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        List<Long> ids = applicationRepository.findAdminRegisterIds(needle);
+        String mode = completeness == null ? "ALL" : completeness.trim().toUpperCase();
+        if ("COMPLETE".equals(mode) || "INCOMPLETE".equals(mode)) {
+            ids = completeAmong(ids, "COMPLETE".equals(mode));
+        }
+        long total = ids.size();
+        int from = (int) Math.min(total, (long) (safePage - 1) * safeSize);
+        List<Long> pageIds = ids.subList(from, (int) Math.min(total, from + safeSize));
+        Map<Long, LoanApplication> byId = applicationRepository.findAllById(pageIds).stream()
+                .collect(Collectors.toMap(LoanApplication::getId, a -> a));
+        List<LoanApplication> apps = pageIds.stream().map(byId::get).filter(Objects::nonNull).toList();
+        return new AdminApplicationPage(enrich(apps), safePage, safeSize, total, applicationRepository.count());
+    }
+
+    /** The ids (order kept) whose completeness equals {@code wantComplete} — same rule as {@link #enrich}. */
+    private List<Long> completeAmong(List<Long> ids, boolean wantComplete) {
+        if (ids.isEmpty()) {
+            return ids;
+        }
+        Map<Long, Integer> completed = verification.requiredPassedCounts(applicationRepository.findAllById(ids));
+        Set<Long> agreed = applicationRepository.findIdsWithTermsAccepted(ids);
+        int required = ApplicationVerificationService.requiredCount();
+        return ids.stream()
+                .filter(id -> (completed.getOrDefault(id, 0) >= required && agreed.contains(id)) == wantComplete)
+                .toList();
+    }
+
+    /** Full register rows for {@code apps}, in the order given — every lookup batched over the list. */
+    private List<AdminApplicationView> enrich(List<LoanApplication> apps) {
         if (apps.isEmpty()) {
             return List.of();
         }
@@ -91,7 +139,6 @@ public class AdminApplicationService {
         Map<Long, com.navix.common.loan.TrustSignals> trustByCustomer = trustSignals.forCustomers(
                 apps.stream().map(LoanApplication::getCustomerId).filter(Objects::nonNull).distinct().toList());
         return apps.stream()
-                .sorted(Comparator.comparing(LoanApplication::getId).reversed())
                 .map(a -> {
                     CustomerProfile p = byApp.get(a.getId());
                     BureauState bureauState = bureauStates.getOrDefault(a.getId(), BureauState.NOT_FETCHED);

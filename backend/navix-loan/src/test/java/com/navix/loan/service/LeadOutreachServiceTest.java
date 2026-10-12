@@ -22,7 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/** Rate limits, the NO_EMAIL skip, and "an SMS gateway failure is recorded, never thrown". */
+/** Rate limits, the NO_EMAIL refusal, templates, and "an SMS gateway failure is recorded, never thrown". */
 @ExtendWith(MockitoExtension.class)
 class LeadOutreachServiceTest {
 
@@ -48,7 +48,7 @@ class LeadOutreachServiceTest {
         when(outreachRepository.countByLeadIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(1L), any()))
                 .thenReturn(3L);
 
-        assertThatThrownBy(() -> service().send(l, 5L, new OutreachRequest("EMAIL", "hi", "hello")))
+        assertThatThrownBy(() -> service().send(l, 5L, new OutreachRequest("EMAIL", "INTRO", null)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("OUTREACH_RATE_LIMITED"));
     }
@@ -59,22 +59,49 @@ class LeadOutreachServiceTest {
         when(outreachRepository.countByLeadIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
         when(outreachRepository.countByDsaStaffIdAndCreatedAtAfter(anyLong(), any())).thenReturn(50L);
 
-        assertThatThrownBy(() -> service().send(l, 5L, new OutreachRequest("EMAIL", "hi", "hello")))
+        assertThatThrownBy(() -> service().send(l, 5L, new OutreachRequest("EMAIL", "INTRO", null)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("OUTREACH_RATE_LIMITED"));
     }
 
     @Test
-    void emailWithNoAddressIsSkipped_notThrown() {
+    void emailWithNoAddressOnFileOrTypedIsRefused() {
         Lead l = lead(1L, "9876543210", null);
         when(outreachRepository.countByLeadIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
         when(outreachRepository.countByDsaStaffIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
 
-        OutreachResultView result = service().send(l, 5L, new OutreachRequest("EMAIL", "hi", "hello"));
+        assertThatThrownBy(() -> service().send(l, 5L, new OutreachRequest("EMAIL", "INTRO", null)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("NO_EMAIL"));
+        verify(mailPort, never()).sendHtml(anyString(), anyString(), anyString(), anyString());
+    }
 
-        assertThat(result.status()).isEqualTo("SKIPPED");
-        assertThat(result.error()).isEqualTo("NO_EMAIL");
-        verify(mailPort, never()).send(anyString(), anyString(), anyString());
+    @Test
+    void typedEmailIsSavedOntoTheLeadAndSentTheBrandedTemplate() {
+        Lead l = lead(1L, "9876543210", null);
+        l.setName("ravi kumar");
+        when(outreachRepository.countByLeadIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
+        when(outreachRepository.countByDsaStaffIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
+        when(mailPort.sendHtml(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+
+        OutreachResultView result = service().send(l, 5L, new OutreachRequest("EMAIL", "how_it_works", " ravi@x.com "));
+
+        assertThat(result.status()).isEqualTo("SENT");
+        assertThat(l.getEmail()).isEqualTo("ravi@x.com");
+        verify(mailPort).sendHtml(org.mockito.ArgumentMatchers.eq("ravi@x.com"),
+                org.mockito.ArgumentMatchers.eq("How DhanBoost works, in 3 simple steps"), anyString(),
+                org.mockito.ArgumentMatchers.argThat(h -> h.contains("Hi Ravi,") && h.contains("dhanboost-mark.png")));
+    }
+
+    @Test
+    void unknownTemplateIsRejected() {
+        Lead l = lead(1L, "9876543210", "a@b.com");
+        when(outreachRepository.countByLeadIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
+        when(outreachRepository.countByDsaStaffIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
+
+        assertThatThrownBy(() -> service().send(l, 5L, new OutreachRequest("EMAIL", "FREE_TEXT", null)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo("INVALID_TEMPLATE"));
     }
 
     @Test
@@ -97,9 +124,9 @@ class LeadOutreachServiceTest {
         Lead l = lead(1L, "9876543210", "a@b.com");
         when(outreachRepository.countByLeadIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
         when(outreachRepository.countByDsaStaffIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);
-        when(mailPort.send(anyString(), anyString(), anyString())).thenReturn(true);
+        when(mailPort.sendHtml(anyString(), anyString(), anyString(), anyString())).thenReturn(true);
 
-        OutreachResultView result = service().send(l, 5L, new OutreachRequest("EMAIL", "hi", "hello"));
+        OutreachResultView result = service().send(l, 5L, new OutreachRequest("EMAIL", "INTRO", null));
 
         assertThat(result.status()).isEqualTo("SENT");
     }

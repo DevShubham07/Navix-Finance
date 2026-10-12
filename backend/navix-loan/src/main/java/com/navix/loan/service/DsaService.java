@@ -171,6 +171,15 @@ public class DsaService {
         return outreachService.send(lead, dsaId, req);
     }
 
+    /** The branded emails this DSA may send the lead, rendered for that lead (the dialog's preview). */
+    @Transactional(readOnly = true)
+    public List<com.navix.loan.dto.DsaDtos.EmailTemplateView> emailTemplates(Long id) {
+        Lead lead = requireOwnLead(id, requireDsaId());
+        return DsaEmailTemplates.renderAll(lead.getName()).stream()
+                .map(t -> new com.navix.loan.dto.DsaDtos.EmailTemplateView(t.key(), t.name(), t.subject(), t.html()))
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public List<DsaCommissionView> commissions() {
         Long dsaId = requireDsaId();

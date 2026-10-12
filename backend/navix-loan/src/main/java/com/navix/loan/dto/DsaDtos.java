@@ -47,10 +47,19 @@ public final class DsaDtos {
             String notes) {
     }
 
+    /**
+     * {@code template} picks one of the fixed branded emails (EMAIL only — the DSA never writes the
+     * subject or body). {@code email} is used only when the lead has no address on file, and is then
+     * saved onto the lead.
+     */
     public record OutreachRequest(
             @NotBlank String channel,
-            @Size(max = 240) String subject,
-            String body) {
+            @Size(max = 40) String template,
+            @Size(max = 254) String email) {
+    }
+
+    /** A branded email a DSA may send, rendered for one lead — the preview is the email as sent. */
+    public record EmailTemplateView(String key, String name, String subject, String html) {
     }
 
     public record OutreachResultView(String channel, String status, String error) {

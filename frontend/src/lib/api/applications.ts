@@ -245,6 +245,15 @@ export function isLoanOverdue(app: ApplicationView, asOf: Date = new Date()): bo
  * ADMIN-only flat view of an application with full KYC detail + onboarding completeness — covers
  * complete AND incomplete (DRAFT / partially filled) applications. Mirrors backend AdminApplicationView.
  */
+/** One page of the ADMIN register; `total` matches the filter, `allCount` is every application. */
+export interface AdminApplicationPage {
+  rows: AdminApplicationView[];
+  page: number;
+  size: number;
+  total: number;
+  allCount: number;
+}
+
 export interface AdminApplicationView {
   id: number;
   customerId: number;
@@ -1858,6 +1867,14 @@ export const staffApi = {
   /** ADMIN-only: every application (complete + incomplete) with full KYC detail + completeness. */
   listAllApplications: () => bff<AdminApplicationView[]>(`${STAFF_BASE}/all`, "GET"),
 
+  /** ADMIN: one page of the register — search, completeness filter and paging run server-side. */
+  listAllApplicationsPage: (p: { q?: string; completeness?: "ALL" | "COMPLETE" | "INCOMPLETE"; page: number; size: number }) => {
+    const sp = new URLSearchParams({ page: String(p.page), size: String(p.size) });
+    if (p.q) sp.set("q", p.q);
+    if (p.completeness && p.completeness !== "ALL") sp.set("completeness", p.completeness);
+    return bff<AdminApplicationPage>(`${STAFF_BASE}/all/page?${sp}`, "GET");
+  },
+
   /** TELECALLER/ADMIN: every pre-SANCTIONED application, enriched with completeness + staleness. */
   telecalling: () => bff<TelecallingView[]>(`${STAFF_BASE}/telecalling`, "GET"),
 
@@ -2648,8 +2665,18 @@ export type OutreachChannel = "SMS" | "EMAIL";
 
 export interface OutreachInput {
   channel: OutreachChannel;
-  subject?: string;
-  body?: string;
+  /** EMAIL only — the key of one of the fixed branded templates. */
+  template?: string;
+  /** EMAIL only — used (and saved onto the lead) when the lead has no email on file. */
+  email?: string;
+}
+
+/** A branded email a DSA may send, rendered server-side for one lead — the preview is the email as sent. */
+export interface DsaEmailTemplate {
+  key: string;
+  name: string;
+  subject: string;
+  html: string;
 }
 
 export interface OutreachResultView {
@@ -2713,6 +2740,8 @@ export const dsaApi = {
 
   outreach: (id: number, body: OutreachInput) =>
     bff<OutreachResultView>(`${DSA_BASE}/leads/${id}/outreach`, "POST", body),
+
+  emailTemplates: (id: number) => bff<DsaEmailTemplate[]>(`${DSA_BASE}/leads/${id}/email-templates`, "GET"),
 
   commissions: () => bff<DsaCommissionView[]>(`${DSA_BASE}/commissions`, "GET"),
 

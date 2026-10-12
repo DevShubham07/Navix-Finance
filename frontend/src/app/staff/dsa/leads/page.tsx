@@ -312,23 +312,33 @@ function NewDsaLeadForm({ onCreated }: { onCreated: () => void }) {
 }
 
 function OutreachDialog({ lead, onClose }: { lead: DsaLeadView; onClose: () => void }) {
+  const qc = useQueryClient();
   const [channel, setChannel] = React.useState<OutreachChannel>("EMAIL");
-  const [subject, setSubject] = React.useState("");
-  const [body, setBody] = React.useState("");
+  const [template, setTemplate] = React.useState<string>("");
+  // Only asked when the lead has no email on file; the backend saves it onto the lead.
+  const [email, setEmail] = React.useState("");
+
+  const templates = useQuery({
+    queryKey: ["dsa-email-templates", lead.id],
+    queryFn: () => dsaApi.emailTemplates(lead.id),
+  });
+  const chosen = templates.data?.find((t) => t.key === template) ?? templates.data?.[0];
 
   const send = useMutation({
     mutationFn: () =>
       dsaApi.outreach(lead.id, {
         channel,
-        subject: channel === "EMAIL" ? subject.trim() : undefined,
-        body: channel === "EMAIL" ? body.trim() : undefined,
+        template: channel === "EMAIL" ? chosen?.key : undefined,
+        email: channel === "EMAIL" && !lead.email ? email.trim() : undefined,
       }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dsa-leads"] }),
   });
 
-  const canSend = channel === "SMS" || (subject.trim().length > 0 && body.trim().length > 0);
+  const emailOk = !!lead.email || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const canSend = channel === "SMS" || (!!chosen && emailOk);
 
   return (
-    <Dialog open onClose={onClose} aria-labelledby="dsa-outreach-title">
+    <Dialog open onClose={onClose} aria-labelledby="dsa-outreach-title" size="lg">
       <DialogHeader>
         <DialogTitle id="dsa-outreach-title">Contact {lead.name}</DialogTitle>
         <p className="text-sm text-navy/60">{lead.mobile}{lead.email ? ` · ${lead.email}` : ""}</p>
@@ -352,17 +362,53 @@ function OutreachDialog({ lead, onClose }: { lead: DsaLeadView; onClose: () => v
 
       {channel === "EMAIL" ? (
         <div className="mt-4 space-y-3">
-          <Input label="Subject" required value={subject} onChange={(e) => setSubject(e.target.value)} className="!mb-0" />
-          <div className="field !mb-0">
-            <label htmlFor="dsa-outreach-body">Body</label>
-            <textarea
-              id="dsa-outreach-body"
-              rows={6}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write your message to this lead…"
+          {!lead.email && (
+            <Input
+              label="Lead's email"
+              required
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              helperText="This lead has no email on file — it will be saved to the lead."
+              className="!mb-0"
             />
-          </div>
+          )}
+          {templates.isLoading ? (
+            <Skeleton variant="table" rows={3} cols={3} />
+          ) : templates.isError ? (
+            <ErrorState error={templates.error} onRetry={() => void templates.refetch()} className="py-4" />
+          ) : (
+            <>
+              <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Email template">
+                {templates.data?.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={chosen?.key === t.key}
+                    onClick={() => setTemplate(t.key)}
+                    className={`rounded-lg border p-3 text-left transition ${
+                      chosen?.key === t.key
+                        ? "border-navy bg-navy/5 ring-2 ring-gold"
+                        : "border-navy/15 hover:border-navy/40"
+                    }`}
+                  >
+                    <span className="block text-sm font-semibold text-navy">{t.name}</span>
+                    <span className="mt-0.5 block text-xs text-navy/60">{t.subject}</span>
+                  </button>
+                ))}
+              </div>
+              {chosen && (
+                <iframe
+                  title={`Preview: ${chosen.name}`}
+                  srcDoc={chosen.html}
+                  sandbox=""
+                  className="h-[26rem] w-full rounded-lg border border-navy/10 bg-white"
+                />
+              )}
+            </>
+          )}
         </div>
       ) : (
         <div className="mt-4">
@@ -377,8 +423,10 @@ function OutreachDialog({ lead, onClose }: { lead: DsaLeadView; onClose: () => v
 
       {send.isError && <p className="mt-3 text-sm text-red-700">{errMessage(send.error)}</p>}
       {send.isSuccess && (
-        <p className="mt-3 text-sm text-emerald-700">
-          {send.data.status === "SENT" ? "Sent." : `${send.data.status}${send.data.error ? ` — ${send.data.error}` : ""}`}
+        <p className={`mt-3 text-sm ${send.data.status === "SENT" ? "text-emerald-700" : "text-red-700"}`}>
+          {send.data.status === "SENT"
+            ? "Sent."
+            : `Not sent (${send.data.status.toLowerCase()})${send.data.error ? ` — ${send.data.error}` : ""}`}
         </p>
       )}
 

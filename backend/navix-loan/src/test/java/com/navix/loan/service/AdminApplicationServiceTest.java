@@ -149,6 +149,29 @@ class AdminApplicationServiceTest {
         assertThatThrownBy(() -> service.listAll()).isInstanceOf(BusinessException.class);
     }
 
+    @Test
+    void pageFiltersCompletenessThenEnrichesOnlyThePageOnScreen() {
+        // Ids come back newest-first from SQL; 3 and 1 are complete, 2 is not.
+        when(applicationRepository.findAdminRegisterIds("%r\\_o%")).thenReturn(List.of(3L, 2L, 1L));
+        LoanApplication a1 = app(1L, 9000001L, ApplicationStatus.KYC_PENDING);
+        LoanApplication a2 = app(2L, 9000002L, ApplicationStatus.DRAFT);
+        LoanApplication a3 = app(3L, 9000003L, ApplicationStatus.SANCTIONED);
+        when(applicationRepository.findAllById(List.of(3L, 2L, 1L))).thenReturn(List.of(a1, a2, a3));
+        when(applicationRepository.findAllById(List.of(1L))).thenReturn(List.of(a1));
+        int required = ApplicationVerificationService.requiredCount();
+        when(verification.requiredPassedCounts(anyCollection())).thenReturn(Map.of(1L, required, 2L, required, 3L, required));
+        when(applicationRepository.findIdsWithTermsAccepted(anyCollection())).thenReturn(java.util.Set.of(1L, 3L));
+        when(applicationRepository.count()).thenReturn(40L);
+        lenient().when(bureauStateService.states(anyCollection())).thenReturn(Map.of());
+
+        var page = service.page(" R_o ", "complete", 2, 1);
+
+        assertThat(page.total()).isEqualTo(2L);
+        assertThat(page.allCount()).isEqualTo(40L);
+        assertThat(page.rows()).extracting(r -> r.id()).containsExactly(1L);
+        verify(applicationRepository, never()).findAll();
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     private static java.util.Collection<ApplicationStatus> argThatContainsSanctionedStates() {
