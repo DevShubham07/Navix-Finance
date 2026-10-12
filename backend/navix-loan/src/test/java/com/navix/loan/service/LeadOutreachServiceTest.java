@@ -94,6 +94,14 @@ class LeadOutreachServiceTest {
     }
 
     @Test
+    void aLeadNameThatIsNotAPlainNameNeverReachesTheEmail() {
+        var email = DsaEmailTemplates.render("INTRO", "secure-dhanboost.co/login now");
+        assertThat(email.subject()).isEqualTo("Get a salary advance before payday");
+        assertThat(email.html()).contains("Hi there,").doesNotContain("secure-dhanboost");
+        assertThat(email.text()).doesNotContain("secure-dhanboost");
+    }
+
+    @Test
     void unknownTemplateIsRejected() {
         Lead l = lead(1L, "9876543210", "a@b.com");
         when(outreachRepository.countByLeadIdAndCreatedAtAfter(anyLong(), any())).thenReturn(0L);

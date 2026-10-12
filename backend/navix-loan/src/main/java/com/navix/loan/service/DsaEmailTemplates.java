@@ -96,7 +96,10 @@ final class DsaEmailTemplates {
         if (name == null || name.isBlank()) {
             return null;
         }
-        return capitalize(name.trim().split("\\s+")[0].toLowerCase());
+        // The DSA types the lead's name and it lands in an email from our domain: only a plain
+        // letters-only first name is used, so it cannot carry a link, domain or other copy.
+        String first = name.trim().split("\\s+")[0].toLowerCase();
+        return first.matches("\\p{L}[\\p{L}'-]{0,29}") ? capitalize(first) : null;
     }
 
     private static String capitalize(String s) {
