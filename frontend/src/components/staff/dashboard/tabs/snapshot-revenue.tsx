@@ -546,7 +546,7 @@ function CollectionAnalysis({ params, open }: DashTabProps) {
   return (
     <ChartCard
       title="Collection Analysis"
-      info="Loans due on the selected date, grouped by assigned executive or by state. % = collected ÷ total repayable (closed or fully paid)."
+      info="Loans due on the selected date, grouped by assigned executive or by state. % = collected ÷ what those loans actually owed (interest to the day repaid, plus penalty if late). Collected count = closed or nothing left to pay."
       accent={TONE_SOLID.orange}
       controls={
         <>
@@ -608,7 +608,7 @@ function CollectionAnalysis({ params, open }: DashTabProps) {
                 <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-muted tabular-nums">
                   <span>{nf(r.loans)} loans</span>
                   <span>Principal {paiseToINR(r.principalPaise)}</span>
-                  <span>Repayable {paiseToINR(r.repayablePaise)}</span>
+                  <span>Owed {paiseToINR(r.repayablePaise)}</span>
                   <span>
                     Collected {nf(r.collectedCount)}/{nf(r.loans)} · {paiseToINR(r.collectedPaise)}
                   </span>

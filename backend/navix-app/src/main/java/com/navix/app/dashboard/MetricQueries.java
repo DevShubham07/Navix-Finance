@@ -119,8 +119,14 @@ public class MetricQueries {
 
     /** Every (group, loan) the metric matches. */
     public List<GroupLoan> groupLoans(Metric m, DashboardScope s, LocalDate from, LocalDate to, String key) {
+        return groupLoans(m, s, from, to, key, null);
+    }
+
+    /** As above, for a metric whose grouping is chosen by {@code groupBy} (COLLECTION_GROUP). */
+    public List<GroupLoan> groupLoans(Metric m, DashboardScope s, LocalDate from, LocalDate to, String key,
+                                      String groupBy) {
         String sql = MetricSql.query(m, s, "select f.grp, f.loan_id from {F} where f.loan_id is not null");
-        return jdbc.query(sql, params(m, s, from, to, key, null),
+        return jdbc.query(sql, params(m, s, from, to, key, groupBy),
                 (rs, i) -> new GroupLoan(rs.getString("grp"), rs.getLong("loan_id")));
     }
 
@@ -161,7 +167,7 @@ public class MetricQueries {
                 rs.getString("extra")));
 
         List<Long> loanIds = List.of();
-        if (m.owedSum()) {
+        if (m.owedSum() || m.dueAmount()) {
             String idsSql = MetricSql.query(m, s, "select f.loan_id from {F}" + filter
                     + " and (:segment = 'ALL' or f.segment = :segment) and f.loan_id is not null");
             loanIds = jdbc.queryForList(idsSql, p, Long.class);

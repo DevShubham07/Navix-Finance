@@ -108,7 +108,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
         {/* Collection % ------------------------------------------------- */}
         <ChartCard
           title={`Collection % (last ${MONTHS_BACK} months)`}
-          info="Per due month: collected ÷ total repayable of the loans due that month. Verified payments only."
+          info="Per due month: verified payments ÷ what the loans due that month actually owed — interest only up to the day each was repaid (less for an early repayment), plus grace-day interest and late penalty for a late one. Loans not yet due count at their contract amount."
           accent={SERIES.collected}
           {...shared}
         >
@@ -151,7 +151,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                   content={
                     <ChartTooltip
                       kinds={{ tloan: "paise", collected: "paise", pct: "pct" }}
-                      labels={{ tloan: "T.Loan", collected: "Collected", pct: "Collection %" }}
+                      labels={{ tloan: "Owed", collected: "Collected", pct: "Collection %" }}
                       extra={(row) => [
                         { label: "Loans due", value: nf(Number(row.dueLoans)) },
                         { label: "Target", value: `${(Number(row.targetBp) / 100).toFixed(0)}%` },
@@ -160,7 +160,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
                     />
                   }
                 />
-                <Bar yAxisId="amt" dataKey="tloan" name="T.Loan" fill="url(#dg-tloan)" radius={[6, 6, 0, 0]} cursor="pointer" />
+                <Bar yAxisId="amt" dataKey="tloan" name="Owed" fill="url(#dg-tloan)" radius={[6, 6, 0, 0]} cursor="pointer" />
                 <Bar yAxisId="amt" dataKey="collected" name="Collected" fill="url(#dg-coll)" radius={[6, 6, 0, 0]} cursor="pointer" />
                 <Line
                   yAxisId="pct"
@@ -466,7 +466,7 @@ export function SnapshotMonthly({ params, open, realAdmin, topOnly = false }: Da
 
 function Legend3() {
   const items: [string, string][] = [
-    ["T.Loan", SERIES.tloan],
+    ["Owed", SERIES.tloan],
     ["Collected", SERIES.collected],
     ["Collection %", SERIES.pctLine],
   ];

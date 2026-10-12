@@ -102,7 +102,7 @@ export function BusinessSnapshot(props: DashTabProps) {
               ["Net receivable", "violet", Receipt, pos.receivablePaise, "POSITION_RECEIVABLE", "principal + interest to date", "Principal plus interest accrued to date, excluding late penalty."],
               ["Total penalty", "red", TriangleAlert, pos.penaltyPaise, "POSITION_PENALTY", undefined, "Late penalty accrued on these loans."],
               ["Net received", "emerald", CheckCircle2, pos.receivedPaise, "POSITION_RECEIVED", "verified payments", "Verified repayments received against these loans."],
-              ["Pending", "orange", Hourglass, pos.pendingPaise, "POSITION_PENDING", pos.waivedPaise > 0 ? `owed today · ${paiseToINR(pos.waivedPaise)} waived` : "owed today, after settlements", "Still owed today on these loans, after settlements."],
+              ["Outstanding", "orange", Hourglass, pos.pendingPaise, "POSITION_PENDING", pos.waivedPaise > 0 ? `owed today · ${paiseToINR(pos.waivedPaise)} waived` : "owed today, after settlements", "Still owed today on these loans, after settlements."],
             ] as const
           ).map(([title, tone, icon, paise, metric, caption, definition]) => (
             <PositionCard
@@ -155,8 +155,8 @@ export function BusinessSnapshot(props: DashTabProps) {
       ) : (
         <div className={kpiGrid}>
           <KpiCard title="Total Loan Amount" tone="violet" icon={IndianRupee} mode="money" kpi={s.financial.totalLoan} onOpen={(m) => openMetric(m, "Total loan amount (disbursed)")} />
-          <KpiCard title="Pending Sanctioned Amount" tone="teal" icon={Scale} mode="money" kpi={s.financial.pendingSanctioned} onOpen={(m) => openMetric(m, "Pending sanctioned")} />
-          <KpiCard title="Pending Amount" tone="sky" icon={Timer} mode="money" kpi={s.financial.pendingDisbursal} onOpen={(m) => openMetric(m, "Pending disbursal")} />
+          <KpiCard title="Sanctioned, Awaiting Borrower" tone="teal" icon={Scale} mode="money" kpi={s.financial.pendingSanctioned} onOpen={(m) => openMetric(m, "Sanctioned, awaiting borrower")} />
+          <KpiCard title="Awaiting Disbursal" tone="sky" icon={Timer} mode="money" kpi={s.financial.pendingDisbursal} onOpen={(m) => openMetric(m, "Awaiting disbursal")} />
           <KpiCard title="Average Loan Size" tone="royal" icon={TrendingUp} mode="money" kpi={avg} onOpen={(m) => openMetric(m, "Disbursed loans (average size)")} />
         </div>
       )}

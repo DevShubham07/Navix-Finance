@@ -279,6 +279,16 @@ public final class MetricSql {
             return owedSum;
         }
 
+        /**
+         * True when the metric's money is "what the borrower had to pay" ({@code DashboardService.dueAmount}),
+         * priced per loan, rather than the stored contractual {@code total_repayable}: that column is fixed
+         * at disbursal (principal + interest to the due date) and is wrong for any loan repaid early (owes
+         * less interest) or late (owes the grace day's interest and late penalty).
+         */
+        boolean dueAmount() {
+            return this == DUE_ON || this == COLLECTION_MONTH || this == COLLECTION_GROUP;
+        }
+
         /** The fragment with the request's scope resolved. */
         String sql(DashboardScope scope) {
             return template.replace("%APP%", appScope(scope)).replace("%LOAN%", loanScope(scope));
