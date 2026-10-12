@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
 import { ledgerRowsCaption } from "@/lib/staff/transactions-ledger";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
 
 const TABS: { key: "ALL" | TransactionDirection; label: string }[] = [
   { key: "ALL", label: "All" },
@@ -76,6 +77,7 @@ function humanISO(iso: string): string {
  * INCOMING repayments — with a borrower search and direction tabs. Read-only oversight.
  */
 export default function TransactionsPage() {
+  const [openLoanId, setOpenLoanId] = React.useState<number | null>(null);
   const role = useStaffMe().data?.role;
   const [tab, setTab] = React.useState<"ALL" | TransactionDirection>("ALL");
   const [period, setPeriod] = React.useState<Period>("MONTH");
@@ -143,6 +145,7 @@ export default function TransactionsPage() {
           fileBase="dhanboost-transactions"
           columns={[
             { header: "Date", value: (t: TransactionView) => (t.date ? formatDate(t.date) : "") },
+            { header: "Repayment date", value: (t) => (t.repaymentDate ? formatDate(t.repaymentDate) : "") },
             { header: "Borrower", value: (t) => t.borrowerName ?? "" },
             { header: "PAN", value: (t) => t.pan ?? "" },
             { header: "Type", value: (t) => (t.type === "REPAYMENT" ? "Repayment" : "Disbursal") },
@@ -297,6 +300,7 @@ export default function TransactionsPage() {
                   <tr>
                     <th scope="col">S.No.</th>
                     <th scope="col">Date</th>
+                    <th scope="col" title="The loan's repayment (due) date">Repayment date</th>
                     <th scope="col">Borrower</th>
                     <th scope="col">Type</th>
                     <th scope="col" className="num">Amount</th>
@@ -308,7 +312,7 @@ export default function TransactionsPage() {
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
-                    <TxnRow key={r.id} t={r} sno={(page - 1) * pageSize + i + 1} />
+                    <TxnRow key={r.id} t={r} sno={(page - 1) * pageSize + i + 1} onOpen={setOpenLoanId} />
                   ))}
                 </tbody>
               </table>
@@ -329,18 +333,39 @@ export default function TransactionsPage() {
           )}
         </div>
       </PermissionGate>
+
+      {/* The customer pop-up, on the application that carries this loan, opened on its Repayment tab. */}
+      <ApplicationDetailDialog applicationId={null} loanId={openLoanId} initialTab="repayment" onClose={() => setOpenLoanId(null)} />
     </div>
   );
 }
 
-function TxnRow({ t, sno }: { t: TransactionView; sno: number }) {
+function TxnRow({ t, sno, onOpen }: { t: TransactionView; sno: number; onOpen: (loanId: number) => void }) {
   const incoming = t.direction === "INCOMING";
+  // A repayment that came in after the loan's repayment date (and its 1 grace day) reads red.
+  const paidLate =
+    t.type === "REPAYMENT" && t.date != null && t.repaymentDate != null &&
+    new Date(`${t.date}T00:00:00`).getTime() > new Date(`${t.repaymentDate}T00:00:00`).getTime() + 86_400_000;
   return (
     <tr>
       <td className="text-muted">{sno}</td>
       <td className="text-muted">{t.date ? formatDate(t.date) : "—"}</td>
+      <td className={paidLate ? "font-semibold text-error-700" : "text-muted"} title={paidLate ? "Paid after the repayment date" : undefined}>
+        {t.repaymentDate ? formatDate(t.repaymentDate) : "—"}
+      </td>
       <td className="staff-cell" title={t.borrowerName ?? undefined}>
-        <span className="font-medium text-ink">{t.borrowerName ?? "—"}</span>
+        {t.loanId != null ? (
+          <button
+            type="button"
+            onClick={() => onOpen(t.loanId as number)}
+            className="font-medium text-navy hover:underline"
+            aria-label={`Open ${t.borrowerName ?? `loan #${t.loanId}`}`}
+          >
+            {t.borrowerName ?? "—"}
+          </button>
+        ) : (
+          <span className="font-medium text-ink">{t.borrowerName ?? "—"}</span>
+        )}
         {t.pan && <span className="ml-1 font-mono text-xs text-muted">{t.pan}</span>}
       </td>
       <td>

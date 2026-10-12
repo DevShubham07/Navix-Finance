@@ -201,7 +201,7 @@ class CustomerServiceTest {
     void pageHydratesOnlyTheIdsSqlReturnedInSqlOrderAndNeverLoadsWholeTables() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
         when(bookQuery.count(any())).thenReturn(2L);
-        when(bookQuery.pageIds(any(), eq(0), eq(25))).thenReturn(List.of(7L, 3L));
+        when(bookQuery.pageIds(any(), eq(0), eq(25), any(), any())).thenReturn(List.of(7L, 3L));
         when(applicationRepository.findByCustomerIdIn(List.of(7L, 3L))).thenReturn(List.of(
                 app(30, 3L, ApplicationStatus.ACTIVE), app(70, 7L, ApplicationStatus.REJECTED)));
         when(profileRepository.findByApplicationIdIn(any())).thenReturn(List.of(
@@ -223,7 +223,7 @@ class CustomerServiceTest {
     @Test
     void pageCapsSizeAndFloorsPageNumber() {
         ActorContext.set(new CurrentActor("10", "Admin", "ADMIN"));
-        when(bookQuery.pageIds(any(), eq(0), eq(CustomerService.MAX_PAGE_SIZE))).thenReturn(List.of());
+        when(bookQuery.pageIds(any(), eq(0), eq(CustomerService.MAX_PAGE_SIZE), any(), any())).thenReturn(List.of());
 
         var page = service.page("raj", null, null, "active", false, 0, 500);
 
@@ -231,7 +231,7 @@ class CustomerServiceTest {
         assertThat(page.page()).isEqualTo(1);
         assertThat(page.rows()).isEmpty();
         var captor = org.mockito.ArgumentCaptor.forClass(CustomerBookQuery.BookFilter.class);
-        verify(bookQuery).pageIds(captor.capture(), eq(0), eq(CustomerService.MAX_PAGE_SIZE));
+        verify(bookQuery).pageIds(captor.capture(), eq(0), eq(CustomerService.MAX_PAGE_SIZE), any(), any());
         assertThat(captor.getValue().needle()).isEqualTo("raj");
         assertThat(captor.getValue().segment()).isEqualTo("active");
         assertThat(captor.getValue().scopeIds()).isNull();      // ADMIN sees the whole book
@@ -242,7 +242,7 @@ class CustomerServiceTest {
     void pageScopesAnExecutiveToTheirOwnBookInSql() {
         ActorContext.set(new CurrentActor("9", "Exec", "CREDIT_EXECUTIVE"));
         when(applicationRepository.findCustomerIdsByAssignedExecutiveId(9L)).thenReturn(java.util.Set.of(7L));
-        when(bookQuery.pageIds(any(), eq(0), eq(25))).thenReturn(List.of());
+        when(bookQuery.pageIds(any(), eq(0), eq(25), any(), any())).thenReturn(List.of());
 
         service.page(null, null, null, null, false, 1, 25);
 
@@ -261,7 +261,7 @@ class CustomerServiceTest {
         sanction.setAction("SANCTION");
         when(applicationEventRepository.findByActorIdOrderByAtDesc("5")).thenReturn(List.of(sanction));
         when(applicationRepository.findCustomerIdsByIdIn(List.of(42L))).thenReturn(java.util.Set.of(2L));
-        when(bookQuery.pageIds(any(), eq(0), eq(25))).thenReturn(List.of());
+        when(bookQuery.pageIds(any(), eq(0), eq(25), any(), any())).thenReturn(List.of());
 
         service.page(null, null, null, null, true, 1, 25);
 
@@ -907,6 +907,17 @@ class CustomerServiceTest {
     }
 
     @Test
+    void byIds_asAccountant_seesEveryCustomerWithALoanButNoOneElse() {
+        ActorContext.set(new CurrentActor("31", "Acct", "ACCOUNTANT"));
+        givenTwoCustomers();
+        when(applicationRepository.findCustomerIdsByAssignedExecutiveId(31L)).thenReturn(java.util.Set.of());
+        when(applicationEventRepository.findByActorIdOrderByAtDesc("31")).thenReturn(List.of());
+        when(loanRepository.findAllCustomerIds()).thenReturn(java.util.Set.of(9000002L));
+
+        assertThat(visibleOfTheTwo()).extracting(CustomerSummary::customerId).containsExactly(9000002L);
+    }
+
+    @Test
     void byIds_ignoresNonDecisionEventsWhenScoping() {
         ActorContext.set(new CurrentActor("12", "Exec", "CREDIT_EXECUTIVE"));
         givenTwoCustomers();
@@ -1071,7 +1082,7 @@ class CustomerServiceTest {
     @Test
     void pageResolvesTheDateWindowInIst() {
         ActorContext.set(new CurrentActor("31", "Credit Head", "CREDIT_HEAD"));
-        when(bookQuery.pageIds(any(), eq(0), eq(25))).thenReturn(List.of());
+        when(bookQuery.pageIds(any(), eq(0), eq(25), any(), any())).thenReturn(List.of());
 
         java.time.LocalDate d19 = java.time.LocalDate.of(2026, 8, 19);
         service.page(null, d19, d19, null, false, 1, 25);

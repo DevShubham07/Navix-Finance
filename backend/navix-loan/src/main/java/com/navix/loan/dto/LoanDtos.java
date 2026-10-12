@@ -186,6 +186,9 @@ public final class LoanDtos {
             // Presigned GET for the borrower-uploaded repayment screenshot — REPAYMENT rows only,
             // null for a DISBURSAL row (nothing was ever uploaded against it) and for a REPAYMENT
             // row with no proof on file.
-            String proofUrl) {
+            String proofUrl,
+            // The loan's contractual repayment (due) date — the same on the disbursal row and on
+            // every repayment against that loan, so a payment can be read as early, on time or late.
+            LocalDate repaymentDate) {
     }
 }

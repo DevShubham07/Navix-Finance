@@ -13,25 +13,18 @@ import { NoAccessNotice } from "@/components/staff/live-pipeline";
 import { useStaffMe, useCan } from "@/components/staff/pipeline/hooks";
 import { useTableSort, SortableTh } from "@/components/staff/sortable-table";
 import { usePagination, PaginationBar } from "@/components/staff/pipeline/pagination";
-import { gradientCss } from "@/components/staff/dashboard/colors";
-import { collectionsApi, paiseToINR, type DashTone, type DpdBucket } from "@/lib/api/applications";
-import { COLLECTION_BUCKETS } from "@/lib/collection-buckets";
+import { TONE_SOLID, gradientCss } from "@/components/staff/dashboard/colors";
+import { ApplicationDetailDialog } from "@/components/staff/application-detail-dialog";
+import { collectionsApi, paiseToINR, type DpdBucket } from "@/lib/api/applications";
+import { BUCKET_TONE, COLLECTION_BUCKETS } from "@/lib/collection-buckets";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
-
-const BUCKET_TONE: Record<DpdBucket, DashTone> = {
-  UPCOMING: "sky",
-  T0_T7: "amber",
-  T8_T30: "orange",
-  T30_T60: "red",
-  T60_T90: "violet",
-  T90_PLUS: "navy",
-};
 const BUCKET_LABEL = Object.fromEntries(COLLECTION_BUCKETS.map((b) => [b.bucket, b.label])) as Record<DpdBucket, string>;
 
 interface Row {
   loanId: number;
   borrower: string;
   dpd: number;
+  bucket: DpdBucket;
   bucketLabel: string;
   outstandingPaise: number;
   officer: string;
@@ -60,6 +53,7 @@ export default function DpdOverviewPage() {
         loanId: w.loanId,
         borrower: w.loan?.borrowerName ?? "—",
         dpd: w.dpd,
+        bucket: w.bucket,
         bucketLabel: BUCKET_LABEL[w.bucket] ?? w.bucket,
         outstandingPaise: w.loan?.outstandingPaise ?? 0,
         officer: w.assignedOfficerName ?? "Unassigned",
@@ -68,6 +62,8 @@ export default function DpdOverviewPage() {
   );
   const { sorted, sortKey, dir, toggle } = useTableSort<Row>(rows, "dpd", "desc");
   const { page, setPage, pageSize, setPageSize, pageCount, pageRows, total } = usePagination(sorted);
+  // The customer pop-up, opened from a borrower's name (resolved loan → customer → application).
+  const [openLoanId, setOpenLoanId] = React.useState<number | null>(null);
 
   if (myRole && !can("collections:overview")) {
     return <NoAccessNotice message="Collection Head or Admin access only." />;
@@ -125,10 +121,26 @@ export default function DpdOverviewPage() {
               <tbody>
                 {pageRows.map((r) => (
                   <tr key={r.loanId}>
-                    <td>{r.borrower}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => setOpenLoanId(r.loanId)}
+                        className="font-medium text-navy hover:underline"
+                        title={`Open ${r.borrower}`}
+                      >
+                        {r.borrower}
+                      </button>
+                    </td>
                     <td>{r.loanId}</td>
                     <td>{r.dpd}</td>
-                    <td>{r.bucketLabel}</td>
+                    <td>
+                      <span
+                        className="inline-block rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+                        style={{ background: TONE_SOLID[BUCKET_TONE[r.bucket]] }}
+                      >
+                        {r.bucketLabel}
+                      </span>
+                    </td>
                     <td>{paiseToINR(r.outstandingPaise)}</td>
                     <td>{r.officer}</td>
                   </tr>
@@ -141,6 +153,8 @@ export default function DpdOverviewPage() {
           <PaginationBar page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} pageCount={pageCount} total={total} />
         )}
       </div>
+
+      <ApplicationDetailDialog applicationId={null} loanId={openLoanId} initialTab="collections" onClose={() => setOpenLoanId(null)} />
     </div>
   );
 }

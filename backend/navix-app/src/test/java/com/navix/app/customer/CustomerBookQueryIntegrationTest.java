@@ -172,6 +172,28 @@ class CustomerBookQueryIntegrationTest {
     }
 
     @Test
+    void sortsByAWhitelistedColumnInEitherDirection() {
+        Instant base = Instant.parse("2026-09-01T00:00:00Z");
+        long a1 = application(1, "ACTIVE", base.plus(2, ChronoUnit.DAYS));
+        profile(a1, "Chetan", "CCCCC1111C", "9000000001");
+        long a2 = application(2, "DRAFT", base);
+        profile(a2, "anil", "AAAAA1111A", "9000000002");
+        long a3 = application(3, "SANCTIONED", base.plus(1, ChronoUnit.DAYS));
+        profile(a3, "Bina", "BBBBB1111B", "9000000003");
+
+        assertThat(query.pageIds(filter("", null), 0, 10, "date", "asc")).containsExactly(2L, 3L, 1L);
+        assertThat(query.pageIds(filter("", null), 0, 10, "date", "desc")).containsExactly(1L, 3L, 2L);
+        // Case-insensitive, so "anil" sorts first.
+        assertThat(query.pageIds(filter("", null), 0, 10, "name", "asc")).containsExactly(2L, 3L, 1L);
+        // Lifecycle order: incomplete (DRAFT) → approved (SANCTIONED) → active.
+        assertThat(query.pageIds(filter("", null), 0, 10, "stage", "asc")).containsExactly(2L, 3L, 1L);
+        assertThat(query.pageIds(filter("", null), 0, 10, "customerId", "desc")).containsExactly(3L, 2L, 1L);
+        // An unknown key falls back to stage date; it never reaches the SQL.
+        assertThat(query.pageIds(filter("", null), 0, 10, "1; drop table loan", "asc"))
+                .containsExactlyInAnyOrder(1L, 2L, 3L);
+    }
+
+    @Test
     void ordersByStageDateDescendingWithNullsLastAndPages() {
         Instant base = Instant.parse("2026-09-01T00:00:00Z");
         long a1 = application(1, "REJECTED", base);

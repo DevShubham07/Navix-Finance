@@ -37,11 +37,11 @@ import { formatDate } from "@/lib/utils";
 /** Date columns that make sense to group rows under — the other sortable columns (amount/DPD) would
  *  interleave dates meaninglessly if we tried to header-group by them, so grouping is switched off
  *  for those (see `groupFieldFor` below). */
-const DATE_SORT_KEYS = new Set(["dueDate", "sanctionedAt", "disbursedOn"]);
+const DATE_SORT_KEYS = new Set(["dueDate", "sanctionedAt", "disbursedOn", "closedOn"]);
 
 /** Sortable columns — kept in one place so the URL-param validation and the `<SortableTh>` calls
  *  can't drift apart. */
-const SORT_KEYS = ["dueDate", "sanctionedAt", "disbursedOn", "principalPaise", "outstandingPaise", "dpd"] as const;
+const SORT_KEYS = ["dueDate", "sanctionedAt", "disbursedOn", "closedOn", "principalPaise", "outstandingPaise", "dpd"] as const;
 type SortKey = (typeof SORT_KEYS)[number];
 
 function isSortKey(v: string | null): v is SortKey {
@@ -195,7 +195,7 @@ function LoansPageInner() {
 
   // Grouping follows the active date sort; switched off entirely for amount/DPD sorts, where date
   // headers would interleave meaninglessly (see DATE_SORT_KEYS).
-  const groupField = DATE_SORT_KEYS.has(sortKey) ? (sortKey as "dueDate" | "sanctionedAt" | "disbursedOn") : null;
+  const groupField = DATE_SORT_KEYS.has(sortKey) ? (sortKey as "dueDate" | "sanctionedAt" | "disbursedOn" | "closedOn") : null;
 
   const [collapsedDates, setCollapsedDates] = React.useState<Set<string>>(new Set());
   const toggleDate = (key: string) =>
@@ -240,7 +240,7 @@ function LoansPageInner() {
             { header: "Sanctioned", value: (l) => (l.sanctionedAt ? formatDate(l.sanctionedAt) : "") },
             { header: "Disbursed", value: (l) => (l.disbursedOn ? formatDate(l.disbursedOn) : "") },
             { header: "Due", value: (l) => (l.dueDate ? formatDate(l.dueDate) : "") },
-            { header: "Closed", value: (l) => (l.closedOn ? formatDate(l.closedOn) : "") },
+            { header: "Closure date", value: (l) => (l.closedOn ? formatDate(l.closedOn) : "") },
             { header: "Principal (₹)", value: (l) => (l.principalPaise / 100).toFixed(2) },
             { header: "Net disbursed (₹)", value: (l) => (l.netDisbursedPaise / 100).toFixed(2) },
             { header: "Repayable (₹)", value: (l) => (l.totalRepayablePaise / 100).toFixed(2) },
@@ -327,6 +327,7 @@ function LoansPageInner() {
                     <SortableTh label="Sanctioned" sortKey="sanctionedAt" active={sortKey} dir={dir} onToggle={toggle} />
                     <SortableTh label="Disbursed" sortKey="disbursedOn" active={sortKey} dir={dir} onToggle={toggle} />
                     <SortableTh label="Due" sortKey="dueDate" active={sortKey} dir={dir} onToggle={toggle} />
+                    <SortableTh label="Closure date" sortKey="closedOn" active={sortKey} dir={dir} onToggle={toggle} />
                     <th scope="col">Cycle</th>
                     <SortableTh label="Principal" sortKey="principalPaise" active={sortKey} dir={dir} onToggle={toggle} className="num" />
                     <th scope="col" className="num">Net disbursed</th>
@@ -351,7 +352,7 @@ function LoansPageInner() {
                         <React.Fragment key={group.key}>
                           {groupField && (
                             <tr>
-                              <td colSpan={16} className="bg-grey-50 px-3 py-2">
+                              <td colSpan={17} className="bg-grey-50 px-3 py-2">
                                 <button
                                   type="button"
                                   onClick={() => toggleDate(group.key)}
@@ -385,6 +386,7 @@ function LoansPageInner() {
                                     {l.dueDate ? formatDate(l.dueDate) : "—"}
                                   </span>
                                 </td>
+                                <td className="whitespace-nowrap text-muted">{l.closedOn ? formatDate(l.closedOn) : "—"}</td>
                                 <td className="text-muted">{ordinal(l.loanCycle)}</td>
                                 <td className="num font-mono text-ink">{paiseToINR(l.principalPaise)}</td>
                                 <td className="num font-mono text-ink">{paiseToINR(l.netDisbursedPaise)}</td>

@@ -155,7 +155,7 @@ describe("CustomersPage", () => {
     await screen.findByText("Asha Verma");
 
     expect(screen.getByText(/Sorted by stage date/)).toBeVisible();
-    expect(screen.getByRole("table", { name: /Customers, grouped by stage date, newest first/ })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: /Customers, sorted by stage date, descending/ })).toBeInTheDocument();
     for (const th of screen.getAllByRole("columnheader")) expect(th).toHaveAttribute("scope", "col");
   });
 
@@ -189,5 +189,22 @@ describe("CustomersPage", () => {
     await waitFor(() => expect(pageCalls.some((f) => f.seg === "overdue" && f.page === 1)).toBe(true));
     expect(await screen.findByText("Page 1 of 3")).toBeInTheDocument();
     expect(pageCalls.filter((f) => f.seg === "overdue" && f.page !== 1)).toEqual([]);
+  });
+
+  it("sorts server-side from the column headers: a new column, then the same one flipped, back to page 1", async () => {
+    renderPage();
+    await screen.findByText("Asha Verma");
+    expect(pageCalls.at(-1)).toMatchObject({ sort: "stageDate", dir: "desc" });
+    await goToPage2();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by Customer" }));
+    await waitFor(() => expect(pageCalls.at(-1)).toMatchObject({ sort: "name", dir: "asc", page: 1 }));
+    expect(screen.getByText(/Sorted by name/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by Customer, ascending" }));
+    await waitFor(() => expect(pageCalls.at(-1)).toMatchObject({ sort: "name", dir: "desc" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by Date" }));
+    await waitFor(() => expect(pageCalls.at(-1)).toMatchObject({ sort: "date", dir: "desc" }));
   });
 });

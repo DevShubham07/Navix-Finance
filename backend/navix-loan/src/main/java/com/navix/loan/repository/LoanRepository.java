@@ -30,6 +30,10 @@ public interface LoanRepository extends JpaRepository<Loan, Long> {
     @Query("select distinct l.customerId from Loan l where l.id in :loanIds")
     Set<Long> findCustomerIdsByIdIn(@Param("loanIds") Collection<Long> loanIds);
 
+    /** Every customer who has ever been disbursed a loan — the Accountant's book (see CustomerService#scope). */
+    @Query("select distinct l.customerId from Loan l")
+    Set<Long> findAllCustomerIds();
+
     /** How many loans this customer has ever taken — the DSA-commission "first loan only" guard. */
     long countByCustomerId(Long customerId);
 

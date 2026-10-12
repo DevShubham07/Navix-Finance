@@ -446,6 +446,8 @@ export interface TransactionView {
   date: string | null;
   /** Presigned link to the borrower-uploaded repayment screenshot. REPAYMENT rows only. */
   proofUrl: string | null;
+  /** The loan's repayment (due) date — the same on its disbursal row and every repayment against it. */
+  repaymentDate: string | null;
 }
 
 /**
@@ -2082,7 +2084,13 @@ export type CustomerListFilters = {
   /** 1-indexed. */
   page?: number;
   size?: number;
+  /** Server-side sort key (`CustomerBookQuery.SORTS`); omitted = stage date. */
+  sort?: CustomerSortKey;
+  dir?: "asc" | "desc";
 };
+
+/** The columns the customer register can sort on — mirrors `CustomerBookQuery.SORTS`. */
+export type CustomerSortKey = "stageDate" | "date" | "name" | "customerId" | "stage";
 
 export type CustomerPage = { rows: CustomerSummary[]; page: number; size: number; total: number };
 

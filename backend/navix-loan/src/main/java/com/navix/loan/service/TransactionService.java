@@ -117,7 +117,7 @@ public class TransactionService {
                     loan.getNetDisbursed() != null ? loan.getNetDisbursed() : 0L,
                     loan.getDisbursalTxnRef(),
                     loan.getStatus() != null ? loan.getStatus().name() : null,
-                    loan.getDisbursedOn(), null));
+                    loan.getDisbursedOn(), null, loan.getDueDate()));
         }
 
         // Incoming: each payment is one repayment.
@@ -134,7 +134,7 @@ public class TransactionService {
                     pay.getAmount() != null ? pay.getAmount() : 0L,
                     pay.getTxnRef(),
                     pay.getStatus() != null ? pay.getStatus().name() : null,
-                    pay.getPaidOn(), pay.getProofUrl()));
+                    pay.getPaidOn(), pay.getProofUrl(), loan != null ? loan.getDueDate() : null));
         }
 
         if (q != null && !q.isBlank()) {
@@ -219,7 +219,8 @@ public class TransactionService {
     /** {@code t} with every field the same except {@code proofUrl}, replaced by {@code presignedUrl}. */
     private static TransactionView withProof(TransactionView t, String presignedUrl) {
         return new TransactionView(t.id(), t.type(), t.direction(), t.loanId(), t.customerId(),
-                t.borrowerName(), t.pan(), t.amountPaise(), t.txnRef(), t.status(), t.date(), presignedUrl);
+                t.borrowerName(), t.pan(), t.amountPaise(), t.txnRef(), t.status(), t.date(), presignedUrl,
+                t.repaymentDate());
     }
 
     /** Match the search needle against borrower name, mobile, or loan id. */

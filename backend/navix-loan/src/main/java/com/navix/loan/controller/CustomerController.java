@@ -73,9 +73,11 @@ public class CustomerController {
             @RequestParam(required = false) String seg,
             @RequestParam(defaultValue = "false") boolean mine,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "25") int size) {
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String dir) {
         requireStaff();
-        return ApiResponse.ok(customerService.page(q, from, to, seg, mine, page, size));
+        return ApiResponse.ok(customerService.page(q, from, to, seg, mine, page, size, sort, dir));
     }
 
     /** The segment-chip counts over the whole (scoped, filtered) book. */

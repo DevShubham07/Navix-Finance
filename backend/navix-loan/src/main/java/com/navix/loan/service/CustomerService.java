@@ -211,6 +211,13 @@ public class CustomerService {
             owned.addAll(nullSafe(loanRepository.findCustomerIdsByIdIn(collectionLoanIds)));
         }
 
+        // The Accountant verifies every borrower's repayments and reads the company-wide ledger, so
+        // their book is every customer who has a loan: the ledger and the verification queue open
+        // the customer behind a payment. Applicants who never got a loan stay out of it.
+        if ("ACCOUNTANT".equals(role)) {
+            owned.addAll(nullSafe(loanRepository.findAllCustomerIds()));
+        }
+
         Set<Long> allocated = null;
         if ("TELECALLER".equals(role)) {
             allocated = new HashSet<>();
@@ -353,12 +360,19 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public CustomerPage page(String q, LocalDate from, LocalDate to, String seg, boolean mine,
             int page, int size) {
+        return page(q, from, to, seg, mine, page, size, null, null);
+    }
+
+    /** As above, sorted by a {@link CustomerBookQuery#SORTS} key and {@code asc}/{@code desc}. */
+    @Transactional(readOnly = true)
+    public CustomerPage page(String q, LocalDate from, LocalDate to, String seg, boolean mine,
+            int page, int size, String sort, String dir) {
         rejectDsa();
         CustomerBookQuery.BookFilter filter = bookFilter(q, from, to, seg, mine);
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         int safePage = Math.max(1, page);
         long total = bookQuery.count(filter);
-        List<Long> ids = bookQuery.pageIds(filter, (safePage - 1) * safeSize, safeSize);
+        List<Long> ids = bookQuery.pageIds(filter, (safePage - 1) * safeSize, safeSize, sort, dir);
         return new CustomerPage(hydrate(ids), safePage, safeSize, total);
     }
 

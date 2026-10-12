@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { staffApi, type TransactionPage, type TransactionView } from "@/lib/api/applications";
 import TransactionsPage from "@/app/staff/accounting/transactions/page";
 
-function txn(id: number): TransactionView {
+function txn(id: number, over: Partial<TransactionView> = {}): TransactionView {
   return {
     id: `R-${id}`,
     type: "REPAYMENT",
@@ -26,6 +26,8 @@ function txn(id: number): TransactionView {
     status: "VERIFIED",
     loanId: id,
     customerId: id,
+    repaymentDate: "2026-10-05",
+    ...over,
   };
 }
 
@@ -174,5 +176,30 @@ describe("TransactionsPage", () => {
     await screen.findByText("Borrower 201");
     expect(screen.getByRole("table", { name: "Transactions ledger" })).toHaveAttribute("aria-busy", "false");
     expect(screen.getByRole("table", { name: "Transactions ledger" }).parentElement).not.toHaveClass("opacity-60");
+  });
+
+  it("shows the loan's repayment date, red when the payment came in after it and the grace day", async () => {
+    vi.spyOn(staffApi, "transactions").mockResolvedValue({
+      ...pageOf(1),
+      rows: [
+        txn(1, { date: "2026-10-01", repaymentDate: "2026-10-05" }),
+        txn(2, { date: "2026-10-09", repaymentDate: "2026-10-05", borrowerName: "Late Payer" }),
+      ],
+    });
+    renderPage();
+
+    expect(await screen.findByRole("columnheader", { name: "Repayment date" })).toBeInTheDocument();
+    const cells = screen.getAllByTitle("Paid after the repayment date");
+    expect(cells).toHaveLength(1);
+    expect(cells[0]).toHaveClass("text-error-700");
+  });
+
+  it("opens the customer pop-up from the borrower's name", async () => {
+    vi.spyOn(staffApi, "transactions").mockResolvedValue(pageOf(1));
+    const loan = vi.spyOn(staffApi, "loan").mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Borrower 101" }));
+    await waitFor(() => expect(loan).toHaveBeenCalledWith(101));
   });
 });

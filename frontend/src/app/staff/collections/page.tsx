@@ -46,7 +46,8 @@ import {
   type WorklistRow,
 } from "@/lib/api/applications";
 import { collectionHandoverColumns } from "@/lib/export/collection-handover-columns";
-import { COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
+import { BUCKET_TONE, COLLECTION_BUCKETS, isDpdBucket } from "@/lib/collection-buckets";
+import { gradientCss } from "@/components/staff/dashboard/colors";
 import { worklistDueCue, worklistDueLabel, type WorklistDueCue } from "@/lib/collections/worklist-due";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui";
 import { StageSignal } from "@/components/staff/stage-signal";
@@ -371,16 +372,23 @@ export default function CollectionsBucketPage() {
           const active = item.bucket === bucket;
           const c = counts[item.bucket] ?? { n: 0, outstandingPaise: 0 };
           return (
+            // Same colours as the DPD overview cards; the open bucket is full strength with a ring,
+            // the others are dimmed until hovered.
             <button
               key={item.bucket}
+              type="button"
+              aria-pressed={active}
               onClick={() => router.push(`/staff/collections?bucket=${item.bucket}`)}
-              className={`rounded border p-3 text-left transition ${
-                active ? "border-navy bg-navy-tint" : "border-line bg-white hover:bg-grey-50"
+              style={{ background: gradientCss(BUCKET_TONE[item.bucket]) }}
+              className={`rounded-lg p-3 text-left text-white shadow-sm transition ${
+                active
+                  ? "ring-2 ring-navy ring-offset-2"
+                  : "opacity-60 hover:-translate-y-0.5 hover:opacity-100 hover:shadow-md"
               }`}
             >
-              <p className="text-xs text-muted">{item.label}</p>
-              <p className="font-mono text-lg font-semibold text-navy">{c.n}</p>
-              <p className="text-xs text-muted">{paiseToINR(c.outstandingPaise)}</p>
+              <p className="text-xs font-semibold text-white/90">{item.label}</p>
+              <p className="font-serif text-2xl font-bold text-white">{c.n}</p>
+              <p className="text-xs text-white/90">{paiseToINR(c.outstandingPaise)}</p>
             </button>
           );
         })}

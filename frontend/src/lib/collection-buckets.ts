@@ -1,4 +1,4 @@
-import type { DpdBucket } from "@/lib/api/applications";
+import type { DashTone, DpdBucket } from "@/lib/api/applications";
 
 export const COLLECTION_BUCKETS: ReadonlyArray<{ bucket: DpdBucket; label: string }> = [
   { bucket: "UPCOMING", label: "Upcoming" },
@@ -8,6 +8,16 @@ export const COLLECTION_BUCKETS: ReadonlyArray<{ bucket: DpdBucket; label: strin
   { bucket: "T60_T90", label: "61–90 DPD" },
   { bucket: "T90_PLUS", label: "90+ DPD" },
 ];
+
+/** One colour per bucket, shared by the overview cards and the working page's bucket switcher. */
+export const BUCKET_TONE: Record<DpdBucket, DashTone> = {
+  UPCOMING: "sky",
+  T0_T7: "amber",
+  T8_T30: "orange",
+  T30_T60: "red",
+  T60_T90: "violet",
+  T90_PLUS: "navy",
+};
 
 /** Rows per bucket. Takes anything carrying a `bucket` — worklist rows today, cases historically. */
 export function collectionBucketCounts(rows: ReadonlyArray<{ bucket: DpdBucket }>): Record<DpdBucket, number> {

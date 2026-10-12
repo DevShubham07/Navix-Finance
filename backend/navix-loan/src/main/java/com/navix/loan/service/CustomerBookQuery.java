@@ -114,11 +114,33 @@ public class CustomerBookQuery {
 
     /** Customer ids for one page, in display order (stage date desc, nulls last). */
     public List<Long> pageIds(BookFilter filter, int offset, int limit) {
+        return pageIds(filter, offset, limit, null, null);
+    }
+
+    /**
+     * The columns the register can sort on, each mapped to a fixed SQL expression — the request
+     * only ever picks a key from this map, so nothing user-supplied reaches the ORDER BY.
+     * {@code stage} follows the lifecycle (incomplete → … → closed), not the alphabet.
+     */
+    static final java.util.Map<String, String> SORTS = java.util.Map.of(
+            "stageDate", "b.status_changed_at",
+            "date", "b.created_at",
+            "name", "lower(b.full_name)",
+            "customerId", "b.customer_id",
+            "stage", "case b.segment when 'incomplete' then 1 when 'pending' then 2 when 'review' then 3"
+                    + " when 'approved' then 4 when 'disbursementPending' then 5 when 'hold' then 6"
+                    + " when 'active' then 7 when 'overdue' then 8 when 'closed' then 9 when 'rejected' then 10"
+                    + " else 11 end");
+
+    /** Customer ids for one page, sorted by a {@link #SORTS} key ({@code null} = stage date) and direction. */
+    public List<Long> pageIds(BookFilter filter, int offset, int limit, String sort, String dir) {
         MapSqlParameterSource params = new MapSqlParameterSource();
         String where = where(filter, true, params);
         params.addValue("limit", limit).addValue("offset", offset);
+        String column = SORTS.getOrDefault(sort == null ? "stageDate" : sort, SORTS.get("stageDate"));
+        String direction = "asc".equalsIgnoreCase(dir) ? "asc" : "desc";
         String sql = BOOK_CTE + "select b.customer_id from book b" + where
-                + " order by b.status_changed_at desc nulls last, b.customer_id desc"
+                + " order by " + column + " " + direction + " nulls last, b.customer_id " + direction
                 + " limit :limit offset :offset";
         return jdbc.queryForList(sql, params, Long.class);
     }

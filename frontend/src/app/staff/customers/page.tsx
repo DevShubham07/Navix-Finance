@@ -6,6 +6,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Loader2, RefreshCw, ArrowRight, Contact, ChevronDown, ChevronRight as ChevronRightIcon, UserPlus, X as XIcon, Pencil } from "lucide-react";
 import { PaginationBar } from "@/components/staff/pipeline/pagination";
+import { SortableTh, type SortDir } from "@/components/staff/sortable-table";
 import { StageSignal } from "@/components/staff/stage-signal";
 import { Badge, EmptyState, ErrorState, Skeleton, StatusBadge } from "@/components/ui";
 import { PageHeader } from "@/components/staff/staff-ui";
@@ -42,6 +43,7 @@ import {
   paiseToINR,
   statusLabel,
   type CustomerSummary,
+  type CustomerSortKey,
   type CustomerSummaryCounts,
   type ApplicationStatus,
 } from "@/lib/api/applications";
@@ -121,6 +123,14 @@ function notActionableReason(c: CustomerSummary): string | null {
  * paging are all applied server-side; the chip counts come from a separate, cheaper summary call
  * that is allowed to lag the table by up to 30s.
  */
+const SORT_LABEL: Record<CustomerSortKey, string> = {
+  stageDate: "stage date",
+  date: "date",
+  name: "name",
+  customerId: "customer ID",
+  stage: "stage",
+};
+
 export default function CustomersPage() {
   return (
     <React.Suspense fallback={<div className="h-40 animate-pulse rounded bg-grey-100" />}>
@@ -164,6 +174,19 @@ function CustomersPageInner() {
   // query is never asked for the old page number under the new filter.
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSizeState] = React.useState(25);
+  // Sorted server-side across the whole book, not just the page on screen. A new column opens
+  // newest-first for dates and A→Z / lifecycle order otherwise; clicking it again flips it.
+  const [sort, setSortState] = React.useState<CustomerSortKey>("stageDate");
+  const [dir, setDir] = React.useState<SortDir>("desc");
+  const toggleSort = React.useCallback((key: string) => {
+    const k = key as CustomerSortKey;
+    if (k === sort) setDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortState(k);
+      setDir(k === "stageDate" || k === "date" ? "desc" : "asc");
+    }
+    setPage(1);
+  }, [sort]);
   const setPageSize = React.useCallback((n: number) => {
     setPageSizeState(n);
     setPage(1);
@@ -197,9 +220,9 @@ function CustomersPageInner() {
   // The range MUST be in the key — without it React Query serves the previous window's rows
   // when the filter changes. Normalised to "" because undefined is not a stable key boundary.
   const listQ = useQuery({
-    queryKey: ["customers-page", query, range.from ?? "", range.to ?? "", seg, mine, page, pageSize],
+    queryKey: ["customers-page", query, range.from ?? "", range.to ?? "", seg, mine, page, pageSize, sort, dir],
     queryFn: () =>
-      customersApi.page({ ...baseFilters, seg: seg === "all" ? undefined : seg, page, size: pageSize }),
+      customersApi.page({ ...baseFilters, seg: seg === "all" ? undefined : seg, page, size: pageSize, sort, dir }),
     // Keep the previous page on screen while the next one loads instead of flashing a skeleton.
     placeholderData: keepPreviousData,
   });
@@ -231,18 +254,21 @@ function CustomersPageInner() {
       else next.add(key);
       return next;
     });
-  // Consecutive rows on the current page grouped by their stage-change (statusChangedAt) date —
-  // the same key the API sorts by, so a run of consecutive rows really does share one date.
+  // Consecutive rows on the current page grouped by the date the list is sorted on, so a run of
+  // consecutive rows really does share one date. Sorted by anything else there is no date to
+  // group on: one flat group, no header row.
+  const grouped = sort === "stageDate" || sort === "date";
   const dateGroups = React.useMemo(() => {
     const list: { key: string; rows: CustomerSummary[] }[] = [];
     for (const c of pageRows) {
-      const key = c.statusChangedAt ? c.statusChangedAt.slice(0, 10) : "unknown";
+      const at = sort === "date" ? c.createdAt : c.statusChangedAt;
+      const key = !grouped ? "all" : at ? at.slice(0, 10) : "unknown";
       const last = list[list.length - 1];
       if (last && last.key === key) last.rows.push(c);
       else list.push({ key, rows: [c] });
     }
     return list;
-  }, [pageRows]);
+  }, [pageRows, sort, grouped]);
 
   // --- Bulk assign / bulk reject (Task 1/2) ---------------------------------------------------
   // The bulk-action target is each row's LATEST application, not the customer id — matching the
@@ -402,11 +428,10 @@ function CustomersPageInner() {
               }
             />
           )}
-          {/* The order is fixed server-side (CustomerBookQuery: stage date desc, nulls last) and the
-              register has no sortable headers, so say so rather than leave the reader guessing. */}
+          {/* Sorted server-side over the whole book; the column headers with a caret change it. */}
           <span className="ml-auto text-xs text-muted">
-            Sorted by stage date <span aria-hidden>↓</span>
-            <span className="sr-only">, newest first</span>
+            Sorted by {SORT_LABEL[sort]} <span aria-hidden>{dir === "asc" ? "↑" : "↓"}</span>
+            <span className="sr-only">, {dir === "asc" ? "ascending" : "descending"}</span>
           </span>
         </div>
 
@@ -434,7 +459,7 @@ function CustomersPageInner() {
             // Offset clears the shell header, PageHeader, the segment-chip strip and the search/date row.
             <div className="staff-table-scroll staff-register-scroll" style={{ "--register-offset": "28rem" } as React.CSSProperties}>
             <table className="staff-data-table">
-              <caption className="sr-only">Customers, grouped by stage date, newest first</caption>
+              <caption className="sr-only">Customers, sorted by {SORT_LABEL[sort]}, {dir === "asc" ? "ascending" : "descending"}</caption>
               <thead>
                 {/* Column set deliberately mirrors the live-applications queue (identity, date,
                     contact, PAN, bank, loan, amount, due, credit) so a staffer reads the same row
@@ -452,9 +477,10 @@ function CustomersPageInner() {
                       />
                     </th>
                   )}
-                  <th scope="col" className={showBulkColumn ? undefined : "staff-sticky-identity"}>Customer</th>
+                  <SortableTh label="Customer" sortKey="name" active={sort} dir={dir} onToggle={toggleSort}
+                    className={showBulkColumn ? undefined : "staff-sticky-identity"} />
                   <th scope="col">Signals</th>
-                  <th scope="col" title="Signup / application start date">Date</th>
+                  <SortableTh label="Date" sortKey="date" active={sort} dir={dir} onToggle={toggleSort} />
                   <th scope="col">Mobile</th>
                   <th scope="col">PAN</th>
                   <th scope="col">Account</th>
@@ -468,8 +494,8 @@ function CustomersPageInner() {
                   <th scope="col">Bureau</th>
                   <th scope="col" title="Why this file has no usable credit decision yet">Failure</th>
                   <th scope="col">Latest status</th>
-                  <th scope="col">Stage</th>
-                  <th scope="col" title="When this customer entered their current status">Stage date</th>
+                  <SortableTh label="Stage" sortKey="stage" active={sort} dir={dir} onToggle={toggleSort} />
+                  <SortableTh label="Stage date" sortKey="stageDate" active={sort} dir={dir} onToggle={toggleSort} />
                   {/* Who worked the file. "Credit exec" is who DECIDED it, which on a reassigned or
                       Head-decided file is not the same person as Owner. Blank until it happens. */}
                   <th scope="col" title="The credit executive who decided the latest application">Credit exec</th>
@@ -489,7 +515,7 @@ function CustomersPageInner() {
                     });
                     return (
                       <React.Fragment key={group.key}>
-                        <tr>
+                        {grouped && <tr>
                           <td colSpan={colCount} className="bg-grey-50 px-3 py-2">
                             <button
                               type="button"
@@ -501,8 +527,8 @@ function CustomersPageInner() {
                               {group.rows.length === 1 ? "" : "s"}
                             </button>
                           </td>
-                        </tr>
-                        {!isCollapsed &&
+                        </tr>}
+                        {(!grouped || !isCollapsed) &&
                           groupRows.map(({ c, sno }) => (
                   <tr key={c.customerId} className="hover:bg-grey-50">
                     <td className="text-muted">{sno}</td>
