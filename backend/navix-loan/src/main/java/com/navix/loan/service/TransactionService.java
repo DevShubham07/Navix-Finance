@@ -1,6 +1,7 @@
 package com.navix.loan.service;
 
 import com.navix.common.storage.DocumentStoragePort;
+import com.navix.loan.domain.PaymentStatus;
 import com.navix.loan.dto.LoanDtos.TransactionView;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.Loan;
@@ -54,8 +55,12 @@ public class TransactionService {
      * One page of the ledger, plus the totals for the <b>whole</b> filter — the summary cards above
      * the table must show the period's real money movement, not just the page the reviewer is on.
      */
+    /**
+     * @param totalInPaise  verified repayments only — money the accountant has confirmed arrived
+     * @param pendingInPaise repayments still awaiting verification (listed, but not yet counted in)
+     */
     public record TransactionPage(List<TransactionView> rows, int page, int size, long total,
-                                  long totalInPaise, long totalOutPaise) {
+                                  long totalInPaise, long totalOutPaise, long pendingInPaise) {
     }
 
     /**
@@ -79,6 +84,9 @@ public class TransactionService {
         // which is what the old in-memory `date() == null` removal did.
         List<Loan> disbursals = "INCOMING".equals(dir) ? List.of() : loanRepository.findAllForRegister(from, to);
         List<Payment> repayments = "OUTGOING".equals(dir) ? List.of() : paymentRepository.findAllForLedger(from, to);
+        // A repayment the accountant rejected never moved any money (the proof did not match a
+        // transfer), so it is not a transaction: it stays on the loan's own Repayment tab, not here.
+        repayments = repayments.stream().filter(p -> p.getStatus() != PaymentStatus.REJECTED).toList();
         if (from != null || to != null) {
             disbursals = disbursals.stream().filter(l -> l.getDisbursedOn() != null).toList();
             repayments = repayments.stream().filter(p -> p.getPaidOn() != null).toList();
@@ -146,9 +154,12 @@ public class TransactionService {
         // period's money movement, and they must not change as the reviewer pages through it.
         long totalIn = 0L;
         long totalOut = 0L;
+        long pendingIn = 0L;
         for (TransactionView t : out) {
             if ("INCOMING".equals(t.direction())) {
-                totalIn += t.amountPaise();
+                // Only confirmed money is inflow; a pending claim may still be rejected.
+                if (PaymentStatus.VERIFIED.name().equals(t.status())) totalIn += t.amountPaise();
+                else pendingIn += t.amountPaise();
             } else {
                 totalOut += t.amountPaise();
             }
@@ -165,7 +176,7 @@ public class TransactionService {
                 .limit(safeSize)
                 .map(t -> withProof(t, presignedProof(t.proofUrl())))
                 .toList();
-        return new TransactionPage(pageRows, safePage, safeSize, out.size(), totalIn, totalOut);
+        return new TransactionPage(pageRows, safePage, safeSize, out.size(), totalIn, totalOut, pendingIn);
     }
 
     /**

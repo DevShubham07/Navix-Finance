@@ -284,6 +284,28 @@ class TransactionServiceTest {
     }
 
     @Test
+    void rejectedRepaymentsAreNotTransactionsAndPendingOnesAreNotYetInflow() {
+        Payment verified = payment1();                       // ₹1,000 VERIFIED
+        Payment rejected = payment1();
+        rejected.setId(2L);
+        rejected.setAmount(500_000L);
+        rejected.setStatus(PaymentStatus.REJECTED);          // proof did not match a transfer
+        Payment pending = payment1();
+        pending.setId(3L);
+        pending.setAmount(250_000L);
+        pending.setStatus(PaymentStatus.PENDING_VERIFICATION);
+        stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(verified, rejected, pending));
+
+        var page = service.listTransactions(null, null, null, null, 1, 25);
+
+        assertThat(page.rows()).extracting(TransactionView::id).containsExactlyInAnyOrder("D-2", "P-1", "P-3");
+        assertThat(page.total()).isEqualTo(3);
+        assertThat(page.totalInPaise()).isEqualTo(100_000L);   // verified only
+        assertThat(page.pendingInPaise()).isEqualTo(250_000L); // listed, not counted in
+        assertThat(page.totalOutPaise()).isEqualTo(882_000L);
+    }
+
+    @Test
     void pushesTheStatementPeriodIntoBothRepositories() {
         stubAll(List.of(loan2()), List.of(app5()), List.of(profile5()), List.of(payment1()));
         LocalDate from = LocalDate.of(2026, 6, 1);

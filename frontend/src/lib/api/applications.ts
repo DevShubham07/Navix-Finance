@@ -437,8 +437,11 @@ export interface TransactionPage {
   size: number;
   /** Rows matching the whole filter. */
   total: number;
+  /** Verified repayments only. Rejected repayments are not in the ledger at all. */
   totalInPaise: number;
   totalOutPaise: number;
+  /** Repayments listed but still awaiting verification — not yet counted in `totalInPaise`. */
+  pendingInPaise: number;
 }
 
 export interface TransactionView {

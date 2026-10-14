@@ -39,6 +39,7 @@ function pageOf(page: number, total = 60): TransactionPage {
     total,
     totalInPaise: 500_000,
     totalOutPaise: 200_000,
+    pendingInPaise: 0,
   };
 }
 
@@ -201,5 +202,11 @@ describe("TransactionsPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Open Borrower 101" }));
     await waitFor(() => expect(loan).toHaveBeenCalledWith(101));
+  });
+
+  it("labels inflow as verified money and shows what is still awaiting verification", async () => {
+    vi.spyOn(staffApi, "transactions").mockResolvedValue({ ...pageOf(1), pendingInPaise: 250_000 });
+    renderPage();
+    expect(await screen.findByText("Verified · ₹2,500 awaiting verification")).toBeInTheDocument();
   });
 });

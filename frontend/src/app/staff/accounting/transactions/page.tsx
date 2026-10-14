@@ -129,6 +129,7 @@ export default function TransactionsPage() {
   // the 25 movements you happen to be looking at".
   const totalIn = q.data?.totalInPaise ?? 0;
   const totalOut = q.data?.totalOutPaise ?? 0;
+  const pendingIn = q.data?.pendingInPaise ?? 0;
   const net = totalIn - totalOut;
   const total = q.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -252,6 +253,10 @@ export default function TransactionsPage() {
           <div className="rounded border border-success-100 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowDownLeft size={14} className="text-success-600" /> Inflow · {periodLabel}</div>
             <div className="mt-1 font-serif text-xl font-bold text-success-700">{paiseToINR(totalIn)}</div>
+            {/* Verified money only; rejected repayments are not listed at all. */}
+            <div className="mt-0.5 text-xs text-muted">
+              {pendingIn > 0 ? `Verified · ${paiseToINR(pendingIn)} awaiting verification` : "Verified repayments"}
+            </div>
           </div>
           <div className="rounded border border-line bg-white p-4 shadow-sm">
             <div className="flex items-center gap-1.5 text-xs text-muted"><ArrowUpRight size={14} className="text-navy" /> Outflow · {periodLabel}</div>
