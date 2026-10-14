@@ -11,7 +11,7 @@ export const html = `<section class="page active" id="grievance">
     <div class="callout">
       <p style="margin-bottom:8px"><b>Level 1 — Customer Support</b><br>Email <b>${BRAND.email}</b> or call ${BRAND.phone} (${BRAND.hours}). Typical response within 1 business day.</p>
       <p style="margin-bottom:8px"><b>Level 2 — Grievance Officer</b><br>If unresolved within 7 days, write to our Grievance Redressal Officer <b>Lalit Kumar</b> at <b>grievance@dhanboost.com</b> or call +91 85100 28510.</p>
-      <p style="margin:0"><b>Level 3 — Partner NBFC &amp; RBI</b><br>You may escalate to the partner NBFC's Nodal Officer (details in your KFS) and, if needed, to the RBI under the Reserve Bank – Integrated Ombudsman Scheme.</p>
+      <p style="margin:0"><b>Level 3 — External escalation</b><br>If your complaint is still unresolved, you may escalate to the Nodal Officer named in your Key Fact Statement and, thereafter, to the appropriate regulatory or consumer redressal authority.</p>
     </div>
     <h2>Grievance Officer</h2>
     <ul>
