@@ -14,7 +14,7 @@ export const html = `<section class="page active" id="refund-policy">
     <p>A refund therefore arises only in the narrow cases where money reached us that should not have, or reached the wrong place.</p>
 
     <h2>3. Where you are in the journey</h2>
-    <table>
+    <div class="tbl"><table>
       <thead><tr><th>Stage</th><th>Have you paid anything?</th><th>Can you exit?</th></tr></thead>
       <tbody>
         <tr><td>Application / KYC submitted</td><td>No</td><td>Yes — abandon or ask us to cancel, no charge</td></tr>
@@ -24,7 +24,7 @@ export const html = `<section class="page active" id="refund-policy">
         <tr><td>Disbursed (loan active)</td><td>Fee + GST already netted off</td><td>No exit; you may prepay at any time with no prepayment charge</td></tr>
         <tr><td>Repaid and closed</td><td>Yes, in full</td><td>Overpayment, if any, is refunded — see 4.3</td></tr>
       </tbody>
-    </table>
+    </table></div>
 
     <h2>4. When a refund is due</h2>
 
