@@ -41,6 +41,7 @@ export function MarketingFooter() {
             <Link href="/terms">Terms &amp; Conditions</Link>
             <Link href="/fair-practices">Fair Practices Code</Link>
             <Link href="/grievance">Grievance Redressal</Link>
+            <Link href="/refund-policy">Refund &amp; Cancellation</Link>
             <Link href="/faq">FAQs</Link>
           </div>
           <div className="fcol f-contact">

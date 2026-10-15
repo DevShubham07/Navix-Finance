@@ -10,14 +10,14 @@ export const html = `<section class="page active" id="grievance">
     <p>We aim to resolve every concern quickly and fairly. Please reach out through any of the channels below.</p>
     <div class="callout">
       <p style="margin-bottom:8px"><b>Level 1 — Customer Support</b><br>Email <b>${BRAND.email}</b> or call ${BRAND.phone} (${BRAND.hours}). Typical response within 1 business day.</p>
-      <p style="margin-bottom:8px"><b>Level 2 — Grievance Officer</b><br>If unresolved within 7 days, write to our Grievance Redressal Officer <b>Lalit Kumar</b> at <b>grievance@dhanboost.com</b> or call +91 85100 28510.</p>
+      <p style="margin-bottom:8px"><b>Level 2 — Grievance Officer</b><br>If unresolved within 7 days, write to our Grievance Redressal Officer <b>Lalit Kumar</b> at <b>grievance@dhanboost.com</b> or call ${BRAND.grievanceOfficer.phone}.</p>
       <p style="margin:0"><b>Level 3 — External escalation</b><br>If your complaint is still unresolved, you may escalate to the Nodal Officer named in your Key Fact Statement and, thereafter, to the appropriate regulatory or consumer redressal authority.</p>
     </div>
     <h2>Grievance Officer</h2>
     <ul>
       <li><b>Name:</b> Lalit Kumar — Grievance Redressal Officer, NAVIX Finance Private Limited</li>
       <li><b>Email:</b> grievance@dhanboost.com</li>
-      <li><b>Phone:</b> +91 85100 28510</li>
+      <li><b>Phone:</b> ${BRAND.grievanceOfficer.phone}</li>
       <li><b>Address:</b> Plot No 268, 1st Floor, Sector 33, Subhash Chowk, Islampur, Gurgaon, Haryana – 122001</li>
     </ul>
     <h2>Our service commitment</h2>
