@@ -9,6 +9,18 @@ import org.junit.jupiter.api.Test;
 
 class DigioConfigTest {
 
+    private static final VerificationChainProperties TIMEOUTS =
+            new VerificationChainProperties(null, null, null, null, null, null, null, null);
+
+    @Test
+    void requestFactoryCarriesExplicitConnectAndReadTimeouts() {
+        var f = DigioConfig.timeoutFactory(TIMEOUTS.connectTimeout(), TIMEOUTS.readTimeout());
+        assertThat(org.springframework.test.util.ReflectionTestUtils.getField(f, "connectTimeout"))
+                .isEqualTo((int) TIMEOUTS.connectTimeout().toMillis());
+        assertThat(org.springframework.test.util.ReflectionTestUtils.getField(f, "readTimeout"))
+                .isEqualTo((int) TIMEOUTS.readTimeout().toMillis());
+    }
+
     private static DigioProperties props(String clientId, String webhookSecret) {
         return new DigioProperties("digio", "https://api.digio.test", clientId, "secret", webhookSecret,
                 "CFG1", null, 7);
@@ -16,7 +28,7 @@ class DigioConfigTest {
 
     @Test
     void refusesToStartWhenEnabledAndClientIdBlank() {
-        assertThatThrownBy(() -> new DigioConfig().digioMandateAdapter(props(" ", "wh")))
+        assertThatThrownBy(() -> new DigioConfig().digioMandateAdapter(props(" ", "wh"), TIMEOUTS))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("navix.digio.client-id")
                 .hasMessageContaining("NAVIX_DIGIO_CLIENT_ID")
@@ -25,7 +37,7 @@ class DigioConfigTest {
 
     @Test
     void refusesToStartWhenEnabledAndWebhookSecretBlank() {
-        assertThatThrownBy(() -> new DigioConfig().digioMandateAdapter(props("id", null)))
+        assertThatThrownBy(() -> new DigioConfig().digioMandateAdapter(props("id", null), TIMEOUTS))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("navix.digio.webhook-secret");
     }
@@ -38,6 +50,6 @@ class DigioConfigTest {
 
     @Test
     void startsWithFullDigioConfig() {
-        assertThat(new DigioConfig().digioMandateAdapter(props("id", "wh"))).isNotNull();
+        assertThat(new DigioConfig().digioMandateAdapter(props("id", "wh"), TIMEOUTS)).isNotNull();
     }
 }

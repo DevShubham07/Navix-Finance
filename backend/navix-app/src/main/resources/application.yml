@@ -100,6 +100,19 @@ navix:
     header-colour: ${NAVIX_ESIGN_HEADER_COLOUR:#0C2540}
     button-colour: ${NAVIX_ESIGN_BUTTON_COLOUR:#E9B53A}
     executer-name: ${NAVIX_ESIGN_EXECUTER_NAME:NAVIX Finance Private Limited}
+  digio:
+    # Digio NACH eMandate (MandatePort). `mock` answers inline without calling anyone and is the default
+    # until the real credentials are in SSM; `digio` files REAL, legally binding NPCI mandate requests.
+    # With provider=digio the app REFUSES TO START unless base-url, client-id, client-secret,
+    # webhook-secret and corporate-config-id are all set (SSM /navix/<env>/navix/digio/...), by design.
+    provider: ${NAVIX_DIGIO_PROVIDER:mock}
+    base-url: ${NAVIX_DIGIO_BASE_URL:https://api.digio.in}
+    client-id: ${NAVIX_DIGIO_CLIENT_ID:}
+    client-secret: ${NAVIX_DIGIO_CLIENT_SECRET:}
+    webhook-secret: ${NAVIX_DIGIO_WEBHOOK_SECRET:}
+    corporate-config-id: ${NAVIX_DIGIO_CORPORATE_CONFIG_ID:}
+    narration: ${NAVIX_DIGIO_NARRATION:}
+    expire-in-days: ${NAVIX_DIGIO_EXPIRE_IN_DAYS:7}
   digitap:
     # Two hosts: svc (KYC/Employment/Email), api (Credit/Location/Face-Match/OCR). Auth = Basic base64(id:secret).
     svc-base-url: ${DIGITAP_SVC_BASE_URL:https://svcdemo.digitap.work}

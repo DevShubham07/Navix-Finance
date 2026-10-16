@@ -7,6 +7,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import java.time.Duration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -28,13 +30,23 @@ public class DigioConfig {
      */
     @Bean
     @ConditionalOnProperty(name = "navix.digio.provider", havingValue = "digio", matchIfMissing = true)
-    public MandatePort digioMandateAdapter(DigioProperties props) {
+    public MandatePort digioMandateAdapter(DigioProperties props, VerificationChainProperties timeouts) {
         require(props.baseUrl(), "base-url", "NAVIX_DIGIO_BASE_URL");
         require(props.clientId(), "client-id", "NAVIX_DIGIO_CLIENT_ID");
         require(props.clientSecret(), "client-secret", "NAVIX_DIGIO_CLIENT_SECRET");
         require(props.webhookSecret(), "webhook-secret", "NAVIX_DIGIO_WEBHOOK_SECRET");
         require(props.corporateConfigId(), "corporate-config-id", "NAVIX_DIGIO_CORPORATE_CONFIG_ID");
-        return new DigioMandateClient(props, RestClient.builder());
+        // Explicit timeouts, shared with the Signzy/Digitap clients: without them a hung connection never
+        // returns, so the timeout-then-findByRef recovery of an unknown register outcome is unreachable.
+        return new DigioMandateClient(props, RestClient.builder()
+                .requestFactory(timeoutFactory(timeouts.connectTimeout(), timeouts.readTimeout())));
+    }
+
+    static SimpleClientHttpRequestFactory timeoutFactory(Duration connect, Duration read) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connect);
+        factory.setReadTimeout(read);
+        return factory;
     }
 
     private static void require(String value, String key, String env) {

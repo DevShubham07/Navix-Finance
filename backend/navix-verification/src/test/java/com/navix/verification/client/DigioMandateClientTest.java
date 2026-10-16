@@ -131,6 +131,35 @@ class DigioMandateClientTest {
     }
 
     @Test
+    void findByRefReturnsEmptyOn404() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/mandate/by_crn/CRN1"))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                        .withStatus(org.springframework.http.HttpStatus.NOT_FOUND)
+                        .contentType(MediaType.APPLICATION_JSON).body("{\"code\":\"NOT_FOUND\"}"));
+
+        assertThat(c.findByRef("CRN1")).isEmpty();
+    }
+
+    @Test
+    void findByRefReturnsEmptyOnEmptyBody() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/mandate/by_crn/CRN1")).andRespond(withSuccess());
+
+        assertThat(c.findByRef("CRN1")).isEmpty();
+    }
+
+    @Test
+    void findByRefStillThrowsOnServerError() {
+        DigioMandateClient c = client();
+        server.expect(requestTo(BASE + "/v3/client/mandate/by_crn/CRN1"))
+                .andRespond(withServerError().contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"SYSTEM_ERROR\",\"message\":\"x\"}"));
+
+        assertThatThrownBy(() -> c.findByRef("CRN1")).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
     void httpFiveHundredSystemErrorThrowsBusinessExceptionNotRetryable(CapturedOutput out) {
         DigioMandateClient c = client();
         // A 500 is NOT transient here: exactly one request is expected, so a retry would fail verify().

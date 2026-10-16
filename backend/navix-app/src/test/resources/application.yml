@@ -7,6 +7,9 @@
 navix:
   esign:
     provider: mock
+  # Digio mandates are real NPCI filings: never reach the provider from a test.
+  digio:
+    provider: mock
 
 spring:
   config:

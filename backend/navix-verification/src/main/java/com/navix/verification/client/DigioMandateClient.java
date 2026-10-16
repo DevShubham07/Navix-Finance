@@ -97,9 +97,11 @@ public class DigioMandateClient implements MandatePort {
 
     @Override
     public Optional<MandateResult> findByRef(String customerRefNumber) {
-        JsonNode root = call("by_crn", http.get().uri("/v3/client/mandate/by_crn/{crn}", customerRefNumber));
+        // A miss may come as 404 (shape unverified). "No mandate" must stay distinguishable from "error"
+        // for timeout recovery, so a 404 is empty and everything else still throws.
+        JsonNode root = call("by_crn", http.get().uri("/v3/client/mandate/by_crn/{crn}", customerRefNumber), true);
         JsonNode first = root.isArray() ? root.path(0) : root;
-        return first.isMissingNode() || first.isNull() || first.isEmpty() ? Optional.empty()
+        return root == null || first.isMissingNode() || first.isNull() || first.isEmpty() ? Optional.empty()
                 : Optional.of(result(first));
     }
 
@@ -133,10 +135,17 @@ public class DigioMandateClient implements MandatePort {
     }
 
     private JsonNode call(String op, RestClient.RequestHeadersSpec<?> spec) {
+        return call(op, spec, false);
+    }
+
+    private JsonNode call(String op, RestClient.RequestHeadersSpec<?> spec, boolean notFoundIsMissing) {
         try {
             byte[] bytes = spec.retrieve().body(byte[].class);
-            return JSON.readTree(bytes);
+            return bytes == null || bytes.length == 0 ? JSON.missingNode() : JSON.readTree(bytes);
         } catch (RestClientResponseException e) {
+            if (notFoundIsMissing && e.getStatusCode().value() == 404) {
+                return JSON.missingNode();
+            }
             throw classify(op, e);
         } catch (java.io.IOException e) {
             throw new BusinessException("DIGIO_UNREADABLE", "Digio " + op + " returned an unreadable body");
