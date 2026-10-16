@@ -1790,6 +1790,12 @@ export const offerApi = {
   /** Poll the Aadhaar e-sign session once the provider redirects the borrower back. */
   esignStatus: (id: number) => bff<StepResult>(`${OFFER(id)}/esign/status`, "GET"),
 
+  /** Start the NACH eMandate. `derived.url` is the Digio page; `derived.bankUnsupported` is terminal. A retry calls this again. */
+  mandateInit: (id: number) => bff<StepResult>(`${OFFER(id)}/mandate/init`, "POST"),
+
+  /** Poll the mandate. PASS once usable (the backend has then already routed the file to disbursement). */
+  mandateStatus: (id: number) => bff<StepResult>(`${OFFER(id)}/mandate/status`, "GET"),
+
   /**
    * Fallback: record a drawn signature. Without a signature by one route or the other the
    * application cannot reach disbursement.

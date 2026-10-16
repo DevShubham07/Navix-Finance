@@ -21,6 +21,7 @@ export const OFFER_STEPS: Array<{ seg: string; step: string; label: string }> = 
   { seg: "sanction-letter", step: "OFFER_SANCTION_LETTER", label: "Agreement & signature" },
   { seg: "sanctioned", step: "OFFER_SANCTIONED", label: "Sanctioned" },
   { seg: "disbursal-account", step: "OFFER_DISBURSAL_ACCOUNT", label: "Where to send the money" },
+  { seg: "mandate", step: "OFFER_MANDATE", label: "Auto-repayment setup" },
 ];
 
 /** The routes this journey owns — everything else under /loan/* is outside the wizard chrome. */

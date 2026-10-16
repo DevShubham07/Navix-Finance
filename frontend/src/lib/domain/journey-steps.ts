@@ -30,6 +30,7 @@ const OFFER: Array<[string, string]> = [
   ["OFFER_ESIGN", "eSign"],
   ["OFFER_SANCTIONED", "Sanctioned"],
   ["OFFER_DISBURSAL_ACCOUNT", "Disbursal account"],
+  ["OFFER_MANDATE", "Mandate"],
 ];
 
 export interface StepInfo {

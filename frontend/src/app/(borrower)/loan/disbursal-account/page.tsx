@@ -8,7 +8,7 @@ import { Input } from "@/components/ui";
 import { WizardActions } from "@/components/borrower/wizard-actions";
 import { Reassurance } from "@/components/borrower/reassurance";
 import { offerApi, verificationApi } from "@/lib/api/applications";
-import { useOffer } from "@/lib/offer";
+import { useOffer, nextOfferRoute } from "@/lib/offer";
 import { formatDateTime } from "@/lib/utils";
 import { formatApiError } from "@/lib/api/errors";
 import { compressImage } from "@/lib/compress-image";
@@ -75,7 +75,7 @@ export default function DisbursalAccountPage() {
         holderName: changing ? holder.trim() : (saved.holderName ?? undefined),
         bank: changing ? undefined : (saved.bank ?? undefined),
       });
-      router.push("/loan/status");
+      router.push(nextOfferRoute("disbursal-account"));
     } catch (err) {
       setError(formatApiError(err, "Invalid account details, please enter the bank details again."));
       setBusy(false);
@@ -127,7 +127,7 @@ export default function DisbursalAccountPage() {
         bank: changing ? undefined : (saved.bank ?? undefined),
         useBankProof: true,
       });
-      router.push("/loan/status");
+      router.push(nextOfferRoute("disbursal-account"));
     } catch (err) {
       setBankProofError(formatApiError(err, "Could not upload your proof — please try again."));
       setBankProofBusy(false);
