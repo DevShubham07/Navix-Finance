@@ -64,7 +64,6 @@ class OfferServiceTest {
     @Mock private SanctionLetterPdfRenderer letterRenderer;
     @Mock private DocumentStoragePort storage;
     @Mock private MandateService mandateService;
-    @Mock private com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     private OfferService offer;
     private LoanApplication app;
@@ -73,7 +72,7 @@ class OfferServiceTest {
     @BeforeEach
     void setUp() {
         offer = new OfferService(applicationRepo, profileRepo, referenceRepo, pennyDropGuard,
-                documentRepo, verification, flow, journey, changeLogger, letterRenderer, storage, new LoanMath(), mandateService, featureFlags);
+                documentRepo, verification, flow, journey, changeLogger, letterRenderer, storage, new LoanMath(), mandateService);
 
         app = new LoanApplication();
         app.setId(APP);

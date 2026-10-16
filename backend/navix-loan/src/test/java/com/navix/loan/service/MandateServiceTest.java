@@ -39,6 +39,8 @@ class MandateServiceTest {
     @Mock MandateRepository mandates;
     @Mock LoanApplicationRepository applications;
     @Mock CustomerProfileRepository profiles;
+    @Mock com.navix.common.featureflag.FeatureFlagService featureFlags;
+    @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     MandateService service;
     LoanApplication app;
@@ -46,7 +48,8 @@ class MandateServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new MandateService(port, mandates, applications, profiles, new LoanMath());
+        service = new MandateService(port, mandates, applications, profiles, new LoanMath(), featureFlags,
+                eventPublisher);
         app = new LoanApplication();
         app.setCustomerId(4471L);
         app.setDisbursalAccountNumber("123456789012");
@@ -137,6 +140,14 @@ class MandateServiceTest {
     }
 
     @Test
+    void anEmptyBankListIsAnOutageNotEveryBankUnsupported() {
+        when(port.liveBanks()).thenReturn(List.of());
+        assertThatThrownBy(() -> service.init(1L)).isInstanceOf(BusinessException.class);
+        verify(port, never()).register(any());
+        verify(mandates, never()).save(any());
+    }
+
+    @Test
     void parksAsBankUnsupportedWhenBankCannotDoApiMandate() {
         when(port.liveBanks()).thenReturn(List.of(new BankCapability("HDFC", false, List.of())));
         service.init(1L);
@@ -144,6 +155,9 @@ class MandateServiceTest {
         ArgumentCaptor<Mandate> c = ArgumentCaptor.forClass(Mandate.class);
         verify(mandates).save(c.capture());
         assertThat(c.getValue().getStatus()).isEqualTo(Mandate.Status.BANK_UNSUPPORTED);
+        // I3 — the borrower is promised a call back, so somebody has to be told.
+        verify(eventPublisher).publishEvent(any(
+                com.navix.common.notification.event.MandateBankUnsupportedEvent.class));
     }
 
     private Mandate pending() {
@@ -267,6 +281,40 @@ class MandateServiceTest {
         verify(port, never()).register(any());
     }
 
+    /** I2 — the lock is taken before anything can be filed, so two concurrent inits cannot interleave. */
+    @Test
+    void locksTheCustomerBeforeFilingAnything() {
+        bankOk();
+        when(port.register(any())).thenReturn(new MandateSession("DID1", "partial", "https://x"));
+        service.init(1L);
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(mandates, port);
+        order.verify(mandates).lockCustomer(4471L);
+        order.verify(port).register(any());
+    }
+
+    @Test
+    void mandateRequiredIsFlagAndUsableMandateTogether() {
+        app.setId(1L);
+        when(featureFlags.isEnabled("digio-mandate", false)).thenReturn(false);
+        assertThat(service.mandateRequired(app)).isFalse();
+
+        when(featureFlags.isEnabled("digio-mandate", false)).thenReturn(true);
+        assertThat(service.mandateRequired(app)).isTrue();
+        active("9012", 20_000_00L);
+        assertThat(service.mandateRequired(app)).isFalse();
+    }
+
+    @Test
+    void recoveryWithoutAMandateIdRethrowsInsteadOfWritingNull() {
+        bankOk();
+        RuntimeException failure = new RuntimeException("timeout");
+        when(port.register(any())).thenThrow(failure);
+        when(port.findByRef("4471-1")).thenReturn(Optional.of(
+                new MandateResult(null, "partial", null, null, null, null, null, null)));
+        assertThatThrownBy(() -> service.init(1L)).isSameAs(failure);
+        verify(mandates, never()).save(any());
+    }
+
     @Test
     void zeroCeilingThrowsInsteadOfRegistering() {
         profile.setMonthlySalaryPaise(null);
@@ -275,10 +323,42 @@ class MandateServiceTest {
         verify(port, never()).register(any());
     }
 
+    /**
+     * C1 — the borrower authorises, then cancels at their bank: Digio returns the UMRN AND
+     * {@code state=revoked}. Driven through the real {@code status()} path, not by hand-setting a status.
+     */
+    @Test
+    void revokedMandateThatKeepsItsUmrnIsNotActive() {
+        Mandate m = pending();
+        when(port.fetch("DID1")).thenReturn(
+                new MandateResult("DID1", "revoked", "revoked", "UMRN123", null, null, null, null));
+
+        var r = service.status(1L);
+
+        assertThat(m.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        assertThat(m.getUmrn()).isEqualTo("UMRN123"); // kept for reconciliation, but it is not usable
+        assertThat(r.status()).isEqualTo("FAIL");
+    }
+
+    @Test
+    void cancelledMandateThatKeepsItsUmrnIsNotActive() {
+        Mandate m = pending();
+        when(port.fetch("DID1")).thenReturn(
+                new MandateResult("DID1", "cancelled", null, "UMRN123", null, null, null, null));
+        service.status(1L);
+        assertThat(m.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+    }
+
+    /** A revoked mandate must not be reusable, so the next init registers a fresh one. */
     @Test
     void doesNotReuseRevokedMandateThatKeepsItsUmrn() {
-        Mandate revoked = active("9012", 20_000_00L);
-        revoked.setStatus(Mandate.Status.AUTHORIZATION_FAILED); // filter must still refuse a non-ACTIVE row
+        Mandate revoked = pending();
+        when(port.fetch("DID1")).thenReturn(
+                new MandateResult("DID1", "auth_success", "revoked", "UMRN123", null, null, null, null));
+        service.status(1L);
+        assertThat(revoked.getStatus()).isNotEqualTo(Mandate.Status.ACTIVE);
+
+        // reusable() looks for an ACTIVE row; the revoked one is not one, so a fresh mandate is filed.
         bankOk();
         when(port.register(any())).thenReturn(new MandateSession("DID9", "partial", "https://z"));
         service.init(1L);
@@ -297,28 +377,22 @@ class MandateServiceTest {
         assertThat(service.status(1L).status()).isEqualTo("FAIL");
     }
 
+    /** A newer revoked attempt (its status set by the real apply() path) must not hide the usable one. */
     @Test
     void reusesOlderActiveMandateHiddenBehindNewerRevokedOne() {
         active("9012", 20_000_00L);
-        Mandate revoked = new Mandate();
-        revoked.setUmrn("UMRN1");
-        revoked.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
-        org.mockito.Mockito.lenient().when(mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(4471L))
-                .thenReturn(Optional.of(revoked));
-        assertThat(service.init(1L).status()).isEqualTo("PASS");
-        verify(port, never()).register(any());
-        verify(mandates, never()).findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(any()); // the hiding finder
-    }
+        Mandate newer = new Mandate();
+        newer.setAttemptNo(2);
+        newer.setDigioMandateId("DID2");
+        newer.setUmrn("UMRN1");
+        // What apply() now writes for a umrn-bearing revoked mandate — not a hand-picked status.
+        MandateService.apply(newer, new MandateResult("DID2", "revoked", "revoked", "UMRN1", null, null, null, null));
+        assertThat(newer.getStatus()).isEqualTo(Mandate.Status.AUTHORIZATION_FAILED);
+        lenient().when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(newer));
 
-    @Test
-    void activeMandateIgnoresRevokedMandateThatKeepsItsUmrn() {
-        Mandate older = active("9012", 20_000_00L);
-        Mandate revoked = new Mandate();
-        revoked.setUmrn("UMRN1");
-        revoked.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
-        org.mockito.Mockito.lenient().when(mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(4471L))
-                .thenReturn(Optional.of(revoked));
-        assertThat(service.activeMandate(4471L)).containsSame(older);
+        assertThat(service.init(1L).status()).isEqualTo("PASS");
+        assertThat(service.status(1L).status()).isEqualTo("PASS");
+        verify(port, never()).register(any());
     }
 
     @Test

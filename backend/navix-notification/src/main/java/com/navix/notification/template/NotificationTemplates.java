@@ -329,6 +329,11 @@ public class NotificationTemplates {
                         + "(Admin → API dashboard) and read the newest row's response payload.\n\n"
                         + "— DhanBoost");
 
+        inApp(NotificationType.MANDATE_BANK_UNSUPPORTED, "eMandate needs manual setup",
+                "{bankName} cannot register an eMandate online for application {applicationId}. The borrower "
+                        + "has been told we will be in touch. Set the mandate up with them, then override the "
+                        + "mandate gate on the application's Mandate tab.");
+
         // ---------------- REFERRAL ----------------
         inApp(NotificationType.REFERRAL_PAYOUT_PENDING, "Referral reward to pay",
                 "A referral qualified — two rewards of {amount} each are pending payout. Settle them in Referral payouts.");

@@ -1,6 +1,8 @@
 package com.navix.loan.service;
 
 import com.navix.common.exception.BusinessException;
+import com.navix.common.featureflag.FeatureFlagService;
+import com.navix.common.notification.event.MandateBankUnsupportedEvent;
 import com.navix.common.verification.MandatePort;
 import com.navix.common.verification.MandatePort.BankCapability;
 import com.navix.common.verification.MandatePort.MandateRequest;
@@ -23,6 +25,7 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +52,8 @@ public class MandateService {
     private final LoanApplicationRepository applications;
     private final CustomerProfileRepository profiles;
     private final LoanMath loanMath;
+    private final FeatureFlagService featureFlags;
+    private final ApplicationEventPublisher eventPublisher;
 
     private volatile Map<String, BankCapability> banks;
     private volatile long banksLoadedAt;
@@ -60,6 +65,14 @@ public class MandateService {
         CustomerProfile profile = profiles.findByApplicationId(appId)
                 .orElseThrow(() -> new BusinessException("PROFILE_NOT_FOUND", "Profile not found"));
         Long customerId = app.getCustomerId();
+        // I2 — every register() files a real, binding NPCI mandate, so two concurrent inits (two tabs, a
+        // retried request) must not interleave: they would compute the same attempt_no/CRN, file TWO
+        // mandates, and then one insert would die on uq_mandate_crn, leaving a real mandate at Digio with
+        // no row anywhere. A transaction-scoped Postgres advisory lock on the customer serialises them;
+        // unlike SELECT ... FOR UPDATE it also covers a customer's FIRST attempt, which has no row to lock.
+        // ponytail: serialised, not deduplicated — the second init still mints a fresh attempt, exactly as
+        // the borrower's own "Try again" does. Collapsing those two would need the authorisation URL stored.
+        mandates.lockCustomer(customerId);
 
         String account = app.getDisbursalAccountNumber() == null ? "" : app.getDisbursalAccountNumber().trim();
         if (!ACCOUNT.matcher(account).matches()) {
@@ -100,6 +113,11 @@ public class MandateService {
             m.setStatus(Mandate.Status.BANK_UNSUPPORTED);
             m.setMaximumAmountPaise(0);
             mandates.save(m);
+            // I3 — the borrower is told "our team will be in touch"; this is what pages them. Event, not a
+            // direct call (CLAUDE.md §12): the AFTER_COMMIT @Async listener delivers and nothing here
+            // depends on it succeeding.
+            eventPublisher.publishEvent(new MandateBankUnsupportedEvent(customerId, appId,
+                    app.getDisbursalBank(), Instant.now()));
             Map<String, Object> d = new LinkedHashMap<>();
             d.put("bankUnsupported", true);
             return new StepResult(CHECK_TYPE, ApplicationVerificationService.PENDING,
@@ -130,8 +148,10 @@ public class MandateService {
                         lookupFailure.getClass().getSimpleName());
                 throw failure;
             }
-            if (found == null) {
-                throw failure; // never filed: nothing to adopt, and we do not re-POST
+            if (found == null || found.digioMandateId() == null || found.digioMandateId().isBlank()) {
+                // Never filed, or filed with no id we can key the NOT NULL column on: nothing to adopt,
+                // and we never re-POST a create.
+                throw failure;
             }
             m.setDigioMandateId(found.digioMandateId());
             apply(m, found);
@@ -198,7 +218,13 @@ public class MandateService {
         return ceiling;
     }
 
-    /** The customer's ACTIVE mandate, if it debits this account and covers this advance. */
+    /**
+     * The customer's ACTIVE mandate, if it debits this account and covers this advance.
+     *
+     * <p>Matched on {@code accountLast4} + {@code ifsc} rather than the account number, because the full
+     * number is deliberately never stored (V82). Two accounts at one branch sharing their last four digits
+     * would therefore match; the penny drop on the disbursal account is what proves the account itself.
+     */
     private Optional<Mandate> reusable(Long customerId, String account, String ifsc, long ceiling) {
         String last4 = account.substring(account.length() - 4);
         return mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(customerId, Mandate.Status.ACTIVE)
@@ -214,6 +240,16 @@ public class MandateService {
     @Transactional(readOnly = true)
     public boolean hasUsableMandate(LoanApplication app) {
         return usableMandate(app).isPresent();
+    }
+
+    /**
+     * The one gate: the {@code digio-mandate} flag is on and this application has no usable mandate. The
+     * journey step, the hand-off and {@code acceptOffer}'s guard all read THIS — three copies of a
+     * money-affecting rule drifted twice on this branch.
+     */
+    @Transactional(readOnly = true)
+    public boolean mandateRequired(LoanApplication app) {
+        return featureFlags.isEnabled("digio-mandate", false) && !hasUsableMandate(app);
     }
 
     /** The mandate {@link #hasUsableMandate} accepts for this application, if any. */
@@ -267,30 +303,45 @@ public class MandateService {
                 .filter(m -> m.getStatus() == Mandate.Status.BANK_UNSUPPORTED).isPresent();
     }
 
-    public Optional<Mandate> activeMandate(Long customerId) {
-        return mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(customerId, Mandate.Status.ACTIVE);
-    }
-
-    /** UMRN present means ACTIVE, whatever the state strings say. */
-    private static void apply(Mandate m, MandateResult r) {
+    /**
+     * UMRN present means ACTIVE, whatever the state strings say — <b>except</b> when the provider also
+     * says the mandate is revoked or cancelled. A borrower who authorises and then cancels at their bank
+     * comes back as {@code umrn: "...", state: "revoked"} (09-state-mapping.md §2), and honouring the UMRN
+     * there marked the row ACTIVE, let {@code reusable()} accept it, and handed the file to disbursement
+     * with no live mandate — permanently, since {@code status()} only ever refreshes a pending row.
+     */
+    static void apply(Mandate m, MandateResult r) {
         m.setDigioState(r.state());
         m.setDigioBankState(r.bankState());
         m.setAuthSubMode(r.authSubMode());
         m.setRejectCode(r.rejectCode());
         m.setRejectReason(r.rejectReason());
         m.setAuthenticatedAt(r.authenticatedAt());
-        if (r.umrn() != null && !r.umrn().isBlank()) {
-            m.setUmrn(r.umrn());
-            m.setStatus(Mandate.Status.ACTIVE);
-            return;
+        boolean umrn = r.umrn() != null && !r.umrn().isBlank();
+        if (umrn) {
+            m.setUmrn(r.umrn()); // keep it for support/reconciliation even when the mandate is dead
         }
-        m.setStatus(mapNoUmrn(r.state(), r.bankState()));
+        m.setStatus(revoked(r.state(), r.bankState()) ? Mandate.Status.AUTHORIZATION_FAILED
+                : umrn ? Mandate.Status.ACTIVE
+                : mapNoUmrn(r.state(), r.bankState()));
     }
 
     /**
      * docs/digio/09-state-mapping.md. Without a UMRN nothing is usable; only documented terminal values
      * map to a terminal status. Anything unrecognised (and the unproven {@code complete}) stays pending.
      */
+    /**
+     * Revoked or cancelled — terminal whether or not a UMRN was ever issued. Collapsed onto
+     * {@code AUTHORIZATION_FAILED} rather than carrying its own status: borrower- and staff-facing
+     * behaviour is identical (dead, register a new one), and the raw {@code digio_state} /
+     * {@code digio_bank_state} are stored verbatim so support can still read "revoked".
+     */
+    static boolean revoked(String state, String bankState) {
+        String s = state == null ? "" : state.toLowerCase(Locale.ROOT);
+        return s.equals("revoked") || s.equals("cancelled")
+                || "revoked".equals(bankState == null ? null : bankState.toLowerCase(Locale.ROOT));
+    }
+
     static Mandate.Status mapNoUmrn(String state, String bankState) {
         String s = state == null ? "" : state.toLowerCase(Locale.ROOT);
         String b = bankState == null ? "" : bankState.toLowerCase(Locale.ROOT);
@@ -339,6 +390,12 @@ public class MandateService {
             Map<String, BankCapability> fresh = new java.util.HashMap<>();
             for (BankCapability b : port.liveBanks()) {
                 fresh.put(b.ifscPrefix().toUpperCase(Locale.ROOT), b);
+            }
+            if (fresh.isEmpty()) {
+                // An empty 200 is an outage, not "no bank supports mandates": caching it for 24h would park
+                // every borrower as BANK_UNSUPPORTED, each needing a staff override to undo.
+                throw new BusinessException("MANDATE_BANKS_UNAVAILABLE",
+                        "We could not reach your bank just now. Please try again.");
             }
             banks = cached = fresh;
             banksLoadedAt = System.currentTimeMillis();

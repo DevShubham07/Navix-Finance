@@ -3,16 +3,14 @@ package com.navix.loan.repository;
 import com.navix.loan.entity.Mandate;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 /** Persistence for eMandate attempts (V82). */
 @Repository
 public interface MandateRepository extends JpaRepository<Mandate, Long> {
 
-    /** The customer's current mandate: newest attempt that the bank registered. */
-    Optional<Mandate> findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(Long customerId);
-
-    /** The newest ACTIVE mandate with a UMRN; unlike the finder above, a newer revoked row cannot hide it. */
+    /** The newest ACTIVE mandate with a UMRN; a newer revoked row cannot hide it. */
     Optional<Mandate> findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(Long customerId, Mandate.Status status);
 
     /** The latest attempt, whatever its outcome — its attemptNo seeds the next one. */
@@ -24,4 +22,12 @@ public interface MandateRepository extends JpaRepository<Mandate, Long> {
     Optional<Mandate> findByCustomerRefNumber(String customerRefNumber);
 
     Optional<Mandate> findByDigioMandateId(String digioMandateId);
+
+    /**
+     * Serialises mandate registration for one customer until this transaction commits. Held for the whole
+     * transaction, so a concurrent {@code init} waits rather than filing a second real NPCI mandate under
+     * the same CRN. Works on a customer with no attempt yet — a row lock would not.
+     */
+    @Query(value = "select pg_advisory_xact_lock(?1)", nativeQuery = true)
+    void lockCustomer(long customerId);
 }

@@ -9,7 +9,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.navix.common.featureflag.FeatureFlagService;
 import com.navix.common.storage.DocumentStoragePort;
 import com.navix.loan.domain.ApplicationStatus;
 import com.navix.loan.dto.OfferDtos.DisbursalAccountRequest;
@@ -17,7 +16,6 @@ import com.navix.loan.entity.ApplicationDocument;
 import com.navix.loan.entity.ApplicationVerification;
 import com.navix.loan.entity.CustomerProfile;
 import com.navix.loan.entity.LoanApplication;
-import com.navix.loan.entity.Mandate;
 import com.navix.loan.pdf.SanctionLetterPdfRenderer;
 import com.navix.loan.repository.ApplicationDocumentRepository;
 import com.navix.loan.repository.ApplicationReferenceRepository;
@@ -54,7 +52,6 @@ class MandateJourneyTest {
     @Mock private SanctionLetterPdfRenderer letterRenderer;
     @Mock private DocumentStoragePort storage;
     @Mock private MandateService mandateService;
-    @Mock private FeatureFlagService featureFlags;
 
     private OfferService offer;
     private JourneyService journey;
@@ -64,9 +61,9 @@ class MandateJourneyTest {
     void setUp() {
         offer = new OfferService(applicationRepo, profileRepo, referenceRepo, pennyDropGuard, documentRepo,
                 verification, flow, journeyMock, changeLogger, letterRenderer, storage, new LoanMath(),
-                mandateService, featureFlags);
+                mandateService);
         journey = new JourneyService(applicationRepo, profileRepo, verificationRepo, referenceRepo,
-                documentRepo, mandateService, featureFlags);
+                documentRepo, mandateService);
 
         app = new LoanApplication();
         app.setId(APP);
@@ -85,7 +82,6 @@ class MandateJourneyTest {
         lenient().when(profileRepo.findByApplicationId(APP)).thenReturn(Optional.of(profile));
         lenient().when(pennyDropGuard.lockedUntil(CUSTOMER)).thenReturn(Optional.empty());
         lenient().when(referenceRepo.findByApplicationIdOrderBySlotAsc(APP)).thenReturn(List.of());
-        lenient().when(mandateService.activeMandate(CUSTOMER)).thenReturn(Optional.empty());
         lenient().when(verification.verifyPennyDrop(any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(new StepResult(ApplicationVerificationService.PENNY_DROP,
                         ApplicationVerificationService.PASS, "ok", Map.of()));
@@ -93,8 +89,9 @@ class MandateJourneyTest {
                 APP, ApplicationVerificationService.BANK_PROOF)).thenReturn(Optional.of(new ApplicationDocument()));
     }
 
+    /** The one gate predicate: flag on and no usable mandate for this application. */
     private void flag(boolean on) {
-        lenient().when(featureFlags.isEnabled("digio-mandate", false)).thenReturn(on);
+        lenient().when(mandateService.mandateRequired(app)).thenReturn(on);
     }
 
     private static ApplicationVerification check(String type, String status) {
@@ -117,10 +114,6 @@ class MandateJourneyTest {
                 .thenReturn(Optional.of(check(ApplicationVerificationService.ESIGN, ApplicationVerificationService.PASS)));
     }
 
-    private Mandate mandate() {
-        return new Mandate();
-    }
-
     @Test
     void confirmDisbursalAccountAdvancesToMandateNotDisbursement() {
         flag(true);
@@ -140,7 +133,7 @@ class MandateJourneyTest {
     void mandateStatusWithUmrnCallsAcceptOffer() {
         flag(true);
         when(mandateService.status(APP)).thenReturn(new StepResult("EMANDATE", "PASS", "ok", Map.of()));
-        when(mandateService.hasUsableMandate(app)).thenReturn(true);
+        when(mandateService.mandateRequired(app)).thenReturn(false); // the UMRN landed
 
         offer.mandateStatus(APP);
 
@@ -170,7 +163,7 @@ class MandateJourneyTest {
     void deriveOfferReturnsDoneWhenCustomerAlreadyHasUmrn() {
         flag(true);
         everythingButMandateDone();
-        when(mandateService.hasUsableMandate(app)).thenReturn(true);
+        flag(false);
         assertThat(journey.current(APP).step()).isEqualTo("OFFER_DONE");
     }
 
@@ -178,7 +171,7 @@ class MandateJourneyTest {
     void stepIsDroppedForExistingUmrnHolderOnNonReborrowApplication() {
         flag(true);
         app.setReappliedFrom(null);
-        when(mandateService.hasUsableMandate(app)).thenReturn(true);
+        flag(false);
         assertThat(journey.current(APP).steps()).doesNotContain("OFFER_MANDATE");
     }
 
@@ -203,19 +196,47 @@ class MandateJourneyTest {
     void repeatMandatePollAfterHandOffDoesNotThrow() {
         flag(true);
         app.setStatus(ApplicationStatus.DISBURSEMENT_PENDING);
-        when(mandateService.hasUsableMandate(app)).thenReturn(true);
         when(mandateService.status(APP)).thenReturn(new StepResult("EMANDATE", "PASS", "ok", Map.of()));
 
         assertThat(offer.mandateStatus(APP).status()).isEqualTo("PASS");
         verify(flow, never()).acceptOffer(any(), any());
     }
 
-    /** F10 (journey side): hasUsableMandate false (mandate bound to another account) keeps the step. */
+    /**
+     * I4: after a staff BANK_UNSUPPORTED override the file is at DISBURSEMENT_PENDING with NO usable
+     * mandate — the page must get the stored row, not NOT_APPLICABLE three times and "Still waiting".
+     */
+    @Test
+    void pollAfterAStaffOverrideReportsTheStoredRowInsteadOfThrowing() {
+        flag(true);
+        app.setStatus(ApplicationStatus.DISBURSEMENT_PENDING);
+        when(mandateService.status(APP))
+                .thenReturn(new StepResult("EMANDATE", "PENDING", "bank unsupported", Map.of()));
+
+        assertThat(offer.mandateStatus(APP).message()).isEqualTo("bank unsupported");
+        verify(flow, never()).acceptOffer(any(), any());
+    }
+
+    /**
+     * I6: the kill switch is flipped off under a borrower sitting on the mandate screen with their
+     * account already confirmed. The poll must hand the file off exactly as the pre-feature code did,
+     * instead of leaving them SANCTIONED for ever.
+     */
+    @Test
+    void flagTurnedOffMidJourneyHandsTheFileOffOnTheNextPoll() {
+        flag(false);
+        app.setDisbursalConfirmedAt(java.time.Instant.now());
+        when(mandateService.status(APP)).thenReturn(new StepResult("EMANDATE", "PENDING", "not started", Map.of()));
+
+        assertThat(offer.mandateStatus(APP).status()).isEqualTo("PASS");
+        verify(journeyMock).advance(APP, JourneyService.OfferStep.OFFER_DONE);
+        verify(flow).acceptOffer(APP, 1_500_000L);
+    }
+
+    /** F10 (journey side): a mandate bound to another account is not usable, so the step stays. */
     @Test
     void aMandateBoundToAnotherAccountDoesNotSkipTheStep() {
         flag(true);
-        lenient().when(mandateService.activeMandate(CUSTOMER)).thenReturn(Optional.of(mandate()));
-        when(mandateService.hasUsableMandate(app)).thenReturn(false);
         assertThat(journey.current(APP).steps()).contains("OFFER_MANDATE");
     }
 }

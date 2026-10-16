@@ -51,7 +51,10 @@ into quarantine until observed.
 and staff-facing behaviour is identical ("waiting on the bank"), and preserving five states would add
 transitions nobody acts on. The cost is diagnostic granularity, paid back by storing the raw
 `digio_state` and `digio_bank_state` on the row (`08-` §5), so support can see the real position
-without our enum carrying it. `AUTHORIZATION_FAILED` and `REGISTRATION_FAILED` are kept **apart** on
+without our enum carrying it. `REVOKED` and `CANCELLED` are collapsed onto `AUTHORIZATION_FAILED` as implemented
+(`MandateService.revoked`), and are evaluated **before** the "UMRN present ⇒ ACTIVE" rule — a mandate
+the bank revoked comes back carrying its UMRN, and honouring it marked the row ACTIVE and let the file
+reach disbursement with no live mandate. `AUTHORIZATION_FAILED` and `REGISTRATION_FAILED` are kept **apart** on
 purpose — the first means the customer can try again, the second usually means their account cannot
 hold this mandate at all.
 

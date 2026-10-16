@@ -10,6 +10,7 @@ import com.navix.common.notification.event.BureauQuestionPendingEvent;
 import com.navix.common.notification.event.VerificationStepLinkEvent;
 import com.navix.common.notification.event.KycReminderEvent;
 import com.navix.common.notification.event.WaitlistSubmittedEvent;
+import com.navix.common.notification.event.MandateBankUnsupportedEvent;
 import com.navix.common.notification.event.PaymentReminderEvent;
 import com.navix.common.notification.event.ProviderHealthEvent;
 import com.navix.common.notification.event.ReferralPayoutCreatedEvent;
@@ -377,6 +378,21 @@ public class NotificationEventListener {
                         .put("paymentAmount", NotificationFormat.inr(e.amountPaise()))
                         .put("remarks", e.remarks() != null ? e.remarks() : "no reason given")
                         .build());
+    }
+
+    /**
+     * A borrower's bank cannot do an API eMandate — page the Disbursement Heads, who are the ones the
+     * borrower's "our team will be in touch" promises.
+     */
+    @Async("notificationExecutor")
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMandateBankUnsupported(MandateBankUnsupportedEvent e) {
+        dispatcher.dispatch(NotificationType.MANDATE_BANK_UNSUPPORTED, NotificationContext.builder()
+                .customerId(e.customerId())
+                .applicationId(e.applicationId())
+                .put("bankName", e.bankName() == null ? "The borrower's bank" : e.bankName())
+                .put("applicationId", String.valueOf(e.applicationId()))
+                .build());
     }
 
     /** A referral qualified at disbursement — nudge the Disbursement Heads to settle the two payouts. */

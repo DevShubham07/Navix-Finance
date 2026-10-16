@@ -284,8 +284,7 @@ class ApplicationFlowServiceTest {
         LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
         app.setSanctionedAmountPaise(2_000_000L);
         esigned(1L);
-        when(featureFlags.isEnabled("digio-mandate", false)).thenReturn(true);
-        when(mandateService.hasUsableMandate(app)).thenReturn(false);
+        when(mandateService.mandateRequired(app)).thenReturn(true);
 
         assertThatThrownBy(() -> flow.acceptOffer(1L, 2_000_000L))
                 .isInstanceOf(BusinessException.class)
@@ -1023,8 +1022,7 @@ class ApplicationFlowServiceTest {
     void applyFromPreApprovedIsBlockedWithoutAMandateWhenTheFlagIsOn() {
         LoanApplication app = appAt(ApplicationStatus.PRE_APPROVED);
         when(loanRepository.findByCustomerId(7L)).thenReturn(List.of(loanAt(50L, LoanStatus.CLOSED, LocalDate.now().minusDays(5))));
-        when(featureFlags.isEnabled("digio-mandate", false)).thenReturn(true);
-        when(mandateService.hasUsableMandate(app)).thenReturn(false);
+        when(mandateService.mandateRequired(app)).thenReturn(true);
         actor("7", "BORROWER");
 
         assertThatThrownBy(() -> flow.apply(1L, 1_000_000L, "medical", 1_500_000L, 30))

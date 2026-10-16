@@ -71,7 +71,6 @@ public class OfferService {
     private final DocumentStoragePort storage;
     private final LoanMath loanMath;
     private final MandateService mandateService;
-    private final com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     @Value("${navix.grievance.officer-name:Lalit Kumar}")
     private String grievanceOfficerName;
@@ -455,7 +454,7 @@ public class OfferService {
      */
     private LoanApplication afterAccountConfirmed(LoanApplication app) {
         Long appId = app.getId();
-        if (featureFlags.isEnabled("digio-mandate", false) && !mandateService.hasUsableMandate(app)) {
+        if (mandateService.mandateRequired(app)) {
             journey.advance(appId, JourneyService.OfferStep.OFFER_MANDATE);
             return app;
         }
@@ -477,15 +476,22 @@ public class OfferService {
     public StepResult mandateStatus(Long appId) {
         LoanApplication app = applicationRepo.findById(appId)
                 .orElseThrow(() -> new ResourceNotFoundException("LoanApplication", String.valueOf(appId)));
-        if (app.getStatus() == ApplicationStatus.DISBURSEMENT_PENDING && mandateService.hasUsableMandate(app)) {
-            // A repeat poll after hand-off (second tab, retry): report success, don't throw.
+        if (app.getStatus() != ApplicationStatus.SANCTIONED) {
+            // The file has already left the borrower's hands — a repeat poll after hand-off (second tab,
+            // retry), or a staff override that pushed a BANK_UNSUPPORTED file on without a mandate. Report
+            // the stored row; throwing NOT_APPLICABLE here left the page polling "Still waiting" for ever
+            // while the advance was actually moving.
             return mandateService.status(appId);
         }
-        requireSanctioned(appId);
         StepResult result = mandateService.status(appId);
-        if (mandateService.hasUsableMandate(app)) {
+        if (!mandateService.mandateRequired(app)) {
+            // Either the UMRN landed, or the kill switch was turned off under a borrower who had already
+            // confirmed their account — in which case this is the pre-feature hand-off, not a skipped step.
             journey.advance(appId, JourneyService.OfferStep.OFFER_DONE);
             flow.acceptOffer(appId, app.getAmountRequested());
+            return ApplicationVerificationService.PASS.equals(result.status()) ? result
+                    : new StepResult(MandateService.CHECK_TYPE, ApplicationVerificationService.PASS,
+                            "eMandate not required", java.util.Map.of());
         }
         return result;
     }

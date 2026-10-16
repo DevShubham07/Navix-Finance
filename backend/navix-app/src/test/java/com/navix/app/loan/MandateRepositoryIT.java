@@ -40,15 +40,22 @@ class MandateRepositoryIT {
     }
 
     @Test
-    void findsNewestMandateWithUmrnForCustomer() {
+    void findsNewestActiveMandateWithUmrnForCustomer() {
         repository.saveAndFlush(mandate(9001, 1, "ENA9001A", "UMRN-OLD-9001"));
         repository.saveAndFlush(mandate(9001, 2, "ENA9001B", null));
         Mandate newest = repository.saveAndFlush(mandate(9001, 3, "ENA9001C", "UMRN-NEW-9001"));
         repository.saveAndFlush(mandate(9001, 4, "ENA9001D", null));
 
-        assertThat(repository.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(9001L))
-                .get().extracting(Mandate::getId).isEqualTo(newest.getId());
-        assertThat(repository.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(424242L)).isEmpty();
+        assertThat(repository.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(
+                9001L, Mandate.Status.ACTIVE)).get().extracting(Mandate::getId).isEqualTo(newest.getId());
+        assertThat(repository.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(
+                424242L, Mandate.Status.ACTIVE)).isEmpty();
+    }
+
+    /** The advisory lock init() serialises on must actually be a valid statement against Postgres. */
+    @Test
+    void locksACustomerWithNoAttemptYet() {
+        repository.lockCustomer(987654L);
     }
 
     @Test

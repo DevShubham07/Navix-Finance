@@ -116,7 +116,6 @@ public class JourneyService {
     private final ApplicationReferenceRepository referenceRepository;
     private final ApplicationDocumentRepository documentRepository;
     private final MandateService mandateService;
-    private final com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     @Transactional(readOnly = true)
     public JourneyView current(Long appId) {
@@ -161,7 +160,7 @@ public class JourneyService {
                 .toList();
         // Outside the reapply branch: a first-loan application for a customer who already holds a
         // mandate (or any application while the flag is off) must skip the step too.
-        if (!mandateRequired(app)) {
+        if (!mandateService.mandateRequired(app)) {
             all = all.stream().filter(s -> s != OfferStep.OFFER_MANDATE).toList();
         }
         if (app.getReappliedFrom() == null) {
@@ -365,15 +364,10 @@ public class JourneyService {
         if (app.getDisbursalConfirmedAt() == null) {
             return OfferStep.OFFER_DISBURSAL_ACCOUNT;
         }
-        if (mandateRequired(app)) {
+        if (mandateService.mandateRequired(app)) {
             return OfferStep.OFFER_MANDATE;
         }
         return OfferStep.OFFER_DONE;
-    }
-
-    /** The eMandate step applies: flag on and no ACTIVE mandate (UMRN) on file for the customer. */
-    private boolean mandateRequired(LoanApplication app) {
-        return featureFlags.isEnabled("digio-mandate", false) && !mandateService.hasUsableMandate(app);
     }
 
     /**

@@ -154,6 +154,13 @@ public enum NotificationType {
      */
     PROVIDER_CAPABILITY_DOWN(SYSTEM, Set.of(IN_APP, EMAIL), Set.of(TO_ADMINS)),
 
+    /**
+     * A borrower's bank cannot do an API eMandate, so their file is parked mid-journey. The borrower is
+     * told we will be in touch, so someone has to actually be told: the Disbursement Heads, who finish the
+     * mandate out of band and then override the gate.
+     */
+    MANDATE_BANK_UNSUPPORTED(SYSTEM, Set.of(IN_APP), Set.of(TO_DISBURSEMENT_HEADS)),
+
     // ---- REFERRAL ----
     // A referral qualified (referred borrower's first loan disbursed) — alert the Disbursement Heads
     // who settle the two pending ₹-reward payouts.

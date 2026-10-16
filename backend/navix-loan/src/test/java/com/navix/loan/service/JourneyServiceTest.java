@@ -42,7 +42,6 @@ class JourneyServiceTest {
     @Mock
     private MandateService mandateService;
     @Mock
-    private com.navix.common.featureflag.FeatureFlagService featureFlags;
 
     private JourneyService journey;
     private LoanApplication app;
@@ -50,7 +49,7 @@ class JourneyServiceTest {
     @BeforeEach
     void setUp() {
         journey = new JourneyService(applicationRepository, profileRepository, verificationRepository,
-                referenceRepository, documentRepository, mandateService, featureFlags);
+                referenceRepository, documentRepository, mandateService);
         app = new LoanApplication();
         app.setId(APP);
         app.setCustomerId(7L);

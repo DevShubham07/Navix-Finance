@@ -766,7 +766,7 @@ public class ApplicationFlowService {
 
     /** Flag on => the application's disbursal account must be covered by a usable ACTIVE mandate. */
     private void requireMandate(LoanApplication app) {
-        if (featureFlags.isEnabled("digio-mandate", false) && !mandateService.hasUsableMandate(app)) {
+        if (mandateService.mandateRequired(app)) {
             throw new BusinessException("MANDATE_REQUIRED", "Register your eMandate before continuing");
         }
     }
