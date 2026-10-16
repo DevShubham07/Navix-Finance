@@ -97,4 +97,31 @@ class FilterSpecTest {
         assertNotNull(s.without("status").get("officer"));
         assertNotNull(s.get("status")); // original untouched
     }
+
+    /**
+     * A numeric bound with an absurd exponent is dropped at parse time.
+     *
+     * `new BigDecimal("1e2000000000")` costs nothing to parse — unscaled 1, scale -2000000000 — but
+     * `SqlFilter` converts display units to stored units with `setScale`, which would have to
+     * materialise two billion digits. One URL could therefore exhaust the heap. Without the guard
+     * this test does not fail, it HANGS, which is the point.
+     */
+    @Test
+    @org.junit.jupiter.api.Timeout(10)
+    void dropsANumericBoundWhoseExponentCouldNotBeMaterialised() {
+        assertNull(one("amount", "num:1e2000000000.."));
+        assertNull(one("amount", "num:..1e2000000000"));
+        // The mirror case: a vanishing value whose integer-digit count goes negative.
+        assertNull(one("amount", "num:1e-2000000000.."));
+        // …and the whole filter is dropped, so nothing reaches SQL.
+        assertTrue(FilterSpec.parse(Map.of("f.amount", "num:1e2000000000.."), COLS).isEmpty());
+    }
+
+    @Test
+    void keepsBoundsAnyoneWouldActuallyType() {
+        assertEquals(new java.math.BigDecimal("10000"), ((ColumnFilter.Num) one("amount", "num:10000..")).min());
+        assertEquals(new java.math.BigDecimal("99.5"), ((ColumnFilter.Num) one("amount", "num:..99.5")).max());
+        // Exponent form is legitimate and must survive.
+        assertEquals(new java.math.BigDecimal("1e6"), ((ColumnFilter.Num) one("amount", "num:1e6..")).min());
+    }
 }

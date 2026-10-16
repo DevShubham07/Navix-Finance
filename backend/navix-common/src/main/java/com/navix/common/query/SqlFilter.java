@@ -103,13 +103,35 @@ public final class SqlFilter {
         return parts.isEmpty() ? null : String.join(" and ", parts);
     }
 
+    /**
+     * A bound in display units as the stored unit, saturating rather than throwing.
+     *
+     * `FilterSpec` already caps a bound at 18 integer digits, but multiplying by a scale can still
+     * carry it past `Long.MAX_VALUE` — 17 nines of rupees is under the cap and over a long once it
+     * becomes paise. `longValueExact()` threw an `ArithmeticException` there, which surfaced as a
+     * 500 on a request this parser is supposed to handle leniently.
+     *
+     * Clamping is also the semantically right answer for a RANGE bound: "at least 10^20 paise" and
+     * "at least Long.MAX_VALUE paise" select exactly the same rows — none — so saturating gives the
+     * reader the honest empty register instead of an error page.
+     */
     private static Object stored(BigDecimal displayValue, long scale) {
         if (scale == 1) {
             return displayValue;
         }
-        return displayValue.multiply(BigDecimal.valueOf(scale)).setScale(0, java.math.RoundingMode.HALF_UP)
-                .longValueExact();
+        BigDecimal scaled = displayValue.multiply(BigDecimal.valueOf(scale))
+                .setScale(0, java.math.RoundingMode.HALF_UP);
+        if (scaled.compareTo(MAX_STORED) > 0) {
+            return Long.MAX_VALUE;
+        }
+        if (scaled.compareTo(MIN_STORED) < 0) {
+            return Long.MIN_VALUE;
+        }
+        return scaled.longValueExact();
     }
+
+    private static final BigDecimal MAX_STORED = BigDecimal.valueOf(Long.MAX_VALUE);
+    private static final BigDecimal MIN_STORED = BigDecimal.valueOf(Long.MIN_VALUE);
 
     private static String day(String expr, ColumnFilter.Day day, String p, MapSqlParameterSource params) {
         List<String> parts = new ArrayList<>();

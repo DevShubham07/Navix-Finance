@@ -166,13 +166,38 @@ public final class FilterSpec {
         return min == null && max == null ? null : new ColumnFilter.Num(min, max);
     }
 
+    /** Integer digits a numeric bound may carry. 18 keeps the scaled operand inside a long. */
+    private static final int MAX_INTEGER_DIGITS = 18;
+
+    /** Fraction digits a numeric bound may carry; also catches `1e-2000000000`. */
+    private static final int MAX_FRACTION_DIGITS = 10;
+
     private static BigDecimal decimal(String v) {
         String t = v.strip();
         if (t.isEmpty()) {
             return null;
         }
         try {
-            return new BigDecimal(t);
+            BigDecimal bd = new BigDecimal(t);
+            // Reject absurd magnitudes BEFORE anything tries to expand them.
+            //
+            // `new BigDecimal("1e2000000000")` parses fine — it is unscaled 1 with scale
+            // -2000000000 — and costs nothing until something calls `setScale`, which then has to
+            // materialise two billion digits. `SqlFilter.stored` does exactly that to convert a
+            // display bound into the stored unit, so a request of `f.amount=num:1e2000000000..`
+            // would burn the heap on one URL. Both bounds here are O(1) on the parsed value: a
+            // short string with a huge exponent keeps a small unscaled value, so `precision()`
+            // stays cheap.
+            //
+            // `precision() - scale()` is the count of integer digits; `abs(scale)` catches the
+            // mirror case of a vanishing value (`1e-2000000000`), whose integer-digit count goes
+            // negative and would otherwise slip past. Anything beyond these is not a bound anyone
+            // means — no money column holds 10^18 of anything — so it is dropped, which is what
+            // this parser does with every other unusable value.
+            if (bd.precision() - bd.scale() > MAX_INTEGER_DIGITS || Math.abs(bd.scale()) > MAX_FRACTION_DIGITS) {
+                return null;
+            }
+            return bd;
         } catch (NumberFormatException e) {
             return null; // lenient: a bad bound is dropped, not fatal
         }
