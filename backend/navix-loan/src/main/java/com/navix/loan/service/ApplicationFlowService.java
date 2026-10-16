@@ -824,7 +824,7 @@ public class ApplicationFlowService {
         if (app.getStatus() != ApplicationStatus.SANCTIONED) {
             throw new BusinessException("NOT_APPLICABLE", "This application isn't sanctioned");
         }
-        if (!mandateService.isBankUnsupported(app.getCustomerId())) {
+        if (!mandateService.isBankUnsupported(appId)) {
             throw new BusinessException("MANDATE_OVERRIDE_NOT_ALLOWED",
                     "A mandate override is only available when the borrower's bank cannot register an online mandate");
         }

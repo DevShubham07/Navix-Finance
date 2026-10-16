@@ -221,7 +221,7 @@ class ApplicationFlowServiceTest {
         LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
         app.setSanctionedAmountPaise(2_000_000L);
         esigned(1L);
-        lenient().when(mandateService.isBankUnsupported(7L)).thenReturn(true);
+        lenient().when(mandateService.isBankUnsupported(1L)).thenReturn(true);
 
         for (String role : new String[] {"CREDIT_HEAD", "CREDIT_EXECUTIVE", "ACCOUNTANT", "TELECALLER", "DSA", "BORROWER"}) {
             actor("9", role);
@@ -237,7 +237,7 @@ class ApplicationFlowServiceTest {
         LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
         app.setSanctionedAmountPaise(2_000_000L);
         esigned(1L);
-        when(mandateService.isBankUnsupported(7L)).thenReturn(true);
+        when(mandateService.isBankUnsupported(1L)).thenReturn(true);
         actor("disb1", "DISBURSEMENT_HEAD");
 
         flow.mandateOverride(1L, "co-operative bank, no API mandate");
@@ -255,7 +255,7 @@ class ApplicationFlowServiceTest {
         LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
         app.setSanctionedAmountPaise(2_000_000L);
         esigned(1L);
-        when(mandateService.isBankUnsupported(7L)).thenReturn(false); // failed / pending / none: borrower retries
+        when(mandateService.isBankUnsupported(1L)).thenReturn(false); // failed / pending / none: borrower retries
         actor("admin1", "ADMIN");
 
         assertThatThrownBy(() -> flow.mandateOverride(1L, "please"))
@@ -268,7 +268,7 @@ class ApplicationFlowServiceTest {
     void overrideNeedsAReasonAndASignedAgreement() {
         LoanApplication app = appAt(ApplicationStatus.SANCTIONED);
         app.setSanctionedAmountPaise(2_000_000L);
-        when(mandateService.isBankUnsupported(7L)).thenReturn(true);
+        when(mandateService.isBankUnsupported(1L)).thenReturn(true);
         actor("admin1", "ADMIN");
 
         assertThatThrownBy(() -> flow.mandateOverride(1L, "reason"))

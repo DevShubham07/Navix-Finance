@@ -240,12 +240,15 @@ public class MandateService {
                 .flatMap(a -> mandates.findFirstByCustomerIdOrderByAttemptNoDesc(a.getCustomerId()))
                 .map(m -> new MandateView(m.getStatus().name(), m.getUmrn(), m.getBankName(), m.getAccountLast4(),
                         m.getAuthenticatedAt(), m.getRejectReason(), m.getAttemptNo(),
-                        m.getStatus() == Mandate.Status.BANK_UNSUPPORTED));
+                        m.getStatus() == Mandate.Status.BANK_UNSUPPORTED && appId.equals(m.getLoanApplicationId())));
     }
 
-    /** The only state a staff override may act on: the customer's latest attempt hit a bank with no API mandate. */
-    public boolean isBankUnsupported(Long customerId) {
-        return mandates.findFirstByCustomerIdOrderByAttemptNoDesc(customerId)
+    /**
+     * The only state a staff override may act on: the newest attempt made ON THIS APPLICATION hit a bank
+     * with no API mandate. An earlier advance's BANK_UNSUPPORTED row says nothing about this account.
+     */
+    public boolean isBankUnsupported(Long appId) {
+        return mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(appId)
                 .filter(m -> m.getStatus() == Mandate.Status.BANK_UNSUPPORTED).isPresent();
     }
 

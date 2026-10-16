@@ -3,6 +3,7 @@ package com.navix.loan.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -341,17 +342,52 @@ class MandateServiceTest {
         m.setAccountLast4("9012");
         m.setBankName("HDFC Bank");
         m.setDigioMandateId("NONE-4471-1");
+        m.setLoanApplicationId(1L);
         when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L)).thenReturn(Optional.of(m));
+        when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.of(m));
 
         MandateService.MandateView v = service.staffView(1L).orElseThrow();
 
         assertThat(v.accountLast4()).isEqualTo("9012");
         assertThat(v.overridable()).isTrue();
         assertThat(v.toString()).doesNotContain("123456789012");
-        assertThat(service.isBankUnsupported(4471L)).isTrue();
+        assertThat(service.isBankUnsupported(1L)).isTrue();
 
         m.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
         assertThat(service.staffView(1L).orElseThrow().overridable()).isFalse();
-        assertThat(service.isBankUnsupported(4471L)).isFalse();
+        assertThat(service.isBankUnsupported(1L)).isFalse();
+    }
+
+    private Mandate attempt(Long appId, Mandate.Status st) {
+        Mandate m = new Mandate();
+        m.setLoanApplicationId(appId);
+        m.setStatus(st);
+        return m;
+    }
+
+    @Test
+    void overrideRefusedWhenBankUnsupportedBelongsToAnEarlierApplication() {
+        // Application 1 has no attempt of its own; the customer's old advance (app 99) was BANK_UNSUPPORTED.
+        when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.empty());
+        lenient().when(mandates.findFirstByCustomerIdOrderByAttemptNoDesc(4471L))
+                .thenReturn(Optional.of(attempt(99L, Mandate.Status.BANK_UNSUPPORTED)));
+
+        assertThat(service.isBankUnsupported(1L)).isFalse();
+        assertThat(service.staffView(1L).orElseThrow().overridable()).isFalse();
+    }
+
+    @Test
+    void overrideRefusedWhenNoMandateRowExists() {
+        when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.empty());
+        assertThat(service.isBankUnsupported(1L)).isFalse();
+    }
+
+    @Test
+    void overrideRefusedWhenLatestAttemptIsExpiredOrPending() {
+        for (Mandate.Status st : new Mandate.Status[] {Mandate.Status.EXPIRED, Mandate.Status.PENDING_AUTHORIZATION,
+                Mandate.Status.AUTHORIZATION_FAILED, Mandate.Status.ACTIVE}) {
+            when(mandates.findFirstByLoanApplicationIdOrderByAttemptNoDesc(1L)).thenReturn(Optional.of(attempt(1L, st)));
+            assertThat(service.isBankUnsupported(1L)).as(st.name()).isFalse();
+        }
     }
 }
