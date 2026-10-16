@@ -298,14 +298,25 @@ class MandateServiceTest {
 
     @Test
     void reusesOlderActiveMandateHiddenBehindNewerRevokedOne() {
+        active("9012", 20_000_00L);
+        Mandate revoked = new Mandate();
+        revoked.setUmrn("UMRN1");
+        revoked.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
+        org.mockito.Mockito.lenient().when(mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(4471L))
+                .thenReturn(Optional.of(revoked));
+        assertThat(service.init(1L).status()).isEqualTo("PASS");
+        verify(port, never()).register(any());
+        verify(mandates, never()).findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(any()); // the hiding finder
+    }
+
+    @Test
+    void activeMandateIgnoresRevokedMandateThatKeepsItsUmrn() {
         Mandate older = active("9012", 20_000_00L);
         Mandate revoked = new Mandate();
         revoked.setUmrn("UMRN1");
         revoked.setStatus(Mandate.Status.AUTHORIZATION_FAILED);
         org.mockito.Mockito.lenient().when(mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(4471L))
                 .thenReturn(Optional.of(revoked));
-        assertThat(older.getStatus()).isEqualTo(Mandate.Status.ACTIVE);
-        assertThat(service.init(1L).status()).isEqualTo("PASS");
-        verify(port, never()).register(any());
+        assertThat(service.activeMandate(4471L)).containsSame(older);
     }
 }

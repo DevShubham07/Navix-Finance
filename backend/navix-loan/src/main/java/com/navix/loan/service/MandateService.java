@@ -207,7 +207,7 @@ public class MandateService {
     }
 
     public Optional<Mandate> activeMandate(Long customerId) {
-        return mandates.findFirstByCustomerIdAndUmrnIsNotNullOrderByIdDesc(customerId);
+        return mandates.findFirstByCustomerIdAndStatusAndUmrnIsNotNullOrderByIdDesc(customerId, Mandate.Status.ACTIVE);
     }
 
     /** UMRN present means ACTIVE, whatever the state strings say. */
